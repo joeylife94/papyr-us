@@ -7,16 +7,19 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
+# Install all dependencies (including dev dependencies for build)
 RUN npm install
 
 # Copy source code
 COPY . .
 
-# Build the application
-RUN npm run build
+# Build the application and apply fix
+RUN npm run build && node build-fix.js
 
-# Expose port (Render will override this)
+# Clean up dev dependencies
+RUN npm ci --only=production && npm cache clean --force
+
+# Expose port
 EXPOSE 10000
 
 # Start the application
