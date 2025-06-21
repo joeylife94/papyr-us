@@ -3,7 +3,7 @@ services:
     name: wiki-platform
     env: node
     plan: free
-    buildCommand: npm install && npm run build && node build-fix.js
+    buildCommand: npm install && npx vite build && npx esbuild server/index.ts --bundle --platform=node --format=esm --outdir=dist --external:vite --external:@replit/vite-plugin-runtime-error-modal --external:@replit/vite-plugin-cartographer && node build-fix.js
     startCommand: npm start
     envVars:
       - key: NODE_ENV
