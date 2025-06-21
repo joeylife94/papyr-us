@@ -1,12 +1,9 @@
 import express, { type Express } from "express";
 import path from "path";
-import { fileURLToPath } from "url";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 export function serveStatic(app: Express) {
-  const publicPath = path.join(__dirname, "..", "dist", "public");
+  // Use process.cwd() to get the current working directory
+  const publicPath = path.join(process.cwd(), "dist", "public");
   
   // Serve static files from the dist/public directory
   app.use(express.static(publicPath));

@@ -12,32 +12,12 @@ if (existsSync(serverFile)) {
   try {
     let content = readFileSync(serverFile, 'utf-8');
     
-    // Add proper ES module __dirname polyfill at the top
-    const dirnamePolyfill = `
-import { fileURLToPath } from 'url';
-import path from 'path';
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-`;
-
-    // Add the polyfill after the first import statement
-    const lines = content.split('\n');
-    let insertIndex = 0;
-    for (let i = 0; i < lines.length; i++) {
-      if (lines[i].startsWith('import ') && !lines[i].includes('fileURLToPath')) {
-        insertIndex = i + 1;
-        break;
-      }
-    }
-    
-    // Insert the polyfill
-    lines.splice(insertIndex, 0, dirnamePolyfill);
-    
-    // Replace import.meta.dirname with __dirname
-    const fixedContent = lines.join('\n').replace(/import\.meta\.dirname/g, '__dirname');
+    // Simple and safe approach - just replace import.meta.dirname with process.cwd()
+    // This avoids any import conflicts and works reliably in production
+    const fixedContent = content.replace(/import\.meta\.dirname/g, 'process.cwd()');
     
     writeFileSync(serverFile, fixedContent);
-    console.log('✓ Build fix applied successfully');
+    console.log('✓ Build fix applied successfully - replaced import.meta.dirname with process.cwd()');
   } catch (error) {
     console.error('Error applying build fix:', error.message);
     console.log('Continuing without fix...');
