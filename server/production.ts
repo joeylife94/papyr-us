@@ -2,16 +2,6 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 
-async function setupDevelopmentServer(app: any, server: any) {
-  try {
-    const { setupVite } = await import("./vite.js");
-    await setupVite(app, server);
-  } catch (error) {
-    console.warn("Vite setup failed, falling back to static files:", error);
-    serveStatic(app);
-  }
-}
-
 function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
     hour: "numeric",
@@ -67,28 +57,13 @@ app.use((req, res, next) => {
     throw err;
   });
 
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
-  if (process.env.NODE_ENV === "development") {
-    await setupDevelopmentServer(app, server);
-  } else {
-    serveStatic(app);
-  }
+  // Production mode: only serve static files
+  serveStatic(app);
 
   // Use PORT from environment variable (for deployment platforms) or default to 5000 (for local dev)
   const port = parseInt(process.env.PORT || '5000');
   
-  // Determine host binding based on environment
-  // Replit and cloud platforms need 0.0.0.0, local development can use localhost
-  const isReplit = process.env.REPL_ID !== undefined;
-  const isProduction = process.env.NODE_ENV === 'production';
-  const host = (isProduction || isReplit) ? '0.0.0.0' : 'localhost';
-  
-  server.listen(port, host, () => {
-    log(`serving on ${host}:${port}`);
-    if (!isProduction && !isReplit) {
-      log(`Local development server: http://localhost:${port}`);
-    }
+  server.listen(port, () => {
+    log(`serving on port ${port}`);
   });
-})();
+})(); 
