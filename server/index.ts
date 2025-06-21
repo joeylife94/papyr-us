@@ -4,7 +4,7 @@ import { serveStatic } from "./static";
 
 async function setupDevelopmentServer(app: any, server: any) {
   try {
-    const { setupVite } = await import("./vite.js");
+    const { setupVite } = await import("./vite-replit.js");
     await setupVite(app, server);
   } catch (error) {
     console.warn("Vite setup failed, falling back to static files:", error);
