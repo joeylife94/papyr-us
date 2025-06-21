@@ -26,8 +26,8 @@ export async function setupVite(app: Express, server: Server) {
   const serverOptions = {
     middlewareMode: true,
     hmr: { server },
-    // For Replit: don't restrict hosts, for local: restrict to localhost
-    ...(isReplit ? {} : { allowedHosts: ["localhost", "127.0.0.1"] }),
+    host: "0.0.0.0",
+    // Don't restrict hosts at all for Replit compatibility
   };
 
   const vite = await createViteServer({
@@ -40,7 +40,11 @@ export async function setupVite(app: Express, server: Server) {
         process.exit(1);
       },
     },
-    server: serverOptions,
+    server: {
+      ...serverOptions,
+      // Override any allowedHosts configuration to allow all hosts
+      allowedHosts: true,
+    },
     appType: "custom",
   });
 
