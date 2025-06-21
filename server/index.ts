@@ -67,9 +67,19 @@ app.use((req, res, next) => {
     serveStatic(app);
   }
 
-  // Use PORT from environment variable (for Render) or default to 5000 (for local dev)
-  const port = process.env.PORT || 5000;
-  server.listen(port, () => {
-    log(`serving on port ${port}`);
+  // Use PORT from environment variable (for deployment platforms) or default to 5000 (for local dev)
+  const port = parseInt(process.env.PORT || '5000');
+  
+  // Determine host binding based on environment
+  // Replit and cloud platforms need 0.0.0.0, local development can use localhost
+  const isReplit = process.env.REPL_ID !== undefined;
+  const isProduction = process.env.NODE_ENV === 'production';
+  const host = (isProduction || isReplit) ? '0.0.0.0' : 'localhost';
+  
+  server.listen(port, host, () => {
+    log(`serving on ${host}:${port}`);
+    if (!isProduction && !isReplit) {
+      log(`Local development server: http://localhost:${port}`);
+    }
   });
 })();
