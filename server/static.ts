@@ -2,9 +2,8 @@ import express, { type Express } from "express";
 import path from "path";
 
 export function serveStatic(app: Express) {
-  // Use process.cwd() to get the current working directory
   const publicPath = path.join(process.cwd(), "dist", "public");
-  
+
   // Serve static files from the dist/public directory at /papyr-us path
   app.use("/papyr-us", express.static(publicPath));
   

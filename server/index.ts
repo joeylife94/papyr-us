@@ -59,6 +59,7 @@ app.use((req, res, next) => {
 (async () => {
   const server = await registerRoutes(app);
 
+  // Error handler should be after routes
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
@@ -67,20 +68,19 @@ app.use((req, res, next) => {
     throw err;
   });
 
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
+  // Importantly, only set up Vite in development and after all other routes
+  // so the catch-all doesn't interfere.
+  // Static file serving should also come after API routes.
   if (process.env.NODE_ENV === "development") {
     await setupDevelopmentServer(app, server);
   } else {
     serveStatic(app);
   }
 
-  // Use PORT from environment variable (for deployment platforms) or default to 5001 (for local dev)
+  // Use PORT from environment variable or default to 5001
   const port = parseInt(process.env.PORT || '5001');
   
   // Determine host binding based on environment
-  // Replit and cloud platforms need 0.0.0.0, local development can use localhost
   const isReplit = process.env.REPL_ID !== undefined;
   const isProduction = process.env.NODE_ENV === 'production';
   const host = (isProduction || isReplit) ? '0.0.0.0' : 'localhost';
