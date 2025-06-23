@@ -76,8 +76,8 @@ app.use((req, res, next) => {
     serveStatic(app);
   }
 
-  // Use PORT from environment variable (for deployment platforms) or default to 5000 (for local dev)
-  const port = parseInt(process.env.PORT || '5000');
+  // Use PORT from environment variable (for deployment platforms) or default to 5001 (for local dev)
+  const port = parseInt(process.env.PORT || '5001');
   
   // Determine host binding based on environment
   // Replit and cloud platforms need 0.0.0.0, local development can use localhost

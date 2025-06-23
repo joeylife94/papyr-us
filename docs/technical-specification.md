@@ -4,10 +4,10 @@
 
 ### 전체 구조
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   React Client  │◄───┤   Express API   │◄───┤  Memory Store   │
-│   (Frontend)    │    │   (Backend)     │    │   (Database)    │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   React Client  │◄───┤   Express API   │◄───┤  Memory Store   │    │   OpenAI API    │
+│   (Frontend)    │    │   (Backend)     │    │   (Database)    │    │   (AI Service)  │
+└─────────────────┘    └─────────────────┘    └─────────────────┘    └─────────────────┘
 ```
 
 ### 기술 스택 세부사항
@@ -24,6 +24,13 @@
 - **Express.js 4.18+**: 웹 프레임워크
 - **TypeScript**: 서버사이드 타입 안전성
 - **tsx**: TypeScript 실행 환경
+- **OpenAI API**: GPT-4o 모델을 통한 AI 기능
+
+#### AI 서비스
+- **OpenAI GPT-4o**: 최신 언어 모델
+- **콘텐츠 생성**: 마크다운 기반 문서 생성
+- **내용 요약**: 긴 문서의 핵심 내용 추출
+- **개선 제안**: 문서 품질 향상을 위한 AI 제안
 
 #### 상태 관리
 - **TanStack Query v5**: 서버 상태 관리
@@ -121,6 +128,18 @@ GET    /api/calendar/:teamId
 POST   /api/calendar
 PUT    /api/calendar/:id
 DELETE /api/calendar/:id
+```
+
+#### Directory Password Verification
+```
+POST   /api/directory/verify      # 디렉토리 패스워드 검증
+```
+
+#### AI Assistant API (계획됨)
+```
+POST   /api/ai/generate           # AI 콘텐츠 생성
+POST   /api/ai/summarize          # 문서 요약
+POST   /api/ai/suggest            # 개선 제안
 ```
 
 ### 응답 형식
@@ -287,7 +306,7 @@ const { data, fetchNextPage, hasNextPage } = useInfiniteQuery({
 ```bash
 # 개발 환경
 NODE_ENV=development
-PORT=5000
+PORT=5001
 
 # 프로덕션 환경
 NODE_ENV=production

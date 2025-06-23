@@ -6,6 +6,18 @@
 - Node.js 18 이상
 - npm 또는 yarn
 - 현대적인 웹 브라우저
+- OpenAI API 키 (AI 기능 사용 시)
+
+### 환경 변수 설정
+프로젝트 루트에 `.env` 파일을 생성하고 다음 환경 변수를 설정하세요:
+
+```env
+# AI 기능을 위한 OpenAI API 키
+OPENAI_API_KEY=your_openai_api_key_here
+
+# 대안 환경 변수명
+OPENAI_API_KEY_ENV_VAR=your_openai_api_key_here
+```
 
 ### 프로젝트 실행
 ```bash
@@ -13,7 +25,7 @@ npm install
 npm run dev
 ```
 
-서버는 기본적으로 `http://localhost:5000`에서 실행됩니다.
+서버는 기본적으로 `http://localhost:5001`에서 실행됩니다.
 
 ## 아키텍처 개요
 
@@ -43,6 +55,17 @@ npm run dev
 - `AdminPage`: 관리자 패널
 - `CalendarPage`: 팀 캘린더
 
+### Wiki 컴포넌트
+- `AIAssistant`: AI 도우미 인터페이스
+- `MarkdownRenderer`: 마크다운 콘텐츠 렌더링
+- `SearchBar`: 검색 기능
+- `TagFilter`: 태그 필터링
+
+### AI 서비스
+- `generateContent`: AI 콘텐츠 생성
+- `summarizeContent`: 문서 요약
+- `generateContentSuggestions`: 개선 제안
+
 ## API 엔드포인트
 
 ### 페이지 관리
@@ -68,6 +91,11 @@ GET    /api/admin/directories     # 디렉토리 목록 조회
 POST   /api/admin/directories     # 새 디렉토리 생성
 PUT    /api/admin/directories/:id # 디렉토리 수정
 DELETE /api/admin/directories/:id # 디렉토리 삭제
+```
+
+### 디렉토리 보안
+```
+POST   /api/directory/verify      # 디렉토리 패스워드 검증
 ```
 
 ### 캘린더 기능
@@ -157,7 +185,7 @@ npm run build
 ## 문제 해결
 
 ### 일반적인 문제
-1. **포트 충돌**: 5000번 포트가 사용 중인 경우 다른 포트 사용
+1. **포트 충돌**: 5001번 포트가 사용 중인 경우 다른 포트 사용
 2. **타입 에러**: TypeScript 컴파일 에러 확인
 3. **빌드 실패**: 의존성 설치 및 캐시 정리
 

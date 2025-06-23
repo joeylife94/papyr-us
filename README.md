@@ -11,6 +11,7 @@ A comprehensive wiki platform built with React and Express.js, enabling collabor
 - 🎨 Modern UI with dark/light theme support
 - ⚡ Real-time updates with hot reload
 - 🔐 Directory-based access control
+- 🤖 AI Assistant powered by GPT-4o for content generation
 
 ## Tech Stack
 
@@ -64,7 +65,7 @@ A comprehensive wiki platform built with React and Express.js, enabling collabor
    local-dev.bat
    ```
    
-   The application will be available at `http://localhost:5000`
+   The application will be available at `http://localhost:5001`
 
 4. **Build for production:**
    ```bash
@@ -112,13 +113,13 @@ Create a `.env` file in the root directory:
 
 ```env
 NODE_ENV=development
-PORT=5000
+PORT=5001
 
 # Optional: Database configuration
 # DATABASE_URL=postgresql://...
 
-# Optional: AI integration
-# OPENAI_API_KEY=your_key_here
+# AI Assistant configuration (required for AI features)
+OPENAI_API_KEY=your_openai_api_key_here
 ```
 
 ### Storage Options
@@ -151,6 +152,7 @@ By default, the application uses in-memory storage. For persistent data:
 - Content suggestions
 - Auto-summarization
 - Smart content generation
+- GPT-4o powered assistance
 
 ## Development
 

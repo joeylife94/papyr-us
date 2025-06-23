@@ -27,7 +27,7 @@ fi
 
 # Set environment variables for local development
 export NODE_ENV=development
-export PORT=${PORT:-5000}
+export PORT=${PORT:-5001}
 
 echo "🌐 Starting server on http://localhost:${PORT}"
 echo "Press Ctrl+C to stop the server"

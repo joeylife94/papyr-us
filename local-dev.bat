@@ -32,7 +32,7 @@ if not exist "node_modules" (
 
 rem Set environment variables for local development
 set NODE_ENV=development
-if not defined PORT set PORT=5000
+if not defined PORT set PORT=5001
 
 echo 🌐 Starting server on http://localhost:%PORT%
 echo Press Ctrl+C to stop the server

@@ -60,8 +60,8 @@ app.use((req, res, next) => {
   // Production mode: only serve static files
   serveStatic(app);
 
-  // Use PORT from environment variable (for deployment platforms) or default to 5000 (for local dev)
-  const port = parseInt(process.env.PORT || '5000');
+  // Use PORT from environment variable (for deployment platforms) or default to 5001 (for local dev)
+  const port = parseInt(process.env.PORT || '5001');
   
   server.listen(port, () => {
     log(`serving on port ${port}`);

@@ -31,6 +31,13 @@ Papyr.us는 React와 Express.js를 기반으로 구축된 현대적인 팀 협�
 - 직관적인 네비게이션
 - 모바일 최적화
 
+### 5. AI Assistant 기능
+- GPT-4o 기반 AI 도우미
+- 마크다운 콘텐츠 자동 생성
+- 문서 개선 제안
+- 실시간 콘텐츠 지원
+- 클립보드 연동 기능
+
 ## 기술 스택
 
 ### Frontend
@@ -48,6 +55,12 @@ Papyr.us는 React와 Express.js를 기반으로 구축된 현대적인 팀 협�
 - **TypeScript** - 서버사이드 타입 안전성
 - **Drizzle ORM** - 타입 안전한 SQL 쿼리 빌더
 - **Zod** - 스키마 검증 라이브러리
+- **OpenAI API** - GPT-4o 모델 연동
+
+### AI & 마크다운
+- **OpenAI SDK** - AI 기능 구현
+- **remark/rehype** - 마크다운 처리
+- **gray-matter** - 프론트매터 파싱
 
 ### 개발 도구
 - **ESLint** - 코드 품질 검사
