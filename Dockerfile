@@ -20,7 +20,7 @@ RUN npm run build && node build-fix.js
 RUN npm ci --only=production && npm cache clean --force
 
 # Expose port
-EXPOSE 10000
+EXPOSE 5001
 
 # Start the application
 CMD ["npm", "start"]
