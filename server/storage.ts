@@ -1,4 +1,7 @@
-import { wikiPages, type WikiPage, type InsertWikiPage, type UpdateWikiPage, type Tag, type SearchParams, type CalendarEvent, type InsertCalendarEvent, type UpdateCalendarEvent, type Directory, type InsertDirectory, type UpdateDirectory } from "@shared/schema";
+import { wikiPages, type WikiPage, type InsertWikiPage, type UpdateWikiPage, type Tag, type SearchParams, type CalendarEvent, type InsertCalendarEvent, type UpdateCalendarEvent, type Directory, type InsertDirectory, type UpdateDirectory, calendarEvents, directories } from "../shared/schema.ts";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { eq, like, and, sql, desc, asc } from "drizzle-orm";
+import { Pool } from "pg";
 
 export interface IStorage {
   // Wiki pages CRUD
@@ -569,4 +572,211 @@ Welcome to Team Alpha's dedicated workspace! Use this area to collaborate and or
   }
 }
 
-export const storage = new MemStorage();
+// PostgreSQL-based storage implementation
+export class DBStorage implements IStorage {
+  private db: any;
+
+  constructor() {
+    if (!process.env.DATABASE_URL) {
+      throw new Error("DATABASE_URL is required for database storage");
+    }
+    
+    // Use node-postgres for PostgreSQL connection
+    const pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+    });
+    this.db = drizzle(pool);
+  }
+
+  // Wiki pages CRUD
+  async getWikiPage(id: number): Promise<WikiPage | undefined> {
+    const result = await this.db.select().from(wikiPages).where(eq(wikiPages.id, id)).limit(1);
+    return result[0] || undefined;
+  }
+
+  async getWikiPageBySlug(slug: string): Promise<WikiPage | undefined> {
+    const result = await this.db.select().from(wikiPages).where(eq(wikiPages.slug, slug)).limit(1);
+    return result[0] || undefined;
+  }
+
+  async createWikiPage(insertPage: InsertWikiPage): Promise<WikiPage> {
+    const result = await this.db.insert(wikiPages).values(insertPage).returning();
+    return result[0];
+  }
+
+  async updateWikiPage(id: number, updatePage: UpdateWikiPage): Promise<WikiPage | undefined> {
+    const result = await this.db
+      .update(wikiPages)
+      .set({ ...updatePage, updatedAt: new Date() })
+      .where(eq(wikiPages.id, id))
+      .returning();
+    return result[0] || undefined;
+  }
+
+  async deleteWikiPage(id: number): Promise<boolean> {
+    const result = await this.db.delete(wikiPages).where(eq(wikiPages.id, id));
+    return result.rowCount > 0;
+  }
+
+  async searchWikiPages(params: SearchParams): Promise<{ pages: WikiPage[]; total: number }> {
+    let query = this.db.select().from(wikiPages);
+    let conditions = [];
+
+    // Apply filters
+    if (params.folder) {
+      conditions.push(eq(wikiPages.folder, params.folder));
+    }
+
+    if (params.query) {
+      const searchTerm = `%${params.query.toLowerCase()}%`;
+      conditions.push(
+        sql`(lower(${wikiPages.title}) LIKE ${searchTerm} OR lower(${wikiPages.content}) LIKE ${searchTerm})`
+      );
+    }
+
+    if (params.tags && params.tags.length > 0) {
+      conditions.push(sql`${wikiPages.tags} && ${params.tags}`);
+    }
+
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions));
+    }
+
+    // Get total count
+    const totalResult = await query.execute();
+    const total = totalResult.length;
+
+    // Apply pagination and ordering
+    const pages = await query
+      .orderBy(desc(wikiPages.updatedAt))
+      .limit(params.limit || 20)
+      .offset(params.offset || 0)
+      .execute();
+
+    return { pages, total };
+  }
+
+  async getWikiPagesByFolder(folder: string): Promise<WikiPage[]> {
+    return await this.db
+      .select()
+      .from(wikiPages)
+      .where(eq(wikiPages.folder, folder))
+      .orderBy(desc(wikiPages.updatedAt))
+      .execute();
+  }
+
+  async getAllTags(): Promise<Tag[]> {
+    const result = await this.db
+      .select({
+        tag: sql`unnest(${wikiPages.tags})`.as('tag'),
+        count: sql`count(*)`.as('count')
+      })
+      .from(wikiPages)
+      .groupBy(sql`unnest(${wikiPages.tags})`)
+      .orderBy(desc(sql`count(*)`))
+      .execute();
+
+    return result.map((row: any) => ({ name: row.tag, count: Number(row.count) }));
+  }
+
+  async getFolders(): Promise<string[]> {
+    const result = await this.db
+      .selectDistinct({ folder: wikiPages.folder })
+      .from(wikiPages)
+      .execute();
+    return result.map((row: any) => row.folder);
+  }
+
+  // Calendar events CRUD
+  async getCalendarEvents(teamId: string): Promise<CalendarEvent[]> {
+    return await this.db
+      .select()
+      .from(calendarEvents)
+      .where(eq(calendarEvents.teamId, teamId))
+      .orderBy(asc(calendarEvents.startDate))
+      .execute();
+  }
+
+  async getCalendarEvent(id: number): Promise<CalendarEvent | undefined> {
+    const result = await this.db.select().from(calendarEvents).where(eq(calendarEvents.id, id)).limit(1);
+    return result[0] || undefined;
+  }
+
+  async createCalendarEvent(insertEvent: InsertCalendarEvent): Promise<CalendarEvent> {
+    const result = await this.db.insert(calendarEvents).values(insertEvent).returning();
+    return result[0];
+  }
+
+  async updateCalendarEvent(id: number, updateEvent: UpdateCalendarEvent): Promise<CalendarEvent | undefined> {
+    const result = await this.db
+      .update(calendarEvents)
+      .set({ ...updateEvent, updatedAt: new Date() })
+      .where(eq(calendarEvents.id, id))
+      .returning();
+    return result[0] || undefined;
+  }
+
+  async deleteCalendarEvent(id: number): Promise<boolean> {
+    const result = await this.db.delete(calendarEvents).where(eq(calendarEvents.id, id));
+    return result.rowCount > 0;
+  }
+
+  // Directory management
+  async getDirectories(): Promise<Directory[]> {
+    return await this.db
+      .select()
+      .from(directories)
+      .where(eq(directories.isVisible, true))
+      .orderBy(asc(directories.order))
+      .execute();
+  }
+
+  async getDirectory(id: number): Promise<Directory | undefined> {
+    const result = await this.db.select().from(directories).where(eq(directories.id, id)).limit(1);
+    return result[0] || undefined;
+  }
+
+  async createDirectory(insertDirectory: InsertDirectory): Promise<Directory> {
+    const result = await this.db.insert(directories).values(insertDirectory).returning();
+    return result[0];
+  }
+
+  async updateDirectory(id: number, updateDirectory: UpdateDirectory): Promise<Directory | undefined> {
+    const result = await this.db
+      .update(directories)
+      .set({ ...updateDirectory, updatedAt: new Date() })
+      .where(eq(directories.id, id))
+      .returning();
+    return result[0] || undefined;
+  }
+
+  async deleteDirectory(id: number): Promise<boolean> {
+    const result = await this.db.delete(directories).where(eq(directories.id, id));
+    return result.rowCount > 0;
+  }
+
+  async verifyDirectoryPassword(directoryName: string, password: string): Promise<boolean> {
+    const result = await this.db
+      .select()
+      .from(directories)
+      .where(eq(directories.name, directoryName))
+      .limit(1);
+    
+    const directory = result[0];
+    if (!directory || !directory.password) return true; // No password required
+    return directory.password === password;
+  }
+}
+
+// Choose storage implementation based on environment
+function createStorage(): IStorage {
+  if (process.env.DATABASE_URL) {
+    console.log("Using PostgreSQL database storage");
+    return new DBStorage();
+  } else {
+    console.log("Using in-memory storage");
+    return new MemStorage();
+  }
+}
+
+export const storage = createStorage();

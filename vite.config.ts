@@ -1,38 +1,82 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
-import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// https://vitejs.dev/config/
 export default defineConfig({
-  base: '/papyr-us/',
-  plugins: [
-    react(),
-    runtimeErrorOverlay(),
-    ...(process.env.NODE_ENV !== "production" &&
-    process.env.REPL_ID !== undefined
-      ? [
-          await import("@replit/vite-plugin-cartographer").then((m) =>
-            m.cartographer(),
-          ),
-        ]
-      : []),
-  ],
+  root: path.resolve(__dirname, "client"),
+  plugins: [react()],
   resolve: {
     alias: {
-      "@": path.resolve(import.meta.dirname, "client", "src"),
-      "@shared": path.resolve(import.meta.dirname, "shared"),
-      "@assets": path.resolve(import.meta.dirname, "attached_assets"),
+      "@": path.resolve(__dirname, "./client/src"),
     },
   },
-  root: path.resolve(import.meta.dirname, "client"),
   build: {
-    outDir: path.resolve(import.meta.dirname, "dist/public"),
-    emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // React and core dependencies
+          'react-vendor': ['react', 'react-dom'],
+          
+          // UI libraries
+          'ui-vendor': [
+            '@radix-ui/react-accordion',
+            '@radix-ui/react-alert-dialog',
+            '@radix-ui/react-avatar',
+            '@radix-ui/react-checkbox',
+            '@radix-ui/react-dialog',
+            '@radix-ui/react-dropdown-menu',
+            '@radix-ui/react-popover',
+            '@radix-ui/react-select',
+            '@radix-ui/react-tabs',
+            '@radix-ui/react-toast',
+            'framer-motion'
+          ],
+          
+          // Utility libraries
+          'utils-vendor': [
+            'clsx',
+            'class-variance-authority',
+            'tailwind-merge',
+            'date-fns',
+            'zod'
+          ],
+          
+          // Query and routing
+          'app-vendor': [
+            '@tanstack/react-query',
+            'wouter'
+          ],
+          
+          // Markdown and content
+          'content-vendor': [
+            'remark',
+            'remark-gfm',
+            'remark-parse',
+            'remark-rehype',
+            'rehype-highlight',
+            'rehype-stringify',
+            'gray-matter'
+          ]
+        }
+      }
+    },
+    // Increase chunk size warning limit
+    chunkSizeWarningLimit: 600,
+    // Enable source maps for better debugging
+    sourcemap: false
   },
   server: {
-    fs: {
-      strict: true,
-      deny: ["**/.*"],
+    proxy: {
+      '/api': {
+        target: 'http://localhost:5001',
+        changeOrigin: true,
+      },
     },
   },
 });
