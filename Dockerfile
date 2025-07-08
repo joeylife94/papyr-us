@@ -8,7 +8,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install all dependencies (including dev dependencies for build)
-RUN npm install
+RUN npm install --legacy-peer-deps
 
 # Copy source code
 COPY . .
@@ -16,11 +16,11 @@ COPY . .
 # Build the application and apply fix
 RUN npm run build && node build-fix.js
 
-# Clean up dev dependencies
-RUN npm ci --only=production && npm cache clean --force
+# Clean up dev dependencies - (We keep them for dev commands inside the container)
+# RUN npm ci --only=production && npm cache clean --force
 
 # Expose port
 EXPOSE 5001
 
-# Start the application
-CMD ["npm", "start"]
+# Start the application - (We'll override this in docker-compose)
+# CMD ["npm", "start"]
