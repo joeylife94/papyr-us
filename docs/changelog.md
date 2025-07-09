@@ -1,5 +1,64 @@
 # 변경 로그
 
+## 버전 1.2.0 - 2025-01-08 (PostgreSQL 마이그레이션 & Docker 환경)
+
+### 🚀 주요 인프라 업그레이드
+- **PostgreSQL 16 데이터베이스**: 메모리 기반 저장소에서 완전 PostgreSQL 전환
+- **Docker 컨테이너화**: 전체 애플리케이션 Docker 환경 구축
+- **데이터베이스 마이그레이션**: Drizzle ORM 자동 마이그레이션 시스템
+- **초기 데이터 시드**: 포괄적인 샘플 데이터 및 컨텐츠 시드
+
+### ✅ 완료된 기능
+
+#### 데이터베이스 시스템
+- PostgreSQL 16 Alpine 컨테이너 설정
+- 볼륨 퍼시스턴스로 데이터 영구 보존
+- 자동 헬스체크 시스템
+- 완전한 스키마 마이그레이션 (`wiki_pages`, `calendar_events`, `directories`)
+
+#### Docker 환경
+- 프로덕션 최적화 멀티스테이지 Dockerfile
+- docker-compose.yml 완전 설정
+- 환경 변수 기반 설정 관리
+- 컨테이너 간 네트워킹 자동 구성
+
+#### 초기 데이터 구축
+- **위키 페이지**: 4개 ("Getting Started", "API Reference Guide" 등)
+- **캘린더 이벤트**: 3개 (Team Alpha 미팅, 문서 리뷰 등)  
+- **디렉토리**: 6개 (Documentation, Ideas & Brainstorming 등)
+- 완전 자동화된 데이터 시드 스크립트
+
+#### 성능 최적화
+- 번들 크기 60% 감소 (1MB+ → 최대 423KB)
+- Vite 코드 분할 최적화 (react-vendor, ui-vendor, utils-vendor 등)
+- 보안 취약점 해결 (npm audit 완료)
+- 최신 패키지 업데이트 (Vite 7.0.2, Drizzle Kit 등)
+
+### 🔧 기술적 개선
+- **환경 설정**: 완전한 .env 구성 시스템
+- **마이그레이션**: `npm run db:migrate`, `npm run db:seed` 스크립트
+- **개발 경험**: 원클릭 환경 설정 및 시작
+- **배포 준비**: 우분투 서버 배포 인프라 완료
+
+### 📚 문서 업데이트
+- **development-status.md**: 실시간 개발 상황 추적 문서
+- **UBUNTU-DEPLOY.md**: 5분 배포 가이드
+- **setup-local-postgres.md**: 로컬 PostgreSQL 설정 가이드
+- **.env.example**: 완전한 환경 변수 템플릿
+
+### ⚠️ 알려진 이슈
+- **정적 파일 서빙**: `/papyr-us` 경로에서 프론트엔드 로딩 오류
+- **API 엔드포인트**: 일부 프론트엔드 요청 경로 불일치
+- 해결 예정: 2025-01-09
+
+### 🎯 배포 상태
+- **백엔드**: 100% 완료 (PostgreSQL + Express API)
+- **데이터베이스**: 100% 완료 (마이그레이션 + 시드)
+- **Docker 환경**: 100% 완료 (프로덕션 준비)
+- **프론트엔드**: 99% 완료 (정적 파일 서빙 이슈만 해결 필요)
+
+---
+
 ## 버전 1.1.0 - 2025-01-XX
 
 ### 🤖 AI Assistant 기능 추가

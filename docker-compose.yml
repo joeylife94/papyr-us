@@ -26,8 +26,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    # Keep the container running for dev purposes
-    command: tail -f /dev/null
+    # Start the application
+    command: npm start
 
 volumes:
   pgdata: 
