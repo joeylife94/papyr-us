@@ -117,237 +117,237 @@ export default function CalendarPage({ teamId }: CalendarPageProps) {
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-white">
-            {teamName} Calendar
-          </h1>
-          <p className="text-slate-600 dark:text-slate-400">
-            Manage your team's schedule and deadlines
-          </p>
-        </div>
-        <div className="flex items-center space-x-4">
-          <div className="flex items-center space-x-2">
-            <Button
-              variant={viewMode === "month" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setViewMode("month")}
-            >
-              Month
-            </Button>
-            <Button
-              variant={viewMode === "week" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setViewMode("week")}
-            >
-              Week
-            </Button>
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-slate-900">
+              {teamName} Calendar
+            </h1>
+            <p className="text-slate-600">
+              Manage your team's schedule and deadlines
+            </p>
           </div>
-          <Dialog open={isEventDialogOpen} onOpenChange={setIsEventDialogOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="h-4 w-4 mr-2" />
-                Add Event
+          <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2">
+              <Button
+                variant={viewMode === "month" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setViewMode("month")}
+              >
+                Month
               </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[425px]">
-              <DialogHeader>
-                <DialogTitle>Create New Event</DialogTitle>
-              </DialogHeader>
-              <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                  <FormField
-                    control={form.control}
-                    name="title"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Event Title</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Meeting, deadline, etc." {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  
-                  <FormField
-                    control={form.control}
-                    name="description"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Description</FormLabel>
-                        <FormControl>
-                          <Textarea 
-                            placeholder="Event details..."
-                            className="resize-none"
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  
-                  <FormField
-                    control={form.control}
-                    name="startDate"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Start Date & Time</FormLabel>
-                        <FormControl>
-                          <Input 
-                            type="datetime-local" 
-                            {...field} 
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  
-                  <FormField
-                    control={form.control}
-                    name="endDate"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>End Date & Time (Optional)</FormLabel>
-                        <FormControl>
-                          <Input 
-                            type="datetime-local" 
-                            {...field} 
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+              <Button
+                variant={viewMode === "week" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setViewMode("week")}
+              >
+                Week
+              </Button>
+            </div>
+            <Dialog open={isEventDialogOpen} onOpenChange={setIsEventDialogOpen}>
+              <DialogTrigger asChild>
+                <Button>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Event
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[425px]">
+                <DialogHeader>
+                  <DialogTitle>Create New Event</DialogTitle>
+                </DialogHeader>
+                <Form {...form}>
+                  <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                    <FormField
+                      control={form.control}
+                      name="title"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Event Title</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Meeting, deadline, etc." {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    
+                    <FormField
+                      control={form.control}
+                      name="description"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Description</FormLabel>
+                          <FormControl>
+                            <Textarea 
+                              placeholder="Event details..."
+                              className="resize-none"
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    
+                    <FormField
+                      control={form.control}
+                      name="startDate"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Start Date & Time</FormLabel>
+                          <FormControl>
+                            <Input 
+                              type="datetime-local" 
+                              {...field} 
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    
+                    <FormField
+                      control={form.control}
+                      name="endDate"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>End Date & Time (Optional)</FormLabel>
+                          <FormControl>
+                            <Input 
+                              type="datetime-local" 
+                              {...field} 
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
 
-                  <div className="flex justify-end space-x-2">
-                    <Button 
-                      type="button" 
-                      variant="outline" 
-                      onClick={() => setIsEventDialogOpen(false)}
-                    >
-                      Cancel
-                    </Button>
-                    <Button 
-                      type="submit" 
-                      disabled={createEventMutation.isPending}
-                    >
-                      {createEventMutation.isPending ? "Creating..." : "Create Event"}
-                    </Button>
-                  </div>
-                </form>
-              </Form>
-            </DialogContent>
-          </Dialog>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Calendar */}
-        <div className="lg:col-span-2">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <CalendarIcon className="h-5 w-5 mr-2" />
-                {format(selectedDate, "MMMM yyyy")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Calendar
-                onChange={(date) => setSelectedDate(date as Date)}
-                value={selectedDate}
-                tileContent={getTileContent}
-                className="w-full border-none"
-              />
-            </CardContent>
-          </Card>
+                    <div className="flex justify-end space-x-2">
+                      <Button 
+                        type="button" 
+                        variant="outline" 
+                        onClick={() => setIsEventDialogOpen(false)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button 
+                        type="submit" 
+                        disabled={createEventMutation.isPending}
+                      >
+                        {createEventMutation.isPending ? "Creating..." : "Create Event"}
+                      </Button>
+                    </div>
+                  </form>
+                </Form>
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
 
-        {/* Events for Selected Date */}
-        <div className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Clock className="h-5 w-5 mr-2" />
-                {format(selectedDate, "MMMM d, yyyy")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {selectedDateEvents.length === 0 ? (
-                <p className="text-slate-500 dark:text-slate-400 text-sm">
-                  No events scheduled for this date
-                </p>
-              ) : (
-                selectedDateEvents.map(event => (
-                  <div
-                    key={event.id}
-                    className="p-3 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <h4 className="font-medium text-slate-900 dark:text-white">
-                          {event.title}
-                        </h4>
-                        <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                          {format(new Date(event.startDate), "h:mm a")}
-                          {event.endDate && ` - ${format(new Date(event.endDate), "h:mm a")}`}
-                        </p>
-                        {event.description && (
-                          <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">
-                            {event.description}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Calendar */}
+          <div className="lg:col-span-2">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center">
+                  <CalendarIcon className="h-5 w-5 mr-2" />
+                  {format(selectedDate, "MMMM yyyy")}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Calendar
+                  onChange={(date) => setSelectedDate(date as Date)}
+                  value={selectedDate}
+                  tileContent={getTileContent}
+                  className="w-full border-none"
+                />
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Events for Selected Date */}
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center">
+                  <Clock className="h-5 w-5 mr-2" />
+                  {format(selectedDate, "MMMM d, yyyy")}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {selectedDateEvents.length === 0 ? (
+                  <p className="text-slate-500 dark:text-slate-400 text-sm">
+                    No events scheduled for this date
+                  </p>
+                ) : (
+                  selectedDateEvents.map(event => (
+                    <div
+                      key={event.id}
+                      className="p-3 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <h4 className="font-medium text-slate-900 dark:text-white">
+                            {event.title}
+                          </h4>
+                          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                            {format(new Date(event.startDate), "h:mm a")}
+                            {event.endDate && ` - ${format(new Date(event.endDate), "h:mm a")}`}
                           </p>
+                          {event.description && (
+                            <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">
+                              {event.description}
+                            </p>
+                          )}
+                        </div>
+                        {event.linkedPageId && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => navigate(`/papyr-us/page/${event.linkedPageId}`)}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
                         )}
                       </div>
-                      {event.linkedPageId && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => navigate(`/papyr-us/page/${event.linkedPageId}`)}
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                      )}
                     </div>
-                  </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
+                  ))
+                )}
+              </CardContent>
+            </Card>
 
-          {/* Upcoming Events */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Upcoming Events</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {events
-                .filter(event => new Date(event.startDate) > new Date())
-                .slice(0, 5)
-                .map(event => (
-                  <div key={event.id} className="flex items-center justify-between p-2 hover:bg-slate-50 dark:hover:bg-slate-800 rounded">
-                    <div>
-                      <p className="font-medium text-sm">{event.title}</p>
-                      <p className="text-xs text-slate-500">
-                        {format(new Date(event.startDate), "MMM d, h:mm a")}
-                      </p>
+            {/* Upcoming Events */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Upcoming Events</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {events
+                  .filter(event => new Date(event.startDate) > new Date())
+                  .slice(0, 5)
+                  .map(event => (
+                    <div key={event.id} className="flex items-center justify-between p-2 hover:bg-slate-50 dark:hover:bg-slate-800 rounded">
+                      <div>
+                        <p className="font-medium text-sm">{event.title}</p>
+                        <p className="text-xs text-slate-500">
+                          {format(new Date(event.startDate), "MMM d, h:mm a")}
+                        </p>
+                      </div>
+                      <Badge variant="outline" className="text-xs">
+                        {format(new Date(event.startDate), "MMM d")}
+                      </Badge>
                     </div>
-                    <Badge variant="outline" className="text-xs">
-                      {format(new Date(event.startDate), "MMM d")}
-                    </Badge>
-                  </div>
-                ))}
-              {events.filter(event => new Date(event.startDate) > new Date()).length === 0 && (
-                <p className="text-sm text-slate-500 dark:text-slate-400">
-                  No upcoming events
-                </p>
-              )}
-            </CardContent>
-          </Card>
+                  ))}
+                {events.filter(event => new Date(event.startDate) > new Date()).length === 0 && (
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    No upcoming events
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </div>
-      </div>
     </div>
   );
 }
