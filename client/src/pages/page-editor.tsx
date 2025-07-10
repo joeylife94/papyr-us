@@ -90,7 +90,7 @@ export default function PageEditor({ pageId, initialFolder = "docs" }: PageEdito
         title: "Page created",
         description: "Your new page has been created successfully.",
       });
-      navigate(`/page/${newPage.slug}`);
+      navigate(`/papyr-us/page/${newPage.slug}`);
     },
     onError: () => {
       toast({
@@ -121,7 +121,7 @@ export default function PageEditor({ pageId, initialFolder = "docs" }: PageEdito
         title: "Page updated",
         description: "Your changes have been saved successfully.",
       });
-      navigate(`/page/${updatedPage.slug}`);
+      navigate(`/papyr-us/page/${updatedPage.slug}`);
     },
     onError: () => {
       toast({

@@ -17,9 +17,11 @@ import {
   Tags,
   Plus,
   Calendar,
-  FileText
+  FileText,
+  File
 } from "lucide-react";
 import type { WikiPage, Tag } from "@shared/schema";
+import { Badge } from "@/components/ui/badge";
 
 interface SidebarProps {
   isOpen: boolean;
@@ -28,7 +30,7 @@ interface SidebarProps {
   onTagToggle: (tag: string) => void;
 }
 
-const folderIcons: Record<string, any> = {
+  const folderIcons: Record<string, React.ElementType> = {
   docs: Book,
   ideas: Lightbulb,
   members: Users,
@@ -61,7 +63,8 @@ export function Sidebar({ isOpen, onClose, selectedTags, onTagToggle }: SidebarP
   const { data: directories = [] } = useQuery<any[]>({
     queryKey: ["/api/admin/directories"],
     queryFn: async () => {
-      const response = await fetch(`/api/admin/directories?adminPassword=404vibe!`);
+              const adminPassword = sessionStorage.getItem("adminAuth") || "";
+        const response = await fetch(`/api/admin/directories?adminPassword=${adminPassword}`);
       if (!response.ok) {
         // Fallback to static folders if admin API fails
         return [
@@ -114,7 +117,7 @@ export function Sidebar({ isOpen, onClose, selectedTags, onTagToggle }: SidebarP
     enabled: expandedSections['team2'],
   });
 
-  const folderQueriesMap: Record<string, any> = {
+  const folderQueriesMap: Record<string, ReturnType<typeof useQuery<WikiPage[]>>> = {
     'docs': docsQuery,
     'ideas': ideasQuery,
     'members': membersQuery,
@@ -160,10 +163,10 @@ export function Sidebar({ isOpen, onClose, selectedTags, onTagToggle }: SidebarP
               Quick Actions
             </h3>
             <div className="space-y-2">
-              <Link href="/create">
-                <Button variant="outline" size="sm" className="w-full justify-start">
+              <Link href="/papyr-us/create">
+                <Button className="w-full justify-start">
                   <Plus className="h-4 w-4 mr-2" />
-                  New Page
+                  Create New Page
                 </Button>
               </Link>
             </div>
@@ -213,7 +216,7 @@ export function Sidebar({ isOpen, onClose, selectedTags, onTagToggle }: SidebarP
                       {/* Team calendar and create page buttons */}
                       {(directory.name === "team1" || directory.name === "team2") && (
                         <div className="mb-4 space-y-2">
-                          <Link href={`/calendar/${directory.name}`}>
+                          <Link href={`/papyr-us/calendar/${directory.name}`}>
                             <Button 
                               variant="ghost" 
                               size="sm" 
@@ -224,7 +227,7 @@ export function Sidebar({ isOpen, onClose, selectedTags, onTagToggle }: SidebarP
                               Team Calendar
                             </Button>
                           </Link>
-                          <Link href={`/create/${directory.name}`}>
+                          <Link href={`/papyr-us/create/${directory.name}`}>
                             <Button 
                               variant="ghost" 
                               size="sm" 
@@ -239,7 +242,7 @@ export function Sidebar({ isOpen, onClose, selectedTags, onTagToggle }: SidebarP
                       )}
                       
                       {folderPages.map((page: WikiPage) => (
-                        <Link key={page.id} href={`/page/${page.slug}`}>
+                        <Link key={page.id} href={`/papyr-us/page/${page.slug}`}>
                           <div
                             className={cn(
                               "block p-3 text-sm rounded-lg transition-all duration-200 cursor-pointer group",

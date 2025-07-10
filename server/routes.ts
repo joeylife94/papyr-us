@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage.ts";
+import { config } from "./config.ts";
 import { insertWikiPageSchema, updateWikiPageSchema, searchSchema, insertCalendarEventSchema, updateCalendarEventSchema, insertDirectorySchema, updateDirectorySchema } from "../shared/schema.ts";
 
 
@@ -188,7 +189,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/admin/auth", async (req, res) => {
     try {
       const { password } = req.body;
-      if (password === "404vibe!") {
+      if (password === config.adminPassword) {
         res.json({ success: true });
       } else {
         res.status(401).json({ message: "Invalid password" });
@@ -213,7 +214,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/admin/directories", async (req, res) => {
     try {
       const { adminPassword } = req.query;
-      if (adminPassword !== "404vibe!") {
+      if (adminPassword !== config.adminPassword) {
         return res.status(401).json({ message: "Unauthorized" });
       }
       const directories = await storage.getDirectories();
@@ -226,7 +227,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/admin/directories", async (req, res) => {
     try {
       const { adminPassword, ...directoryData } = req.body;
-      if (adminPassword !== "404vibe!") {
+      if (adminPassword !== config.adminPassword) {
         return res.status(401).json({ message: "Unauthorized" });
       }
       const validatedData = insertDirectorySchema.parse(directoryData);
@@ -240,7 +241,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/admin/directories/:id", async (req, res) => {
     try {
       const { adminPassword, ...updateData } = req.body;
-      if (adminPassword !== "404vibe!") {
+      if (adminPassword !== config.adminPassword) {
         return res.status(401).json({ message: "Unauthorized" });
       }
       const id = parseInt(req.params.id);
@@ -258,7 +259,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/admin/directories/:id", async (req, res) => {
     try {
       const { adminPassword } = req.body;
-      if (adminPassword !== "404vibe!") {
+      if (adminPassword !== config.adminPassword) {
         return res.status(401).json({ message: "Unauthorized" });
       }
       const id = parseInt(req.params.id);

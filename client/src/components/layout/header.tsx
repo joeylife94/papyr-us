@@ -67,7 +67,7 @@ export function Header({ onToggleSidebar, searchQuery, onSearchChange }: HeaderP
               <Moon className="h-5 w-5" />
             )}
           </Button>
-          <Link href="/admin">
+          <Link href="/papyr-us/admin">
             <Button
               variant="ghost"
               size="icon"

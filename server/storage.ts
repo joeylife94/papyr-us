@@ -676,7 +676,10 @@ export class DBStorage implements IStorage {
       .orderBy(desc(sql`count(*)`))
       .execute();
 
-    return result.map((row: any) => ({ name: row.tag, count: Number(row.count) }));
+    return result.map((row: { tag: string; count: string | number }) => ({ 
+      name: row.tag, 
+      count: Number(row.count) 
+    }));
   }
 
   async getFolders(): Promise<string[]> {
@@ -684,7 +687,7 @@ export class DBStorage implements IStorage {
       .selectDistinct({ folder: wikiPages.folder })
       .from(wikiPages)
       .execute();
-    return result.map((row: any) => row.folder);
+    return result.map((row: { folder: string }) => row.folder);
   }
 
   // Calendar events CRUD

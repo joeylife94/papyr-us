@@ -15,8 +15,6 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Directory, InsertDirectory } from "@shared/schema";
 
-const adminPassword = "404vibe!";
-
 const directoryFormSchema = z.object({
   name: z.string().min(1, "Name is required").regex(/^[a-z0-9-_]+$/, "Name must be lowercase letters, numbers, hyphens, or underscores only"),
   displayName: z.string().min(1, "Display name is required"),
@@ -50,8 +48,19 @@ export default function AdminPage() {
   // Check authentication on page load
   useEffect(() => {
     const stored = sessionStorage.getItem("adminAuth");
-    if (stored === adminPassword) {
-      setIsAuthenticated(true);
+    if (stored) {
+      // Verify stored password with server
+      fetch("/api/admin/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: stored }),
+      }).then(response => {
+        if (response.ok) {
+          setIsAuthenticated(true);
+        } else {
+          sessionStorage.removeItem("adminAuth");
+        }
+      });
     }
   }, []);
 
@@ -89,7 +98,8 @@ export default function AdminPage() {
   const { data: directories = [], refetch } = useQuery<Directory[]>({
     queryKey: ["/api/admin/directories"],
     queryFn: async () => {
-      const response = await fetch(`/api/admin/directories?adminPassword=${adminPassword}`);
+      const storedPassword = sessionStorage.getItem("adminAuth") || "";
+      const response = await fetch(`/api/admin/directories?adminPassword=${storedPassword}`);
       if (!response.ok) throw new Error("Failed to fetch directories");
       return response.json();
     },
@@ -98,10 +108,11 @@ export default function AdminPage() {
 
   const createDirectoryMutation = useMutation({
     mutationFn: async (data: InsertDirectory) => {
+      const storedPassword = sessionStorage.getItem("adminAuth") || "";
       const response = await fetch("/api/admin/directories", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...data, adminPassword }),
+        body: JSON.stringify({ ...data, adminPassword: storedPassword }),
       });
       if (!response.ok) throw new Error("Failed to create directory");
       return response.json();
@@ -126,10 +137,11 @@ export default function AdminPage() {
 
   const updateDirectoryMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: Partial<Directory> }) => {
+      const storedPassword = sessionStorage.getItem("adminAuth") || "";
       const response = await fetch(`/api/admin/directories/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...data, adminPassword }),
+        body: JSON.stringify({ ...data, adminPassword: storedPassword }),
       });
       if (!response.ok) throw new Error("Failed to update directory");
       return response.json();
@@ -155,10 +167,11 @@ export default function AdminPage() {
 
   const deleteDirectoryMutation = useMutation({
     mutationFn: async (id: number) => {
+      const storedPassword = sessionStorage.getItem("adminAuth") || "";
       const response = await fetch(`/api/admin/directories/${id}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ adminPassword }),
+        body: JSON.stringify({ adminPassword: storedPassword }),
       });
       if (!response.ok) throw new Error("Failed to delete directory");
     },
@@ -239,7 +252,7 @@ export default function AdminPage() {
             </Button>
             <Button
               variant="outline"
-              onClick={() => navigate("/")}
+              onClick={() => navigate("/papyr-us/")}
               className="w-full"
             >
               Back to Home
@@ -259,7 +272,7 @@ export default function AdminPage() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => navigate("/")}
+              onClick={() => navigate("/papyr-us/")}
             >
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back to Wiki

@@ -305,7 +305,7 @@ export default function CalendarPage({ teamId }: CalendarPageProps) {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => navigate(`/page/${event.linkedPageId}`)}
+                          onClick={() => navigate(`/papyr-us/page/${event.linkedPageId}`)}
                         >
                           <Eye className="h-4 w-4" />
                         </Button>

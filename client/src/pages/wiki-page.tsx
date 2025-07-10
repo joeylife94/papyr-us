@@ -152,7 +152,7 @@ export default function WikiPageView() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => navigate(`/edit/${page.id}`)}
+                  onClick={() => navigate(`/papyr-us/edit/${page.id}`)}
                   title="Edit Page"
                 >
                   <Edit className="h-4 w-4" />

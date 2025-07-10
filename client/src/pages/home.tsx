@@ -95,8 +95,8 @@ export default function Home({ searchQuery, selectedTags, selectedFolder }: Home
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredPages?.pages.map((page: WikiPage) => (
-              <Link key={page.id} href={`/page/${page.slug}`}>
-                <Card className="h-full hover:shadow-md transition-shadow cursor-pointer">
+              <Link key={page.id} href={`/papyr-us/page/${page.slug}`}>
+                <Card className="group hover:shadow-lg transition-all duration-200 border-l-4 border-l-primary/20 hover:border-l-primary cursor-pointer">
                     <CardHeader>
                       <CardTitle className="text-lg line-clamp-2">
                         {page.title}
