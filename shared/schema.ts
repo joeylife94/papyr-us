@@ -54,6 +54,9 @@ export const calendarEvents = pgTable("calendar_events", {
   description: text("description"),
   startDate: timestamp("start_date").notNull(),
   endDate: timestamp("end_date"),
+  startTime: text("start_time"), // Optional time in HH:MM format (24-hour)
+  endTime: text("end_time"), // Optional time in HH:MM format (24-hour)
+  priority: integer("priority").notNull().default(1), // Priority 1-5
   teamId: text("team_id").notNull(), // team1, team2, etc.
   linkedPageId: integer("linked_page_id").references(() => wikiPages.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),

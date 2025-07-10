@@ -129,8 +129,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const teamId = req.params.teamId;
       const events = await storage.getCalendarEvents(teamId);
-      res.json(events);
+      
+      // Ensure compatibility with new fields - add defaults if missing
+      const safeEvents = events.map(event => ({
+        ...event,
+        startTime: event.startTime || null,
+        endTime: event.endTime || null,
+        priority: event.priority || 1
+      }));
+      
+      res.json(safeEvents);
     } catch (error) {
+      console.error("Error fetching calendar events:", error);
       res.status(500).json({ message: "Server error" });
     }
   });
@@ -150,10 +160,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/calendar", async (req, res) => {
     try {
-      const eventData = insertCalendarEventSchema.parse(req.body);
+      console.log("Received calendar event data:", req.body);
+      
+      // Convert ISO string dates to Date objects
+      const requestData = { ...req.body };
+      if (requestData.startDate && typeof requestData.startDate === 'string') {
+        requestData.startDate = new Date(requestData.startDate);
+      }
+      if (requestData.endDate && typeof requestData.endDate === 'string') {
+        requestData.endDate = new Date(requestData.endDate);
+      }
+      
+      // If endDate is not provided or is null, set it to startDate
+      if (!requestData.endDate && requestData.startDate) {
+        requestData.endDate = new Date(requestData.startDate);
+        console.log("Set endDate to startDate");
+      }
+      
+      // Handle time fields - convert empty strings to null
+      if (requestData.startTime === '' || requestData.startTime === undefined) {
+        requestData.startTime = null;
+      }
+      if (requestData.endTime === '' || requestData.endTime === undefined) {
+        requestData.endTime = null;
+      }
+      
+      // Set default priority if not provided
+      if (!requestData.priority || requestData.priority === undefined) {
+        requestData.priority = 1;
+      }
+      
+      console.log("Converted date data:", requestData);
+      const eventData = insertCalendarEventSchema.parse(requestData);
+      console.log("Parsed event data:", eventData);
       const event = await storage.createCalendarEvent(eventData);
       res.status(201).json(event);
-    } catch (error) {
+    } catch (error: any) {
+      console.error("Calendar event creation error:", error);
+      if (error.name === "ZodError") {
+        return res.status(400).json({ 
+          message: "Invalid event data",
+          errors: error.errors 
+        });
+      }
       res.status(400).json({ message: "Invalid event data" });
     }
   });
