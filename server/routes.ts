@@ -185,9 +185,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         requestData.endTime = null;
       }
       
-      // Set default priority if not provided
+      // Handle priority field - convert to integer and set default
       if (!requestData.priority || requestData.priority === undefined) {
         requestData.priority = 1;
+      } else {
+        requestData.priority = parseInt(requestData.priority);
       }
       
       console.log("Converted date data:", requestData);
@@ -209,14 +211,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/calendar/event/:id", async (req, res) => {
     try {
+      console.log("Received calendar event update data:", req.body);
+      
       const id = parseInt(req.params.id);
-      const updateData = updateCalendarEventSchema.parse(req.body);
+      
+      // Convert ISO string dates to Date objects (same logic as POST)
+      const requestData = { ...req.body };
+      if (requestData.startDate && typeof requestData.startDate === 'string') {
+        requestData.startDate = new Date(requestData.startDate);
+      }
+      if (requestData.endDate && typeof requestData.endDate === 'string') {
+        requestData.endDate = new Date(requestData.endDate);
+      }
+      
+      // If endDate is not provided or is null, set it to startDate
+      if (!requestData.endDate && requestData.startDate) {
+        requestData.endDate = new Date(requestData.startDate);
+        console.log("Set endDate to startDate for update");
+      }
+      
+      // Handle time fields - convert empty strings to null
+      if (requestData.startTime === '' || requestData.startTime === undefined) {
+        requestData.startTime = null;
+      }
+      if (requestData.endTime === '' || requestData.endTime === undefined) {
+        requestData.endTime = null;
+      }
+      
+      // Handle priority field - convert to integer and set default
+      if (!requestData.priority || requestData.priority === undefined) {
+        requestData.priority = 1;
+      } else {
+        requestData.priority = parseInt(requestData.priority);
+      }
+      
+      console.log("Converted update data:", requestData);
+      const updateData = updateCalendarEventSchema.parse(requestData);
+      console.log("Parsed update data:", updateData);
       const event = await storage.updateCalendarEvent(id, updateData);
       if (!event) {
         return res.status(404).json({ message: "Event not found" });
       }
       res.json(event);
-    } catch (error) {
+    } catch (error: any) {
+      console.error("Calendar event update error:", error);
+      if (error.name === "ZodError") {
+        return res.status(400).json({ 
+          message: "Invalid event data",
+          errors: error.errors 
+        });
+      }
       res.status(400).json({ message: "Invalid event data" });
     }
   });
