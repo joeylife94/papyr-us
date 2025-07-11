@@ -194,6 +194,220 @@ npm run build
 - 네트워크 탭에서 API 요청 상태 확인
 - React DevTools 사용
 
+## 최신 기능 개발 가이드 (v1.3.0)
+
+### 캘린더 시스템 고급 기능
+
+#### 시간 검증 시스템
+**위치**: `client/src/pages/calendar.tsx`
+
+```typescript
+// 종료시간 옵션 생성 (시작시간 이후만)
+const generateEndTimeOptions = (startTime?: string) => {
+  const allTimes = generateTimeOptions();
+  if (!startTime) return allTimes;
+  
+  const startIndex = allTimes.indexOf(startTime);
+  if (startIndex === -1) return allTimes;
+  
+  // 시작시간 이후 시간들만 반환
+  return allTimes.slice(startIndex + 1);
+};
+
+// 시간 검증 React Effect
+React.useEffect(() => {
+  const currentEndTime = form.getValues("endTime");
+  if (watchedStartTime && currentEndTime) {
+    const startIndex = timeOptions.indexOf(watchedStartTime);
+    const endIndex = timeOptions.indexOf(currentEndTime);
+    
+    // 종료시간이 시작시간보다 이전이면 리셋
+    if (endIndex <= startIndex) {
+      form.setValue("endTime", undefined);
+    }
+  }
+}, [watchedStartTime, form]);
+```
+
+#### Daily View 분리 렌더링
+```typescript
+const renderDayView = () => {
+  const dayEvents = getEventsForDate(selectedDate);
+  
+  // 종일 이벤트와 시간 이벤트 분리
+  const allDayEvents = dayEvents.filter(event => !event.startTime);
+  const timedEvents = dayEvents.filter(event => event.startTime);
+
+  return (
+    <div className="space-y-4">
+      {/* All Day Events 섹션 */}
+      {allDayEvents.length > 0 && (
+        <div className="border rounded-lg p-4">
+          <h3 className="font-medium mb-3 flex items-center">
+            <CalendarSmall className="h-4 w-4 mr-2" />
+            All Day Events
+          </h3>
+          {/* 종일 이벤트 렌더링 */}
+        </div>
+      )}
+      
+      {/* Schedule 섹션 */}
+      <div className="border rounded-lg">
+        <h3 className="font-medium p-3 flex items-center">
+          <Clock className="h-4 w-4 mr-2" />
+          Schedule
+        </h3>
+        {/* 24시간 타임라인 렌더링 */}
+      </div>
+    </div>
+  );
+};
+```
+
+### 통합 검색 시스템
+
+#### 사이드바 검색 구현
+**위치**: `client/src/components/layout/sidebar.tsx`
+
+```typescript
+// 페이지 필터링 함수
+const filterPages = (pages: WikiPage[], query: string) => {
+  if (!query.trim()) return pages;
+  return pages.filter(page =>
+    page.title.toLowerCase().includes(query.toLowerCase()) ||
+    page.content.toLowerCase().includes(query.toLowerCase()) ||
+    page.tags.some(tag => tag.toLowerCase().includes(query.toLowerCase()))
+  );
+};
+
+// 캘린더 이벤트 필터링 함수
+const hasMatchingEvents = (events: any[], query: string) => {
+  if (!query.trim()) return true;
+  return events.some(event => 
+    event.title?.toLowerCase().includes(query.toLowerCase()) ||
+    event.description?.toLowerCase().includes(query.toLowerCase())
+  );
+};
+```
+
+#### 검색 연동 렌더링
+```typescript
+// 검색 기반 가시성 결정
+const showTeam1 = hasMatchingEvents(team1Events, searchQuery);
+const showTeam2 = hasMatchingEvents(team2Events, searchQuery);
+
+// 동적 폴더 필터링
+const allFolderPages = folderQueriesMap[directory.name]?.data || [];
+const folderPages = filterPages(allFolderPages, searchQuery);
+
+// 검색 결과 없으면 폴더 숨김
+if (searchQuery.trim() && folderPages.length === 0 && !["team1", "team2"].includes(directory.name)) {
+  return null;
+}
+```
+
+### API 개선사항
+
+#### PATCH API 타입 안전성
+**위치**: `server/routes.ts`
+
+```typescript
+app.patch("/api/calendar/event/:id", async (req, res) => {
+  try {
+    const requestData = { ...req.body };
+    
+    // 날짜 문자열을 Date 객체로 변환
+    if (requestData.startDate && typeof requestData.startDate === 'string') {
+      requestData.startDate = new Date(requestData.startDate);
+    }
+    
+    // 시간 필드 처리 (빈 문자열을 null로)
+    if (requestData.startTime === '' || requestData.startTime === undefined) {
+      requestData.startTime = null;
+    }
+    
+    // 우선순위 필드 정수 변환
+    if (!requestData.priority || requestData.priority === undefined) {
+      requestData.priority = 1;
+    } else {
+      requestData.priority = parseInt(requestData.priority);
+    }
+    
+    const updateData = updateCalendarEventSchema.parse(requestData);
+    // ... 업데이트 로직
+  } catch (error) {
+    // 타입 에러 처리
+    if (error.name === "ZodError") {
+      return res.status(400).json({ 
+        message: "Invalid event data",
+        errors: error.errors 
+      });
+    }
+  }
+});
+```
+
+### UI/UX 패턴
+
+#### 네비게이션 링크 패턴
+```typescript
+// 로고를 Link 컴포넌트로 감싸기
+<Link href="/papyr-us/" className="flex items-center space-x-2 hover:opacity-80 transition-opacity cursor-pointer">
+  <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+    <ScrollText className="h-4 w-4 text-white" />
+  </div>
+  <h1 className="text-xl font-bold text-slate-900 dark:text-white">Papyr.us</h1>
+</Link>
+```
+
+#### 검색 입력 필드 패턴
+```typescript
+<input
+  type="text"
+  placeholder="Search pages, content..."
+  value={searchQuery}
+  onChange={(e) => onSearchChange(e.target.value)}
+  className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-colors"
+/>
+```
+
+### 성능 최적화 팁
+
+#### 검색 성능
+- **debouncing**: 과도한 검색 요청 방지
+- **메모이제이션**: React.useMemo로 필터링 결과 캐싱
+- **조건부 렌더링**: 검색 결과 없으면 DOM 렌더링 스킵
+
+#### 캘린더 성능
+- **가상화**: 대량 이벤트 처리 시 react-window 고려
+- **지연 로딩**: 월/주/일 뷰 전환 시 필요한 데이터만 로드
+- **캐시 무효화**: TanStack Query로 적절한 캐시 정책
+
+### 개발 디버깅 가이드
+
+#### 캘린더 이슈 디버깅
+```bash
+# 1. 시간 검증 관련 이슈
+console.log("Start time:", watchedStartTime);
+console.log("End options:", endTimeOptions);
+
+# 2. Daily view 분리 이슈  
+console.log("All day events:", allDayEvents);
+console.log("Timed events:", timedEvents);
+
+# 3. PATCH API 이슈
+console.log("Request data:", requestData);
+console.log("Parsed data:", updateData);
+```
+
+#### 검색 기능 디버깅
+```bash
+# 검색 쿼리 확인
+console.log("Search query:", searchQuery);
+console.log("Filtered pages:", filteredPages);
+console.log("Team visibility:", { showTeam1, showTeam2 });
+```
+
 ## Docker 기반 로컬 개발 환경
 
 이 프로젝트는 Docker Compose를 사용하여 일관된 개발 환경을 제공합니다. 애플리케이션과 데이터베이스가 격리된 컨테이너 환경에서 실행되므로, 로컬 머신에 직접 `Node.js`나 `PostgreSQL`을 설치할 필요가 없습니다.
