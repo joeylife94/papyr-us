@@ -9,19 +9,17 @@ import type { WikiPage } from "@shared/schema";
 
 interface HomeProps {
   searchQuery: string;
-  selectedTags: string[];
   selectedFolder: string;
 }
 
-export default function Home({ searchQuery, selectedTags, selectedFolder }: HomeProps) {
+export default function Home({ searchQuery, selectedFolder }: HomeProps) {
   const queryParams = new URLSearchParams();
   if (searchQuery) queryParams.append('q', searchQuery);
   if (selectedFolder) queryParams.append('folder', selectedFolder);
-  if (selectedTags.length > 0) queryParams.append('tags', selectedTags.join(','));
   queryParams.append('limit', '12');
 
   const { data: filteredPages, isLoading } = useQuery<{ pages: WikiPage[]; total: number }>({
-    queryKey: ['/api/pages', searchQuery, selectedTags, selectedFolder],
+    queryKey: ['/api/pages', searchQuery, selectedFolder],
     queryFn: () => fetch(`/api/pages?${queryParams.toString()}`).then(res => res.json()),
   });
 

@@ -17,19 +17,10 @@ import NotFound from "@/pages/not-found";
 function Router() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<string>("");
 
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
   const closeSidebar = () => setIsSidebarOpen(false);
-
-  const handleTagToggle = (tag: string) => {
-    setSelectedTags(prev => 
-      prev.includes(tag) 
-        ? prev.filter(t => t !== tag)
-        : [...prev, tag]
-    );
-  };
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
@@ -43,8 +34,8 @@ function Router() {
         <Sidebar 
           isOpen={isSidebarOpen}
           onClose={closeSidebar}
-          selectedTags={selectedTags}
-          onTagToggle={handleTagToggle}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
         />
         
         <main className="flex-1 lg:ml-80">
@@ -53,7 +44,6 @@ function Router() {
               <Route path="/papyr-us/">
                 <Home 
                   searchQuery={searchQuery}
-                  selectedTags={selectedTags}
                   selectedFolder={selectedFolder}
                 />
               </Route>

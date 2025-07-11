@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { TagFilter } from "@/components/wiki/tag-filter";
+
 
 import { 
   Book, 
@@ -20,14 +20,14 @@ import {
   FileText,
   File
 } from "lucide-react";
-import type { WikiPage, Tag } from "@shared/schema";
+import type { WikiPage } from "@shared/schema";
 import { Badge } from "@/components/ui/badge";
 
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
-  selectedTags: string[];
-  onTagToggle: (tag: string) => void;
+  searchQuery: string;
+  onSearchChange: (query: string) => void;
 }
 
   const folderIcons: Record<string, React.ElementType> = {
@@ -50,15 +50,13 @@ const folderColors: Record<string, string> = {
   team2: "text-teal-500",
 };
 
-export function Sidebar({ isOpen, onClose, selectedTags, onTagToggle }: SidebarProps) {
+export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: SidebarProps) {
   const [location] = useLocation();
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     docs: true, // docs expanded by default
   });
 
-  const { data: tags = [] } = useQuery<Tag[]>({
-    queryKey: ["/api/tags"],
-  });
+
 
   const { data: directories = [] } = useQuery<any[]>({
     queryKey: ["/api/admin/directories"],
@@ -79,6 +77,15 @@ export function Sidebar({ isOpen, onClose, selectedTags, onTagToggle }: SidebarP
       }
       return response.json();
     },
+  });
+
+  // Query calendar events for search filtering
+  const { data: team1Events = [] } = useQuery<any[]>({
+    queryKey: ["/api/calendar/team1"],
+  });
+  
+  const { data: team2Events = [] } = useQuery<any[]>({
+    queryKey: ["/api/calendar/team2"],
   });
 
   // Query for pages in each folder - using fixed folder list to avoid Hook violations
@@ -138,6 +145,28 @@ export function Sidebar({ isOpen, onClose, selectedTags, onTagToggle }: SidebarP
     return location === `/page/${slug}`;
   };
 
+  // Search filtering helpers
+  const hasMatchingEvents = (events: any[], query: string) => {
+    if (!query.trim()) return true;
+    return events.some(event => 
+      event.title?.toLowerCase().includes(query.toLowerCase()) ||
+      event.description?.toLowerCase().includes(query.toLowerCase())
+    );
+  };
+
+  const filterPages = (pages: WikiPage[], query: string) => {
+    if (!query.trim()) return pages;
+    return pages.filter(page =>
+      page.title.toLowerCase().includes(query.toLowerCase()) ||
+      page.content.toLowerCase().includes(query.toLowerCase()) ||
+      page.tags.some(tag => tag.toLowerCase().includes(query.toLowerCase()))
+    );
+  };
+
+  // Determine visibility based on search
+  const showTeam1 = hasMatchingEvents(team1Events, searchQuery);
+  const showTeam2 = hasMatchingEvents(team2Events, searchQuery);
+
   return (
     <>
       {/* Mobile overlay */}
@@ -172,17 +201,66 @@ export function Sidebar({ isOpen, onClose, selectedTags, onTagToggle }: SidebarP
             </div>
           </div>
 
-          {/* Tag Filters */}
+          {/* Calendar Section */}
+          <div className="mb-6">
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 flex items-center">
+              <Calendar className="h-4 w-4 text-primary mr-2" />
+              Team Calendars
+            </h3>
+            <div className="space-y-2">
+              {showTeam1 && (
+                <div className="flex items-center gap-2">
+                  <Link href="/papyr-us/calendar/team1" className="flex-1">
+                    <Button variant="outline" className="w-full justify-start">
+                      <Calendar className="h-4 w-4 mr-2 text-orange-500" />
+                      Team Alpha
+                    </Button>
+                  </Link>
+                  <Link href="/papyr-us/calendar/team1">
+                    <Button size="sm" className="px-2" title="Add event to Team Alpha">
+                      <Plus className="h-3 w-3" />
+                    </Button>
+                  </Link>
+                </div>
+              )}
+              {showTeam2 && (
+                <div className="flex items-center gap-2">
+                  <Link href="/papyr-us/calendar/team2" className="flex-1">
+                    <Button variant="outline" className="w-full justify-start">
+                      <Calendar className="h-4 w-4 mr-2 text-teal-500" />
+                      Team Beta
+                    </Button>
+                  </Link>
+                  <Link href="/papyr-us/calendar/team2">
+                    <Button size="sm" className="px-2" title="Add event to Team Beta">
+                      <Plus className="h-3 w-3" />
+                    </Button>
+                  </Link>
+                </div>
+              )}
+              {!showTeam1 && !showTeam2 && searchQuery.trim() && (
+                <p className="text-sm text-slate-500 dark:text-slate-400 py-2">
+                  No matching calendar events found
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Search */}
           <div className="mb-6">
             <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 flex items-center">
               <Tags className="h-4 w-4 text-primary mr-2" />
-              Filter by Tags
+              Search Content
             </h3>
-            <TagFilter
-              tags={tags}
-              selectedTags={selectedTags}
-              onTagToggle={onTagToggle}
-            />
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search pages, content..."
+                value={searchQuery}
+                onChange={(e) => onSearchChange(e.target.value)}
+                className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-colors"
+              />
+            </div>
           </div>
 
           {/* Navigation Tree */}
@@ -191,7 +269,13 @@ export function Sidebar({ isOpen, onClose, selectedTags, onTagToggle }: SidebarP
               const Icon = folderIcons[directory.name as keyof typeof folderIcons] || Book;
               const iconColor = folderColors[directory.name as keyof typeof folderColors] || "text-primary";
               const isExpanded = expandedSections[directory.name];
-              const folderPages = folderQueriesMap[directory.name as keyof typeof folderQueriesMap]?.data || [];
+              const allFolderPages = folderQueriesMap[directory.name as keyof typeof folderQueriesMap]?.data || [];
+              const folderPages = filterPages(allFolderPages, searchQuery);
+              
+              // Hide folder if no matching pages when searching
+              if (searchQuery.trim() && folderPages.length === 0 && !["team1", "team2"].includes(directory.name)) {
+                return null;
+              }
 
               return (
                 <div key={directory.name} className="group">
@@ -261,7 +345,7 @@ export function Sidebar({ isOpen, onClose, selectedTags, onTagToggle }: SidebarP
                       ))}
                       {folderPages.length === 0 && !["team1", "team2"].includes(directory.name) && (
                         <div className="p-3 text-xs text-slate-400 italic bg-slate-50/50 dark:bg-slate-800/30 rounded-lg">
-                          No pages in this section
+                          {searchQuery.trim() ? "No matching pages found" : "No pages in this section"}
                         </div>
                       )}
                     </div>
