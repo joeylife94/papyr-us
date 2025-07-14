@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MarkdownRenderer } from "@/components/wiki/markdown-renderer";
 import { TableOfContents } from "@/components/layout/table-of-contents";
+import { Comments } from "@/components/wiki/comments";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { extractHeadings, estimateReadingTime } from "@/lib/markdown";
@@ -223,6 +224,13 @@ export default function WikiPageView() {
               </div>
             </div>
           </footer>
+
+          {/* Comments Section */}
+          {page && (
+            <div className="mt-12 pt-8 border-t border-slate-200 dark:border-slate-700">
+              <Comments pageId={page.id} />
+            </div>
+          )}
         </article>
       </div>
 

@@ -12,6 +12,9 @@ import WikiPageView from "@/pages/wiki-page";
 import CalendarPage from "@/pages/calendar";
 import PageEditor from "@/pages/page-editor";
 import AdminPage from "@/pages/admin";
+import Members from "@/pages/members";
+import FileManager from "@/pages/file-manager";
+import { DashboardPage } from "@/pages/dashboard";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -67,6 +70,12 @@ function Router() {
               </Route>
               
               <Route path="/papyr-us/admin" component={AdminPage} />
+              
+              <Route path="/papyr-us/members" component={Members} />
+              
+              <Route path="/papyr-us/files" component={FileManager} />
+              
+              <Route path="/papyr-us/dashboard" component={DashboardPage} />
               
               <Route component={NotFound} />
             </Switch>

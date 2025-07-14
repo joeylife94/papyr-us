@@ -18,7 +18,8 @@ import {
   Plus,
   Calendar,
   FileText,
-  File
+  File,
+  Activity
 } from "lucide-react";
 import type { WikiPage } from "@shared/schema";
 import { Badge } from "@/components/ui/badge";
@@ -38,6 +39,7 @@ interface SidebarProps {
   archive: Archive,
   team1: Users,
   team2: Users,
+  dashboard: Activity,
 };
 
 const folderColors: Record<string, string> = {
@@ -192,10 +194,38 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
               Quick Actions
             </h3>
             <div className="space-y-2">
+              <Link href="/papyr-us/dashboard">
+                <Button variant="outline" className="w-full justify-start">
+                  <Activity className="h-4 w-4 mr-2 text-purple-500" />
+                  스터디 대시보드
+                </Button>
+              </Link>
               <Link href="/papyr-us/create">
                 <Button className="w-full justify-start">
                   <Plus className="h-4 w-4 mr-2" />
                   Create New Page
+                </Button>
+              </Link>
+            </div>
+          </div>
+
+          {/* Team Members */}
+          <div className="mb-6">
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 flex items-center">
+              <Users className="h-4 w-4 text-emerald-500 mr-2" />
+              Team Management
+            </h3>
+            <div className="space-y-2">
+              <Link href="/papyr-us/members">
+                <Button variant="outline" className="w-full justify-start">
+                  <Users className="h-4 w-4 mr-2 text-emerald-500" />
+                  팀원 관리
+                </Button>
+              </Link>
+              <Link href="/papyr-us/files">
+                <Button variant="outline" className="w-full justify-start">
+                  <File className="h-4 w-4 mr-2 text-blue-500" />
+                  파일 관리
                 </Button>
               </Link>
             </div>

@@ -10,6 +10,7 @@ const __dirname = dirname(__filename);
 // https://vitejs.dev/config/
 export default defineConfig({
   root: path.resolve(__dirname, "client"),
+  base: "/papyr-us/",
   plugins: [react()],
   resolve: {
     alias: {

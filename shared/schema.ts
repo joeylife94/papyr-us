@@ -98,3 +98,66 @@ export const updateDirectorySchema = insertDirectorySchema.partial();
 export type InsertDirectory = z.infer<typeof insertDirectorySchema>;
 export type UpdateDirectory = z.infer<typeof updateDirectorySchema>;
 export type Directory = typeof directories.$inferSelect;
+
+// Comments schema
+export const comments = pgTable("comments", {
+  id: serial("id").primaryKey(),
+  content: text("content").notNull(),
+  author: text("author").notNull(), // Author name (will be enhanced with user system later)
+  pageId: integer("page_id").notNull().references(() => wikiPages.id, { onDelete: "cascade" }),
+  parentId: integer("parent_id"), // For nested replies - will be handled as foreign key later
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertCommentSchema = createInsertSchema(comments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateCommentSchema = insertCommentSchema.partial();
+
+export type InsertComment = z.infer<typeof insertCommentSchema>;
+export type UpdateComment = z.infer<typeof updateCommentSchema>;
+export type Comment = typeof comments.$inferSelect;
+
+// Members schema  
+export const members = pgTable("members", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  email: text("email").notNull().unique(),
+  role: text("role").notNull(), // 팀장, 개발자, 디자이너, PM 등
+  avatarUrl: text("avatar_url"), // 프로필 이미지 URL (선택)
+  bio: text("bio"), // 자기소개 (선택)
+  githubUsername: text("github_username"), // GitHub 사용자명 (선택)
+  skills: text("skills").array().notNull().default([]), // 기술 스택 배열
+  joinedDate: timestamp("joined_date").notNull().defaultNow(), // 팀 가입일
+  isActive: boolean("is_active").notNull().default(true), // 활성 상태
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertMemberSchema = createInsertSchema(members).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateMemberSchema = insertMemberSchema.partial();
+
+export type InsertMember = z.infer<typeof insertMemberSchema>;
+export type UpdateMember = z.infer<typeof updateMemberSchema>;
+export type Member = typeof members.$inferSelect;
+
+// Study progress & contribution stats schema
+export const progressStats = pgTable("progress_stats", {
+  id: serial("id").primaryKey(),
+  teamId: text("team_id").notNull(), // 팀 구분
+  memberId: integer("member_id").references(() => members.id, { onDelete: "cascade" }), // 멤버별(전체 통계는 null)
+  pagesCreated: integer("pages_created").notNull().default(0),
+  commentsWritten: integer("comments_written").notNull().default(0),
+  tasksCompleted: integer("tasks_completed").notNull().default(0),
+  lastActiveAt: timestamp("last_active_at"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});

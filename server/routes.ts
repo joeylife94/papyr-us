@@ -2,7 +2,15 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage.ts";
 import { config } from "./config.ts";
-import { insertWikiPageSchema, updateWikiPageSchema, searchSchema, insertCalendarEventSchema, updateCalendarEventSchema, insertDirectorySchema, updateDirectorySchema } from "../shared/schema.ts";
+import { insertWikiPageSchema, updateWikiPageSchema, searchSchema, insertCalendarEventSchema, updateCalendarEventSchema, insertDirectorySchema, updateDirectorySchema, insertCommentSchema, updateCommentSchema, insertMemberSchema, updateMemberSchema } from "../shared/schema.ts";
+import { upload, processUploadedFile, deleteUploadedFile, listUploadedFiles, getFileInfo } from "./services/upload.ts";
+import path from "path";
+import { existsSync } from "fs";
+import type { Request } from "express";
+
+interface MulterRequest extends Request {
+  files?: any[];
+}
 
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -278,6 +286,241 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Comments API
+  app.get("/api/pages/:pageId/comments", async (req, res) => {
+    try {
+      const pageId = parseInt(req.params.pageId);
+      const comments = await storage.getCommentsByPageId(pageId);
+      res.json(comments);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid page ID" });
+    }
+  });
+
+  app.post("/api/pages/:pageId/comments", async (req, res) => {
+    try {
+      const pageId = parseInt(req.params.pageId);
+      const commentData = insertCommentSchema.parse({
+        ...req.body,
+        pageId
+      });
+      const comment = await storage.createComment(commentData);
+      res.status(201).json(comment);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid comment data", error });
+    }
+  });
+
+  app.put("/api/comments/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const updateData = updateCommentSchema.parse(req.body);
+      const comment = await storage.updateComment(id, updateData);
+      
+      if (!comment) {
+        return res.status(404).json({ message: "Comment not found" });
+      }
+      
+      res.json(comment);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid update data", error });
+    }
+  });
+
+  app.delete("/api/comments/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const deleted = await storage.deleteComment(id);
+      
+      if (!deleted) {
+        return res.status(404).json({ message: "Comment not found" });
+      }
+      
+      res.json({ message: "Comment deleted successfully" });
+    } catch (error) {
+      res.status(400).json({ message: "Invalid comment ID" });
+    }
+  });
+
+  // Members API
+  app.get("/api/members", async (req, res) => {
+    try {
+      const members = await storage.getMembers();
+      res.json(members);
+    } catch (error) {
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  app.get("/api/members/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const member = await storage.getMember(id);
+      
+      if (!member) {
+        return res.status(404).json({ message: "Member not found" });
+      }
+      
+      res.json(member);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid member ID" });
+    }
+  });
+
+  app.get("/api/members/email/:email", async (req, res) => {
+    try {
+      const email = req.params.email;
+      const member = await storage.getMemberByEmail(email);
+      
+      if (!member) {
+        return res.status(404).json({ message: "Member not found" });
+      }
+      
+      res.json(member);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid email" });
+    }
+  });
+
+  app.post("/api/members", async (req, res) => {
+    try {
+      const memberData = insertMemberSchema.parse(req.body);
+      const member = await storage.createMember(memberData);
+      res.status(201).json(member);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid member data", error });
+    }
+  });
+
+  app.put("/api/members/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const updateData = updateMemberSchema.parse(req.body);
+      const member = await storage.updateMember(id, updateData);
+      
+      if (!member) {
+        return res.status(404).json({ message: "Member not found" });
+      }
+      
+      res.json(member);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid update data", error });
+    }
+  });
+
+  app.delete("/api/members/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const deleted = await storage.deleteMember(id);
+      
+      if (!deleted) {
+        return res.status(404).json({ message: "Member not found" });
+      }
+      
+      res.json({ message: "Member deleted successfully" });
+    } catch (error) {
+      res.status(400).json({ message: "Invalid member ID" });
+    }
+  });
+
+  // File Upload API
+  app.post("/api/upload", upload.array('files', 5), async (req: any, res) => {
+    try {
+      if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
+        return res.status(400).json({ message: "No files uploaded" });
+      }
+
+      const uploadedFiles = await Promise.all(
+        req.files.map((file: any) => processUploadedFile(file))
+      );
+
+      res.status(201).json({
+        message: `${uploadedFiles.length} file(s) uploaded successfully`,
+        files: uploadedFiles
+      });
+    } catch (error: any) {
+      console.error('Upload error:', error);
+      res.status(400).json({ 
+        message: "Upload failed", 
+        error: error.message 
+      });
+    }
+  });
+
+  // Serve uploaded images
+  app.get("/api/uploads/images/:filename", async (req, res) => {
+    try {
+      const { filename } = req.params;
+      const fileInfo = await getFileInfo(filename, true);
+      
+      if (!fileInfo || !existsSync(fileInfo.path)) {
+        return res.status(404).json({ message: "Image not found" });
+      }
+
+      // Set appropriate headers
+      res.setHeader('Content-Type', fileInfo.mimetype);
+      res.setHeader('Content-Length', fileInfo.size);
+      res.setHeader('Cache-Control', 'public, max-age=31536000'); // Cache for 1 year
+      
+      res.sendFile(path.resolve(fileInfo.path));
+    } catch (error) {
+      res.status(500).json({ message: "Error serving image" });
+    }
+  });
+
+  // Serve uploaded files
+  app.get("/api/uploads/files/:filename", async (req, res) => {
+    try {
+      const { filename } = req.params;
+      const fileInfo = await getFileInfo(filename, false);
+      
+      if (!fileInfo || !existsSync(fileInfo.path)) {
+        return res.status(404).json({ message: "File not found" });
+      }
+
+      // Set appropriate headers
+      res.setHeader('Content-Type', fileInfo.mimetype);
+      res.setHeader('Content-Length', fileInfo.size);
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      
+      res.sendFile(path.resolve(fileInfo.path));
+    } catch (error) {
+      res.status(500).json({ message: "Error serving file" });
+    }
+  });
+
+  // List uploaded files
+  app.get("/api/uploads", async (req, res) => {
+    try {
+      const fileList = await listUploadedFiles();
+      res.json(fileList);
+    } catch (error) {
+      res.status(500).json({ message: "Error listing files" });
+    }
+  });
+
+  // Delete uploaded file
+  app.delete("/api/uploads/:type/:filename", async (req, res) => {
+    try {
+      const { type, filename } = req.params;
+      const isImage = type === 'images';
+      
+      if (type !== 'images' && type !== 'files') {
+        return res.status(400).json({ message: "Invalid file type" });
+      }
+
+      const deleted = await deleteUploadedFile(filename, isImage);
+      
+      if (!deleted) {
+        return res.status(404).json({ message: "File not found" });
+      }
+      
+      res.json({ message: "File deleted successfully" });
+    } catch (error) {
+      res.status(500).json({ message: "Error deleting file" });
+    }
+  });
+
   // Admin Authentication
   app.post("/api/admin/auth", async (req, res) => {
     try {
@@ -366,7 +609,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Dashboard API
+  app.get("/api/dashboard/overview", async (req, res) => {
+    try {
+      const overview = await storage.getDashboardOverview();
+      res.json(overview);
+    } catch (error) {
+      res.status(500).json({ message: "Server error" });
+    }
+  });
 
+  app.get("/api/dashboard/team/:teamId", async (req, res) => {
+    try {
+      const teamId = req.params.teamId;
+      const stats = await storage.getTeamProgressStats(teamId);
+      res.json(stats);
+    } catch (error) {
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  app.get("/api/dashboard/member/:memberId", async (req, res) => {
+    try {
+      const memberId = parseInt(req.params.memberId);
+      const stats = await storage.getMemberProgressStats(memberId);
+      if (!stats) {
+        return res.status(404).json({ message: "Member stats not found" });
+      }
+      res.json(stats);
+    } catch (error) {
+      res.status(500).json({ message: "Server error" });
+    }
+  });
 
   const httpServer = createServer(app);
   return httpServer;

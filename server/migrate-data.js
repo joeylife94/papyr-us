@@ -1,6 +1,6 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { wikiPages, calendarEvents, directories } from "../shared/schema.js";
+import { wikiPages, calendarEvents, directories, comments } from "../shared/schema.js";
 
 // PostgreSQL 연결
 const pool = new Pool({
