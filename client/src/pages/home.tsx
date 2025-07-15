@@ -10,16 +10,18 @@ import type { WikiPage } from "@shared/schema";
 interface HomeProps {
   searchQuery: string;
   selectedFolder: string;
+  teamName?: string;
 }
 
-export default function Home({ searchQuery, selectedFolder }: HomeProps) {
+export default function Home({ searchQuery, selectedFolder, teamName }: HomeProps) {
   const queryParams = new URLSearchParams();
   if (searchQuery) queryParams.append('q', searchQuery);
   if (selectedFolder) queryParams.append('folder', selectedFolder);
+  if (teamName) queryParams.append('teamId', teamName);
   queryParams.append('limit', '12');
 
   const { data: filteredPages, isLoading } = useQuery<{ pages: WikiPage[]; total: number }>({
-    queryKey: ['/papyr-us/api/pages', searchQuery, selectedFolder],
+    queryKey: ['/papyr-us/api/pages', searchQuery, selectedFolder, teamName],
     queryFn: () => fetch(`/papyr-us/api/pages?${queryParams.toString()}`).then(res => res.json()),
   });
 
@@ -28,10 +30,13 @@ export default function Home({ searchQuery, selectedFolder }: HomeProps) {
       {/* Hero Section */}
       <div className="text-center space-y-4 py-12">
         <h1 className="text-4xl font-bold text-slate-900 dark:text-white">
-          Welcome to Papyr.us
+          {teamName ? `${teamName} 팀 문서` : 'Welcome to Papyr.us'}
         </h1>
         <p className="text-xl text-slate-600 dark:text-slate-400 max-w-2xl mx-auto">
-          Your modern wiki and documentation platform. Organize knowledge, collaborate with AI, and build comprehensive documentation.
+          {teamName 
+            ? `${teamName} 팀의 문서들을 관리하고 공유하세요.`
+            : 'Your modern wiki and documentation platform. Organize knowledge, collaborate with AI, and build comprehensive documentation.'
+          }
         </p>
       </div>
 
@@ -72,9 +77,18 @@ export default function Home({ searchQuery, selectedFolder }: HomeProps) {
 
       {/* Recent Pages */}
       <div>
-        <h2 className="text-2xl font-semibold text-slate-900 dark:text-white mb-6">
-          Recent Pages
-        </h2>
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-2xl font-semibold text-slate-900 dark:text-white">
+            {teamName ? `${teamName} 팀 문서` : 'Recent Pages'}
+          </h2>
+          {teamName && (
+            <Link href={`/papyr-us/teams/${teamName}/create`}>
+              <button className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors">
+                새 문서 작성
+              </button>
+            </Link>
+          )}
+        </div>
         
         {isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -142,10 +156,13 @@ export default function Home({ searchQuery, selectedFolder }: HomeProps) {
           <div className="text-center py-12">
             <Book className="h-12 w-12 text-slate-400 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-slate-900 dark:text-white mb-2">
-              No pages yet
+              {teamName ? `${teamName} 팀 문서가 없습니다` : 'No pages yet'}
             </h3>
             <p className="text-slate-600 dark:text-slate-400">
-              Start by creating your first wiki page using the sidebar navigation.
+              {teamName 
+                ? '새 문서를 작성하여 팀의 지식을 공유해보세요.'
+                : 'Start by creating your first wiki page using the sidebar navigation.'
+              }
             </p>
           </div>
         )}

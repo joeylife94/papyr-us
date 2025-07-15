@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage.ts";
 import { config } from "./config.ts";
-import { insertWikiPageSchema, updateWikiPageSchema, searchSchema, insertCalendarEventSchema, updateCalendarEventSchema, insertDirectorySchema, updateDirectorySchema, insertCommentSchema, updateCommentSchema, insertMemberSchema, updateMemberSchema, insertTaskSchema, updateTaskSchema, insertNotificationSchema, updateNotificationSchema } from "../shared/schema.ts";
+import { insertWikiPageSchema, updateWikiPageSchema, searchSchema, insertCalendarEventSchema, updateCalendarEventSchema, insertDirectorySchema, updateDirectorySchema, insertCommentSchema, updateCommentSchema, insertMemberSchema, updateMemberSchema, insertTaskSchema, updateTaskSchema, insertNotificationSchema, updateNotificationSchema, insertTemplateCategorySchema, updateTemplateCategorySchema, insertTemplateSchema, updateTemplateSchema } from "../shared/schema.ts";
 import { upload, processUploadedFile, deleteUploadedFile, listUploadedFiles, getFileInfo } from "./services/upload.ts";
 import path from "path";
 import { existsSync } from "fs";
@@ -17,12 +17,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Wiki Pages API
   app.get("/papyr-us/api/pages", async (req, res) => {
     try {
+      const teamId = req.query.teamId as string;
       const searchParams = searchSchema.parse({
         query: req.query.q as string,
         folder: req.query.folder as string,
         tags: req.query.tags ? (req.query.tags as string).split(',') : undefined,
         limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
         offset: req.query.offset ? parseInt(req.query.offset as string) : undefined,
+        teamId: teamId,
       });
 
       const result = await storage.searchWikiPages(searchParams);
@@ -65,6 +67,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/papyr-us/api/pages", async (req, res) => {
     try {
       const pageData = insertWikiPageSchema.parse(req.body);
+      
+      // If teamId is provided, find the actual team ID
+      if (pageData.teamId && typeof pageData.teamId === 'string') {
+        const team = await storage.getTeamByName(pageData.teamId);
+        if (team) {
+          pageData.teamId = team.id;
+        } else {
+          return res.status(400).json({ message: "Team not found" });
+        }
+      }
+      
       const page = await storage.createWikiPage(pageData);
       res.status(201).json(page);
     } catch (error) {
@@ -430,8 +443,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "No files uploaded" });
       }
 
+      const teamId = req.body.teamId;
       const uploadedFiles = await Promise.all(
-        req.files.map((file: any) => processUploadedFile(file))
+        req.files.map((file: any) => processUploadedFile(file, teamId))
       );
 
       res.status(201).json({
@@ -492,7 +506,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // List uploaded files
   app.get("/papyr-us/api/uploads", async (req, res) => {
     try {
-      const fileList = await listUploadedFiles();
+      const teamId = req.query.teamId as string;
+      const fileList = await listUploadedFiles(teamId);
       res.json(fileList);
     } catch (error) {
       res.status(500).json({ message: "Error listing files" });
@@ -842,6 +857,345 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ message: "All notifications marked as read" });
     } catch (error) {
       res.status(400).json({ message: "Invalid request data" });
+    }
+  });
+
+  // Template Categories API
+  app.get("/papyr-us/api/template-categories", async (req, res) => {
+    try {
+      const categories = await storage.getTemplateCategories();
+      res.json(categories);
+    } catch (error) {
+      console.error("Error fetching template categories:", error);
+      res.status(500).json({ error: "Failed to fetch template categories" });
+    }
+  });
+
+  app.get("/papyr-us/api/template-categories/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: "Invalid category ID" });
+      }
+      
+      const category = await storage.getTemplateCategory(id);
+      if (!category) {
+        return res.status(404).json({ error: "Template category not found" });
+      }
+      
+      res.json(category);
+    } catch (error) {
+      console.error("Error fetching template category:", error);
+      res.status(500).json({ error: "Failed to fetch template category" });
+    }
+  });
+
+  app.post("/papyr-us/api/template-categories", async (req, res) => {
+    try {
+      const validatedData = insertTemplateCategorySchema.parse(req.body);
+      const category = await storage.createTemplateCategory(validatedData);
+      res.status(201).json(category);
+    } catch (error) {
+      console.error("Error creating template category:", error);
+      res.status(400).json({ error: "Failed to create template category" });
+    }
+  });
+
+  app.put("/papyr-us/api/template-categories/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: "Invalid category ID" });
+      }
+      
+      const validatedData = updateTemplateCategorySchema.parse(req.body);
+      const category = await storage.updateTemplateCategory(id, validatedData);
+      if (!category) {
+        return res.status(404).json({ error: "Template category not found" });
+      }
+      
+      res.json(category);
+    } catch (error) {
+      console.error("Error updating template category:", error);
+      res.status(400).json({ error: "Failed to update template category" });
+    }
+  });
+
+  app.delete("/papyr-us/api/template-categories/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: "Invalid category ID" });
+      }
+      
+      const success = await storage.deleteTemplateCategory(id);
+      if (!success) {
+        return res.status(404).json({ error: "Template category not found" });
+      }
+      
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting template category:", error);
+      res.status(500).json({ error: "Failed to delete template category" });
+    }
+  });
+
+  // Templates API
+  app.get("/papyr-us/api/templates", async (req, res) => {
+    try {
+      const categoryId = req.query.categoryId ? parseInt(req.query.categoryId as string) : undefined;
+      if (req.query.categoryId && isNaN(categoryId!)) {
+        return res.status(400).json({ error: "Invalid category ID" });
+      }
+      
+      const templates = await storage.getTemplates(categoryId);
+      res.json(templates);
+    } catch (error) {
+      console.error("Error fetching templates:", error);
+      res.status(500).json({ error: "Failed to fetch templates" });
+    }
+  });
+
+  app.get("/papyr-us/api/templates/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: "Invalid template ID" });
+      }
+      
+      const template = await storage.getTemplate(id);
+      if (!template) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      
+      res.json(template);
+    } catch (error) {
+      console.error("Error fetching template:", error);
+      res.status(500).json({ error: "Failed to fetch template" });
+    }
+  });
+
+  app.post("/papyr-us/api/templates", async (req, res) => {
+    try {
+      const validatedData = insertTemplateSchema.parse(req.body);
+      const template = await storage.createTemplate(validatedData);
+      res.status(201).json(template);
+    } catch (error) {
+      console.error("Error creating template:", error);
+      res.status(400).json({ error: "Failed to create template" });
+    }
+  });
+
+  app.put("/papyr-us/api/templates/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: "Invalid template ID" });
+      }
+      
+      const validatedData = updateTemplateSchema.parse(req.body);
+      const template = await storage.updateTemplate(id, validatedData);
+      if (!template) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      
+      res.json(template);
+    } catch (error) {
+      console.error("Error updating template:", error);
+      res.status(400).json({ error: "Failed to update template" });
+    }
+  });
+
+  app.delete("/papyr-us/api/templates/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: "Invalid template ID" });
+      }
+      
+      const success = await storage.deleteTemplate(id);
+      if (!success) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting template:", error);
+      res.status(500).json({ error: "Failed to delete template" });
+    }
+  });
+
+  app.post("/papyr-us/api/templates/:id/use", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: "Invalid template ID" });
+      }
+      
+      const success = await storage.incrementTemplateUsage(id);
+      if (!success) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error incrementing template usage:", error);
+      res.status(500).json({ error: "Failed to increment template usage" });
+    }
+  });
+
+  // Teams API
+  app.get("/papyr-us/api/teams", async (req, res) => {
+    try {
+      const teams = await storage.getTeams();
+      res.json(teams);
+    } catch (error) {
+      console.error("Error fetching teams:", error);
+      res.status(500).json({ error: "Failed to fetch teams" });
+    }
+  });
+
+  app.get("/papyr-us/api/teams/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const team = await storage.getTeam(id);
+      if (!team) {
+        return res.status(404).json({ error: "Team not found" });
+      }
+      res.json(team);
+    } catch (error) {
+      console.error("Error fetching team:", error);
+      res.status(500).json({ error: "Failed to fetch team" });
+    }
+  });
+
+  app.post("/papyr-us/api/teams", async (req, res) => {
+    try {
+      const team = await storage.createTeam(req.body);
+      res.status(201).json(team);
+    } catch (error) {
+      console.error("Error creating team:", error);
+      res.status(500).json({ error: "Failed to create team" });
+    }
+  });
+
+  app.put("/papyr-us/api/teams/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const team = await storage.updateTeam(id, req.body);
+      if (!team) {
+        return res.status(404).json({ error: "Team not found" });
+      }
+      res.json(team);
+    } catch (error) {
+      console.error("Error updating team:", error);
+      res.status(500).json({ error: "Failed to update team" });
+    }
+  });
+
+  app.delete("/papyr-us/api/teams/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const success = await storage.deleteTeam(id);
+      if (!success) {
+        return res.status(404).json({ error: "Team not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting team:", error);
+      res.status(500).json({ error: "Failed to delete team" });
+    }
+  });
+
+  app.post("/papyr-us/api/teams/verify", async (req, res) => {
+    try {
+      const { teamName, password } = req.body;
+      const isValid = await storage.verifyTeamPassword(teamName, password);
+      res.json({ isValid });
+    } catch (error) {
+      console.error("Error verifying team password:", error);
+      res.status(500).json({ error: "Failed to verify team password" });
+    }
+  });
+
+  // Members API with team support
+  app.get("/papyr-us/api/members", async (req, res) => {
+    try {
+      let teamId: number | undefined;
+      
+      if (req.query.teamId) {
+        const teamIdParam = req.query.teamId as string;
+        
+        // Check if it's a number (team ID) or string (team name)
+        if (!isNaN(parseInt(teamIdParam))) {
+          teamId = parseInt(teamIdParam);
+        } else {
+          // It's a team name, find the team ID
+          const team = await storage.getTeamByName(teamIdParam);
+          if (team) {
+            teamId = team.id;
+          } else {
+            return res.status(404).json({ error: "Team not found" });
+          }
+        }
+      }
+      
+      const members = await storage.getMembers(teamId);
+      res.json(members);
+    } catch (error) {
+      console.error("Error fetching members:", error);
+      res.status(500).json({ error: "Failed to fetch members" });
+    }
+  });
+
+  app.post("/papyr-us/api/members", async (req, res) => {
+    try {
+      const memberData = insertMemberSchema.parse(req.body);
+      
+      // If teamId is provided as a string (team name), find the actual team ID
+      if (memberData.teamId && typeof memberData.teamId === 'string') {
+        const team = await storage.getTeamByName(memberData.teamId);
+        if (team) {
+          memberData.teamId = team.id;
+        } else {
+          return res.status(400).json({ error: "Team not found" });
+        }
+      }
+      
+      const member = await storage.createMember(memberData);
+      res.status(201).json(member);
+    } catch (error) {
+      console.error("Error creating member:", error);
+      res.status(400).json({ error: "Failed to create member" });
+    }
+  });
+
+  app.put("/papyr-us/api/members/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const memberData = updateMemberSchema.parse(req.body);
+      const member = await storage.updateMember(id, memberData);
+      if (!member) {
+        return res.status(404).json({ error: "Member not found" });
+      }
+      res.json(member);
+    } catch (error) {
+      console.error("Error updating member:", error);
+      res.status(400).json({ error: "Failed to update member" });
+    }
+  });
+
+  app.delete("/papyr-us/api/members/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const success = await storage.deleteMember(id);
+      if (!success) {
+        return res.status(404).json({ error: "Member not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting member:", error);
+      res.status(500).json({ error: "Failed to delete member" });
     }
   });
 

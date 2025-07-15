@@ -58,7 +58,11 @@ const skillOptions = [
   "Git", "Jira", "Slack"
 ];
 
-export default function Members() {
+interface MembersProps {
+  teamName?: string;
+}
+
+export default function Members({ teamName }: MembersProps) {
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -79,11 +83,15 @@ export default function Members() {
 
   // Fetch members
   const { data: members = [], isLoading } = useQuery<Member[]>({
-    queryKey: ['members'],
+    queryKey: ['members', teamName],
     queryFn: async () => {
-      const response = await fetch('/api/members');
+      const url = teamName 
+        ? `/papyr-us/api/members?teamId=${teamName}`
+        : '/papyr-us/api/members';
+      const response = await fetch(url);
       if (!response.ok) {
-        throw new Error('Failed to fetch members');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to fetch members');
       }
       return response.json();
     }
@@ -92,18 +100,20 @@ export default function Members() {
   // Create member mutation
   const createMember = useMutation({
     mutationFn: async (data: MemberFormData) => {
-      const response = await fetch('/api/members', {
+      const memberData = teamName ? { ...data, teamId: teamName } : data;
+      const response = await fetch('/papyr-us/api/members', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
+        body: JSON.stringify(memberData)
       });
       if (!response.ok) {
-        throw new Error('Failed to create member');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create member');
       }
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['members'] });
+      queryClient.invalidateQueries({ queryKey: ['members', teamName] });
       setIsDialogOpen(false);
       resetForm();
       toast({
@@ -123,7 +133,7 @@ export default function Members() {
   // Update member mutation
   const updateMember = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: Partial<MemberFormData> }) => {
-      const response = await fetch(`/api/members/${id}`, {
+      const response = await fetch(`/papyr-us/api/members/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
@@ -134,7 +144,7 @@ export default function Members() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['members'] });
+      queryClient.invalidateQueries({ queryKey: ['members', teamName] });
       setIsDialogOpen(false);
       setIsEditing(false);
       resetForm();
@@ -155,7 +165,7 @@ export default function Members() {
   // Delete member mutation
   const deleteMember = useMutation({
     mutationFn: async (id: number) => {
-      const response = await fetch(`/api/members/${id}`, {
+      const response = await fetch(`/papyr-us/api/members/${id}`, {
         method: 'DELETE'
       });
       if (!response.ok) {
@@ -164,7 +174,7 @@ export default function Members() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['members'] });
+      queryClient.invalidateQueries({ queryKey: ['members', teamName] });
       toast({
         title: "멤버 삭제 완료",
         description: "팀원이 성공적으로 삭제되었습니다."
@@ -258,8 +268,12 @@ export default function Members() {
     <div className="container mx-auto p-6">
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-3xl font-bold">팀원 관리</h1>
-          <p className="text-muted-foreground mt-2">바이브코딩 스터디 팀원들의 프로필을 관리합니다</p>
+          <h1 className="text-3xl font-bold">
+            {teamName ? `${teamName} 팀원 관리` : '팀원 관리'}
+          </h1>
+          <p className="text-muted-foreground mt-2">
+            {teamName ? `${teamName} 팀의 팀원들을 관리합니다` : '바이브코딩 스터디 팀원들의 프로필을 관리합니다'}
+          </p>
         </div>
         
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

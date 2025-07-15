@@ -63,7 +63,11 @@ const formatDate = (dateString: string): string => {
   });
 };
 
-export default function FileManager() {
+interface FileManagerProps {
+  teamName?: string;
+}
+
+export default function FileManager({ teamName }: FileManagerProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFile, setSelectedFile] = useState<UploadedFile | null>(null);
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
@@ -74,9 +78,12 @@ export default function FileManager() {
 
   // Fetch files
   const { data: fileList, isLoading } = useQuery<FileList>({
-    queryKey: ['uploads'],
+    queryKey: ['uploads', teamName],
     queryFn: async () => {
-      const response = await fetch('/api/uploads');
+      const url = teamName 
+        ? `/papyr-us/api/uploads?teamId=${teamName}`
+        : '/papyr-us/api/uploads';
+      const response = await fetch(url);
       if (!response.ok) {
         throw new Error('Failed to fetch files');
       }
@@ -88,7 +95,7 @@ export default function FileManager() {
   const deleteMutation = useMutation({
     mutationFn: async ({ filename, isImage }: { filename: string; isImage: boolean }) => {
       const type = isImage ? 'images' : 'files';
-      const response = await fetch(`/api/uploads/${type}/${filename}`, {
+      const response = await fetch(`/papyr-us/api/uploads/${type}/${filename}`, {
         method: 'DELETE'
       });
       
@@ -100,7 +107,7 @@ export default function FileManager() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['uploads'] });
+      queryClient.invalidateQueries({ queryKey: ['uploads', teamName] });
       toast({
         title: "파일 삭제 완료",
         description: "파일이 성공적으로 삭제되었습니다."
@@ -189,8 +196,12 @@ export default function FileManager() {
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-3xl font-bold">파일 관리</h1>
-          <p className="text-muted-foreground mt-2">업로드된 파일들을 관리하고 마크다운에서 사용하세요</p>
+          <h1 className="text-3xl font-bold">
+            {teamName ? `${teamName} 파일 관리` : '파일 관리'}
+          </h1>
+          <p className="text-muted-foreground mt-2">
+            {teamName ? `${teamName} 팀의 파일들을 관리하고 마크다운에서 사용하세요` : '업로드된 파일들을 관리하고 마크다운에서 사용하세요'}
+          </p>
         </div>
         
         <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
@@ -209,8 +220,9 @@ export default function FileManager() {
             </DialogHeader>
             
             <FileUpload 
+              teamName={teamName}
               onFilesUploaded={() => {
-                queryClient.invalidateQueries({ queryKey: ['uploads'] });
+                queryClient.invalidateQueries({ queryKey: ['uploads', teamName] });
                 setIsUploadDialogOpen(false);
               }}
             />

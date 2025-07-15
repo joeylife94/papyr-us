@@ -30,13 +30,21 @@ type PageFormData = z.infer<typeof pageFormSchema>;
 interface PageEditorProps {
   pageId?: string; // If provided, we're editing; if not, we're creating
   initialFolder?: string;
+  teamName?: string;
 }
 
-export default function PageEditor({ pageId, initialFolder = "docs" }: PageEditorProps) {
+export default function PageEditor({ pageId, initialFolder = "docs", teamName }: PageEditorProps) {
+  // Extract teamName from URL if not provided as prop
+  const currentLocation = window.location;
+  const urlTeamName = teamName || (currentLocation.pathname.includes('/teams/') ? currentLocation.pathname.split('/teams/')[1]?.split('/')[0] : undefined);
   const [, navigate] = useLocation();
   const [isPreview, setIsPreview] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Check if we have template data from navigation state
+  const location = window.location;
+  const templateData = (location as any).state?.template;
 
   const { data: existingPage } = useQuery<WikiPage>({
     queryKey: [`/api/pages/${pageId}`],
@@ -58,7 +66,7 @@ export default function PageEditor({ pageId, initialFolder = "docs" }: PageEdito
     },
   });
 
-  // Update form when existing page loads
+  // Update form when existing page loads or template data is available
   useEffect(() => {
     if (existingPage) {
       form.reset({
@@ -68,17 +76,27 @@ export default function PageEditor({ pageId, initialFolder = "docs" }: PageEdito
         tags: existingPage.tags.join(", "),
         author: existingPage.author,
       });
+    } else if (templateData) {
+      // Apply template data
+      form.reset({
+        title: templateData.title || "",
+        content: templateData.content || "",
+        folder: initialFolder,
+        tags: templateData.tags?.join(", ") || "",
+        author: "User",
+      });
     }
-  }, [existingPage, form]);
+  }, [existingPage, templateData, initialFolder, form]);
 
   const createPageMutation = useMutation({
     mutationFn: async (data: InsertWikiPage) => {
-      const response = await fetch(`/api/pages`, {
+      const pageData = urlTeamName ? { ...data, teamId: urlTeamName } : data;
+      const response = await fetch(`/papyr-us/api/pages`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(data),
+        body: JSON.stringify(pageData),
       });
       if (!response.ok) throw new Error("Failed to create page");
       return response.json();
@@ -103,7 +121,7 @@ export default function PageEditor({ pageId, initialFolder = "docs" }: PageEdito
 
   const updatePageMutation = useMutation({
     mutationFn: async (data: Partial<WikiPage>) => {
-      const response = await fetch(`/api/pages/${pageId}`, {
+      const response = await fetch(`/papyr-us/api/pages/${pageId}`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -192,10 +210,16 @@ export default function PageEditor({ pageId, initialFolder = "docs" }: PageEdito
           </Button>
           <div>
             <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-              {pageId ? "Edit Page" : "Create New Page"}
+              {pageId 
+                ? (urlTeamName ? `${urlTeamName} 팀 문서 수정` : "Edit Page")
+                : (urlTeamName ? `${urlTeamName} 팀 새 문서 작성` : "Create New Page")
+              }
             </h1>
             <p className="text-slate-600 dark:text-slate-400">
-              {pageId ? "Update your existing page" : "Add a new page to your wiki"}
+              {pageId 
+                ? (urlTeamName ? "팀 문서를 수정합니다" : "Update your existing page")
+                : (urlTeamName ? "팀에 새로운 문서를 추가합니다" : "Add a new page to your wiki")
+              }
             </p>
           </div>
         </div>

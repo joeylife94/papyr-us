@@ -88,13 +88,14 @@ export const upload = multer({
 });
 
 // Process and save uploaded file
-export async function processUploadedFile(file: Express.Multer.File): Promise<{
+export async function processUploadedFile(file: Express.Multer.File, teamId?: string): Promise<{
   filename: string;
   originalName: string;
   size: number;
   mimetype: string;
   url: string;
   path: string;
+  teamId?: string;
 }> {
   const uniqueFilename = generateUniqueFilename(file.originalname);
   
@@ -121,7 +122,8 @@ export async function processUploadedFile(file: Express.Multer.File): Promise<{
       size: stats.size,
       mimetype: file.mimetype,
       url: `/papyr-us/api/uploads/images/${uniqueFilename}`,
-      path: processedImagePath
+      path: processedImagePath,
+      teamId
     };
   } else {
     // Save regular file
@@ -134,7 +136,8 @@ export async function processUploadedFile(file: Express.Multer.File): Promise<{
       size: file.size,
       mimetype: file.mimetype,
       url: `/papyr-us/api/uploads/files/${uniqueFilename}`,
-      path: filePath
+      path: filePath,
+      teamId
     };
   }
 }
@@ -186,7 +189,7 @@ export async function getFileInfo(filename: string, isImage: boolean = false) {
 }
 
 // List uploaded files
-export async function listUploadedFiles(): Promise<{
+export async function listUploadedFiles(teamId?: string): Promise<{
   images: any[];
   files: any[];
 }> {

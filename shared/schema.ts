@@ -10,6 +10,7 @@ export const wikiPages = pgTable("wiki_pages", {
   folder: text("folder").notNull(), // docs, ideas, members, logs, archive, team1, team2, etc.
   tags: text("tags").array().notNull().default([]),
   author: text("author").notNull(),
+  teamId: integer("team_id").references(() => teams.id, { onDelete: "set null" }), // 팀 소속
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   isPublished: boolean("is_published").notNull().default(true),
@@ -41,6 +42,7 @@ export const searchSchema = z.object({
   query: z.string().optional(),
   folder: z.string().optional(),
   tags: z.array(z.string()).optional(),
+  teamId: z.string().optional(),
   limit: z.number().optional().default(20),
   offset: z.number().optional().default(0),
 });
@@ -122,12 +124,28 @@ export type InsertComment = z.infer<typeof insertCommentSchema>;
 export type UpdateComment = z.infer<typeof updateCommentSchema>;
 export type Comment = typeof comments.$inferSelect;
 
+// Teams schema
+export const teams = pgTable("teams", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  displayName: text("display_name").notNull(),
+  description: text("description"),
+  password: text("password"), // 팀 접근 비밀번호
+  icon: text("icon"), // Lucide icon name
+  color: text("color"), // Tailwind color class
+  isActive: boolean("is_active").notNull().default(true),
+  order: integer("order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 // Members schema  
 export const members = pgTable("members", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
   role: text("role").notNull(), // 팀장, 개발자, 디자이너, PM 등
+  teamId: integer("team_id").references(() => teams.id, { onDelete: "set null" }), // 팀 소속
   avatarUrl: text("avatar_url"), // 프로필 이미지 URL (선택)
   bio: text("bio"), // 자기소개 (선택)
   githubUsername: text("github_username"), // GitHub 사용자명 (선택)
@@ -145,6 +163,19 @@ export const insertMemberSchema = createInsertSchema(members).omit({
 });
 
 export const updateMemberSchema = insertMemberSchema.partial();
+
+// Teams types and schemas
+export const insertTeamSchema = createInsertSchema(teams).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateTeamSchema = insertTeamSchema.partial();
+
+export type InsertTeam = z.infer<typeof insertTeamSchema>;
+export type UpdateTeam = z.infer<typeof updateTeamSchema>;
+export type Team = typeof teams.$inferSelect;
 
 export type InsertMember = z.infer<typeof insertMemberSchema>;
 export type UpdateMember = z.infer<typeof updateMemberSchema>;
@@ -219,3 +250,63 @@ export const updateNotificationSchema = insertNotificationSchema.partial();
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 export type UpdateNotification = z.infer<typeof updateNotificationSchema>;
 export type Notification = typeof notifications.$inferSelect;
+
+// Template Categories schema
+export const templateCategories = pgTable("template_categories", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  displayName: text("display_name").notNull(),
+  description: text("description"),
+  icon: text("icon"), // Lucide icon name
+  color: text("color"), // Tailwind color class
+  order: integer("order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Templates schema
+export const templates = pgTable("templates", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  description: text("description"),
+  content: text("content").notNull(), // Markdown content
+  categoryId: integer("category_id").references(() => templateCategories.id, { onDelete: "cascade" }),
+  tags: text("tags").array().notNull().default([]),
+  author: text("author").notNull(),
+  isPublic: boolean("is_public").notNull().default(true),
+  usageCount: integer("usage_count").notNull().default(0),
+  rating: integer("rating").notNull().default(0), // 1-5 stars
+  thumbnail: text("thumbnail"), // Preview image URL
+  metadata: jsonb("metadata").default({}), // Additional template data
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Template Categories types
+export type TemplateCategory = typeof templateCategories.$inferSelect;
+export type InsertTemplateCategory = typeof templateCategories.$inferInsert;
+export type UpdateTemplateCategory = Partial<InsertTemplateCategory>;
+
+// Template Categories schemas
+export const insertTemplateCategorySchema = createInsertSchema(templateCategories).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateTemplateCategorySchema = insertTemplateCategorySchema.partial();
+
+// Templates schemas
+export const insertTemplateSchema = createInsertSchema(templates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateTemplateSchema = insertTemplateSchema.partial();
+
+// Templates types
+export type Template = typeof templates.$inferSelect;
+export type InsertTemplate = z.infer<typeof insertTemplateSchema>;
+export type UpdateTemplate = z.infer<typeof updateTemplateSchema>;

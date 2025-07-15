@@ -27,6 +27,10 @@ npm run dev
 
 서버는 기본적으로 `http://localhost:5001`에서 실행됩니다.
 
+### 접근 URL
+- **프론트엔드**: `http://localhost:5001/papyr-us/`
+- **API 엔드포인트**: `http://localhost:5001/papyr-us/api/`
+
 ## 아키텍처 개요
 
 ### Frontend 아키텍처
@@ -68,42 +72,53 @@ npm run dev
 
 ## API 엔드포인트
 
+### API 경로 구조
+모든 API 엔드포인트는 `/papyr-us/api/` 접두사를 사용합니다.
+
 ### 페이지 관리
 ```
-GET    /api/pages                 # 모든 페이지 조회
-GET    /api/pages/:id             # 특정 페이지 조회
-GET    /api/pages/slug/:slug      # 슬러그로 페이지 조회
-POST   /api/pages                 # 새 페이지 생성
-PUT    /api/pages/:id             # 페이지 수정
-DELETE /api/pages/:id             # 페이지 삭제
+GET    /papyr-us/api/pages                 # 모든 페이지 조회
+GET    /papyr-us/api/pages/:id             # 특정 페이지 조회
+GET    /papyr-us/api/pages/slug/:slug      # 슬러그로 페이지 조회
+POST   /papyr-us/api/pages                 # 새 페이지 생성
+PUT    /papyr-us/api/pages/:id             # 페이지 수정
+DELETE /papyr-us/api/pages/:id             # 페이지 삭제
 ```
 
 ### 폴더 관리
 ```
-GET    /api/folders               # 모든 폴더 조회
-GET    /api/folders/:folder/pages # 특정 폴더의 페이지들
+GET    /papyr-us/api/folders               # 모든 폴더 조회
+GET    /papyr-us/api/folders/:folder/pages # 특정 폴더의 페이지들
 ```
 
 ### 관리자 기능
 ```
-POST   /api/admin/auth            # 관리자 인증
-GET    /api/admin/directories     # 디렉토리 목록 조회
-POST   /api/admin/directories     # 새 디렉토리 생성
-PUT    /api/admin/directories/:id # 디렉토리 수정
-DELETE /api/admin/directories/:id # 디렉토리 삭제
+POST   /papyr-us/api/admin/auth            # 관리자 인증
+GET    /papyr-us/api/admin/directories     # 디렉토리 목록 조회
+POST   /papyr-us/api/admin/directories     # 새 디렉토리 생성
+PUT    /papyr-us/api/admin/directories/:id # 디렉토리 수정
+DELETE /papyr-us/api/admin/directories/:id # 디렉토리 삭제
 ```
 
 ### 디렉토리 보안
 ```
-POST   /api/directory/verify      # 디렉토리 패스워드 검증
+POST   /papyr-us/api/directory/verify      # 디렉토리 패스워드 검증
 ```
 
 ### 캘린더 기능
 ```
-GET    /api/calendar/:teamId      # 팀 캘린더 이벤트 조회
-POST   /api/calendar              # 새 이벤트 생성
-PUT    /api/calendar/:id          # 이벤트 수정
-DELETE /api/calendar/:id          # 이벤트 삭제
+GET    /papyr-us/api/calendar/:teamId      # 팀 캘린더 이벤트 조회
+POST   /papyr-us/api/calendar              # 새 이벤트 생성
+PUT    /papyr-us/api/calendar/:id          # 이벤트 수정
+DELETE /papyr-us/api/calendar/:id          # 이벤트 삭제
+```
+
+### 알림 기능
+```
+GET    /papyr-us/api/notifications          # 알림 목록 조회
+POST   /papyr-us/api/notifications          # 새 알림 생성
+PATCH  /papyr-us/api/notifications/:id/read # 읽음 처리
+DELETE /papyr-us/api/notifications/:id      # 알림 삭제
 ```
 
 ## 데이터 모델
@@ -143,6 +158,19 @@ interface CalendarEvent {
   startDate: string;
   endDate: string;
   teamId: string;
+  createdAt: string;
+}
+```
+
+### Notification
+```typescript
+interface Notification {
+  id: number;
+  userId: string;
+  type: 'comment' | 'mention' | 'deadline' | 'system';
+  title: string;
+  message?: string;
+  isRead: boolean;
   createdAt: string;
 }
 ```

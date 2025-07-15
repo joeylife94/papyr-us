@@ -20,7 +20,8 @@ import {
   FileText,
   File,
   Activity,
-  CheckSquare
+  CheckSquare,
+  BookOpen
 } from "lucide-react";
 import type { WikiPage } from "@shared/schema";
 import { Badge } from "@/components/ui/badge";
@@ -38,8 +39,6 @@ interface SidebarProps {
   members: Users,
   logs: ListChecks,
   archive: Archive,
-  team1: Users,
-  team2: Users,
   dashboard: Activity,
 };
 
@@ -49,8 +48,6 @@ const folderColors: Record<string, string> = {
   members: "text-emerald-500",
   logs: "text-purple-500",
   archive: "text-slate-500",
-  team1: "text-orange-500",
-  team2: "text-teal-500",
 };
 
 export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: SidebarProps) {
@@ -62,10 +59,10 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
 
 
   const { data: directories = [] } = useQuery<any[]>({
-            queryKey: ["/papyr-us/api/admin/directories"],
+    queryKey: ["/papyr-us/api/admin/directories"],
     queryFn: async () => {
-              const adminPassword = sessionStorage.getItem("adminAuth") || "";
-        const response = await fetch(`/api/admin/directories?adminPassword=${adminPassword}`);
+      const adminPassword = sessionStorage.getItem("adminAuth") || "";
+      const response = await fetch(`/papyr-us/api/admin/directories?adminPassword=${adminPassword}`);
       if (!response.ok) {
         // Fallback to static folders if admin API fails
         return [
@@ -74,21 +71,31 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
           { name: "members", displayName: "Members", order: 3 },
           { name: "logs", displayName: "Logs", order: 4 },
           { name: "archive", displayName: "Archive", order: 5 },
-          { name: "team1", displayName: "Team Alpha", order: 6 },
-          { name: "team2", displayName: "Team Beta", order: 7 },
         ];
       }
       return response.json();
     },
   });
 
-  // Query calendar events for search filtering
-  const { data: team1Events = [] } = useQuery<any[]>({
-            queryKey: ["/papyr-us/api/calendar/team1"],
+  const { data: teams = [] } = useQuery<any[]>({
+    queryKey: ["/papyr-us/api/teams"],
+    queryFn: async () => {
+      const response = await fetch("/papyr-us/api/teams");
+      if (!response.ok) {
+        return [];
+      }
+      return response.json();
+    },
   });
-  
-  const { data: team2Events = [] } = useQuery<any[]>({
-            queryKey: ["/papyr-us/api/calendar/team2"],
+
+  // Query calendar events for search filtering
+  const { data: teamEvents = [] } = useQuery<any[]>({
+    queryKey: ["/papyr-us/api/calendar"],
+    queryFn: async () => {
+      const response = await fetch("/papyr-us/api/calendar");
+      if (!response.ok) return [];
+      return response.json();
+    },
   });
 
   // Query for pages in each folder - using fixed folder list to avoid Hook violations
@@ -117,24 +124,12 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
     enabled: expandedSections['archive'],
   });
 
-  const team1Query = useQuery<WikiPage[]>({
-    queryKey: [`/api/folders/team1/pages`],
-    enabled: expandedSections['team1'],
-  });
-
-  const team2Query = useQuery<WikiPage[]>({
-    queryKey: [`/api/folders/team2/pages`],
-    enabled: expandedSections['team2'],
-  });
-
   const folderQueriesMap: Record<string, ReturnType<typeof useQuery<WikiPage[]>>> = {
     'docs': docsQuery,
     'ideas': ideasQuery,
     'members': membersQuery,
     'logs': logsQuery,
     'archive': archiveQuery,
-    'team1': team1Query,
-    'team2': team2Query,
   };
 
   const toggleSection = (folder: string) => {
@@ -167,8 +162,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
   };
 
   // Determine visibility based on search
-  const showTeam1 = hasMatchingEvents(team1Events, searchQuery);
-  const showTeam2 = hasMatchingEvents(team2Events, searchQuery);
+  const showTeams = hasMatchingEvents(teamEvents, searchQuery);
 
   return (
     <>
@@ -207,81 +201,123 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                   Create New Page
                 </Button>
               </Link>
-            </div>
-          </div>
-
-          {/* Team Members */}
-          <div className="mb-6">
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 flex items-center">
-              <Users className="h-4 w-4 text-emerald-500 mr-2" />
-              Team Management
-            </h3>
-            <div className="space-y-2">
-              <Link href="/papyr-us/members">
+              <Link href="/papyr-us/templates">
                 <Button variant="outline" className="w-full justify-start">
-                  <Users className="h-4 w-4 mr-2 text-emerald-500" />
-                  팀원 관리
-                </Button>
-              </Link>
-              <Link href="/papyr-us/tasks">
-                <Button variant="outline" className="w-full justify-start">
-                  <CheckSquare className="h-4 w-4 mr-2 text-orange-500" />
-                  과제 트래커
-                </Button>
-              </Link>
-              <Link href="/papyr-us/files">
-                <Button variant="outline" className="w-full justify-start">
-                  <File className="h-4 w-4 mr-2 text-blue-500" />
-                  파일 관리
+                  <BookOpen className="h-4 w-4 mr-2 text-blue-500" />
+                  템플릿 갤러리
                 </Button>
               </Link>
             </div>
           </div>
 
-          {/* Calendar Section */}
-          <div className="mb-6">
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 flex items-center">
-              <Calendar className="h-4 w-4 text-primary mr-2" />
-              Team Calendars
-            </h3>
-            <div className="space-y-2">
-              {showTeam1 && (
-                <div className="flex items-center gap-2">
-                  <Link href="/papyr-us/calendar/team1" className="flex-1">
-                    <Button variant="outline" className="w-full justify-start">
-                      <Calendar className="h-4 w-4 mr-2 text-orange-500" />
-                      Team Alpha
-                    </Button>
-                  </Link>
-                  <Link href="/papyr-us/calendar/team1">
-                    <Button size="sm" className="px-2" title="Add event to Team Alpha">
-                      <Plus className="h-3 w-3" />
-                    </Button>
-                  </Link>
-                </div>
-              )}
-              {showTeam2 && (
-                <div className="flex items-center gap-2">
-                  <Link href="/papyr-us/calendar/team2" className="flex-1">
-                    <Button variant="outline" className="w-full justify-start">
-                      <Calendar className="h-4 w-4 mr-2 text-teal-500" />
-                      Team Beta
-                    </Button>
-                  </Link>
-                  <Link href="/papyr-us/calendar/team2">
-                    <Button size="sm" className="px-2" title="Add event to Team Beta">
-                      <Plus className="h-3 w-3" />
-                    </Button>
-                  </Link>
-                </div>
-              )}
-              {!showTeam1 && !showTeam2 && searchQuery.trim() && (
-                <p className="text-sm text-slate-500 dark:text-slate-400 py-2">
-                  No matching calendar events found
-                </p>
-              )}
+          {/* Teams Section */}
+          {teams.length > 0 && (
+            <div className="mb-6">
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 flex items-center">
+                <Users className="h-4 w-4 text-emerald-500 mr-2" />
+                Teams
+              </h3>
+              <div className="space-y-2">
+                {teams.map((team) => {
+                  const Icon = team.icon ? (() => {
+                    // Dynamic icon import - you might need to adjust this based on your icon library
+                    const iconMap: Record<string, React.ElementType> = {
+                      Server: Activity,
+                      Monitor: Activity,
+                      Cloud: Activity,
+                      Users: Users,
+                      Calendar: Calendar,
+                      File: File,
+                      CheckSquare: CheckSquare,
+                    };
+                    return iconMap[team.icon] || Users;
+                  })() : Users;
+                  
+                  const iconColor = team.color || "text-primary";
+                  
+                  return (
+                    <div key={team.id} className="group">
+                      <Button
+                        variant="ghost"
+                        className="w-full justify-start p-3 h-auto rounded-xl hover:bg-gradient-to-r hover:from-primary/5 hover:to-primary/10 transition-all duration-200"
+                        onClick={() => toggleSection(`team-${team.id}`)}
+                      >
+                        <Icon className={cn("h-5 w-5 mr-3", iconColor)} />
+                        <span className="flex-1 text-left font-medium">
+                          {team.displayName}
+                        </span>
+                        {expandedSections[`team-${team.id}`] ? (
+                          <ChevronDown className="h-4 w-4 text-slate-400 group-hover:text-primary transition-colors" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4 text-slate-400 group-hover:text-primary transition-colors" />
+                        )}
+                      </Button>
+                      
+                      {expandedSections[`team-${team.id}`] && (
+                        <div className="ml-8 mt-3 space-y-2">
+                          <Link href={`/papyr-us/teams/${team.name}/members`}>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="w-full justify-start h-9 text-xs rounded-lg hover:bg-gradient-to-r hover:from-emerald-50 hover:to-emerald-100 dark:hover:from-emerald-900/20 dark:hover:to-emerald-800/20 transition-all"
+                              onClick={onClose}
+                            >
+                              <Users className="h-4 w-4 mr-2 text-emerald-500" />
+                              팀원 관리
+                            </Button>
+                          </Link>
+                          <Link href={`/papyr-us/teams/${team.name}/tasks`}>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="w-full justify-start h-9 text-xs rounded-lg hover:bg-gradient-to-r hover:from-orange-50 hover:to-orange-100 dark:hover:from-orange-900/20 dark:hover:to-orange-800/20 transition-all"
+                              onClick={onClose}
+                            >
+                              <CheckSquare className="h-4 w-4 mr-2 text-orange-500" />
+                              과제 트래커
+                            </Button>
+                          </Link>
+                          <Link href={`/papyr-us/teams/${team.name}/files`}>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="w-full justify-start h-9 text-xs rounded-lg hover:bg-gradient-to-r hover:from-blue-50 hover:to-blue-100 dark:hover:from-blue-900/20 dark:hover:to-blue-800/20 transition-all"
+                              onClick={onClose}
+                            >
+                              <File className="h-4 w-4 mr-2 text-blue-500" />
+                              파일 관리
+                            </Button>
+                          </Link>
+                          <Link href={`/papyr-us/teams/${team.name}/calendar`}>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="w-full justify-start h-9 text-xs rounded-lg hover:bg-gradient-to-r hover:from-purple-50 hover:to-purple-100 dark:hover:from-purple-900/20 dark:hover:to-purple-800/20 transition-all"
+                              onClick={onClose}
+                            >
+                              <Calendar className="h-4 w-4 mr-2 text-purple-500" />
+                              팀 캘린더
+                            </Button>
+                          </Link>
+                          <Link href={`/papyr-us/teams/${team.name}/pages`}>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="w-full justify-start h-9 text-xs rounded-lg hover:bg-gradient-to-r hover:from-green-50 hover:to-green-100 dark:hover:from-green-900/20 dark:hover:to-green-800/20 transition-all"
+                              onClick={onClose}
+                            >
+                              <Plus className="h-4 w-4 mr-2 text-green-500" />
+                              팀 페이지
+                            </Button>
+                          </Link>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Search */}
           <div className="mb-6">
@@ -310,7 +346,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
               const folderPages = filterPages(allFolderPages, searchQuery);
               
               // Hide folder if no matching pages when searching
-              if (searchQuery.trim() && folderPages.length === 0 && !["team1", "team2"].includes(directory.name)) {
+              if (searchQuery.trim() && folderPages.length === 0) {
                 return null;
               }
 
@@ -334,34 +370,6 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                   
                   {isExpanded && (
                     <div className="ml-8 mt-3 space-y-2">
-                      {/* Team calendar and create page buttons */}
-                      {(directory.name === "team1" || directory.name === "team2") && (
-                        <div className="mb-4 space-y-2">
-                          <Link href={`/papyr-us/calendar/${directory.name}`}>
-                            <Button 
-                              variant="ghost" 
-                              size="sm" 
-                              className="w-full justify-start h-9 text-xs rounded-lg hover:bg-gradient-to-r hover:from-blue-50 hover:to-blue-100 dark:hover:from-blue-900/20 dark:hover:to-blue-800/20 transition-all"
-                              onClick={onClose}
-                            >
-                              <Calendar className="h-4 w-4 mr-2 text-blue-500" />
-                              Team Calendar
-                            </Button>
-                          </Link>
-                          <Link href={`/papyr-us/create/${directory.name}`}>
-                            <Button 
-                              variant="ghost" 
-                              size="sm" 
-                              className="w-full justify-start h-9 text-xs rounded-lg hover:bg-gradient-to-r hover:from-green-50 hover:to-green-100 dark:hover:from-green-900/20 dark:hover:to-green-800/20 transition-all"
-                              onClick={onClose}
-                            >
-                              <Plus className="h-4 w-4 mr-2 text-green-500" />
-                              Add Page
-                            </Button>
-                          </Link>
-                        </div>
-                      )}
-                      
                       {folderPages.map((page: WikiPage) => (
                         <Link key={page.id} href={`/papyr-us/page/${page.slug}`}>
                           <div
@@ -380,7 +388,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                           </div>
                         </Link>
                       ))}
-                      {folderPages.length === 0 && !["team1", "team2"].includes(directory.name) && (
+                      {folderPages.length === 0 && (
                         <div className="p-3 text-xs text-slate-400 italic bg-slate-50/50 dark:bg-slate-800/30 rounded-lg">
                           {searchQuery.trim() ? "No matching pages found" : "No pages in this section"}
                         </div>

@@ -16,6 +16,7 @@ import Members from "@/pages/members";
 import FileManager from "@/pages/file-manager";
 import { DashboardPage } from "@/pages/dashboard";
 import { TasksPage } from "@/pages/tasks";
+import Templates from "@/pages/templates";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -70,6 +71,10 @@ function Router() {
                 {(params) => <PageEditor initialFolder={params.folder} />}
               </Route>
               
+              <Route path="/papyr-us/teams/:teamName/create">
+                {(params) => <PageEditor teamName={params.teamName} />}
+              </Route>
+              
               <Route path="/papyr-us/admin" component={AdminPage} />
               
               <Route path="/papyr-us/members" component={Members} />
@@ -79,6 +84,29 @@ function Router() {
               <Route path="/papyr-us/dashboard" component={DashboardPage} />
               
               <Route path="/papyr-us/tasks" component={TasksPage} />
+              
+              <Route path="/papyr-us/templates" component={Templates} />
+              
+              {/* Team routes */}
+              <Route path="/papyr-us/teams/:teamName/members">
+                {(params) => <Members teamName={params.teamName} />}
+              </Route>
+              
+              <Route path="/papyr-us/teams/:teamName/tasks">
+                {(params) => <TasksPage teamName={params.teamName} />}
+              </Route>
+              
+              <Route path="/papyr-us/teams/:teamName/files">
+                {(params) => <FileManager teamName={params.teamName} />}
+              </Route>
+              
+              <Route path="/papyr-us/teams/:teamName/calendar">
+                {(params) => <CalendarPage teamId={params.teamName} />}
+              </Route>
+              
+              <Route path="/papyr-us/teams/:teamName/pages">
+                {(params) => <Home searchQuery={searchQuery} selectedFolder={selectedFolder} teamName={params.teamName} />}
+              </Route>
               
               <Route component={NotFound} />
             </Switch>

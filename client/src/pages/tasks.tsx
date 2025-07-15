@@ -80,7 +80,11 @@ const priorityLabels = {
   5: '매우 낮음'
 };
 
-export function TasksPage() {
+interface TasksPageProps {
+  teamName?: string;
+}
+
+export function TasksPage({ teamName }: TasksPageProps) {
   const [selectedTeam, setSelectedTeam] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -91,10 +95,10 @@ export function TasksPage() {
 
   // Fetch tasks
   const { data: tasks = [], isLoading } = useQuery<Task[]>({
-    queryKey: ['tasks', selectedTeam, selectedStatus],
+    queryKey: ['tasks', teamName, selectedStatus],
     queryFn: async () => {
       const params = new URLSearchParams();
-      if (selectedTeam !== 'all') params.append('teamId', selectedTeam);
+      if (teamName) params.append('teamId', teamName);
       if (selectedStatus !== 'all') params.append('status', selectedStatus);
       
       const response = await fetch(`/papyr-us/api/tasks?${params.toString()}`);
@@ -107,9 +111,12 @@ export function TasksPage() {
 
   // Fetch members for assignment
   const { data: members = [] } = useQuery<Member[]>({
-    queryKey: ['members'],
+    queryKey: ['members', teamName],
     queryFn: async () => {
-      const response = await fetch('/papyr-us/api/members');
+      const url = teamName 
+        ? `/papyr-us/api/members?teamId=${teamName}`
+        : '/papyr-us/api/members';
+      const response = await fetch(url);
       if (!response.ok) {
         throw new Error('Failed to fetch members');
       }
@@ -120,10 +127,11 @@ export function TasksPage() {
   // Create task mutation
   const createTaskMutation = useMutation({
     mutationFn: async (taskData: any) => {
+      const taskWithTeam = teamName ? { ...taskData, teamId: teamName } : taskData;
       const response = await fetch('/papyr-us/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(taskData),
+        body: JSON.stringify(taskWithTeam),
       });
       if (!response.ok) {
         throw new Error('Failed to create task');
@@ -131,7 +139,7 @@ export function TasksPage() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['tasks', teamName] });
       setIsCreateDialogOpen(false);
     },
   });
@@ -150,7 +158,7 @@ export function TasksPage() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['tasks', teamName] });
       setEditingTask(null);
     },
   });
@@ -166,7 +174,7 @@ export function TasksPage() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['tasks', teamName] });
     },
   });
 
@@ -184,7 +192,7 @@ export function TasksPage() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['tasks', teamName] });
     },
   });
 

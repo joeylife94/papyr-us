@@ -1,4 +1,4 @@
-import { wikiPages, type WikiPage, type InsertWikiPage, type UpdateWikiPage, type Tag, type SearchParams, type CalendarEvent, type InsertCalendarEvent, type UpdateCalendarEvent, type Directory, type InsertDirectory, type UpdateDirectory, type Comment, type InsertComment, type UpdateComment, type Member, type InsertMember, type UpdateMember, type Task, type InsertTask, type UpdateTask, type Notification, type InsertNotification, type UpdateNotification, calendarEvents, directories, comments, members, tasks, notifications } from "../shared/schema.ts";
+import { wikiPages, type WikiPage, type InsertWikiPage, type UpdateWikiPage, type Tag, type SearchParams, type CalendarEvent, type InsertCalendarEvent, type UpdateCalendarEvent, type Directory, type InsertDirectory, type UpdateDirectory, type Comment, type InsertComment, type UpdateComment, type Member, type InsertMember, type UpdateMember, type Task, type InsertTask, type UpdateTask, type Notification, type InsertNotification, type UpdateNotification, type Template, type InsertTemplate, type UpdateTemplate, type TemplateCategory, type InsertTemplateCategory, type UpdateTemplateCategory, type Team, type InsertTeam, type UpdateTeam, calendarEvents, directories, comments, members, tasks, notifications, templates, templateCategories, teams } from "../shared/schema.ts";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { eq, like, and, sql, desc, asc } from "drizzle-orm";
 import { Pool } from "pg";
@@ -41,8 +41,17 @@ export interface IStorage {
   updateComment(id: number, comment: UpdateComment): Promise<Comment | undefined>;
   deleteComment(id: number): Promise<boolean>;
   
+  // Teams CRUD
+  getTeams(): Promise<Team[]>;
+  getTeam(id: number): Promise<Team | undefined>;
+  getTeamByName(name: string): Promise<Team | undefined>;
+  createTeam(team: InsertTeam): Promise<Team>;
+  updateTeam(id: number, team: UpdateTeam): Promise<Team | undefined>;
+  deleteTeam(id: number): Promise<boolean>;
+  verifyTeamPassword(teamName: string, password: string): Promise<boolean>;
+  
   // Members CRUD
-  getMembers(): Promise<Member[]>;
+  getMembers(teamId?: number): Promise<Member[]>;
   getMember(id: number): Promise<Member | undefined>;
   getMemberByEmail(email: string): Promise<Member | undefined>;
   createMember(member: InsertMember): Promise<Member>;
@@ -72,6 +81,21 @@ export interface IStorage {
   markNotificationAsRead(id: number): Promise<Notification | undefined>;
   markAllNotificationsAsRead(recipientId: number): Promise<void>;
   getUnreadNotificationCount(recipientId: number): Promise<number>;
+  
+  // Template Categories CRUD
+  getTemplateCategories(): Promise<TemplateCategory[]>;
+  getTemplateCategory(id: number): Promise<TemplateCategory | undefined>;
+  createTemplateCategory(category: InsertTemplateCategory): Promise<TemplateCategory>;
+  updateTemplateCategory(id: number, category: UpdateTemplateCategory): Promise<TemplateCategory | undefined>;
+  deleteTemplateCategory(id: number): Promise<boolean>;
+  
+  // Templates CRUD
+  getTemplates(categoryId?: number): Promise<Template[]>;
+  getTemplate(id: number): Promise<Template | undefined>;
+  createTemplate(template: InsertTemplate): Promise<Template>;
+  updateTemplate(id: number, template: UpdateTemplate): Promise<Template | undefined>;
+  deleteTemplate(id: number): Promise<boolean>;
+  incrementTemplateUsage(id: number): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
@@ -79,38 +103,53 @@ export class MemStorage implements IStorage {
   private calendarEvents: Map<number, CalendarEvent>;
   private directories: Map<number, Directory>;
   private comments: Map<number, Comment>;
+  private teams: Map<number, Team>;
   private members: Map<number, Member>;
   private tasks: Map<number, Task>;
   private notifications: Map<number, Notification>;
+  private templateCategories: Map<number, TemplateCategory>;
+  private templates: Map<number, Template>;
   private currentId: number;
   private currentEventId: number;
   private currentDirectoryId: number;
   private currentCommentId: number;
+  private currentTeamId: number;
   private currentMemberId: number;
   private currentTaskId: number;
   private currentNotificationId: number;
+  private currentTemplateCategoryId: number;
+  private currentTemplateId: number;
 
   constructor() {
     this.wikiPages = new Map();
     this.calendarEvents = new Map();
     this.directories = new Map();
     this.comments = new Map();
+    this.teams = new Map();
     this.members = new Map();
     this.tasks = new Map();
     this.notifications = new Map();
+    this.templateCategories = new Map();
+    this.templates = new Map();
     this.currentId = 1;
     this.currentEventId = 1;
     this.currentDirectoryId = 1;
     this.currentCommentId = 1;
+    this.currentTeamId = 1;
     this.currentMemberId = 1;
     this.currentTaskId = 1;
     this.currentNotificationId = 1;
+    this.currentTemplateCategoryId = 1;
+    this.currentTemplateId = 1;
     this.initializeDefaultPages();
     this.initializeDefaultEvents();
     this.initializeDefaultDirectories();
+    this.initializeDefaultTeams();
     this.initializeDefaultMembers();
     this.initializeDefaultTasks();
     this.initializeDefaultNotifications();
+    this.initializeDefaultTemplateCategories();
+    this.initializeDefaultTemplates();
   }
 
   private initializeDefaultPages() {
@@ -679,6 +718,59 @@ Welcome to Team Alpha's dedicated workspace! Use this area to collaborate and or
     return this.comments.delete(id);
   }
 
+  // Teams methods
+  private initializeDefaultTeams() {
+    const defaultTeams: Omit<Team, 'id'>[] = [
+      {
+        name: "backend-team",
+        displayName: "Backend Team",
+        description: "백엔드 개발 및 서버 관리 팀",
+        password: "backend123",
+        icon: "Server",
+        color: "text-orange-500",
+        isActive: true,
+        order: 1,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        name: "frontend-team",
+        displayName: "Frontend Team",
+        description: "프론트엔드 개발 및 UI/UX 팀",
+        password: "frontend123",
+        icon: "Monitor",
+        color: "text-blue-500",
+        isActive: true,
+        order: 2,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        name: "devops-team",
+        displayName: "DevOps Team",
+        description: "인프라 및 배포 관리 팀",
+        password: "devops123",
+        icon: "Cloud",
+        color: "text-green-500",
+        isActive: true,
+        order: 3,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ];
+
+    defaultTeams.forEach(team => {
+      const id = this.currentTeamId++;
+      this.teams.set(id, { 
+        ...team, 
+        id,
+        description: team.description || null,
+        icon: team.icon || null,
+        color: team.color || null,
+      });
+    });
+  }
+
   // Members methods
   private initializeDefaultMembers() {
     // Initialize with some default team members
@@ -687,6 +779,7 @@ Welcome to Team Alpha's dedicated workspace! Use this area to collaborate and or
         name: "바이브코딩 팀장",
         email: "leader@vibecoding.com",
         role: "팀장",
+        teamId: 1, // Backend Team
         avatarUrl: "https://github.com/identicons/leader.png",
         bio: "바이브코딩 스터디를 이끌어가는 팀장입니다. 풀스택 개발과 팀 관리에 열정을 가지고 있습니다.",
         githubUsername: "vibecoding-leader", 
@@ -698,6 +791,7 @@ Welcome to Team Alpha's dedicated workspace! Use this area to collaborate and or
         name: "Frontend 개발자 A",
         email: "frontend-a@vibecoding.com",
         role: "프론트엔드 개발자",
+        teamId: 2, // Frontend Team
         avatarUrl: "https://github.com/identicons/frontend-a.png",
         bio: "사용자 경험에 중점을 둔 프론트엔드 개발자입니다. React와 TypeScript를 주로 사용합니다.",
         githubUsername: "frontend-developer-a",
@@ -709,6 +803,7 @@ Welcome to Team Alpha's dedicated workspace! Use this area to collaborate and or
         name: "Backend 개발자 B", 
         email: "backend-b@vibecoding.com",
         role: "백엔드 개발자",
+        teamId: 1, // Backend Team
         avatarUrl: "https://github.com/identicons/backend-b.png",
         bio: "서버 아키텍처와 API 설계에 관심이 많은 백엔드 개발자입니다.",
         githubUsername: "backend-developer-b",
@@ -722,6 +817,7 @@ Welcome to Team Alpha's dedicated workspace! Use this area to collaborate and or
       const member: Member = {
         id: this.currentMemberId++,
         ...memberData,
+        teamId: memberData.teamId || null,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -729,8 +825,67 @@ Welcome to Team Alpha's dedicated workspace! Use this area to collaborate and or
     });
   }
 
-  async getMembers(): Promise<Member[]> {
-    return Array.from(this.members.values()).filter(member => member.isActive);
+  // Teams CRUD methods
+  async getTeams(): Promise<Team[]> {
+    return Array.from(this.teams.values()).filter(team => team.isActive);
+  }
+
+  async getTeam(id: number): Promise<Team | undefined> {
+    return this.teams.get(id);
+  }
+
+  async getTeamByName(name: string): Promise<Team | undefined> {
+    return Array.from(this.teams.values()).find(team => team.name === name);
+  }
+
+  async createTeam(insertTeam: InsertTeam): Promise<Team> {
+    const id = this.currentTeamId++;
+    const now = new Date();
+    const team: Team = {
+      id,
+      name: insertTeam.name,
+      displayName: insertTeam.displayName,
+      description: insertTeam.description || null,
+      password: insertTeam.password || null,
+      icon: insertTeam.icon || null,
+      color: insertTeam.color || null,
+      isActive: insertTeam.isActive ?? true,
+      order: insertTeam.order || 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.teams.set(id, team);
+    return team;
+  }
+
+  async updateTeam(id: number, updateTeam: UpdateTeam): Promise<Team | undefined> {
+    const existingTeam = this.teams.get(id);
+    if (!existingTeam) return undefined;
+
+    const updated: Team = {
+      ...existingTeam,
+      ...updateTeam,
+      updatedAt: new Date(),
+    };
+    this.teams.set(id, updated);
+    return updated;
+  }
+
+  async deleteTeam(id: number): Promise<boolean> {
+    return this.teams.delete(id);
+  }
+
+  async verifyTeamPassword(teamName: string, password: string): Promise<boolean> {
+    const team = await this.getTeamByName(teamName);
+    return team?.password === password;
+  }
+
+  async getMembers(teamId?: number): Promise<Member[]> {
+    const allMembers = Array.from(this.members.values()).filter(member => member.isActive);
+    if (teamId) {
+      return allMembers.filter(member => member.teamId === teamId);
+    }
+    return allMembers;
   }
 
   async getMember(id: number): Promise<Member | undefined> {
@@ -749,6 +904,7 @@ Welcome to Team Alpha's dedicated workspace! Use this area to collaborate and or
       name: insertMember.name,
       email: insertMember.email,
       role: insertMember.role,
+      teamId: insertMember.teamId || null,
       avatarUrl: insertMember.avatarUrl || null,
       bio: insertMember.bio || null,
       githubUsername: insertMember.githubUsername || null,
@@ -1126,6 +1282,409 @@ Welcome to Team Alpha's dedicated workspace! Use this area to collaborate and or
     return Array.from(this.notifications.values())
       .filter(notification => notification.recipientId === recipientId && !notification.isRead)
       .length;
+  }
+
+  // Template Categories methods
+  private initializeDefaultTemplateCategories() {
+    const defaultCategories: Omit<TemplateCategory, 'id'>[] = [
+      {
+        name: "study",
+        displayName: "스터디 노트",
+        description: "학습 내용을 체계적으로 정리하는 템플릿",
+        icon: "BookOpen",
+        color: "text-blue-500",
+        order: 1,
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        name: "project",
+        displayName: "프로젝트 기획서",
+        description: "프로젝트 계획과 진행 상황을 관리하는 템플릿",
+        icon: "FolderOpen",
+        color: "text-green-500",
+        order: 2,
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        name: "meeting",
+        displayName: "회의록",
+        description: "회의 내용과 결정사항을 기록하는 템플릿",
+        icon: "Users",
+        color: "text-purple-500",
+        order: 3,
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        name: "retrospective",
+        displayName: "회고록",
+        description: "프로젝트나 스프린트 회고를 위한 템플릿",
+        icon: "RefreshCw",
+        color: "text-orange-500",
+        order: 4,
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ];
+
+    defaultCategories.forEach(category => {
+      const id = this.currentTemplateCategoryId++;
+      this.templateCategories.set(id, { 
+        ...category, 
+        id,
+        description: category.description || null,
+        icon: category.icon || null,
+        color: category.color || null,
+      });
+    });
+  }
+
+  private initializeDefaultTemplates() {
+    const defaultTemplates: Omit<Template, 'id'>[] = [
+      {
+        title: "일반 스터디 노트",
+        description: "기본적인 학습 내용 정리 템플릿",
+        content: `# 📚 스터디 노트
+
+## 📋 학습 정보
+- **주제**: 
+- **학습일**: {{date}}
+- **학습자**: {{author}}
+- **소요시간**: 
+
+## 🎯 학습 목표
+- [ ] 목표 1
+- [ ] 목표 2
+- [ ] 목표 3
+
+## 📖 학습 내용
+
+### 주요 개념
+- 
+
+### 핵심 포인트
+1. 
+2. 
+3. 
+
+### 예제 코드
+\`\`\`
+// 코드 예제
+\`\`\`
+
+## ❓ 질문사항
+- 
+
+## 💡 추가 학습 필요사항
+- [ ] 
+- [ ] 
+- [ ] 
+
+## 📝 복습 노트
+- 
+
+## 🔗 참고 자료
+- 
+
+---
+*이 노트는 {{date}}에 작성되었습니다.*`,
+        categoryId: 1, // study
+        tags: ["study", "note", "learning"],
+        author: "System",
+        isPublic: true,
+        usageCount: 0,
+        rating: 5,
+        thumbnail: null,
+        metadata: {},
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        title: "프로젝트 기획서",
+        description: "프로젝트 시작을 위한 기본 기획서 템플릿",
+        content: `# 🚀 프로젝트 기획서
+
+## 📋 프로젝트 개요
+- **프로젝트명**: 
+- **기간**: {{startDate}} ~ {{endDate}}
+- **팀원**: 
+- **담당자**: {{author}}
+
+## 🎯 프로젝트 목표
+### 주요 목표
+- 
+
+### 성공 지표
+- [ ] 
+- [ ] 
+- [ ] 
+
+## 📊 현재 상황 분석
+### 강점 (Strengths)
+- 
+
+### 약점 (Weaknesses)
+- 
+
+### 기회 (Opportunities)
+- 
+
+### 위협 (Threats)
+- 
+
+## 📅 일정 계획
+### Phase 1: 기획 ({{phase1Start}} ~ {{phase1End}})
+- [ ] 요구사항 분석
+- [ ] 기술 스택 선정
+- [ ] 아키텍처 설계
+
+### Phase 2: 개발 ({{phase2Start}} ~ {{phase2End}})
+- [ ] 기본 기능 구현
+- [ ] 핵심 기능 개발
+- [ ] 테스트 및 디버깅
+
+### Phase 3: 배포 ({{phase3Start}} ~ {{phase3End}})
+- [ ] 최종 테스트
+- [ ] 배포 준비
+- [ ] 런칭
+
+## 💰 예산 계획
+- **총 예산**: 
+- **개발 비용**: 
+- **운영 비용**: 
+- **마케팅 비용**: 
+
+## 🛠️ 기술 스택
+### Frontend
+- 
+
+### Backend
+- 
+
+### Database
+- 
+
+### DevOps
+- 
+
+## 👥 팀 구성
+| 역할 | 담당자 | 주요 업무 |
+|------|--------|-----------|
+| 프로젝트 매니저 | | |
+| 개발자 | | |
+| 디자이너 | | |
+| QA | | |
+
+## ⚠️ 리스크 관리
+| 리스크 | 확률 | 영향도 | 대응 방안 |
+|--------|------|--------|-----------|
+| | | | |
+
+## 📈 성과 측정
+- **KPI 1**: 
+- **KPI 2**: 
+- **KPI 3**: 
+
+---
+*작성일: {{date}} | 작성자: {{author}}*`,
+        categoryId: 2, // project
+        tags: ["project", "planning", "management"],
+        author: "System",
+        isPublic: true,
+        usageCount: 0,
+        rating: 5,
+        thumbnail: null,
+        metadata: {},
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        title: "회의록 템플릿",
+        description: "회의 내용을 체계적으로 기록하는 템플릿",
+        content: `# 📝 회의록
+
+## 📋 회의 정보
+- **회의명**: 
+- **일시**: {{date}} {{time}}
+- **장소**: 
+- **참석자**: 
+- **작성자**: {{author}}
+
+## 🎯 회의 목적
+- 
+
+## 📋 안건
+1. 
+2. 
+3. 
+
+## 💬 논의 내용
+
+### 안건 1: 
+**발표자**: 
+**내용**: 
+**논의**: 
+**결론**: 
+
+### 안건 2: 
+**발표자**: 
+**내용**: 
+**논의**: 
+**결론**: 
+
+### 안건 3: 
+**발표자**: 
+**내용**: 
+**논의**: 
+**결론**: 
+
+## ✅ 결정사항
+- [ ] 
+- [ ] 
+- [ ] 
+
+## 📋 할 일 (Action Items)
+| 담당자 | 할 일 | 마감일 | 상태 |
+|--------|-------|--------|------|
+| | | | |
+| | | | |
+| | | | |
+
+## ❓ 다음 회의
+- **일시**: 
+- **안건**: 
+- **준비사항**: 
+
+## 📝 특이사항
+- 
+
+---
+*회의록 작성일: {{date}} | 작성자: {{author}}*`,
+        categoryId: 3, // meeting
+        tags: ["meeting", "minutes", "record"],
+        author: "System",
+        isPublic: true,
+        usageCount: 0,
+        rating: 5,
+        thumbnail: null,
+        metadata: {},
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ];
+
+    defaultTemplates.forEach(template => {
+      const id = this.currentTemplateId++;
+      this.templates.set(id, { 
+        ...template, 
+        id,
+        description: template.description || null,
+        tags: template.tags || [],
+        metadata: template.metadata || {},
+        thumbnail: template.thumbnail || null,
+      });
+    });
+  }
+
+  // Template Categories CRUD
+  async getTemplateCategories(): Promise<TemplateCategory[]> {
+    return Array.from(this.templateCategories.values()).sort((a, b) => a.order - b.order);
+  }
+
+  async getTemplateCategory(id: number): Promise<TemplateCategory | undefined> {
+    return this.templateCategories.get(id);
+  }
+
+  async createTemplateCategory(category: InsertTemplateCategory): Promise<TemplateCategory> {
+    const id = this.currentTemplateCategoryId++;
+    const now = new Date();
+    const newCategory: TemplateCategory = {
+      id,
+      ...category,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.templateCategories.set(id, newCategory);
+    return newCategory;
+  }
+
+  async updateTemplateCategory(id: number, category: UpdateTemplateCategory): Promise<TemplateCategory | undefined> {
+    const existing = this.templateCategories.get(id);
+    if (!existing) return undefined;
+
+    const updated: TemplateCategory = {
+      ...existing,
+      ...category,
+      updatedAt: new Date(),
+    };
+    this.templateCategories.set(id, updated);
+    return updated;
+  }
+
+  async deleteTemplateCategory(id: number): Promise<boolean> {
+    return this.templateCategories.delete(id);
+  }
+
+  // Templates CRUD
+  async getTemplates(categoryId?: number): Promise<Template[]> {
+    let templates = Array.from(this.templates.values());
+    if (categoryId) {
+      templates = templates.filter(t => t.categoryId === categoryId);
+    }
+    return templates.sort((a, b) => b.usageCount - a.usageCount);
+  }
+
+  async getTemplate(id: number): Promise<Template | undefined> {
+    return this.templates.get(id);
+  }
+
+  async createTemplate(template: InsertTemplate): Promise<Template> {
+    const id = this.currentTemplateId++;
+    const now = new Date();
+    const newTemplate: Template = {
+      id,
+      ...template,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.templates.set(id, newTemplate);
+    return newTemplate;
+  }
+
+  async updateTemplate(id: number, template: UpdateTemplate): Promise<Template | undefined> {
+    const existing = this.templates.get(id);
+    if (!existing) return undefined;
+
+    const updated: Template = {
+      ...existing,
+      ...template,
+      updatedAt: new Date(),
+    };
+    this.templates.set(id, updated);
+    return updated;
+  }
+
+  async deleteTemplate(id: number): Promise<boolean> {
+    return this.templates.delete(id);
+  }
+
+  async incrementTemplateUsage(id: number): Promise<boolean> {
+    const template = this.templates.get(id);
+    if (!template) return false;
+
+    const updated: Template = {
+      ...template,
+      usageCount: template.usageCount + 1,
+      updatedAt: new Date(),
+    };
+    this.templates.set(id, updated);
+    return true;
   }
 }
 
@@ -1731,9 +2290,50 @@ export class DBStorage implements IStorage {
   }
 
   // Members CRUD
-  async getMembers(): Promise<Member[]> {
-    const result = await this.db.select().from(members).where(eq(members.isActive, true)).orderBy(asc(members.name));
+  // Teams CRUD methods
+  async getTeams(): Promise<Team[]> {
+    const result = await this.db.select().from(teams).where(eq(teams.isActive, true)).orderBy(asc(teams.order));
     return result;
+  }
+
+  async getTeam(id: number): Promise<Team | undefined> {
+    const result = await this.db.select().from(teams).where(eq(teams.id, id));
+    return result[0];
+  }
+
+  async getTeamByName(name: string): Promise<Team | undefined> {
+    const result = await this.db.select().from(teams).where(eq(teams.name, name));
+    return result[0];
+  }
+
+  async createTeam(insertTeam: InsertTeam): Promise<Team> {
+    const result = await this.db.insert(teams).values(insertTeam).returning();
+    return result[0];
+  }
+
+  async updateTeam(id: number, updateTeam: UpdateTeam): Promise<Team | undefined> {
+    const result = await this.db.update(teams).set(updateTeam).where(eq(teams.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteTeam(id: number): Promise<boolean> {
+    const result = await this.db.delete(teams).where(eq(teams.id, id));
+    return result.rowCount > 0;
+  }
+
+  async verifyTeamPassword(teamName: string, password: string): Promise<boolean> {
+    const result = await this.db.select().from(teams).where(and(eq(teams.name, teamName), eq(teams.password, password)));
+    return result.length > 0;
+  }
+
+  async getMembers(teamId?: number): Promise<Member[]> {
+    if (teamId) {
+      const result = await this.db.select().from(members).where(and(eq(members.isActive, true), eq(members.teamId, teamId))).orderBy(asc(members.name));
+      return result;
+    } else {
+      const result = await this.db.select().from(members).where(eq(members.isActive, true)).orderBy(asc(members.name));
+      return result;
+    }
   }
 
   async getMember(id: number): Promise<Member | undefined> {
@@ -1987,6 +2587,87 @@ export class DBStorage implements IStorage {
       .from(notifications)
       .where(and(eq(notifications.recipientId, recipientId), eq(notifications.isRead, false)));
     return result[0].count;
+  }
+
+  // Template Categories CRUD (DBStorage implementation)
+  async getTemplateCategories(): Promise<TemplateCategory[]> {
+    return await this.db
+      .select()
+      .from(templateCategories)
+      .where(eq(templateCategories.isActive, true))
+      .orderBy(asc(templateCategories.order))
+      .execute();
+  }
+
+  async getTemplateCategory(id: number): Promise<TemplateCategory | undefined> {
+    const result = await this.db.select().from(templateCategories).where(eq(templateCategories.id, id)).limit(1);
+    return result[0];
+  }
+
+  async createTemplateCategory(category: InsertTemplateCategory): Promise<TemplateCategory> {
+    const result = await this.db.insert(templateCategories).values(category).returning();
+    return result[0];
+  }
+
+  async updateTemplateCategory(id: number, category: UpdateTemplateCategory): Promise<TemplateCategory | undefined> {
+    const result = await this.db
+      .update(templateCategories)
+      .set({ ...category, updatedAt: new Date() })
+      .where(eq(templateCategories.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteTemplateCategory(id: number): Promise<boolean> {
+    const result = await this.db.delete(templateCategories).where(eq(templateCategories.id, id));
+    return result.rowCount > 0;
+  }
+
+  // Templates CRUD (DBStorage implementation)
+  async getTemplates(categoryId?: number): Promise<Template[]> {
+    let query = this.db.select().from(templates);
+    
+    if (categoryId) {
+      query = query.where(eq(templates.categoryId, categoryId));
+    }
+    
+    return await query.orderBy(desc(templates.usageCount)).execute();
+  }
+
+  async getTemplate(id: number): Promise<Template | undefined> {
+    const result = await this.db.select().from(templates).where(eq(templates.id, id)).limit(1);
+    return result[0];
+  }
+
+  async createTemplate(template: InsertTemplate): Promise<Template> {
+    const result = await this.db.insert(templates).values(template).returning();
+    return result[0];
+  }
+
+  async updateTemplate(id: number, template: UpdateTemplate): Promise<Template | undefined> {
+    const result = await this.db
+      .update(templates)
+      .set({ ...template, updatedAt: new Date() })
+      .where(eq(templates.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteTemplate(id: number): Promise<boolean> {
+    const result = await this.db.delete(templates).where(eq(templates.id, id));
+    return result.rowCount > 0;
+  }
+
+  async incrementTemplateUsage(id: number): Promise<boolean> {
+    const result = await this.db
+      .update(templates)
+      .set({ 
+        usageCount: sql`usage_count + 1`,
+        updatedAt: new Date() 
+      })
+      .where(eq(templates.id, id))
+      .returning();
+    return result.length > 0;
   }
 }
 

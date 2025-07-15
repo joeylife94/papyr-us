@@ -93,53 +93,77 @@ CREATE TABLE calendar_events (
 );
 ```
 
+#### Notification 테이블
+```sql
+CREATE TABLE notifications (
+  id SERIAL PRIMARY KEY,
+  user_id VARCHAR(100) NOT NULL,
+  type VARCHAR(50) NOT NULL, -- 'comment', 'mention', 'deadline', 'system'
+  title VARCHAR(255) NOT NULL,
+  message TEXT,
+  is_read BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
 ## API 설계
 
 ### RESTful API 엔드포인트
 
+#### API 경로 구조
+모든 API 엔드포인트는 `/papyr-us/api/` 접두사를 사용하여 일관성을 유지합니다.
+
 #### Pages API
 ```
-GET    /api/pages
-POST   /api/pages
-GET    /api/pages/:id
-PUT    /api/pages/:id
-DELETE /api/pages/:id
-GET    /api/pages/slug/:slug
+GET    /papyr-us/api/pages
+POST   /papyr-us/api/pages
+GET    /papyr-us/api/pages/:id
+PUT    /papyr-us/api/pages/:id
+DELETE /papyr-us/api/pages/:id
+GET    /papyr-us/api/pages/slug/:slug
 ```
 
 #### Folders API
 ```
-GET    /api/folders
-GET    /api/folders/:folder/pages
+GET    /papyr-us/api/folders
+GET    /papyr-us/api/folders/:folder/pages
 ```
 
 #### Admin API
 ```
-POST   /api/admin/auth
-GET    /api/admin/directories
-POST   /api/admin/directories
-PUT    /api/admin/directories/:id
-DELETE /api/admin/directories/:id
+POST   /papyr-us/api/admin/auth
+GET    /papyr-us/api/admin/directories
+POST   /papyr-us/api/admin/directories
+PUT    /papyr-us/api/admin/directories/:id
+DELETE /papyr-us/api/admin/directories/:id
 ```
 
 #### Calendar API
 ```
-GET    /api/calendar/:teamId
-POST   /api/calendar
-PUT    /api/calendar/:id
-DELETE /api/calendar/:id
+GET    /papyr-us/api/calendar/:teamId
+POST   /papyr-us/api/calendar
+PUT    /papyr-us/api/calendar/:id
+DELETE /papyr-us/api/calendar/:id
 ```
 
 #### Directory Password Verification
 ```
-POST   /api/directory/verify      # 디렉토리 패스워드 검증
+POST   /papyr-us/api/directory/verify      # 디렉토리 패스워드 검증
+```
+
+#### Notifications API
+```
+GET    /papyr-us/api/notifications          # 알림 목록 조회
+POST   /papyr-us/api/notifications          # 새 알림 생성
+PATCH  /papyr-us/api/notifications/:id/read # 읽음 처리
+DELETE /papyr-us/api/notifications/:id      # 알림 삭제
 ```
 
 #### AI Assistant API (계획됨)
 ```
-POST   /api/ai/generate           # AI 콘텐츠 생성
-POST   /api/ai/summarize          # 문서 요약
-POST   /api/ai/suggest            # 개선 제안
+POST   /papyr-us/api/ai/generate           # AI 콘텐츠 생성
+POST   /papyr-us/api/ai/summarize          # 문서 요약
+POST   /papyr-us/api/ai/suggest            # 개선 제안
 ```
 
 ### 응답 형식

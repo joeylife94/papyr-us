@@ -32,6 +32,7 @@ interface UploadedFile {
 interface FileUploadProps {
   onFilesUploaded?: (files: UploadedFile[]) => void;
   onMarkdownInsert?: (markdown: string) => void;
+  teamName?: string;
   accept?: string;
   maxFiles?: number;
   maxSize?: number;
@@ -72,6 +73,7 @@ const generateMarkdown = (file: UploadedFile): string => {
 export function FileUpload({ 
   onFilesUploaded, 
   onMarkdownInsert,
+  teamName,
   accept = "image/*,.pdf,.doc,.docx,.txt,.md,.zip",
   maxFiles = 5,
   maxSize = 10 * 1024 * 1024, // 10MB
@@ -89,8 +91,12 @@ export function FileUpload({
       files.forEach(file => {
         formData.append('files', file);
       });
+      
+      if (teamName) {
+        formData.append('teamId', teamName);
+      }
 
-      const response = await fetch('/api/upload', {
+      const response = await fetch('/papyr-us/api/upload', {
         method: 'POST',
         body: formData,
       });
