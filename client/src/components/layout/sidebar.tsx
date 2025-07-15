@@ -77,15 +77,25 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
     },
   });
 
-  const { data: teams = [] } = useQuery<any[]>({
+  const { data: teams = [], isLoading: teamsLoading, error: teamsError } = useQuery<any[]>({
     queryKey: ["/papyr-us/api/teams"],
     queryFn: async () => {
-      const response = await fetch("/papyr-us/api/teams");
-      if (!response.ok) {
+      try {
+        const response = await fetch("/papyr-us/api/teams");
+        if (!response.ok) {
+          console.error("Failed to fetch teams:", response.status, response.statusText);
+          return [];
+        }
+        const data = await response.json();
+        console.log("Fetched teams:", data);
+        return data;
+      } catch (error) {
+        console.error("Error fetching teams:", error);
         return [];
       }
-      return response.json();
     },
+    retry: 3,
+    retryDelay: 1000,
   });
 
   // Query calendar events for search filtering
@@ -211,12 +221,28 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
           </div>
 
           {/* Teams Section */}
-          {teams.length > 0 && (
-            <div className="mb-6">
-              <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 flex items-center">
-                <Users className="h-4 w-4 text-emerald-500 mr-2" />
-                Teams
-              </h3>
+          <div className="mb-6">
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 flex items-center">
+              <Users className="h-4 w-4 text-emerald-500 mr-2" />
+              Teams
+              {teamsLoading && (
+                <span className="ml-2 text-xs text-slate-400">(로딩 중...)</span>
+              )}
+            </h3>
+            
+            {teamsError && (
+              <div className="text-xs text-red-500 mb-2">
+                팀 목록을 불러오는데 실패했습니다.
+              </div>
+            )}
+            
+            {teamsLoading ? (
+              <div className="space-y-2">
+                {[1, 2].map((i) => (
+                  <div key={i} className="h-10 bg-slate-200 dark:bg-slate-700 rounded-lg animate-pulse" />
+                ))}
+              </div>
+            ) : (
               <div className="space-y-2">
                 {teams.map((team) => {
                   const Icon = team.icon ? (() => {
@@ -316,8 +342,14 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                   );
                 })}
               </div>
-            </div>
-          )}
+            )}
+            
+            {!teamsLoading && teams.length === 0 && (
+              <div className="text-xs text-slate-400 italic p-3 bg-slate-50 dark:bg-slate-800/30 rounded-lg">
+                팀이 없습니다. 관리자 페이지에서 팀을 추가하세요.
+              </div>
+            )}
+          </div>
 
           {/* Search */}
           <div className="mb-6">

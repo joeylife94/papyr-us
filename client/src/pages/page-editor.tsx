@@ -14,8 +14,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { WikiPage, InsertWikiPage } from "@shared/schema";
+import { WikiPage, InsertWikiPage, Block } from "@shared/schema";
 import { MarkdownRenderer } from "@/components/wiki/markdown-renderer";
+import { BlockEditor } from "@/components/blocks/block-editor";
 
 const pageFormSchema = z.object({
   title: z.string().min(1, "Title is required"),
@@ -39,6 +40,7 @@ export default function PageEditor({ pageId, initialFolder = "docs", teamName }:
   const urlTeamName = teamName || (currentLocation.pathname.includes('/teams/') ? currentLocation.pathname.split('/teams/')[1]?.split('/')[0] : undefined);
   const [, navigate] = useLocation();
   const [isPreview, setIsPreview] = useState(false);
+  const [blocks, setBlocks] = useState<Block[]>([]);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -76,6 +78,22 @@ export default function PageEditor({ pageId, initialFolder = "docs", teamName }:
         tags: existingPage.tags.join(", "),
         author: existingPage.author,
       });
+      
+      // Load blocks if available, otherwise convert content to blocks
+      if (existingPage.blocks && Array.isArray(existingPage.blocks) && existingPage.blocks.length > 0) {
+        setBlocks(existingPage.blocks as Block[]);
+      } else {
+        // Convert existing content to blocks
+        const defaultBlock: Block = {
+          id: `block_${Date.now()}`,
+          type: 'paragraph',
+          content: existingPage.content,
+          properties: {},
+          order: 0,
+          children: [],
+        };
+        setBlocks([defaultBlock]);
+      }
     } else if (templateData) {
       // Apply template data
       form.reset({
@@ -85,6 +103,17 @@ export default function PageEditor({ pageId, initialFolder = "docs", teamName }:
         tags: templateData.tags?.join(", ") || "",
         author: "User",
       });
+      
+      // Convert template content to blocks
+      const defaultBlock: Block = {
+        id: `block_${Date.now()}`,
+        type: 'paragraph',
+        content: templateData.content || "",
+        properties: {},
+        order: 0,
+        children: [],
+      };
+      setBlocks([defaultBlock]);
     }
   }, [existingPage, templateData, initialFolder, form]);
 
@@ -161,11 +190,15 @@ export default function PageEditor({ pageId, initialFolder = "docs", teamName }:
       .map(tag => tag.trim())
       .filter(tag => tag.length > 0);
 
+    // Convert blocks to content for backward compatibility
+    const content = blocks.map(block => block.content).join('\n\n');
+
     if (pageId) {
       // Update existing page
       updatePageMutation.mutate({
         title: data.title,
-        content: data.content,
+        content,
+        blocks,
         folder: data.folder,
         tags,
         author: data.author,
@@ -175,7 +208,8 @@ export default function PageEditor({ pageId, initialFolder = "docs", teamName }:
       createPageMutation.mutate({
         title: data.title,
         slug,
-        content: data.content,
+        content,
+        blocks,
         folder: data.folder,
         tags,
         author: data.author,
@@ -333,13 +367,15 @@ export default function PageEditor({ pageId, initialFolder = "docs", teamName }:
                   name="content"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Content (Markdown)</FormLabel>
+                      <FormLabel>Content (Block Editor)</FormLabel>
                       <FormControl>
-                        <Textarea
-                          placeholder="Write your content in markdown..."
-                          className="min-h-[400px] font-mono"
-                          {...field}
-                        />
+                        <div className="border rounded-md">
+                          <BlockEditor
+                            blocks={blocks}
+                            onChange={setBlocks}
+                            teamName={urlTeamName}
+                          />
+                        </div>
                       </FormControl>
                       <FormMessage />
                     </FormItem>

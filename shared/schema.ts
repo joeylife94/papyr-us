@@ -2,11 +2,43 @@ import { pgTable, text, serial, integer, boolean, timestamp, jsonb } from "drizz
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+// Block types for the new block-based editor
+export const blockTypes = [
+  'heading1', 'heading2', 'heading3', // 제목 블록
+  'paragraph', // 단락 블록
+  'checkbox', // 체크박스 블록
+  'table', // 테이블 블록
+  'image', // 이미지 블록
+  'code', // 코드 블록
+  'quote', // 인용구 블록
+  'bulleted_list', // 글머리 기호 목록
+  'numbered_list', // 번호 목록
+  'toggle', // 토글 블록
+  'mention', // 멘션 블록
+  'comment', // 댓글 블록
+] as const;
+
+export type BlockType = typeof blockTypes[number];
+
+// Block schema for individual content blocks
+export const blockSchema = z.object({
+  id: z.string(),
+  type: z.enum(blockTypes),
+  content: z.string().default(''),
+  properties: z.record(z.any()).default({}),
+  order: z.number(),
+  parentId: z.string().optional(),
+  children: z.array(z.string()).default([]), // child block IDs
+});
+
+export type Block = z.infer<typeof blockSchema>;
+
 export const wikiPages = pgTable("wiki_pages", {
   id: serial("id").primaryKey(),
   title: text("title").notNull(),
   slug: text("slug").notNull().unique(),
   content: text("content").notNull(),
+  blocks: jsonb("blocks").default([]), // New field for block-based content
   folder: text("folder").notNull(), // docs, ideas, members, logs, archive, team1, team2, etc.
   tags: text("tags").array().notNull().default([]),
   author: text("author").notNull(),

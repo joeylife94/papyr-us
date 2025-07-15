@@ -20,9 +20,26 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
   if (teamName) queryParams.append('teamId', teamName);
   queryParams.append('limit', '12');
 
-  const { data: filteredPages, isLoading } = useQuery<{ pages: WikiPage[]; total: number }>({
+  const { data: filteredPages, isLoading, error } = useQuery<{ pages: WikiPage[]; total: number }>({
     queryKey: ['/papyr-us/api/pages', searchQuery, selectedFolder, teamName],
-    queryFn: () => fetch(`/papyr-us/api/pages?${queryParams.toString()}`).then(res => res.json()),
+    queryFn: async () => {
+      try {
+        const response = await fetch(`/papyr-us/api/pages?${queryParams.toString()}`);
+        if (!response.ok) {
+          console.error('API Error:', response.status, response.statusText);
+          throw new Error(`API Error: ${response.status}`);
+        }
+        const data = await response.json();
+        console.log('API Response:', data);
+        return data;
+      } catch (error) {
+        console.error('Fetch error:', error);
+        // Return empty data structure to prevent undefined errors
+        return { pages: [], total: 0 };
+      }
+    },
+    retry: 3,
+    retryDelay: 1000,
   });
 
   return (
@@ -104,9 +121,19 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
               </Card>
             ))}
           </div>
+        ) : error ? (
+          <div className="text-center py-12">
+            <div className="text-red-500 mb-4">
+              <Book className="h-12 w-12 mx-auto mb-2" />
+              <p className="text-lg font-medium">데이터를 불러오는데 실패했습니다</p>
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                잠시 후 다시 시도해주세요.
+              </p>
+            </div>
+          </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredPages?.pages.map((page: WikiPage) => (
+            {filteredPages?.pages?.map((page: WikiPage) => (
               <Link key={page.id} href={`/papyr-us/page/${page.slug}`}>
                 <Card className="group hover:shadow-lg transition-all duration-200 border-l-4 border-l-primary/20 hover:border-l-primary cursor-pointer">
                     <CardHeader>
@@ -152,7 +179,7 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
           </div>
         )}
 
-        {filteredPages?.pages.length === 0 && !isLoading && (
+        {filteredPages?.pages?.length === 0 && !isLoading && !error && (
           <div className="text-center py-12">
             <Book className="h-12 w-12 text-slate-400 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-slate-900 dark:text-white mb-2">
