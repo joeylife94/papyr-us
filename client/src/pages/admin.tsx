@@ -50,7 +50,7 @@ export default function AdminPage() {
     const stored = sessionStorage.getItem("adminAuth");
     if (stored) {
       // Verify stored password with server
-      fetch("/api/admin/auth", {
+      fetch("/papyr-us/api/admin/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password: stored }),
@@ -66,7 +66,7 @@ export default function AdminPage() {
 
   const handleAuth = async () => {
     try {
-      const response = await fetch("/api/admin/auth", {
+      const response = await fetch("/papyr-us/api/admin/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password: authPassword }),
@@ -96,7 +96,7 @@ export default function AdminPage() {
   };
 
   const { data: directories = [], refetch } = useQuery<Directory[]>({
-    queryKey: ["/api/admin/directories"],
+            queryKey: ["/papyr-us/api/admin/directories"],
     queryFn: async () => {
       const storedPassword = sessionStorage.getItem("adminAuth") || "";
       const response = await fetch(`/api/admin/directories?adminPassword=${storedPassword}`);
@@ -109,7 +109,7 @@ export default function AdminPage() {
   const createDirectoryMutation = useMutation({
     mutationFn: async (data: InsertDirectory) => {
       const storedPassword = sessionStorage.getItem("adminAuth") || "";
-      const response = await fetch("/api/admin/directories", {
+              const response = await fetch("/papyr-us/api/admin/directories", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...data, adminPassword: storedPassword }),

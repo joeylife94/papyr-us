@@ -4,6 +4,7 @@ import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SearchBar } from "@/components/wiki/search-bar";
+import { NotificationBell } from "@/components/ui/notification-bell";
 import { Moon, Sun, Settings, Menu, Search, ScrollText } from "lucide-react";
 
 interface HeaderProps {
@@ -56,6 +57,7 @@ export function Header({ onToggleSidebar, searchQuery, onSearchChange }: HeaderP
           >
             <Search className="h-5 w-5" />
           </Button>
+          <NotificationBell userId={1} />
           <Button
             variant="ghost"
             size="icon"

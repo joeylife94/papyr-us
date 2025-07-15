@@ -120,7 +120,7 @@ export async function processUploadedFile(file: Express.Multer.File): Promise<{
       originalName: file.originalname,
       size: stats.size,
       mimetype: file.mimetype,
-      url: `/api/uploads/images/${uniqueFilename}`,
+      url: `/papyr-us/api/uploads/images/${uniqueFilename}`,
       path: processedImagePath
     };
   } else {
@@ -133,7 +133,7 @@ export async function processUploadedFile(file: Express.Multer.File): Promise<{
       originalName: file.originalname,
       size: file.size,
       mimetype: file.mimetype,
-      url: `/api/uploads/files/${uniqueFilename}`,
+      url: `/papyr-us/api/uploads/files/${uniqueFilename}`,
       path: filePath
     };
   }
@@ -201,7 +201,7 @@ export async function listUploadedFiles(): Promise<{
         .filter(file => file !== '.gitkeep')
         .map(async (filename) => {
           const info = await getFileInfo(filename, true);
-          return info ? { ...info, url: `/api/uploads/images/${filename}` } : null;
+          return info ? { ...info, url: `/papyr-us/api/uploads/images/${filename}` } : null;
         })
     );
 
@@ -210,7 +210,7 @@ export async function listUploadedFiles(): Promise<{
         .filter(file => file !== '.gitkeep')
         .map(async (filename) => {
           const info = await getFileInfo(filename, false);
-          return info ? { ...info, url: `/api/uploads/files/${filename}` } : null;
+          return info ? { ...info, url: `/papyr-us/api/uploads/files/${filename}` } : null;
         })
     );
 

@@ -52,9 +52,9 @@ interface TeamProgressStats {
 export function DashboardPage() {
   // Fetch dashboard overview data
   const { data: overview, isLoading: overviewLoading } = useQuery<DashboardOverview>({
-    queryKey: ['/api/dashboard/overview'],
+    queryKey: ['/papyr-us/api/dashboard/overview'],
     queryFn: async () => {
-      const response = await fetch('/api/dashboard/overview');
+      const response = await fetch('/papyr-us/api/dashboard/overview');
       if (!response.ok) {
         throw new Error('Failed to fetch dashboard overview');
       }
@@ -64,9 +64,9 @@ export function DashboardPage() {
 
   // Fetch team progress stats
   const { data: team1Stats, isLoading: team1Loading } = useQuery<TeamProgressStats[]>({
-    queryKey: ['/api/dashboard/team/team1'],
+    queryKey: ['/papyr-us/api/dashboard/team/team1'],
     queryFn: async () => {
-      const response = await fetch('/api/dashboard/team/team1');
+      const response = await fetch('/papyr-us/api/dashboard/team/team1');
       if (!response.ok) {
         throw new Error('Failed to fetch team1 stats');
       }
@@ -75,9 +75,9 @@ export function DashboardPage() {
   });
 
   const { data: team2Stats, isLoading: team2Loading } = useQuery<TeamProgressStats[]>({
-    queryKey: ['/api/dashboard/team/team2'],
+    queryKey: ['/papyr-us/api/dashboard/team/team2'],
     queryFn: async () => {
-      const response = await fetch('/api/dashboard/team/team2');
+      const response = await fetch('/papyr-us/api/dashboard/team/team2');
       if (!response.ok) {
         throw new Error('Failed to fetch team2 stats');
       }

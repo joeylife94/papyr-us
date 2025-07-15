@@ -44,7 +44,7 @@ export default function PageEditor({ pageId, initialFolder = "docs" }: PageEdito
   });
 
   const { data: folders = [] } = useQuery<string[]>({
-    queryKey: ["/api/folders"],
+          queryKey: ["/papyr-us/api/folders"],
   });
 
   const form = useForm<PageFormData>({
@@ -84,8 +84,8 @@ export default function PageEditor({ pageId, initialFolder = "docs" }: PageEdito
       return response.json();
     },
     onSuccess: (newPage: WikiPage) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/pages"] });
-      queryClient.invalidateQueries({ queryKey: [`/api/folders/${newPage.folder}/pages`] });
+      queryClient.invalidateQueries({ queryKey: ["/papyr-us/api/pages"] });
+      queryClient.invalidateQueries({ queryKey: [`/papyr-us/api/folders/${newPage.folder}/pages`] });
       toast({
         title: "Page created",
         description: "Your new page has been created successfully.",
@@ -114,9 +114,9 @@ export default function PageEditor({ pageId, initialFolder = "docs" }: PageEdito
       return response.json();
     },
     onSuccess: (updatedPage: WikiPage) => {
-      queryClient.invalidateQueries({ queryKey: [`/api/pages/${pageId}`] });
-      queryClient.invalidateQueries({ queryKey: ["/api/pages"] });
-      queryClient.invalidateQueries({ queryKey: [`/api/folders/${updatedPage.folder}/pages`] });
+      queryClient.invalidateQueries({ queryKey: [`/papyr-us/api/pages/${pageId}`] });
+      queryClient.invalidateQueries({ queryKey: ["/papyr-us/api/pages"] });
+      queryClient.invalidateQueries({ queryKey: [`/papyr-us/api/folders/${updatedPage.folder}/pages`] });
       toast({
         title: "Page updated",
         description: "Your changes have been saved successfully.",

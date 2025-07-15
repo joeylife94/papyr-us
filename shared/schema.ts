@@ -161,3 +161,61 @@ export const progressStats = pgTable("progress_stats", {
   lastActiveAt: timestamp("last_active_at"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
+
+// Tasks schema for assignment tracking
+export const tasks = pgTable("tasks", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  description: text("description"),
+  status: text("status").notNull().default("todo"), // todo, in_progress, review, done
+  priority: integer("priority").notNull().default(3), // 1-5 (1: highest, 5: lowest)
+  assignedTo: integer("assigned_to").references(() => members.id, { onDelete: "set null" }),
+  teamId: text("team_id").notNull(), // team1, team2, etc.
+  dueDate: timestamp("due_date"),
+  estimatedHours: integer("estimated_hours"), // 예상 소요 시간
+  actualHours: integer("actual_hours"), // 실제 소요 시간
+  progress: integer("progress").notNull().default(0), // 0-100%
+  tags: text("tags").array().notNull().default([]),
+  linkedPageId: integer("linked_page_id").references(() => wikiPages.id, { onDelete: "set null" }),
+  createdBy: integer("created_by").references(() => members.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertTaskSchema = createInsertSchema(tasks).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateTaskSchema = insertTaskSchema.partial();
+
+export type InsertTask = z.infer<typeof insertTaskSchema>;
+export type UpdateTask = z.infer<typeof updateTaskSchema>;
+export type Task = typeof tasks.$inferSelect;
+
+// Notifications schema
+export const notifications = pgTable("notifications", {
+  id: serial("id").primaryKey(),
+  type: text("type").notNull(), // comment, mention, task_due, task_assigned
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  recipientId: integer("recipient_id").notNull().references(() => members.id, { onDelete: "cascade" }),
+  senderId: integer("sender_id").references(() => members.id, { onDelete: "set null" }),
+  relatedPageId: integer("related_page_id").references(() => wikiPages.id, { onDelete: "cascade" }),
+  relatedTaskId: integer("related_task_id").references(() => tasks.id, { onDelete: "cascade" }),
+  relatedCommentId: integer("related_comment_id").references(() => comments.id, { onDelete: "cascade" }),
+  isRead: boolean("is_read").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertNotificationSchema = createInsertSchema(notifications).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const updateNotificationSchema = insertNotificationSchema.partial();
+
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+export type UpdateNotification = z.infer<typeof updateNotificationSchema>;
+export type Notification = typeof notifications.$inferSelect;

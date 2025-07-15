@@ -15,6 +15,7 @@ import AdminPage from "@/pages/admin";
 import Members from "@/pages/members";
 import FileManager from "@/pages/file-manager";
 import { DashboardPage } from "@/pages/dashboard";
+import { TasksPage } from "@/pages/tasks";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -76,6 +77,8 @@ function Router() {
               <Route path="/papyr-us/files" component={FileManager} />
               
               <Route path="/papyr-us/dashboard" component={DashboardPage} />
+              
+              <Route path="/papyr-us/tasks" component={TasksPage} />
               
               <Route component={NotFound} />
             </Switch>

@@ -36,7 +36,7 @@ export default function WikiPageView() {
 
 
   const { data: page, isLoading, error } = useQuery<WikiPage>({
-    queryKey: [`/api/pages/slug/${slug}`],
+    queryKey: [`/papyr-us/api/pages/slug/${slug}`],
     enabled: !!slug,
   });
 

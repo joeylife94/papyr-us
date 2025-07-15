@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage.ts";
 import { config } from "./config.ts";
-import { insertWikiPageSchema, updateWikiPageSchema, searchSchema, insertCalendarEventSchema, updateCalendarEventSchema, insertDirectorySchema, updateDirectorySchema, insertCommentSchema, updateCommentSchema, insertMemberSchema, updateMemberSchema } from "../shared/schema.ts";
+import { insertWikiPageSchema, updateWikiPageSchema, searchSchema, insertCalendarEventSchema, updateCalendarEventSchema, insertDirectorySchema, updateDirectorySchema, insertCommentSchema, updateCommentSchema, insertMemberSchema, updateMemberSchema, insertTaskSchema, updateTaskSchema, insertNotificationSchema, updateNotificationSchema } from "../shared/schema.ts";
 import { upload, processUploadedFile, deleteUploadedFile, listUploadedFiles, getFileInfo } from "./services/upload.ts";
 import path from "path";
 import { existsSync } from "fs";
@@ -15,7 +15,7 @@ interface MulterRequest extends Request {
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Wiki Pages API
-  app.get("/api/pages", async (req, res) => {
+  app.get("/papyr-us/api/pages", async (req, res) => {
     try {
       const searchParams = searchSchema.parse({
         query: req.query.q as string,
@@ -32,7 +32,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/pages/:id", async (req, res) => {
+  app.get("/papyr-us/api/pages/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const page = await storage.getWikiPage(id);
@@ -47,7 +47,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/pages/slug/:slug", async (req, res) => {
+  app.get("/papyr-us/api/pages/slug/:slug", async (req, res) => {
     try {
       const slug = req.params.slug;
       const page = await storage.getWikiPageBySlug(slug);
@@ -62,7 +62,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/pages", async (req, res) => {
+  app.post("/papyr-us/api/pages", async (req, res) => {
     try {
       const pageData = insertWikiPageSchema.parse(req.body);
       const page = await storage.createWikiPage(pageData);
@@ -72,7 +72,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/pages/:id", async (req, res) => {
+  app.put("/papyr-us/api/pages/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const updateData = updateWikiPageSchema.parse(req.body);
@@ -88,7 +88,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/pages/:id", async (req, res) => {
+  app.delete("/papyr-us/api/pages/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const deleted = await storage.deleteWikiPage(id);
@@ -104,7 +104,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Folder and Tag APIs
-  app.get("/api/folders", async (req, res) => {
+  app.get("/papyr-us/api/folders", async (req, res) => {
     try {
       const folders = await storage.getFolders();
       res.json(folders);
@@ -113,7 +113,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/folders/:folder/pages", async (req, res) => {
+  app.get("/papyr-us/api/folders/:folder/pages", async (req, res) => {
     try {
       const folder = req.params.folder;
       const pages = await storage.getWikiPagesByFolder(folder);
@@ -123,7 +123,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/tags", async (req, res) => {
+  app.get("/papyr-us/api/tags", async (req, res) => {
     try {
       const tags = await storage.getAllTags();
       res.json(tags);
@@ -133,7 +133,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Calendar Events API
-  app.get("/api/calendar/:teamId", async (req, res) => {
+  app.get("/papyr-us/api/calendar/:teamId", async (req, res) => {
     try {
       const teamId = req.params.teamId;
       const events = await storage.getCalendarEvents(teamId);
@@ -153,7 +153,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/calendar/event/:id", async (req, res) => {
+  app.get("/papyr-us/api/calendar/event/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const event = await storage.getCalendarEvent(id);
@@ -166,7 +166,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/calendar", async (req, res) => {
+  app.post("/papyr-us/api/calendar", async (req, res) => {
     try {
       console.log("Received calendar event data:", req.body);
       
@@ -217,7 +217,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/calendar/event/:id", async (req, res) => {
+  app.patch("/papyr-us/api/calendar/event/:id", async (req, res) => {
     try {
       console.log("Received calendar event update data:", req.body);
       
@@ -273,7 +273,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/calendar/event/:id", async (req, res) => {
+  app.delete("/papyr-us/api/calendar/event/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const deleted = await storage.deleteCalendarEvent(id);
@@ -287,7 +287,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Comments API
-  app.get("/api/pages/:pageId/comments", async (req, res) => {
+  app.get("/papyr-us/api/pages/:pageId/comments", async (req, res) => {
     try {
       const pageId = parseInt(req.params.pageId);
       const comments = await storage.getCommentsByPageId(pageId);
@@ -297,7 +297,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/pages/:pageId/comments", async (req, res) => {
+  app.post("/papyr-us/api/pages/:pageId/comments", async (req, res) => {
     try {
       const pageId = parseInt(req.params.pageId);
       const commentData = insertCommentSchema.parse({
@@ -311,7 +311,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/comments/:id", async (req, res) => {
+  app.put("/papyr-us/api/comments/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const updateData = updateCommentSchema.parse(req.body);
@@ -327,7 +327,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/comments/:id", async (req, res) => {
+  app.delete("/papyr-us/api/comments/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const deleted = await storage.deleteComment(id);
@@ -343,7 +343,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Members API
-  app.get("/api/members", async (req, res) => {
+  app.get("/papyr-us/api/members", async (req, res) => {
     try {
       const members = await storage.getMembers();
       res.json(members);
@@ -352,7 +352,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/members/:id", async (req, res) => {
+  app.get("/papyr-us/api/members/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const member = await storage.getMember(id);
@@ -367,7 +367,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/members/email/:email", async (req, res) => {
+  app.get("/papyr-us/api/members/email/:email", async (req, res) => {
     try {
       const email = req.params.email;
       const member = await storage.getMemberByEmail(email);
@@ -382,7 +382,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/members", async (req, res) => {
+  app.post("/papyr-us/api/members", async (req, res) => {
     try {
       const memberData = insertMemberSchema.parse(req.body);
       const member = await storage.createMember(memberData);
@@ -392,7 +392,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/members/:id", async (req, res) => {
+  app.put("/papyr-us/api/members/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const updateData = updateMemberSchema.parse(req.body);
@@ -408,7 +408,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/members/:id", async (req, res) => {
+  app.delete("/papyr-us/api/members/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const deleted = await storage.deleteMember(id);
@@ -424,7 +424,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // File Upload API
-  app.post("/api/upload", upload.array('files', 5), async (req: any, res) => {
+  app.post("/papyr-us/api/upload", upload.array('files', 5), async (req: any, res) => {
     try {
       if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
         return res.status(400).json({ message: "No files uploaded" });
@@ -448,7 +448,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Serve uploaded images
-  app.get("/api/uploads/images/:filename", async (req, res) => {
+  app.get("/papyr-us/api/uploads/images/:filename", async (req, res) => {
     try {
       const { filename } = req.params;
       const fileInfo = await getFileInfo(filename, true);
@@ -469,7 +469,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Serve uploaded files
-  app.get("/api/uploads/files/:filename", async (req, res) => {
+  app.get("/papyr-us/api/uploads/files/:filename", async (req, res) => {
     try {
       const { filename } = req.params;
       const fileInfo = await getFileInfo(filename, false);
@@ -490,7 +490,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // List uploaded files
-  app.get("/api/uploads", async (req, res) => {
+  app.get("/papyr-us/api/uploads", async (req, res) => {
     try {
       const fileList = await listUploadedFiles();
       res.json(fileList);
@@ -500,7 +500,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete uploaded file
-  app.delete("/api/uploads/:type/:filename", async (req, res) => {
+  app.delete("/papyr-us/api/uploads/:type/:filename", async (req, res) => {
     try {
       const { type, filename } = req.params;
       const isImage = type === 'images';
@@ -522,7 +522,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin Authentication
-  app.post("/api/admin/auth", async (req, res) => {
+  app.post("/papyr-us/api/admin/auth", async (req, res) => {
     try {
       const { password } = req.body;
       if (password === config.adminPassword) {
@@ -536,7 +536,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Directory password verification
-  app.post("/api/directory/verify", async (req, res) => {
+  app.post("/papyr-us/api/directory/verify", async (req, res) => {
     try {
       const { directoryName, password } = req.body;
       const isValid = await storage.verifyDirectoryPassword(directoryName, password);
@@ -547,7 +547,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin Directory Management
-  app.get("/api/admin/directories", async (req, res) => {
+  app.get("/papyr-us/api/admin/directories", async (req, res) => {
     try {
       const { adminPassword } = req.query;
       if (adminPassword !== config.adminPassword) {
@@ -560,7 +560,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/admin/directories", async (req, res) => {
+  app.post("/papyr-us/api/admin/directories", async (req, res) => {
     try {
       const { adminPassword, ...directoryData } = req.body;
       if (adminPassword !== config.adminPassword) {
@@ -574,7 +574,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/admin/directories/:id", async (req, res) => {
+  app.patch("/papyr-us/api/admin/directories/:id", async (req, res) => {
     try {
       const { adminPassword, ...updateData } = req.body;
       if (adminPassword !== config.adminPassword) {
@@ -592,7 +592,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/admin/directories/:id", async (req, res) => {
+  app.delete("/papyr-us/api/admin/directories/:id", async (req, res) => {
     try {
       const { adminPassword } = req.body;
       if (adminPassword !== config.adminPassword) {
@@ -610,7 +610,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Dashboard API
-  app.get("/api/dashboard/overview", async (req, res) => {
+  app.get("/papyr-us/api/dashboard/overview", async (req, res) => {
     try {
       const overview = await storage.getDashboardOverview();
       res.json(overview);
@@ -619,7 +619,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/dashboard/team/:teamId", async (req, res) => {
+  app.get("/papyr-us/api/dashboard/team/:teamId", async (req, res) => {
     try {
       const teamId = req.params.teamId;
       const stats = await storage.getTeamProgressStats(teamId);
@@ -629,7 +629,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/dashboard/member/:memberId", async (req, res) => {
+  app.get("/papyr-us/api/dashboard/member/:memberId", async (req, res) => {
     try {
       const memberId = parseInt(req.params.memberId);
       const stats = await storage.getMemberProgressStats(memberId);
@@ -639,6 +639,209 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(stats);
     } catch (error) {
       res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // Tasks API
+  app.get("/papyr-us/api/tasks", async (req, res) => {
+    try {
+      const teamId = req.query.teamId as string;
+      const status = req.query.status as string;
+      const tasks = await storage.getTasks(teamId, status);
+      res.json(tasks);
+    } catch (error) {
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  app.get("/papyr-us/api/tasks/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const task = await storage.getTask(id);
+      
+      if (!task) {
+        return res.status(404).json({ message: "Task not found" });
+      }
+      
+      res.json(task);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid task ID" });
+    }
+  });
+
+  app.post("/papyr-us/api/tasks", async (req, res) => {
+    try {
+      const taskData = insertTaskSchema.parse(req.body);
+      const task = await storage.createTask(taskData);
+      res.status(201).json(task);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid task data", error });
+    }
+  });
+
+  app.put("/papyr-us/api/tasks/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const updateData = updateTaskSchema.parse(req.body);
+      const task = await storage.updateTask(id, updateData);
+      
+      if (!task) {
+        return res.status(404).json({ message: "Task not found" });
+      }
+      
+      res.json(task);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid update data", error });
+    }
+  });
+
+  app.delete("/papyr-us/api/tasks/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const deleted = await storage.deleteTask(id);
+      
+      if (!deleted) {
+        return res.status(404).json({ message: "Task not found" });
+      }
+      
+      res.json({ message: "Task deleted successfully" });
+    } catch (error) {
+      res.status(400).json({ message: "Invalid task ID" });
+    }
+  });
+
+  app.patch("/papyr-us/api/tasks/:id/progress", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { progress } = req.body;
+      
+      if (typeof progress !== 'number' || progress < 0 || progress > 100) {
+        return res.status(400).json({ message: "Progress must be a number between 0 and 100" });
+      }
+      
+      const task = await storage.updateTaskProgress(id, progress);
+      
+      if (!task) {
+        return res.status(404).json({ message: "Task not found" });
+      }
+      
+      res.json(task);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid progress data" });
+    }
+  });
+
+  // Notifications API
+  app.get("/papyr-us/api/notifications", async (req, res) => {
+    try {
+      const recipientId = parseInt(req.query.recipientId as string);
+      if (!recipientId) {
+        return res.status(400).json({ message: "recipientId is required" });
+      }
+      
+      const notifications = await storage.getNotifications(recipientId);
+      res.json(notifications);
+    } catch (error) {
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  app.get("/papyr-us/api/notifications/unread-count", async (req, res) => {
+    try {
+      const recipientId = parseInt(req.query.recipientId as string);
+      if (!recipientId) {
+        return res.status(400).json({ message: "recipientId is required" });
+      }
+      
+      const count = await storage.getUnreadNotificationCount(recipientId);
+      res.json({ count });
+    } catch (error) {
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  app.get("/papyr-us/api/notifications/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const notification = await storage.getNotification(id);
+      
+      if (!notification) {
+        return res.status(404).json({ message: "Notification not found" });
+      }
+      
+      res.json(notification);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid notification ID" });
+    }
+  });
+
+  app.post("/papyr-us/api/notifications", async (req, res) => {
+    try {
+      const notificationData = insertNotificationSchema.parse(req.body);
+      const notification = await storage.createNotification(notificationData);
+      res.status(201).json(notification);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid notification data", error });
+    }
+  });
+
+  app.put("/papyr-us/api/notifications/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const updateData = updateNotificationSchema.parse(req.body);
+      const notification = await storage.updateNotification(id, updateData);
+      
+      if (!notification) {
+        return res.status(404).json({ message: "Notification not found" });
+      }
+      
+      res.json(notification);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid update data", error });
+    }
+  });
+
+  app.delete("/papyr-us/api/notifications/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const deleted = await storage.deleteNotification(id);
+      
+      if (!deleted) {
+        return res.status(404).json({ message: "Notification not found" });
+      }
+      
+      res.json({ message: "Notification deleted successfully" });
+    } catch (error) {
+      res.status(400).json({ message: "Invalid notification ID" });
+    }
+  });
+
+  app.patch("/papyr-us/api/notifications/:id/read", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const notification = await storage.markNotificationAsRead(id);
+      
+      if (!notification) {
+        return res.status(404).json({ message: "Notification not found" });
+      }
+      
+      res.json(notification);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid notification ID" });
+    }
+  });
+
+  app.patch("/papyr-us/api/notifications/read-all", async (req, res) => {
+    try {
+      const { recipientId } = req.body;
+      if (!recipientId) {
+        return res.status(400).json({ message: "recipientId is required" });
+      }
+      
+      await storage.markAllNotificationsAsRead(recipientId);
+      res.json({ message: "All notifications marked as read" });
+    } catch (error) {
+      res.status(400).json({ message: "Invalid request data" });
     }
   });
 

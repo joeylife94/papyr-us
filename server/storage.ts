@@ -1,4 +1,4 @@
-import { wikiPages, type WikiPage, type InsertWikiPage, type UpdateWikiPage, type Tag, type SearchParams, type CalendarEvent, type InsertCalendarEvent, type UpdateCalendarEvent, type Directory, type InsertDirectory, type UpdateDirectory, type Comment, type InsertComment, type UpdateComment, type Member, type InsertMember, type UpdateMember, calendarEvents, directories, comments, members } from "../shared/schema.ts";
+import { wikiPages, type WikiPage, type InsertWikiPage, type UpdateWikiPage, type Tag, type SearchParams, type CalendarEvent, type InsertCalendarEvent, type UpdateCalendarEvent, type Directory, type InsertDirectory, type UpdateDirectory, type Comment, type InsertComment, type UpdateComment, type Member, type InsertMember, type UpdateMember, type Task, type InsertTask, type UpdateTask, type Notification, type InsertNotification, type UpdateNotification, calendarEvents, directories, comments, members, tasks, notifications } from "../shared/schema.ts";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { eq, like, and, sql, desc, asc } from "drizzle-orm";
 import { Pool } from "pg";
@@ -54,6 +54,24 @@ export interface IStorage {
   getMemberProgressStats(memberId: number): Promise<any | undefined>;
   updateProgressStats(teamId: string, memberId: number | null, type: 'page' | 'comment' | 'task'): Promise<void>;
   getDashboardOverview(): Promise<any>;
+  
+  // Tasks CRUD
+  getTasks(teamId?: string, status?: string): Promise<Task[]>;
+  getTask(id: number): Promise<Task | undefined>;
+  createTask(task: InsertTask): Promise<Task>;
+  updateTask(id: number, task: UpdateTask): Promise<Task | undefined>;
+  deleteTask(id: number): Promise<boolean>;
+  updateTaskProgress(id: number, progress: number): Promise<Task | undefined>;
+  
+  // Notifications CRUD
+  getNotifications(recipientId: number): Promise<Notification[]>;
+  getNotification(id: number): Promise<Notification | undefined>;
+  createNotification(notification: InsertNotification): Promise<Notification>;
+  updateNotification(id: number, notification: UpdateNotification): Promise<Notification | undefined>;
+  deleteNotification(id: number): Promise<boolean>;
+  markNotificationAsRead(id: number): Promise<Notification | undefined>;
+  markAllNotificationsAsRead(recipientId: number): Promise<void>;
+  getUnreadNotificationCount(recipientId: number): Promise<number>;
 }
 
 export class MemStorage implements IStorage {
@@ -62,11 +80,15 @@ export class MemStorage implements IStorage {
   private directories: Map<number, Directory>;
   private comments: Map<number, Comment>;
   private members: Map<number, Member>;
+  private tasks: Map<number, Task>;
+  private notifications: Map<number, Notification>;
   private currentId: number;
   private currentEventId: number;
   private currentDirectoryId: number;
   private currentCommentId: number;
   private currentMemberId: number;
+  private currentTaskId: number;
+  private currentNotificationId: number;
 
   constructor() {
     this.wikiPages = new Map();
@@ -74,15 +96,21 @@ export class MemStorage implements IStorage {
     this.directories = new Map();
     this.comments = new Map();
     this.members = new Map();
+    this.tasks = new Map();
+    this.notifications = new Map();
     this.currentId = 1;
     this.currentEventId = 1;
     this.currentDirectoryId = 1;
     this.currentCommentId = 1;
     this.currentMemberId = 1;
+    this.currentTaskId = 1;
+    this.currentNotificationId = 1;
     this.initializeDefaultPages();
     this.initializeDefaultEvents();
     this.initializeDefaultDirectories();
     this.initializeDefaultMembers();
+    this.initializeDefaultTasks();
+    this.initializeDefaultNotifications();
   }
 
   private initializeDefaultPages() {
@@ -829,6 +857,7 @@ Welcome to Team Alpha's dedicated workspace! Use this area to collaborate and or
     return {
       totalPages: 27,
       totalComments: 43,
+      totalMembers: 3, // Add totalMembers field
       totalTasks: 14,
       activeTeams: 2,
       recentActivity: [
@@ -841,6 +870,262 @@ Welcome to Team Alpha's dedicated workspace! Use this area to collaborate and or
         { teamId: 'team2', name: 'Team Beta', pages: 12, comments: 18, tasks: 6 }
       ]
     };
+  }
+
+  // Tasks methods
+  private initializeDefaultTasks() {
+    // Initialize with some default tasks
+    const defaultTasks: Omit<Task, 'id'>[] = [
+      {
+        title: "프로젝트 기획서 작성",
+        description: "새로운 기능 개발을 위한 상세 기획서 작성",
+        status: "in_progress",
+        priority: 1,
+        assignedTo: 1, // 바이브코딩 팀장
+        teamId: "team1",
+        dueDate: new Date("2024-02-15"),
+        estimatedHours: 8,
+        actualHours: 4,
+        progress: 50,
+        tags: ["기획", "문서화"],
+        linkedPageId: null,
+        createdBy: 1,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        title: "UI 컴포넌트 개발",
+        description: "재사용 가능한 UI 컴포넌트 라이브러리 구축",
+        status: "todo",
+        priority: 2,
+        assignedTo: 2, // Frontend 개발자 A
+        teamId: "team1",
+        dueDate: new Date("2024-02-20"),
+        estimatedHours: 16,
+        actualHours: 0,
+        progress: 0,
+        tags: ["프론트엔드", "UI/UX"],
+        linkedPageId: null,
+        createdBy: 1,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        title: "API 엔드포인트 구현",
+        description: "백엔드 API 엔드포인트 개발 및 테스트",
+        status: "todo",
+        priority: 2,
+        assignedTo: 3, // Backend 개발자 B
+        teamId: "team2",
+        dueDate: new Date("2024-02-25"),
+        estimatedHours: 12,
+        actualHours: 0,
+        progress: 0,
+        tags: ["백엔드", "API"],
+        linkedPageId: null,
+        createdBy: 1,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }
+    ];
+
+    defaultTasks.forEach(task => {
+      this.tasks.set(this.currentTaskId, { ...task, id: this.currentTaskId });
+      this.currentTaskId++;
+    });
+  }
+
+  async getTasks(teamId?: string, status?: string): Promise<Task[]> {
+    let filteredTasks = Array.from(this.tasks.values());
+    
+    if (teamId) {
+      filteredTasks = filteredTasks.filter(task => task.teamId === teamId);
+    }
+    
+    if (status) {
+      filteredTasks = filteredTasks.filter(task => task.status === status);
+    }
+    
+    return filteredTasks.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  async getTask(id: number): Promise<Task | undefined> {
+    return this.tasks.get(id);
+  }
+
+  async createTask(insertTask: InsertTask): Promise<Task> {
+    const id = this.currentTaskId++;
+    const now = new Date();
+    const task: Task = {
+      id,
+      title: insertTask.title,
+      description: insertTask.description || null,
+      status: insertTask.status || "todo",
+      priority: insertTask.priority || 3,
+      assignedTo: insertTask.assignedTo || null,
+      teamId: insertTask.teamId,
+      dueDate: insertTask.dueDate || null,
+      estimatedHours: insertTask.estimatedHours || null,
+      actualHours: insertTask.actualHours || null,
+      progress: insertTask.progress || 0,
+      tags: insertTask.tags || [],
+      linkedPageId: insertTask.linkedPageId || null,
+      createdBy: insertTask.createdBy || null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.tasks.set(id, task);
+    return task;
+  }
+
+  async updateTask(id: number, updateTask: UpdateTask): Promise<Task | undefined> {
+    const existingTask = this.tasks.get(id);
+    if (!existingTask) return undefined;
+
+    const updated: Task = {
+      ...existingTask,
+      ...updateTask,
+      updatedAt: new Date(),
+    };
+    this.tasks.set(id, updated);
+    return updated;
+  }
+
+  async deleteTask(id: number): Promise<boolean> {
+    return this.tasks.delete(id);
+  }
+
+  async updateTaskProgress(id: number, progress: number): Promise<Task | undefined> {
+    const existingTask = this.tasks.get(id);
+    if (!existingTask) return undefined;
+
+    const updated: Task = {
+      ...existingTask,
+      progress: Math.max(0, Math.min(100, progress)), // Ensure progress is between 0-100
+      updatedAt: new Date(),
+    };
+    this.tasks.set(id, updated);
+    return updated;
+  }
+
+  // Notifications methods
+  private initializeDefaultNotifications() {
+    // Initialize with some default notifications
+    const defaultNotifications: Omit<Notification, 'id'>[] = [
+      {
+        type: 'comment',
+        title: '새 댓글이 작성되었습니다',
+        content: 'API Reference Guide 페이지에 새 댓글이 작성되었습니다.',
+        recipientId: 1,
+        senderId: 2,
+        relatedPageId: 2,
+        relatedCommentId: null,
+        relatedTaskId: null,
+        isRead: false,
+        createdAt: new Date()
+      },
+      {
+        type: 'mention',
+        title: '멘션되었습니다',
+        content: '프로젝트 기획서 작성 과제에서 멘션되었습니다.',
+        recipientId: 2,
+        senderId: 1,
+        relatedPageId: null,
+        relatedCommentId: null,
+        relatedTaskId: 1,
+        isRead: false,
+        createdAt: new Date()
+      },
+      {
+        type: 'task_due',
+        title: '과제 마감일 임박',
+        content: 'UI 컴포넌트 개발 과제의 마감일이 3일 남았습니다.',
+        recipientId: 2,
+        senderId: null,
+        relatedPageId: null,
+        relatedCommentId: null,
+        relatedTaskId: 2,
+        isRead: true,
+        createdAt: new Date()
+      }
+    ];
+
+    defaultNotifications.forEach(notification => {
+      this.notifications.set(this.currentNotificationId, { ...notification, id: this.currentNotificationId });
+      this.currentNotificationId++;
+    });
+  }
+
+  async getNotifications(recipientId: number): Promise<Notification[]> {
+    return Array.from(this.notifications.values())
+      .filter(notification => notification.recipientId === recipientId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  async getNotification(id: number): Promise<Notification | undefined> {
+    return this.notifications.get(id);
+  }
+
+  async createNotification(insertNotification: InsertNotification): Promise<Notification> {
+    const id = this.currentNotificationId++;
+    const now = new Date();
+    const notification: Notification = {
+      id,
+      type: insertNotification.type,
+      title: insertNotification.title,
+      content: insertNotification.content,
+      recipientId: insertNotification.recipientId,
+      senderId: insertNotification.senderId || null,
+      relatedPageId: insertNotification.relatedPageId || null,
+      relatedTaskId: insertNotification.relatedTaskId || null,
+      relatedCommentId: insertNotification.relatedCommentId || null,
+      isRead: false,
+      createdAt: now,
+    };
+    this.notifications.set(id, notification);
+    return notification;
+  }
+
+  async updateNotification(id: number, updateNotification: UpdateNotification): Promise<Notification | undefined> {
+    const existingNotification = this.notifications.get(id);
+    if (!existingNotification) return undefined;
+
+    const updated: Notification = {
+      ...existingNotification,
+      ...updateNotification,
+    };
+    this.notifications.set(id, updated);
+    return updated;
+  }
+
+  async deleteNotification(id: number): Promise<boolean> {
+    return this.notifications.delete(id);
+  }
+
+  async markNotificationAsRead(id: number): Promise<Notification | undefined> {
+    const existingNotification = this.notifications.get(id);
+    if (!existingNotification) return undefined;
+
+    const updated: Notification = {
+      ...existingNotification,
+      isRead: true,
+    };
+    this.notifications.set(id, updated);
+    return updated;
+  }
+
+  async markAllNotificationsAsRead(recipientId: number): Promise<void> {
+    Array.from(this.notifications.values())
+      .filter(notification => notification.recipientId === recipientId && !notification.isRead)
+      .forEach(notification => {
+        this.notifications.set(notification.id, { ...notification, isRead: true });
+      });
+  }
+
+  async getUnreadNotificationCount(recipientId: number): Promise<number> {
+    return Array.from(this.notifications.values())
+      .filter(notification => notification.recipientId === recipientId && !notification.isRead)
+      .length;
   }
 }
 
@@ -1065,6 +1350,164 @@ export class DBStorage implements IStorage {
         console.log("✅ Default progress stats added successfully!");
       } else {
         console.log("✅ Progress stats table already exists");
+      }
+
+      // Check if tasks table exists
+      const checkTasksTableQuery = `
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'tasks'
+        );
+      `;
+      
+      const checkTasksResult = await this.pool.query(checkTasksTableQuery);
+      const tasksTableExists = checkTasksResult.rows[0].exists;
+      
+      if (!tasksTableExists) {
+        console.log("🚀 Creating tasks table...");
+        
+        // Create tasks table
+        const createTasksTableQuery = `
+          CREATE TABLE tasks (
+            id SERIAL PRIMARY KEY,
+            title TEXT NOT NULL,
+            description TEXT,
+            status TEXT NOT NULL DEFAULT 'todo',
+            priority INTEGER NOT NULL DEFAULT 3,
+            assigned_to INTEGER REFERENCES members(id) ON DELETE SET NULL,
+            team_id TEXT NOT NULL,
+            due_date TIMESTAMP,
+            estimated_hours INTEGER,
+            actual_hours INTEGER,
+            progress INTEGER NOT NULL DEFAULT 0,
+            tags TEXT[] DEFAULT '{}',
+            linked_page_id INTEGER REFERENCES wiki_pages(id) ON DELETE SET NULL,
+            created_by INTEGER REFERENCES members(id) ON DELETE SET NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+          );
+        `;
+
+        await this.pool.query(createTasksTableQuery);
+        console.log("✅ Tasks table created successfully!");
+
+        // Create indexes for better performance
+        const createTasksIndexQueries = [
+          "CREATE INDEX idx_tasks_team_id ON tasks(team_id);",
+          "CREATE INDEX idx_tasks_status ON tasks(status);",
+          "CREATE INDEX idx_tasks_assigned_to ON tasks(assigned_to);",
+          "CREATE INDEX idx_tasks_due_date ON tasks(due_date);",
+          "CREATE INDEX idx_tasks_priority ON tasks(priority);",
+          "CREATE INDEX idx_tasks_created_at ON tasks(created_at);"
+        ];
+
+        for (const query of createTasksIndexQueries) {
+          await this.pool.query(query);
+        }
+        console.log("✅ Tasks table indexes created successfully!");
+
+        // Insert default tasks
+        const defaultTasksQuery = `
+          INSERT INTO tasks (title, description, status, priority, assigned_to, team_id, due_date, estimated_hours, actual_hours, progress, tags, created_by) VALUES
+          ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12),
+          ($13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24),
+          ($25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36)
+        `;
+
+        await this.pool.query(defaultTasksQuery, [
+          // 프로젝트 기획서 작성
+          "프로젝트 기획서 작성", "새로운 기능 개발을 위한 상세 기획서 작성", "in_progress", 1, 1, "team1", 
+          new Date("2024-02-15"), 8, 4, 50, ["기획", "문서화"], 1,
+          
+          // UI 컴포넌트 개발
+          "UI 컴포넌트 개발", "재사용 가능한 UI 컴포넌트 라이브러리 구축", "todo", 2, 2, "team1", 
+          new Date("2024-02-20"), 16, 0, 0, ["프론트엔드", "UI/UX"], 1,
+          
+          // API 엔드포인트 구현
+          "API 엔드포인트 구현", "백엔드 API 엔드포인트 개발 및 테스트", "todo", 2, 3, "team2", 
+          new Date("2024-02-25"), 12, 0, 0, ["백엔드", "API"], 1
+        ]);
+        
+        console.log("✅ Default tasks added successfully!");
+      } else {
+        console.log("✅ Tasks table already exists");
+      }
+
+      // Check if notifications table exists
+      const checkNotificationsTableQuery = `
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'notifications'
+        );
+      `;
+      
+      const checkNotificationsResult = await this.pool.query(checkNotificationsTableQuery);
+      const notificationsTableExists = checkNotificationsResult.rows[0].exists;
+      
+      if (!notificationsTableExists) {
+        console.log("🚀 Creating notifications table...");
+        
+        // Create notifications table
+        const createNotificationsTableQuery = `
+          CREATE TABLE notifications (
+            id SERIAL PRIMARY KEY,
+            type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            recipient_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+            sender_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+            related_page_id INTEGER REFERENCES wiki_pages(id) ON DELETE CASCADE,
+            related_task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
+            related_comment_id INTEGER REFERENCES comments(id) ON DELETE CASCADE,
+            is_read BOOLEAN NOT NULL DEFAULT false,
+            created_at TIMESTAMP NOT NULL DEFAULT NOW()
+          );
+        `;
+
+        await this.pool.query(createNotificationsTableQuery);
+        console.log("✅ Notifications table created successfully!");
+
+        // Create indexes for better performance
+        const createNotificationsIndexQueries = [
+          "CREATE INDEX idx_notifications_recipient_id ON notifications(recipient_id);",
+          "CREATE INDEX idx_notifications_sender_id ON notifications(sender_id);",
+          "CREATE INDEX idx_notifications_type ON notifications(type);",
+          "CREATE INDEX idx_notifications_is_read ON notifications(is_read);",
+          "CREATE INDEX idx_notifications_created_at ON notifications(created_at);"
+        ];
+
+        for (const query of createNotificationsIndexQueries) {
+          await this.pool.query(query);
+        }
+        console.log("✅ Notifications table indexes created successfully!");
+
+        // Insert default notifications
+        const defaultNotificationsQuery = `
+          INSERT INTO notifications (type, title, content, recipient_id, sender_id, related_page_id, related_task_id, related_comment_id, is_read) VALUES
+          ($1, $2, $3, $4, $5, $6, $7, $8, $9),
+          ($10, $11, $12, $13, $14, $15, $16, $17, $18),
+          ($19, $20, $21, $22, $23, $24, $25, $26, $27)
+        `;
+
+        await this.pool.query(defaultNotificationsQuery, [
+          // 댓글 알림
+          "comment", "새 댓글이 작성되었습니다", "API Reference Guide 페이지에 새 댓글이 작성되었습니다.", 
+          1, 2, 2, null, null, false,
+          
+          // 멘션 알림
+          "mention", "멘션되었습니다", "프로젝트 기획서 작성 과제에서 멘션되었습니다.", 
+          2, 1, null, null, null, false,
+          
+          // 과제 마감 알림
+          "task_due", "과제 마감일 임박", "UI 컴포넌트 개발 과제의 마감일이 3일 남았습니다.", 
+          2, null, null, null, null, true
+        ]);
+        
+        console.log("✅ Default notifications added successfully!");
+      } else {
+        console.log("✅ Notifications table already exists");
       }
     } catch (error) {
       console.error("❌ Error initializing tables:", error);
@@ -1375,11 +1818,13 @@ export class DBStorage implements IStorage {
     const totalPagesQuery = "SELECT COUNT(*) as count FROM wiki_pages";
     const totalCommentsQuery = "SELECT COUNT(*) as count FROM comments";
     const totalMembersQuery = "SELECT COUNT(*) as count FROM members WHERE is_active = true";
+    const totalTasksQuery = "SELECT COUNT(*) as count FROM tasks";
     
-    const [pagesResult, commentsResult, membersResult] = await Promise.all([
+    const [pagesResult, commentsResult, membersResult, tasksResult] = await Promise.all([
       this.pool.query(totalPagesQuery),
       this.pool.query(totalCommentsQuery),
-      this.pool.query(totalMembersQuery)
+      this.pool.query(totalMembersQuery),
+      this.pool.query(totalTasksQuery)
     ]);
     
     // Get recent activity
@@ -1391,6 +1836,11 @@ export class DBStorage implements IStorage {
       UNION ALL
       (SELECT 'comment' as type, NULL as title, author, created_at as time, content
        FROM comments 
+       ORDER BY created_at DESC 
+       LIMIT 3)
+      UNION ALL
+      (SELECT 'task' as type, title, NULL as author, created_at as time, NULL as content
+       FROM tasks 
        ORDER BY created_at DESC 
        LIMIT 3)
       ORDER BY time DESC 
@@ -1417,7 +1867,7 @@ export class DBStorage implements IStorage {
       totalPages: parseInt(pagesResult.rows[0].count),
       totalComments: parseInt(commentsResult.rows[0].count),
       totalMembers: parseInt(membersResult.rows[0].count),
-      totalTasks: 0, // Will be updated when tasks table is implemented
+      totalTasks: parseInt(tasksResult.rows[0].count),
       activeTeams: teamStatsResult.rows.length,
       recentActivity: activityResult.rows,
       teamStats: teamStatsResult.rows.map(row => ({
@@ -1428,6 +1878,115 @@ export class DBStorage implements IStorage {
         tasks: parseInt(row.tasks)
       }))
     };
+  }
+
+  // Tasks CRUD (DBStorage implementation)
+  async getTasks(teamId?: string, status?: string): Promise<Task[]> {
+    let query = this.db.select().from(tasks);
+    
+    if (teamId) {
+      query = query.where(eq(tasks.teamId, teamId));
+    }
+    
+    if (status) {
+      query = query.where(eq(tasks.status, status));
+    }
+    
+    return await query.orderBy(desc(tasks.createdAt)).execute();
+  }
+
+  async getTask(id: number): Promise<Task | undefined> {
+    const result = await this.db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
+    return result[0];
+  }
+
+  async createTask(insertTask: InsertTask): Promise<Task> {
+    const result = await this.db.insert(tasks).values(insertTask).returning();
+    return result[0];
+  }
+
+  async updateTask(id: number, updateTask: UpdateTask): Promise<Task | undefined> {
+    const result = await this.db
+      .update(tasks)
+      .set({ ...updateTask, updatedAt: new Date() })
+      .where(eq(tasks.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteTask(id: number): Promise<boolean> {
+    const result = await this.db.delete(tasks).where(eq(tasks.id, id));
+    return result.rowCount > 0;
+  }
+
+  async updateTaskProgress(id: number, progress: number): Promise<Task | undefined> {
+    const result = await this.db
+      .update(tasks)
+      .set({ 
+        progress: Math.max(0, Math.min(100, progress)), // Ensure progress is between 0-100
+        updatedAt: new Date() 
+      })
+      .where(eq(tasks.id, id))
+      .returning();
+    return result[0];
+  }
+
+  // Notifications CRUD (DBStorage implementation)
+  async getNotifications(recipientId: number): Promise<Notification[]> {
+    return await this.db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.recipientId, recipientId))
+      .orderBy(desc(notifications.createdAt))
+      .execute();
+  }
+
+  async getNotification(id: number): Promise<Notification | undefined> {
+    const result = await this.db.select().from(notifications).where(eq(notifications.id, id)).limit(1);
+    return result[0];
+  }
+
+  async createNotification(insertNotification: InsertNotification): Promise<Notification> {
+    const result = await this.db.insert(notifications).values(insertNotification).returning();
+    return result[0];
+  }
+
+  async updateNotification(id: number, updateNotification: UpdateNotification): Promise<Notification | undefined> {
+    const result = await this.db
+      .update(notifications)
+      .set(updateNotification)
+      .where(eq(notifications.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteNotification(id: number): Promise<boolean> {
+    const result = await this.db.delete(notifications).where(eq(notifications.id, id));
+    return result.rowCount > 0;
+  }
+
+  async markNotificationAsRead(id: number): Promise<Notification | undefined> {
+    const result = await this.db
+      .update(notifications)
+      .set({ isRead: true })
+      .where(eq(notifications.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async markAllNotificationsAsRead(recipientId: number): Promise<void> {
+    await this.db
+      .update(notifications)
+      .set({ isRead: true })
+      .where(eq(notifications.recipientId, recipientId));
+  }
+
+  async getUnreadNotificationCount(recipientId: number): Promise<number> {
+    const result = await this.db
+      .select({ count: sql<number>`count(*)` })
+      .from(notifications)
+      .where(and(eq(notifications.recipientId, recipientId), eq(notifications.isRead, false)));
+    return result[0].count;
   }
 }
 

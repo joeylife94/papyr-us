@@ -19,7 +19,8 @@ import {
   Calendar,
   FileText,
   File,
-  Activity
+  Activity,
+  CheckSquare
 } from "lucide-react";
 import type { WikiPage } from "@shared/schema";
 import { Badge } from "@/components/ui/badge";
@@ -61,7 +62,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
 
 
   const { data: directories = [] } = useQuery<any[]>({
-    queryKey: ["/api/admin/directories"],
+            queryKey: ["/papyr-us/api/admin/directories"],
     queryFn: async () => {
               const adminPassword = sessionStorage.getItem("adminAuth") || "";
         const response = await fetch(`/api/admin/directories?adminPassword=${adminPassword}`);
@@ -83,11 +84,11 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
 
   // Query calendar events for search filtering
   const { data: team1Events = [] } = useQuery<any[]>({
-    queryKey: ["/api/calendar/team1"],
+            queryKey: ["/papyr-us/api/calendar/team1"],
   });
   
   const { data: team2Events = [] } = useQuery<any[]>({
-    queryKey: ["/api/calendar/team2"],
+            queryKey: ["/papyr-us/api/calendar/team2"],
   });
 
   // Query for pages in each folder - using fixed folder list to avoid Hook violations
@@ -220,6 +221,12 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                 <Button variant="outline" className="w-full justify-start">
                   <Users className="h-4 w-4 mr-2 text-emerald-500" />
                   팀원 관리
+                </Button>
+              </Link>
+              <Link href="/papyr-us/tasks">
+                <Button variant="outline" className="w-full justify-start">
+                  <CheckSquare className="h-4 w-4 mr-2 text-orange-500" />
+                  과제 트래커
                 </Button>
               </Link>
               <Link href="/papyr-us/files">

@@ -19,8 +19,8 @@ export default function Home({ searchQuery, selectedFolder }: HomeProps) {
   queryParams.append('limit', '12');
 
   const { data: filteredPages, isLoading } = useQuery<{ pages: WikiPage[]; total: number }>({
-    queryKey: ['/api/pages', searchQuery, selectedFolder],
-    queryFn: () => fetch(`/api/pages?${queryParams.toString()}`).then(res => res.json()),
+    queryKey: ['/papyr-us/api/pages', searchQuery, selectedFolder],
+    queryFn: () => fetch(`/papyr-us/api/pages?${queryParams.toString()}`).then(res => res.json()),
   });
 
   return (

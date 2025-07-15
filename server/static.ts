@@ -27,7 +27,7 @@ export function serveStatic(app: Express) {
   
   // Handle remaining routes (for API 404s)
   app.get("*", (req, res) => {
-    if (req.path.startsWith("/api")) {
+    if (req.path.startsWith("/papyr-us/api")) {
       return res.status(404).json({ message: "API endpoint not found" });
     }
     
