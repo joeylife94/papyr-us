@@ -224,6 +224,12 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                   데이터베이스 뷰
                 </Button>
               </Link>
+              <Link href="/papyr-us/collaboration-test">
+                <Button variant="outline" className="w-full justify-start">
+                  <Users className="h-4 w-4 mr-2 text-green-500" />
+                  실시간 협업 테스트
+                </Button>
+              </Link>
             </div>
           </div>
 

@@ -17,6 +17,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { WikiPage, InsertWikiPage, Block } from "@shared/schema";
 import { MarkdownRenderer } from "@/components/wiki/markdown-renderer";
 import { BlockEditor } from "@/components/blocks/block-editor";
+import { getUserId, getUserName } from "@/lib/user";
 
 const pageFormSchema = z.object({
   title: z.string().min(1, "Title is required"),
@@ -370,11 +371,14 @@ export default function PageEditor({ pageId, initialFolder = "docs", teamName }:
                       <FormLabel>Content (Block Editor)</FormLabel>
                       <FormControl>
                         <div className="border rounded-md">
-                          <BlockEditor
-                            blocks={blocks}
-                            onChange={setBlocks}
-                            teamName={urlTeamName}
-                          />
+                                  <BlockEditor 
+          blocks={blocks} 
+          onChange={setBlocks} 
+          teamName={urlTeamName}
+          pageId={pageId ? parseInt(pageId) : undefined}
+          userId={getUserId()}
+          userName={getUserName()}
+        />
                         </div>
                       </FormControl>
                       <FormMessage />

@@ -14,6 +14,16 @@ interface MulterRequest extends Request {
 
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  const server = createServer(app);
+  
+  // Setup Socket.IO for real-time collaboration
+  try {
+    const { setupSocketIO } = await import('./services/socket.ts');
+    setupSocketIO(server);
+    console.log('Socket.IO server initialized for real-time collaboration');
+  } catch (error) {
+    console.warn('Socket.IO setup failed:', error);
+  }
   // Wiki Pages API
   app.get("/papyr-us/api/pages", async (req, res) => {
     try {

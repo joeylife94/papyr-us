@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Block, BlockType } from '@shared/schema';
 import { HeadingBlock } from './heading-block';
 import { ParagraphBlock } from './paragraph-block';
@@ -7,7 +7,7 @@ import { ImageBlock } from './image-block';
 import { TableBlock } from './table-block';
 import { CodeBlock } from './code-block';
 import { QuoteBlock } from './quote-block';
-import { Plus, Type, AlignLeft, CheckSquare, Image as ImageIcon, Table as TableIcon, Code, Quote } from 'lucide-react';
+import { Plus, Type, AlignLeft, CheckSquare, Image as ImageIcon, Table as TableIcon, Code, Quote, Users, Wifi, WifiOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { 
   DropdownMenu,
@@ -15,15 +15,53 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useCollaboration } from '@/lib/socket';
+import { Badge } from '@/components/ui/badge';
+import { collaborationSync } from '@/lib/collaboration';
 
 interface BlockEditorProps {
   blocks: Block[];
   onChange: (blocks: Block[]) => void;
   teamName?: string;
+  pageId?: number;
+  userId?: string;
+  userName?: string;
 }
 
-export function BlockEditor({ blocks, onChange, teamName }: BlockEditorProps) {
+export function BlockEditor({ blocks, onChange, teamName, pageId, userId, userName }: BlockEditorProps) {
   const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null);
+  
+  // 실시간 협업 설정
+  const collaboration = useCollaboration(
+    pageId || 0,
+    userId || 'anonymous',
+    userName || 'Anonymous User',
+    teamName
+  );
+
+  // 원격 변경사항 처리
+  useEffect(() => {
+    if (!collaboration.socket) return;
+
+    const handleDocumentChange = (change: any) => {
+      // 자신의 변경사항은 무시
+      if (change.userId === userId) return;
+
+      console.log('Received remote change:', change);
+      
+      // 충돌 해결 및 블록 업데이트
+      const updatedBlocks = collaborationSync.processRemoteChange(change, blocks);
+      if (updatedBlocks !== blocks) {
+        onChange(updatedBlocks);
+      }
+    };
+
+    collaboration.socket.on('document-change', handleDocumentChange);
+
+    return () => {
+      collaboration.socket?.off('document-change', handleDocumentChange);
+    };
+  }, [collaboration.socket, blocks, onChange, userId]);
 
   // 블록 추가 함수
   const addBlock = useCallback((index: number, type: BlockType = 'paragraph') => {
@@ -46,7 +84,17 @@ export function BlockEditor({ blocks, onChange, teamName }: BlockEditorProps) {
 
     onChange(newBlocks);
     setFocusedBlockId(newBlock.id);
-  }, [blocks, onChange]);
+    
+    // 실시간 협업: 추가 변경사항 전송
+    if (pageId && collaboration.isConnected) {
+      collaboration.sendDocumentChange({
+        pageId,
+        blockId: newBlock.id,
+        type: 'insert',
+        data: { blocks: newBlocks }
+      });
+    }
+  }, [blocks, onChange, pageId, collaboration]);
 
   // 블록 삭제 함수
   const deleteBlock = useCallback((blockId: string) => {
@@ -55,7 +103,17 @@ export function BlockEditor({ blocks, onChange, teamName }: BlockEditorProps) {
       block.order = idx;
     });
     onChange(newBlocks);
-  }, [blocks, onChange]);
+    
+    // 실시간 협업: 삭제 변경사항 전송
+    if (pageId && collaboration.isConnected) {
+      collaboration.sendDocumentChange({
+        pageId,
+        blockId,
+        type: 'delete',
+        data: { blocks: newBlocks }
+      });
+    }
+  }, [blocks, onChange, pageId, collaboration]);
 
   // 블록 업데이트 함수
   const updateBlock = useCallback((blockId: string, updates: Partial<Block>) => {
@@ -63,7 +121,17 @@ export function BlockEditor({ blocks, onChange, teamName }: BlockEditorProps) {
       block.id === blockId ? { ...block, ...updates } : block
     );
     onChange(newBlocks);
-  }, [blocks, onChange]);
+    
+    // 실시간 협업: 변경사항 전송
+    if (pageId && collaboration.isConnected) {
+      collaboration.sendDocumentChange({
+        pageId,
+        blockId,
+        type: 'update',
+        data: { blocks: newBlocks }
+      });
+    }
+  }, [blocks, onChange, pageId, collaboration]);
 
   // 블록 렌더링 함수
   const renderBlock = (block: Block, index: number) => {
@@ -133,6 +201,46 @@ export function BlockEditor({ blocks, onChange, teamName }: BlockEditorProps) {
 
   return (
     <div className="block-editor min-h-[400px] p-4">
+      {/* 실시간 협업 상태 표시 */}
+      {pageId && (
+        <div className="flex items-center justify-between mb-4 p-2 bg-gray-50 rounded-lg">
+          <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-1">
+              {collaboration.isConnected ? (
+                <Wifi className="h-4 w-4 text-green-500" />
+              ) : (
+                <WifiOff className="h-4 w-4 text-red-500" />
+              )}
+              <span className="text-sm text-gray-600">
+                {collaboration.isConnected ? '실시간 연결됨' : '연결 끊김'}
+              </span>
+            </div>
+            
+            {collaboration.users.length > 0 && (
+              <div className="flex items-center space-x-1">
+                <Users className="h-4 w-4 text-blue-500" />
+                <span className="text-sm text-gray-600">
+                  {collaboration.users.length}명 참여 중
+                </span>
+              </div>
+            )}
+          </div>
+          
+          <div className="flex items-center space-x-2">
+            {collaboration.users.map((user) => (
+              <Badge key={user.id} variant="secondary" className="text-xs">
+                {user.name}
+              </Badge>
+            ))}
+            
+            {collaboration.typingUsers.length > 0 && (
+              <Badge variant="outline" className="text-xs text-blue-600">
+                {collaboration.typingUsers.length}명 입력 중...
+              </Badge>
+            )}
+          </div>
+        </div>
+      )}
       {blocks.length === 0 ? (
         <div 
           className="flex items-center justify-center h-64 border-2 border-dashed border-gray-300 rounded-lg hover:border-gray-400 transition-colors"

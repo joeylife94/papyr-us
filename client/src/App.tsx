@@ -18,6 +18,7 @@ import { DashboardPage } from "@/pages/dashboard";
 import { TasksPage } from "@/pages/tasks";
 import Templates from "@/pages/templates";
 import DatabaseView from "@/pages/database-view";
+import CollaborationTest from "@/pages/collaboration-test";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -93,6 +94,8 @@ function Router() {
               <Route path="/papyr-us/teams/:teamName/database">
                 {(params) => <DatabaseView teamName={params.teamName} />}
               </Route>
+              
+              <Route path="/papyr-us/collaboration-test" component={CollaborationTest} />
               
               {/* Team routes */}
               <Route path="/papyr-us/teams/:teamName/members">
