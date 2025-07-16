@@ -280,14 +280,14 @@ export function BlockEditor({ blocks, onChange, teamName, pageId, userId, userNa
           <div className="flex justify-center pt-4">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="opacity-60 hover:opacity-100 transition-opacity"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  블록 추가
-                </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="opacity-60 hover:opacity-100 transition-opacity"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              블록 추가
+            </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="center">
                 <DropdownMenuItem onClick={() => addBlock(blocks.length, 'paragraph')}>

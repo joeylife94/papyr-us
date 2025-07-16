@@ -4,6 +4,7 @@ import { storage } from "./storage.ts";
 import { config } from "./config.ts";
 import { insertWikiPageSchema, updateWikiPageSchema, searchSchema, insertCalendarEventSchema, updateCalendarEventSchema, insertDirectorySchema, updateDirectorySchema, insertCommentSchema, updateCommentSchema, insertMemberSchema, updateMemberSchema, insertTaskSchema, updateTaskSchema, insertNotificationSchema, updateNotificationSchema, insertTemplateCategorySchema, updateTemplateCategorySchema, insertTemplateSchema, updateTemplateSchema } from "../shared/schema.ts";
 import { upload, processUploadedFile, deleteUploadedFile, listUploadedFiles, getFileInfo } from "./services/upload.ts";
+import { smartSearch, generateSearchSuggestions } from "./services/ai.ts";
 import path from "path";
 import { existsSync } from "fs";
 import type { Request } from "express";
@@ -1206,6 +1207,103 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error deleting member:", error);
       res.status(500).json({ error: "Failed to delete member" });
+    }
+  });
+
+  // AI 서비스 API
+  app.post("/papyr-us/api/ai/generate", async (req, res) => {
+    try {
+      const { prompt, type } = req.body;
+      const { generateContent } = await import("./services/ai.ts");
+      const content = await generateContent(prompt, type);
+      res.json({ content });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to generate content", error: (error as Error).message });
+    }
+  });
+
+  app.post("/papyr-us/api/ai/improve", async (req, res) => {
+    try {
+      const { content, title } = req.body;
+      const { generateContentSuggestions } = await import("./services/ai.ts");
+      const suggestions = await generateContentSuggestions(content, title);
+      res.json({ suggestions });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to generate suggestions", error: (error as Error).message });
+    }
+  });
+
+  // AI 검색 API
+  app.post("/papyr-us/api/ai/search", async (req, res) => {
+    try {
+      const { query, teamId } = req.body;
+      
+      if (!query || query.trim().length === 0) {
+        return res.status(400).json({ message: "Search query is required" });
+      }
+
+      // 모든 관련 데이터 수집
+      const pagesResult = await storage.searchWikiPages({ 
+        query: "", 
+        teamId, 
+        limit: 100, 
+        offset: 0 
+      });
+      const tasks = await storage.getTasks(teamId);
+      const filesResult = await listUploadedFiles();
+
+      // 문서 배열 생성
+      const documents = [
+        ...pagesResult.pages.map((page: any) => ({
+          id: page.id,
+          title: page.title,
+          content: page.content,
+          type: 'page' as const,
+          url: `/papyr-us/page/${page.slug}`
+        })),
+        ...tasks.map((task: any) => ({
+          id: task.id,
+          title: task.title,
+          content: task.description || "",
+          type: 'task' as const,
+          url: `/papyr-us/tasks`
+        })),
+        ...filesResult.files.map((file: any) => ({
+          id: file.id || 0,
+          title: file.filename,
+          content: file.description || "",
+          type: 'file' as const,
+          url: `/papyr-us/files`
+        }))
+      ];
+
+      // AI 검색 수행
+      const results = await smartSearch(query, documents);
+      
+      res.json({ 
+        results,
+        query,
+        totalResults: results.length
+      });
+    } catch (error) {
+      console.error("AI search error:", error);
+      res.status(500).json({ message: "Failed to perform AI search", error: (error as Error).message });
+    }
+  });
+
+  app.post("/papyr-us/api/ai/search-suggestions", async (req, res) => {
+    try {
+      const { query } = req.body;
+      
+      if (!query || query.trim().length === 0) {
+        return res.json({ suggestions: [] });
+      }
+
+      const suggestions = await generateSearchSuggestions(query);
+      res.json({ suggestions });
+    } catch (error) {
+      console.error("Search suggestions error:", error);
+      res.status(500).json({ message: "Failed to generate search suggestions", error: (error as Error).message });
     }
   });
 

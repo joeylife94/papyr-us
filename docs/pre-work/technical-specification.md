@@ -22,6 +22,7 @@ Papyr.us는 React와 Express.js를 기반으로 구축된 현대적인 팀 협�
 - **Drizzle ORM** - 타입 안전한 SQL 쿼리 빌더
 - **Zod** - 스키마 검증 라이브러리
 - **OpenAI API** - GPT-4o 모델 연동
+- **Socket.IO** - 실시간 WebSocket 통신
 
 ### Database
 - **PostgreSQL 16** - 관계형 데이터베이스
@@ -167,6 +168,39 @@ CREATE TABLE progress_stats (
 );
 ```
 
+#### templates
+```sql
+CREATE TABLE templates (
+  id SERIAL PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT,
+  content TEXT NOT NULL,
+  blocks JSONB DEFAULT '[]', -- 블록 기반 템플릿 콘텐츠
+  category TEXT NOT NULL,
+  tags TEXT[] DEFAULT '{}',
+  author TEXT NOT NULL,
+  team_id INTEGER REFERENCES teams(id),
+  usage_count INTEGER DEFAULT 0,
+  is_public BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+#### ai_search_logs
+```sql
+CREATE TABLE ai_search_logs (
+  id SERIAL PRIMARY KEY,
+  query TEXT NOT NULL,
+  response TEXT NOT NULL,
+  user_id TEXT,
+  team_id INTEGER REFERENCES teams(id),
+  search_type TEXT DEFAULT 'general',
+  response_time INTEGER, -- 응답 시간 (ms)
+  created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
 ## API 엔드포인트
 
 ### 위키 페이지
@@ -226,6 +260,19 @@ GET    /papyr-us/api/dashboard/teams    # 팀별 통계
 ```
 POST   /papyr-us/api/ai/generate        # AI 콘텐츠 생성
 POST   /papyr-us/api/ai/improve         # 콘텐츠 개선 제안
+POST   /papyr-us/api/ai/search          # AI 자연어 검색
+GET    /papyr-us/api/ai/suggestions     # 검색 제안
+```
+
+### 템플릿 관리
+```
+GET    /papyr-us/api/templates          # 템플릿 목록 조회
+GET    /papyr-us/api/templates/:id      # 특정 템플릿 조회
+POST   /papyr-us/api/templates          # 새 템플릿 생성
+PUT    /papyr-us/api/templates/:id      # 템플릿 수정
+DELETE /papyr-us/api/templates/:id      # 템플릿 삭제
+GET    /papyr-us/api/templates/categories # 템플릿 카테고리 목록
+POST   /papyr-us/api/templates/:id/use  # 템플릿 사용 (사용 횟수 증가)
 ```
 
 ### 실시간 협업 (WebSocket)
@@ -255,6 +302,8 @@ Socket.IO Events:
 - **CodeBlock** - 코드 블록
 - **QuoteBlock** - 인용 블록
 - **CollaborationTest** - 실시간 협업 테스트 페이지
+- **TemplateEditor** - 템플릿 편집기 (블록 에디터 기반)
+- **AIAssistant** - AI 검색 및 제안 컴포넌트
 
 #### 블록 데이터 구조
 ```typescript
@@ -303,8 +352,56 @@ interface Block {
 /papyr-us/files               # 파일 관리
 /papyr-us/database            # 데이터베이스 뷰
 /papyr-us/collaboration-test  # 실시간 협업 테스트
+/papyr-us/ai-search           # AI 검색 페이지
+/papyr-us/templates           # 템플릿 갤러리
+/papyr-us/templates/edit/:id  # 템플릿 편집
 /papyr-us/teams/:teamName/*   # 팀별 페이지
 ```
+
+## AI 검색 시스템
+
+### OpenAI API 연동
+- **GPT-4o 모델**: 최신 OpenAI 모델을 활용한 자연어 처리
+- **검색 쿼리 변환**: 사용자 입력을 구조화된 검색 쿼리로 변환
+- **스마트 필터링**: 검색 결과에 대한 지능형 필터링 및 정렬
+- **응답 포맷팅**: JSON 형태의 구조화된 검색 결과 제공
+
+### AI 검색 컴포넌트
+- **AIAssistant**: 메인 AI 검색 인터페이스 컴포넌트
+- **검색 입력**: 자연어 검색 입력 필드 및 자동완성
+- **검색 제안**: 실시간 검색 제안 및 관련 키워드
+- **결과 표시**: 구조화된 검색 결과 및 관련 정보
+- **로딩 상태**: 검색 중 로딩 애니메이션 및 상태 표시
+
+### AI 검색 기능
+- **자연어 검색**: 일반적인 언어로 검색 가능
+- **스마트 제안**: 검색 패턴 기반 제안 시스템
+- **결과 필터링**: 검색 결과 타입별 필터링
+- **검색 히스토리**: 최근 검색 기록 관리
+- **응답 캐싱**: 동일한 검색 쿼리 응답 캐싱
+
+## 고급 템플릿 시스템
+
+### 템플릿 에디터
+- **블록 기반 편집**: 기존 블록 에디터를 활용한 템플릿 생성
+- **실시간 미리보기**: 템플릿 편집 중 실시간 미리보기
+- **메타데이터 관리**: 제목, 설명, 카테고리, 태그 관리
+- **템플릿 검증**: 필수 필드 검증 및 템플릿 구조 확인
+- **버전 관리**: 템플릿 버전 관리 및 변경 이력
+
+### 템플릿 갤러리
+- **카테고리 분류**: 카테고리별 템플릿 분류 및 관리
+- **사용 통계**: 템플릿 사용 횟수 및 인기도 표시
+- **검색 기능**: 제목, 설명, 태그 기반 템플릿 검색
+- **미리보기**: 템플릿 내용 미리보기 및 상세 정보
+- **편집 기능**: 기존 템플릿 편집 및 업데이트
+
+### 템플릿 관리
+- **CRUD 작업**: 생성, 읽기, 수정, 삭제 기능
+- **권한 관리**: 템플릿 생성/수정 권한 관리
+- **공유 시스템**: 팀 내 템플릿 공유 및 협업
+- **백업/복원**: 템플릿 백업 및 복원 기능
+- **사용 추적**: 템플릿 사용 통계 및 분석
 
 ## 실시간 협업 시스템
 

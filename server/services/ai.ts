@@ -130,3 +130,120 @@ export async function generateContent(prompt: string, type: 'page' | 'section' =
     throw new Error("Failed to generate content: " + (error as Error).message);
   }
 }
+
+export interface SearchResult {
+  id: number;
+  title: string;
+  content: string;
+  relevance: number;
+  matchedTerms: string[];
+  summary: string;
+  type: 'page' | 'task' | 'file';
+  url: string;
+}
+
+export async function smartSearch(query: string, documents: Array<{id: number, title: string, content: string, type: 'page' | 'task' | 'file', url: string}>): Promise<SearchResult[]> {
+  try {
+    const prompt = `Analyze the following search query and documents to find the most relevant matches. Consider semantic meaning, context, and user intent.
+
+Search Query: "${query}"
+
+Available Documents:
+${documents.map((doc, index) => `${index + 1}. ${doc.title} (${doc.type})
+   Content: ${doc.content.substring(0, 500)}...`).join('\n')}
+
+Respond with JSON in this format: {
+  "results": [
+    {
+      "documentIndex": 0,
+      "relevance": 0.95,
+      "matchedTerms": ["term1", "term2"],
+      "summary": "Brief explanation of why this document is relevant"
+    }
+  ]
+}
+
+Rank by relevance (0.0-1.0) and provide specific matched terms and reasoning.`;
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: "You are an expert search and information retrieval specialist. Analyze search queries and documents to find the most relevant matches based on semantic meaning and user intent."
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      response_format: { type: "json_object" },
+      max_tokens: 1500
+    });
+
+    const result = JSON.parse(response.choices[0].message.content || '{"results": []}');
+    
+    return result.results.map((item: any) => {
+      const doc = documents[item.documentIndex];
+      return {
+        id: doc.id,
+        title: doc.title,
+        content: doc.content,
+        relevance: item.relevance || 0,
+        matchedTerms: item.matchedTerms || [],
+        summary: item.summary || "",
+        type: doc.type,
+        url: doc.url
+      };
+    }).sort((a: SearchResult, b: SearchResult) => b.relevance - a.relevance);
+  } catch (error) {
+    console.error("Failed to perform smart search:", error);
+    // Fallback to simple text search
+    return documents
+      .map(doc => ({
+        id: doc.id,
+        title: doc.title,
+        content: doc.content,
+        relevance: doc.title.toLowerCase().includes(query.toLowerCase()) ? 0.8 : 
+                   doc.content.toLowerCase().includes(query.toLowerCase()) ? 0.6 : 0.3,
+        matchedTerms: [query],
+        summary: `Found "${query}" in ${doc.type}`,
+        type: doc.type,
+        url: doc.url
+      }))
+      .filter(result => result.relevance > 0.3)
+      .sort((a, b) => b.relevance - a.relevance);
+  }
+}
+
+export async function generateSearchSuggestions(query: string): Promise<string[]> {
+  try {
+    const prompt = `Given the search query "${query}", suggest 5 related search terms or phrases that might help the user find what they're looking for. Consider synonyms, related concepts, and alternative phrasings.
+
+Respond with JSON in this format: {
+  "suggestions": ["suggestion1", "suggestion2", "suggestion3", "suggestion4", "suggestion5"]
+}`;
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: "You are an expert at understanding search intent and suggesting related search terms. Provide helpful, relevant suggestions that expand on the user's query."
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      response_format: { type: "json_object" },
+      max_tokens: 300
+    });
+
+    const result = JSON.parse(response.choices[0].message.content || '{"suggestions": []}');
+    return result.suggestions || [];
+  } catch (error) {
+    console.error("Failed to generate search suggestions:", error);
+    return [];
+  }
+}

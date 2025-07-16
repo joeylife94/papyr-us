@@ -19,6 +19,7 @@ import { TasksPage } from "@/pages/tasks";
 import Templates from "@/pages/templates";
 import DatabaseView from "@/pages/database-view";
 import CollaborationTest from "@/pages/collaboration-test";
+import AISearchPage from "@/pages/ai-search";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -96,6 +97,8 @@ function Router() {
               </Route>
               
               <Route path="/papyr-us/collaboration-test" component={CollaborationTest} />
+              
+              <Route path="/papyr-us/ai-search" component={AISearchPage} />
               
               {/* Team routes */}
               <Route path="/papyr-us/teams/:teamName/members">

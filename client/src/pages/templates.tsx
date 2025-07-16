@@ -5,7 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
-import { BookOpen, FolderOpen, Users, RefreshCw, Star, Eye, FileText } from 'lucide-react';
+import { BookOpen, FolderOpen, Users, RefreshCw, Star, Eye, FileText, Plus, Edit, Trash2 } from 'lucide-react';
+import { TemplateEditor } from '@/components/templates/template-editor';
 
 interface TemplateCategory {
   id: number;
@@ -19,7 +20,7 @@ interface TemplateCategory {
 }
 
 interface Template {
-  id: number;
+  id?: number;
   title: string;
   description?: string;
   content: string;
@@ -27,12 +28,12 @@ interface Template {
   tags: string[];
   author: string;
   isPublic: boolean;
-  usageCount: number;
-  rating: number;
+  usageCount?: number;
+  rating?: number;
   thumbnail?: string;
   metadata?: any;
-  createdAt: string;
-  updatedAt: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 const iconMap: Record<string, React.ComponentType<any>> = {
@@ -44,6 +45,8 @@ const iconMap: Record<string, React.ComponentType<any>> = {
 
 const TemplatesPage: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
+  const [showEditor, setShowEditor] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
   const [, navigate] = useLocation();
 
   // Fetch template categories
@@ -96,6 +99,26 @@ const TemplatesPage: React.FC = () => {
     }
   };
 
+  const handleEditTemplate = (template: Template) => {
+    setEditingTemplate(template);
+    setShowEditor(true);
+  };
+
+  const handleCreateTemplate = () => {
+    setEditingTemplate(null);
+    setShowEditor(true);
+  };
+
+  const handleSaveTemplate = (template: Template) => {
+    setShowEditor(false);
+    setEditingTemplate(null);
+  };
+
+  const handleCancelEdit = () => {
+    setShowEditor(false);
+    setEditingTemplate(null);
+  };
+
   const renderStars = (rating: number) => {
     return Array.from({ length: 5 }, (_, i) => (
       <Star
@@ -113,10 +136,18 @@ const TemplatesPage: React.FC = () => {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="mb-8">
+        <div className="flex items-center justify-between">
+          <div>
         <h1 className="text-3xl font-bold mb-2">템플릿 갤러리</h1>
         <p className="text-muted-foreground">
           다양한 템플릿을 선택하여 새로운 페이지를 빠르게 시작하세요
         </p>
+          </div>
+          <Button onClick={handleCreateTemplate} className="flex items-center space-x-2">
+            <Plus className="h-4 w-4" />
+            <span>새 템플릿</span>
+          </Button>
+        </div>
       </div>
 
       {/* Category Tabs */}
@@ -145,6 +176,7 @@ const TemplatesPage: React.FC = () => {
                 template={template}
                 category={categories.find(c => c.id === template.categoryId)}
                 onSelect={handleTemplateSelect}
+                onEdit={handleEditTemplate}
                 renderStars={renderStars}
                 getCategoryIcon={getCategoryIcon}
               />
@@ -161,6 +193,7 @@ const TemplatesPage: React.FC = () => {
                   template={template}
                   category={category}
                   onSelect={handleTemplateSelect}
+                  onEdit={handleEditTemplate}
                   renderStars={renderStars}
                   getCategoryIcon={getCategoryIcon}
                 />
@@ -169,6 +202,19 @@ const TemplatesPage: React.FC = () => {
           </TabsContent>
         ))}
       </Tabs>
+
+      {/* Template Editor Modal */}
+      {showEditor && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-900 rounded-lg max-w-6xl w-full max-h-[90vh] overflow-hidden">
+            <TemplateEditor
+              template={editingTemplate || undefined}
+              onSave={handleSaveTemplate}
+              onCancel={handleCancelEdit}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -177,6 +223,7 @@ interface TemplateCardProps {
   template: Template;
   category?: TemplateCategory;
   onSelect: (template: Template) => void;
+  onEdit?: (template: Template) => void;
   renderStars: (rating: number) => React.ReactNode;
   getCategoryIcon: (iconName?: string) => React.ReactNode;
 }
@@ -185,6 +232,7 @@ const TemplateCard: React.FC<TemplateCardProps> = ({
   template,
   category,
   onSelect,
+  onEdit,
   renderStars,
   getCategoryIcon,
 }) => {
@@ -231,14 +279,14 @@ const TemplateCard: React.FC<TemplateCardProps> = ({
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-1">
               <Eye className="w-4 h-4" />
-              <span>{template.usageCount}</span>
+            <span>{template.usageCount || 0}</span>
             </div>
             <div className="flex items-center gap-1">
-              {renderStars(template.rating)}
+            {renderStars(template.rating || 0)}
             </div>
           </div>
           <div className="text-xs">
-            {new Date(template.createdAt).toLocaleDateString()}
+          {template.createdAt ? new Date(template.createdAt).toLocaleDateString() : '-'}
           </div>
         </div>
 
@@ -253,6 +301,17 @@ const TemplateCard: React.FC<TemplateCardProps> = ({
             <Eye className="w-4 h-4 mr-2" />
             미리보기
           </Button>
+          {onEdit && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onEdit(template)}
+              className="flex-1"
+            >
+              <Edit className="w-4 h-4 mr-2" />
+              편집
+            </Button>
+          )}
           <Button
             size="sm"
             onClick={() => onSelect(template)}

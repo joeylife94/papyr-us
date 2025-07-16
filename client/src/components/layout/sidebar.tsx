@@ -22,7 +22,9 @@ import {
   Activity,
   CheckSquare,
   BookOpen,
-  Database
+  Database,
+  Search,
+  Sparkles
 } from "lucide-react";
 import type { WikiPage } from "@shared/schema";
 import { Badge } from "@/components/ui/badge";
@@ -228,6 +230,12 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                 <Button variant="outline" className="w-full justify-start">
                   <Users className="h-4 w-4 mr-2 text-green-500" />
                   실시간 협업 테스트
+                </Button>
+              </Link>
+              <Link href="/papyr-us/ai-search">
+                <Button variant="outline" className="w-full justify-start">
+                  <Sparkles className="h-4 w-4 mr-2 text-purple-500" />
+                  AI 검색
                 </Button>
               </Link>
             </div>
