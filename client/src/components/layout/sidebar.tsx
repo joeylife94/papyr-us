@@ -21,7 +21,8 @@ import {
   File,
   Activity,
   CheckSquare,
-  BookOpen
+  BookOpen,
+  Database
 } from "lucide-react";
 import type { WikiPage } from "@shared/schema";
 import { Badge } from "@/components/ui/badge";
@@ -217,6 +218,12 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                   템플릿 갤러리
                 </Button>
               </Link>
+              <Link href="/papyr-us/database">
+                <Button variant="outline" className="w-full justify-start">
+                  <Database className="h-4 w-4 mr-2 text-indigo-500" />
+                  데이터베이스 뷰
+                </Button>
+              </Link>
             </div>
           </div>
 
@@ -334,6 +341,17 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                             >
                               <Plus className="h-4 w-4 mr-2 text-green-500" />
                               팀 페이지
+                            </Button>
+                          </Link>
+                          <Link href={`/papyr-us/teams/${team.name}/database`}>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="w-full justify-start h-9 text-xs rounded-lg hover:bg-gradient-to-r hover:from-indigo-50 hover:to-indigo-100 dark:hover:from-indigo-900/20 dark:hover:to-indigo-800/20 transition-all"
+                              onClick={onClose}
+                            >
+                              <Database className="h-4 w-4 mr-2 text-indigo-500" />
+                              팀 데이터
                             </Button>
                           </Link>
                         </div>

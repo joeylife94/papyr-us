@@ -3,8 +3,18 @@ import { Block, BlockType } from '@shared/schema';
 import { HeadingBlock } from './heading-block';
 import { ParagraphBlock } from './paragraph-block';
 import { CheckboxBlock } from './checkbox-block';
-import { Plus } from 'lucide-react';
+import { ImageBlock } from './image-block';
+import { TableBlock } from './table-block';
+import { CodeBlock } from './code-block';
+import { QuoteBlock } from './quote-block';
+import { Plus, Type, AlignLeft, CheckSquare, Image as ImageIcon, Table as TableIcon, Code, Quote } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { 
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface BlockEditorProps {
   blocks: Block[];
@@ -77,6 +87,14 @@ export function BlockEditor({ blocks, onChange, teamName }: BlockEditorProps) {
         return <ParagraphBlock {...commonProps} />;
       case 'checkbox':
         return <CheckboxBlock {...commonProps} />;
+      case 'image':
+        return <ImageBlock {...commonProps} teamName={teamName} />;
+      case 'table':
+        return <TableBlock {...commonProps} />;
+      case 'code':
+        return <CodeBlock {...commonProps} />;
+      case 'quote':
+        return <QuoteBlock {...commonProps} />;
       default:
         return <ParagraphBlock {...commonProps} />;
     }
@@ -89,16 +107,61 @@ export function BlockEditor({ blocks, onChange, teamName }: BlockEditorProps) {
     }
   };
 
+  // 블록 타입별 아이콘
+  const getBlockTypeIcon = (type: BlockType) => {
+    switch (type) {
+      case 'heading1':
+      case 'heading2':
+      case 'heading3':
+        return <Type className="h-4 w-4" />;
+      case 'paragraph':
+        return <AlignLeft className="h-4 w-4" />;
+      case 'checkbox':
+        return <CheckSquare className="h-4 w-4" />;
+      case 'image':
+        return <ImageIcon className="h-4 w-4" />;
+      case 'table':
+        return <TableIcon className="h-4 w-4" />;
+      case 'code':
+        return <Code className="h-4 w-4" />;
+      case 'quote':
+        return <Quote className="h-4 w-4" />;
+      default:
+        return <AlignLeft className="h-4 w-4" />;
+    }
+  };
+
   return (
     <div className="block-editor min-h-[400px] p-4">
       {blocks.length === 0 ? (
         <div 
-          className="flex items-center justify-center h-64 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-gray-400 transition-colors"
-          onClick={handleEmptyEditorClick}
+          className="flex items-center justify-center h-64 border-2 border-dashed border-gray-300 rounded-lg hover:border-gray-400 transition-colors"
         >
-          <div className="text-center">
-            <Plus className="h-8 w-8 mx-auto mb-2 text-gray-400" />
-            <p className="text-gray-500">클릭하여 첫 번째 블록을 추가하세요</p>
+          <div className="text-center space-y-4">
+            <Plus className="h-8 w-8 mx-auto text-gray-400" />
+            <p className="text-gray-500">첫 번째 블록을 추가하세요</p>
+            <div className="flex flex-wrap justify-center gap-2">
+              {(['paragraph', 'heading1', 'checkbox', 'image', 'table', 'code', 'quote'] as BlockType[]).map((type) => (
+                <Button
+                  key={type}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => addBlock(0, type)}
+                  className="flex items-center space-x-2"
+                >
+                  {getBlockTypeIcon(type)}
+                  <span>
+                    {type === 'paragraph' && '단락'}
+                    {type === 'heading1' && '제목'}
+                    {type === 'checkbox' && '체크박스'}
+                    {type === 'image' && '이미지'}
+                    {type === 'table' && '테이블'}
+                    {type === 'code' && '코드'}
+                    {type === 'quote' && '인용'}
+                  </span>
+                </Button>
+              ))}
+            </div>
           </div>
         </div>
       ) : (
@@ -107,15 +170,56 @@ export function BlockEditor({ blocks, onChange, teamName }: BlockEditorProps) {
           
           {/* 마지막에 새 블록 추가 버튼 */}
           <div className="flex justify-center pt-4">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => addBlock(blocks.length, 'paragraph')}
-              className="opacity-60 hover:opacity-100 transition-opacity"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              블록 추가
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="opacity-60 hover:opacity-100 transition-opacity"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  블록 추가
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="center">
+                <DropdownMenuItem onClick={() => addBlock(blocks.length, 'paragraph')}>
+                  <AlignLeft className="h-4 w-4 mr-2" />
+                  단락
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => addBlock(blocks.length, 'heading1')}>
+                  <Type className="h-4 w-4 mr-2" />
+                  제목 1
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => addBlock(blocks.length, 'heading2')}>
+                  <Type className="h-4 w-4 mr-2" />
+                  제목 2
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => addBlock(blocks.length, 'heading3')}>
+                  <Type className="h-4 w-4 mr-2" />
+                  제목 3
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => addBlock(blocks.length, 'checkbox')}>
+                  <CheckSquare className="h-4 w-4 mr-2" />
+                  체크박스
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => addBlock(blocks.length, 'image')}>
+                  <ImageIcon className="h-4 w-4 mr-2" />
+                  이미지
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => addBlock(blocks.length, 'table')}>
+                  <TableIcon className="h-4 w-4 mr-2" />
+                  테이블
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => addBlock(blocks.length, 'code')}>
+                  <Code className="h-4 w-4 mr-2" />
+                  코드
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => addBlock(blocks.length, 'quote')}>
+                  <Quote className="h-4 w-4 mr-2" />
+                  인용
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       )}

@@ -17,6 +17,7 @@ import FileManager from "@/pages/file-manager";
 import { DashboardPage } from "@/pages/dashboard";
 import { TasksPage } from "@/pages/tasks";
 import Templates from "@/pages/templates";
+import DatabaseView from "@/pages/database-view";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -86,6 +87,12 @@ function Router() {
               <Route path="/papyr-us/tasks" component={TasksPage} />
               
               <Route path="/papyr-us/templates" component={Templates} />
+              
+              <Route path="/papyr-us/database" component={DatabaseView} />
+              
+              <Route path="/papyr-us/teams/:teamName/database">
+                {(params) => <DatabaseView teamName={params.teamName} />}
+              </Route>
               
               {/* Team routes */}
               <Route path="/papyr-us/teams/:teamName/members">
