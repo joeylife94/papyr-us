@@ -25,25 +25,58 @@ A comprehensive wiki platform built with React and Express.js, enabling collabor
 
 ### Backend
 - Express.js with TypeScript
-- In-memory storage (expandable to PostgreSQL)
+- PostgreSQL 16 with Drizzle ORM
 - RESTful API design
+- Docker containerization
 
 ## Quick Start
 
-### Prerequisites
+### 🐳 Docker 환경 (권장)
+
+이 프로젝트는 **Docker 환경에서 개발**하는 것을 권장합니다.
+
+#### Prerequisites
+- Docker Desktop
+- Docker Compose
+
+#### Docker Development
+
+1. **Clone and start with Docker:**
+   ```bash
+   git clone <your-repo-url>
+   cd papyr-us
+   docker-compose up --build
+   ```
+
+2. **Set up environment (optional):**
+   ```bash
+   cp .env.example .env
+   # Edit .env file with your preferred settings
+   ```
+
+3. **Access the application:**
+   - **Frontend**: `http://localhost:5001/papyr-us/`
+   - **API**: `http://localhost:5001/papyr-us/api/`
+
+### 🔧 로컬 환경 (대안)
+
+Docker 환경을 사용할 수 없는 경우에만 사용하세요.
+
+#### Prerequisites
 - Node.js 18+ 
 - npm or yarn
+- PostgreSQL 16 (선택사항)
 
-### Local Development
+#### Local Development
 
 1. **Clone and install dependencies:**
    ```bash
    git clone <your-repo-url>
-   cd wiki-platform
+   cd papyr-us
    npm install
    ```
 
-2. **Set up environment (optional):**
+2. **Set up environment:**
    ```bash
    cp .env.example .env
    # Edit .env file with your preferred settings
@@ -124,11 +157,11 @@ OPENAI_API_KEY=your_openai_api_key_here
 
 ### Storage Options
 
-By default, the application uses in-memory storage. For persistent data:
+The application uses **PostgreSQL 16** as the primary database:
 
-1. Set up PostgreSQL database
-2. Add `DATABASE_URL` to your environment variables
-3. The application will automatically use database storage
+1. **Docker 환경**: PostgreSQL이 자동으로 설정됩니다
+2. **로컬 환경**: PostgreSQL을 별도로 설치하고 `DATABASE_URL` 환경 변수를 설정하세요
+3. **개발용**: 메모리 저장소도 지원됩니다 (자동 전환)
 
 ## Features Overview
 

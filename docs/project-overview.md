@@ -57,12 +57,18 @@ Papyr.us는 React와 Express.js를 기반으로 구축된 현대적인 팀 협�
 - **Zod** - 스키마 검증 라이브러리
 - **OpenAI API** - GPT-4o 모델 연동
 
+### Database
+- **PostgreSQL 16** - 관계형 데이터베이스
+- **Drizzle ORM** - 타입 안전한 데이터베이스 접근
+
 ### AI & 마크다운
 - **OpenAI SDK** - AI 기능 구현
 - **remark/rehype** - 마크다운 처리
 - **gray-matter** - 프론트매터 파싱
 
 ### 개발 도구
+- **Docker** - 컨테이너화된 개발 환경
+- **Docker Compose** - 멀티 컨테이너 애플리케이션 관리
 - **ESLint** - 코드 품질 검사
 - **Prettier** - 코드 포맷팅
 - **Vite** - 개발 서버 및 HMR
@@ -84,9 +90,14 @@ papyr-us/
 └── docs/                   # 프로젝트 문서
 ```
 
+## 개발 환경
+- **🐳 Docker 환경 (권장)** - 컨테이너화된 일관된 개발 환경
+- **🔧 로컬 환경** - Docker를 사용할 수 없는 경우의 대안
+
 ## 배포 환경
 - **Vercel** - 프로덕션 배포
 - **Replit** - 개발 및 테스트 환경
+- **Ubuntu 서버** - 개인 서버 배포 (계획됨)
 
 ## 다음 단계
 

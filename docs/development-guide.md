@@ -2,13 +2,40 @@
 
 ## 개발 환경 설정
 
-### 필수 요구사항
-- Node.js 18 이상
-- npm 또는 yarn
+### 🐳 Docker 환경 (권장)
+이 프로젝트는 **Docker 환경에서 개발**하는 것을 권장합니다.
+
+#### 필수 요구사항
+- Docker Desktop
+- Docker Compose
 - 현대적인 웹 브라우저
 - OpenAI API 키 (AI 기능 사용 시)
 
-### 환경 변수 설정
+#### Docker 환경 설정
+```bash
+# 1. Docker 컨테이너 빌드 및 실행
+docker-compose up --build
+
+# 2. 백그라운드 실행 (선택사항)
+docker-compose up -d --build
+```
+
+#### Docker 환경 접근
+- **프론트엔드**: `http://localhost:5001/papyr-us/`
+- **API 엔드포인트**: `http://localhost:5001/papyr-us/api/`
+- **PostgreSQL**: `localhost:5432` (컨테이너 내부)
+
+### 🔧 로컬 환경 (대안)
+Docker 환경을 사용할 수 없는 경우에만 로컬 환경을 사용하세요.
+
+#### 필수 요구사항
+- Node.js 18 이상
+- npm 또는 yarn
+- PostgreSQL 16 (선택사항)
+- 현대적인 웹 브라우저
+- OpenAI API 키 (AI 기능 사용 시)
+
+#### 환경 변수 설정
 프로젝트 루트에 `.env` 파일을 생성하고 다음 환경 변수를 설정하세요:
 
 ```env
@@ -19,7 +46,7 @@ OPENAI_API_KEY=your_openai_api_key_here
 OPENAI_API_KEY_ENV_VAR=your_openai_api_key_here
 ```
 
-### 프로젝트 실행
+#### 로컬 프로젝트 실행
 ```bash
 npm install
 npm run dev
