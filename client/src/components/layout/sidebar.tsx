@@ -24,7 +24,8 @@ import {
   BookOpen,
   Database,
   Search,
-  Sparkles
+  Sparkles,
+  X
 } from "lucide-react";
 import type { WikiPage } from "@shared/schema";
 import { Badge } from "@/components/ui/badge";
@@ -190,12 +191,24 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
       {/* Sidebar */}
       <aside 
         className={cn(
-          "fixed left-0 top-16 bottom-0 w-80 bg-gradient-to-b from-white to-slate-50/50 dark:from-slate-900 dark:to-slate-950/50 border-r border-slate-200/60 dark:border-slate-700/60 overflow-y-auto transform transition-all duration-300 z-30 backdrop-blur-sm",
+          "fixed left-0 top-16 bottom-0 w-[85vw] max-w-sm lg:w-80 bg-gradient-to-b from-white to-slate-50/50 dark:from-slate-900 dark:to-slate-950/50 border-r border-slate-200/60 dark:border-slate-700/60 overflow-y-auto transform transition-all duration-300 z-30 backdrop-blur-sm",
           "lg:translate-x-0",
           isOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
         <div className="p-4">
+          {/* Mobile Close Button */}
+          <div className="flex justify-end mb-4 lg:hidden">
+            <Button
+              variant="ghost"
+              size="mobile"
+              onClick={onClose}
+              className="h-10 w-10"
+            >
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
+          
           {/* Quick Actions */}
           <div className="mb-6">
             <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">

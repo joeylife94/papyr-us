@@ -31,7 +31,7 @@ function Router() {
   const closeSidebar = () => setIsSidebarOpen(false);
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-950">
       <Header 
         onToggleSidebar={toggleSidebar}
         searchQuery={searchQuery}
@@ -46,8 +46,8 @@ function Router() {
           onSearchChange={setSearchQuery}
         />
         
-        <main className="flex-1 lg:ml-80">
-          <div className="max-w-7xl mx-auto">
+        <main id="main-content" className="flex-1 lg:ml-80">
+          <div className="max-w-7xl mx-auto px-4 md:px-6 lg:px-8">
             <Switch>
               <Route path="/papyr-us/">
                 <Home 
