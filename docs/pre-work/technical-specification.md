@@ -228,12 +228,25 @@ POST   /papyr-us/api/ai/generate        # AI 콘텐츠 생성
 POST   /papyr-us/api/ai/improve         # 콘텐츠 개선 제안
 ```
 
+### 실시간 협업 (WebSocket)
+```
+Socket.IO Events:
+- join-document     # 문서 세션 참여
+- leave-document    # 문서 세션 퇴장
+- document-change   # 문서 변경사항 전송
+- cursor-update     # 커서 위치 업데이트
+- typing-start      # 타이핑 시작
+- typing-stop       # 타이핑 종료
+- user-joined       # 사용자 참여 알림
+- user-left         # 사용자 퇴장 알림
+```
+
 ## 컴포넌트 아키텍처
 
 ### 블록 에디터 시스템
 
 #### 핵심 컴포넌트
-- **BlockEditor** - 메인 블록 에디터
+- **BlockEditor** - 메인 블록 에디터 (실시간 협업 통합)
 - **HeadingBlock** - 제목 블록 (H1, H2, H3)
 - **ParagraphBlock** - 단락 블록
 - **CheckboxBlock** - 체크박스 블록
@@ -241,6 +254,7 @@ POST   /papyr-us/api/ai/improve         # 콘텐츠 개선 제안
 - **TableBlock** - 테이블 블록
 - **CodeBlock** - 코드 블록
 - **QuoteBlock** - 인용 블록
+- **CollaborationTest** - 실시간 협업 테스트 페이지
 
 #### 블록 데이터 구조
 ```typescript
@@ -288,8 +302,31 @@ interface Block {
 /papyr-us/tasks               # 과제 관리
 /papyr-us/files               # 파일 관리
 /papyr-us/database            # 데이터베이스 뷰
+/papyr-us/collaboration-test  # 실시간 협업 테스트
 /papyr-us/teams/:teamName/*   # 팀별 페이지
 ```
+
+## 실시간 협업 시스템
+
+### WebSocket 기반 실시간 통신
+- **Socket.IO 서버**: Express 서버와 통합된 WebSocket 서버
+- **클라이언트 연결**: 자동 재연결 및 연결 상태 관리
+- **이벤트 기반 통신**: 문서 변경, 사용자 참여/퇴장, 타이핑 상태
+
+### 협업 세션 관리
+- **문서별 세션**: 각 페이지별 독립적인 협업 세션
+- **사용자 관리**: 참여자 목록 및 실시간 상태 표시
+- **세션 정리**: 사용자 퇴장 시 자동 세션 정리
+
+### 충돌 해결 시스템
+- **타임스탬프 기반**: 마지막 수정 시간 기반 충돌 감지
+- **자동 병합**: 로컬/원격 변경사항 자동 병합
+- **안전한 해결**: 충돌 해결 실패 시 원격 변경사항 우선
+
+### 사용자 경험
+- **실시간 표시**: 연결 상태, 참여자, 타이핑 상태 UI
+- **직관적 피드백**: 사용자 참여/퇴장 알림
+- **성능 최적화**: 메모리 사용량 및 이벤트 최적화
 
 ## 성능 최적화
 
