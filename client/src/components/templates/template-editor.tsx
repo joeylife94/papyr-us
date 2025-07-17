@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -98,14 +98,14 @@ export function TemplateEditor({ template, onSave, onCancel }: TemplateEditorPro
         return await apiRequest('POST', '/papyr-us/api/templates', templateData);
       }
     },
-    onSuccess: (data) => {
+    onSuccess: (data: any) => {
       toast({
         title: template?.id ? "템플릿 업데이트" : "템플릿 생성",
         description: "템플릿이 성공적으로 저장되었습니다.",
       });
       queryClient.invalidateQueries({ queryKey: ['templates'] });
       if (onSave) {
-        onSave(data);
+        onSave(data as Template);
       } else {
         navigate('/papyr-us/templates');
       }
@@ -253,7 +253,7 @@ export function TemplateEditor({ template, onSave, onCancel }: TemplateEditorPro
                     <SelectValue placeholder="카테고리를 선택하세요" />
                   </SelectTrigger>
                   <SelectContent>
-                    {categories.map((category) => (
+                    {categories.map((category: TemplateCategory) => (
                       <SelectItem key={category.id} value={category.id.toString()}>
                         {category.displayName}
                       </SelectItem>

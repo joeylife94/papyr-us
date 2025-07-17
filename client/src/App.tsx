@@ -80,17 +80,29 @@ function Router() {
               
               <Route path="/papyr-us/admin" component={AdminPage} />
               
-              <Route path="/papyr-us/members" component={Members} />
+              <Route path="/papyr-us/members">
+                <Members />
+              </Route>
               
-              <Route path="/papyr-us/files" component={FileManager} />
+              <Route path="/papyr-us/files">
+                <FileManager />
+              </Route>
               
-              <Route path="/papyr-us/dashboard" component={DashboardPage} />
+              <Route path="/papyr-us/dashboard">
+                <DashboardPage />
+              </Route>
               
-              <Route path="/papyr-us/tasks" component={TasksPage} />
+              <Route path="/papyr-us/tasks">
+                <TasksPage />
+              </Route>
               
-              <Route path="/papyr-us/templates" component={Templates} />
+              <Route path="/papyr-us/templates">
+                <Templates />
+              </Route>
               
-              <Route path="/papyr-us/database" component={DatabaseView} />
+              <Route path="/papyr-us/database">
+                <DatabaseView />
+              </Route>
               
               <Route path="/papyr-us/teams/:teamName/database">
                 {(params) => <DatabaseView teamName={params.teamName} />}
