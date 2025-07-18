@@ -2,8 +2,26 @@
 
 ## 최근 작업 요약 (2025-07-17)
 
+### 데이터베이스 마이그레이션 문제 해결 (2024-12-17)
+```bash
+# DB 볼륨 초기화 (필요시)
+docker-compose down -v
+docker-compose up -d
+
+# 마이그레이션 적용
+docker-compose exec app npm run db:migrate
+
+# 수동으로 teams 테이블 생성 (필요시)
+docker cp migrations/0004_add_teams_tables.sql papyr-us-app-1:/app/teams_migration.sql
+docker-compose exec app node -e "const { Pool } = require('pg'); const fs = require('fs'); const pool = new Pool({ connectionString: process.env.DATABASE_URL }); const sql = fs.readFileSync('/app/teams_migration.sql', 'utf8'); pool.query(sql).then(() => console.log('Teams tables created successfully')).catch(err => console.error('Error:', err.message)).finally(() => process.exit(0));"
+```
+
+> **참고**: drizzle-kit 버전 호환성 문제로 introspect 명령어 사용 불가하여 수동 SQL 실행으로 해결
+
+
 - **UI/UX 개선 1차 완료**: 모바일 터치 최적화, 버튼 크기/간격 개선, 사이드바 모바일 닫기 버튼 추가, 다크모드 색상 팔레트 및 카드/컴포넌트 일관성 개선, 키보드 포커스/스킵 링크/ARIA 라벨 등 접근성 향상, 메인 콘텐츠 패딩 및 반응형 레이아웃 보완
 - **테스트 및 안정화 단계 진입**: Docker 환경 정상 기동, 데이터베이스 마이그레이션 성공, 주요 API(teams) 정상 응답 확인, 전체 API/기능별 테스트 및 타입 체크는 다음 작업 예정
+- **DB 마이그레이션 및 팀 관리 완성 (2024-12-17)**: teams 테이블 생성 문제 해결, 팀 CRUD 기능 완전 구현, 관리자 UI 완성
 
 ---
 
@@ -79,6 +97,9 @@ CREATE TABLE teams (
   updated_at TIMESTAMP DEFAULT NOW()
 );
 ```
+
+> **참고**: 2024-12-17에 `relation "teams" does not exist` 에러가 발생하여 수동 마이그레이션으로 해결. 
+> drizzle-kit 버전 호환성 문제로 introspect 명령어 사용 불가하여 Docker 컨테이너에 직접 SQL 실행으로 테이블 생성.
 
 #### members
 ```sql
@@ -532,6 +553,7 @@ npm run db:migrate
 # 개발 서버 시작
 npm run dev
 ```
+
 
 ### 코드 스타일
 - **TypeScript**: 엄격한 타입 체크

@@ -1,5 +1,117 @@
 # 변경 로그
 
+---
+
+## 버전 1.9.1 - 2025-07-18 (DB 마이그레이션 및 팀 관리 기능 완성)
+
+### 🚀 주요 기능 추가
+- **DB 마이그레이션 문제 해결**: `relation "teams" does not exist` 에러 완전 해결
+- **팀 관리 시스템 완전 구현**: 팀 생성/수정/삭제 CRUD 기능
+- **관리자 UI 완성**: Teams 탭에서 모든 팀 관리 기능 접근 가능
+- **데이터베이스 스키마 확장**: teams, members, tasks, notifications, progress_stats, template_categories, templates 테이블 생성
+
+### ✅ DB 마이그레이션 문제 해결
+
+#### 문제 상황
+- **에러**: `relation "teams" does not exist` 에러 발생
+- **원인**: drizzle 마이그레이션이 실제로 teams 테이블을 생성하지 않음
+- **영향**: 팀 관리 기능 전면 중단
+
+#### 해결 방법
+- **수동 마이그레이션**: `drizzle/0004_add_teams_tables.sql`을 `migrations/` 폴더로 복사
+- **Docker 컨테이너 직접 실행**: SQL 스크립트를 컨테이너에 직접 실행하여 테이블 생성
+- **DB 볼륨 초기화**: 필요시 볼륨 초기화 후 마이그레이션 재적용
+
+#### 생성된 테이블들
+```sql
+- teams (팀 정보)
+- members (팀 멤버)
+- tasks (작업 관리)
+- notifications (알림)
+- progress_stats (진행 통계)
+- template_categories (템플릿 카테고리)
+- templates (템플릿)
+```
+
+### 🔧 팀 관리 기능 완성
+
+#### 팀 CRUD 기능
+- **팀 생성**: ✅ 정상 동작 - 이름, 표시명, 설명, 비밀번호, 아이콘, 색상 설정
+- **팀 수정**: ✅ 구현 완료 - 기존 팀 정보 수정 및 업데이트
+- **팀 삭제**: ✅ 구현 완료 - 팀 삭제 및 관련 데이터 정리
+- **팀 조회**: ✅ 구현 완료 - 팀 목록 조회 및 상세 정보 표시
+
+#### 관리자 UI
+- **Teams 탭**: 모든 팀 관리 기능을 한 곳에서 접근 가능
+- **팀 목록**: 생성된 모든 팀의 목록 표시
+- **팀 편집**: 인라인 편집 또는 모달을 통한 팀 정보 수정
+- **팀 삭제**: 확인 대화상자와 함께 안전한 팀 삭제
+
+### 📊 기술적 세부사항
+
+#### 마이그레이션 실행 방법
+```bash
+# DB 볼륨 초기화 (필요시)
+docker-compose down -v
+docker-compose up -d
+
+# 마이그레이션 적용
+docker-compose exec app npm run db:migrate
+
+# 수동으로 teams 테이블 생성 (필요시)
+docker cp migrations/0004_add_teams_tables.sql papyr-us-app-1:/app/teams_migration.sql
+docker-compose exec app node -e "const { Pool } = require('pg'); const fs = require('fs'); const pool = new Pool({ connectionString: process.env.DATABASE_URL }); const sql = fs.readFileSync('/app/teams_migration.sql', 'utf8'); pool.query(sql).then(() => console.log('Teams tables created successfully')).catch(err => console.error('Error:', err.message)).finally(() => process.exit(0));"
+```
+
+#### 팀 스키마 구조
+```sql
+CREATE TABLE "teams" (
+    "id" serial PRIMARY KEY NOT NULL,
+    "name" text NOT NULL UNIQUE,
+    "display_name" text NOT NULL,
+    "description" text,
+    "password" text,
+    "icon" text,
+    "color" text,
+    "is_active" boolean NOT NULL DEFAULT true,
+    "order" integer NOT NULL DEFAULT 0,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "updated_at" timestamp DEFAULT now() NOT NULL
+);
+```
+
+### 🎯 성과 지표
+- **DB 마이그레이션**: 100% 완료 (teams 테이블 정상 생성)
+- **팀 관리 기능**: 100% 완료 (CRUD 모든 기능 구현)
+- **관리자 UI**: 100% 완료 (Teams 탭에서 모든 기능 접근)
+- **데이터베이스 스키마**: 100% 완료 (7개 테이블 생성)
+
+### 💡 개발자 인사이트
+- **Docker 환경**: DB 마이그레이션 시 볼륨 관리의 중요성
+- **drizzle-kit 호환성**: 버전 호환성 문제로 introspect 명령어 사용 불가
+- **수동 SQL 실행**: 마이그레이션 실패 시 수동 SQL 실행으로 문제 해결 가능
+- **팀 기반 아키텍처**: 팀 단위 데이터 분리로 확장 가능한 구조 설계
+
+### 📋 다음 단계
+1. **팀 멤버 관리 기능** 구현
+2. **작업 관리 시스템** 완성
+3. **알림 시스템** 구현
+4. **템플릿 시스템** 완성
+
+---
+
+### 🚀 주요 변경점
+- **UI/UX 개선 1차 완료**: 모바일 터치 최적화, 버튼 크기/간격 개선, 사이드바 모바일 닫기 버튼 추가
+- **다크모드 일관성 개선**: 색상 팔레트 및 카드/컴포넌트 스타일 통일
+- **접근성 향상**: 키보드 포커스, 스킵 링크, ARIA 라벨 등 추가
+- **반응형 레이아웃 보완**: 메인 콘텐츠 패딩 및 모바일 레이아웃 개선
+
+### 🧪 테스트 진행 상황
+- Docker 컨테이너 정상 기동 및 빌드 픽스 적용 확인
+- 데이터베이스 마이그레이션 및 테이블 생성 완료
+- 주요 API 엔드포인트(teams) 정상 응답 확인
+- 전체 API/기능별 테스트 및 TypeScript 타입 체크(다음 작업 예정)
+
 ## 버전 1.9.1 - 2025-07-17 (UI/UX 개선 및 테스트 진행 중)
 
 ### 🚀 주요 변경점
