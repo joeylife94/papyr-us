@@ -30,6 +30,8 @@ Papyr.us는 React와 Express.js를 기반으로 구축된 현대적인 팀 협�
 - **Zod** - 스키마 검증 라이브러리
 - **OpenAI API** - GPT-4o 모델 연동
 - **Socket.IO** - 실시간 WebSocket 통신
+- **bcrypt** - 비밀번호 해싱
+- **jsonwebtoken** - JWT 기반 인증
 
 ### Database
 - **PostgreSQL 16** - 관계형 데이터베이스
@@ -43,6 +45,18 @@ Papyr.us는 React와 Express.js를 기반으로 구축된 현대적인 팀 협�
 ## 데이터베이스 스키마
 
 ### 핵심 테이블
+
+#### users
+```sql
+CREATE TABLE users (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+```
 
 #### wiki_pages
 ```sql
@@ -210,6 +224,14 @@ CREATE TABLE ai_search_logs (
 
 ## API 엔드포인트
 
+### 사용자 인증 (Authentication)
+```
+POST   /papyr-us/api/auth/register      # 회원 가입
+POST   /papyr-us/api/auth/login         # 로그인
+POST   /papyr-us/api/auth/logout        # 로그아웃
+GET    /papyr-us/api/auth/me            # 현재 로그인된 사용자 정보 조회
+```
+
 ### 위키 페이지
 ```
 GET    /papyr-us/api/pages              # 페이지 목록 조회
@@ -351,6 +373,8 @@ interface Block {
 #### 라우팅 구조
 ```
 /papyr-us/                    # 홈페이지
+/papyr-us/login               # 로그인 페이지
+/papyr-us/register            # 회원가입 페이지
 /papyr-us/page/:slug          # 위키 페이지
 /papyr-us/edit/:pageId        # 페이지 편집
 /papyr-us/create              # 새 페이지 생성
