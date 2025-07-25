@@ -2,6 +2,7 @@ import { wikiPages, type WikiPage, type InsertWikiPage, type UpdateWikiPage, typ
 import { drizzle } from "drizzle-orm/node-postgres";
 import { eq, like, and, sql, desc, asc } from "drizzle-orm";
 import { Pool } from "pg";
+import bcrypt from "bcrypt";
 
 export interface IStorage {
   // Wiki pages CRUD
@@ -719,7 +720,7 @@ Welcome to Team Alpha's dedicated workspace! Use this area to collaborate and or
   }
 
   // Teams methods
-  private initializeDefaultTeams() {
+  private async initializeDefaultTeams() {
     const defaultTeams: Omit<Team, 'id'>[] = [
       {
         name: "backend-team",
@@ -759,8 +760,12 @@ Welcome to Team Alpha's dedicated workspace! Use this area to collaborate and or
       },
     ];
 
-    defaultTeams.forEach(team => {
+    for (const team of defaultTeams) {
       const id = this.currentTeamId++;
+      if (team.password) {
+        const salt = await bcrypt.genSalt(10);
+        team.password = await bcrypt.hash(team.password, salt);
+      }
       this.teams.set(id, { 
         ...team, 
         id,
@@ -768,7 +773,7 @@ Welcome to Team Alpha's dedicated workspace! Use this area to collaborate and or
         icon: team.icon || null,
         color: team.color || null,
       });
-    });
+    }
   }
 
   // Members methods
@@ -841,6 +846,10 @@ Welcome to Team Alpha's dedicated workspace! Use this area to collaborate and or
   async createTeam(insertTeam: InsertTeam): Promise<Team> {
     const id = this.currentTeamId++;
     const now = new Date();
+    if (insertTeam.password) {
+      const salt = await bcrypt.genSalt(10);
+      insertTeam.password = await bcrypt.hash(insertTeam.password, salt);
+    }
     const team: Team = {
       id,
       name: insertTeam.name,
@@ -862,6 +871,11 @@ Welcome to Team Alpha's dedicated workspace! Use this area to collaborate and or
     const existingTeam = this.teams.get(id);
     if (!existingTeam) return undefined;
 
+    if (updateTeam.password) {
+      const salt = await bcrypt.genSalt(10);
+      updateTeam.password = await bcrypt.hash(updateTeam.password, salt);
+    }
+
     const updated: Team = {
       ...existingTeam,
       ...updateTeam,
@@ -877,7 +891,10 @@ Welcome to Team Alpha's dedicated workspace! Use this area to collaborate and or
 
   async verifyTeamPassword(teamName: string, password: string): Promise<boolean> {
     const team = await this.getTeamByName(teamName);
-    return team?.password === password;
+    if (!team || !team.password) {
+      return false;
+    }
+    return await bcrypt.compare(password, team.password);
   }
 
   async getMembers(teamId?: number): Promise<Member[]> {
@@ -2302,16 +2319,23 @@ export class DBStorage implements IStorage {
   }
 
   async getTeamByName(name: string): Promise<Team | undefined> {
-    const result = await this.db.select().from(teams).where(eq(teams.name, name));
-    return result[0];
+    return this.db.select().from(teams).where(eq(teams.name, name)).then((res: any[]) => res[0]);
   }
 
   async createTeam(insertTeam: InsertTeam): Promise<Team> {
+    if (insertTeam.password) {
+      const salt = await bcrypt.genSalt(10);
+      insertTeam.password = await bcrypt.hash(insertTeam.password, salt);
+    }
     const result = await this.db.insert(teams).values(insertTeam).returning();
     return result[0];
   }
 
   async updateTeam(id: number, updateTeam: UpdateTeam): Promise<Team | undefined> {
+    if (updateTeam.password) {
+      const salt = await bcrypt.genSalt(10);
+      updateTeam.password = await bcrypt.hash(updateTeam.password, salt);
+    }
     const result = await this.db.update(teams).set(updateTeam).where(eq(teams.id, id)).returning();
     return result[0];
   }
@@ -2322,8 +2346,15 @@ export class DBStorage implements IStorage {
   }
 
   async verifyTeamPassword(teamName: string, password: string): Promise<boolean> {
-    const result = await this.db.select().from(teams).where(and(eq(teams.name, teamName), eq(teams.password, password)));
-    return result.length > 0;
+    const result = await this.db.select().from(teams).where(eq(teams.name, teamName));
+    if (result.length === 0) {
+      return false;
+    }
+    const team = result[0];
+    if (!team.password) {
+      return false;
+    }
+    return await bcrypt.compare(password, team.password);
   }
 
   async getMembers(teamId?: number): Promise<Member[]> {

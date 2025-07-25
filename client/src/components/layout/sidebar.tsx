@@ -3,6 +3,9 @@ import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { useToast } from "@/hooks/use-toast";
 
 
 import { 
@@ -55,10 +58,14 @@ const folderColors: Record<string, string> = {
 };
 
 export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: SidebarProps) {
-  const [location] = useLocation();
+  const [location, navigate] = useLocation();
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     docs: true, // docs expanded by default
   });
+  const [passwordPrompt, setPasswordPrompt] = useState<{ teamName: string; teamId: number } | null>(null);
+  const [passwordInput, setPasswordInput] = useState("");
+  const [verifiedTeams, setVerifiedTeams] = useState<string[]>([]);
+  const { toast } = useToast();
 
 
 
@@ -173,6 +180,40 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
       page.content.toLowerCase().includes(query.toLowerCase()) ||
       page.tags.some(tag => tag.toLowerCase().includes(query.toLowerCase()))
     );
+  };
+
+  const handleTeamClick = (team: any) => {
+    if (team.password && !verifiedTeams.includes(team.name)) {
+      setPasswordPrompt({ teamName: team.name, teamId: team.id });
+    } else {
+      toggleSection(`team-${team.id}`);
+    }
+  };
+
+  const handlePasswordSubmit = async () => {
+    if (!passwordPrompt) return;
+
+    try {
+      const response = await fetch("/papyr-us/api/teams/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teamName: passwordPrompt.teamName, password: passwordInput }),
+      });
+
+      const result = await response.json();
+
+      if (result.isValid) {
+        setVerifiedTeams(prev => [...prev, passwordPrompt.teamName]);
+        toggleSection(`team-${passwordPrompt.teamId}`);
+        setPasswordPrompt(null);
+        setPasswordInput("");
+        toast({ title: "Success", description: "Team unlocked." });
+      } else {
+        toast({ title: "Error", description: "Invalid password.", variant: "destructive" });
+      }
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to verify password.", variant: "destructive" });
+    }
   };
 
   // Determine visibility based on search
@@ -300,7 +341,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                       <Button
                         variant="ghost"
                         className="w-full justify-start p-3 h-auto rounded-xl hover:bg-gradient-to-r hover:from-primary/5 hover:to-primary/10 transition-all duration-200"
-                        onClick={() => toggleSection(`team-${team.id}`)}
+                        onClick={() => handleTeamClick(team)}
                       >
                         <Icon className={cn("h-5 w-5 mr-3", iconColor)} />
                         <span className="flex-1 text-left font-medium">
@@ -480,6 +521,23 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
 
         </div>
       </aside>
+      <Dialog open={!!passwordPrompt} onOpenChange={() => setPasswordPrompt(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Password Required</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p>The team "{passwordPrompt?.teamName}" is password protected. Please enter the password to continue.</p>
+            <Input
+              type="password"
+              value={passwordInput}
+              onChange={(e) => setPasswordInput(e.target.value)}
+              onKeyPress={(e) => e.key === "Enter" && handlePasswordSubmit()}
+            />
+            <Button onClick={handlePasswordSubmit}>Submit</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
