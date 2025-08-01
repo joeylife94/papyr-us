@@ -1,27 +1,10 @@
 # 기술 명세서
 
-## 최근 작업 요약 (2025-07-17)
+## 최근 작업 요약 (2025-07-25)
 
-### 데이터베이스 마이그레이션 문제 해결 (2024-12-17)
-```bash
-# DB 볼륨 초기화 (필요시)
-docker-compose down -v
-docker-compose up -d
-
-# 마이그레이션 적용
-docker-compose exec app npm run db:migrate
-
-# 수동으로 teams 테이블 생성 (필요시)
-docker cp migrations/0004_add_teams_tables.sql papyr-us-app-1:/app/teams_migration.sql
-docker-compose exec app node -e "const { Pool } = require('pg'); const fs = require('fs'); const pool = new Pool({ connectionString: process.env.DATABASE_URL }); const sql = fs.readFileSync('/app/teams_migration.sql', 'utf8'); pool.query(sql).then(() => console.log('Teams tables created successfully')).catch(err => console.error('Error:', err.message)).finally(() => process.exit(0));"
-```
-
-> **참고**: drizzle-kit 버전 호환성 문제로 introspect 명령어 사용 불가하여 수동 SQL 실행으로 해결
-
-
-- **UI/UX 개선 1차 완료**: 모바일 터치 최적화, 버튼 크기/간격 개선, 사이드바 모바일 닫기 버튼 추가, 다크모드 색상 팔레트 및 카드/컴포넌트 일관성 개선, 키보드 포커스/스킵 링크/ARIA 라벨 등 접근성 향상, 메인 콘텐츠 패딩 및 반응형 레이아웃 보완
-- **테스트 및 안정화 단계 진입**: Docker 환경 정상 기동, 데이터베이스 마이그레이션 성공, 주요 API(teams) 정상 응답 확인, 전체 API/기능별 테스트 및 타입 체크는 다음 작업 예정
-- **DB 마이그레이션 및 팀 관리 완성 (2024-12-17)**: teams 테이블 생성 문제 해결, 팀 CRUD 기능 완전 구현, 관리자 UI 완성
+- **팀 비밀번호 보호 기능 추가**: `bcrypt`를 사용한 비밀번호 해싱 및 검증 기능 구현
+- **UI/UX 개선**: 비밀번호로 보호된 팀에 접근하기 위한 다이얼로그 및 사용자 피드백 추가
+- **API 확장**: 팀 비밀번호 검증을 위한 `/papyr-us/api/teams/verify` 엔드포인트 추가
 
 ---
 
@@ -48,6 +31,8 @@ Papyr.us는 React와 Express.js를 기반으로 구축된 현대적인 팀 협�
 - **Zod** - 스키마 검증 라이브러리
 - **OpenAI API** - GPT-4o 모델 연동
 - **Socket.IO** - 실시간 WebSocket 통신
+- **bcrypt** - 비밀번호 해싱
+- **jsonwebtoken** - JWT 기반 인증
 
 ### Database
 - **PostgreSQL 16** - 관계형 데이터베이스
@@ -61,6 +46,18 @@ Papyr.us는 React와 Express.js를 기반으로 구축된 현대적인 팀 협�
 ## 데이터베이스 스키마
 
 ### 핵심 테이블
+
+#### users
+```sql
+CREATE TABLE users (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+```
 
 #### wiki_pages
 ```sql
@@ -231,6 +228,14 @@ CREATE TABLE ai_search_logs (
 
 ## API 엔드포인트
 
+### 사용자 인증 (Authentication)
+```
+POST   /papyr-us/api/auth/register      # 회원 가입
+POST   /papyr-us/api/auth/login         # 로그인
+POST   /papyr-us/api/auth/logout        # 로그아웃
+GET    /papyr-us/api/auth/me            # 현재 로그인된 사용자 정보 조회
+```
+
 ### 위키 페이지
 ```
 GET    /papyr-us/api/pages              # 페이지 목록 조회
@@ -248,6 +253,7 @@ GET    /papyr-us/api/teams/:id          # 특정 팀 조회
 POST   /papyr-us/api/teams              # 새 팀 생성
 PUT    /papyr-us/api/teams/:id          # 팀 정보 수정
 DELETE /papyr-us/api/teams/:id          # 팀 삭제
+POST   /papyr-us/api/teams/verify       # 팀 비밀번호 검증
 ```
 
 ### 과제 관리
@@ -372,6 +378,8 @@ interface Block {
 #### 라우팅 구조
 ```
 /papyr-us/                    # 홈페이지
+/papyr-us/login               # 로그인 페이지
+/papyr-us/register            # 회원가입 페이지
 /papyr-us/page/:slug          # 위키 페이지
 /papyr-us/edit/:pageId        # 페이지 편집
 /papyr-us/create              # 새 페이지 생성
@@ -624,3 +632,39 @@ npm run dev
 - **성능 테스트**: 로딩 속도 및 동시 사용자 처리
 - **보안 테스트**: 입력 검증 및 취약점 점검
 - **최종 배포 준비**: 프로덕션 환경 최적화
+
+---
+
+## 팀 관리 기능 명세
+
+### 팀 생성/수정/삭제
+- **API 엔드포인트**:
+  - `POST /papyr-us/api/teams`: 팀 생성
+  - `PUT /papyr-us/api/teams/:id`: 팀 수정
+  - `DELETE /papyr-us/api/teams/:id`: 팀 삭제
+- **데이터베이스 스키마**: `teams` 테이블 (id, name, display_name, description, password, icon, color, is_active, order)
+- **관리자 UI**: Teams 탭에서 모든 기능 접근 가능
+
+### 팀 비밀번호 보호
+- **비밀번호 해싱**: `bcrypt` 라이브러리를 사용하여 비밀번호를 안전하게 해싱하여 저장
+- **비밀번호 검증**:
+  - `POST /papyr-us/api/teams/verify`: 팀 이름과 비밀번호를 받아 유효성 검증
+  - `bcrypt.compare`를 사용하여 입력된 비밀번호와 해시된 비밀번호를 비교
+- **프론트엔드 처리**:
+  - 비밀번호가 설정된 팀에 접근 시, 비밀번호 입력 다이얼로그 표시
+  - 비밀번호 검증 성공 시, 해당 팀의 컨텐츠에 접근 허용
+  - 검증된 팀의 상태를 로컬 상태(React `useState`)로 관리하여, 동일 세션 내에서 반복적인 비밀번호 입력을 방지
+
+### 기술적 세부사항
+- **비밀번호 저장**: `teams` 테이블의 `password` 필드에 해시된 비밀번호 저장
+- **API 보안**: 비밀번호와 같은 민감한 정보는 HTTPS를 통해 전송되어야 함
+- **UI/UX**:
+  - 비밀번호 입력 다이얼로그는 shadcn/ui의 `Dialog` 컴포넌트 사용
+  - 비밀번호 검증 성공/실패 시 `Toast` 컴포넌트를 사용하여 사용자에게 피드백 제공
+  - 비밀번호 입력 필드는 `Input` 컴포넌트의 `type="password"` 속성 사용
+
+---
+
+## 최종 업데이트: 2025-07-25
+- **작성자**: AI Assistant
+- **상태**: 최신화 완료 ✅
