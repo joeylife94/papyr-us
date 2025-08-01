@@ -178,7 +178,7 @@ export default function AdminPage() {
   const updateDirectoryMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: Partial<Directory> }) => {
       const storedPassword = sessionStorage.getItem("adminAuth") || "";
-      const response = await fetch(`/api/admin/directories/${id}`, {
+      const response = await fetch(`/papyr-us/api/admin/directories/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...data, adminPassword: storedPassword }),
