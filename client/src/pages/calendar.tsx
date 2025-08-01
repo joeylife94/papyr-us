@@ -34,7 +34,7 @@ const eventFormSchema = z.object({
 type EventFormData = z.infer<typeof eventFormSchema>;
 
 interface CalendarPageProps {
-  teamId: string;
+  teamId: string | number;
 }
 
 // Generate time options (30-minute intervals, exclude 24:30)

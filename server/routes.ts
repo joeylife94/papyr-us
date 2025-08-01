@@ -21,7 +21,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   try {
     const { setupSocketIO } = await import('./services/socket.ts');
     setupSocketIO(server);
-    console.log('Socket.IO server initialized for real-time collaboration');
   } catch (error) {
     console.warn('Socket.IO setup failed:', error);
   }
@@ -192,7 +191,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/papyr-us/api/calendar", async (req, res) => {
     try {
-      console.log("Received calendar event data:", req.body);
       
       // Convert ISO string dates to Date objects
       const requestData = { ...req.body };
@@ -206,7 +204,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // If endDate is not provided or is null, set it to startDate
       if (!requestData.endDate && requestData.startDate) {
         requestData.endDate = new Date(requestData.startDate);
-        console.log("Set endDate to startDate");
       }
       
       // Handle time fields - convert empty strings to null
@@ -224,9 +221,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         requestData.priority = parseInt(requestData.priority);
       }
       
-      console.log("Converted date data:", requestData);
       const eventData = insertCalendarEventSchema.parse(requestData);
-      console.log("Parsed event data:", eventData);
       const event = await storage.createCalendarEvent(eventData);
       res.status(201).json(event);
     } catch (error: any) {
@@ -243,7 +238,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/papyr-us/api/calendar/event/:id", async (req, res) => {
     try {
-      console.log("Received calendar event update data:", req.body);
       
       const id = parseInt(req.params.id);
       
@@ -259,7 +253,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // If endDate is not provided or is null, set it to startDate
       if (!requestData.endDate && requestData.startDate) {
         requestData.endDate = new Date(requestData.startDate);
-        console.log("Set endDate to startDate for update");
       }
       
       // Handle time fields - convert empty strings to null
@@ -277,9 +270,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         requestData.priority = parseInt(requestData.priority);
       }
       
-      console.log("Converted update data:", requestData);
       const updateData = updateCalendarEventSchema.parse(requestData);
-      console.log("Parsed update data:", updateData);
       const event = await storage.updateCalendarEvent(id, updateData);
       if (!event) {
         return res.status(404).json({ message: "Event not found" });
@@ -367,14 +358,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Members API
-  app.get("/papyr-us/api/members", async (req, res) => {
-    try {
-      const members = await storage.getMembers();
-      res.json(members);
-    } catch (error) {
-      res.status(500).json({ message: "Server error" });
-    }
-  });
 
   app.get("/papyr-us/api/members/:id", async (req, res) => {
     try {

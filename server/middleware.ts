@@ -58,15 +58,16 @@ export function setupErrorHandler(app: Express) {
     const message = err.message || "Internal Server Error";
 
     res.status(status).json({ message });
-    throw err;
   });
 }
 
+import { config } from "./config.ts";
+
 export function getServerConfig() {
-  const port = parseInt(process.env.PORT || '5001');
-  const isReplit = process.env.REPL_ID !== undefined;
-  const isProduction = process.env.NODE_ENV === 'production';
-  const host = (isProduction || isReplit) ? '0.0.0.0' : 'localhost';
+  const port = config.port;
+  const isReplit = config.isReplit;
+  const isProduction = config.isProduction;
+  const host = config.host;
   
   return { port, host, isProduction, isReplit };
 } 
