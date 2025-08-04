@@ -1,4 +1,5 @@
 import express, { type Express, type Request, Response, NextFunction } from "express";
+import jwt from 'jsonwebtoken';
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -70,4 +71,26 @@ export function getServerConfig() {
   const host = config.host;
   
   return { port, host, isProduction, isReplit };
+}
+
+interface AuthRequest extends Request {
+  user?: any;
+}
+
+export function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ message: 'Authentication token required' });
+  }
+
+  const token = authHeader.split(' ')[1];
+
+  try {
+    const payload = jwt.verify(token, config.jwtSecret);
+    req.user = payload;
+    next();
+  } catch (error) {
+    return res.status(401).json({ message: 'Invalid or expired token' });
+  }
 } 

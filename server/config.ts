@@ -5,6 +5,15 @@ export const config = {
   
   // Database configuration
   databaseUrl: process.env.DATABASE_URL,
+
+  // JWT Secret
+  jwtSecret: process.env.JWT_SECRET || 'your-default-secret',
+
+  // OAuth Configuration
+  googleClientId: process.env.GOOGLE_CLIENT_ID || '',
+  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+  githubClientId: process.env.GITHUB_CLIENT_ID || '',
+  githubClientSecret: process.env.GITHUB_CLIENT_SECRET || '',
   
   // Admin configuration
   adminPassword: process.env.ADMIN_PASSWORD || '404vibe!',

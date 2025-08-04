@@ -1,12 +1,15 @@
-import { Switch, Route } from "wouter";
+import { BrowserRouter, Routes, Route, Outlet, useParams } from "react-router-dom";
 import { useState } from "react";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/hooks/use-theme";
+import { AuthProvider } from "@/hooks/useAuth";
 import { Header } from "@/components/layout/header";
 import { Sidebar } from "@/components/layout/sidebar";
+
+// Pages
 import Home from "@/pages/home";
 import WikiPageView from "@/pages/wiki-page";
 import CalendarPage from "@/pages/calendar";
@@ -21,11 +24,59 @@ import DatabaseView from "@/pages/database-view";
 import CollaborationTest from "@/pages/collaboration-test";
 import AISearchPage from "@/pages/ai-search";
 import NotFound from "@/pages/not-found";
+import LoginPage from "@/pages/login";
+import RegisterPage from "@/pages/register";
 
-function Router() {
+// Components
+import ProtectedRoute from "@/components/ProtectedRoute";
+
+// Helper components to handle route params, since the pages were designed for wouter
+const WikiPageViewWrapper = () => {
+  const { slug } = useParams();
+  return <WikiPageView slug={slug} />;
+};
+
+const CalendarPageWrapper = () => {
+  const { teamId } = useParams();
+  return <CalendarPage teamId={teamId} />;
+};
+
+const PageEditorWrapper = () => {
+  const { pageId, folder, teamName } = useParams();
+  return <PageEditor pageId={pageId} initialFolder={folder} teamName={teamName} />;
+};
+
+const MembersWrapper = () => {
+    const { teamName } = useParams();
+    return <Members teamName={teamName} />;
+};
+
+const TasksPageWrapper = () => {
+    const { teamName } = useParams();
+    return <TasksPage teamName={teamName} />;
+};
+
+const FileManagerWrapper = () => {
+    const { teamName } = useParams();
+    return <FileManager teamName={teamName} />;
+};
+
+const DatabaseViewWrapper = () => {
+    const { teamName } = useParams();
+    return <DatabaseView teamName={teamName} />;
+};
+
+const HomeWrapper = () => {
+    const { teamName } = useParams();
+    const [searchQuery, setSearchQuery] = useState("");
+    const [selectedFolder, setSelectedFolder] = useState<string>("");
+    return <Home searchQuery={searchQuery} selectedFolder={selectedFolder} teamName={teamName} />;
+};
+
+
+function AppLayout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedFolder, setSelectedFolder] = useState<string>("");
 
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
   const closeSidebar = () => setIsSidebarOpen(false);
@@ -48,93 +99,7 @@ function Router() {
         
         <main id="main-content" className="flex-1 lg:ml-80">
           <div className="max-w-7xl mx-auto px-4 md:px-6 lg:px-8">
-            <Switch>
-              <Route path="/papyr-us/">
-                <Home 
-                  searchQuery={searchQuery}
-                  selectedFolder={selectedFolder}
-                />
-              </Route>
-              
-              <Route path="/papyr-us/page/:slug" component={WikiPageView} />
-              
-              <Route path="/papyr-us/calendar/:teamId">
-                {(params) => <CalendarPage teamId={params.teamId} />}
-              </Route>
-              
-              <Route path="/papyr-us/edit/:pageId">
-                {(params) => <PageEditor pageId={params.pageId} />}
-              </Route>
-              
-              <Route path="/papyr-us/create">
-                <PageEditor />
-              </Route>
-              
-              <Route path="/papyr-us/create/:folder">
-                {(params) => <PageEditor initialFolder={params.folder} />}
-              </Route>
-              
-              <Route path="/papyr-us/teams/:teamName/create">
-                {(params) => <PageEditor teamName={params.teamName} />}
-              </Route>
-              
-              <Route path="/papyr-us/admin" component={AdminPage} />
-              
-              <Route path="/papyr-us/members">
-                <Members />
-              </Route>
-              
-              <Route path="/papyr-us/files">
-                <FileManager />
-              </Route>
-              
-              <Route path="/papyr-us/dashboard">
-                <DashboardPage />
-              </Route>
-              
-              <Route path="/papyr-us/tasks">
-                <TasksPage />
-              </Route>
-              
-              <Route path="/papyr-us/templates">
-                <Templates />
-              </Route>
-              
-              <Route path="/papyr-us/database">
-                <DatabaseView />
-              </Route>
-              
-              <Route path="/papyr-us/teams/:teamName/database">
-                {(params) => <DatabaseView teamName={params.teamName} />}
-              </Route>
-              
-              <Route path="/papyr-us/collaboration-test" component={CollaborationTest} />
-              
-              <Route path="/papyr-us/ai-search" component={AISearchPage} />
-              
-              {/* Team routes */}
-              <Route path="/papyr-us/teams/:teamName/members">
-                {(params) => <Members teamName={params.teamName} />}
-              </Route>
-              
-              <Route path="/papyr-us/teams/:teamName/tasks">
-                {(params) => <TasksPage teamName={params.teamName} />}
-              </Route>
-              
-              <Route path="/papyr-us/teams/:teamName/files">
-                {(params) => <FileManager teamName={params.teamName} />}
-              </Route>
-              
-              <Route path="/papyr-us/teams/:teamName/calendar">
-                {(params) => <CalendarPage teamId={params.teamName} />}
-              </Route>
-              
-              <Route path="/papyr-us/teams/:teamName/pages">
-                {(params) => <Home searchQuery={searchQuery} selectedFolder={selectedFolder} teamName={params.teamName} />}
-              </Route>
-              
-              <Route component={NotFound} />
-            </Switch>
+            <Outlet />
           </div>
         </main>
       </div>
@@ -148,7 +113,42 @@ function App() {
       <ThemeProvider>
         <TooltipProvider>
           <Toaster />
-          <Router />
+          <BrowserRouter>
+            <AuthProvider>
+              <Routes>
+                <Route path="/login" element={<LoginPage />} />
+                <Route path="/register" element={<RegisterPage />} />
+                <Route element={<ProtectedRoute />}>
+                  <Route element={<AppLayout />}>
+                    <Route path="/" element={<HomeWrapper />} />
+                    <Route path="/papyr-us" element={<HomeWrapper />} />
+                    <Route path="/papyr-us/page/:slug" element={<WikiPageViewWrapper />} />
+                    <Route path="/papyr-us/calendar/:teamId" element={<CalendarPageWrapper />} />
+                    <Route path="/papyr-us/edit/:pageId" element={<PageEditorWrapper />} />
+                    <Route path="/papyr-us/create" element={<PageEditorWrapper />} />
+                    <Route path="/papyr-us/create/:folder" element={<PageEditorWrapper />} />
+                    <Route path="/papyr-us/teams/:teamName/create" element={<PageEditorWrapper />} />
+                    <Route path="/papyr-us/admin" element={<AdminPage />} />
+                    <Route path="/papyr-us/members" element={<MembersWrapper />} />
+                    <Route path="/papyr-us/files" element={<FileManagerWrapper />} />
+                    <Route path="/papyr-us/dashboard" element={<DashboardPage />} />
+                    <Route path="/papyr-us/tasks" element={<TasksPageWrapper />} />
+                    <Route path="/papyr-us/templates" element={<Templates />} />
+                    <Route path="/papyr-us/database" element={<DatabaseViewWrapper />} />
+                    <Route path="/papyr-us/teams/:teamName/database" element={<DatabaseViewWrapper />} />
+                    <Route path="/papyr-us/collaboration-test" element={<CollaborationTest />} />
+                    <Route path="/papyr-us/ai-search" element={<AISearchPage />} />
+                    <Route path="/papyr-us/teams/:teamName/members" element={<MembersWrapper />} />
+                    <Route path="/papyr-us/teams/:teamName/tasks" element={<TasksPageWrapper />} />
+                    <Route path="/papyr-us/teams/:teamName/files" element={<FileManagerWrapper />} />
+                    <Route path="/papyr-us/teams/:teamName/calendar" element={<CalendarPageWrapper />} />
+                    <Route path="/papyr-us/teams/:teamName/pages" element={<HomeWrapper />} />
+                    <Route path="*" element={<NotFound />} />
+                  </Route>
+                </Route>
+              </Routes>
+            </AuthProvider>
+          </BrowserRouter>
         </TooltipProvider>
       </ThemeProvider>
     </QueryClientProvider>

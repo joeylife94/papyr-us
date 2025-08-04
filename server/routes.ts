@@ -2,12 +2,17 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage.ts";
 import { config } from "./config.ts";
-import { insertWikiPageSchema, updateWikiPageSchema, searchSchema, insertCalendarEventSchema, updateCalendarEventSchema, insertDirectorySchema, updateDirectorySchema, insertCommentSchema, updateCommentSchema, insertMemberSchema, updateMemberSchema, insertTaskSchema, updateTaskSchema, insertNotificationSchema, updateNotificationSchema, insertTemplateCategorySchema, updateTemplateCategorySchema, insertTemplateSchema, updateTemplateSchema, insertTeamSchema } from "../shared/schema.ts";
+import { insertWikiPageSchema, updateWikiPageSchema, searchSchema, insertCalendarEventSchema, updateCalendarEventSchema, insertDirectorySchema, updateDirectorySchema, insertCommentSchema, updateCommentSchema, insertMemberSchema, updateMemberSchema, insertTaskSchema, updateTaskSchema, insertNotificationSchema, updateNotificationSchema, insertTemplateCategorySchema, updateTemplateCategorySchema, insertTemplateSchema, updateTemplateSchema, insertTeamSchema, users } from "../shared/schema.ts";
 import { upload, processUploadedFile, deleteUploadedFile, listUploadedFiles, getFileInfo } from "./services/upload.ts";
 import { smartSearch, generateSearchSuggestions } from "./services/ai.ts";
 import path from "path";
 import { existsSync } from "fs";
 import type { Request } from "express";
+import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
+import passport from 'passport';
+import { authMiddleware } from './middleware.ts';
+import { eq } from 'drizzle-orm';
 
 interface MulterRequest extends Request {
   files?: any[];
@@ -17,6 +22,9 @@ interface MulterRequest extends Request {
 export async function registerRoutes(app: Express): Promise<Server> {
   const server = createServer(app);
   
+  // app.use(passport.initialize());
+  // await import('./services/passport');
+
   // Setup Socket.IO for real-time collaboration
   try {
     const { setupSocketIO } = await import('./services/socket.ts');
@@ -24,6 +32,100 @@ export async function registerRoutes(app: Express): Promise<Server> {
   } catch (error) {
     console.warn('Socket.IO setup failed:', error);
   }
+
+  // --- Authentication Routes ---
+ 
+  // User Registration
+  app.post("/papyr-us/api/auth/register", async (req, res) => {
+    try {
+      const { name, email, password } = req.body;
+      if (!name || !email || !password) {
+        return res.status(400).json({ message: "Name, email, and password are required" });
+      }
+
+      const existingUser = await storage.db.select().from(users).where(eq(users.email, email));
+      if (existingUser.length > 0) {
+        return res.status(409).json({ message: "User with this email already exists" });
+      }
+
+      const hashedPassword = await bcrypt.hash(password, 10);
+      await storage.db.insert(users).values({ name, email, hashedPassword });
+      const newUserResult = await storage.db.select().from(users).where(eq(users.email, email));
+      const newUser = newUserResult[0];
+
+      res.status(201).json({ message: "User registered successfully", user: { id: newUser.id, name: newUser.name, email: newUser.email } });
+    } catch (error) {
+      res.status(500).json({ message: "Server error during registration", error });
+    }
+  });
+
+  // User Login
+  app.post("/papyr-us/api/auth/login", async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      if (!email || !password) {
+        return res.status(400).json({ message: "Email and password are required" });
+      }
+
+      const userResult = await storage.db.select().from(users).where(eq(users.email, email));
+      if (userResult.length === 0) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+
+      const user = userResult[0];
+      if (!user.hashedPassword) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+      const isPasswordValid = await bcrypt.compare(password, user.hashedPassword);
+      if (!isPasswordValid) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+
+      const token = jwt.sign({ id: user.id, email: user.email }, config.jwtSecret, { expiresIn: '1d' });
+
+      res.json({ token, user: { id: user.id, name: user.name, email: user.email } });
+    } catch (error) {
+      res.status(500).json({ message: "Server error during login", error });
+    }
+  });
+
+  // Get current user info (Protected Route)
+  app.get("/papyr-us/api/auth/me", authMiddleware, async (req: any, res) => {
+    try {
+        const userResult = await storage.db.select({ id: users.id, name: users.name, email: users.email }).from(users).where(eq(users.id, req.user.id));
+        if (userResult.length === 0) {
+            return res.status(404).json({ message: "User not found" });
+        }
+        res.json(userResult[0]);
+    } catch (error) {
+        res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // --- Social Auth Routes ---
+
+  /*
+  // Google Auth
+  app.get('/papyr-us/api/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+  app.get('/papyr-us/api/auth/google/callback',
+    passport.authenticate('google', { failureRedirect: '/login', session: false }),
+    (req: any, res) => {
+      const token = jwt.sign({ id: req.user.id, email: req.user.email }, config.jwtSecret, { expiresIn: '1d' });
+      res.send(`<script>window.localStorage.setItem('token', '${token}');window.location.href='/';</script>`);
+    }
+  );
+
+  // GitHub Auth
+  app.get('/papyr-us/api/auth/github', passport.authenticate('github', { scope: ['user:email'] }));
+  app.get('/papyr-us/api/auth/github/callback',
+    passport.authenticate('github', { failureRedirect: '/login', session: false }),
+    (req: any, res) => {
+      const token = jwt.sign({ id: req.user.id, email: req.user.email }, config.jwtSecret, { expiresIn: '1d' });
+      res.send(`<script>window.localStorage.setItem('token', '${token}');window.location.href='/';</script>`);
+    }
+  );
+  */
+  
   // Wiki Pages API
   app.get("/papyr-us/api/pages", async (req, res) => {
     try {

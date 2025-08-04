@@ -22,10 +22,11 @@ async function setupDevelopmentServer(app: any, server: any) {
 const app = express();
 
 // Setup basic middleware
-setupBasicMiddleware(app);
-setupLoggingMiddleware(app);
-
 (async () => {
+  // Setup basic middleware
+  setupBasicMiddleware(app);
+  setupLoggingMiddleware(app);
+
   const server = await registerRoutes(app);
 
   // Setup error handler after routes
