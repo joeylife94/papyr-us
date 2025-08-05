@@ -72,6 +72,7 @@ Papyr.us는 React와 Express.js를 기반으로 구축된 현대적인 팀 협�
 - **ESLint** - 코드 품질 검사
 - **Prettier** - 코드 포맷팅
 - **Vite** - 개발 서버 및 HMR
+- **Vitest** - 단위/통합 테스트 프레임워크
 
 ## 프로젝트 구조
 ```

@@ -570,10 +570,10 @@ npm run dev
 - **Husky**: Git 훅을 통한 품질 관리
 
 ### 테스트 전략
-- **단위 테스트**: Jest + React Testing Library
-- **통합 테스트**: API 엔드포인트 테스트
-- **E2E 테스트**: Playwright 기반
-- **성능 테스트**: Lighthouse CI
+- **단위/통합 테스트 (Backend)**: `Vitest`와 `Supertest`를 사용하여 모든 API 엔드포인트의 동작을 검증합니다. 스토리지 계층은 모의(mock) 처리하여 외부 의존성 없이 테스트합니다.
+- **단위 테스트 (Frontend)**: `Vitest`와 `React Testing Library`를 사용하여 개별 컴포넌트의 렌더링 및 상호작용을 테스트합니다.
+- **E2E 테스트**: `Playwright`를 사용하여 사용자의 실제 시나리오를 시뮬레이션하고 전체 애플리케이션의 흐름을 검증합니다.
+- **성능 테스트**: `Lighthouse CI`를 사용하여 성능, 접근성, SEO 점수를 지속적으로 측정하고 관리합니다.
 
 ## 확장성 계획
 

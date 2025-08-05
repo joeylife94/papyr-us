@@ -49,12 +49,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const hashedPassword = await bcrypt.hash(password, 10);
-      await storage.db.insert(users).values({ name, email, hashedPassword });
-      const newUserResult = await storage.db.select().from(users).where(eq(users.email, email));
+      const newUserResult = await storage.db.insert(users).values({ name, email, hashedPassword, provider: 'local' }).returning();
       const newUser = newUserResult[0];
 
       res.status(201).json({ message: "User registered successfully", user: { id: newUser.id, name: newUser.name, email: newUser.email } });
     } catch (error) {
+      console.error("Registration error:", error);
       res.status(500).json({ message: "Server error during registration", error });
     }
   });
@@ -520,15 +520,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/papyr-us/api/members/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      const deleted = await storage.deleteMember(id);
-      
-      if (!deleted) {
-        return res.status(404).json({ message: "Member not found" });
+      const success = await storage.deleteMember(id);
+      if (!success) {
+        return res.status(404).json({ error: "Member not found" });
       }
-      
-      res.json({ message: "Member deleted successfully" });
+      res.status(204).send();
     } catch (error) {
-      res.status(400).json({ message: "Invalid member ID" });
+      console.error("Error deleting member:", error);
+      res.status(500).json({ error: "Failed to delete member" });
     }
   });
 
