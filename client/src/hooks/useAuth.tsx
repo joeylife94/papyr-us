@@ -4,6 +4,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   user: any;
   login: (email, password) => Promise<void>;
+  socialLogin: (token: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -13,23 +14,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState(null);
 
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      // You might want to verify the token with the backend here
-      setIsAuthenticated(true);
-      // Fetch user info from backend using the token
-      fetch('/papyr-us/api/auth/me', {
+  const fetchUser = async (token: string) => {
+    try {
+      const response = await fetch('/papyr-us/api/auth/me', {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
-      })
-        .then(res => res.json())
-        .then(data => setUser(data))
-        .catch(() => {
-          // Token is invalid, logout
-          logout();
-        });
+      });
+      if (response.ok) {
+        const userData = await response.json();
+        setUser(userData);
+        setIsAuthenticated(true);
+      } else {
+        logout();
+      }
+    } catch (error) {
+      console.error("Failed to fetch user", error);
+      logout();
+    }
+  };
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      fetchUser(token);
     }
   }, []);
 
@@ -43,13 +51,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     if (response.ok) {
-      const { token, user } = await response.json();
+      const { token } = await response.json();
       localStorage.setItem('token', token);
-      setIsAuthenticated(true);
-      setUser(user);
+      await fetchUser(token);
     } else {
       throw new Error('Login failed');
     }
+  };
+
+  const socialLogin = async (token: string) => {
+    localStorage.setItem('token', token);
+    await fetchUser(token);
   };
 
   const logout = () => {
@@ -59,7 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, user, login, logout }}>
+    <AuthContext.Provider value={{ isAuthenticated, user, login, socialLogin, logout }}>
       {children}
     </AuthContext.Provider>
   );

@@ -22,7 +22,7 @@ Papyr.us는 React와 Express.js를 기반으로 구축된 현대적인 팀 협�
 - **shadcn/ui** - 재사용 가능한 UI 컴포넌트
 - **TanStack Query** - 서버 상태 관리
 - **React Hook Form** - 폼 상태 관리
-- **Wouter** - 경량 라우팅 라이브러리
+- **react-router-dom** - 클라이언트 사이드 라우팅 라이브러리
 
 ### Backend
 - **Express.js** - Node.js 웹 프레임워크
@@ -392,6 +392,30 @@ interface Block {
 /papyr-us/templates           # 템플릿 갤러리
 /papyr-us/templates/edit/:id  # 템플릿 편집
 /papyr-us/teams/:teamName/*   # 팀별 페이지
+```
+
+## 인증 시스템 (Frontend)
+
+### 핵심 컴포넌트 및 훅
+- **`LoginPage`**, **`RegisterPage`**: 사용자가 이메일/비밀번호 또는 소셜 계정(Google, GitHub)을 통해 인증할 수 있는 UI를 제공합니다.
+- **`useAuth`**: `AuthContext`를 통해 전역적으로 사용자의 인증 상태(`isAuthenticated`), 사용자 정보(`user`), 그리고 `login`, `logout`, `socialLogin`과 같은 함수를 제공하는 커스텀 훅입니다.
+- **`AuthProvider`**: `useAuth` 훅이 제공하는 모든 상태와 함수를 애플리케이션 전체에 공급하는 컨텍스트 제공자입니다.
+- **`ProtectedRoute`**: 특정 라우트를 감싸서, 사용자가 인증된 경우에만 해당 라우트의 컴포넌트에 접근할 수 있도록 보호합니다. 인증되지 않은 사용자는 로그인 페이지로 리디렉션됩니다.
+- **`Header` (동적 UI)**: `useAuth` 훅을 사용하여 로그인 상태에 따라 "Login" 버튼 또는 사용자 아바타와 드롭다운 메뉴(사용자 정보, 로그아웃 버튼 포함)를 동적으로 렌더링합니다.
+
+### 인증 흐름
+1.  사용자가 로그인/회원가입 페이지를 통해 인증을 시도합니다.
+2.  `useAuth` 훅의 `login` 또는 `socialLogin` 함수가 백엔드 API와 통신하여 JWT 토큰을 받아옵니다.
+3.  토큰은 `localStorage`에 저장되고, `AuthProvider`는 사용자 정보를 가져와 `isAuthenticated` 상태를 `true`로 설정합니다.
+4.  `ProtectedRoute`는 `isAuthenticated` 상태를 확인하여 보호된 페이지로의 접근을 허용하거나 로그인 페이지로 리디렉션합니다.
+5.  사용자가 로그아웃하면 `logout` 함수가 토큰을 삭제하고 상태를 초기화합니다.
+
+## 컴포넌트 아키텍처
+
+### 블록 에디터 시스템
+
+#### 핵심 컴포넌트
+- **BlockEditor** - 메인 블록 에디터 (실시간 협업 통합)   # 팀별 페이지
 ```
 
 ## AI 검색 시스템
