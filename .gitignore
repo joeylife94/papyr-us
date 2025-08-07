@@ -73,3 +73,7 @@ temp/
 # Replit specific
 .replit
 replit.nix
+
+# Test reports
+playwright-report/
+test-results/

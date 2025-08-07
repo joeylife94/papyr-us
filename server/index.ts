@@ -27,7 +27,7 @@ const app = express();
   setupBasicMiddleware(app);
   setupLoggingMiddleware(app);
 
-  const server = await registerRoutes(app);
+  const { httpServer, io } = await registerRoutes(app);
 
   // Setup error handler after routes
   setupErrorHandler(app);
@@ -37,15 +37,32 @@ const app = express();
   if (isProduction) {
     serveStatic(app);
   } else {
-    await setupDevelopmentServer(app, server);
+    await setupDevelopmentServer(app, httpServer);
   }
 
   // Start server
   const { port, host, isReplit } = getServerConfig();
-  server.listen(port, host, () => {
+  httpServer.listen(port, host, () => {
     log(`serving on ${host}:${port}`);
     if (!isProduction && !isReplit) {
       log(`Local development server: http://localhost:${port}`);
     }
   });
+
+  // Graceful shutdown
+  const shutdown = () => {
+    log('Shutting down server...');
+    if (io) {
+      io.close(() => {
+        log('Socket.IO server shut down.');
+      });
+    }
+    httpServer.close(() => {
+      log('HTTP server shut down.');
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 })();

@@ -1,5 +1,6 @@
 import type { Express } from "express";
-import { createServer, type Server } from "http";
+import { createServer, type Server as HttpServer } from "http";
+import { Server as SocketIoServer } from "socket.io";
 import { storage } from "./storage.ts";
 import { config } from "./config.ts";
 import { insertWikiPageSchema, updateWikiPageSchema, searchSchema, insertCalendarEventSchema, updateCalendarEventSchema, insertDirectorySchema, updateDirectorySchema, insertCommentSchema, updateCommentSchema, insertMemberSchema, updateMemberSchema, insertTaskSchema, updateTaskSchema, insertNotificationSchema, updateNotificationSchema, insertTemplateCategorySchema, updateTemplateCategorySchema, insertTemplateSchema, updateTemplateSchema, insertTeamSchema, users } from "../shared/schema.ts";
@@ -19,8 +20,9 @@ interface MulterRequest extends Request {
 }
 
 
-export async function registerRoutes(app: Express): Promise<Server> {
-  const server = createServer(app);
+export async function registerRoutes(app: Express): Promise<{ httpServer: HttpServer, io?: SocketIoServer }> {
+  const httpServer = createServer(app);
+  let io: SocketIoServer | undefined;
   
   // app.use(passport.initialize());
   // await import('./services/passport');
@@ -28,7 +30,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Setup Socket.IO for real-time collaboration
   try {
     const { setupSocketIO } = await import('./services/socket.ts');
-    setupSocketIO(server);
+    io = setupSocketIO(httpServer);
   } catch (error) {
     console.warn('Socket.IO setup failed:', error);
   }
@@ -1392,6 +1394,5 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  const httpServer = createServer(app);
-  return httpServer;
+  return { httpServer, io };
 }
