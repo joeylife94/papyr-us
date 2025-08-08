@@ -3,31 +3,34 @@ import request from 'supertest';
 import type { Express } from 'express';
 import express from 'express';
 import http from 'http';
-import { registerRoutes } from '../routes';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 
-// Mock the entire storage module
-vi.mock('../storage', () => ({
-  storage: {
-    db: {
-      select: vi.fn().mockReturnThis(),
-      from: vi.fn().mockReturnThis(),
-      where: vi.fn(),
-      insert: vi.fn().mockReturnThis(),
-      values: vi.fn().mockReturnThis(),
-      returning: vi.fn(),
-    },
-    getWikiPageBySlug: vi.fn().mockResolvedValue(null),
-  },
-}));
+// Use vi.doMock to ensure the mock is hoisted
+vi.doMock('../storage', async (importOriginal) => {
+    const actual = await importOriginal() as any;
+    const dbMock = {
+        select: vi.fn().mockReturnThis(),
+        from: vi.fn().mockReturnThis(),
+        where: vi.fn().mockResolvedValue([]),
+        insert: vi.fn().mockReturnThis(),
+        values: vi.fn().mockReturnThis(),
+        returning: vi.fn().mockResolvedValue([]),
+    };
+    return {
+        ...actual,
+        MemStorage: vi.fn(),
+        storage: { db: dbMock },
+    };
+});
 
 // Mock external libraries
 vi.mock('bcrypt');
 vi.mock('jsonwebtoken');
 
-// Now, import the mocked storage to access the mock functions
-import { storage } from '../storage';
+// Dynamically import after mocks are set up
+const { registerRoutes } = await import('../routes');
+const { storage } = await import('../storage');
 
 let app: Express;
 let server: http.Server;
@@ -35,22 +38,32 @@ let server: http.Server;
 beforeAll(async () => {
   app = express();
   app.use(express.json());
-  server = await registerRoutes(app);
+  const result = await registerRoutes(app, storage);
+  server = result.httpServer;
 });
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Reset mocks for storage.db to their chained implementation for each test
+  (storage.db.select as vi.Mock).mockReturnThis();
+  (storage.db.from as vi.Mock).mockReturnThis();
+  (storage.db.insert as vi.Mock).mockReturnThis();
+  (storage.db.values as vi.Mock).mockReturnThis();
 });
 
-afterAll(() => {
-  server.close();
+afterAll((done) => {
+  server.close(done);
 });
 
 describe('Authentication API', () => {
   describe('POST /papyr-us/api/auth/register', () => {
     it('TC-AUTH-001: should register a new user successfully', async () => {
       // Setup mock for this specific test
+      (storage.db.select as vi.Mock).mockReturnThis();
+      (storage.db.from as vi.Mock).mockReturnThis();
       (storage.db.where as vi.Mock).mockResolvedValue([]);
+      (storage.db.insert as vi.Mock).mockReturnThis();
+      (storage.db.values as vi.Mock).mockReturnThis();
       (storage.db.returning as vi.Mock).mockResolvedValue([{ id: 1, name: 'Test User', email: 'new.user@test.com' }]);
       (bcrypt.hash as vi.Mock).mockResolvedValue('hashed_password');
 
@@ -69,6 +82,8 @@ describe('Authentication API', () => {
 
     it('TC-AUTH-002: should fail to register with an existing email', async () => {
       // Setup mock for this specific test
+      (storage.db.select as vi.Mock).mockReturnThis();
+      (storage.db.from as vi.Mock).mockReturnThis();
       (storage.db.where as vi.Mock).mockResolvedValue([{ id: 2, email: 'existing.user@test.com' }]);
 
       const response = await request(app)
@@ -101,6 +116,8 @@ describe('Authentication API', () => {
     const mockUser = { id: 1, name: 'Test User', email: 'user@test.com', hashedPassword: 'hashed_password' };
 
     it('TC-AUTH-004: should log in a user successfully', async () => {
+      (storage.db.select as vi.Mock).mockReturnThis();
+      (storage.db.from as vi.Mock).mockReturnThis();
       (storage.db.where as vi.Mock).mockResolvedValue([mockUser]);
       (bcrypt.compare as vi.Mock).mockResolvedValue(true);
       (jwt.sign as vi.Mock).mockReturnValue('fake_jwt_token');
@@ -115,6 +132,8 @@ describe('Authentication API', () => {
     });
 
     it('TC-AUTH-005: should fail to log in with incorrect password', async () => {
+      (storage.db.select as vi.Mock).mockReturnThis();
+      (storage.db.from as vi.Mock).mockReturnThis();
       (storage.db.where as vi.Mock).mockResolvedValue([mockUser]);
       (bcrypt.compare as vi.Mock).mockResolvedValue(false); // Incorrect password
 
@@ -127,6 +146,8 @@ describe('Authentication API', () => {
     });
 
     it('TC-AUTH-006: should fail to log in with a non-existent email', async () => {
+      (storage.db.select as vi.Mock).mockReturnThis();
+      (storage.db.from as vi.Mock).mockReturnThis();
       (storage.db.where as vi.Mock).mockResolvedValue([]); // User not found
 
       const response = await request(app)
@@ -144,6 +165,8 @@ describe('Authentication API', () => {
 
     it("TC-AUTH-007: should get current user's info with a valid token", async () => {
       (jwt.verify as vi.Mock).mockReturnValue({ id: mockUser.id });
+      (storage.db.select as vi.Mock).mockReturnThis();
+      (storage.db.from as vi.Mock).mockReturnThis();
       (storage.db.where as vi.Mock).mockResolvedValue([mockUser]);
 
       const response = await request(app)

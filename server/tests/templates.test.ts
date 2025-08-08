@@ -6,21 +6,25 @@ import express from 'express';
 import http from 'http';
 
 // Mock storage module if it hits a real database
-vi.mock('../storage', () => ({
-  storage: {
-    db: {
-      insert: vi.fn().mockReturnThis(),
-      values: vi.fn().mockResolvedValueOnce([{ id: 1, name: 'Test Category' }])
-                     .mockResolvedValueOnce([{ id: 1, title: 'Test Template' }]),
-      select: vi.fn().mockReturnThis(),
-      from: vi.fn().mockReturnThis(),
-      where: vi.fn().mockResolvedValue([]), // Assume user doesn't exist
-    },
-    getTemplateCategory: vi.fn().mockResolvedValue({ id: 1, name: 'Test Category' }),
-    createTemplateCategory: vi.fn().mockResolvedValue({ id: 1, name: 'api-test-category', displayName: 'API Test Category' }),
-    createTemplate: vi.fn().mockResolvedValue({ id: 1, title: 'API Test Template', categoryId: 1 }),
-  },
-}));
+vi.mock('../storage', async (importOriginal) => {
+    const actual = await importOriginal() as any;
+    const memStorageInstance = new actual.MemStorage();
+
+    // Replace all methods with vi.fn() to allow for mocking in tests
+    for (const key of Object.getOwnPropertyNames(actual.MemStorage.prototype)) {
+        if (key !== 'constructor' && typeof memStorageInstance[key] === 'function') {
+            memStorageInstance[key] = vi.fn();
+        }
+    }
+
+    return {
+        ...actual,
+        MemStorage: vi.fn(() => memStorageInstance),
+        storage: memStorageInstance,
+    };
+});
+
+import { storage } from '../storage';
 
 let app: Express;
 let server: http.Server;
@@ -28,11 +32,11 @@ let server: http.Server;
 beforeAll(async () => {
   app = express();
   app.use(express.json());
-  server = await registerRoutes(app);
+  ({ httpServer: server } = await registerRoutes(app, storage));
 });
 
-afterAll(() => {
-  server.close();
+afterAll((done) => {
+  server.close(done);
 });
 
 describe('POST /papyr-us/api/templates', () => {
@@ -56,6 +60,21 @@ describe('POST /papyr-us/api/templates', () => {
   });
 
   it('should create a template successfully if category exists', async () => {
+    const { storage } = await import('../storage');
+    const categoryId = 1;
+
+    // Mock the storage calls for this test
+    (storage.createTemplateCategory as vi.Mock).mockResolvedValue({ 
+        id: categoryId, 
+        name: 'api-test-category', 
+        displayName: 'API Test Category' 
+    });
+    (storage.createTemplate as vi.Mock).mockResolvedValue({ 
+        id: 1, 
+        title: 'API Test Template', 
+        categoryId: categoryId 
+    });
+
     // First, let's "create" a category to ensure it exists.
     const categoryResponse = await request(app)
       .post('/papyr-us/api/template-categories')
@@ -65,7 +84,7 @@ describe('POST /papyr-us/api/templates', () => {
       });
     
     expect(categoryResponse.status).toBe(201);
-    const categoryId = categoryResponse.body.id;
+    expect(categoryResponse.body).toHaveProperty('id', categoryId);
 
     // Now, create the template using the new category ID
     const templateResponse = await request(app)

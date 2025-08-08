@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server as HttpServer } from "http";
 import { Server as SocketIoServer } from "socket.io";
-import { storage } from "./storage.ts";
+import { authMiddleware } from "./middleware.ts";
 import { config } from "./config.ts";
 import { insertWikiPageSchema, updateWikiPageSchema, searchSchema, insertCalendarEventSchema, updateCalendarEventSchema, insertDirectorySchema, updateDirectorySchema, insertCommentSchema, updateCommentSchema, insertMemberSchema, updateMemberSchema, insertTaskSchema, updateTaskSchema, insertNotificationSchema, updateNotificationSchema, insertTemplateCategorySchema, updateTemplateCategorySchema, insertTemplateSchema, updateTemplateSchema, insertTeamSchema, users } from "../shared/schema.ts";
 import { upload, processUploadedFile, deleteUploadedFile, listUploadedFiles, getFileInfo } from "./services/upload.ts";
@@ -12,15 +12,15 @@ import type { Request } from "express";
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import passport from 'passport';
-import { authMiddleware } from './middleware.ts';
 import { eq } from 'drizzle-orm';
+import type { IStorage } from './storage.ts';
 
 interface MulterRequest extends Request {
   files?: any[];
 }
 
 
-export async function registerRoutes(app: Express): Promise<{ httpServer: HttpServer, io?: SocketIoServer }> {
+export async function registerRoutes(app: Express, storage: IStorage): Promise<{ httpServer: HttpServer, io?: SocketIoServer }> {
   const httpServer = createServer(app);
   let io: SocketIoServer | undefined;
   

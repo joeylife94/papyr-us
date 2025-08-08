@@ -113,7 +113,7 @@ function App() {
       <ThemeProvider>
         <TooltipProvider>
           <Toaster />
-          <BrowserRouter>
+          <BrowserRouter basename="/papyr-us">
             <AuthProvider>
               <Routes>
                 <Route path="/login" element={<LoginPage />} />
@@ -121,28 +121,27 @@ function App() {
                 <Route element={<ProtectedRoute />}>
                   <Route element={<AppLayout />}>
                     <Route path="/" element={<HomeWrapper />} />
-                    <Route path="/papyr-us" element={<HomeWrapper />} />
-                    <Route path="/papyr-us/page/:slug" element={<WikiPageViewWrapper />} />
-                    <Route path="/papyr-us/calendar/:teamId" element={<CalendarPageWrapper />} />
-                    <Route path="/papyr-us/edit/:pageId" element={<PageEditorWrapper />} />
-                    <Route path="/papyr-us/create" element={<PageEditorWrapper />} />
-                    <Route path="/papyr-us/create/:folder" element={<PageEditorWrapper />} />
-                    <Route path="/papyr-us/teams/:teamName/create" element={<PageEditorWrapper />} />
-                    <Route path="/papyr-us/admin" element={<AdminPage />} />
-                    <Route path="/papyr-us/members" element={<MembersWrapper />} />
-                    <Route path="/papyr-us/files" element={<FileManagerWrapper />} />
-                    <Route path="/papyr-us/dashboard" element={<DashboardPage />} />
-                    <Route path="/papyr-us/tasks" element={<TasksPageWrapper />} />
-                    <Route path="/papyr-us/templates" element={<Templates />} />
-                    <Route path="/papyr-us/database" element={<DatabaseViewWrapper />} />
-                    <Route path="/papyr-us/teams/:teamName/database" element={<DatabaseViewWrapper />} />
-                    <Route path="/papyr-us/collaboration-test" element={<CollaborationTest />} />
-                    <Route path="/papyr-us/ai-search" element={<AISearchPage />} />
-                    <Route path="/papyr-us/teams/:teamName/members" element={<MembersWrapper />} />
-                    <Route path="/papyr-us/teams/:teamName/tasks" element={<TasksPageWrapper />} />
-                    <Route path="/papyr-us/teams/:teamName/files" element={<FileManagerWrapper />} />
-                    <Route path="/papyr-us/teams/:teamName/calendar" element={<CalendarPageWrapper />} />
-                    <Route path="/papyr-us/teams/:teamName/pages" element={<HomeWrapper />} />
+                    <Route path="/page/:slug" element={<WikiPageViewWrapper />} />
+                    <Route path="/calendar/:teamId" element={<CalendarPageWrapper />} />
+                    <Route path="/edit/:pageId" element={<PageEditorWrapper />} />
+                    <Route path="/create" element={<PageEditorWrapper />} />
+                    <Route path="/create/:folder" element={<PageEditorWrapper />} />
+                    <Route path="/teams/:teamName/create" element={<PageEditorWrapper />} />
+                    <Route path="/admin" element={<AdminPage />} />
+                    <Route path="/members" element={<MembersWrapper />} />
+                    <Route path="/files" element={<FileManagerWrapper />} />
+                    <Route path="/dashboard" element={<DashboardPage />} />
+                    <Route path="/tasks" element={<TasksPageWrapper />} />
+                    <Route path="/templates" element={<Templates />} />
+                    <Route path="/database" element={<DatabaseViewWrapper />} />
+                    <Route path="/teams/:teamName/database" element={<DatabaseViewWrapper />} />
+                    <Route path="/collaboration-test" element={<CollaborationTest />} />
+                    <Route path="/ai-search" element={<AISearchPage />} />
+                    <Route path="/teams/:teamName/members" element={<MembersWrapper />} />
+                    <Route path="/teams/:teamName/tasks" element={<TasksPageWrapper />} />
+                    <Route path="/teams/:teamName/files" element={<FileManagerWrapper />} />
+                    <Route path="/teams/:teamName/calendar" element={<CalendarPageWrapper />} />
+                    <Route path="/teams/:teamName/pages" element={<HomeWrapper />} />
                     <Route path="*" element={<NotFound />} />
                   </Route>
                 </Route>

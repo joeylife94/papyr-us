@@ -13,17 +13,21 @@ vi.mock('../config', () => ({
 }));
 
 // Mock the storage module
-vi.mock('../storage', async () => {
-    const actualStorage = await vi.importActual('../storage') as any;
+vi.mock('../storage', async (importOriginal) => {
+    const actual = await importOriginal() as any;
+    const memStorageInstance = new actual.MemStorage();
+
+    // Replace all methods with vi.fn() to allow for mocking in tests
+    for (const key of Object.getOwnPropertyNames(actual.MemStorage.prototype)) {
+        if (key !== 'constructor' && typeof memStorageInstance[key] === 'function') {
+            memStorageInstance[key] = vi.fn();
+        }
+    }
+
     return {
-        storage: {
-            ...actualStorage.storage,
-            verifyDirectoryPassword: vi.fn(),
-            getDirectories: vi.fn(),
-            createDirectory: vi.fn(),
-            updateDirectory: vi.fn(),
-            deleteDirectory: vi.fn(),
-        },
+        ...actual,
+        MemStorage: vi.fn(() => memStorageInstance),
+        storage: memStorageInstance,
     };
 });
 
@@ -35,15 +39,15 @@ let server: http.Server;
 beforeAll(async () => {
   app = express();
   app.use(express.json());
-  server = await registerRoutes(app);
+  ({ httpServer: server } = await registerRoutes(app, storage));
 });
 
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
-afterAll(() => {
-  server.close();
+afterAll((done) => {
+  server.close(done);
 });
 
 describe('Admin & Directory Management API', () => {

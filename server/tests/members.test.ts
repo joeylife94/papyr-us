@@ -6,19 +6,21 @@ import http from 'http';
 import { registerRoutes } from '../routes';
 
 // Mock the storage module
-vi.mock('../storage', async () => {
-    const actualStorage = await vi.importActual('../storage') as any;
+vi.mock('../storage', async (importOriginal) => {
+    const actual = await importOriginal() as any;
+    const memStorageInstance = new actual.MemStorage();
+
+    // Replace all methods with vi.fn() to allow for mocking in tests
+    for (const key of Object.getOwnPropertyNames(actual.MemStorage.prototype)) {
+        if (key !== 'constructor' && typeof memStorageInstance[key] === 'function') {
+            memStorageInstance[key] = vi.fn();
+        }
+    }
+
     return {
-        storage: {
-            ...actualStorage.storage,
-            createMember: vi.fn(),
-            getMembers: vi.fn(),
-            getMember: vi.fn(),
-            getMemberByEmail: vi.fn(),
-            updateMember: vi.fn(),
-            deleteMember: vi.fn(),
-            getTeamByName: vi.fn(), // Also mock this as it's used in the route
-        },
+        ...actual,
+        MemStorage: vi.fn(() => memStorageInstance),
+        storage: memStorageInstance,
     };
 });
 
@@ -30,15 +32,15 @@ let server: http.Server;
 beforeAll(async () => {
   app = express();
   app.use(express.json());
-  server = await registerRoutes(app);
+  ({ httpServer: server } = await registerRoutes(app, storage));
 });
 
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
-afterAll(() => {
-  server.close();
+afterAll((done) => {
+  server.close(done);
 });
 
 describe('Member Management API', () => {

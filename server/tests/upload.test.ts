@@ -7,6 +7,26 @@ import { registerRoutes } from '../routes';
 import path from 'path';
 import fs from 'fs';
 
+// Mock the storage module
+vi.mock('../storage', async (importOriginal) => {
+    const actualStorage = await importOriginal() as any;
+    
+    // Create a spy for each method of MemStorage
+    const memStorageInstance = new actualStorage.MemStorage();
+    for (const key in memStorageInstance) {
+        if (typeof memStorageInstance[key] === 'function') {
+            vi.spyOn(memStorageInstance, key as any).mockImplementation(() => {});
+        }
+    }
+
+    return {
+        ...actualStorage,
+        DBStorage: vi.fn(), // Mock DBStorage if necessary
+        MemStorage: vi.fn(() => memStorageInstance), // Mock MemStorage constructor
+        storage: memStorageInstance, // Use the mocked instance
+    };
+});
+
 // Mock the entire upload service module
 vi.mock('../services/upload', async () => {
     const actual = await vi.importActual('../services/upload') as any;
@@ -21,17 +41,22 @@ vi.mock('../services/upload', async () => {
 
 import { processUploadedFile, listUploadedFiles, getFileInfo, deleteUploadedFile } from '../services/upload';
 
+import { storage } from '../storage';
+
 let app: Express;
 let server: http.Server;
 const testFilePath = path.join(__dirname, 'test-file.txt');
 
 beforeAll(async () => {
     // Create a dummy file for testing uploads
+    if (!fs.existsSync(path.dirname(testFilePath))) {
+        fs.mkdirSync(path.dirname(testFilePath), { recursive: true });
+    }
     fs.writeFileSync(testFilePath, 'This is a test file.');
 
     app = express();
     app.use(express.json());
-    server = await registerRoutes(app);
+    ({ httpServer: server } = await registerRoutes(app, storage));
 });
 
 beforeEach(() => {

@@ -1,5 +1,9 @@
 import express, { type Express, type Request, Response, NextFunction } from "express";
 import jwt from 'jsonwebtoken';
+import { config } from "./config.ts";
+import { DBStorage, MemStorage } from "./storage.ts";
+
+export const storage = config.useDatabase ? new DBStorage() : new MemStorage();
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -61,8 +65,6 @@ export function setupErrorHandler(app: Express) {
     res.status(status).json({ message });
   });
 }
-
-import { config } from "./config.ts";
 
 export function getServerConfig() {
   const port = config.port;

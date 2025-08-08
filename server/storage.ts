@@ -1708,7 +1708,7 @@ Welcome to Team Alpha's dedicated workspace! Use this area to collaborate and or
 // PostgreSQL-based storage implementation
 export class DBStorage implements IStorage {
   private db: any;
-  private pool: Pool;
+  public pool: Pool;
 
   constructor() {
     if (!process.env.DATABASE_URL) {

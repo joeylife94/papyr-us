@@ -6,7 +6,8 @@ import {
   setupBasicMiddleware, 
   setupLoggingMiddleware, 
   setupErrorHandler, 
-  getServerConfig 
+  getServerConfig,
+  storage
 } from "./middleware.ts";
 
 async function setupDevelopmentServer(app: any, server: any) {
@@ -27,7 +28,7 @@ const app = express();
   setupBasicMiddleware(app);
   setupLoggingMiddleware(app);
 
-  const { httpServer, io } = await registerRoutes(app);
+  const { httpServer, io } = await registerRoutes(app, storage);
 
   // Setup error handler after routes
   setupErrorHandler(app);
@@ -50,19 +51,61 @@ const app = express();
   });
 
   // Graceful shutdown
-  const shutdown = () => {
-    log('Shutting down server...');
-    if (io) {
-      io.close(() => {
-        log('Socket.IO server shut down.');
-      });
-    }
-    httpServer.close(() => {
-      log('HTTP server shut down.');
-      process.exit(0);
+  const connections = new Set<import('net').Socket>();
+  httpServer.on('connection', (connection) => {
+    connections.add(connection);
+    connection.on('close', () => {
+      connections.delete(connection);
     });
+  });
+
+  const shutdown = (signal: string) => {
+    log(`[SHUTDOWN] Received ${signal}. Starting graceful shutdown...`);
+
+    // Force exit after a timeout to prevent hanging indefinitely
+    const forceExitTimeout = setTimeout(() => {
+      log('[SHUTDOWN] Graceful shutdown timed out. Forcing exit.', 'error');
+      process.exit(1);
+    }, 10000); // 10 seconds
+
+    log(`[SHUTDOWN] Destroying ${connections.size} open connections...`);
+    for (const connection of connections) {
+      connection.destroy();
+    }
+    
+    const closeHttpServer = () => {
+      log('[SHUTDOWN] Closing HTTP server...');
+      httpServer.close(async () => {
+        log('[SHUTDOWN] HTTP server shut down.');
+        try {
+          if (storage && 'pool' in storage) {
+            log('[SHUTDOWN] Closing database connection pool...');
+            await (storage as any).pool.end();
+            log('[SHUTDOWN] Database connection pool shut down.');
+          } else {
+            log('[SHUTDOWN] Database pool not found or not applicable.');
+          }
+        } catch (dbError) {
+          log(`[SHUTDOWN] Error closing database pool: ${(dbError as Error).message}`, 'error');
+        } finally {
+          clearTimeout(forceExitTimeout); // Clear the timeout as we are exiting gracefully
+          log('[SHUTDOWN] Exiting process.');
+          process.exit(0);
+        }
+      });
+    };
+
+    if (io) {
+      log('[SHUTDOWN] Closing Socket.IO server...');
+      io.close(() => {
+        log('[SHUTDOWN] Socket.IO server shut down.');
+        closeHttpServer();
+      });
+    } else {
+      closeHttpServer();
+    }
   };
 
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
 })();

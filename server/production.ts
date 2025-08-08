@@ -6,7 +6,8 @@ import {
   setupBasicMiddleware, 
   setupLoggingMiddleware, 
   setupErrorHandler, 
-  getServerConfig 
+  getServerConfig,
+  storage
 } from "./middleware";
 
 const app = express();
@@ -16,7 +17,7 @@ setupBasicMiddleware(app);
 setupLoggingMiddleware(app);
 
 (async () => {
-  const server = await registerRoutes(app);
+  const { httpServer } = await registerRoutes(app, storage);
 
   // Setup error handler after routes
   setupErrorHandler(app);
@@ -26,7 +27,7 @@ setupLoggingMiddleware(app);
 
   // Start server
   const { port } = getServerConfig();
-  server.listen(port, () => {
+  httpServer.listen(port, () => {
     log(`serving on port ${port}`);
   });
 })(); 
