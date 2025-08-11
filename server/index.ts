@@ -1,3 +1,10 @@
+import dotenv from 'dotenv';
+import path from 'path';
+
+// Load environment variables based on NODE_ENV
+const envPath = process.env.NODE_ENV === 'test' ? '.env.test' : '.env';
+dotenv.config({ path: path.resolve(process.cwd(), envPath) });
+
 import express from "express";
 import { registerRoutes } from "./routes.ts";
 import { serveStatic } from "./static.ts";
@@ -60,49 +67,42 @@ const app = express();
   });
 
   const shutdown = (signal: string) => {
-    log(`[SHUTDOWN] Received ${signal}. Starting graceful shutdown...`);
+    log(`[SHUTDOWN] Received ${signal}. Shutting down...`);
 
-    // Force exit after a timeout to prevent hanging indefinitely
-    const forceExitTimeout = setTimeout(() => {
-      log('[SHUTDOWN] Graceful shutdown timed out. Forcing exit.', 'error');
+    // Force exit after a timeout
+    const timeout = setTimeout(() => {
+      log('[SHUTDOWN] Shutdown timed out. Forcing exit.', 'error');
       process.exit(1);
-    }, 10000); // 10 seconds
+    }, 5000);
 
+    // Close the HTTP server, which stops accepting new connections
+    httpServer.close(async (err) => {
+      clearTimeout(timeout);
+      if (err) {
+        log(`[SHUTDOWN] Error closing HTTP server: ${err.message}`, 'error');
+        process.exit(1);
+        return;
+      }
+      log('[SHUTDOWN] HTTP server closed.');
+
+      // Close the database pool
+      try {
+        if (storage && 'pool' in storage && (storage as any).pool) {
+          await (storage as any).pool.end();
+          log('[SHUTDOWN] Database pool closed.');
+        }
+      } catch (dbError) {
+        log(`[SHUTDOWN] Error closing database pool: ${(dbError as Error).message}`, 'error');
+      }
+
+      log('[SHUTDOWN] Shutdown complete. Exiting.');
+      process.exit(0);
+    });
+
+    // Forcibly close any open connections
     log(`[SHUTDOWN] Destroying ${connections.size} open connections...`);
     for (const connection of connections) {
       connection.destroy();
-    }
-    
-    const closeHttpServer = () => {
-      log('[SHUTDOWN] Closing HTTP server...');
-      httpServer.close(async () => {
-        log('[SHUTDOWN] HTTP server shut down.');
-        try {
-          if (storage && 'pool' in storage) {
-            log('[SHUTDOWN] Closing database connection pool...');
-            await (storage as any).pool.end();
-            log('[SHUTDOWN] Database connection pool shut down.');
-          } else {
-            log('[SHUTDOWN] Database pool not found or not applicable.');
-          }
-        } catch (dbError) {
-          log(`[SHUTDOWN] Error closing database pool: ${(dbError as Error).message}`, 'error');
-        } finally {
-          clearTimeout(forceExitTimeout); // Clear the timeout as we are exiting gracefully
-          log('[SHUTDOWN] Exiting process.');
-          process.exit(0);
-        }
-      });
-    };
-
-    if (io) {
-      log('[SHUTDOWN] Closing Socket.IO server...');
-      io.close(() => {
-        log('[SHUTDOWN] Socket.IO server shut down.');
-        closeHttpServer();
-      });
-    } else {
-      closeHttpServer();
     }
   };
 

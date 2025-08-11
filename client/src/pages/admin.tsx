@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useLocation } from "wouter";
+import { useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -39,7 +39,7 @@ type DirectoryFormData = z.infer<typeof directoryFormSchema>;
 type TeamFormData = z.infer<typeof teamFormSchema>;
 
 export default function AdminPage() {
-  const [, navigate] = useLocation();
+  const navigate = useNavigate();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authPassword, setAuthPassword] = useState("");
   const [activeTab, setActiveTab] = useState<"directories" | "teams">("directories");

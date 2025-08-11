@@ -63,7 +63,7 @@ npm run dev
 ### Frontend 아키텍처
 - **컴포넌트 기반 구조**: 재사용 가능한 컴포넌트로 UI 구성
 - **상태 관리**: TanStack Query를 통한 서버 상태 관리
-- **라우팅**: Wouter를 사용한 클라이언트 사이드 라우팅
+- **라우팅**: React Router DOM을 사용한 클라이언트 사이드 라우팅
 - **스타일링**: Tailwind CSS + shadcn/ui 컴포넌트
 
 ### Backend 아키텍처
@@ -108,7 +108,10 @@ npm run test:watch
 프로젝트 루트 디렉토리에서 다음 명령어를 사용하여 E2E 테스트를 실행할 수 있습니다.
 
 ```bash
-# 전체 E2E 테스트 스위트 실행
+# 1. 테스트 데이터베이스 설정 (최초 1회 또는 스키마 변경 시)
+npm run test:setup
+
+# 2. 전체 E2E 테스트 스위트 실행
 npm run e2e
 ```
 
@@ -116,8 +119,9 @@ npm run e2e
 모든 E2E 테스트 파일은 `tests/` 디렉토리 내에 위치하며, `*.spec.ts` 형식의 파일명을 따릅니다.
 
 #### E2E 테스트 작성 가이드
-- **서버 자동 실행**: `playwright.config.ts`에 `webServer` 설정이 되어 있어, 테스트 실행 시 `npm run dev` 명령어를 통해 개발 서버가 자동으로 시작됩니다.
-- **서버 정상 종료 (Graceful Shutdown)**: Playwright가 테스트를 완료하고 정상적으로 종료되려면, 테스트 대상 서버가 `SIGINT` 또는 `SIGTERM` 신호를 받았을 때 스스로 모든 리소스(HTTP 서버, WebSocket, DB 커넥션 등)를 정리하고 프로세스를 종료하는 로직을 갖추고 있어야 합니다. `server/index.ts`의 종료 핸들러를 참고하세요.
+- **서버 자동 실행**: `playwright.config.ts`에 `webServer` 설정이 되어 있어, 테스트 실행 시 `npm run start:e2e` 명령어를 통해 테스트용 서버가 자동으로 시작됩니다.
+- **테스트 안정성**: 테스트 코드 내에서 `page.waitForLoadState('networkidle')`과 같이 불안정한 대기 대신, `page.waitForSelector()`를 사용하거나 `expect(locator).toBeVisible()`와 같이 특정 요소가 나타날 때까지 기다리는 방식을 사용하여 안정성을 높였습니다.
+- **서버 정상 종료 (Graceful Shutdown)**: Playwright가 테스트를 완료하고 정상적으로 종료되려면, 테스트 대상 서버가 `SIGINT` 또는 `SIGTERM` 신호를 받았을 때 스스로 모든 리소스(HTTP 서버, DB 커넥션 등)를 정리하고 프로세스를 종료하는 로직을 갖추고 있어야 합니다. `server/index.ts`의 종료 핸들러를 참고하세요.
 - 새로운 사용자 시나리오를 추가할 경우, `tests/` 디렉토리에 테스트 파일을 추가하여 검증 범위를 넓혀야 합니다.
 
 ## 주요 컴포넌트

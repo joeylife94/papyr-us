@@ -53,7 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (response.ok) {
       const { token } = await response.json();
       localStorage.setItem('token', token);
-      await fetchUser(token);
+      return fetchUser(token);
     } else {
       throw new Error('Login failed');
     }

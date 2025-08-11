@@ -48,7 +48,7 @@ Papyr.us는 React와 Express.js를 기반으로 구축된 현대적인 팀 협�
 - **shadcn/ui** - 재사용 가능한 UI 컴포넌트
 - **TanStack Query** - 서버 상태 관리
 - **React Hook Form** - 폼 상태 관리
-- **Wouter** - 경량 라우팅 라이브러리
+- **react-router-dom** - 클라이언트 사이드 라우팅
 
 ### Backend
 - **Express.js** - Node.js 웹 프레임워크

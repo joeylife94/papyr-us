@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -58,7 +58,8 @@ const folderColors: Record<string, string> = {
 };
 
 export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: SidebarProps) {
-  const [location, navigate] = useLocation();
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     docs: true, // docs expanded by default
   });
@@ -161,7 +162,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
   };
 
   const isActivePage = (slug: string) => {
-    return location === `/page/${slug}`;
+    return pathname === `/papyr-us/page/${slug}`;
   };
 
   // Search filtering helpers

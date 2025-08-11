@@ -1,5 +1,5 @@
-import { BrowserRouter, Routes, Route, Outlet, useParams } from "react-router-dom";
-import { useState } from "react";
+import { Routes, Route, Outlet, useParams } from "react-router-dom";
+import React, { useState, Suspense } from "react";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -9,28 +9,29 @@ import { AuthProvider } from "@/hooks/useAuth";
 import { Header } from "@/components/layout/header";
 import { Sidebar } from "@/components/layout/sidebar";
 
-// Pages
-import Home from "@/pages/home";
-import WikiPageView from "@/pages/wiki-page";
-import CalendarPage from "@/pages/calendar";
-import PageEditor from "@/pages/page-editor";
-import AdminPage from "@/pages/admin";
-import Members from "@/pages/members";
-import FileManager from "@/pages/file-manager";
-import { DashboardPage } from "@/pages/dashboard";
-import { TasksPage } from "@/pages/tasks";
-import Templates from "@/pages/templates";
-import DatabaseView from "@/pages/database-view";
-import CollaborationTest from "@/pages/collaboration-test";
-import AISearchPage from "@/pages/ai-search";
-import NotFound from "@/pages/not-found";
-import LoginPage from "@/pages/login";
-import RegisterPage from "@/pages/register";
+// Pages - Lazy Loading
+const Home = React.lazy(() => import("@/pages/home"));
+const WikiPageView = React.lazy(() => import("@/pages/wiki-page"));
+const CalendarPage = React.lazy(() => import("@/pages/calendar"));
+const PageEditor = React.lazy(() => import("@/pages/page-editor"));
+const AdminPage = React.lazy(() => import("@/pages/admin"));
+const Members = React.lazy(() => import("@/pages/members"));
+const FileManager = React.lazy(() => import("@/pages/file-manager"));
+const DashboardPage = React.lazy(() => import("@/pages/dashboard"));
+const TasksPage = React.lazy(() => import("@/pages/tasks"));
+const Templates = React.lazy(() => import("@/pages/templates"));
+const DatabaseView = React.lazy(() => import("@/pages/database-view"));
+const CollaborationTest = React.lazy(() => import("@/pages/collaboration-test"));
+const AISearchPage = React.lazy(() => import("@/pages/ai-search"));
+const NotFound = React.lazy(() => import("@/pages/not-found"));
+const LoginPage = React.lazy(() => import("@/pages/login"));
+const RegisterPage = React.lazy(() => import("@/pages/register"));
+
 
 // Components
 import ProtectedRoute from "@/components/ProtectedRoute";
 
-// Helper components to handle route params, since the pages were designed for wouter
+// Helper components to handle route params
 const WikiPageViewWrapper = () => {
   const { slug } = useParams();
   return <WikiPageView slug={slug} />;
@@ -99,7 +100,9 @@ function AppLayout() {
         
         <main id="main-content" className="flex-1 lg:ml-80">
           <div className="max-w-7xl mx-auto px-4 md:px-6 lg:px-8">
-            <Outlet />
+            <Suspense fallback={<div>Loading page...</div>}>
+              <Outlet />
+            </Suspense>
           </div>
         </main>
       </div>
@@ -113,41 +116,41 @@ function App() {
       <ThemeProvider>
         <TooltipProvider>
           <Toaster />
-          <BrowserRouter basename="/papyr-us">
             <AuthProvider>
-              <Routes>
-                <Route path="/login" element={<LoginPage />} />
-                <Route path="/register" element={<RegisterPage />} />
-                <Route element={<ProtectedRoute />}>
-                  <Route element={<AppLayout />}>
-                    <Route path="/" element={<HomeWrapper />} />
-                    <Route path="/page/:slug" element={<WikiPageViewWrapper />} />
-                    <Route path="/calendar/:teamId" element={<CalendarPageWrapper />} />
-                    <Route path="/edit/:pageId" element={<PageEditorWrapper />} />
-                    <Route path="/create" element={<PageEditorWrapper />} />
-                    <Route path="/create/:folder" element={<PageEditorWrapper />} />
-                    <Route path="/teams/:teamName/create" element={<PageEditorWrapper />} />
-                    <Route path="/admin" element={<AdminPage />} />
-                    <Route path="/members" element={<MembersWrapper />} />
-                    <Route path="/files" element={<FileManagerWrapper />} />
-                    <Route path="/dashboard" element={<DashboardPage />} />
-                    <Route path="/tasks" element={<TasksPageWrapper />} />
-                    <Route path="/templates" element={<Templates />} />
-                    <Route path="/database" element={<DatabaseViewWrapper />} />
-                    <Route path="/teams/:teamName/database" element={<DatabaseViewWrapper />} />
-                    <Route path="/collaboration-test" element={<CollaborationTest />} />
-                    <Route path="/ai-search" element={<AISearchPage />} />
-                    <Route path="/teams/:teamName/members" element={<MembersWrapper />} />
-                    <Route path="/teams/:teamName/tasks" element={<TasksPageWrapper />} />
-                    <Route path="/teams/:teamName/files" element={<FileManagerWrapper />} />
-                    <Route path="/teams/:teamName/calendar" element={<CalendarPageWrapper />} />
-                    <Route path="/teams/:teamName/pages" element={<HomeWrapper />} />
-                    <Route path="*" element={<NotFound />} />
+              <Suspense fallback={<div>Loading application...</div>}>
+                <Routes>
+                  <Route path="/login" element={<LoginPage />} />
+                  <Route path="/register" element={<RegisterPage />} />
+                  <Route element={<ProtectedRoute />}>
+                    <Route element={<AppLayout />}>
+                      <Route path="/" element={<HomeWrapper />} />
+                      <Route path="/page/:slug" element={<WikiPageViewWrapper />} />
+                      <Route path="/calendar/:teamId" element={<CalendarPageWrapper />} />
+                      <Route path="/edit/:pageId" element={<PageEditorWrapper />} />
+                      <Route path="/create" element={<PageEditorWrapper />} />
+                      <Route path="/create/:folder" element={<PageEditorWrapper />} />
+                      <Route path="/teams/:teamName/create" element={<PageEditorWrapper />} />
+                      <Route path="/admin" element={<AdminPage />} />
+                      <Route path="/members" element={<MembersWrapper />} />
+                      <Route path="/files" element={<FileManagerWrapper />} />
+                      <Route path="/dashboard" element={<DashboardPage />} />
+                      <Route path="/tasks" element={<TasksPageWrapper />} />
+                      <Route path="/templates" element={<Templates />} />
+                      <Route path="/database" element={<DatabaseViewWrapper />} />
+                      <Route path="/teams/:teamName/database" element={<DatabaseViewWrapper />} />
+                      <Route path="/collaboration-test" element={<CollaborationTest />} />
+                      <Route path="/ai-search" element={<AISearchPage />} />
+                      <Route path="/teams/:teamName/members" element={<MembersWrapper />} />
+                      <Route path="/teams/:teamName/tasks" element={<TasksPageWrapper />} />
+                      <Route path="/teams/:teamName/files" element={<FileManagerWrapper />} />
+                      <Route path="/teams/:teamName/calendar" element={<CalendarPageWrapper />} />
+                      <Route path="/teams/:teamName/pages" element={<HomeWrapper />} />
+                      <Route path="*" element={<NotFound />} />
+                    </Route>
                   </Route>
-                </Route>
-              </Routes>
+                </Routes>
+              </Suspense>
             </AuthProvider>
-          </BrowserRouter>
         </TooltipProvider>
       </ThemeProvider>
     </QueryClientProvider>
