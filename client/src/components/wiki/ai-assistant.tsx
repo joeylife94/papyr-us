@@ -15,7 +15,7 @@ export function AIAssistant() {
 
   const generateContentMutation = useMutation({
     mutationFn: async (data: { prompt: string; type: string }) => {
-      const response = await apiRequest("POST", "/papyr-us/api/ai/generate", data);
+      const response = await apiRequest("POST", "/api/ai/generate", data);
       return response.json();
     },
     onSuccess: (data) => {

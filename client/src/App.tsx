@@ -9,23 +9,23 @@ import { AuthProvider } from "@/hooks/useAuth";
 import { Header } from "@/components/layout/header";
 import { Sidebar } from "@/components/layout/sidebar";
 
-// Pages - Lazy Loading
-const Home = React.lazy(() => import("@/pages/home"));
-const WikiPageView = React.lazy(() => import("@/pages/wiki-page"));
-const CalendarPage = React.lazy(() => import("@/pages/calendar"));
-const PageEditor = React.lazy(() => import("@/pages/page-editor"));
-const AdminPage = React.lazy(() => import("@/pages/admin"));
-const Members = React.lazy(() => import("@/pages/members"));
-const FileManager = React.lazy(() => import("@/pages/file-manager"));
-const DashboardPage = React.lazy(() => import("@/pages/dashboard"));
-const TasksPage = React.lazy(() => import("@/pages/tasks"));
-const Templates = React.lazy(() => import("@/pages/templates"));
-const DatabaseView = React.lazy(() => import("@/pages/database-view"));
-const CollaborationTest = React.lazy(() => import("@/pages/collaboration-test"));
-const AISearchPage = React.lazy(() => import("@/pages/ai-search"));
-const NotFound = React.lazy(() => import("@/pages/not-found"));
-const LoginPage = React.lazy(() => import("@/pages/login"));
-const RegisterPage = React.lazy(() => import("@/pages/register"));
+// Pages
+import Home from "@/pages/home";
+import WikiPageView from "@/pages/wiki-page";
+import CalendarPage from "@/pages/calendar";
+import PageEditor from "@/pages/page-editor";
+import AdminPage from "@/pages/admin";
+import Members from "@/pages/members";
+import FileManager from "@/pages/file-manager";
+import DashboardPage from "@/pages/dashboard";
+import TasksPage from "@/pages/tasks";
+import Templates from "@/pages/templates";
+import DatabaseView from "@/pages/database-view";
+import CollaborationTest from "@/pages/collaboration-test";
+import AISearchPage from "@/pages/ai-search";
+import NotFound from "@/pages/not-found";
+import LoginPage from "@/pages/login";
+import RegisterPage from "@/pages/register";
 
 
 // Components

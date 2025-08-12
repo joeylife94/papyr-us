@@ -56,7 +56,7 @@ describe('Team Management API', () => {
         (storage.createTeam as vi.Mock).mockResolvedValue({ ...newTeamData, id: 2 });
 
         const response = await request(app)
-            .post('/papyr-us/api/teams')
+            .post('/api/teams')
             .send(newTeamData);
 
         expect(response.status).toBe(201);
@@ -67,7 +67,7 @@ describe('Team Management API', () => {
         const teams = [mockTeam, { ...mockTeam, id: 2, name: 'qa-team' }];
         (storage.getTeams as vi.Mock).mockResolvedValue(teams);
 
-        const response = await request(app).get('/papyr-us/api/teams');
+        const response = await request(app).get('/api/teams');
 
         expect(response.status).toBe(200);
         expect(response.body).toEqual(teams);
@@ -76,7 +76,7 @@ describe('Team Management API', () => {
     it('TC-TEAM-003: should retrieve a single team by ID', async () => {
         (storage.getTeam as vi.Mock).mockResolvedValue(mockTeam);
 
-        const response = await request(app).get(`/papyr-us/api/teams/${mockTeam.id}`);
+        const response = await request(app).get(`/api/teams/${mockTeam.id}`);
 
         expect(response.status).toBe(200);
         expect(response.body).toEqual(mockTeam);
@@ -87,7 +87,7 @@ describe('Team Management API', () => {
         const payload = { teamName: 'core-devs', password: 'password123' };
 
         const response = await request(app)
-            .post('/papyr-us/api/teams/verify')
+            .post('/api/teams/verify')
             .send(payload);
 
         expect(response.status).toBe(200);
@@ -99,7 +99,7 @@ describe('Team Management API', () => {
         const payload = { teamName: 'core-devs', password: 'wrongpassword' };
 
         const response = await request(app)
-            .post('/papyr-us/api/teams/verify')
+            .post('/api/teams/verify')
             .send(payload);
 
         expect(response.status).toBe(200);
@@ -112,7 +112,7 @@ describe('Team Management API', () => {
         (storage.updateTeam as vi.Mock).mockResolvedValue(updatedTeam);
 
         const response = await request(app)
-            .put(`/papyr-us/api/teams/${mockTeam.id}`)
+            .put(`/api/teams/${mockTeam.id}`)
             .send(updateData);
 
         expect(response.status).toBe(200);
@@ -122,7 +122,7 @@ describe('Team Management API', () => {
     it('TC-TEAM-007: should delete a team', async () => {
         (storage.deleteTeam as vi.Mock).mockResolvedValue({ success: true });
 
-        const response = await request(app).delete(`/papyr-us/api/teams/${mockTeam.id}`);
+        const response = await request(app).delete(`/api/teams/${mockTeam.id}`);
 
         expect(response.status).toBe(204);
     });

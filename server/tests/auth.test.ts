@@ -56,7 +56,7 @@ afterAll((done) => {
 });
 
 describe('Authentication API', () => {
-  describe('POST /papyr-us/api/auth/register', () => {
+  describe('POST /api/auth/register', () => {
     it('TC-AUTH-001: should register a new user successfully', async () => {
       // Setup mock for this specific test
       (storage.db.select as vi.Mock).mockReturnThis();
@@ -68,7 +68,7 @@ describe('Authentication API', () => {
       (bcrypt.hash as vi.Mock).mockResolvedValue('hashed_password');
 
       const response = await request(app)
-        .post('/papyr-us/api/auth/register')
+        .post('/api/auth/register')
         .send({
           name: 'Test User',
           email: 'new.user@test.com',
@@ -87,7 +87,7 @@ describe('Authentication API', () => {
       (storage.db.where as vi.Mock).mockResolvedValue([{ id: 2, email: 'existing.user@test.com' }]);
 
       const response = await request(app)
-        .post('/papyr-us/api/auth/register')
+        .post('/api/auth/register')
         .send({
           name: 'Existing User',
           email: 'existing.user@test.com',
@@ -100,7 +100,7 @@ describe('Authentication API', () => {
 
      it('TC-AUTH-003: should fail to register with missing fields', async () => {
       const response = await request(app)
-        .post('/papyr-us/api/auth/register')
+        .post('/api/auth/register')
         .send({
           name: 'Test User',
           email: 'test@test.com',
@@ -112,7 +112,7 @@ describe('Authentication API', () => {
     });
   });
 
-  describe('POST /papyr-us/api/auth/login', () => {
+  describe('POST /api/auth/login', () => {
     const mockUser = { id: 1, name: 'Test User', email: 'user@test.com', hashedPassword: 'hashed_password' };
 
     it('TC-AUTH-004: should log in a user successfully', async () => {
@@ -123,7 +123,7 @@ describe('Authentication API', () => {
       (jwt.sign as vi.Mock).mockReturnValue('fake_jwt_token');
 
       const response = await request(app)
-        .post('/papyr-us/api/auth/login')
+        .post('/api/auth/login')
         .send({ email: 'user@test.com', password: 'password123' });
 
       expect(response.status).toBe(200);
@@ -138,7 +138,7 @@ describe('Authentication API', () => {
       (bcrypt.compare as vi.Mock).mockResolvedValue(false); // Incorrect password
 
       const response = await request(app)
-        .post('/papyr-us/api/auth/login')
+        .post('/api/auth/login')
         .send({ email: 'user@test.com', password: 'wrong_password' });
 
       expect(response.status).toBe(401);
@@ -151,7 +151,7 @@ describe('Authentication API', () => {
       (storage.db.where as vi.Mock).mockResolvedValue([]); // User not found
 
       const response = await request(app)
-        .post('/papyr-us/api/auth/login')
+        .post('/api/auth/login')
         .send({ email: 'nouser@test.com', password: 'password123' });
 
       expect(response.status).toBe(401);
@@ -159,7 +159,7 @@ describe('Authentication API', () => {
     });
   });
 
-  describe('GET /papyr-us/api/auth/me', () => {
+  describe('GET /api/auth/me', () => {
     const mockUser = { id: 1, name: 'Test User', email: 'user@test.com' };
     const token = 'fake_jwt_token';
 
@@ -170,7 +170,7 @@ describe('Authentication API', () => {
       (storage.db.where as vi.Mock).mockResolvedValue([mockUser]);
 
       const response = await request(app)
-        .get('/papyr-us/api/auth/me')
+        .get('/api/auth/me')
         .set('Authorization', `Bearer ${token}`);
 
       expect(response.status).toBe(200);
@@ -178,7 +178,7 @@ describe('Authentication API', () => {
     });
 
     it("TC-AUTH-008: should fail to get user's info without a token", async () => {
-      const response = await request(app).get('/papyr-us/api/auth/me');
+      const response = await request(app).get('/api/auth/me');
       expect(response.status).toBe(401);
       expect(response.body.message).toBe('No token provided');
     });
@@ -189,7 +189,7 @@ describe('Authentication API', () => {
       });
 
       const response = await request(app)
-        .get('/papyr-us/api/auth/me')
+        .get('/api/auth/me')
         .set('Authorization', 'Bearer invalid_token');
 
       expect(response.status).toBe(401);

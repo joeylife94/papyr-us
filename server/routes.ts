@@ -38,7 +38,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
   // --- Authentication Routes ---
  
   // User Registration
-  app.post("/papyr-us/api/auth/register", async (req, res) => {
+  app.post("/api/auth/register", async (req, res) => {
     try {
       const { name, email, password } = req.body;
       if (!name || !email || !password) {
@@ -62,7 +62,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
   });
 
   // User Login
-  app.post("/papyr-us/api/auth/login", async (req, res) => {
+  app.post("/api/auth/login", async (req, res) => {
     try {
       const { email, password } = req.body;
       if (!email || !password) {
@@ -92,7 +92,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
   });
 
   // Get current user info (Protected Route)
-  app.get("/papyr-us/api/auth/me", authMiddleware, async (req: any, res) => {
+  app.get("/api/auth/me", authMiddleware, async (req: any, res) => {
     try {
         const userResult = await storage.db.select({ id: users.id, name: users.name, email: users.email }).from(users).where(eq(users.id, req.user.id));
         if (userResult.length === 0) {
@@ -108,8 +108,8 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
 
   /*
   // Google Auth
-  app.get('/papyr-us/api/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
-  app.get('/papyr-us/api/auth/google/callback',
+  app.get('/api/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+  app.get('/api/auth/google/callback',
     passport.authenticate('google', { failureRedirect: '/login', session: false }),
     (req: any, res) => {
       const token = jwt.sign({ id: req.user.id, email: req.user.email }, config.jwtSecret, { expiresIn: '1d' });
@@ -118,8 +118,8 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
   );
 
   // GitHub Auth
-  app.get('/papyr-us/api/auth/github', passport.authenticate('github', { scope: ['user:email'] }));
-  app.get('/papyr-us/api/auth/github/callback',
+  app.get('/api/auth/github', passport.authenticate('github', { scope: ['user:email'] }));
+  app.get('/api/auth/github/callback',
     passport.authenticate('github', { failureRedirect: '/login', session: false }),
     (req: any, res) => {
       const token = jwt.sign({ id: req.user.id, email: req.user.email }, config.jwtSecret, { expiresIn: '1d' });
@@ -129,7 +129,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
   */
   
   // Wiki Pages API
-  app.get("/papyr-us/api/pages", async (req, res) => {
+  app.get("/api/pages", async (req, res) => {
     try {
       const teamId = req.query.teamId as string;
       const searchParams = searchSchema.parse({
@@ -148,7 +148,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.get("/papyr-us/api/pages/:id", async (req, res) => {
+  app.get("/api/pages/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const page = await storage.getWikiPage(id);
@@ -163,7 +163,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.get("/papyr-us/api/pages/slug/:slug", async (req, res) => {
+  app.get("/api/pages/slug/:slug", async (req, res) => {
     try {
       const slug = req.params.slug;
       const page = await storage.getWikiPageBySlug(slug);
@@ -178,7 +178,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.post("/papyr-us/api/pages", async (req, res) => {
+  app.post("/api/pages", async (req, res) => {
     try {
       const pageData = insertWikiPageSchema.parse(req.body);
       
@@ -199,7 +199,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.put("/papyr-us/api/pages/:id", async (req, res) => {
+  app.put("/api/pages/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const updateData = updateWikiPageSchema.parse(req.body);
@@ -215,7 +215,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.delete("/papyr-us/api/pages/:id", async (req, res) => {
+  app.delete("/api/pages/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const deleted = await storage.deleteWikiPage(id);
@@ -231,7 +231,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
   });
 
   // Folder and Tag APIs
-  app.get("/papyr-us/api/folders", async (req, res) => {
+  app.get("/api/folders", async (req, res) => {
     try {
       const folders = await storage.getFolders();
       res.json(folders);
@@ -240,7 +240,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.get("/papyr-us/api/folders/:folder/pages", async (req, res) => {
+  app.get("/api/folders/:folder/pages", async (req, res) => {
     try {
       const folder = req.params.folder;
       const pages = await storage.getWikiPagesByFolder(folder);
@@ -250,7 +250,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.get("/papyr-us/api/tags", async (req, res) => {
+  app.get("/api/tags", async (req, res) => {
     try {
       const tags = await storage.getAllTags();
       res.json(tags);
@@ -260,7 +260,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
   });
 
   // Calendar Events API
-  app.get("/papyr-us/api/calendar/:teamId", async (req, res) => {
+  app.get("/api/calendar/:teamId", async (req, res) => {
     try {
       const teamId = req.params.teamId;
       const events = await storage.getCalendarEvents(teamId);
@@ -280,7 +280,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.get("/papyr-us/api/calendar/event/:id", async (req, res) => {
+  app.get("/api/calendar/event/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const event = await storage.getCalendarEvent(id);
@@ -293,7 +293,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.post("/papyr-us/api/calendar", async (req, res) => {
+  app.post("/api/calendar", async (req, res) => {
     try {
       
       // Convert ISO string dates to Date objects
@@ -340,7 +340,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.patch("/papyr-us/api/calendar/event/:id", async (req, res) => {
+  app.patch("/api/calendar/event/:id", async (req, res) => {
     try {
       
       const id = parseInt(req.params.id);
@@ -392,7 +392,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.delete("/papyr-us/api/calendar/event/:id", async (req, res) => {
+  app.delete("/api/calendar/event/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const deleted = await storage.deleteCalendarEvent(id);
@@ -406,7 +406,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
   });
 
   // Comments API
-  app.get("/papyr-us/api/pages/:pageId/comments", async (req, res) => {
+  app.get("/api/pages/:pageId/comments", async (req, res) => {
     try {
       const pageId = parseInt(req.params.pageId);
       const comments = await storage.getCommentsByPageId(pageId);
@@ -416,7 +416,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.post("/papyr-us/api/pages/:pageId/comments", async (req, res) => {
+  app.post("/api/pages/:pageId/comments", async (req, res) => {
     try {
       const pageId = parseInt(req.params.pageId);
       const commentData = insertCommentSchema.parse({
@@ -430,7 +430,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.put("/papyr-us/api/comments/:id", async (req, res) => {
+  app.put("/api/comments/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const updateData = updateCommentSchema.parse(req.body);
@@ -446,7 +446,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.delete("/papyr-us/api/comments/:id", async (req, res) => {
+  app.delete("/api/comments/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const deleted = await storage.deleteComment(id);
@@ -463,7 +463,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
 
   // Members API
 
-  app.get("/papyr-us/api/members/:id", async (req, res) => {
+  app.get("/api/members/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const member = await storage.getMember(id);
@@ -478,7 +478,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.get("/papyr-us/api/members/email/:email", async (req, res) => {
+  app.get("/api/members/email/:email", async (req, res) => {
     try {
       const email = req.params.email;
       const member = await storage.getMemberByEmail(email);
@@ -493,7 +493,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.post("/papyr-us/api/members", async (req, res) => {
+  app.post("/api/members", async (req, res) => {
     try {
       const memberData = insertMemberSchema.parse(req.body);
       const member = await storage.createMember(memberData);
@@ -503,7 +503,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.put("/papyr-us/api/members/:id", async (req, res) => {
+  app.put("/api/members/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const updateData = updateMemberSchema.parse(req.body);
@@ -519,7 +519,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.delete("/papyr-us/api/members/:id", async (req, res) => {
+  app.delete("/api/members/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const success = await storage.deleteMember(id);
@@ -534,7 +534,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
   });
 
   // File Upload API
-  app.post("/papyr-us/api/upload", upload.array('files', 5), async (req: any, res) => {
+  app.post("/api/upload", upload.array('files', 5), async (req: any, res) => {
     try {
       if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
         return res.status(400).json({ message: "No files uploaded" });
@@ -559,7 +559,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
   });
 
   // Serve uploaded images
-  app.get("/papyr-us/api/uploads/images/:filename", async (req, res) => {
+  app.get("/api/uploads/images/:filename", async (req, res) => {
     try {
       const { filename } = req.params;
       const fileInfo = await getFileInfo(filename, true);
@@ -580,7 +580,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
   });
 
   // Serve uploaded files
-  app.get("/papyr-us/api/uploads/files/:filename", async (req, res) => {
+  app.get("/api/uploads/files/:filename", async (req, res) => {
     try {
       const { filename } = req.params;
       const fileInfo = await getFileInfo(filename, false);
@@ -601,7 +601,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
   });
 
   // List uploaded files
-  app.get("/papyr-us/api/uploads", async (req, res) => {
+  app.get("/api/uploads", async (req, res) => {
     try {
       const teamId = req.query.teamId as string;
       const fileList = await listUploadedFiles(teamId);
@@ -612,7 +612,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
   });
 
   // Delete uploaded file
-  app.delete("/papyr-us/api/uploads/:type/:filename", async (req, res) => {
+  app.delete("/api/uploads/:type/:filename", async (req, res) => {
     try {
       const { type, filename } = req.params;
       const isImage = type === 'images';
@@ -634,7 +634,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
   });
 
   // Admin Authentication
-  app.post("/papyr-us/api/admin/auth", async (req, res) => {
+  app.post("/api/admin/auth", async (req, res) => {
     try {
       const { password } = req.body;
       if (password === config.adminPassword) {
@@ -648,7 +648,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
   });
 
   // Directory password verification
-  app.post("/papyr-us/api/directory/verify", async (req, res) => {
+  app.post("/api/directory/verify", async (req, res) => {
     try {
       const { directoryName, password } = req.body;
       const isValid = await storage.verifyDirectoryPassword(directoryName, password);
@@ -659,7 +659,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
   });
 
   // Admin Directory Management
-  app.get("/papyr-us/api/admin/directories", async (req, res) => {
+  app.get("/api/admin/directories", async (req, res) => {
     try {
       const { adminPassword } = req.query;
       if (adminPassword !== config.adminPassword) {
@@ -672,7 +672,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.post("/papyr-us/api/admin/directories", async (req, res) => {
+  app.post("/api/admin/directories", async (req, res) => {
     try {
       const { adminPassword, ...directoryData } = req.body;
       if (adminPassword !== config.adminPassword) {
@@ -686,7 +686,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.patch("/papyr-us/api/admin/directories/:id", async (req, res) => {
+  app.patch("/api/admin/directories/:id", async (req, res) => {
     try {
       const { adminPassword, ...updateData } = req.body;
       if (adminPassword !== config.adminPassword) {
@@ -704,7 +704,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.delete("/papyr-us/api/admin/directories/:id", async (req, res) => {
+  app.delete("/api/admin/directories/:id", async (req, res) => {
     try {
       const { adminPassword } = req.body;
       if (adminPassword !== config.adminPassword) {
@@ -722,7 +722,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
   });
 
   // Dashboard API
-  app.get("/papyr-us/api/dashboard/overview", async (req, res) => {
+  app.get("/api/dashboard/overview", async (req, res) => {
     try {
       const overview = await storage.getDashboardOverview();
       res.json(overview);
@@ -731,7 +731,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.get("/papyr-us/api/dashboard/team/:teamId", async (req, res) => {
+  app.get("/api/dashboard/team/:teamId", async (req, res) => {
     try {
       const teamId = req.params.teamId;
       const stats = await storage.getTeamProgressStats(teamId);
@@ -741,7 +741,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.get("/papyr-us/api/dashboard/member/:memberId", async (req, res) => {
+  app.get("/api/dashboard/member/:memberId", async (req, res) => {
     try {
       const memberId = parseInt(req.params.memberId);
       const stats = await storage.getMemberProgressStats(memberId);
@@ -755,7 +755,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
   });
 
   // Tasks API
-  app.get("/papyr-us/api/tasks", async (req, res) => {
+  app.get("/api/tasks", async (req, res) => {
     try {
       const teamId = req.query.teamId as string;
       const status = req.query.status as string;
@@ -766,7 +766,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.get("/papyr-us/api/tasks/:id", async (req, res) => {
+  app.get("/api/tasks/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const task = await storage.getTask(id);
@@ -781,7 +781,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.post("/papyr-us/api/tasks", async (req, res) => {
+  app.post("/api/tasks", async (req, res) => {
     try {
       const taskData = insertTaskSchema.parse(req.body);
       const task = await storage.createTask(taskData);
@@ -791,7 +791,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.put("/papyr-us/api/tasks/:id", async (req, res) => {
+  app.put("/api/tasks/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const updateData = updateTaskSchema.parse(req.body);
@@ -807,7 +807,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.delete("/papyr-us/api/tasks/:id", async (req, res) => {
+  app.delete("/api/tasks/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const deleted = await storage.deleteTask(id);
@@ -822,7 +822,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.patch("/papyr-us/api/tasks/:id/progress", async (req, res) => {
+  app.patch("/api/tasks/:id/progress", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const { progress } = req.body;
@@ -844,7 +844,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
   });
 
   // Notifications API
-  app.get("/papyr-us/api/notifications", async (req, res) => {
+  app.get("/api/notifications", async (req, res) => {
     try {
       const recipientId = parseInt(req.query.recipientId as string);
       if (!recipientId) {
@@ -858,7 +858,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.get("/papyr-us/api/notifications/unread-count", async (req, res) => {
+  app.get("/api/notifications/unread-count", async (req, res) => {
     try {
       const recipientId = parseInt(req.query.recipientId as string);
       if (!recipientId) {
@@ -872,7 +872,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.get("/papyr-us/api/notifications/:id", async (req, res) => {
+  app.get("/api/notifications/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const notification = await storage.getNotification(id);
@@ -887,7 +887,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.post("/papyr-us/api/notifications", async (req, res) => {
+  app.post("/api/notifications", async (req, res) => {
     try {
       const notificationData = insertNotificationSchema.parse(req.body);
       const notification = await storage.createNotification(notificationData);
@@ -897,7 +897,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.put("/papyr-us/api/notifications/:id", async (req, res) => {
+  app.put("/api/notifications/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const updateData = updateNotificationSchema.parse(req.body);
@@ -913,7 +913,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.delete("/papyr-us/api/notifications/:id", async (req, res) => {
+  app.delete("/api/notifications/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const deleted = await storage.deleteNotification(id);
@@ -928,7 +928,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.patch("/papyr-us/api/notifications/:id/read", async (req, res) => {
+  app.patch("/api/notifications/:id/read", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const notification = await storage.markNotificationAsRead(id);
@@ -943,7 +943,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.patch("/papyr-us/api/notifications/read-all", async (req, res) => {
+  app.patch("/api/notifications/read-all", async (req, res) => {
     try {
       const { recipientId } = req.body;
       if (!recipientId) {
@@ -958,7 +958,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
   });
 
   // Template Categories API
-  app.get("/papyr-us/api/template-categories", async (req, res) => {
+  app.get("/api/template-categories", async (req, res) => {
     try {
       const categories = await storage.getTemplateCategories();
       res.json(categories);
@@ -968,7 +968,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.get("/papyr-us/api/template-categories/:id", async (req, res) => {
+  app.get("/api/template-categories/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -987,7 +987,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.post("/papyr-us/api/template-categories", async (req, res) => {
+  app.post("/api/template-categories", async (req, res) => {
     try {
       const validatedData = insertTemplateCategorySchema.parse(req.body);
       const category = await storage.createTemplateCategory(validatedData);
@@ -998,7 +998,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.put("/papyr-us/api/template-categories/:id", async (req, res) => {
+  app.put("/api/template-categories/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1018,7 +1018,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.delete("/papyr-us/api/template-categories/:id", async (req, res) => {
+  app.delete("/api/template-categories/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1038,7 +1038,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
   });
 
   // Templates API
-  app.get("/papyr-us/api/templates", async (req, res) => {
+  app.get("/api/templates", async (req, res) => {
     try {
       const categoryId = req.query.categoryId ? parseInt(req.query.categoryId as string) : undefined;
       if (req.query.categoryId && isNaN(categoryId!)) {
@@ -1053,7 +1053,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.get("/papyr-us/api/templates/:id", async (req, res) => {
+  app.get("/api/templates/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1072,7 +1072,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.post("/papyr-us/api/templates", async (req, res) => {
+  app.post("/api/templates", async (req, res) => {
     try {
       const validatedData = insertTemplateSchema.parse(req.body);
       const template = await storage.createTemplate(validatedData);
@@ -1083,7 +1083,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.put("/papyr-us/api/templates/:id", async (req, res) => {
+  app.put("/api/templates/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1103,7 +1103,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.delete("/papyr-us/api/templates/:id", async (req, res) => {
+  app.delete("/api/templates/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1122,7 +1122,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.post("/papyr-us/api/templates/:id/use", async (req, res) => {
+  app.post("/api/templates/:id/use", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1142,7 +1142,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
   });
 
   // Teams API
-  app.get("/papyr-us/api/teams", async (req, res) => {
+  app.get("/api/teams", async (req, res) => {
     try {
       const teams = await storage.getTeams();
       res.json(teams);
@@ -1152,7 +1152,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.get("/papyr-us/api/teams/:id", async (req, res) => {
+  app.get("/api/teams/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const team = await storage.getTeam(id);
@@ -1166,7 +1166,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.post("/papyr-us/api/teams", async (req, res) => {
+  app.post("/api/teams", async (req, res) => {
     try {
       const validatedData = insertTeamSchema.parse(req.body);
       const team = await storage.createTeam(validatedData);
@@ -1177,7 +1177,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.put("/papyr-us/api/teams/:id", async (req, res) => {
+  app.put("/api/teams/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const team = await storage.updateTeam(id, req.body);
@@ -1191,7 +1191,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.delete("/papyr-us/api/teams/:id", async (req, res) => {
+  app.delete("/api/teams/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const success = await storage.deleteTeam(id);
@@ -1205,7 +1205,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.post("/papyr-us/api/teams/verify", async (req, res) => {
+  app.post("/api/teams/verify", async (req, res) => {
     try {
       const { teamName, password } = req.body;
       const isValid = await storage.verifyTeamPassword(teamName, password);
@@ -1217,7 +1217,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
   });
 
   // Members API with team support
-  app.get("/papyr-us/api/members", async (req, res) => {
+  app.get("/api/members", async (req, res) => {
     try {
       let teamId: number | undefined;
       
@@ -1246,7 +1246,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.post("/papyr-us/api/members", async (req, res) => {
+  app.post("/api/members", async (req, res) => {
     try {
       const memberData = insertMemberSchema.parse(req.body);
       
@@ -1268,7 +1268,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.put("/papyr-us/api/members/:id", async (req, res) => {
+  app.put("/api/members/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const memberData = updateMemberSchema.parse(req.body);
@@ -1283,7 +1283,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.delete("/papyr-us/api/members/:id", async (req, res) => {
+  app.delete("/api/members/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const success = await storage.deleteMember(id);
@@ -1298,7 +1298,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
   });
 
   // AI 서비스 API
-  app.post("/papyr-us/api/ai/generate", async (req, res) => {
+  app.post("/api/ai/generate", async (req, res) => {
     try {
       const { prompt, type } = req.body;
       const { generateContent } = await import("./services/ai.ts");
@@ -1309,7 +1309,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.post("/papyr-us/api/ai/improve", async (req, res) => {
+  app.post("/api/ai/improve", async (req, res) => {
     try {
       const { content, title } = req.body;
       const { generateContentSuggestions } = await import("./services/ai.ts");
@@ -1321,7 +1321,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
   });
 
   // AI 검색 API
-  app.post("/papyr-us/api/ai/search", async (req, res) => {
+  app.post("/api/ai/search", async (req, res) => {
     try {
       const { query, teamId } = req.body;
       
@@ -1346,21 +1346,21 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
           title: page.title,
           content: page.content,
           type: 'page' as const,
-          url: `/papyr-us/page/${page.slug}`
+          url: `/page/${page.slug}`
         })),
         ...tasks.map((task: any) => ({
           id: task.id,
           title: task.title,
           content: task.description || "",
           type: 'task' as const,
-          url: `/papyr-us/tasks`
+          url: `/tasks`
         })),
         ...filesResult.files.map((file: any) => ({
           id: file.id || 0,
           title: file.filename,
           content: file.description || "",
           type: 'file' as const,
-          url: `/papyr-us/files`
+          url: `/files`
         }))
       ];
 
@@ -1378,7 +1378,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
     }
   });
 
-  app.post("/papyr-us/api/ai/search-suggestions", async (req, res) => {
+  app.post("/api/ai/search-suggestions", async (req, res) => {
     try {
       const { query } = req.body;
       

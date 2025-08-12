@@ -55,7 +55,7 @@ export function ImageBlock({
         formData.append('teamId', teamName);
       }
 
-      const response = await fetch('/papyr-us/api/upload', {
+      const response = await fetch('/api/upload', {
         method: 'POST',
         body: formData,
       });

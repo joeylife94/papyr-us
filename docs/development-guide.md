@@ -21,8 +21,8 @@ docker-compose up -d --build
 ```
 
 #### Docker 환경 접근
-- **프론트엔드**: `http://localhost:5001/papyr-us/`
-- **API 엔드포인트**: `http://localhost:5001/papyr-us/api/`
+- **프론트엔드**: `http://localhost:5001/`
+- **API 엔드포인트**: `http://localhost:5001/api/`
 - **PostgreSQL**: `localhost:5432` (컨테이너 내부)
 
 ### 🔧 로컬 환경 (대안)
@@ -55,8 +55,8 @@ npm run dev
 서버는 기본적으로 `http://localhost:5001`에서 실행됩니다.
 
 ### 접근 URL
-- **프론트엔드**: `http://localhost:5001/papyr-us/`
-- **API 엔드포인트**: `http://localhost:5001/papyr-us/api/`
+- **프론트엔드**: `http://localhost:5001/`
+- **API 엔드포인트**: `http://localhost:5001/api/`
 
 ## 아키텍처 개요
 
@@ -102,26 +102,38 @@ npm run test:watch
 
 ### 🧪 E2E (End-to-End) Testing
 
-이 프로젝트는 사용자의 실제 시나리오를 시뮬레이션하여 전체 애플리케이션의 흐름을 검증하기 위해 `Playwright`를 사용한 E2E 테스트를 지원합니다.
+이 프로젝트는 `Playwright`를 사용한 E2E 테스트를 지원하며, 두 가지 실행 방식이 있습니다.
 
-#### E2E 테스트 실행
-프로젝트 루트 디렉토리에서 다음 명령어를 사용하여 E2E 테스트를 실행할 수 있습니다.
+#### 1. Docker 환경 테스트 (기본 방식)
+실행 중인 Docker 컨테이너를 대상으로 테스트를 실행합니다.
 
 ```bash
-# 1. 테스트 데이터베이스 설정 (최초 1회 또는 스키마 변경 시)
-npm run test:setup
+# 1. Docker 컨테이너가 실행 중인지 확인
+docker-compose up -d
 
-# 2. 전체 E2E 테스트 스위트 실행
+# 2. E2E 테스트 실행
 npm run e2e
 ```
+> **참고**: 이 방식은 테스트 결과만 터미널에 출력됩니다. 서버 로그는 테스트 실행 후 `docker logs papyr-us-app-1` 명령을 통해 별도로 확인해야 합니다.
+
+#### 2. 로컬 환경 테스트 (디버깅용)
+로컬에서 테스트 서버를 직접 실행하며, 서버 로그와 테스트 결과를 각각 파일로 저장하여 디버깅에 유용합니다.
+
+```bash
+# 로컬 E2E 테스트 실행 (로그 파일 자동 생성)
+npm run e2e:local
+```
+> **로그 파일 위치**:
+> - **서버 로그**: `test-log/server.log`
+> - **테스트 결과**: `test-log/e2e-test-results.md`
 
 #### 테스트 파일 위치
 모든 E2E 테스트 파일은 `tests/` 디렉토리 내에 위치하며, `*.spec.ts` 형식의 파일명을 따릅니다.
 
 #### E2E 테스트 작성 가이드
-- **서버 자동 실행**: `playwright.config.ts`에 `webServer` 설정이 되어 있어, 테스트 실행 시 `npm run start:e2e` 명령어를 통해 테스트용 서버가 자동으로 시작됩니다.
-- **테스트 안정성**: 테스트 코드 내에서 `page.waitForLoadState('networkidle')`과 같이 불안정한 대기 대신, `page.waitForSelector()`를 사용하거나 `expect(locator).toBeVisible()`와 같이 특정 요소가 나타날 때까지 기다리는 방식을 사용하여 안정성을 높였습니다.
-- **서버 정상 종료 (Graceful Shutdown)**: Playwright가 테스트를 완료하고 정상적으로 종료되려면, 테스트 대상 서버가 `SIGINT` 또는 `SIGTERM` 신호를 받았을 때 스스로 모든 리소스(HTTP 서버, DB 커넥션 등)를 정리하고 프로세스를 종료하는 로직을 갖추고 있어야 합니다. `server/index.ts`의 종료 핸들러를 참고하세요.
+- **테스트 대상**: `e2e` 스크립트는 실행 중인 Docker 컨테이너(`http://localhost:5001`)를 대상으로, `e2e:local` 스크립트는 로컬에서 실행된 테스트 서버를 대상으로 합니다.
+- **테스트 안정성**: 테스트 코드 내에서 `page.waitForSelector()`를 사용하거나 `expect(locator).toBeVisible()`와 같이 특정 요소가 나타날 때까지 기다리는 방식을 사용하여 안정성을 높였습니다.
+- **서버 정상 종료 (Graceful Shutdown)**: `e2e:local` 실행 시, 테스트가 완료되면 `npm-run-all`이 테스트 서버를 자동으로 종료합니다. 이를 위해 서버는 `SIGINT` 또는 `SIGTERM` 신호를 받았을 때 모든 리소스를 정리하고 프로세스를 종료하는 로직을 갖추고 있어야 합니다. `server/index.ts`의 종료 핸들러를 참고하세요.
 - 새로운 사용자 시나리오를 추가할 경우, `tests/` 디렉토리에 테스트 파일을 추가하여 검증 범위를 넓혀야 합니다.
 
 ## 주요 컴포넌트
@@ -152,52 +164,52 @@ npm run e2e
 ## API 엔드포인트
 
 ### API 경로 구조
-모든 API 엔드포인트는 `/papyr-us/api/` 접두사를 사용합니다.
+모든 API 엔드포인트는 `/api/` 접두사를 사용합니다.
 
 ### 페이지 관리
 ```
-GET    /papyr-us/api/pages                 # 모든 페이지 조회
-GET    /papyr-us/api/pages/:id             # 특정 페이지 조회
-GET    /papyr-us/api/pages/slug/:slug      # 슬러그로 페이지 조회
-POST   /papyr-us/api/pages                 # 새 페이지 생성
-PUT    /papyr-us/api/pages/:id             # 페이지 수정
-DELETE /papyr-us/api/pages/:id             # 페이지 삭제
+GET    /api/pages                 # 모든 페이지 조회
+GET    /api/pages/:id             # 특정 페이지 조회
+GET    /api/pages/slug/:slug      # 슬러그로 페이지 조회
+POST   /api/pages                 # 새 페이지 생성
+PUT    /api/pages/:id             # 페이지 수정
+DELETE /api/pages/:id             # 페이지 삭제
 ```
 
 ### 폴더 관리
 ```
-GET    /papyr-us/api/folders               # 모든 폴더 조회
-GET    /papyr-us/api/folders/:folder/pages # 특정 폴더의 페이지들
+GET    /api/folders               # 모든 폴더 조회
+GET    /api/folders/:folder/pages # 특정 폴더의 페이지들
 ```
 
 ### 관리자 기능
 ```
-POST   /papyr-us/api/admin/auth            # 관리자 인증
-GET    /papyr-us/api/admin/directories     # 디렉토리 목록 조회
-POST   /papyr-us/api/admin/directories     # 새 디렉토리 생성
-PUT    /papyr-us/api/admin/directories/:id # 디렉토리 수정
-DELETE /papyr-us/api/admin/directories/:id # 디렉토리 삭제
+POST   /api/admin/auth            # 관리자 인증
+GET    /api/admin/directories     # 디렉토리 목록 조회
+POST   /api/admin/directories     # 새 디렉토리 생성
+PUT    /api/admin/directories/:id # 디렉토리 수정
+DELETE /api/admin/directories/:id # 디렉토리 삭제
 ```
 
 ### 디렉토리 보안
 ```
-POST   /papyr-us/api/directory/verify      # 디렉토리 패스워드 검증
+POST   /api/directory/verify      # 디렉토리 패스워드 검증
 ```
 
 ### 캘린더 기능
 ```
-GET    /papyr-us/api/calendar/:teamId      # 팀 캘린더 이벤트 조회
-POST   /papyr-us/api/calendar              # 새 이벤트 생성
-PUT    /papyr-us/api/calendar/:id          # 이벤트 수정
-DELETE /papyr-us/api/calendar/:id          # 이벤트 삭제
+GET    /api/calendar/:teamId      # 팀 캘린더 이벤트 조회
+POST   /api/calendar              # 새 이벤트 생성
+PUT    /api/calendar/:id          # 이벤트 수정
+DELETE /api/calendar/:id          # 이벤트 삭제
 ```
 
 ### 알림 기능
 ```
-GET    /papyr-us/api/notifications          # 알림 목록 조회
-POST   /papyr-us/api/notifications          # 새 알림 생성
-PATCH  /papyr-us/api/notifications/:id/read # 읽음 처리
-DELETE /papyr-us/api/notifications/:id      # 알림 삭제
+GET    /api/notifications          # 알림 목록 조회
+POST   /api/notifications          # 새 알림 생성
+PATCH  /api/notifications/:id/read # 읽음 처리
+DELETE /api/notifications/:id      # 알림 삭제
 ```
 
 ## 데이터 모델
@@ -459,7 +471,7 @@ app.patch("/api/calendar/event/:id", async (req, res) => {
 #### 네비게이션 링크 패턴
 ```typescript
 // 로고를 Link 컴포넌트로 감싸기
-<Link href="/papyr-us/" className="flex items-center space-x-2 hover:opacity-80 transition-opacity cursor-pointer">
+<Link href="/" className="flex items-center space-x-2 hover:opacity-80 transition-opacity cursor-pointer">
   <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
     <ScrollText className="h-4 w-4 text-white" />
   </div>

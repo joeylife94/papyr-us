@@ -36,7 +36,7 @@ export default function WikiPageView() {
 
 
   const { data: page, isLoading, error } = useQuery<WikiPage>({
-    queryKey: [`/papyr-us/api/pages/slug/${slug}`],
+    queryKey: [`/api/pages/slug/${slug}`],
     enabled: !!slug,
   });
 
@@ -153,7 +153,7 @@ export default function WikiPageView() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => navigate(`/papyr-us/edit/${page.id}`)}
+                  onClick={() => navigate(`/edit/${page.id}`)}
                   title="Edit Page"
                 >
                   <Edit className="h-4 w-4" />

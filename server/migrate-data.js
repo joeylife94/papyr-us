@@ -2,10 +2,23 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import bcrypt from "bcrypt";
 import { users, wikiPages, calendarEvents, directories, comments } from "../shared/schema.js";
+import dotenv from "dotenv";
+import path from "path";
+
+// Load environment variables based on NODE_ENV
+const envPath = process.env.NODE_ENV === 'test' 
+  ? path.resolve(process.cwd(), '.env.test') 
+  : path.resolve(process.cwd(), '.env');
+  
+dotenv.config({ path: envPath, override: true });
+
+if (!process.env.DATABASE_URL) {
+  throw new Error("DATABASE_URL is not set. Please check your .env file.");
+}
 
 // PostgreSQL 연결
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || "postgresql://papyrus_user:papyrus_password_2024@localhost:5432/papyrus_db",
+  connectionString: process.env.DATABASE_URL,
 });
 
 const db = drizzle(pool);

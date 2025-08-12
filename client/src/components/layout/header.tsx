@@ -57,7 +57,7 @@ export function Header({ onToggleSidebar, searchQuery, onSearchChange }: HeaderP
           >
             <Menu className="h-5 w-5" />
           </Button>
-          <Link to="/papyr-us/" className="flex items-center space-x-2 hover:opacity-80 transition-opacity cursor-pointer">
+          <Link to="/" className="flex items-center space-x-2 hover:opacity-80 transition-opacity cursor-pointer">
             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
               <ScrollText className="h-4 w-4 text-white" />
             </div>
@@ -120,7 +120,7 @@ export function Header({ onToggleSidebar, searchQuery, onSearchChange }: HeaderP
                     </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => navigate('/papyr-us/admin')}>
+                  <DropdownMenuItem onClick={() => navigate('/admin')}>
                     <Settings className="mr-2 h-4 w-4" />
                     <span>Settings</span>
                   </DropdownMenuItem>

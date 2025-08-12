@@ -23,7 +23,7 @@ export default function LoginPage() {
   }, [location, socialLogin, navigate]);
 
   const handleSocialLogin = (provider: 'google' | 'github') => {
-    window.location.href = `/papyr-us/api/auth/${provider}`;
+    window.location.href = `/api/auth/${provider}`;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

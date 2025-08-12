@@ -121,7 +121,7 @@ export async function processUploadedFile(file: Express.Multer.File, teamId?: st
       originalName: file.originalname,
       size: stats.size,
       mimetype: file.mimetype,
-      url: `/papyr-us/api/uploads/images/${uniqueFilename}`,
+      url: `/api/uploads/images/${uniqueFilename}`,
       path: processedImagePath,
       teamId
     };
@@ -135,7 +135,7 @@ export async function processUploadedFile(file: Express.Multer.File, teamId?: st
       originalName: file.originalname,
       size: file.size,
       mimetype: file.mimetype,
-      url: `/papyr-us/api/uploads/files/${uniqueFilename}`,
+      url: `/api/uploads/files/${uniqueFilename}`,
       path: filePath,
       teamId
     };
@@ -204,7 +204,7 @@ export async function listUploadedFiles(teamId?: string): Promise<{
         .filter(file => file !== '.gitkeep')
         .map(async (filename) => {
           const info = await getFileInfo(filename, true);
-          return info ? { ...info, url: `/papyr-us/api/uploads/images/${filename}` } : null;
+          return info ? { ...info, url: `/api/uploads/images/${filename}` } : null;
         })
     );
 
@@ -213,7 +213,7 @@ export async function listUploadedFiles(teamId?: string): Promise<{
         .filter(file => file !== '.gitkeep')
         .map(async (filename) => {
           const info = await getFileInfo(filename, false);
-          return info ? { ...info, url: `/papyr-us/api/uploads/files/${filename}` } : null;
+          return info ? { ...info, url: `/api/uploads/files/${filename}` } : null;
         })
     );
 

@@ -97,14 +97,14 @@
 #### 백엔드 (server/storage.ts, server/routes.ts)
 - **`bcrypt` 의존성 추가**: `package.json`에 `bcrypt` 및 `@types/bcrypt` 추가
 - **비밀번호 해싱**: 팀 생성 및 수정 시 `bcrypt.hash`를 사용하여 비밀번호를 해싱
-- **비밀번호 검증 API**: `POST /papyr-us/api/teams/verify` 엔드포인트 추가
+- **비밀번호 검증 API**: `POST /api/teams/verify` 엔드포인트 추가
   - `bcrypt.compare`를 사용하여 제출된 비밀번호와 저장된 해시를 비교
 - **스키마 업데이트**: `insertTeamSchema`에 `password` 필드 추가 (선택 사항)
 
 #### 프론트엔드 (client/src/components/layout/sidebar.tsx)
 - **비밀번호 다이얼로그**: `Dialog` 컴포넌트를 사용하여 비밀번호 입력 UI 제공
 - **상태 관리**: `useState`를 사용하여 다이얼로그 열림/닫힘, 입력된 비밀번호, 검증된 팀 목록 관리
-- **API 호출**: `fetch`를 사용하여 `/papyr-us/api/teams/verify`로 비밀번호 검증 요청
+- **API 호출**: `fetch`를 사용하여 `/api/teams/verify`로 비밀번호 검증 요청
 - **사용자 피드백**: `Toast`를 사용하여 비밀번호 검증 성공/실패 알림
 
 ### 💡 개발자 인사이트
@@ -146,7 +146,7 @@
 - **에러 처리**: API 호출 실패 시 적절한 에러 처리 및 대체 응답
 
 #### AI 검색 API 엔드포인트
-- **POST /papyr-us/api/ai/search**: 자연어 검색 요청 처리
+- **POST /api/ai/search**: 자연어 검색 요청 처리
 - **검색 쿼리 검증**: 입력값 검증 및 보안 처리
 - **응답 캐싱**: 동일한 검색 쿼리에 대한 응답 캐싱
 - **Rate Limiting**: API 호출 제한으로 비용 관리
@@ -160,7 +160,7 @@
 - **에러 처리**: 검색 실패 시 사용자 친화적 에러 메시지
 
 #### AI 검색 페이지 (client/src/pages/ai-search.tsx)
-- **전용 AI 검색 페이지**: `/papyr-us/ai-search` 경로
+- **전용 AI 검색 페이지**: `/ai-search` 경로
 - **통합 검색 인터페이스**: 모든 데이터 소스에 대한 통합 검색
 - **검색 히스토리**: 최근 검색 기록 및 빠른 재검색
 - **필터링 옵션**: 검색 결과 타입별 필터링
@@ -281,7 +281,7 @@
 ### 🎯 협업 테스트 시스템
 
 #### 테스트 페이지 구현
-- **전용 테스트 페이지**: `/papyr-us/collaboration-test` 경로
+- **전용 테스트 페이지**: `/collaboration-test` 경로
 - **사용자 설정**: 실시간 사용자 이름 변경 기능
 - **테스트 안내**: 다중 탭 테스트 방법 안내
 - **상태 표시**: 현재 연결 상태 및 참여자 정보 표시
@@ -381,8 +381,8 @@
 - **최적화된 쿼리**: 불필요한 API 호출 최소화
 
 #### 라우팅 시스템
-- **데이터베이스 뷰 라우팅**: `/papyr-us/database` 메인 데이터베이스 뷰
-- **팀별 데이터베이스 뷰**: `/papyr-us/teams/{teamName}/database` 팀별 뷰
+- **데이터베이스 뷰 라우팅**: `/database` 메인 데이터베이스 뷰
+- **팀별 데이터베이스 뷰**: `/teams/{teamName}/database` 팀별 뷰
 - **사이드바 통합**: 사이드바에 데이터베이스 뷰 링크 추가
 - **네비게이션 개선**: 팀별 서브메뉴에 데이터베이스 뷰 추가
 
@@ -404,8 +404,8 @@
 
 ### 🐛 버그 수정
 - **대시보드 API 404 문제 완전 해결**: Docker 환경에서 서버 재시작으로 API 라우트 정상 반영
-- **대시보드 페이지 정상 접근**: `/papyr-us/dashboard` 경로 정상 작동 확인
-- **대시보드 API 엔드포인트 정상화**: `/papyr-us/api/dashboard/overview` 등 모든 대시보드 API 정상 작동
+- **대시보드 페이지 정상 접근**: `/dashboard` 경로 정상 작동 확인
+- **대시보드 API 엔드포인트 정상화**: `/api/dashboard/overview` 등 모든 대시보드 API 정상 작동
 
 ### 🔧 기술적 개선
 - **Docker 환경 안정성**: 컨테이너 재시작으로 라우트 캐시 문제 해결
@@ -520,8 +520,8 @@
 
 ### 🚀 주요 기능 추가
 - **알림 시스템 완전 구현**: 댓글 알림, 멘션, 작업 마감일 알림, 실시간 배지
-- **API 경로 통합**: 모든 API 엔드포인트를 `/papyr-us/api/` 접두사로 통일
-- **프론트엔드 라우팅 개선**: 페이지 경로를 `/papyr-us/` 접두사로 통일
+- **API 경로 통합**: 모든 API 엔드포인트를 `/api/` 접두사로 통일
+- **프론트엔드 라우팅 개선**: 페이지 경로를 `/` 접두사로 통일
 - **데이터베이스 스키마 확장**: 알림 테이블 및 관련 필드 추가
 
 ### ✅ 알림 시스템 구현
@@ -534,10 +534,10 @@
 
 #### API 엔드포인트
 ```
-GET    /papyr-us/api/notifications          # 알림 목록 조회
-POST   /papyr-us/api/notifications          # 새 알림 생성
-PATCH  /papyr-us/api/notifications/:id/read # 읽음 처리
-DELETE /papyr-us/api/notifications/:id      # 알림 삭제
+GET    /api/notifications          # 알림 목록 조회
+POST   /api/notifications          # 새 알림 생성
+PATCH  /api/notifications/:id/read # 읽음 처리
+DELETE /api/notifications/:id      # 알림 삭제
 ```
 
 #### 프론트엔드 컴포넌트
@@ -549,15 +549,15 @@ DELETE /papyr-us/api/notifications/:id      # 알림 삭제
 ### 🔧 API 경로 통합
 
 #### 서버 라우팅 개선
-- **API 접두사 통일**: 모든 API를 `/papyr-us/api/` 경로로 이동
-- **정적 파일 서빙**: `/papyr-us/` 경로에서 프론트엔드 파일 서빙
+- **API 접두사 통일**: 모든 API를 `/api/` 경로로 이동
+- **정적 파일 서빙**: `/` 경로에서 프론트엔드 파일 서빙
 - **미들웨어 로깅**: API 요청 경로 로깅 개선
 - **CORS 설정**: 새로운 경로 구조에 맞춘 CORS 정책
 
 #### 프론트엔드 경로 업데이트
-- **API 호출 통일**: 모든 fetch 요청을 `/papyr-us/api/` 접두사 사용
+- **API 호출 통일**: 모든 fetch 요청을 `/api/` 접두사 사용
 - **쿼리 키 업데이트**: TanStack Query 키를 새로운 API 경로로 변경
-- **내부 링크 수정**: 페이지 간 이동 링크를 `/papyr-us/` 접두사 사용
+- **내부 링크 수정**: 페이지 간 이동 링크를 `/` 접두사 사용
 - **업로드 URL**: 파일 업로드 경로도 새로운 구조로 통일
 
 #### 배포 설정 업데이트
@@ -568,9 +568,9 @@ DELETE /papyr-us/api/notifications/:id      # 알림 삭제
 ### 📊 기술적 개선
 
 #### 경로 일관성
-- **API 엔드포인트**: 100% `/papyr-us/api/` 접두사 적용
-- **페이지 라우팅**: 100% `/papyr-us/` 접두사 적용
-- **중복 경로 제거**: `/papyr-us/papyr-us/` 같은 중복 경로 완전 제거
+- **API 엔드포인트**: 100% `/api/` 접두사 적용
+- **페이지 라우팅**: 100% `/` 접두사 적용
+- **중복 경로 제거**: `/` 같은 중복 경로 완전 제거
 - **정적 자원**: 이미지, CSS, JS 파일 경로 통일
 
 #### 개발자 경험
@@ -587,7 +587,7 @@ DELETE /papyr-us/api/notifications/:id      # 알림 삭제
 
 ### 💡 개발자 인사이트
 - **RESTful 설계**: API와 페이지 경로의 명확한 분리로 REST 원칙 준수
-- **확장성**: `/papyr-us/` 접두사로 향후 서브도메인 분리 가능
+- **확장성**: `/` 접두사로 향후 서브도메인 분리 가능
 - **유지보수성**: 일관된 경로 구조로 코드 유지보수 용이성 향상
 
 ---
@@ -752,7 +752,7 @@ DELETE /papyr-us/api/notifications/:id      # 알림 삭제
 - **.env.example**: 완전한 환경 변수 템플릿
 
 ### ⚠️ 알려진 이슈
-- **정적 파일 서빙**: `/papyr-us` 경로에서 프론트엔드 로딩 오류
+- **정적 파일 서빙**: `` 경로에서 프론트엔드 로딩 오류
 - **API 엔드포인트**: 일부 프론트엔드 요청 경로 불일치
 - 해결 예정: 2025-01-06
 

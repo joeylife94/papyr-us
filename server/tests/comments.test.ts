@@ -60,7 +60,7 @@ describe('Comments Management API', () => {
             (storage.createComment as vi.Mock).mockResolvedValue({ ...newCommentData, id: 102, pageId });
 
             const response = await request(app)
-                .post(`/papyr-us/api/pages/${pageId}/comments`)
+                .post(`/api/pages/${pageId}/comments`)
                 .send(newCommentData);
 
             expect(response.status).toBe(201);
@@ -74,7 +74,7 @@ describe('Comments Management API', () => {
             const comments = [mockComment, { ...mockComment, id: 102 }];
             (storage.getCommentsByPageId as vi.Mock).mockResolvedValue(comments);
 
-            const response = await request(app).get(`/papyr-us/api/pages/${pageId}/comments`);
+            const response = await request(app).get(`/api/pages/${pageId}/comments`);
 
             expect(response.status).toBe(200);
             expect(response.body).toEqual(comments);
@@ -89,7 +89,7 @@ describe('Comments Management API', () => {
             (storage.updateComment as vi.Mock).mockResolvedValue(updatedComment);
 
             const response = await request(app)
-                .put(`/papyr-us/api/comments/${mockComment.id}`)
+                .put(`/api/comments/${mockComment.id}`)
                 .send(updateData);
 
             expect(response.status).toBe(200);
@@ -102,7 +102,7 @@ describe('Comments Management API', () => {
         it('TC-CMT-004: should delete a comment', async () => {
             (storage.deleteComment as vi.Mock).mockResolvedValue({ success: true });
 
-            const response = await request(app).delete(`/papyr-us/api/comments/${mockComment.id}`);
+            const response = await request(app).delete(`/api/comments/${mockComment.id}`);
 
             expect(response.status).toBe(200);
             expect(response.body.message).toBe('Comment deleted successfully');

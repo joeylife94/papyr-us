@@ -63,7 +63,7 @@ describe('Calendar Event Management API', () => {
         (storage.createCalendarEvent as vi.Mock).mockResolvedValue({ ...newEventData, id: 2 });
 
         const response = await request(app)
-            .post('/papyr-us/api/calendar')
+            .post('/api/calendar')
             .send(newEventData);
 
         expect(response.status).toBe(201);
@@ -74,7 +74,7 @@ describe('Calendar Event Management API', () => {
         const events = [mockEvent, { ...mockEvent, id: 2, title: 'Design Review' }];
         (storage.getCalendarEvents as vi.Mock).mockResolvedValue(events);
 
-        const response = await request(app).get(`/papyr-us/api/calendar/${teamId}`);
+        const response = await request(app).get(`/api/calendar/${teamId}`);
 
         expect(response.status).toBe(200);
         // The route handler adds default values, so we need to check for a match
@@ -85,7 +85,7 @@ describe('Calendar Event Management API', () => {
     it('TC-CAL-003: should retrieve a single event by ID', async () => {
         (storage.getCalendarEvent as vi.Mock).mockResolvedValue(mockEvent);
 
-        const response = await request(app).get(`/papyr-us/api/calendar/event/${mockEvent.id}`);
+        const response = await request(app).get(`/api/calendar/event/${mockEvent.id}`);
 
         expect(response.status).toBe(200);
         expect(response.body.title).toBe(mockEvent.title);
@@ -97,7 +97,7 @@ describe('Calendar Event Management API', () => {
         (storage.updateCalendarEvent as vi.Mock).mockResolvedValue(updatedEvent);
 
         const response = await request(app)
-            .patch(`/papyr-us/api/calendar/event/${mockEvent.id}`)
+            .patch(`/api/calendar/event/${mockEvent.id}`)
             .send(updateData);
 
         expect(response.status).toBe(200);
@@ -107,7 +107,7 @@ describe('Calendar Event Management API', () => {
     it('TC-CAL-005: should delete a calendar event', async () => {
         (storage.deleteCalendarEvent as vi.Mock).mockResolvedValue({ success: true });
 
-        const response = await request(app).delete(`/papyr-us/api/calendar/event/${mockEvent.id}`);
+        const response = await request(app).delete(`/api/calendar/event/${mockEvent.id}`);
 
         expect(response.status).toBe(204);
     });

@@ -81,8 +81,8 @@ export default function FileManager({ teamName }: FileManagerProps) {
     queryKey: ['uploads', teamName],
     queryFn: async () => {
       const url = teamName 
-        ? `/papyr-us/api/uploads?teamId=${teamName}`
-        : '/papyr-us/api/uploads';
+        ? `/api/uploads?teamId=${teamName}`
+        : '/api/uploads';
       const response = await fetch(url);
       if (!response.ok) {
         throw new Error('Failed to fetch files');
@@ -95,7 +95,7 @@ export default function FileManager({ teamName }: FileManagerProps) {
   const deleteMutation = useMutation({
     mutationFn: async ({ filename, isImage }: { filename: string; isImage: boolean }) => {
       const type = isImage ? 'images' : 'files';
-      const response = await fetch(`/papyr-us/api/uploads/${type}/${filename}`, {
+      const response = await fetch(`/api/uploads/${type}/${filename}`, {
         method: 'DELETE'
       });
       

@@ -52,7 +52,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
   const { data: notifications = [] } = useQuery<Notification[]>({
     queryKey: ['notifications', userId],
     queryFn: async () => {
-      const response = await fetch(`/papyr-us/api/notifications?recipientId=${userId}`);
+      const response = await fetch(`/api/notifications?recipientId=${userId}`);
       if (!response.ok) {
         throw new Error('Failed to fetch notifications');
       }
@@ -64,7 +64,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
   const { data: unreadCount = { count: 0 } } = useQuery<{ count: number }>({
     queryKey: ['notifications', 'unread-count', userId],
     queryFn: async () => {
-      const response = await fetch(`/papyr-us/api/notifications/unread-count?recipientId=${userId}`);
+      const response = await fetch(`/api/notifications/unread-count?recipientId=${userId}`);
       if (!response.ok) {
         throw new Error('Failed to fetch unread count');
       }
@@ -75,7 +75,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
   // Mark notification as read
   const markAsReadMutation = useMutation({
     mutationFn: async (notificationId: number) => {
-      const response = await fetch(`/papyr-us/api/notifications/${notificationId}/read`, {
+      const response = await fetch(`/api/notifications/${notificationId}/read`, {
         method: 'PATCH',
       });
       if (!response.ok) {
@@ -92,7 +92,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
   // Mark all notifications as read
   const markAllAsReadMutation = useMutation({
     mutationFn: async () => {
-      const response = await fetch('/papyr-us/api/notifications/read-all', {
+      const response = await fetch('/api/notifications/read-all', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ recipientId: userId }),
@@ -111,7 +111,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
   // Delete notification
   const deleteNotificationMutation = useMutation({
     mutationFn: async (notificationId: number) => {
-      const response = await fetch(`/papyr-us/api/notifications/${notificationId}`, {
+      const response = await fetch(`/api/notifications/${notificationId}`, {
         method: 'DELETE',
       });
       if (!response.ok) {
@@ -132,10 +132,10 @@ export function NotificationBell({ userId }: NotificationBellProps) {
     // Navigate to related content
     if (notification.relatedPageId) {
       // Navigate to page
-      window.location.href = `/papyr-us/page/${notification.relatedPageId}`;
+      window.location.href = `/page/${notification.relatedPageId}`;
     } else if (notification.relatedTaskId) {
       // Navigate to task
-      window.location.href = `/papyr-us/tasks`;
+      window.location.href = `/tasks`;
     }
   };
 

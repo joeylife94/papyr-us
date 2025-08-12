@@ -58,7 +58,7 @@ describe('Wiki Page Management API', () => {
         updatedAt: new Date().toISOString(),
     };
 
-    describe('POST /papyr-us/api/pages', () => {
+    describe('POST ', () => {
         it('TC-PAGE-001: should create a new wiki page successfully', async () => {
             const newPageData = {
                 title: 'New Test Page',
@@ -72,7 +72,7 @@ describe('Wiki Page Management API', () => {
             (storage.createWikiPage as vi.Mock).mockResolvedValue(expectedPage);
 
             const response = await request(app)
-                .post('/papyr-us/api/pages')
+                .post('')
                 .send(newPageData);
 
             expect(response.status).toBe(201);
@@ -87,7 +87,7 @@ describe('Wiki Page Management API', () => {
             };
 
             const response = await request(app)
-                .post('/papyr-us/api/pages')
+                .post('')
                 .send(invalidPageData);
 
             expect(response.status).toBe(400);
@@ -95,11 +95,11 @@ describe('Wiki Page Management API', () => {
         });
     });
 
-    describe('GET /papyr-us/api/pages/:id', () => {
+    describe('GET /:id', () => {
         it('TC-PAGE-004: should retrieve a single page by ID', async () => {
             (storage.getWikiPage as vi.Mock).mockResolvedValue(mockPage);
 
-            const response = await request(app).get(`/papyr-us/api/pages/${mockPage.id}`);
+            const response = await request(app).get(`/${mockPage.id}`);
 
             expect(response.status).toBe(200);
             expect(response.body).toEqual(mockPage);
@@ -110,18 +110,18 @@ describe('Wiki Page Management API', () => {
             const nonExistentId = 999;
             (storage.getWikiPage as vi.Mock).mockResolvedValue(null);
 
-            const response = await request(app).get(`/papyr-us/api/pages/${nonExistentId}`);
+            const response = await request(app).get(`/${nonExistentId}`);
 
             expect(response.status).toBe(404);
             expect(response.body.message).toBe('Page not found');
         });
     });
 
-    describe('GET /papyr-us/api/pages/slug/:slug', () => {
+    describe('GET /slug/:slug', () => {
         it('TC-PAGE-005: should retrieve a single page by slug', async () => {
             (storage.getWikiPageBySlug as vi.Mock).mockResolvedValue(mockPage);
 
-            const response = await request(app).get(`/papyr-us/api/pages/slug/${mockPage.slug}`);
+            const response = await request(app).get(`/slug/${mockPage.slug}`);
 
             expect(response.status).toBe(200);
             expect(response.body).toEqual(mockPage);
@@ -129,14 +129,14 @@ describe('Wiki Page Management API', () => {
         });
     });
 
-    describe('PUT /papyr-us/api/pages/:id', () => {
+    describe('PUT /:id', () => {
         it('TC-PAGE-007: should update an existing page', async () => {
             const updateData = { title: 'Updated Test Page' };
             const updatedPage = { ...mockPage, ...updateData };
             (storage.updateWikiPage as vi.Mock).mockResolvedValue(updatedPage);
 
             const response = await request(app)
-                .put(`/papyr-us/api/pages/${mockPage.id}`)
+                .put(`/${mockPage.id}`)
                 .send(updateData);
 
             expect(response.status).toBe(200);
@@ -145,11 +145,11 @@ describe('Wiki Page Management API', () => {
         });
     });
 
-    describe('DELETE /papyr-us/api/pages/:id', () => {
+    describe('DELETE /:id', () => {
         it('TC-PAGE-008: should delete a page', async () => {
             (storage.deleteWikiPage as vi.Mock).mockResolvedValue({ success: true });
 
-            const response = await request(app).delete(`/papyr-us/api/pages/${mockPage.id}`);
+            const response = await request(app).delete(`/${mockPage.id}`);
 
             expect(response.status).toBe(200);
             expect(response.body.message).toBe('Page deleted successfully');
@@ -157,12 +157,12 @@ describe('Wiki Page Management API', () => {
         });
     });
 
-    describe('GET /papyr-us/api/pages', () => {
+    describe('GET ', () => {
         it('TC-PAGE-009: should search/filter pages by query', async () => {
             const searchResult = { pages: [mockPage], total: 1 };
             (storage.searchWikiPages as vi.Mock).mockResolvedValue(searchResult);
 
-            const response = await request(app).get('/papyr-us/api/pages?q=test');
+            const response = await request(app).get('?q=test');
 
             expect(response.status).toBe(200);
             expect(response.body).toEqual(searchResult);
@@ -173,7 +173,7 @@ describe('Wiki Page Management API', () => {
             const allPagesResult = { pages: [mockPage, { ...mockPage, id: 2, title: 'Another Page' }], total: 2 };
             (storage.searchWikiPages as vi.Mock).mockResolvedValue(allPagesResult);
 
-            const response = await request(app).get('/papyr-us/api/pages');
+            const response = await request(app).get('');
 
             expect(response.status).toBe(200);
             expect(response.body).toEqual(allPagesResult);

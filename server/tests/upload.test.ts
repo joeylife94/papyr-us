@@ -84,7 +84,7 @@ describe('File Upload API', () => {
         (processUploadedFile as vi.Mock).mockResolvedValue(mockFile);
 
         const response = await request(app)
-            .post('/papyr-us/api/upload')
+            .post('/api/upload')
             .field('teamId', '1')
             .attach('files', testFilePath);
 
@@ -97,7 +97,7 @@ describe('File Upload API', () => {
         const fileList = { files: [mockFile] };
         (listUploadedFiles as vi.Mock).mockResolvedValue(fileList);
 
-        const response = await request(app).get('/papyr-us/api/uploads?teamId=1');
+        const response = await request(app).get('/api/uploads?teamId=1');
 
         expect(response.status).toBe(200);
         expect(response.body).toEqual(fileList);
@@ -106,7 +106,7 @@ describe('File Upload API', () => {
     it('TC-UPL-005: should delete an uploaded file', async () => {
         (deleteUploadedFile as vi.Mock).mockResolvedValue(true);
 
-        const response = await request(app).delete(`/papyr-us/api/uploads/files/${mockFile.filename}`);
+        const response = await request(app).delete(`/api/uploads/files/${mockFile.filename}`);
 
         expect(response.status).toBe(200);
         expect(response.body.message).toBe('File deleted successfully');
@@ -118,7 +118,7 @@ describe('File Upload API', () => {
         (getFileInfo as vi.Mock).mockResolvedValue({ ...mockFile, path: testFilePath });
         // We can't easily test the file download itself in a unit test,
         // but we can check if the route is hit and doesn't error out.
-        const response = await request(app).get(`/papyr-us/api/uploads/files/${mockFile.filename}`);
+        const response = await request(app).get(`/api/uploads/files/${mockFile.filename}`);
         
         // If getFileInfo is called correctly and res.sendFile is triggered,
         // supertest will handle the stream. A 200 status is a good indicator of success.

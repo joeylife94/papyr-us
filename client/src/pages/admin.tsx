@@ -80,7 +80,7 @@ export default function AdminPage() {
     const stored = sessionStorage.getItem("adminAuth");
     if (stored) {
       // Verify stored password with server
-      fetch("/papyr-us/api/admin/auth", {
+      fetch("/api/admin/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password: stored }),
@@ -96,7 +96,7 @@ export default function AdminPage() {
 
   const handleAuth = async () => {
     try {
-      const response = await fetch("/papyr-us/api/admin/auth", {
+      const response = await fetch("/api/admin/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password: authPassword }),
@@ -126,10 +126,10 @@ export default function AdminPage() {
   };
 
   const { data: directories = [], refetch: refetchDirectories } = useQuery<Directory[]>({
-    queryKey: ["/papyr-us/api/admin/directories"],
+    queryKey: ["/api/admin/directories"],
     queryFn: async () => {
       const storedPassword = sessionStorage.getItem("adminAuth") || "";
-      const response = await fetch(`/papyr-us/api/admin/directories?adminPassword=${storedPassword}`);
+      const response = await fetch(`/api/admin/directories?adminPassword=${storedPassword}`);
       if (!response.ok) throw new Error("Failed to fetch directories");
       return response.json();
     },
@@ -137,9 +137,9 @@ export default function AdminPage() {
   });
 
   const { data: teams = [], refetch: refetchTeams } = useQuery<Team[]>({
-    queryKey: ["/papyr-us/api/teams"],
+    queryKey: ["/api/teams"],
     queryFn: async () => {
-      const response = await fetch("/papyr-us/api/teams");
+      const response = await fetch("/api/teams");
       if (!response.ok) throw new Error("Failed to fetch teams");
       return response.json();
     },
@@ -149,7 +149,7 @@ export default function AdminPage() {
   const createDirectoryMutation = useMutation({
     mutationFn: async (data: InsertDirectory) => {
       const storedPassword = sessionStorage.getItem("adminAuth") || "";
-              const response = await fetch("/papyr-us/api/admin/directories", {
+              const response = await fetch("/api/admin/directories", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...data, adminPassword: storedPassword }),
@@ -178,7 +178,7 @@ export default function AdminPage() {
   const updateDirectoryMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: Partial<Directory> }) => {
       const storedPassword = sessionStorage.getItem("adminAuth") || "";
-      const response = await fetch(`/papyr-us/api/admin/directories/${id}`, {
+      const response = await fetch(`/api/admin/directories/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...data, adminPassword: storedPassword }),
@@ -208,7 +208,7 @@ export default function AdminPage() {
   const deleteDirectoryMutation = useMutation({
     mutationFn: async (id: number) => {
       const storedPassword = sessionStorage.getItem("adminAuth") || "";
-      const response = await fetch(`/papyr-us/api/admin/directories/${id}`, {
+      const response = await fetch(`/api/admin/directories/${id}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ adminPassword: storedPassword }),
@@ -234,7 +234,7 @@ export default function AdminPage() {
   // Team mutations
   const createTeamMutation = useMutation({
     mutationFn: async (data: InsertTeam) => {
-      const response = await fetch("/papyr-us/api/teams", {
+      const response = await fetch("/api/teams", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
@@ -262,7 +262,7 @@ export default function AdminPage() {
 
   const updateTeamMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: Partial<Team> }) => {
-      const response = await fetch(`/papyr-us/api/teams/${id}`, {
+      const response = await fetch(`/api/teams/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
@@ -291,7 +291,7 @@ export default function AdminPage() {
 
   const deleteTeamMutation = useMutation({
     mutationFn: async (id: number) => {
-      const response = await fetch(`/papyr-us/api/teams/${id}`, {
+      const response = await fetch(`/api/teams/${id}`, {
         method: "DELETE",
       });
       if (!response.ok) throw new Error("Failed to delete team");
@@ -419,7 +419,7 @@ export default function AdminPage() {
             </Button>
             <Button
               variant="outline"
-              onClick={() => navigate("/papyr-us/")}
+              onClick={() => navigate("/")}
               className="w-full"
             >
               Back to Home
@@ -438,7 +438,7 @@ export default function AdminPage() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => navigate("/papyr-us/")}
+            onClick={() => navigate("/")}
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to Wiki

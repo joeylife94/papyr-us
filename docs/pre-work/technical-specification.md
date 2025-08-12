@@ -229,83 +229,83 @@ CREATE TABLE ai_search_logs (
 
 ### 사용자 인증 (Authentication)
 ```
-POST   /papyr-us/api/auth/register      # 회원 가입
-POST   /papyr-us/api/auth/login         # 로그인
-POST   /papyr-us/api/auth/logout        # 로그아웃
-GET    /papyr-us/api/auth/me            # 현재 로그인된 사용자 정보 조회
+POST   /api/auth/register      # 회원 가입
+POST   /api/auth/login         # 로그인
+POST   /api/auth/logout        # 로그아웃
+GET    /api/auth/me            # 현재 로그인된 사용자 정보 조회
 ```
 
 ### 위키 페이지
 ```
-GET    /papyr-us/api/pages              # 페이지 목록 조회
-GET    /papyr-us/api/pages/:id          # 특정 페이지 조회
-POST   /papyr-us/api/pages              # 새 페이지 생성
-PUT    /papyr-us/api/pages/:id          # 페이지 수정
-DELETE /papyr-us/api/pages/:id          # 페이지 삭제
-GET    /papyr-us/api/pages/search       # 페이지 검색
+GET    /api/pages              # 페이지 목록 조회
+GET    /api/pages/:id          # 특정 페이지 조회
+POST   /api/pages              # 새 페이지 생성
+PUT    /api/pages/:id          # 페이지 수정
+DELETE /api/pages/:id          # 페이지 삭제
+GET    /api/pages/search       # 페이지 검색
 ```
 
 ### 팀 관리
 ```
-GET    /papyr-us/api/teams              # 팀 목록 조회
-GET    /papyr-us/api/teams/:id          # 특정 팀 조회
-POST   /papyr-us/api/teams              # 새 팀 생성
-PUT    /papyr-us/api/teams/:id          # 팀 정보 수정
-DELETE /papyr-us/api/teams/:id          # 팀 삭제
-POST   /papyr-us/api/teams/verify       # 팀 비밀번호 검증
+GET    /api/teams              # 팀 목록 조회
+GET    /api/teams/:id          # 특정 팀 조회
+POST   /api/teams              # 새 팀 생성
+PUT    /api/teams/:id          # 팀 정보 수정
+DELETE /api/teams/:id          # 팀 삭제
+POST   /api/teams/verify       # 팀 비밀번호 검증
 ```
 
 ### 과제 관리
 ```
-GET    /papyr-us/api/tasks              # 과제 목록 조회
-GET    /papyr-us/api/tasks/:id          # 특정 과제 조회
-POST   /papyr-us/api/tasks              # 새 과제 생성
-PATCH  /papyr-us/api/tasks/:id          # 과제 상태 업데이트
-DELETE /papyr-us/api/tasks/:id          # 과제 삭제
+GET    /api/tasks              # 과제 목록 조회
+GET    /api/tasks/:id          # 특정 과제 조회
+POST   /api/tasks              # 새 과제 생성
+PATCH  /api/tasks/:id          # 과제 상태 업데이트
+DELETE /api/tasks/:id          # 과제 삭제
 ```
 
 ### 캘린더
 ```
-GET    /papyr-us/api/calendar           # 이벤트 목록 조회
-GET    /papyr-us/api/calendar/:id       # 특정 이벤트 조회
-POST   /papyr-us/api/calendar           # 새 이벤트 생성
-PUT    /papyr-us/api/calendar/:id       # 이벤트 수정
-DELETE /papyr-us/api/calendar/:id       # 이벤트 삭제
+GET    /api/calendar           # 이벤트 목록 조회
+GET    /api/calendar/:id       # 특정 이벤트 조회
+POST   /api/calendar           # 새 이벤트 생성
+PUT    /api/calendar/:id       # 이벤트 수정
+DELETE /api/calendar/:id       # 이벤트 삭제
 ```
 
 ### 파일 업로드
 ```
-POST   /papyr-us/api/uploads/images     # 이미지 업로드
-POST   /papyr-us/api/uploads/files      # 파일 업로드
-GET    /papyr-us/api/uploads            # 업로드된 파일 목록
-DELETE /papyr-us/api/uploads/images/:filename  # 이미지 삭제
-DELETE /papyr-us/api/uploads/files/:filename   # 파일 삭제
+POST   /api/uploads/images     # 이미지 업로드
+POST   /api/uploads/files      # 파일 업로드
+GET    /api/uploads            # 업로드된 파일 목록
+DELETE /api/uploads/images/:filename  # 이미지 삭제
+DELETE /api/uploads/files/:filename   # 파일 삭제
 ```
 
 ### 대시보드
 ```
-GET    /papyr-us/api/dashboard/overview # 대시보드 통계
-GET    /papyr-us/api/dashboard/activity # 최근 활동
-GET    /papyr-us/api/dashboard/teams    # 팀별 통계
+GET    /api/dashboard/overview # 대시보드 통계
+GET    /api/dashboard/activity # 최근 활동
+GET    /api/dashboard/teams    # 팀별 통계
 ```
 
 ### AI 서비스
 ```
-POST   /papyr-us/api/ai/generate        # AI 콘텐츠 생성
-POST   /papyr-us/api/ai/improve         # 콘텐츠 개선 제안
-POST   /papyr-us/api/ai/search          # AI 자연어 검색
-GET    /papyr-us/api/ai/suggestions     # 검색 제안
+POST   /api/ai/generate        # AI 콘텐츠 생성
+POST   /api/ai/improve         # 콘텐츠 개선 제안
+POST   /api/ai/search          # AI 자연어 검색
+GET    /api/ai/suggestions     # 검색 제안
 ```
 
 ### 템플릿 관리
 ```
-GET    /papyr-us/api/templates          # 템플릿 목록 조회
-GET    /papyr-us/api/templates/:id      # 특정 템플릿 조회
-POST   /papyr-us/api/templates          # 새 템플릿 생성
-PUT    /papyr-us/api/templates/:id      # 템플릿 수정
-DELETE /papyr-us/api/templates/:id      # 템플릿 삭제
-GET    /papyr-us/api/templates/categories # 템플릿 카테고리 목록
-POST   /papyr-us/api/templates/:id/use  # 템플릿 사용 (사용 횟수 증가)
+GET    /api/templates          # 템플릿 목록 조회
+GET    /api/templates/:id      # 특정 템플릿 조회
+POST   /api/templates          # 새 템플릿 생성
+PUT    /api/templates/:id      # 템플릿 수정
+DELETE /api/templates/:id      # 템플릿 삭제
+GET    /api/templates/categories # 템플릿 카테고리 목록
+POST   /api/templates/:id/use  # 템플릿 사용 (사용 횟수 증가)
 ```
 
 ### 실시간 협업 (WebSocket)
@@ -376,21 +376,21 @@ interface Block {
 
 #### 라우팅 구조
 ```
-/papyr-us/                    # 홈페이지
-/papyr-us/login               # 로그인 페이지
-/papyr-us/register            # 회원가입 페이지
-/papyr-us/page/:slug          # 위키 페이지
-/papyr-us/edit/:pageId        # 페이지 편집
-/papyr-us/create              # 새 페이지 생성
-/papyr-us/dashboard           # 대시보드
-/papyr-us/tasks               # 과제 관리
-/papyr-us/files               # 파일 관리
-/papyr-us/database            # 데이터베이스 뷰
-/papyr-us/collaboration-test  # 실시간 협업 테스트
-/papyr-us/ai-search           # AI 검색 페이지
-/papyr-us/templates           # 템플릿 갤러리
-/papyr-us/templates/edit/:id  # 템플릿 편집
-/papyr-us/teams/:teamName/*   # 팀별 페이지
+/                    # 홈페이지
+/login               # 로그인 페이지
+/register            # 회원가입 페이지
+/page/:slug          # 위키 페이지
+/edit/:pageId        # 페이지 편집
+/create              # 새 페이지 생성
+/dashboard           # 대시보드
+/tasks               # 과제 관리
+/files               # 파일 관리
+/database            # 데이터베이스 뷰
+/collaboration-test  # 실시간 협업 테스트
+/ai-search           # AI 검색 페이지
+/templates           # 템플릿 갤러리
+/templates/edit/:id  # 템플릿 편집
+/teams/:teamName/*   # 팀별 페이지
 ```
 
 ## 인증 시스템 (Frontend)
@@ -569,7 +569,7 @@ ADMIN_PASSWORD=404vibe!
 ### 개발 환경 설정
 ```bash
 # 저장소 클론
-git clone https://github.com/your-org/papyr-us.git
+git clone https://github.com/your-org.git
 cd papyr-us
 
 # 의존성 설치
@@ -662,16 +662,16 @@ npm run dev
 
 ### 팀 생성/수정/삭제
 - **API 엔드포인트**:
-  - `POST /papyr-us/api/teams`: 팀 생성
-  - `PUT /papyr-us/api/teams/:id`: 팀 수정
-  - `DELETE /papyr-us/api/teams/:id`: 팀 삭제
+  - `POST /api/teams`: 팀 생성
+  - `PUT /api/teams/:id`: 팀 수정
+  - `DELETE /api/teams/:id`: 팀 삭제
 - **데이터베이스 스키마**: `teams` 테이블 (id, name, display_name, description, password, icon, color, is_active, order)
 - **관리자 UI**: Teams 탭에서 모든 기능 접근 가능
 
 ### 팀 비밀번호 보호
 - **비밀번호 해싱**: `bcrypt` 라이브러리를 사용하여 비밀번호를 안전하게 해싱하여 저장
 - **비밀번호 검증**:
-  - `POST /papyr-us/api/teams/verify`: 팀 이름과 비밀번호를 받아 유효성 검증
+  - `POST /api/teams/verify`: 팀 이름과 비밀번호를 받아 유효성 검증
   - `bcrypt.compare`를 사용하여 입력된 비밀번호와 해시된 비밀번호를 비교
 - **프론트엔드 처리**:
   - 비밀번호가 설정된 팀에 접근 시, 비밀번호 입력 다이얼로그 표시

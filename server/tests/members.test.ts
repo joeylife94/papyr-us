@@ -57,7 +57,7 @@ describe('Member Management API', () => {
         (storage.createMember as vi.Mock).mockResolvedValue({ ...newMemberData, id: 2 });
 
         const response = await request(app)
-            .post('/papyr-us/api/members')
+            .post('/api/members')
             .send(newMemberData);
 
         expect(response.status).toBe(201);
@@ -68,7 +68,7 @@ describe('Member Management API', () => {
         const members = [mockMember, { ...mockMember, id: 2, email: 'jane.doe@example.com' }];
         (storage.getMembers as vi.Mock).mockResolvedValue(members);
 
-        const response = await request(app).get('/papyr-us/api/members?teamId=1');
+        const response = await request(app).get('/api/members?teamId=1');
 
         expect(response.status).toBe(200);
         expect(response.body).toEqual(members);
@@ -78,7 +78,7 @@ describe('Member Management API', () => {
     it('TC-MEM-003: should retrieve a single member by ID', async () => {
         (storage.getMember as vi.Mock).mockResolvedValue(mockMember);
 
-        const response = await request(app).get(`/papyr-us/api/members/${mockMember.id}`);
+        const response = await request(app).get(`/api/members/${mockMember.id}`);
 
         expect(response.status).toBe(200);
         expect(response.body).toEqual(mockMember);
@@ -87,7 +87,7 @@ describe('Member Management API', () => {
     it('TC-MEM-004: should retrieve a single member by email', async () => {
         (storage.getMemberByEmail as vi.Mock).mockResolvedValue(mockMember);
 
-        const response = await request(app).get(`/papyr-us/api/members/email/${mockMember.email}`);
+        const response = await request(app).get(`/api/members/email/${mockMember.email}`);
 
         expect(response.status).toBe(200);
         expect(response.body).toEqual(mockMember);
@@ -99,7 +99,7 @@ describe('Member Management API', () => {
         (storage.updateMember as vi.Mock).mockResolvedValue(updatedMember);
 
         const response = await request(app)
-            .put(`/papyr-us/api/members/${mockMember.id}`)
+            .put(`/api/members/${mockMember.id}`)
             .send(updateData);
 
         expect(response.status).toBe(200);
@@ -109,7 +109,7 @@ describe('Member Management API', () => {
     it('TC-MEM-006: should delete a member', async () => {
         (storage.deleteMember as vi.Mock).mockResolvedValue({ success: true });
 
-        const response = await request(app).delete(`/papyr-us/api/members/${mockMember.id}`);
+        const response = await request(app).delete(`/api/members/${mockMember.id}`);
 
         expect(response.status).toBe(204);
     });

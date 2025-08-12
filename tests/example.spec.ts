@@ -4,7 +4,7 @@ import { test, expect } from '@playwright/test';
 test.describe('Authentication', () => {
   test.beforeEach(async ({ request }) => {
     // 각 인증 테스트 전에 테스트용 사용자가 등록되도록 보장합니다.
-    await request.post('/papyr-us/api/auth/register', {
+    await request.post('/api/auth/register', {
       data: {
         name: 'Test User',
         email: 'test@example.com',
@@ -15,8 +15,7 @@ test.describe('Authentication', () => {
   });
 
   test('성공적인 회원가입', async ({ page }) => {
-    await page.goto('/papyr-us/register');
-    await page.waitForSelector('main#main-content');
+    await page.goto('/register');
     await expect(page.getByRole('heading', { name: 'Register' })).toBeVisible();
 
     const uniqueEmail = `testuser-${Date.now()}@example.com`;
@@ -28,13 +27,12 @@ test.describe('Authentication', () => {
     await page.getByRole('button', { name: 'Register' }).click();
     await responsePromise;
 
-    await expect(page).toHaveURL('/papyr-us/login');
+    await expect(page).toHaveURL('/login');
     await expect(page.getByText('Registration Successful')).toBeVisible();
   });
 
   test('성공적인 로그인', async ({ page }) => {
-    await page.goto('/papyr-us/login');
-    await page.waitForSelector('main#main-content');
+    await page.goto('/login');
     await expect(page.getByRole('heading', { name: 'Login' })).toBeVisible();
 
     await page.getByLabel('Email').fill('test@example.com');
@@ -44,18 +42,18 @@ test.describe('Authentication', () => {
     await page.getByRole('button', { name: 'Login with Email' }).click();
     await responsePromise;
 
-    await expect(page).toHaveURL('/papyr-us/', { timeout: 10000 });
+    await expect(page).toHaveURL('/', { timeout: 10000 });
     await expect(page.locator('button > .flex.items-center.space-x-2')).toBeVisible();
   });
 
   test('성공적인 로그아웃', async ({ page }) => {
     // 1. 먼저 로그인합니다.
-    await page.goto('/papyr-us/login');
-    await page.waitForSelector('main#main-content');
+    await page.goto('/login');
+    await expect(page.getByRole('heading', { name: 'Login' })).toBeVisible();
     await page.getByLabel('Email').fill('test@example.com');
     await page.getByLabel('Password').fill('password123');
     await page.getByRole('button', { name: 'Login with Email' }).click();
-    await expect(page).toHaveURL('/papyr-us/', { timeout: 10000 });
+    await expect(page).toHaveURL('/', { timeout: 10000 });
 
     // 2. 사용자 아바타 버튼을 클릭하여 드롭다운 메뉴를 엽니다.
     await page.locator('button > .flex.items-center.space-x-2').click();
@@ -64,20 +62,19 @@ test.describe('Authentication', () => {
     await page.getByRole('menuitem', { name: 'Log out' }).click();
 
     // 4. 로그아웃 후 로그인 페이지로 리디렉션되었는지 확인합니다.
-    await expect(page).toHaveURL('/papyr-us/login');
+    await expect(page).toHaveURL('/login');
     await expect(page.getByRole('heading', { name: 'Login' })).toBeVisible();
 
     // 5. 로그아웃이 실제로 적용되었는지 확인하기 위해 인증이 필요한 페이지로 이동해 봅니다.
-    await page.goto('/papyr-us/');
-    await page.waitForSelector('main#main-content');
+    await page.goto('/');
     // 로그인 페이지로 다시 리디렉션되어야 합니다.
-    await expect(page).toHaveURL('/papyr-us/login');
+    await expect(page).toHaveURL('/login');
   });
 
   test('TC-AUTH-004: 테마 변경', async ({ page }) => {
     // 1. 홈페이지로 이동합니다.
-    await page.goto('/papyr-us/');
-    await page.waitForSelector('main#main-content');
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: '모든 페이지' })).toBeVisible();
 
     // 2. 현재 html 태그의 class 속성을 확인하여 초기 테마(light)를 검증합니다.
     const html = page.locator('html');
@@ -103,20 +100,22 @@ test.describe('Wiki Page Management', () => {
   let testPage: any;
 
   test.beforeEach(async ({ page, request }) => {
-    // 1. 로그인
-    await request.post('/papyr-us/api/auth/login', {
+    // 1. 로그인 API 호출
+    const loginRes = await request.post('/api/auth/login', {
       data: {
         email: 'test@example.com',
         password: 'password123',
       },
     });
+    // API 요청이 성공했는지 확인
+    expect(loginRes.ok()).toBeTruthy();
     
     // 2. 테스트용 페이지 생성
     const pageTitle = `Test Page for Editing - ${Date.now()}`;
     const pageContent = 'Initial content for editing.';
     const slug = pageTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
-    const response = await request.post('/papyr-us/api/pages', {
+    const response = await request.post('/api/pages', {
       data: {
         title: pageTitle,
         slug: slug,
@@ -126,22 +125,18 @@ test.describe('Wiki Page Management', () => {
         author: 'Playwright',
       },
     });
+    expect(response.ok()).toBeTruthy();
     testPage = await response.json();
 
     // 3. 페이지 컨텍스트에 로그인 상태 적용 (localStorage 사용)
-    // 이 방법은 UI를 통한 로그인보다 훨씬 빠르고 안정적입니다.
-    const { token } = (await (await request.post('/papyr-us/api/auth/login', {
-        data: { email: 'test@example.com', password: 'password123' }
-    })).json());
-
+    const { token } = await loginRes.json();
     await page.addInitScript((token) => {
         window.localStorage.setItem('token', token);
     }, token);
   });
 
   test('새 위키 페이지 생성', async ({ page }) => {
-    await page.goto('/papyr-us/create');
-    await page.waitForSelector('main#main-content');
+    await page.goto('/create');
     await expect(page.getByRole('heading', { name: 'Create New Page' })).toBeVisible();
 
     const newPageTitle = `My New Test Page - ${Date.now()}`;
@@ -154,14 +149,14 @@ test.describe('Wiki Page Management', () => {
     await responsePromise;
 
     const expectedSlug = newPageTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-    await expect(page).toHaveURL(`/papyr-us/page/${expectedSlug}`, { timeout: 10000 });
+    await expect(page).toHaveURL(`/page/${expectedSlug}`, { timeout: 10000 });
     await expect(page.getByRole('heading', { name: newPageTitle })).toBeVisible();
   });
 
   test('위키 페이지 수정', async ({ page }) => {
     // 1. 생성된 테스트 페이지로 이동합니다.
-    await page.goto(`/papyr-us/page/${testPage.slug}`);
-    await page.waitForSelector('main#main-content');
+    await page.goto(`/page/${testPage.slug}`);
+    await expect(page.getByRole('heading', { name: testPage.title })).toBeVisible();
     
     // 2. "Edit" 버튼을 클릭하여 편집기로 이동합니다.
     // 페이지 뷰에 'Edit' 버튼이 있다고 가정합니다. (실제 UI에 맞게 셀렉터 수정 필요)
@@ -180,7 +175,7 @@ test.describe('Wiki Page Management', () => {
     await responsePromise;
 
     // 5. 수정된 페이지로 돌아와서 변경사항을 확인합니다.
-    await expect(page).toHaveURL(`/papyr-us/page/${testPage.slug}`, { timeout: 10000 });
+    await expect(page).toHaveURL(`/page/${testPage.slug}`, { timeout: 10000 });
     await expect(page.getByRole('heading', { name: updatedTitle })).toBeVisible();
     await expect(page.getByText(updatedContent)).toBeVisible();
   });
@@ -190,7 +185,7 @@ test.describe('Wiki Page Management', () => {
     const tocPageTitle = `TOC Test Page - ${Date.now()}`;
     const tocPageContent = `# Main Heading\n\nSome text here.\n\n## Sub Heading 1\n\nMore text.\n\n### Sub-Sub Heading\n\nDetails.`;
     const tocSlug = tocPageTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-    await request.post('/papyr-us/api/pages', {
+    await request.post('/api/pages', {
       data: {
         title: tocPageTitle,
         slug: tocSlug,
@@ -202,8 +197,7 @@ test.describe('Wiki Page Management', () => {
     });
 
     // 2. 생성된 페이지로 이동합니다.
-    await page.goto(`/papyr-us/page/${tocSlug}`);
-    await page.waitForSelector('main#main-content');
+    await page.goto(`/page/${tocSlug}`);
     await expect(page.getByRole('heading', { name: tocPageTitle })).toBeVisible();
 
     // 3. 목차가 보이는지 확인합니다.
@@ -224,12 +218,11 @@ test.describe('Wiki Page Management', () => {
     expect(testPage).toBeDefined();
 
     // 2. API를 통해 페이지를 직접 삭제합니다.
-    const deleteResponse = await request.delete(`/papyr-us/api/pages/${testPage.id}`);
+    const deleteResponse = await request.delete(`/api/pages/${testPage.id}`);
     expect(deleteResponse.ok()).toBeTruthy();
 
     // 3. 삭제된 페이지로 이동하여 404 Not Found가 발생하는지 확인합니다.
-    await page.goto(`/papyr-us/page/${testPage.slug}`);
-    await page.waitForSelector('main#main-content');
+    await page.goto(`/page/${testPage.slug}`);
     
     // 4. "Page Not Found" 메시지가 보이는지 확인합니다.
     await expect(page.getByRole('heading', { name: 'Page Not Found' })).toBeVisible();
@@ -238,8 +231,7 @@ test.describe('Wiki Page Management', () => {
 
   test('TC-WIKI-005: 페이지 내 댓글 작성 및 확인', async ({ page }) => {
     // 1. beforeEach에서 생성된 테스트 페이지로 이동합니다.
-    await page.goto(`/papyr-us/page/${testPage.slug}`);
-    await page.waitForSelector('main#main-content');
+    await page.goto(`/page/${testPage.slug}`);
     await expect(page.getByRole('heading', { name: testPage.title })).toBeVisible();
 
     // 2. 댓글 작성자 이름과 내용을 입력합니다.
@@ -260,8 +252,7 @@ test.describe('Wiki Page Management', () => {
 
   test('TC-WIKI-006: 템플릿을 사용하여 새 페이지 생성', async ({ page }) => {
     // 1. 템플릿 갤러리 페이지로 이동합니다.
-    await page.goto('/papyr-us/templates');
-    await page.waitForSelector('main#main-content');
+    await page.goto('/templates');
     await expect(page.getByRole('heading', { name: '템플릿 갤러리' })).toBeVisible();
 
     // 2. "일반 스터디 노트" 템플릿을 찾고 "사용하기" 버튼을 클릭합니다.
@@ -293,15 +284,14 @@ test.describe('Wiki Page Management', () => {
 test.describe('Productivity & Collaboration', () => {
   test.beforeEach(async ({ page, request }) => {
     // 모든 테스트 전에 로그인 상태를 보장합니다.
-    await request.post('/papyr-us/api/auth/login', {
+    const loginRes = await request.post('/api/auth/login', {
       data: {
         email: 'test@example.com',
         password: 'password123',
       },
     });
-    const { token } = (await (await request.post('/papyr-us/api/auth/login', {
-        data: { email: 'test@example.com', password: 'password123' }
-    })).json());
+    expect(loginRes.ok()).toBeTruthy();
+    const { token } = await loginRes.json();
     await page.addInitScript((token) => {
         window.localStorage.setItem('token', token);
     }, token);
@@ -309,8 +299,7 @@ test.describe('Productivity & Collaboration', () => {
 
   test('TC-PROD-001: 대시보드 위젯 확인', async ({ page }) => {
     // 1. 대시보드 페이지로 이동합니다.
-    await page.goto('/papyr-us/dashboard');
-    await page.waitForSelector('main#main-content');
+    await page.goto('/dashboard');
 
     // 2. 페이지 제목을 확인합니다.
     await expect(page.getByRole('heading', { name: '스터디 대시보드' })).toBeVisible();
@@ -325,8 +314,7 @@ test.describe('Productivity & Collaboration', () => {
 
   test('TC-PROD-002: 캘린더 조회', async ({ page }) => {
     // 1. 특정 팀의 캘린더 페이지로 이동합니다.
-    await page.goto('/papyr-us/calendar/team1');
-    await page.waitForSelector('main#main-content');
+    await page.goto('/calendar/team1');
 
     // 2. 페이지 제목과 주요 UI 요소들이 보이는지 확인합니다.
     await expect(page.getByRole('heading', { name: /Calendar/ })).toBeVisible();
@@ -342,8 +330,7 @@ test.describe('Productivity & Collaboration', () => {
 
   test('TC-PROD-003: 과제 트래커 조회', async ({ page }) => {
     // 1. 과제 트래커 페이지로 이동합니다.
-    await page.goto('/pap-us/tasks');
-    await page.waitForSelector('main#main-content');
+    await page.goto('/tasks');
 
     // 2. 페이지 제목과 주요 UI 요소들이 보이는지 확인합니다.
     await expect(page.getByRole('heading', { name: '과제 트래커' })).toBeVisible();
@@ -359,8 +346,7 @@ test.describe('Productivity & Collaboration', () => {
 
   test('TC-PROS-004: AI 검색 페이지 접근 및 검색 실행', async ({ page }) => {
     // 1. AI 검색 페이지로 이동합니다.
-    await page.goto('/papyr-us/ai-search');
-    await page.waitForSelector('main#main-content');
+    await page.goto('/ai-search');
 
     // 2. 페이지 제목과 검색 UI 요소들이 보이는지 확인합니다.
     await expect(page.getByRole('heading', { name: 'AI 검색' })).toBeVisible();
@@ -382,8 +368,7 @@ test.describe('Productivity & Collaboration', () => {
 
   test('TC-PROD-005: 파일 관리 페이지 접근', async ({ page }) => {
     // 1. 파일 관리 페이지로 이동합니다.
-    await page.goto('/papyr-us/files');
-    await page.waitForSelector('main#main-content');
+    await page.goto('/files');
 
     // 2. 페이지 제목이 올바르게 표시되는지 확인합니다.
     await expect(page.getByRole('heading', { name: '파일 관리' })).toBeVisible();
@@ -392,8 +377,7 @@ test.describe('Productivity & Collaboration', () => {
 
   test('TC-PROD-006: 데이터베이스 뷰 페이지 접근', async ({ page }) => {
     // 1. 데이터베이스 뷰 페이지로 이동합니다.
-    await page.goto('/papyr-us/database');
-    await page.waitForSelector('main#main-content');
+    await page.goto('/database');
 
     // 2. 페이지 제목이 올바르게 표시되는지 확인합니다.
     await expect(page.getByRole('heading', { name: '데이터베이스 뷰' })).toBeVisible();
@@ -412,13 +396,15 @@ test.describe('Admin Features', () => {
     // UI를 통한 로그인을 생략하여 테스트 실행 속도와 안정성을 높입니다.
     await page.addInitScript(async (password) => {
       try {
-        const response = await fetch('/papyr-us/api/admin/login', {
+        const response = await fetch('/api/admin/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ password }),
         });
         if (response.ok) {
           window.localStorage.setItem('isAdmin', 'true');
+        } else {
+          console.error('Admin login script failed with status:', response.status);
         }
       } catch (error) {
         console.error('Admin login script failed:', error);
@@ -426,8 +412,7 @@ test.describe('Admin Features', () => {
     }, adminPassword);
 
     // 관리자 페이지로 이동하여 로그인 상태가 적용되었는지 확인합니다.
-    await page.goto('/papyr-us/admin');
-    await page.waitForSelector('main#main-content');
+    await page.goto('/admin');
     await expect(page.getByRole('heading', { name: 'Admin Panel' })).toBeVisible();
   });
 

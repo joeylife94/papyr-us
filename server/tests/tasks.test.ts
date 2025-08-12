@@ -57,7 +57,7 @@ describe('Task Management API', () => {
         (storage.createTask as vi.Mock).mockResolvedValue({ ...newTaskData, id: 2, status: 'todo', progress: 0 });
 
         const response = await request(app)
-            .post('/papyr-us/api/tasks')
+            .post('/api/tasks')
             .send(newTaskData);
 
         expect(response.status).toBe(201);
@@ -68,7 +68,7 @@ describe('Task Management API', () => {
         const tasks = [mockTask, { ...mockTask, id: 2, title: 'Write documentation' }];
         (storage.getTasks as vi.Mock).mockResolvedValue(tasks);
 
-        const response = await request(app).get('/papyr-us/api/tasks?teamId=dev-team');
+        const response = await request(app).get('/api/tasks?teamId=dev-team');
 
         expect(response.status).toBe(200);
         expect(response.body).toEqual(tasks);
@@ -77,7 +77,7 @@ describe('Task Management API', () => {
     it('TC-TASK-003: should retrieve a single task by ID', async () => {
         (storage.getTask as vi.Mock).mockResolvedValue(mockTask);
 
-        const response = await request(app).get(`/papyr-us/api/tasks/${mockTask.id}`);
+        const response = await request(app).get(`/api/tasks/${mockTask.id}`);
 
         expect(response.status).toBe(200);
         expect(response.body).toEqual(mockTask);
@@ -89,7 +89,7 @@ describe('Task Management API', () => {
         (storage.updateTask as vi.Mock).mockResolvedValue(updatedTask);
 
         const response = await request(app)
-            .put(`/papyr-us/api/tasks/${mockTask.id}`)
+            .put(`/api/tasks/${mockTask.id}`)
             .send(updateData);
 
         expect(response.status).toBe(200);
@@ -102,7 +102,7 @@ describe('Task Management API', () => {
         (storage.updateTaskProgress as vi.Mock).mockResolvedValue(updatedTask);
 
         const response = await request(app)
-            .patch(`/papyr-us/api/tasks/${mockTask.id}/progress`)
+            .patch(`/api/tasks/${mockTask.id}/progress`)
             .send(progressData);
 
         expect(response.status).toBe(200);
@@ -112,7 +112,7 @@ describe('Task Management API', () => {
     it('TC-TASK-006: should delete a task', async () => {
         (storage.deleteTask as vi.Mock).mockResolvedValue({ success: true });
 
-        const response = await request(app).delete(`/papyr-us/api/tasks/${mockTask.id}`);
+        const response = await request(app).delete(`/api/tasks/${mockTask.id}`);
 
         expect(response.status).toBe(200);
         expect(response.body.message).toBe('Task deleted successfully');

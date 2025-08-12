@@ -23,7 +23,7 @@ passport.deserializeUser(async (id: number, done) => {
 passport.use(new GoogleStrategy({
     clientID: config.googleClientId,
     clientSecret: config.googleClientSecret,
-    callbackURL: '/papyr-us/api/auth/google/callback'
+    callbackURL: '/api/auth/google/callback'
   },
   async (accessToken, refreshToken, profile, done) => {
     try {
@@ -54,7 +54,7 @@ passport.use(new GoogleStrategy({
 passport.use(new GitHubStrategy({
     clientID: config.githubClientId,
     clientSecret: config.githubClientSecret,
-    callbackURL: '/papyr-us/api/auth/github/callback'
+    callbackURL: '/api/auth/github/callback'
   },
   async (accessToken, refreshToken, profile, done) => {
     try {

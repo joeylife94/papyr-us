@@ -44,7 +44,7 @@ A comprehensive wiki platform built with React and Express.js, enabling collabor
 1. **Clone and start with Docker:**
    ```bash
    git clone <your-repo-url>
-   cd papyr-us
+   
    docker-compose up --build
    ```
 
@@ -55,8 +55,8 @@ A comprehensive wiki platform built with React and Express.js, enabling collabor
    ```
 
 3. **Access the application:**
-   - **Frontend**: `http://localhost:5001/papyr-us/`
-   - **API**: `http://localhost:5001/papyr-us/api/`
+   - **Frontend**: `http://localhost:5001/`
+   - **API**: `http://localhost:5001/api/`
 
 ### 🔧 로컬 환경 (대안)
 
@@ -72,7 +72,7 @@ Docker 환경을 사용할 수 없는 경우에만 사용하세요.
 1. **Clone and install dependencies:**
    ```bash
    git clone <your-repo-url>
-   cd papyr-us
+   
    npm install
    ```
 

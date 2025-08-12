@@ -60,7 +60,7 @@ describe('Admin & Directory Management API', () => {
 
     it('TC-ADM-001: should authenticate as admin successfully', async () => {
         const response = await request(app)
-            .post('/papyr-us/api/admin/auth')
+            .post('/api/admin/auth')
             .send({ password: adminPassword });
 
         expect(response.status).toBe(200);
@@ -69,7 +69,7 @@ describe('Admin & Directory Management API', () => {
 
     it('TC-ADM-001: should fail admin authentication with wrong password', async () => {
         const response = await request(app)
-            .post('/papyr-us/api/admin/auth')
+            .post('/api/admin/auth')
             .send({ password: 'wrong-password' });
 
         expect(response.status).toBe(401);
@@ -80,7 +80,7 @@ describe('Admin & Directory Management API', () => {
         (storage.createDirectory as vi.Mock).mockResolvedValue({ ...newDirData, id: 2 });
 
         const response = await request(app)
-            .post('/papyr-us/api/admin/directories')
+            .post('/api/admin/directories')
             .send({ ...newDirData, adminPassword });
 
         expect(response.status).toBe(201);
@@ -91,7 +91,7 @@ describe('Admin & Directory Management API', () => {
         (storage.getDirectories as vi.Mock).mockResolvedValue([mockDirectory]);
 
         const response = await request(app)
-            .get('/papyr-us/api/admin/directories')
+            .get('/api/admin/directories')
             .query({ adminPassword });
 
         expect(response.status).toBe(200);
@@ -102,7 +102,7 @@ describe('Admin & Directory Management API', () => {
         (storage.deleteDirectory as vi.Mock).mockResolvedValue(true);
 
         const response = await request(app)
-            .delete(`/papyr-us/api/admin/directories/${mockDirectory.id}`)
+            .delete(`/api/admin/directories/${mockDirectory.id}`)
             .send({ adminPassword });
 
         expect(response.status).toBe(204);
@@ -113,7 +113,7 @@ describe('Admin & Directory Management API', () => {
         const payload = { directoryName: 'protected-docs', password: 'dir-password' };
 
         const response = await request(app)
-            .post('/papyr-us/api/directory/verify')
+            .post('/api/directory/verify')
             .send(payload);
 
         expect(response.status).toBe(200);

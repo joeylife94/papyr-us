@@ -53,7 +53,7 @@ const TemplatesPage: React.FC = () => {
   const { data: categories = [] } = useQuery<TemplateCategory[]>({
     queryKey: ['template-categories'],
     queryFn: async () => {
-      const response = await fetch('/papyr-us/api/template-categories');
+      const response = await fetch('/api/template-categories');
       if (!response.ok) throw new Error('Failed to fetch categories');
       return response.json();
     },
@@ -64,8 +64,8 @@ const TemplatesPage: React.FC = () => {
     queryKey: ['templates', selectedCategory],
     queryFn: async () => {
       const url = selectedCategory 
-        ? `/papyr-us/api/templates?categoryId=${selectedCategory}`
-        : '/papyr-us/api/templates';
+        ? `/api/templates?categoryId=${selectedCategory}`
+        : '/api/templates';
       const response = await fetch(url);
       if (!response.ok) throw new Error('Failed to fetch templates');
       return response.json();
@@ -80,12 +80,12 @@ const TemplatesPage: React.FC = () => {
   const handleTemplateSelect = async (template: Template) => {
     try {
       // Increment usage count
-      await fetch(`/papyr-us/api/templates/${template.id}/use`, {
+      await fetch(`/api/templates/${template.id}/use`, {
         method: 'POST',
       });
 
       // Navigate to page editor with template content
-      navigate('/papyr-us/page-editor', {
+      navigate('/page-editor', {
         state: {
           template: {
             title: template.title,

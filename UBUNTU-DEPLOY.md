@@ -20,8 +20,8 @@ sudo usermod -aG docker $USER
 
 ```bash
 # 1. 프로젝트 클론
-git clone https://github.com/your-username/papyr-us.git
-cd papyr-us
+git clone https://github.com/your-username.git
+
 
 # 2. 환경 설정
 cp .env.example .env

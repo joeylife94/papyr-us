@@ -1,9 +1,6 @@
 import express, { type Express, type Request, Response, NextFunction } from "express";
 import jwt from 'jsonwebtoken';
 import { config } from "./config.ts";
-import { DBStorage, MemStorage } from "./storage.ts";
-
-export const storage = config.useDatabase ? new DBStorage() : new MemStorage();
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -34,7 +31,7 @@ export function setupLoggingMiddleware(app: Express) {
 
     res.on("finish", () => {
       const duration = Date.now() - start;
-      if (path.startsWith("/papyr-us/api")) {
+      if (path.startsWith("/api")) {
         let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
         if (capturedJsonResponse) {
           logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;

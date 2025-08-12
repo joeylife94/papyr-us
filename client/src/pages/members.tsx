@@ -86,8 +86,8 @@ export default function Members({ teamName }: MembersProps) {
     queryKey: ['members', teamName],
     queryFn: async () => {
       const url = teamName 
-        ? `/papyr-us/api/members?teamId=${teamName}`
-        : '/papyr-us/api/members';
+        ? `/api/members?teamId=${teamName}`
+        : '/api/members';
       const response = await fetch(url);
       if (!response.ok) {
         const errorData = await response.json();
@@ -101,7 +101,7 @@ export default function Members({ teamName }: MembersProps) {
   const createMember = useMutation({
     mutationFn: async (data: MemberFormData) => {
       const memberData = teamName ? { ...data, teamId: teamName } : data;
-      const response = await fetch('/papyr-us/api/members', {
+      const response = await fetch('/api/members', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(memberData)
@@ -133,7 +133,7 @@ export default function Members({ teamName }: MembersProps) {
   // Update member mutation
   const updateMember = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: Partial<MemberFormData> }) => {
-      const response = await fetch(`/papyr-us/api/members/${id}`, {
+      const response = await fetch(`/api/members/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
@@ -165,7 +165,7 @@ export default function Members({ teamName }: MembersProps) {
   // Delete member mutation
   const deleteMember = useMutation({
     mutationFn: async (id: number) => {
-      const response = await fetch(`/papyr-us/api/members/${id}`, {
+      const response = await fetch(`/api/members/${id}`, {
         method: 'DELETE'
       });
       if (!response.ok) {

@@ -71,7 +71,7 @@ describe('AI Services API', () => {
         (generateContent as vi.Mock).mockResolvedValue(generated.content);
 
         const response = await request(app)
-            .post('/papyr-us/api/ai/generate')
+            .post('/api/ai/generate')
             .send({ prompt, type: 'poem' });
 
         expect(response.status).toBe(200);
@@ -85,7 +85,7 @@ describe('AI Services API', () => {
         (generateContentSuggestions as vi.Mock).mockResolvedValue(suggestions.suggestions);
 
         const response = await request(app)
-            .post('/papyr-us/api/ai/improve')
+            .post('/api/ai/improve')
             .send(content);
 
         expect(response.status).toBe(200);
@@ -105,7 +105,7 @@ describe('AI Services API', () => {
         (smartSearch as vi.Mock).mockResolvedValue(searchResults);
 
         const response = await request(app)
-            .post('/papyr-us/api/ai/search')
+            .post('/api/ai/search')
             .send({ query, teamId });
 
         expect(response.status).toBe(200);
@@ -119,7 +119,7 @@ describe('AI Services API', () => {
         (generateSearchSuggestions as vi.Mock).mockResolvedValue(suggestions.suggestions);
 
         const response = await request(app)
-            .post('/papyr-us/api/ai/search-suggestions')
+            .post('/api/ai/search-suggestions')
             .send({ query });
 
         expect(response.status).toBe(200);

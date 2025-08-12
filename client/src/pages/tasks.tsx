@@ -84,7 +84,7 @@ interface TasksPageProps {
   teamName?: string;
 }
 
-export function TasksPage({ teamName }: TasksPageProps) {
+export default function TasksPage({ teamName }: TasksPageProps) {
   const [selectedTeam, setSelectedTeam] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -101,7 +101,7 @@ export function TasksPage({ teamName }: TasksPageProps) {
       if (teamName) params.append('teamId', teamName);
       if (selectedStatus !== 'all') params.append('status', selectedStatus);
       
-      const response = await fetch(`/papyr-us/api/tasks?${params.toString()}`);
+      const response = await fetch(`/api/tasks?${params.toString()}`);
       if (!response.ok) {
         throw new Error('Failed to fetch tasks');
       }
@@ -114,8 +114,8 @@ export function TasksPage({ teamName }: TasksPageProps) {
     queryKey: ['members', teamName],
     queryFn: async () => {
       const url = teamName 
-        ? `/papyr-us/api/members?teamId=${teamName}`
-        : '/papyr-us/api/members';
+        ? `/api/members?teamId=${teamName}`
+        : '/api/members';
       const response = await fetch(url);
       if (!response.ok) {
         throw new Error('Failed to fetch members');
@@ -128,7 +128,7 @@ export function TasksPage({ teamName }: TasksPageProps) {
   const createTaskMutation = useMutation({
     mutationFn: async (taskData: any) => {
       const taskWithTeam = teamName ? { ...taskData, teamId: teamName } : taskData;
-      const response = await fetch('/papyr-us/api/tasks', {
+      const response = await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(taskWithTeam),
@@ -147,7 +147,7 @@ export function TasksPage({ teamName }: TasksPageProps) {
   // Update task mutation
   const updateTaskMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: any }) => {
-      const response = await fetch(`/papyr-us/api/tasks/${id}`, {
+      const response = await fetch(`/api/tasks/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
@@ -166,7 +166,7 @@ export function TasksPage({ teamName }: TasksPageProps) {
   // Delete task mutation
   const deleteTaskMutation = useMutation({
     mutationFn: async (id: number) => {
-      const response = await fetch(`/papyr-us/api/tasks/${id}`, {
+      const response = await fetch(`/api/tasks/${id}`, {
         method: 'DELETE',
       });
       if (!response.ok) {
@@ -181,7 +181,7 @@ export function TasksPage({ teamName }: TasksPageProps) {
   // Update progress mutation
   const updateProgressMutation = useMutation({
     mutationFn: async ({ id, progress }: { id: number; progress: number }) => {
-      const response = await fetch(`/papyr-us/api/tasks/${id}/progress`, {
+      const response = await fetch(`/api/tasks/${id}/progress`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ progress }),

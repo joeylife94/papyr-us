@@ -21,10 +21,10 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
   queryParams.append('limit', '12');
 
   const { data: filteredPages, isLoading, error } = useQuery<{ pages: WikiPage[]; total: number }>({
-    queryKey: ['/papyr-us/api/pages', searchQuery, selectedFolder, teamName],
+    queryKey: ['/api/pages', searchQuery, selectedFolder, teamName],
     queryFn: async () => {
       try {
-        const response = await fetch(`/papyr-us/api/pages?${queryParams.toString()}`);
+        const response = await fetch(`/api/pages?${queryParams.toString()}`);
         if (!response.ok) {
           console.error('API Error:', response.status, response.statusText);
           throw new Error(`API Error: ${response.status}`);
@@ -99,7 +99,7 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
             {teamName ? `${teamName} 팀 문서` : 'Recent Pages'}
           </h2>
           {teamName && (
-            <Link href={`/papyr-us/teams/${teamName}/create`}>
+            <Link href={`/teams/${teamName}/create`}>
               <button className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors">
                 새 문서 작성
               </button>
@@ -134,7 +134,7 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredPages?.pages?.map((page: WikiPage) => (
-              <Link key={page.id} href={`/papyr-us/page/${page.slug}`}>
+              <Link key={page.id} href={`/page/${page.slug}`}>
                 <Card className="group hover:shadow-lg transition-all duration-200 border-l-4 border-l-primary/20 hover:border-l-primary cursor-pointer">
                     <CardHeader>
                       <CardTitle className="text-lg line-clamp-2">

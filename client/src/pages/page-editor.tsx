@@ -55,7 +55,7 @@ export default function PageEditor({ pageId, initialFolder = "docs", teamName }:
   });
 
   const { data: folders = [] } = useQuery<string[]>({
-          queryKey: ["/papyr-us/api/folders"],
+          queryKey: ["/api/folders"],
   });
 
   const form = useForm<PageFormData>({
@@ -121,7 +121,7 @@ export default function PageEditor({ pageId, initialFolder = "docs", teamName }:
   const createPageMutation = useMutation({
     mutationFn: async (data: InsertWikiPage) => {
       const pageData = urlTeamName ? { ...data, teamId: urlTeamName } : data;
-      const response = await fetch(`/papyr-us/api/pages`, {
+      const response = await fetch(`/api/pages`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -132,13 +132,13 @@ export default function PageEditor({ pageId, initialFolder = "docs", teamName }:
       return response.json();
     },
     onSuccess: (newPage: WikiPage) => {
-      queryClient.invalidateQueries({ queryKey: ["/papyr-us/api/pages"] });
-      queryClient.invalidateQueries({ queryKey: [`/papyr-us/api/folders/${newPage.folder}/pages`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/pages"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/folders/${newPage.folder}/pages`] });
       toast({
         title: "Page created",
         description: "Your new page has been created successfully.",
       });
-      navigate(`/papyr-us/page/${newPage.slug}`);
+      navigate(`/page/${newPage.slug}`);
     },
     onError: () => {
       toast({
@@ -151,7 +151,7 @@ export default function PageEditor({ pageId, initialFolder = "docs", teamName }:
 
   const updatePageMutation = useMutation({
     mutationFn: async (data: Partial<WikiPage>) => {
-      const response = await fetch(`/papyr-us/api/pages/${pageId}`, {
+      const response = await fetch(`/api/pages/${pageId}`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -162,14 +162,14 @@ export default function PageEditor({ pageId, initialFolder = "docs", teamName }:
       return response.json();
     },
     onSuccess: (updatedPage: WikiPage) => {
-      queryClient.invalidateQueries({ queryKey: [`/papyr-us/api/pages/${pageId}`] });
-      queryClient.invalidateQueries({ queryKey: ["/papyr-us/api/pages"] });
-      queryClient.invalidateQueries({ queryKey: [`/papyr-us/api/folders/${updatedPage.folder}/pages`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/pages/${pageId}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/pages"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/folders/${updatedPage.folder}/pages`] });
       toast({
         title: "Page updated",
         description: "Your changes have been saved successfully.",
       });
-      navigate(`/papyr-us/page/${updatedPage.slug}`);
+      navigate(`/page/${updatedPage.slug}`);
     },
     onError: () => {
       toast({

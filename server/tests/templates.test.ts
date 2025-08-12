@@ -39,14 +39,14 @@ afterAll((done) => {
   server.close(done);
 });
 
-describe('POST /papyr-us/api/templates', () => {
+describe('POST /api/templates', () => {
   it('should fail to create a template if category does not exist', async () => {
     // Mock that the category does not exist
     const { storage } = await import('../storage');
     (storage.createTemplate as any).mockRejectedValueOnce(new Error('Category not found'));
 
     const response = await request(app)
-      .post('/papyr-us/api/templates')
+      .post('/api/templates')
       .send({
         title: 'Test Template',
         description: 'A test template',
@@ -77,7 +77,7 @@ describe('POST /papyr-us/api/templates', () => {
 
     // First, let's "create" a category to ensure it exists.
     const categoryResponse = await request(app)
-      .post('/papyr-us/api/template-categories')
+      .post('/api/template-categories')
       .send({
         name: 'api-test-category',
         displayName: 'API Test Category',
@@ -88,7 +88,7 @@ describe('POST /papyr-us/api/templates', () => {
 
     // Now, create the template using the new category ID
     const templateResponse = await request(app)
-      .post('/papyr-us/api/templates')
+      .post('/api/templates')
       .send({
         title: 'API Test Template',
         description: 'A test template',

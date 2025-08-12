@@ -71,10 +71,10 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
 
 
   const { data: directories = [] } = useQuery<any[]>({
-    queryKey: ["/papyr-us/api/admin/directories"],
+    queryKey: ["/api/admin/directories"],
     queryFn: async () => {
       const adminPassword = sessionStorage.getItem("adminAuth") || "";
-      const response = await fetch(`/papyr-us/api/admin/directories?adminPassword=${adminPassword}`);
+      const response = await fetch(`/api/admin/directories?adminPassword=${adminPassword}`);
       if (!response.ok) {
         // Fallback to static folders if admin API fails
         return [
@@ -90,10 +90,10 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
   });
 
   const { data: teams = [], isLoading: teamsLoading, error: teamsError } = useQuery<any[]>({
-    queryKey: ["/papyr-us/api/teams"],
+    queryKey: ["/api/teams"],
     queryFn: async () => {
       try {
-        const response = await fetch("/papyr-us/api/teams");
+        const response = await fetch("/api/teams");
         if (!response.ok) {
           console.error("Failed to fetch teams:", response.status, response.statusText);
           return [];
@@ -112,9 +112,9 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
 
   // Query calendar events for search filtering
   const { data: teamEvents = [] } = useQuery<any[]>({
-    queryKey: ["/papyr-us/api/calendar"],
+    queryKey: ["/api/calendar"],
     queryFn: async () => {
-      const response = await fetch("/papyr-us/api/calendar");
+      const response = await fetch("/api/calendar");
       if (!response.ok) return [];
       return response.json();
     },
@@ -162,7 +162,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
   };
 
   const isActivePage = (slug: string) => {
-    return pathname === `/papyr-us/page/${slug}`;
+    return pathname === `/page/${slug}`;
   };
 
   // Search filtering helpers
@@ -195,7 +195,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
     if (!passwordPrompt) return;
 
     try {
-      const response = await fetch("/papyr-us/api/teams/verify", {
+      const response = await fetch("/api/teams/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ teamName: passwordPrompt.teamName, password: passwordInput }),
@@ -257,37 +257,37 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
               Quick Actions
             </h3>
             <div className="space-y-2">
-              <Link href="/papyr-us/dashboard">
+              <Link href="/dashboard">
                 <Button variant="outline" className="w-full justify-start">
                   <Activity className="h-4 w-4 mr-2 text-purple-500" />
                   스터디 대시보드
                 </Button>
               </Link>
-              <Link href="/papyr-us/create">
+              <Link href="/create">
                 <Button className="w-full justify-start">
                   <Plus className="h-4 w-4 mr-2" />
                   Create New Page
                 </Button>
               </Link>
-              <Link href="/papyr-us/templates">
+              <Link href="/templates">
                 <Button variant="outline" className="w-full justify-start">
                   <BookOpen className="h-4 w-4 mr-2 text-blue-500" />
                   템플릿 갤러리
                 </Button>
               </Link>
-              <Link href="/papyr-us/database">
+              <Link href="/database">
                 <Button variant="outline" className="w-full justify-start">
                   <Database className="h-4 w-4 mr-2 text-indigo-500" />
                   데이터베이스 뷰
                 </Button>
               </Link>
-              <Link href="/papyr-us/collaboration-test">
+              <Link href="/collaboration-test">
                 <Button variant="outline" className="w-full justify-start">
                   <Users className="h-4 w-4 mr-2 text-green-500" />
                   실시간 협업 테스트
                 </Button>
               </Link>
-              <Link href="/papyr-us/ai-search">
+              <Link href="/ai-search">
                 <Button variant="outline" className="w-full justify-start">
                   <Sparkles className="h-4 w-4 mr-2 text-purple-500" />
                   AI 검색
@@ -357,7 +357,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                       
                       {expandedSections[`team-${team.id}`] && (
                         <div className="ml-8 mt-3 space-y-2">
-                          <Link href={`/papyr-us/teams/${team.name}/members`}>
+                          <Link href={`/teams/${team.name}/members`}>
                             <Button 
                               variant="ghost" 
                               size="sm" 
@@ -368,7 +368,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                               팀원 관리
                             </Button>
                           </Link>
-                          <Link href={`/papyr-us/teams/${team.name}/tasks`}>
+                          <Link href={`/teams/${team.name}/tasks`}>
                             <Button 
                               variant="ghost" 
                               size="sm" 
@@ -379,7 +379,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                               과제 트래커
                             </Button>
                           </Link>
-                          <Link href={`/papyr-us/teams/${team.name}/files`}>
+                          <Link href={`/teams/${team.name}/files`}>
                             <Button 
                               variant="ghost" 
                               size="sm" 
@@ -390,7 +390,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                               파일 관리
                             </Button>
                           </Link>
-                          <Link href={`/papyr-us/teams/${team.name}/calendar`}>
+                          <Link href={`/teams/${team.name}/calendar`}>
                             <Button 
                               variant="ghost" 
                               size="sm" 
@@ -401,7 +401,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                               팀 캘린더
                             </Button>
                           </Link>
-                          <Link href={`/papyr-us/teams/${team.name}/pages`}>
+                          <Link href={`/teams/${team.name}/pages`}>
                             <Button 
                               variant="ghost" 
                               size="sm" 
@@ -412,7 +412,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                               팀 페이지
                             </Button>
                           </Link>
-                          <Link href={`/papyr-us/teams/${team.name}/database`}>
+                          <Link href={`/teams/${team.name}/database`}>
                             <Button 
                               variant="ghost" 
                               size="sm" 
@@ -490,7 +490,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                   {isExpanded && (
                     <div className="ml-8 mt-3 space-y-2">
                       {folderPages.map((page: WikiPage) => (
-                        <Link key={page.id} href={`/papyr-us/page/${page.slug}`}>
+                        <Link key={page.id} href={`/page/${page.slug}`}>
                           <div
                             className={cn(
                               "block p-3 text-sm rounded-lg transition-all duration-200 cursor-pointer group",

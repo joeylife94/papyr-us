@@ -35,11 +35,11 @@ export default function DatabaseView({ teamName }: DatabaseViewProps) {
 
   // 위키 페이지 데이터 가져오기
   const { data: pages = [], isLoading: pagesLoading } = useQuery<any[]>({
-    queryKey: ['/papyr-us/api/pages', teamName],
+    queryKey: ['/api/pages', teamName],
     queryFn: async () => {
       const url = teamName 
-        ? `/papyr-us/api/pages?teamId=${teamName}`
-        : '/papyr-us/api/pages';
+        ? `/api/pages?teamId=${teamName}`
+        : '/api/pages';
       const response = await fetch(url);
       if (!response.ok) return [];
       const data = await response.json();
@@ -49,11 +49,11 @@ export default function DatabaseView({ teamName }: DatabaseViewProps) {
 
   // 과제 데이터 가져오기
   const { data: tasks = [], isLoading: tasksLoading } = useQuery<any[]>({
-    queryKey: ['/papyr-us/api/tasks', teamName],
+    queryKey: ['/api/tasks', teamName],
     queryFn: async () => {
       const url = teamName 
-        ? `/papyr-us/api/tasks?teamId=${teamName}`
-        : '/papyr-us/api/tasks';
+        ? `/api/tasks?teamId=${teamName}`
+        : '/api/tasks';
       const response = await fetch(url);
       if (!response.ok) return [];
       return response.json();
@@ -62,11 +62,11 @@ export default function DatabaseView({ teamName }: DatabaseViewProps) {
 
   // 파일 데이터 가져오기
   const { data: files = { images: [], files: [] }, isLoading: filesLoading } = useQuery<any>({
-    queryKey: ['/papyr-us/api/uploads', teamName],
+    queryKey: ['/api/uploads', teamName],
     queryFn: async () => {
       const url = teamName 
-        ? `/papyr-us/api/uploads?teamId=${teamName}`
-        : '/papyr-us/api/uploads';
+        ? `/api/uploads?teamId=${teamName}`
+        : '/api/uploads';
       const response = await fetch(url);
       if (!response.ok) return { images: [], files: [] };
       return response.json();
@@ -76,7 +76,7 @@ export default function DatabaseView({ teamName }: DatabaseViewProps) {
   // 과제 상태 업데이트
   const updateTaskMutation = useMutation({
     mutationFn: async ({ taskId, status }: { taskId: string; status: string }) => {
-      const response = await fetch(`/papyr-us/api/tasks/${taskId}`, {
+      const response = await fetch(`/api/tasks/${taskId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status })
@@ -85,7 +85,7 @@ export default function DatabaseView({ teamName }: DatabaseViewProps) {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/papyr-us/api/tasks', teamName] });
+      queryClient.invalidateQueries({ queryKey: ['/api/tasks', teamName] });
       toast({
         title: "과제 업데이트 완료",
         description: "과제 상태가 성공적으로 변경되었습니다."

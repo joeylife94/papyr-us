@@ -6,9 +6,9 @@ import {
   setupBasicMiddleware, 
   setupLoggingMiddleware, 
   setupErrorHandler, 
-  getServerConfig,
-  storage
+  getServerConfig
 } from "./middleware";
+import { storage } from "./storage";
 
 const app = express();
 

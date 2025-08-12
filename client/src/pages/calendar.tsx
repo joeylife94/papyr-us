@@ -74,7 +74,7 @@ export default function CalendarPage({ teamId }: CalendarPageProps) {
   const queryClient = useQueryClient();
 
   const { data: events = [] } = useQuery<CalendarEvent[]>({
-    queryKey: [`/papyr-us/api/calendar/${teamId}`],
+    queryKey: [`/api/calendar/${teamId}`],
   });
 
   // Get next priority based on existing events
@@ -118,7 +118,7 @@ export default function CalendarPage({ teamId }: CalendarPageProps) {
 
   const createEventMutation = useMutation({
     mutationFn: async (data: InsertCalendarEvent) => {
-      const response = await fetch(`/papyr-us/api/calendar`, {
+      const response = await fetch(`/api/calendar`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -129,14 +129,14 @@ export default function CalendarPage({ teamId }: CalendarPageProps) {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/papyr-us/api/calendar/${teamId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/calendar/${teamId}`] });
       handleCloseDialog();
     },
   });
 
   const updateEventMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: Partial<InsertCalendarEvent> }) => {
-      const response = await fetch(`/papyr-us/api/calendar/event/${id}`, {
+      const response = await fetch(`/api/calendar/event/${id}`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -147,21 +147,21 @@ export default function CalendarPage({ teamId }: CalendarPageProps) {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/papyr-us/api/calendar/${teamId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/calendar/${teamId}`] });
       handleCloseDialog();
     },
   });
 
   const deleteEventMutation = useMutation({
     mutationFn: async (id: number) => {
-      const response = await fetch(`/papyr-us/api/calendar/event/${id}`, {
+      const response = await fetch(`/api/calendar/event/${id}`, {
         method: "DELETE",
       });
       if (!response.ok) throw new Error("Failed to delete event");
       return response.ok;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/papyr-us/api/calendar/${teamId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/calendar/${teamId}`] });
       handleCloseDialog();
     },
   });

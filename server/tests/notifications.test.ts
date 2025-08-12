@@ -59,7 +59,7 @@ describe('Notification Management API', () => {
         (storage.createNotification as vi.Mock).mockResolvedValue({ ...newNotificationData, id: 2, isRead: false });
 
         const response = await request(app)
-            .post('/papyr-us/api/notifications')
+            .post('/api/notifications')
             .send(newNotificationData);
 
         expect(response.status).toBe(201);
@@ -70,7 +70,7 @@ describe('Notification Management API', () => {
         const notifications = [mockNotification, { ...mockNotification, id: 2, type: 'comment' }];
         (storage.getNotifications as vi.Mock).mockResolvedValue(notifications);
 
-        const response = await request(app).get(`/papyr-us/api/notifications?recipientId=${recipientId}`);
+        const response = await request(app).get(`/api/notifications?recipientId=${recipientId}`);
 
         expect(response.status).toBe(200);
         expect(response.body).toEqual(notifications);
@@ -79,7 +79,7 @@ describe('Notification Management API', () => {
     it('TC-NOTIF-003: should get the count of unread notifications', async () => {
         (storage.getUnreadNotificationCount as vi.Mock).mockResolvedValue(5);
 
-        const response = await request(app).get(`/papyr-us/api/notifications/unread-count?recipientId=${recipientId}`);
+        const response = await request(app).get(`/api/notifications/unread-count?recipientId=${recipientId}`);
 
         expect(response.status).toBe(200);
         expect(response.body).toEqual({ count: 5 });
@@ -89,7 +89,7 @@ describe('Notification Management API', () => {
         const readNotification = { ...mockNotification, isRead: true };
         (storage.markNotificationAsRead as vi.Mock).mockResolvedValue(readNotification);
 
-        const response = await request(app).patch(`/papyr-us/api/notifications/${mockNotification.id}/read`);
+        const response = await request(app).patch(`/api/notifications/${mockNotification.id}/read`);
 
         expect(response.status).toBe(200);
         expect(response.body.isRead).toBe(true);
@@ -99,7 +99,7 @@ describe('Notification Management API', () => {
         (storage.markAllNotificationsAsRead as vi.Mock).mockResolvedValue({ success: true });
 
         const response = await request(app)
-            .patch('/papyr-us/api/notifications/read-all')
+            .patch('/api/notifications/read-all')
             .send({ recipientId });
 
         expect(response.status).toBe(200);
@@ -109,7 +109,7 @@ describe('Notification Management API', () => {
     it('TC-NOTIF-006: should delete a notification', async () => {
         (storage.deleteNotification as vi.Mock).mockResolvedValue({ success: true });
 
-        const response = await request(app).delete(`/papyr-us/api/notifications/${mockNotification.id}`);
+        const response = await request(app).delete(`/api/notifications/${mockNotification.id}`);
 
         expect(response.status).toBe(200);
         expect(response.body.message).toBe('Notification deleted successfully');

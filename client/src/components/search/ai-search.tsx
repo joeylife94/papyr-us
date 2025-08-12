@@ -39,7 +39,7 @@ export function AISearch({ teamId }: { teamId?: string }) {
   // AI 검색 뮤테이션
   const searchMutation = useMutation({
     mutationFn: async (searchQuery: string) => {
-      const response = await apiRequest("POST", "/papyr-us/api/ai/search", {
+      const response = await apiRequest("POST", "/api/ai/search", {
         query: searchQuery,
         teamId
       }) as unknown as SearchResponse;
@@ -57,7 +57,7 @@ export function AISearch({ teamId }: { teamId?: string }) {
   // 검색 제안 뮤테이션
   const suggestionsMutation = useMutation({
     mutationFn: async (searchQuery: string) => {
-      const response = await apiRequest("POST", "/papyr-us/api/ai/search-suggestions", {
+      const response = await apiRequest("POST", "/api/ai/search-suggestions", {
         query: searchQuery
       }) as unknown as SearchSuggestionsResponse;
       return response;

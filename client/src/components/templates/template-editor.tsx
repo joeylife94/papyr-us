@@ -81,7 +81,7 @@ export function TemplateEditor({ template, onSave, onCancel }: TemplateEditorPro
   const { data: categories = [] } = useQuery({
     queryKey: ['template-categories'],
     queryFn: async () => {
-      const response = await fetch('/papyr-us/api/template-categories');
+      const response = await fetch('/api/template-categories');
       if (!response.ok) throw new Error('Failed to fetch categories');
       return response.json();
     },
@@ -92,10 +92,10 @@ export function TemplateEditor({ template, onSave, onCancel }: TemplateEditorPro
     mutationFn: async (templateData: Template) => {
       if (templateData.id) {
         // Update existing template
-        return await apiRequest('PUT', `/papyr-us/api/templates/${templateData.id}`, templateData);
+        return await apiRequest('PUT', `/api/templates/${templateData.id}`, templateData);
       } else {
         // Create new template
-        return await apiRequest('POST', '/papyr-us/api/templates', templateData);
+        return await apiRequest('POST', '/api/templates', templateData);
       }
     },
     onSuccess: (data: any) => {
@@ -107,7 +107,7 @@ export function TemplateEditor({ template, onSave, onCancel }: TemplateEditorPro
       if (onSave) {
         onSave(data as Template);
       } else {
-        navigate('/papyr-us/templates');
+        navigate('/templates');
       }
     },
     onError: (error) => {
@@ -169,7 +169,7 @@ export function TemplateEditor({ template, onSave, onCancel }: TemplateEditorPro
     if (onCancel) {
       onCancel();
     } else {
-      navigate('/papyr-us/templates');
+      navigate('/templates');
     }
   };
 
