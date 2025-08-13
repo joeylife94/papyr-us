@@ -70,7 +70,6 @@
 /* Dark mode improvements */
 .dark {
   /* Better contrast for dark mode */
-  color-scheme: dark;
   
   /* Improved scrollbar for dark mode */
   --scrollbar-track: hsl(240, 3.7%, 15.9%);

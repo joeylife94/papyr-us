@@ -1,6 +1,6 @@
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import { Server as HTTPServer } from 'http';
-import { storage } from '../storage.ts';
+import type { IStorage } from '../storage.ts';
 
 interface User {
   id: string;
@@ -84,7 +84,7 @@ class CollaborationManager {
 
 const collaborationManager = new CollaborationManager();
 
-export function setupSocketIO(server: HTTPServer) {
+export function setupSocketIO(server: HTTPServer, storage: IStorage) {
   const io = new SocketIOServer(server, {
     cors: {
       origin: "*",
@@ -209,4 +209,4 @@ export function setupSocketIO(server: HTTPServer) {
   return io;
 }
 
-export { collaborationManager }; 
+export { collaborationManager };

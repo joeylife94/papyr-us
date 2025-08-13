@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 // == Authentication Tests ==
 test.describe('Authentication', () => {
-  test.beforeEach(async ({ request }) => {
+  test.beforeAll(async ({ request }) => {
     // 각 인증 테스트 전에 테스트용 사용자가 등록되도록 보장합니다.
     await request.post('/api/auth/register', {
       data: {
@@ -396,7 +396,7 @@ test.describe('Admin Features', () => {
     // UI를 통한 로그인을 생략하여 테스트 실행 속도와 안정성을 높입니다.
     await page.addInitScript(async (password) => {
       try {
-        const response = await fetch('/api/admin/login', {
+        const response = await fetch('/api/admin/auth', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ password }),

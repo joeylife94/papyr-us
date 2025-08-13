@@ -13,14 +13,14 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import passport from 'passport';
 import { eq } from 'drizzle-orm';
-import type { IStorage } from './storage.ts';
+import { DBStorage } from './storage.ts';
 
 interface MulterRequest extends Request {
   files?: any[];
 }
 
 
-export async function registerRoutes(app: Express, storage: IStorage): Promise<{ httpServer: HttpServer, io?: SocketIoServer }> {
+export async function registerRoutes(app: Express, storage: DBStorage): Promise<{ httpServer: HttpServer, io?: SocketIoServer }> {
   const httpServer = createServer(app);
   let io: SocketIoServer | undefined;
   
@@ -30,7 +30,7 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
   // Setup Socket.IO for real-time collaboration
   try {
     const { setupSocketIO } = await import('./services/socket.ts');
-    io = setupSocketIO(httpServer);
+    io = setupSocketIO(httpServer, storage);
   } catch (error) {
     console.warn('Socket.IO setup failed:', error);
   }
@@ -55,7 +55,11 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
       const newUser = newUserResult[0];
 
       res.status(201).json({ message: "User registered successfully", user: { id: newUser.id, name: newUser.name, email: newUser.email } });
-    } catch (error) {
+    } catch (error: any) {
+      // Handle unique constraint violation for PostgreSQL (code 23505)
+      if (error.code === '23505') {
+        return res.status(409).json({ message: "User with this email already exists" });
+      }
       console.error("Registration error:", error);
       res.status(500).json({ message: "Server error during registration", error });
     }
@@ -260,6 +264,26 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
   });
 
   // Calendar Events API
+  app.get("/api/calendar", async (req, res) => {
+    try {
+      const teamId = req.query.teamId as string | undefined;
+      const events = await storage.getCalendarEvents(teamId);
+      
+      // Ensure compatibility with new fields - add defaults if missing
+      const safeEvents = events.map(event => ({
+        ...event,
+        startTime: event.startTime || null,
+        endTime: event.endTime || null,
+        priority: event.priority || 1
+      }));
+      
+      res.json(safeEvents);
+    } catch (error) {
+      console.error("Error fetching calendar events:", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
   app.get("/api/calendar/:teamId", async (req, res) => {
     try {
       const teamId = req.params.teamId;

@@ -1,26 +1,30 @@
-import express, { type Express } from "express";
+import express, { Express } from "express";
 import path from "path";
+import { fileURLToPath } from "url";
+import { log } from "./middleware";
 
-export function serveStatic(app: Express) {
-  const publicPath = path.join(process.cwd(), "dist", "public");
+// ES Module-safe way to get __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-  // Serve static files from the dist/public directory at /papyr-us path
-  app.use("/", express.static(publicPath));
-  
-  // Also serve assets directly at /assets for direct asset requests
-  app.use("/assets", express.static(path.join(publicPath, "assets")));
-  
-  // Handle client-side routing - serve index.html for all /papyr-us routes
-  app.get("/*", (req, res) => {
-    const indexPath = path.join(publicPath, "index.html");
-    res.sendFile(indexPath, (err) => {
-      if (err) {
-        res.status(500).json({ message: "Error serving application" });
-      }
-    });
+// This function should be called BEFORE API routes
+export function serveStaticAssets(app: Express) {
+  const publicDir = path.join(__dirname, "public");
+  log(`Serving static assets from ${publicDir}`);
+  app.use(express.static(publicDir));
+}
+
+// This function should be called AFTER API routes
+export function serveIndex(app: Express) {
+  const publicDir = path.join(__dirname, "public");
+  app.get("*", (req, res, next) => {
+    // If the request is not for an API route, serve the index.html
+    if (!req.path.startsWith('/api/')) {
+      log(`Serving index.html for non-API route: ${req.path}`);
+      res.sendFile(path.join(publicDir, "index.html"));
+    } else {
+      // Let the next middleware (e.g., 404 handler) take care of it
+      next();
+    }
   });
-  
-  
-  
-  
 }
