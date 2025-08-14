@@ -1,4 +1,8 @@
 import { build } from 'esbuild';
+import { rmSync } from 'fs';
+
+// Clean the dist directory before building
+rmSync('dist', { recursive: true, force: true });
 
 // Custom build script to handle dependencies properly
 const buildServer = async () => {

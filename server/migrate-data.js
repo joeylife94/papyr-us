@@ -1,6 +1,6 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import { users, wikiPages, calendarEvents, directories, comments } from "../shared/schema.js";
 import dotenv from "dotenv";
 import path from "path";
@@ -166,7 +166,7 @@ async function migrateData() {
         await db.insert(users).values({
           name: user.name,
           email: user.email,
-          passwordHash: hashedPassword,
+          hashedPassword: hashedPassword,
         });
         console.log(`✅ 사용자 생성: ${user.email}`);
       } catch (error) {

@@ -102,39 +102,32 @@ npm run test:watch
 
 ### 🧪 E2E (End-to-End) Testing
 
-이 프로젝트는 `Playwright`를 사용한 E2E 테스트를 지원하며, 두 가지 실행 방식이 있습니다.
+이 프로젝트는 `Playwright`를 사용하여 사용자 시나리오를 검증하는 E2E 테스트를 지원합니다.
 
-#### 1. Docker 환경 테스트 (기본 방식)
-실행 중인 Docker 컨테이너를 대상으로 테스트를 실행합니다.
+#### E2E 테스트 환경 설정
+1.  **테스트 데이터베이스 설정**: E2E 테스트는 별도의 테스트 데이터베이스를 사용합니다. 프로젝트 루트의 `.env.example` 파일을 복사하여 `.env.test` 파일을 생성하고, `DATABASE_URL`을 테스트용 데이터베이스(예: `localhost:5433`)를 가리키도록 수정해야 합니다.
+2.  **필수 의존성**: `dotenv-cli` 패키지가 개발 의존성(`devDependencies`)에 포함되어 있어야 합니다.
+
+#### E2E 테스트 실행
+아래 명령어를 실행하면 Playwright가 자동으로 테스트 서버를 구동하고 전체 테스트를 수행합니다.
 
 ```bash
-# 1. Docker 컨테이너가 실행 중인지 확인
-docker-compose up -d
-
-# 2. E2E 테스트 실행
+# E2E 테스트 전체 실행
 npm run e2e
 ```
-> **참고**: 이 방식은 테스트 결과만 터미널에 출력됩니다. 서버 로그는 테스트 실행 후 `docker logs papyr-us-app-1` 명령을 통해 별도로 확인해야 합니다.
 
-#### 2. 로컬 환경 테스트 (디버깅용)
-로컬에서 테스트 서버를 직접 실행하며, 서버 로그와 테스트 결과를 각각 파일로 저장하여 디버깅에 유용합니다.
+> **참고**: 디버깅 목적으로 서버 로그와 테스트 결과를 별도의 파일로 남기고 싶다면 `npm run e2e:local` 명령어를 사용할 수 있습니다. (로그 위치: `test-log/`)
 
-```bash
-# 로컬 E2E 테스트 실행 (로그 파일 자동 생성)
-npm run e2e:local
-```
-> **로그 파일 위치**:
-> - **서버 로그**: `test-log/server.log`
-> - **테스트 결과**: `test-log/e2e-test-results.md`
-
-#### 테스트 파일 위치
-모든 E2E 테스트 파일은 `tests/` 디렉토리 내에 위치하며, `*.spec.ts` 형식의 파일명을 따릅니다.
-
-#### E2E 테스트 작성 가이드
-- **테스트 대상**: `e2e` 스크립트는 실행 중인 Docker 컨테이너(`http://localhost:5001`)를 대상으로, `e2e:local` 스크립트는 로컬에서 실행된 테스트 서버를 대상으로 합니다.
+#### E2E 테스트 작성 및 구성 가이드
+- **테스트 서버 자동 실행**: `playwright.config.ts`의 `webServer` 옵션은 `npm run e2e` 실행 시 `npm run start:e2e` 스크립트를 자동으로 실행하여 테스트 서버를 구동합니다.
+- **환경 변수 로딩**: `start:e2e` 스크립트(`dotenv -e .env.test -- tsx server/index.ts`)는 `dotenv-cli`를 사용하여 `.env.test` 파일의 환경 변수를 테스트 서버에 주입합니다. 이는 테스트가 올바른 데이터베이스에 연결되도록 보장하는 핵심적인 부분입니다.
+- **테스트 격리**: `playwright.config.ts`의 `reuseExistingServer: false` 설정은 매번 새로운 테스트 서버를 구동하여, 테스트 실행 간의 상태 공유를 방지하고 일관된 결과를 보장합니다.
 - **테스트 안정성**: 테스트 코드 내에서 `page.waitForSelector()`를 사용하거나 `expect(locator).toBeVisible()`와 같이 특정 요소가 나타날 때까지 기다리는 방식을 사용하여 안정성을 높였습니다.
-- **서버 정상 종료 (Graceful Shutdown)**: `e2e:local` 실행 시, 테스트가 완료되면 `npm-run-all`이 테스트 서버를 자동으로 종료합니다. 이를 위해 서버는 `SIGINT` 또는 `SIGTERM` 신호를 받았을 때 모든 리소스를 정리하고 프로세스를 종료하는 로직을 갖추고 있어야 합니다. `server/index.ts`의 종료 핸들러를 참고하세요.
-- 새로운 사용자 시나리오를 추가할 경우, `tests/` 디렉토리에 테스트 파일을 추가하여 검증 범위를 넓혀야 합니다.
+
+#### 주요 문제 해결 (Troubleshooting)
+- **오류**: `getaddrinfo ENOTFOUND db` 또는 `ECONNREFUSED`
+  - **원인**: 테스트 서버가 `.env.test`를 제대로 읽지 못해 Docker 환경의 데이터베이스 호스트(`db`)나 잘못된 주소로 연결을 시도할 때 발생합니다.
+  - **해결**: `package.json`의 `start:e2e` 스크립트가 `dotenv-cli`를 사용하여 `.env.test` 파일을 올바르게 로드하는지 확인하세요.
 
 ## 주요 컴포넌트
 

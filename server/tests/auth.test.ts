@@ -3,7 +3,7 @@ import request from 'supertest';
 import type { Express } from 'express';
 import express from 'express';
 import http from 'http';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 
 // Use vi.doMock to ensure the mock is hoisted
@@ -25,7 +25,7 @@ vi.doMock('../storage', async (importOriginal) => {
 });
 
 // Mock external libraries
-vi.mock('bcrypt');
+vi.mock('bcryptjs');
 vi.mock('jsonwebtoken');
 
 // Dynamically import after mocks are set up

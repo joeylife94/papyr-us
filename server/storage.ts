@@ -2,7 +2,7 @@ import { wikiPages, type WikiPage, type InsertWikiPage, type UpdateWikiPage, typ
 import { drizzle } from "drizzle-orm/node-postgres";
 import { eq, like, and, sql, desc, asc } from "drizzle-orm";
 import { Pool } from "pg";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 
 // Simplified and unified DBStorage
 export class DBStorage {

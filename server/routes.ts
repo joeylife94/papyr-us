@@ -9,7 +9,7 @@ import { smartSearch, generateSearchSuggestions } from "./services/ai.ts";
 import path from "path";
 import { existsSync } from "fs";
 import type { Request } from "express";
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import passport from 'passport';
 import { eq } from 'drizzle-orm';
@@ -39,28 +39,38 @@ export async function registerRoutes(app: Express, storage: DBStorage): Promise<
  
   // User Registration
   app.post("/api/auth/register", async (req, res) => {
+    console.log('--- [REGISTER] Received request ---');
     try {
       const { name, email, password } = req.body;
+      console.log(`[REGISTER] Data: email=${email}, name=${name}`);
       if (!name || !email || !password) {
+        console.log('[REGISTER] Validation failed: Missing fields');
         return res.status(400).json({ message: "Name, email, and password are required" });
       }
 
+      console.log('[REGISTER] Checking for existing user...');
       const existingUser = await storage.db.select().from(users).where(eq(users.email, email));
       if (existingUser.length > 0) {
+        console.log('[REGISTER] User already exists');
         return res.status(409).json({ message: "User with this email already exists" });
       }
 
+      console.log('[REGISTER] Hashing password...');
       const hashedPassword = await bcrypt.hash(password, 10);
+      
+      console.log('[REGISTER] Inserting new user into DB...');
       const newUserResult = await storage.db.insert(users).values({ name, email, hashedPassword, provider: 'local' }).returning();
       const newUser = newUserResult[0];
+      console.log(`[REGISTER] User created successfully with ID: ${newUser.id}`);
 
       res.status(201).json({ message: "User registered successfully", user: { id: newUser.id, name: newUser.name, email: newUser.email } });
+      console.log('--- [REGISTER] Response sent ---');
     } catch (error: any) {
+      console.error("--- [REGISTER] Critical error ---", error);
       // Handle unique constraint violation for PostgreSQL (code 23505)
       if (error.code === '23505') {
         return res.status(409).json({ message: "User with this email already exists" });
       }
-      console.error("Registration error:", error);
       res.status(500).json({ message: "Server error during registration", error });
     }
   });
