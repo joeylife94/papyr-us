@@ -76,7 +76,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: process.env.NODE_ENV === 'test' ? 'http://localhost:5001' : 'http://app:5001',
+        target: process.env.NODE_ENV === 'test' ? 'http://localhost:5002' : 'http://app:5001',
         changeOrigin: true,
       },
     },

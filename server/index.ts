@@ -36,7 +36,7 @@ setupLoggingMiddleware(app);
     serveIndex(app);
   } else {
     try {
-      const { setupVite } = await import("./vite.ts");
+      const { setupVite } = await import("./vite.js");
       await setupVite(app, httpServer);
     } catch (error) {
       console.warn("Vite setup failed, falling back to static files:", error);

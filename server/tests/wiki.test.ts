@@ -9,23 +9,23 @@ import { insertWikiPageSchema } from '../../shared/schema';
 // Mock the storage module
 vi.mock('../storage', async (importOriginal) => {
     const actual = await importOriginal() as any;
-    const memStorageInstance = new actual.MemStorage();
+    const dbStorageInstance = new actual.DBStorage();
 
     // Replace all methods with vi.fn() to allow for mocking in tests
-    for (const key of Object.getOwnPropertyNames(actual.MemStorage.prototype)) {
-        if (key !== 'constructor' && typeof memStorageInstance[key] === 'function') {
-            memStorageInstance[key] = vi.fn();
+    for (const key of Object.getOwnPropertyNames(actual.DBStorage.prototype)) {
+        if (key !== 'constructor' && typeof dbStorageInstance[key] === 'function') {
+            dbStorageInstance[key] = vi.fn();
         }
     }
 
     return {
         ...actual,
-        MemStorage: vi.fn(() => memStorageInstance),
-        storage: memStorageInstance,
+        DBStorage: vi.fn(() => dbStorageInstance),
+        storage: dbStorageInstance,
     };
 });
 
-import { storage } from '../storage';
+import { storage } from '../storage.js';
 
 let app: Express;
 let server: http.Server;
@@ -72,7 +72,7 @@ describe('Wiki Page Management API', () => {
             (storage.createWikiPage as vi.Mock).mockResolvedValue(expectedPage);
 
             const response = await request(app)
-                .post('')
+                .post('/api/pages')
                 .send(newPageData);
 
             expect(response.status).toBe(201);
@@ -87,7 +87,7 @@ describe('Wiki Page Management API', () => {
             };
 
             const response = await request(app)
-                .post('')
+                .post('/api/pages')
                 .send(invalidPageData);
 
             expect(response.status).toBe(400);
@@ -99,7 +99,7 @@ describe('Wiki Page Management API', () => {
         it('TC-PAGE-004: should retrieve a single page by ID', async () => {
             (storage.getWikiPage as vi.Mock).mockResolvedValue(mockPage);
 
-            const response = await request(app).get(`/${mockPage.id}`);
+            const response = await request(app).get(`/api/pages/${mockPage.id}`);
 
             expect(response.status).toBe(200);
             expect(response.body).toEqual(mockPage);
@@ -110,7 +110,7 @@ describe('Wiki Page Management API', () => {
             const nonExistentId = 999;
             (storage.getWikiPage as vi.Mock).mockResolvedValue(null);
 
-            const response = await request(app).get(`/${nonExistentId}`);
+            const response = await request(app).get(`/api/pages/${nonExistentId}`);
 
             expect(response.status).toBe(404);
             expect(response.body.message).toBe('Page not found');
@@ -121,7 +121,7 @@ describe('Wiki Page Management API', () => {
         it('TC-PAGE-005: should retrieve a single page by slug', async () => {
             (storage.getWikiPageBySlug as vi.Mock).mockResolvedValue(mockPage);
 
-            const response = await request(app).get(`/slug/${mockPage.slug}`);
+            const response = await request(app).get(`/api/pages/slug/${mockPage.slug}`);
 
             expect(response.status).toBe(200);
             expect(response.body).toEqual(mockPage);
@@ -136,7 +136,7 @@ describe('Wiki Page Management API', () => {
             (storage.updateWikiPage as vi.Mock).mockResolvedValue(updatedPage);
 
             const response = await request(app)
-                .put(`/${mockPage.id}`)
+                .put(`/api/pages/${mockPage.id}`)
                 .send(updateData);
 
             expect(response.status).toBe(200);
@@ -149,7 +149,7 @@ describe('Wiki Page Management API', () => {
         it('TC-PAGE-008: should delete a page', async () => {
             (storage.deleteWikiPage as vi.Mock).mockResolvedValue({ success: true });
 
-            const response = await request(app).delete(`/${mockPage.id}`);
+            const response = await request(app).delete(`/api/pages/${mockPage.id}`);
 
             expect(response.status).toBe(200);
             expect(response.body.message).toBe('Page deleted successfully');
@@ -162,7 +162,7 @@ describe('Wiki Page Management API', () => {
             const searchResult = { pages: [mockPage], total: 1 };
             (storage.searchWikiPages as vi.Mock).mockResolvedValue(searchResult);
 
-            const response = await request(app).get('?q=test');
+            const response = await request(app).get('/api/pages?q=test');
 
             expect(response.status).toBe(200);
             expect(response.body).toEqual(searchResult);
@@ -173,7 +173,7 @@ describe('Wiki Page Management API', () => {
             const allPagesResult = { pages: [mockPage, { ...mockPage, id: 2, title: 'Another Page' }], total: 2 };
             (storage.searchWikiPages as vi.Mock).mockResolvedValue(allPagesResult);
 
-            const response = await request(app).get('');
+            const response = await request(app).get('/api/pages');
 
             expect(response.status).toBe(200);
             expect(response.body).toEqual(allPagesResult);

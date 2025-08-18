@@ -14,8 +14,14 @@ const buildServer = async () => {
       target: 'node18',
       format: 'esm',
       outdir: 'dist',
-      // Bundle all dependencies to avoid missing module errors
-      external: [],
+      // Exclude problematic dependencies from the bundle
+      external: [
+        '@babel/preset-typescript', 
+        'lightningcss',
+        'bcrypt',
+        'dotenv', // Exclude dotenv from bundling
+        'depd'
+      ],
       minify: false,
       sourcemap: false,
       logLevel: 'info',

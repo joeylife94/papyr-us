@@ -8,23 +8,23 @@ import { registerRoutes } from '../routes';
 // Mock the storage module
 vi.mock('../storage', async (importOriginal) => {
     const actual = await importOriginal() as any;
-    const memStorageInstance = new actual.MemStorage();
+    const dbStorageInstance = new actual.DBStorage();
 
     // Replace all methods with vi.fn() to allow for mocking in tests
-    for (const key of Object.getOwnPropertyNames(actual.MemStorage.prototype)) {
-        if (key !== 'constructor' && typeof memStorageInstance[key] === 'function') {
-            memStorageInstance[key] = vi.fn();
+    for (const key of Object.getOwnPropertyNames(actual.DBStorage.prototype)) {
+        if (key !== 'constructor' && typeof dbStorageInstance[key] === 'function') {
+            dbStorageInstance[key] = vi.fn();
         }
     }
 
     return {
         ...actual,
-        MemStorage: vi.fn(() => memStorageInstance),
-        storage: memStorageInstance,
+        DBStorage: vi.fn(() => dbStorageInstance),
+        storage: dbStorageInstance,
     };
 });
 
-import { storage } from '../storage';
+import { storage } from '../storage.js';
 
 let app: Express;
 let server: http.Server;

@@ -257,37 +257,37 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
               Quick Actions
             </h3>
             <div className="space-y-2">
-              <Link href="/dashboard">
+              <Link to="/dashboard">
                 <Button variant="outline" className="w-full justify-start">
                   <Activity className="h-4 w-4 mr-2 text-purple-500" />
                   스터디 대시보드
                 </Button>
               </Link>
-              <Link href="/create">
+              <Link to="/create">
                 <Button className="w-full justify-start">
                   <Plus className="h-4 w-4 mr-2" />
                   Create New Page
                 </Button>
               </Link>
-              <Link href="/templates">
+              <Link to="/templates">
                 <Button variant="outline" className="w-full justify-start">
                   <BookOpen className="h-4 w-4 mr-2 text-blue-500" />
                   템플릿 갤러리
                 </Button>
               </Link>
-              <Link href="/database">
+              <Link to="/database">
                 <Button variant="outline" className="w-full justify-start">
                   <Database className="h-4 w-4 mr-2 text-indigo-500" />
                   데이터베이스 뷰
                 </Button>
               </Link>
-              <Link href="/collaboration-test">
+              <Link to="/collaboration-test">
                 <Button variant="outline" className="w-full justify-start">
                   <Users className="h-4 w-4 mr-2 text-green-500" />
                   실시간 협업 테스트
                 </Button>
               </Link>
-              <Link href="/ai-search">
+              <Link to="/ai-search">
                 <Button variant="outline" className="w-full justify-start">
                   <Sparkles className="h-4 w-4 mr-2 text-purple-500" />
                   AI 검색
@@ -357,7 +357,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                       
                       {expandedSections[`team-${team.id}`] && (
                         <div className="ml-8 mt-3 space-y-2">
-                          <Link href={`/teams/${team.name}/members`}>
+                          <Link to={`/teams/${team.name}/members`}>
                             <Button 
                               variant="ghost" 
                               size="sm" 
@@ -368,7 +368,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                               팀원 관리
                             </Button>
                           </Link>
-                          <Link href={`/teams/${team.name}/tasks`}>
+                          <Link to={`/teams/${team.name}/tasks`}>
                             <Button 
                               variant="ghost" 
                               size="sm" 
@@ -379,7 +379,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                               과제 트래커
                             </Button>
                           </Link>
-                          <Link href={`/teams/${team.name}/files`}>
+                          <Link to={`/teams/${team.name}/files`}>
                             <Button 
                               variant="ghost" 
                               size="sm" 
@@ -390,7 +390,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                               파일 관리
                             </Button>
                           </Link>
-                          <Link href={`/teams/${team.name}/calendar`}>
+                          <Link to={`/teams/${team.name}/calendar`}>
                             <Button 
                               variant="ghost" 
                               size="sm" 
@@ -401,7 +401,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                               팀 캘린더
                             </Button>
                           </Link>
-                          <Link href={`/teams/${team.name}/pages`}>
+                          <Link to={`/teams/${team.name}/pages`}>
                             <Button 
                               variant="ghost" 
                               size="sm" 
@@ -412,7 +412,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                               팀 페이지
                             </Button>
                           </Link>
-                          <Link href={`/teams/${team.name}/database`}>
+                          <Link to={`/teams/${team.name}/database`}>
                             <Button 
                               variant="ghost" 
                               size="sm" 
@@ -490,7 +490,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                   {isExpanded && (
                     <div className="ml-8 mt-3 space-y-2">
                       {folderPages.map((page: WikiPage) => (
-                        <Link key={page.id} href={`/page/${page.slug}`}>
+                        <Link key={page.id} to={`/page/${page.slug}`}>
                           <div
                             className={cn(
                               "block p-3 text-sm rounded-lg transition-all duration-200 cursor-pointer group",

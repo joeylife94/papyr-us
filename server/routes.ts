@@ -3,7 +3,7 @@ import { createServer, type Server as HttpServer } from "http";
 import { Server as SocketIoServer } from "socket.io";
 import { authMiddleware } from "./middleware.ts";
 import { config } from "./config.ts";
-import { insertWikiPageSchema, updateWikiPageSchema, searchSchema, insertCalendarEventSchema, updateCalendarEventSchema, insertDirectorySchema, updateDirectorySchema, insertCommentSchema, updateCommentSchema, insertMemberSchema, updateMemberSchema, insertTaskSchema, updateTaskSchema, insertNotificationSchema, updateNotificationSchema, insertTemplateCategorySchema, updateTemplateCategorySchema, insertTemplateSchema, updateTemplateSchema, insertTeamSchema, users } from "../shared/schema.ts";
+import { insertWikiPageSchema, updateWikiPageSchema, searchSchema, insertCalendarEventSchema, updateCalendarEventSchema, insertDirectorySchema, updateDirectorySchema, insertCommentSchema, updateCommentSchema, insertMemberSchema, updateMemberSchema, insertTaskSchema, updateTaskSchema, insertNotificationSchema, updateNotificationSchema, insertTemplateCategorySchema, updateTemplateCategorySchema, insertTemplateSchema, updateTemplateSchema, insertTeamSchema, users } from "../shared/schema.js";
 import { upload, processUploadedFile, deleteUploadedFile, listUploadedFiles, getFileInfo } from "./services/upload.ts";
 import { smartSearch, generateSearchSuggestions } from "./services/ai.ts";
 import path from "path";
@@ -13,7 +13,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import passport from 'passport';
 import { eq } from 'drizzle-orm';
-import { DBStorage } from './storage.ts';
+import { DBStorage } from './storage.js';
 
 interface MulterRequest extends Request {
   files?: any[];
@@ -29,7 +29,7 @@ export async function registerRoutes(app: Express, storage: DBStorage): Promise<
 
   // Setup Socket.IO for real-time collaboration
   try {
-    const { setupSocketIO } = await import('./services/socket.ts');
+    const { setupSocketIO } = await import('./services/socket.js');
     io = setupSocketIO(httpServer, storage);
   } catch (error) {
     console.warn('Socket.IO setup failed:', error);
@@ -1346,7 +1346,7 @@ export async function registerRoutes(app: Express, storage: DBStorage): Promise<
   app.post("/api/ai/improve", async (req, res) => {
     try {
       const { content, title } = req.body;
-      const { generateContentSuggestions } = await import("./services/ai.ts");
+      const { generateContentSuggestions } = await import("./services/ai.js");
       const suggestions = await generateContentSuggestions(content, title);
       res.json({ suggestions });
     } catch (error) {

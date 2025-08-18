@@ -1,6 +1,6 @@
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import { Server as HTTPServer } from 'http';
-import type { IStorage } from '../storage.ts';
+import type { IStorage } from '../storage.js';
 
 interface User {
   id: string;

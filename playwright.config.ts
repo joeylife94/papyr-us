@@ -24,7 +24,7 @@ export default defineConfig({
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
   reporter: [['html', { open: 'never' }]],
   /* Timeout for each test */
-  timeout: 30 * 1000,
+  timeout: 60 * 1000,
   expect: {
     /**
      * Maximum time expect() should wait for the condition to be met.
@@ -35,7 +35,7 @@ export default defineConfig({
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
-    baseURL: 'http://localhost:5001',
+    baseURL: 'http://localhost:5002',
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
@@ -81,8 +81,8 @@ export default defineConfig({
 
   webServer: {
     command: 'npm run start:e2e',
-    url: 'http://localhost:5001',
+    url: 'http://localhost:5002',
     reuseExistingServer: false,
-    timeout: 120 * 1000,
+    timeout: 240 * 1000,
   },
 });

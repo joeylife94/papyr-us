@@ -469,8 +469,8 @@ function TaskForm({ task, onSubmit, members, onCancel }: TaskFormProps) {
     e.preventDefault();
     onSubmit({
       ...formData,
-      estimatedHours: formData.estimatedHours ? parseInt(formData.estimatedHours) : null,
-      assignedTo: formData.assignedTo ? parseInt(formData.assignedTo) : null,
+      estimatedHours: formData.estimatedHours ? parseInt(String(formData.estimatedHours)) : null,
+      assignedTo: formData.assignedTo ? parseInt(String(formData.assignedTo)) : null,
     });
   };
 
@@ -527,7 +527,7 @@ function TaskForm({ task, onSubmit, members, onCancel }: TaskFormProps) {
         </div>
         <div className="space-y-2">
           <Label htmlFor="priority">우선순위</Label>
-          <Select value={formData.priority.toString()} onValueChange={(value) => setFormData({ ...formData, priority: parseInt(value) })}>
+          <Select value={String(formData.priority)} onValueChange={(value) => setFormData({ ...formData, priority: parseInt(value) })}>
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
@@ -542,7 +542,7 @@ function TaskForm({ task, onSubmit, members, onCancel }: TaskFormProps) {
         </div>
         <div className="space-y-2">
           <Label htmlFor="assignedTo">담당자</Label>
-          <Select value={formData.assignedTo?.toString() || ''} onValueChange={(value) => setFormData({ ...formData, assignedTo: value ? parseInt(value) : null })}>
+          <Select value={String(formData.assignedTo) || ''} onValueChange={(value) => setFormData({ ...formData, assignedTo: value ? parseInt(value) : null })}>
             <SelectTrigger>
               <SelectValue placeholder="담당자 선택" />
             </SelectTrigger>
@@ -574,7 +574,7 @@ function TaskForm({ task, onSubmit, members, onCancel }: TaskFormProps) {
             id="estimatedHours"
             type="number"
             value={formData.estimatedHours}
-            onChange={(e) => setFormData({ ...formData, estimatedHours: e.target.value })}
+            onChange={(e) => setFormData({ ...formData, estimatedHours: Number(e.target.value) })}
             min="0"
           />
         </div>

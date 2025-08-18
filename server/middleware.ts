@@ -1,6 +1,6 @@
 import express, { type Express, type Request, Response, NextFunction } from "express";
 import jwt from 'jsonwebtoken';
-import { config } from "./config.ts";
+import { config } from "./config.js";
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {

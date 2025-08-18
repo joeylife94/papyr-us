@@ -94,7 +94,7 @@ export default function CalendarPage({ teamId }: CalendarPageProps) {
       startTime: undefined,
       endTime: undefined,
       priority: getNextPriority(),
-      teamId: teamId,
+      teamId: String(teamId),
     },
   });
 
@@ -178,7 +178,7 @@ export default function CalendarPage({ teamId }: CalendarPageProps) {
       startTime: undefined,
       endTime: undefined,
       priority: getNextPriority(),
-      teamId: teamId,
+      teamId: String(teamId),
     });
   };
 
@@ -196,7 +196,7 @@ export default function CalendarPage({ teamId }: CalendarPageProps) {
       startTime: event.startTime || undefined,
       endTime: event.endTime || undefined,
       priority: event.priority || 1,
-      teamId: event.teamId,
+      teamId: String(event.teamId),
     });
   };
 
@@ -237,7 +237,7 @@ export default function CalendarPage({ teamId }: CalendarPageProps) {
       startTime: data.startTime || null,
       endTime: data.endTime || null,
       priority: data.priority || getNextPriority(),
-      teamId: data.teamId,
+      teamId: Number(data.teamId),
       linkedPageId: null,
     };
 

@@ -8,23 +8,23 @@ import http from 'http';
 // Mock storage module if it hits a real database
 vi.mock('../storage', async (importOriginal) => {
     const actual = await importOriginal() as any;
-    const memStorageInstance = new actual.MemStorage();
+    const dbStorageInstance = new actual.DBStorage();
 
     // Replace all methods with vi.fn() to allow for mocking in tests
-    for (const key of Object.getOwnPropertyNames(actual.MemStorage.prototype)) {
-        if (key !== 'constructor' && typeof memStorageInstance[key] === 'function') {
-            memStorageInstance[key] = vi.fn();
+    for (const key of Object.getOwnPropertyNames(actual.DBStorage.prototype)) {
+        if (key !== 'constructor' && typeof dbStorageInstance[key] === 'function') {
+            dbStorageInstance[key] = vi.fn();
         }
     }
 
     return {
         ...actual,
-        MemStorage: vi.fn(() => memStorageInstance),
-        storage: memStorageInstance,
+        DBStorage: vi.fn(() => dbStorageInstance),
+        storage: dbStorageInstance,
     };
 });
 
-import { storage } from '../storage';
+import { storage } from '../storage.js';
 
 let app: Express;
 let server: http.Server;
@@ -42,7 +42,7 @@ afterAll((done) => {
 describe('POST /api/templates', () => {
   it('should fail to create a template if category does not exist', async () => {
     // Mock that the category does not exist
-    const { storage } = await import('../storage');
+    const { storage } = await import('../storage.js');
     (storage.createTemplate as any).mockRejectedValueOnce(new Error('Category not found'));
 
     const response = await request(app)
@@ -60,7 +60,7 @@ describe('POST /api/templates', () => {
   });
 
   it('should create a template successfully if category exists', async () => {
-    const { storage } = await import('../storage');
+    const { storage } = await import('../storage.js');
     const categoryId = 1;
 
     // Mock the storage calls for this test

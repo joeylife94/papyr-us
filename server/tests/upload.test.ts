@@ -9,21 +9,20 @@ import fs from 'fs';
 
 // Mock the storage module
 vi.mock('../storage', async (importOriginal) => {
-    const actualStorage = await importOriginal() as any;
-    
-    // Create a spy for each method of MemStorage
-    const memStorageInstance = new actualStorage.MemStorage();
-    for (const key in memStorageInstance) {
-        if (typeof memStorageInstance[key] === 'function') {
-            vi.spyOn(memStorageInstance, key as any).mockImplementation(() => {});
+    const actual = await importOriginal() as any;
+    const dbStorageInstance = new actual.DBStorage();
+
+    // Replace all methods with vi.fn() to allow for mocking in tests
+    for (const key of Object.getOwnPropertyNames(actual.DBStorage.prototype)) {
+        if (key !== 'constructor' && typeof dbStorageInstance[key] === 'function') {
+            dbStorageInstance[key] = vi.fn();
         }
     }
 
     return {
-        ...actualStorage,
-        DBStorage: vi.fn(), // Mock DBStorage if necessary
-        MemStorage: vi.fn(() => memStorageInstance), // Mock MemStorage constructor
-        storage: memStorageInstance, // Use the mocked instance
+        ...actual,
+        DBStorage: vi.fn(() => dbStorageInstance),
+        storage: dbStorageInstance,
     };
 });
 
@@ -41,7 +40,7 @@ vi.mock('../services/upload', async () => {
 
 import { processUploadedFile, listUploadedFiles, getFileInfo, deleteUploadedFile } from '../services/upload';
 
-import { storage } from '../storage';
+import { storage } from '../storage.js';
 
 let app: Express;
 let server: http.Server;

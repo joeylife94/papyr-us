@@ -1,4 +1,4 @@
-import { wikiPages, type WikiPage, type InsertWikiPage, type UpdateWikiPage, type Tag, type SearchParams, type CalendarEvent, type InsertCalendarEvent, type UpdateCalendarEvent, type Directory, type InsertDirectory, type UpdateDirectory, type Comment, type InsertComment, type UpdateComment, type Member, type InsertMember, type UpdateMember, type Task, type InsertTask, type UpdateTask, type Notification, type InsertNotification, type UpdateNotification, type Template, type InsertTemplate, type UpdateTemplate, type TemplateCategory, type InsertTemplateCategory, type UpdateTemplateCategory, type Team, type InsertTeam, type UpdateTeam, users, calendarEvents, directories, comments, members, tasks, notifications, templates, templateCategories, teams } from "../shared/schema.ts";
+import { wikiPages, type WikiPage, type InsertWikiPage, type UpdateWikiPage, type Tag, type SearchParams, type CalendarEvent, type InsertCalendarEvent, type UpdateCalendarEvent, type Directory, type InsertDirectory, type UpdateDirectory, type Comment, type InsertComment, type UpdateComment, type Member, type InsertMember, type UpdateMember, type Task, type InsertTask, type UpdateTask, type Notification, type InsertNotification, type UpdateNotification, type Template, type InsertTemplate, type UpdateTemplate, type TemplateCategory, type InsertTemplateCategory, type UpdateTemplateCategory, type Team, type InsertTeam, type UpdateTeam, users, calendarEvents, directories, comments, members, tasks, notifications, templates, templateCategories, teams } from "../shared/schema.js";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { eq, like, and, sql, desc, asc } from "drizzle-orm";
 import { Pool } from "pg";
@@ -58,7 +58,7 @@ export class DBStorage {
       conditions.push(eq(wikiPages.folder, params.folder));
     }
     if (params.teamId) {
-      conditions.push(eq(wikiPages.teamId, params.teamId));
+      conditions.push(eq(wikiPages.teamId, Number(params.teamId)));
     }
     if (params.tags && params.tags.length > 0) {
       conditions.push(sql`${wikiPages.tags} && ${params.tags}`);
@@ -85,8 +85,8 @@ export class DBStorage {
   async getAllTags(): Promise<Tag[]> {
     const allPages = await this.db.select({ tags: wikiPages.tags }).from(wikiPages);
     const tagCounts = new Map<string, number>();
-    allPages.forEach(page => {
-      page.tags?.forEach(tag => {
+    allPages.forEach((page: { tags: string[] }) => {
+      page.tags?.forEach((tag: string) => {
         tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
       });
     });
@@ -95,10 +95,10 @@ export class DBStorage {
 
   async getFolders(): Promise<string[]> {
     const result = await this.db.selectDistinct({ folder: wikiPages.folder }).from(wikiPages);
-    return result.map(r => r.folder);
+    return result.map((r: { folder: string }) => r.folder);
   }
 
-  async getCalendarEvents(teamId?: string): Promise<CalendarEvent[]> {
+  async getCalendarEvents(teamId?: number): Promise<CalendarEvent[]> {
     const query = this.db.select().from(calendarEvents);
     if (teamId) {
       query.where(eq(calendarEvents.teamId, teamId));
@@ -223,11 +223,12 @@ export class DBStorage {
   }
 
   async getMembers(teamId?: number): Promise<Member[]> {
-    const query = this.db.select().from(members).where(eq(members.isActive, true));
+    const query = this.db.select().from(members);
+    const conditions = [eq(members.isActive, true)];
     if (teamId) {
-      query.where(eq(members.teamId, teamId));
+      conditions.push(eq(members.teamId, teamId));
     }
-    return query;
+    return query.where(and(...conditions));
   }
 
   async getMember(id: number): Promise<Member | undefined> {

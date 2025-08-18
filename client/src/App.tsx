@@ -32,18 +32,12 @@ import RegisterPage from "@/pages/register";
 import ProtectedRoute from "@/components/ProtectedRoute";
 
 // Helper components to handle route params
-const WikiPageViewWrapper = () => {
-  const { slug } = useParams();
-  return <WikiPageView slug={slug} />;
-};
 
-const CalendarPageWrapper = () => {
-  const { teamId } = useParams();
-  return <CalendarPage teamId={teamId} />;
-};
+
+
 
 const PageEditorWrapper = () => {
-  const { pageId, folder, teamName } = useParams();
+  const { pageId, folder, teamName } = useParams<{ pageId: string; folder: string; teamName: string }>();
   return <PageEditor pageId={pageId} initialFolder={folder} teamName={teamName} />;
 };
 
@@ -124,8 +118,8 @@ function App() {
                   <Route element={<ProtectedRoute />}>
                     <Route element={<AppLayout />}>
                       <Route path="/" element={<HomeWrapper />} />
-                      <Route path="/page/:slug" element={<WikiPageViewWrapper />} />
-                      <Route path="/calendar/:teamId" element={<CalendarPageWrapper />} />
+                      <Route path="/page/:slug" element={<WikiPageView />} />
+                      <Route path="/calendar/:teamId" element={<CalendarPage />} />
                       <Route path="/edit/:pageId" element={<PageEditorWrapper />} />
                       <Route path="/create" element={<PageEditorWrapper />} />
                       <Route path="/create/:folder" element={<PageEditorWrapper />} />
@@ -143,7 +137,7 @@ function App() {
                       <Route path="/teams/:teamName/members" element={<MembersWrapper />} />
                       <Route path="/teams/:teamName/tasks" element={<TasksPageWrapper />} />
                       <Route path="/teams/:teamName/files" element={<FileManagerWrapper />} />
-                      <Route path="/teams/:teamName/calendar" element={<CalendarPageWrapper />} />
+                      <Route path="/teams/:teamName/calendar" element={<CalendarPage />} />
                       <Route path="/teams/:teamName/pages" element={<HomeWrapper />} />
                       <Route path="*" element={<NotFound />} />
                     </Route>

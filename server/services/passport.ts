@@ -4,7 +4,7 @@ import { Strategy as GitHubStrategy } from 'passport-github2';
 import { storage } from '../storage';
 import { users } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
-import { config } from '../config';
+import { config } from '../config.js';
 
 passport.serializeUser((user: any, done) => {
   done(null, user.id);
