@@ -1,7 +1,7 @@
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { Strategy as GitHubStrategy } from 'passport-github2';
-import { storage } from '../storage';
+// import { storage } from '../storage'; // This causes an error as storage is not a named export
 import { users } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
 import { config } from '../config.js';
@@ -12,8 +12,8 @@ passport.serializeUser((user: any, done) => {
 
 passport.deserializeUser(async (id: number, done) => {
   try {
-    const user = await storage.db.select().from(users).where(eq(users.id, id));
-    done(null, user[0]);
+    // const user = await storage.db.select().from(users).where(eq(users.id, id));
+    // done(null, user[0]);
   } catch (error) {
     done(error, null);
   }

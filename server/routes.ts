@@ -1,11 +1,11 @@
 import type { Express } from "express";
 import { createServer, type Server as HttpServer } from "http";
 import { Server as SocketIoServer } from "socket.io";
-import { authMiddleware } from "./middleware.ts";
-import { config } from "./config.ts";
+import { authMiddleware } from "./middleware.js";
+import { config } from "./config.js";
 import { insertWikiPageSchema, updateWikiPageSchema, searchSchema, insertCalendarEventSchema, updateCalendarEventSchema, insertDirectorySchema, updateDirectorySchema, insertCommentSchema, updateCommentSchema, insertMemberSchema, updateMemberSchema, insertTaskSchema, updateTaskSchema, insertNotificationSchema, updateNotificationSchema, insertTemplateCategorySchema, updateTemplateCategorySchema, insertTemplateSchema, updateTemplateSchema, insertTeamSchema, users } from "../shared/schema.js";
-import { upload, processUploadedFile, deleteUploadedFile, listUploadedFiles, getFileInfo } from "./services/upload.ts";
-import { smartSearch, generateSearchSuggestions } from "./services/ai.ts";
+import { upload, processUploadedFile, deleteUploadedFile, listUploadedFiles, getFileInfo } from "./services/upload.js";
+import { smartSearch, generateSearchSuggestions } from "./services/ai.js";
 import path from "path";
 import { existsSync } from "fs";
 import type { Request } from "express";
@@ -277,7 +277,7 @@ export async function registerRoutes(app: Express, storage: DBStorage): Promise<
   app.get("/api/calendar", async (req, res) => {
     try {
       const teamId = req.query.teamId as string | undefined;
-      const events = await storage.getCalendarEvents(teamId);
+      const events = await storage.getCalendarEvents(teamId ? Number(teamId) : undefined);
       
       // Ensure compatibility with new fields - add defaults if missing
       const safeEvents = events.map(event => ({
@@ -297,7 +297,7 @@ export async function registerRoutes(app: Express, storage: DBStorage): Promise<
   app.get("/api/calendar/:teamId", async (req, res) => {
     try {
       const teamId = req.params.teamId;
-      const events = await storage.getCalendarEvents(teamId);
+      const events = await storage.getCalendarEvents(Number(teamId));
       
       // Ensure compatibility with new fields - add defaults if missing
       const safeEvents = events.map(event => ({
@@ -1335,7 +1335,7 @@ export async function registerRoutes(app: Express, storage: DBStorage): Promise<
   app.post("/api/ai/generate", async (req, res) => {
     try {
       const { prompt, type } = req.body;
-      const { generateContent } = await import("./services/ai.ts");
+      const { generateContent } = await import("./services/ai.js");
       const content = await generateContent(prompt, type);
       res.json({ content });
     } catch (error) {

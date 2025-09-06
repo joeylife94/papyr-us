@@ -1,3 +1,5 @@
+import dotenv from 'dotenv';
+dotenv.config();
 import { wikiPages, type WikiPage, type InsertWikiPage, type UpdateWikiPage, type Tag, type SearchParams, type CalendarEvent, type InsertCalendarEvent, type UpdateCalendarEvent, type Directory, type InsertDirectory, type UpdateDirectory, type Comment, type InsertComment, type UpdateComment, type Member, type InsertMember, type UpdateMember, type Task, type InsertTask, type UpdateTask, type Notification, type InsertNotification, type UpdateNotification, type Template, type InsertTemplate, type UpdateTemplate, type TemplateCategory, type InsertTemplateCategory, type UpdateTemplateCategory, type Team, type InsertTeam, type UpdateTeam, users, calendarEvents, directories, comments, members, tasks, notifications, templates, templateCategories, teams } from "../shared/schema.js";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { eq, like, and, sql, desc, asc } from "drizzle-orm";
@@ -101,7 +103,7 @@ export class DBStorage {
   async getCalendarEvents(teamId?: number): Promise<CalendarEvent[]> {
     const query = this.db.select().from(calendarEvents);
     if (teamId) {
-      query.where(eq(calendarEvents.teamId, teamId));
+  query.where(eq(calendarEvents.teamId, String(teamId)));
     }
     return query.orderBy(asc(calendarEvents.startDate));
   }

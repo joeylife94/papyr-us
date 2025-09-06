@@ -13,6 +13,7 @@ import { Sidebar } from "@/components/layout/sidebar";
 import Home from "@/pages/home";
 import WikiPageView from "@/pages/wiki-page";
 import CalendarPage from "@/pages/calendar";
+import CalendarPageWrapper from "@/components/CalendarPageWrapper";
 import PageEditor from "@/pages/page-editor";
 import AdminPage from "@/pages/admin";
 import Members from "@/pages/members";
@@ -119,7 +120,7 @@ function App() {
                     <Route element={<AppLayout />}>
                       <Route path="/" element={<HomeWrapper />} />
                       <Route path="/page/:slug" element={<WikiPageView />} />
-                      <Route path="/calendar/:teamId" element={<CalendarPage />} />
+                      <Route path="/calendar/:teamId" element={<CalendarPageWrapper />} />
                       <Route path="/edit/:pageId" element={<PageEditorWrapper />} />
                       <Route path="/create" element={<PageEditorWrapper />} />
                       <Route path="/create/:folder" element={<PageEditorWrapper />} />
@@ -137,7 +138,7 @@ function App() {
                       <Route path="/teams/:teamName/members" element={<MembersWrapper />} />
                       <Route path="/teams/:teamName/tasks" element={<TasksPageWrapper />} />
                       <Route path="/teams/:teamName/files" element={<FileManagerWrapper />} />
-                      <Route path="/teams/:teamName/calendar" element={<CalendarPage />} />
+                      <Route path="/teams/:teamName/calendar" element={<CalendarPageWrapper />} />
                       <Route path="/teams/:teamName/pages" element={<HomeWrapper />} />
                       <Route path="*" element={<NotFound />} />
                     </Route>

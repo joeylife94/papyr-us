@@ -86,7 +86,7 @@ class SocketManager {
     }
 
     if (this.socket) {
-      this.socket.off(event, callback);
+    this.socket.off(event, callback as (...args: any[]) => void);
     }
   }
 

@@ -242,9 +242,9 @@ export default function CalendarPage({ teamId }: CalendarPageProps) {
     };
 
     if (isEditing && editingEvent) {
-      updateEventMutation.mutate({ id: editingEvent.id, data: eventData });
+  updateEventMutation.mutate({ id: editingEvent.id, data: { ...eventData, teamId: String(eventData.teamId) } });
     } else {
-      createEventMutation.mutate(eventData);
+  createEventMutation.mutate({ ...eventData, teamId: String(eventData.teamId) });
     }
   };
 

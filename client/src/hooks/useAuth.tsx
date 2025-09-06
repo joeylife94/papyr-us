@@ -3,7 +3,7 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 interface AuthContextType {
   isAuthenticated: boolean;
   user: any;
-  login: (email, password) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
   socialLogin: (token: string) => Promise<void>;
   logout: () => void;
 }
