@@ -28,7 +28,7 @@ test.describe('Authentication', () => {
     await responsePromise;
 
     await expect(page).toHaveURL('/login');
-    await expect(page.getByText('Registration Successful')).toBeVisible();
+    await expect(page.locator('div.text-sm.font-semibold', { hasText: 'Registration Successful' })).toBeVisible();
   });
 
   test('성공적인 로그인', async ({ page }) => {
@@ -99,44 +99,15 @@ test.describe('Authentication', () => {
 test.describe('Wiki Page Management', () => {
   let testPage: any;
 
-  test.beforeEach(async ({ page, request }) => {
-    // 1. 로그인 API 호출
-    const loginRes = await request.post('/api/auth/login', {
-      data: {
-        email: 'test@example.com',
-        password: 'password123',
-      },
-    });
-    // API 요청이 성공했는지 확인
-    expect(loginRes.ok()).toBeTruthy();
-    
-    // 2. 테스트용 페이지 생성
-    const pageTitle = `Test Page for Editing - ${Date.now()}`;
-    const pageContent = 'Initial content for editing.';
-    const slug = pageTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-
-    const response = await request.post('/api/pages', {
-      data: {
-        title: pageTitle,
-        slug: slug,
-        content: pageContent,
-        folder: 'docs',
-        tags: ['e2e-test'],
-        author: 'Playwright',
-      },
-    });
-    expect(response.ok()).toBeTruthy();
-    testPage = await response.json();
-
-    // 3. 페이지 컨텍스트에 로그인 상태 적용 (localStorage 사용)
-    const { token } = await loginRes.json();
-    await page.addInitScript((token) => {
-        window.localStorage.setItem('token', token);
-    }, token);
-  });
-
   test('새 위키 페이지 생성', async ({ page }) => {
+    await page.goto('/login');
+    await page.getByLabel('Email').fill('test@example.com');
+    await page.getByLabel('Password').fill('password123');
+    await page.getByRole('button', { name: 'Login with Email' }).click();
+    await expect(page).toHaveURL('/', { timeout: 10000 });
+
     await page.goto('/create');
+    await page.waitForURL('/create');
     await expect(page.getByRole('heading', { name: 'Create New Page' })).toBeVisible();
 
     const newPageTitle = `My New Test Page - ${Date.now()}`;

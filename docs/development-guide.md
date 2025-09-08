@@ -89,9 +89,9 @@ npm run dev
 2.  **환경 변수 로더**: `cross-env` 패키지를 사용하여 `package.json` 스크립트에서 `DATABASE_URL`을 명시적으로 설정합니다.
 
 #### E2E 테스트 구성 가이드
-- **테스트 서버**: `playwright.config.ts`의 `webServer` 옵션이 `npm run start:e2e`를 실행하여 테스트 서버를 구동합니다. 이 서버는 `5002` 포트를 사용합니다.
-- **환경 변수**: `cross-env`를 통해 테스트 스크립트 전체에 걸쳐 올바른 데이터베이스 연결 문자열이 주입됩니다.
-- **안정성**: `playwright.config.ts`의 `timeout`을 `240000`ms (240초)로 설정하여, 서버가 완전히 준비될 때까지 충분히 기다립니다.
+- **테스트 서버**: `playwright.config.ts`의 `webServer` 옵션이 `npm run start:e2e`를 실행하여 테스트 서버를 구동합니다. 이 서버는 `5001` 포트를 사용합니다.
+- **안정성**: `playwright.config.ts`의 `timeout`을 `60000`ms (60초)로 설정하여, 서버가 완전히 준비될 때까지 충분히 기다립니다.
+- **테스트 안정화 권장사항**: API 호출과 `localStorage` 조작을 통해 테스트 상태를 설정하는 방식은 애플리케이션의 복잡한 상태 변화로 인해 불안정할 수 있습니다. 각 테스트가 독립적으로 UI를 통해 로그인하고 필요한 데이터를 생성하는 방식을 사용하면 실제 사용자 시나리오와 유사하게 동작하여 안정성을 높일 수 있습니다.
 
 #### 주요 문제 해결 (Troubleshooting)
 - **오류**: `Dynamic require of "path" is not supported` (Docker 환경)
