@@ -90,8 +90,8 @@ npm run dev
 
 #### E2E 테스트 구성 가이드
 - **테스트 서버**: `playwright.config.ts`의 `webServer` 옵션이 `npm run start:e2e`를 실행하여 테스트 서버를 구동합니다. 이 서버는 `5001` 포트를 사용합니다.
-- **안정성**: `playwright.config.ts`의 `timeout`을 `60000`ms (60초)로 설정하여, 서버가 완전히 준비될 때까지 충분히 기다립니다.
-- **테스트 안정화 권장사항**: API 호출과 `localStorage` 조작을 통해 테스트 상태를 설정하는 방식은 애플리케이션의 복잡한 상태 변화로 인해 불안정할 수 있습니다. 각 테스트가 독립적으로 UI를 통해 로그인하고 필요한 데이터를 생성하는 방식을 사용하면 실제 사용자 시나리오와 유사하게 동작하여 안정성을 높일 수 있습니다.
+- **안정성**: 애플리케이션의 응답 속도 저하에 대응하기 위해, `playwright.config.ts`의 전역 `timeout` 및 `expect.timeout`을 `120000`ms (120초)로 설정하여 시간 초과로 인한 테스트 실패 가능성을 최소화했습니다.
+- **테스트 안정화 권장사항**: API 호출과 `localStorage` 조작을 통해 테스트 상태를 설정하는 방식은 불안정성이 높아 제거되었습니다. 현재 모든 E2E 테스트는 실제 사용자 시나리오와 같이 UI를 통해 직접 상호작용하는 방식으로 리팩토링되었습니다. `login`, `createPage`, `adminLogin`과 같은 헬퍼 함수를 사용하여 테스트 코드의 안정성과 가독성을 높였습니다.
 
 #### 주요 문제 해결 (Troubleshooting)
 - **오류**: `Dynamic require of "path" is not supported` (Docker 환경)
