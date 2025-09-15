@@ -4,14 +4,27 @@ import { test, expect, type Page } from '@playwright/test';
  * Logs in a user through the UI.
  * @param page The Playwright page object.
  */
-async function login(page: Page) {
+async function login(page: Page, email: string, password: string) {
   await page.goto('/login');
   await expect(page.getByRole('heading', { name: 'Login' })).toBeVisible();
-  await page.getByLabel('Email').fill('test@example.com');
-  await page.getByLabel('Password').fill('password123');
+  await page.getByLabel('Email').fill(email);
+  await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Login with Email' }).click();
   await expect(page).toHaveURL('/', { timeout: 15000 });
   await expect(page.locator('button > .flex.items-center.space-x-2')).toBeVisible({ timeout: 30000 });
+}
+
+async function registerUser(page: Page, name: string, email: string, pass: string) {
+  await page.goto('/register');
+  await expect(page.getByRole('heading', { name: 'Register' })).toBeVisible();
+  await page.getByLabel('Name').fill(name);
+  await page.getByLabel('Email').fill(email);
+  await page.getByLabel('Password').fill(pass);
+  const responsePromise = page.waitForResponse(response => response.url().includes('/api/auth/register') && response.status() === 201);
+  await page.getByRole('button', { name: 'Register' }).click();
+  await responsePromise;
+  await expect(page).toHaveURL('/login');
+  await expect(page.locator('div.text-sm.font-semibold', { hasText: 'Registration Successful' })).toBeVisible();
 }
 
 /**
@@ -28,7 +41,7 @@ async function createPage(page: Page, title: string, content: string): Promise<s
   await page.getByLabel('Title').fill(title);
   await page.locator('.ProseMirror[contenteditable="true"]').fill(content);
 
-  const responsePromise = page.waitForResponse(/\/api\/pages/);
+  const responsePromise = page.waitForResponse(response => response.url().includes('/api/pages') && response.status() === 201);
   await page.getByRole('button', { name: 'Create Page' }).click();
   const response = await responsePromise;
   expect(response.ok()).toBeTruthy();
@@ -42,45 +55,28 @@ async function createPage(page: Page, title: string, content: string): Promise<s
 
 // == Authentication Tests ==
 test.describe('Authentication', () => {
-  // NOTE: This beforeAll hook is not ideal, but we keep it for now to ensure
-  // the 'test@example.com' user exists for login tests.
-  // A better approach would be to create a user via the UI in each test that needs it.
-  test.beforeAll(async ({ request }) => {
-    await request.post('/api/auth/register', {
-      data: {
-        name: 'Test User',
-        email: 'test@example.com',
-        password: 'password123',
-      },
-      failOnStatusCode: false, // Don't fail if user already exists
-    });
-  });
-
   test('성공적인 회원가입', async ({ page }) => {
-    await page.goto('/register');
-    await expect(page.getByRole('heading', { name: 'Register' })).toBeVisible();
-
     const uniqueEmail = `testuser-${Date.now()}@example.com`;
-    await page.getByLabel('Name').fill('New Test User');
-    await page.getByLabel('Email').fill(uniqueEmail);
-    await page.getByLabel('Password').fill('password123');
-
-    const responsePromise = page.waitForResponse(/\/api\/auth\/register/);
-    await page.getByRole('button', { name: 'Register' }).click();
-    await responsePromise;
-
-    await expect(page).toHaveURL('/login');
-    await expect(page.locator('div.text-sm.font-semibold', { hasText: 'Registration Successful' })).toBeVisible();
+    await registerUser(page, 'New Test User', uniqueEmail, 'password123');
   });
 
   test('성공적인 로그인', async ({ page }) => {
-    await login(page);
+    // 1. Register a new user via UI first.
+    const uniqueEmail = `testuser-${Date.now()}@example.com`;
+    const password = 'password123';
+    await registerUser(page, 'Login Test User', uniqueEmail, password);
+
+    // 2. Now, log in with the new user's credentials.
+    await login(page, uniqueEmail, password);
     await expect(page).toHaveURL('/');
   });
 
   test('성공적인 로그아웃', async ({ page }) => {
-    // 1. First, log in.
-    await login(page);
+    // 1. Register and log in a new user.
+    const uniqueEmail = `testuser-${Date.now()}@example.com`;
+    const password = 'password123';
+    await registerUser(page, 'Logout Test User', uniqueEmail, password);
+    await login(page, uniqueEmail, password);
 
     // 2. Click the user avatar button to open the dropdown menu.
     await page.locator('button > .flex.items-center.space-x-2').click();
@@ -115,9 +111,19 @@ test.describe('Authentication', () => {
 
 // == Wiki Page Management Tests ==
 test.describe('Wiki Page Management', () => {
+  const testUserEmail = `wiki-user-${Date.now()}@example.com`;
+  const testUserPassword = 'password123';
+
+  test.beforeAll(async ({ browser }) => {
+    const page = await browser.newPage();
+    // Create user once for this test suite for efficiency
+    await registerUser(page, 'Wiki User', testUserEmail, testUserPassword);
+    await page.close();
+  });
+
   test.beforeEach(async ({ page }) => {
     // Login before each test in this suite.
-    await login(page);
+    await login(page, testUserEmail, testUserPassword);
   });
 
   test('새 위키 페이지 생성', async ({ page }) => {
@@ -144,7 +150,7 @@ test.describe('Wiki Page Management', () => {
     await page.locator('.ProseMirror[contenteditable="true"]').fill(updatedContent);
 
     // 4. Click the "Update Page" button.
-    const responsePromise = page.waitForResponse(/\/api\/pages\/\d+/);
+    const responsePromise = page.waitForResponse(response => response.url().match(/\/api\/pages\/\d+/) && response.status() === 200);
     await page.getByRole('button', { name: 'Update Page' }).click();
     await responsePromise;
 
@@ -157,17 +163,7 @@ test.describe('Wiki Page Management', () => {
   test('위키 페이지 목차', async ({ page }) => {
     // 1. Create a test page with headings.
     const tocPageTitle = `TOC Test Page - ${Date.now()}`;
-    const tocPageContent = `# Main Heading
-
-Some text here.
-
-## Sub Heading 1
-
-More text.
-
-### Sub-Sub Heading
-
-Details.`;
+    const tocPageContent = `# Main Heading\n\nSome text here.\n\n## Sub Heading 1\n\nMore text.\n\n### Sub-Sub Heading\n\nDetails.`;
     const slug = await createPage(page, tocPageTitle, tocPageContent);
 
     // 2. Go to the created page.
@@ -222,7 +218,7 @@ Details.`;
     await page.getByPlaceholder('Write a comment...').fill(commentText);
 
     // 4. Post the comment.
-    const responsePromise = page.waitForResponse(/\/api\/pages\/\d+\/comments/);
+    const responsePromise = page.waitForResponse(response => response.url().match(/\/api\/pages\/\d+\/comments/) && response.status() === 201);
     await page.getByRole('button', { name: 'Post Comment' }).click();
     await responsePromise;
 
@@ -249,7 +245,7 @@ Details.`;
     const newPageTitle = `My Study Note - ${Date.now()}`;
     await page.getByLabel('Title').fill(newPageTitle);
     
-    const responsePromise = page.waitForResponse(/\/api\/pages/);
+    const responsePromise = page.waitForResponse(response => response.url().includes('/api/pages') && response.status() === 201);
     await page.getByRole('button', { name: 'Create Page' }).click();
     const response = await responsePromise;
     const { slug } = await response.json();
@@ -263,9 +259,18 @@ Details.`;
 
 // == Productivity & Collaboration Tests ==
 test.describe('Productivity & Collaboration', () => {
+  const testUserEmail = `prod-user-${Date.now()}@example.com`;
+  const testUserPassword = 'password123';
+
+  test.beforeAll(async ({ browser }) => {
+    const page = await browser.newPage();
+    await registerUser(page, 'Prod User', testUserEmail, testUserPassword);
+    await page.close();
+  });
+
   test.beforeEach(async ({ page }) => {
     // Login before each test in this suite.
-    await login(page);
+    await login(page, testUserEmail, testUserPassword);
   });
 
   test('TC-PROD-001: 대시보드 위젯 확인', async ({ page }) => {
@@ -309,7 +314,7 @@ test.describe('Productivity & Collaboration', () => {
     await expect(searchButton).toBeVisible();
 
     await searchInput.fill('test');
-    const responsePromise = page.waitForResponse(/\/api\/ai\/search/);
+    const responsePromise = page.waitForResponse(response => response.url().includes('/api/ai/search') && response.status() === 200);
     await searchButton.click();
     await responsePromise;
 
@@ -334,10 +339,12 @@ test.describe('Productivity & Collaboration', () => {
 // == Admin Features Tests ==
 test.describe('Admin Features', () => {
   const adminPassword = 'test-admin-password'; // As defined in original test
+  const testUserEmail = `admin-user-${Date.now()}@example.com`;
+  const testUserPassword = 'password123';
 
   async function adminLogin(page: Page) {
     // 1. First, log in as a regular user to be able to access the /admin route
-    await login(page);
+    await login(page, testUserEmail, testUserPassword);
     
     // 2. Navigate to the admin page
     await page.goto('/admin');
@@ -348,6 +355,12 @@ test.describe('Admin Features', () => {
     await page.getByRole('button', { name: 'Login' }).click();
     await expect(page.getByRole('heading', { name: 'Admin Panel' })).toBeVisible({ timeout: 15000 });
   }
+
+  test.beforeAll(async ({ browser }) => {
+    const page = await browser.newPage();
+    await registerUser(page, 'Admin User', testUserEmail, testUserPassword);
+    await page.close();
+  });
 
   test.beforeEach(async ({ page }) => {
     // Login as admin via UI before each test
