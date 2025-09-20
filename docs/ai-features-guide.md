@@ -2,6 +2,19 @@
 
 ## AI Assistant 개요
 
+---
+### 2025-09-20 업데이트
+
+오늘 적용된 변경사항(요약):
+
+- OpenAI/AI 키 처리 개선: 코드에서 하드코딩된 AI 키의 안전하지 않은 폴백을 제거하고, `OPENAI_API_KEY`가 필요한 기능은 명시적으로 요구하도록 변경했습니다.
+- 환경 변수 검증: 운영 환경에서 중요한 시크릿이 누락되면 서버가 시작되지 않도록(`validateEnv()`) 안전 장치를 추가했습니다.
+- CI 준비: 타입 검사 및 테스트를 포함한 GitHub Actions 워크플로를 추가하여 원격에서 자동 검증을 준비했습니다.
+
+검증: 로컬에서 타입 검사와 테스트, 빌드를 통과했습니다.
+
+다음 단계: 원격 CI 실행 후 AI 관련 시크릿 제공 방식(Secrets manager, Vault 등)을 도입하는 것을 권장합니다.
+
 Papyr.us는 OpenAI의 GPT-4o 모델을 활용한 강력한 AI 도우미 기능을 제공합니다. 이 기능을 통해 더 효율적이고 질 높은 문서 작성이 가능합니다.
 
 ## 주요 AI 기능
@@ -96,7 +109,7 @@ async function generateContentSuggestions(
 2. 프로젝트 루트에 `.env` 파일 생성
 3. 환경 변수 설정:
 ```env
-OPENAI_API_KEY=your_openai_api_key_here
+OPENAI_API_KEY=REPLACE_WITH_OPENAI_API_KEY
 ```
 
 ### 비용 관리

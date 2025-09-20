@@ -461,16 +461,16 @@ function TaskForm({ task, onSubmit, members, onCancel }: TaskFormProps) {
     assignedTo: task?.assignedTo || null,
     teamId: task?.teamId || 'team1',
     dueDate: task?.dueDate ? task.dueDate.split('T')[0] : '',
-    estimatedHours: task?.estimatedHours || '',
-    tags: task?.tags || [],
+  estimatedHours: task?.estimatedHours ? String(task.estimatedHours) : '',
+  tags: task?.tags || [],
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSubmit({
       ...formData,
-      estimatedHours: formData.estimatedHours ? parseInt(formData.estimatedHours) : null,
-      assignedTo: formData.assignedTo ? parseInt(formData.assignedTo) : null,
+      estimatedHours: typeof formData.estimatedHours === 'string' && formData.estimatedHours !== '' ? parseInt(formData.estimatedHours) : null,
+      assignedTo: typeof formData.assignedTo === 'string' && formData.assignedTo !== '' ? parseInt(String(formData.assignedTo)) : null,
     });
   };
 

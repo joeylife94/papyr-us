@@ -152,7 +152,7 @@ PORT=5001
 # DATABASE_URL=postgresql://...
 
 # AI Assistant configuration (required for AI features)
-OPENAI_API_KEY=your_openai_api_key_here
+OPENAI_API_KEY=REPLACE_WITH_OPENAI_API_KEY
 ```
 
 ### Storage Options

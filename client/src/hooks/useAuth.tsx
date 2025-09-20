@@ -3,7 +3,7 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 interface AuthContextType {
   isAuthenticated: boolean;
   user: any;
-  login: (email, password) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
   socialLogin: (token: string) => Promise<void>;
   logout: () => void;
 }
@@ -41,7 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const login = async (email, password) => {
+  const login = async (email: string, password: string) => {
     const response = await fetch('/papyr-us/api/auth/login', {
       method: 'POST',
       headers: {

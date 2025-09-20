@@ -160,3 +160,16 @@ This document defines the test cases for the Papyr-us backend API to ensure its 
 | **TC-ADM-004** | `PATCH /api/admin/directories/:id` | Update a directory as admin. | Authenticated as admin; a directory exists. | 1. Send PATCH request with `adminPassword` and updated data. | 1. HTTP status 200. <br> 2. Response body contains the updated directory object. | Pass |
 | **TC-ADM-005** | `DELETE /api/admin/directories/:id` | Delete a directory as admin. | Authenticated as admin; a directory exists. | 1. Send DELETE request with `adminPassword` in the body. | 1. HTTP status 204. | Pass |
 | **TC-ADM-006** | `POST /api/directory/verify` | Verify a password-protected directory. | A directory with a password exists. | 1. Send POST request with `directoryName` and correct `password`. | 1. HTTP status 200. <br> 2. Response body is `{ "success": true }`. | Pass |
+
+---
+### 2025-09-20 업데이트
+
+오늘 백엔드 관련 변경 및 테스트 상황 요약:
+
+- 환경 변수 강제 검증(`server/env.ts`) 추가: 운영 환경에서 필수 시크릿이 누락되면 서버가 시작되지 않도록 하여 보안을 강화했습니다.
+- `IStorage` 타입 정렬 및 메모리 픽스처 보강: 테스트에서 사용되는 인메모리 저장소의 데이터 형태를 보완해 타입 및 런타임 오류를 줄였습니다.
+- CI 준비: 타입 검사(`npm run check`), 테스트(`npm test`), 빌드(`npm run build`)를 포함하는 GitHub Actions 워크플로를 추가해 원격 검증을 준비했습니다.
+
+검증 결과: 로컬에서 모든 유닛 테스트 통과(12 파일, 68 테스트) 및 타입검사 성공.
+
+주의: 원격 CI에서 환경 관련 문제(Secrets 설정 등)가 발생할 수 있으므로 PR 이후 CI 리포트를 확인하세요.

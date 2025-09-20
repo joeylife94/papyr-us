@@ -33,12 +33,12 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 // Helper components to handle route params, since the pages were designed for wouter
 const WikiPageViewWrapper = () => {
   const { slug } = useParams();
-  return <WikiPageView slug={slug} />;
+  return <WikiPageView />;
 };
 
 const CalendarPageWrapper = () => {
   const { teamId } = useParams();
-  return <CalendarPage teamId={teamId} />;
+  return <CalendarPage teamId={teamId ?? ''} />;
 };
 
 const PageEditorWrapper = () => {

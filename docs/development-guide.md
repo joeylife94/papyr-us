@@ -40,10 +40,10 @@ Docker 환경을 사용할 수 없는 경우에만 로컬 환경을 사용하세
 
 ```env
 # AI 기능을 위한 OpenAI API 키
-OPENAI_API_KEY=your_openai_api_key_here
+OPENAI_API_KEY=REPLACE_WITH_OPENAI_API_KEY
 
 # 대안 환경 변수명
-OPENAI_API_KEY_ENV_VAR=your_openai_api_key_here
+OPENAI_API_KEY_ENV_VAR=REPLACE_WITH_OPENAI_API_KEY
 ```
 
 #### 로컬 프로젝트 실행
@@ -197,6 +197,23 @@ DELETE /papyr-us/api/notifications/:id      # 알림 삭제
 ```
 
 ## 데이터 모델
+
+---
+### 2025-09-20 업데이트
+
+오늘 개발 요약 및 개발자 주의사항:
+
+- 환경 변수 안전성 강화: `.env.example`에서 하드코딩된 시크릿을 제거했고, 서버 시작 시 필수 환경 변수를 검증하는 `validateEnv()`를 도입했습니다. 운영 환경에서는 `JWT_SECRET`, `ADMIN_PASSWORD` 등의 보안값을 반드시 설정해야 합니다.
+- 저장소 선택 플래그: `server/config.ts`의 `useDatabase` 설정으로 메모리 저장소와 DB 저장소를 명확히 전환할 수 있습니다. 로컬 개발/테스트는 기본적으로 인메모리 저장소를 사용합니다.
+- 타입 안정화: 테스트용 메모리 픽스처와 서버/클라이언트 타입을 정렬하여 `npm run check`(타입스크립트 검사)가 통과하도록 수정했습니다.
+- CI 준비: 타입 검사, 유닛 테스트, 빌드를 수행하는 GitHub Actions 워크플로를 추가했습니다. PR 생성 시 자동으로 실행됩니다.
+
+검증: 로컬에서 `npm run check`, `npm test`, `npm run build`가 모두 성공했습니다.
+
+개발 권장사항:
+
+- 운영 비밀(Secrets)은 로컬에 노출된 `.env` 파일 대신 GitHub Secrets, Vault 같은 안전한 비밀 관리 시스템을 사용하세요.
+- 새로운 API를 추가할 때는 반드시 대응하는 유닛 테스트를 추가하고 `docs/backend-test-cases.md`에 테스트 케이스를 업데이트하세요.
 
 ### WikiPage
 ```typescript

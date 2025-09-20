@@ -211,6 +211,21 @@ CREATE TABLE templates (
 );
 ```
 
+---
+### 2025-09-20 기술 노트
+
+오늘 적용된 기술적 변경 요약:
+
+- 환경 변수 검증(`validateEnv()`): 애플리케이션 시작 시 `JWT_SECRET`, `ADMIN_PASSWORD` 등 필수 환경 변수를 확인하고 운영 환경에서 누락 시 프로세스를 종료하도록 fail-fast 동작을 도입했습니다.
+- USE_DATABASE 플래그: `server/config.ts`에 `useDatabase` 게터를 추가하여 메모리 저장소와 데이터베이스 저장소 전환을 명확히 했습니다. 테스트와 개발은 기본적으로 인메모리 저장소를 사용합니다.
+- 저장소 타입 정렬 및 테스트 픽스처 보강: `IStorage` 타입을 조정하고 메모리 픽스처에 누락된 필드를 보강해 타입 안정성과 테스트 신뢰성을 향상했습니다.
+- CI 워크플로 추가: 타입 검사, 유닛 테스트, 프로덕션 빌드를 포함한 GitHub Actions 워크플로를 추가해 PR 시 자동 검증을 준비했습니다.
+
+운영 권장사항:
+
+- 민감정보(Secrets)는 GitHub Secrets 또는 Vault 같은 안전한 비밀관리 시스템을 사용해 관리하세요.
+- 프로덕션 환경에서는 `FAIL_ON_MISSING_ENV` 기본값이 활성화되어 있어 필수 환경 변수가 없으면 서버가 시작되지 않습니다.
+
 #### ai_search_logs
 ```sql
 CREATE TABLE ai_search_logs (
@@ -554,8 +569,8 @@ volumes:
 NODE_ENV=production
 PORT=5001
 DATABASE_URL=postgresql://user:pass@localhost:5432/papyrus
-OPENAI_API_KEY=your_openai_api_key
-ADMIN_PASSWORD=404vibe!
+OPENAI_API_KEY=REPLACE_WITH_OPENAI_API_KEY
+ADMIN_PASSWORD=REPLACE_WITH_ADMIN_PASSWORD
 ```
 
 ### 모니터링

@@ -89,7 +89,11 @@ export function authMiddleware(req: AuthRequest, res: Response, next: NextFuncti
   const token = authHeader.split(' ')[1];
 
   try {
-    const payload = jwt.verify(token, config.jwtSecret);
+    if (!config.jwtSecret) {
+      console.error('JWT_SECRET is not set');
+      return res.status(500).json({ message: 'Server misconfiguration' });
+    }
+    const payload = jwt.verify(token, config.jwtSecret as string);
     req.user = payload;
     next();
   } catch (error) {

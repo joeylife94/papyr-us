@@ -5,6 +5,9 @@ import { Pool } from "pg";
 import bcrypt from "bcrypt";
 
 export interface IStorage {
+  // Optional direct database handle for DB-backed storage.
+  // Present only when using DBStorage; left optional so MemStorage compiles.
+  db?: any;
   // Wiki pages CRUD
   getWikiPage(id: number): Promise<WikiPage | undefined>;
   getWikiPageBySlug(slug: string): Promise<WikiPage | undefined>;
@@ -182,7 +185,9 @@ Papyr.us is designed to help you organize and share knowledge effectively. Here'
 5. Teams can create their own workspaces in team directories
 
 Start exploring and building your knowledge base!`,
-        folder: "docs",
+  folder: "docs",
+  blocks: [],
+  teamId: null,
         tags: ["tutorial", "getting-started"],
         author: "System",
         createdAt: new Date(),
@@ -248,7 +253,9 @@ Create a new wiki page with markdown content and frontmatter metadata.
 ## Rate Limiting
 
 The API implements rate limiting to ensure fair usage. Each API key is limited to 1000 requests per hour.`,
-        folder: "docs",
+  folder: "docs",
+  blocks: [],
+  teamId: null,
         tags: ["api", "reference", "documentation"],
         author: "System",
         createdAt: new Date(),
@@ -283,7 +290,9 @@ Collection of ideas and concepts for future development.
 - User comments and discussions
 - Community-driven content curation
 - Public wiki hosting options`,
-        folder: "ideas",
+  folder: "ideas",
+  blocks: [],
+  teamId: null,
         tags: ["brainstorming", "features", "roadmap"],
         author: "System",
         createdAt: new Date(),
@@ -334,7 +343,9 @@ Welcome to Team Alpha's dedicated workspace! Use this area to collaborate and or
 - Mike Rodriguez (Backend Developer)
 - Lisa Wang (Frontend Developer)
 - David Kim (Designer)`,
-        folder: "team1",
+  folder: "team1",
+  blocks: [],
+  teamId: null,
         tags: ["team", "workspace", "collaboration", "projects"],
         author: "Sarah Chen",
         createdAt: new Date(),
@@ -392,7 +403,9 @@ Welcome to Team Alpha's dedicated workspace! Use this area to collaborate and or
 - External course recommendations
 - Technical blog posts
 - Conference talk recordings`,
-        folder: "team2",
+  folder: "team2",
+  blocks: [],
+  teamId: null,
         tags: ["team", "guidelines", "development", "processes"],
         author: "Alex Thompson",
         createdAt: new Date(),
@@ -426,6 +439,8 @@ Welcome to Team Alpha's dedicated workspace! Use this area to collaborate and or
       content: insertPage.content,
       folder: insertPage.folder,
       tags: insertPage.tags || [],
+      blocks: insertPage.blocks || [],
+      teamId: insertPage.teamId ?? null,
       author: insertPage.author,
       createdAt: now,
       updatedAt: now,
@@ -1353,11 +1368,16 @@ Welcome to Team Alpha's dedicated workspace! Use this area to collaborate and or
     defaultCategories.forEach(category => {
       const id = this.currentTemplateCategoryId++;
       this.templateCategories.set(id, { 
-        ...category, 
         id,
-        description: category.description || null,
-        icon: category.icon || null,
-        color: category.color || null,
+        name: category.name,
+        displayName: category.displayName,
+        description: category.description ?? null,
+        icon: category.icon ?? null,
+        color: category.color ?? null,
+        order: category.order ?? 999,
+        isActive: category.isActive ?? true,
+        createdAt: category.createdAt,
+        updatedAt: category.updatedAt,
       });
     });
   }
@@ -1599,12 +1619,20 @@ Welcome to Team Alpha's dedicated workspace! Use this area to collaborate and or
     defaultTemplates.forEach(template => {
       const id = this.currentTemplateId++;
       this.templates.set(id, { 
-        ...template, 
         id,
-        description: template.description || null,
+        title: template.title,
+        content: template.content,
+        author: template.author,
+        description: template.description ?? null,
         tags: template.tags || [],
         metadata: template.metadata || {},
-        thumbnail: template.thumbnail || null,
+        categoryId: template.categoryId ?? null,
+        isPublic: template.isPublic ?? false,
+        usageCount: template.usageCount ?? 0,
+        rating: template.rating ?? 0,
+        thumbnail: template.thumbnail ?? null,
+        createdAt: template.createdAt,
+        updatedAt: template.updatedAt,
       });
     });
   }
@@ -1623,7 +1651,13 @@ Welcome to Team Alpha's dedicated workspace! Use this area to collaborate and or
     const now = new Date();
     const newCategory: TemplateCategory = {
       id,
-      ...category,
+      name: category.name,
+      displayName: category.displayName,
+      description: category.description ?? null,
+      icon: category.icon ?? null,
+      color: category.color ?? null,
+      isActive: category.isActive ?? true,
+      order: category.order ?? 999,
       createdAt: now,
       updatedAt: now,
     };
@@ -1666,7 +1700,17 @@ Welcome to Team Alpha's dedicated workspace! Use this area to collaborate and or
     const now = new Date();
     const newTemplate: Template = {
       id,
-      ...template,
+      title: template.title,
+      content: template.content,
+      author: template.author,
+      description: template.description ?? null,
+      tags: template.tags || [],
+      metadata: template.metadata || {},
+      categoryId: template.categoryId ?? null,
+      isPublic: template.isPublic ?? false,
+      usageCount: template.usageCount ?? 0,
+      rating: template.rating ?? 0,
+      thumbnail: template.thumbnail ?? null,
       createdAt: now,
       updatedAt: now,
     };
@@ -1707,7 +1751,7 @@ Welcome to Team Alpha's dedicated workspace! Use this area to collaborate and or
 
 // PostgreSQL-based storage implementation
 export class DBStorage implements IStorage {
-  private db: any;
+  public db: any;
   public pool: Pool;
 
   constructor() {

@@ -1,4 +1,5 @@
 import express from "express";
+import { validateEnv } from "./env";
 import { registerRoutes } from "./routes.ts";
 import { serveStatic } from "./static.ts";
 import { 
@@ -23,6 +24,9 @@ async function setupDevelopmentServer(app: any, server: any) {
 const app = express();
 
 // Setup basic middleware
+// Validate environment before starting
+validateEnv();
+
 (async () => {
   // Setup basic middleware
   setupBasicMiddleware(app);

@@ -1,9 +1,11 @@
 import OpenAI from "openai";
 
-// the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
-const openai = new OpenAI({ 
-  apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR || "default_key"
-});
+// Lazily create OpenAI client so module import doesn't throw when API key is missing
+function getOpenAIClient(): OpenAI | null {
+  const apiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR;
+  if (!apiKey) return null;
+  return new OpenAI({ apiKey });
+}
 
 export interface ContentSuggestion {
   type: 'section' | 'improvement' | 'related';
@@ -35,7 +37,10 @@ Respond with JSON in this format: {
   ]
 }`;
 
-    const response = await openai.chat.completions.create({
+  const client = getOpenAIClient();
+  if (!client) throw new Error('OPENAI_API_KEY not set');
+
+  const response = await client.chat.completions.create({
       model: "gpt-4o",
       messages: [
         {
@@ -71,7 +76,10 @@ Respond with JSON in this format: {
   "readingTime": 5
 }`;
 
-    const response = await openai.chat.completions.create({
+  const client = getOpenAIClient();
+  if (!client) throw new Error('OPENAI_API_KEY not set');
+
+  const response = await client.chat.completions.create({
       model: "gpt-4o",
       messages: [
         {
@@ -109,7 +117,10 @@ export async function generateContent(prompt: string, type: 'page' | 'section' =
       ? "You are an expert technical writer. Generate well-structured markdown content for wiki pages. Use proper headings, formatting, and include practical examples where appropriate."
       : "You are an expert technical writer. Generate a well-structured markdown section that can be added to existing documentation. Focus on clarity and usefulness.";
 
-    const response = await openai.chat.completions.create({
+  const client = getOpenAIClient();
+  if (!client) throw new Error('OPENAI_API_KEY not set');
+
+  const response = await client.chat.completions.create({
       model: "gpt-4o",
       messages: [
         {
@@ -165,7 +176,9 @@ Respond with JSON in this format: {
 
 Rank by relevance (0.0-1.0) and provide specific matched terms and reasoning.`;
 
-    const response = await openai.chat.completions.create({
+  const client = getOpenAIClient();
+  if (!client) throw new Error('OPENAI_API_KEY not set');
+    const response = await client.chat.completions.create({
       model: "gpt-4o",
       messages: [
         {
@@ -224,7 +237,10 @@ Respond with JSON in this format: {
   "suggestions": ["suggestion1", "suggestion2", "suggestion3", "suggestion4", "suggestion5"]
 }`;
 
-    const response = await openai.chat.completions.create({
+    const client = getOpenAIClient();
+    if (!client) throw new Error('OPENAI_API_KEY not set');
+
+    const response = await client.chat.completions.create({
       model: "gpt-4o",
       messages: [
         {

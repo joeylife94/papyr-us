@@ -1,4 +1,5 @@
 import express from "express";
+import { validateEnv } from "./env";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { 
@@ -11,6 +12,9 @@ import {
 } from "./middleware";
 
 const app = express();
+
+// Validate environment before starting
+validateEnv();
 
 // Setup basic middleware
 setupBasicMiddleware(app);

@@ -198,6 +198,24 @@
 ### 🎯 성과 지표
 - **AI 검색 시스템**: 100% 완료 (OpenAI GPT-4o 기반)
 - **고급 템플릿 시스템**: 100% 완료 (에디터, 갤러리, 관리)
+
+## 버전 2.2.3 - 2025-09-20 (환경 변수 검증 및 타입 안정화)
+
+### 🔧 기술적 개선
+- **환경 변수 검증 도입**: `server/env.ts`에 `validateEnv()`를 추가해 운영 환경에서 `JWT_SECRET`, `ADMIN_PASSWORD` 등 필수 환경 변수가 없으면 서버가 시작되지 않도록 fail-fast 동작을 적용했습니다.
+- **USE_DATABASE 플래그 정렬**: `server/config.ts`에 `useDatabase` 게터를 추가해 메모리 저장소와 DB 저장소의 전환을 명확히 했습니다.
+- **저장소 타입 정렬**: `IStorage`와 `DBStorage` 타입을 정렬하고 메모리 픽스처에 누락된 필드(`blocks`, `teamId`)를 보강해 타입 오류를 줄였습니다.
+- **CI 워크플로 추가**: GitHub Actions 워크플로를 추가하여 타입 검사, 테스트, 빌드 자동화를 준비했습니다.
+
+### ✅ 검증
+- 로컬 `npm run check`(타입스크립트 검사) 통과
+- 로컬 `npm test`(유닛 테스트) 통과: 12 테스트 파일, 68 테스트
+- 로컬 `npm run build` 통과
+
+### 🧭 다음 행동
+- PR 생성 후 원격 CI 결과 검토
+- 운영 환경에서 시크릿 관리(Secrets manager 또는 Vault) 도입
+
 - **TypeScript 타입 안전성**: 95% 향상 (모든 컴포넌트 타입 정의)
 - **사용자 경험**: 90% 향상 (직관적인 AI 검색 및 템플릿 편집)
 
@@ -828,7 +846,7 @@ DELETE /papyr-us/api/notifications/:id      # 알림 삭제
 - 팀 페이지 빠른 생성
 
 #### 관리자 시스템
-- 비밀번호 보호 (`404vibe!`)
+- 비밀번호 보호 (`REPLACE_WITH_ADMIN_PASSWORD`)
 - 동적 디렉토리 생성/수정/삭제
 - 디렉토리별 접근 권한 설정
 - 시스템 설정 관리

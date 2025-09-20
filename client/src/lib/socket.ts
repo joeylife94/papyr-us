@@ -31,7 +31,7 @@ interface CollaborationState {
 
 class SocketManager {
   private socket: Socket | null = null;
-  private listeners: Map<string, Set<Function>> = new Map();
+  private listeners: Map<string, Set<(...args: any[]) => void>> = new Map();
 
   connect(url: string = 'http://localhost:5001'): Socket {
     if (this.socket?.connected) {
@@ -79,7 +79,7 @@ class SocketManager {
     }
   }
 
-  off(event: string, callback: Function): void {
+  off(event: string, callback: (...args: any[]) => void): void {
     const listeners = this.listeners.get(event);
     if (listeners) {
       listeners.delete(callback);

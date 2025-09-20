@@ -34,7 +34,7 @@ const eventFormSchema = z.object({
 type EventFormData = z.infer<typeof eventFormSchema>;
 
 interface CalendarPageProps {
-  teamId: string | number;
+  teamId?: string;
 }
 
 // Generate time options (30-minute intervals, exclude 24:30)
@@ -74,7 +74,7 @@ export default function CalendarPage({ teamId }: CalendarPageProps) {
   const queryClient = useQueryClient();
 
   const { data: events = [] } = useQuery<CalendarEvent[]>({
-    queryKey: [`/papyr-us/api/calendar/${teamId}`],
+    queryKey: [`/papyr-us/api/calendar/${String(teamId || '')}`],
   });
 
   // Get next priority based on existing events
@@ -94,7 +94,7 @@ export default function CalendarPage({ teamId }: CalendarPageProps) {
       startTime: undefined,
       endTime: undefined,
       priority: getNextPriority(),
-      teamId: teamId,
+  teamId: String(teamId || ''),
     },
   });
 

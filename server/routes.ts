@@ -83,7 +83,11 @@ export async function registerRoutes(app: Express, storage: IStorage): Promise<{
         return res.status(401).json({ message: "Invalid credentials" });
       }
 
-      const token = jwt.sign({ id: user.id, email: user.email }, config.jwtSecret, { expiresIn: '1d' });
+      if (!config.jwtSecret) {
+        console.error('JWT_SECRET not configured');
+        return res.status(500).json({ message: 'Server misconfiguration' });
+      }
+      const token = jwt.sign({ id: user.id, email: user.email }, config.jwtSecret as string, { expiresIn: '1d' });
 
       res.json({ token, user: { id: user.id, name: user.name, email: user.email } });
     } catch (error) {
