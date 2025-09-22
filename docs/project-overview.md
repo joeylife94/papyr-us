@@ -80,6 +80,17 @@ Papyr.us는 React와 Express.js를 기반으로 구축된 현대적인 팀 협�
 - **ESLint & Prettier**: 코드 스타일 및 품질 유지
 - **Vercel**: 프로덕션 배포 (권장)
 
+### 린트와 CI
+
+프로젝트의 CI(`.github/workflows/ci.yml`)에는 타입체크, 린트, 테스트, 빌드 순으로 작업이 정의되어 있습니다. PR은 `npm run lint`에서 실패하면 병합이 차단되므로, 로컬에서 아래 명령을 실행해 검증하세요:
+
+```bash
+npm run check   # TypeScript 타입 체크
+npm run lint    # ESLint 검사
+npm test       # 단위/통합 테스트
+```
+
+필요 시 `npm run lint:fix`와 `npm run format`로 자동 수정을 먼저 적용한 뒤 커밋해주세요.
 ## 테스트 전략
 
 프로젝트의 안정성과 코드 품질을 보장하기 위해 단위, 통합, E2E 테스트를 포함하는 다층적인 테스트 전략을 사용합니다.

@@ -125,3 +125,24 @@ npm run dev
 ## 개발 규칙
 
 (기존 내용과 동일)
+
+## 린팅(Linting) 및 포매팅(Formatting)
+
+프로젝트는 코드 품질과 스타일 일관성을 위해 ESLint와 Prettier를 사용합니다. 로컬에서 개발할 때는 아래 명령을 주기적으로 실행하세요:
+
+```bash
+# 린트 검사
+npm run lint
+
+# 린트 자동 수정 가능 항목 적용
+npm run lint:fix
+
+# Prettier 포맷 적용
+npm run format
+```
+
+권장 워크플로:
+- PR 생성 전 `npm run lint:fix`와 `npm run format`를 실행합니다.
+- CI에서는 자동으로 `npm run lint`가 실행되어 린트 오류가 있는 PR은 차단됩니다.
+
+작업 중인 팀의 표준 규칙을 추가하려면 `.eslintrc.cjs` 또는 `.prettierrc`를 업데이트하고 팀 리포지토리에 커밋하세요.
