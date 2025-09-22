@@ -28,8 +28,7 @@
   "lint-staged": {
     "**/*.{js,ts,tsx,json,md,css,scss,html}": [
       "npm run lint:fix",
-      "npm run format",
-      "git add"
+      "npm run format"
     ]
   },
   "dependencies": {
