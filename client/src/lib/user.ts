@@ -13,13 +13,13 @@ export function getCurrentUser(): User {
   if (stored) {
     return JSON.parse(stored);
   }
-  
+
   // 기본 사용자 생성
   const defaultUser: User = {
     id: `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-    name: `User_${Math.random().toString(36).substr(2, 5)}`
+    name: `User_${Math.random().toString(36).substr(2, 5)}`,
   };
-  
+
   localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(defaultUser));
   return defaultUser;
 }
@@ -46,4 +46,4 @@ export function getUserId(): string {
 
 export function getUserTeamId(): string | undefined {
   return getCurrentUser().teamId;
-} 
+}

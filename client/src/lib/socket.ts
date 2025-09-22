@@ -40,7 +40,7 @@ class SocketManager {
 
     this.socket = io(url, {
       transports: ['websocket', 'polling'],
-      autoConnect: true
+      autoConnect: true,
     });
 
     this.socket.on('connect', () => {
@@ -86,7 +86,7 @@ class SocketManager {
     }
 
     if (this.socket) {
-    this.socket.off(event, callback as (...args: any[]) => void);
+      this.socket.off(event, callback as (...args: any[]) => void);
     }
   }
 
@@ -99,7 +99,7 @@ class SocketManager {
   private emitInternal(event: string, ...args: any[]): void {
     const listeners = this.listeners.get(event);
     if (listeners) {
-      listeners.forEach(callback => {
+      listeners.forEach((callback) => {
         try {
           callback(...args);
         } catch (error) {
@@ -137,17 +137,22 @@ export function useSocket() {
     isConnected,
     emit: socketManager.emit.bind(socketManager),
     on: socketManager.on.bind(socketManager),
-    off: socketManager.off.bind(socketManager)
+    off: socketManager.off.bind(socketManager),
   };
 }
 
-export function useCollaboration(pageId: number, userId: string, userName: string, teamId?: string) {
+export function useCollaboration(
+  pageId: number,
+  userId: string,
+  userName: string,
+  teamId?: string
+) {
   const { socket, isConnected, emit, on, off } = useSocket();
   const [collaborationState, setCollaborationState] = useState<CollaborationState>({
     users: [],
     isConnected: false,
     isTyping: false,
-    typingUsers: []
+    typingUsers: [],
   });
 
   // Join document session
@@ -160,34 +165,34 @@ export function useCollaboration(pageId: number, userId: string, userName: strin
   // Handle session users
   useEffect(() => {
     const handleSessionUsers = (users: User[]) => {
-      setCollaborationState(prev => ({ ...prev, users }));
+      setCollaborationState((prev) => ({ ...prev, users }));
     };
 
     const handleUserJoined = (data: { userId: string; userName: string }) => {
-      setCollaborationState(prev => ({
+      setCollaborationState((prev) => ({
         ...prev,
-        users: [...prev.users, { id: data.userId, name: data.userName }]
+        users: [...prev.users, { id: data.userId, name: data.userName }],
       }));
     };
 
     const handleUserLeft = (data: { userId: string }) => {
-      setCollaborationState(prev => ({
+      setCollaborationState((prev) => ({
         ...prev,
-        users: prev.users.filter(user => user.id !== data.userId)
+        users: prev.users.filter((user) => user.id !== data.userId),
       }));
     };
 
     const handleTypingStart = (data: { userId: string; userName: string }) => {
-      setCollaborationState(prev => ({
+      setCollaborationState((prev) => ({
         ...prev,
-        typingUsers: [...prev.typingUsers.filter(id => id !== data.userId), data.userId]
+        typingUsers: [...prev.typingUsers.filter((id) => id !== data.userId), data.userId],
       }));
     };
 
     const handleTypingStop = (data: { userId: string }) => {
-      setCollaborationState(prev => ({
+      setCollaborationState((prev) => ({
         ...prev,
-        typingUsers: prev.typingUsers.filter(id => id !== data.userId)
+        typingUsers: prev.typingUsers.filter((id) => id !== data.userId),
       }));
     };
 
@@ -208,7 +213,7 @@ export function useCollaboration(pageId: number, userId: string, userName: strin
 
   // Update connection state
   useEffect(() => {
-    setCollaborationState(prev => ({ ...prev, isConnected }));
+    setCollaborationState((prev) => ({ ...prev, isConnected }));
   }, [isConnected]);
 
   // Leave document on unmount
@@ -224,7 +229,7 @@ export function useCollaboration(pageId: number, userId: string, userName: strin
     emit('document-change', {
       ...change,
       userId,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
   };
 
@@ -234,7 +239,7 @@ export function useCollaboration(pageId: number, userId: string, userName: strin
       userId,
       userName,
       position,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
   };
 
@@ -252,8 +257,8 @@ export function useCollaboration(pageId: number, userId: string, userName: strin
     sendDocumentChange,
     sendCursorUpdate,
     sendTypingStart,
-    sendTypingStop
+    sendTypingStop,
   };
 }
 
-export { socketManager }; 
+export { socketManager };

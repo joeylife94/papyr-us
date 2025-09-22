@@ -1,38 +1,38 @@
 import React, { useState, useMemo } from 'react';
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { 
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { 
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { 
-  Search, 
-  Filter, 
-  ArrowUpDown, 
-  ArrowUp, 
+import {
+  Search,
+  Filter,
+  ArrowUpDown,
+  ArrowUp,
   ArrowDown,
   MoreHorizontal,
   Edit,
   Trash2,
   Eye,
-  Plus
+  Plus,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 
@@ -73,7 +73,7 @@ export function TableView({
   filterable = true,
   sortable = true,
   pagination = true,
-  itemsPerPage = 10
+  itemsPerPage = 10,
 }: TableViewProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState<Record<string, string>>({});
@@ -89,8 +89,8 @@ export function TableView({
 
     // 검색 필터
     if (searchQuery) {
-      result = result.filter(item =>
-        Object.values(item).some(value =>
+      result = result.filter((item) =>
+        Object.values(item).some((value) =>
           String(value).toLowerCase().includes(searchQuery.toLowerCase())
         )
       );
@@ -99,7 +99,7 @@ export function TableView({
     // 컬럼별 필터
     Object.entries(filters).forEach(([key, value]) => {
       if (value) {
-        result = result.filter(item => {
+        result = result.filter((item) => {
           const itemValue = item[key];
           if (typeof itemValue === 'string') {
             return itemValue.toLowerCase().includes(value.toLowerCase());
@@ -140,11 +140,11 @@ export function TableView({
 
   // 정렬 핸들러
   const handleSort = (key: string) => {
-    setSortConfig(current => {
+    setSortConfig((current) => {
       if (current?.key === key) {
         return {
           key,
-          direction: current.direction === 'asc' ? 'desc' : 'asc'
+          direction: current.direction === 'asc' ? 'desc' : 'asc',
         };
       }
       return { key, direction: 'asc' };
@@ -153,9 +153,9 @@ export function TableView({
 
   // 필터 핸들러
   const handleFilter = (key: string, value: string) => {
-    setFilters(current => ({
+    setFilters((current) => ({
       ...current,
-      [key]: value
+      [key]: value,
     }));
     setCurrentPage(1);
   };
@@ -173,18 +173,18 @@ export function TableView({
     switch (column.type) {
       case 'date':
         return new Date(value).toLocaleDateString();
-      
+
       case 'select':
-        const option = column.options?.find(opt => opt.value === value);
+        const option = column.options?.find((opt) => opt.value === value);
         return option?.label || value;
-      
+
       case 'badge':
         return (
           <Badge variant="secondary" className="text-xs">
             {value}
           </Badge>
         );
-      
+
       case 'action':
         return (
           <DropdownMenu>
@@ -207,10 +207,7 @@ export function TableView({
                 </DropdownMenuItem>
               )}
               {onDelete && (
-                <DropdownMenuItem 
-                  onClick={() => onDelete(item)}
-                  className="text-red-600"
-                >
+                <DropdownMenuItem onClick={() => onDelete(item)} className="text-red-600">
                   <Trash2 className="h-4 w-4 mr-2" />
                   삭제
                 </DropdownMenuItem>
@@ -218,7 +215,7 @@ export function TableView({
             </DropdownMenuContent>
           </DropdownMenu>
         );
-      
+
       default:
         return value;
     }
@@ -230,9 +227,7 @@ export function TableView({
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold">{title}</h2>
-          <p className="text-muted-foreground">
-            총 {sortedData.length}개 항목
-          </p>
+          <p className="text-muted-foreground">총 {sortedData.length}개 항목</p>
         </div>
         {onAdd && (
           <Button onClick={onAdd}>
@@ -259,8 +254,8 @@ export function TableView({
         {filterable && (
           <div className="flex gap-2">
             {columns
-              .filter(col => col.filterable && col.type === 'select')
-              .map(column => (
+              .filter((col) => col.filterable && col.type === 'select')
+              .map((column) => (
                 <Select
                   key={column.key}
                   value={filters[column.key] || ''}
@@ -271,7 +266,7 @@ export function TableView({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="">전체</SelectItem>
-                    {column.options?.map(option => (
+                    {column.options?.map((option) => (
                       <SelectItem key={option.value} value={option.value}>
                         {option.label}
                       </SelectItem>
@@ -288,8 +283,8 @@ export function TableView({
         <Table>
           <TableHeader>
             <TableRow>
-              {columns.map(column => (
-                <TableHead 
+              {columns.map((column) => (
+                <TableHead
                   key={column.key}
                   style={{ width: column.width }}
                   className={sortable && column.sortable ? 'cursor-pointer hover:bg-muted/50' : ''}
@@ -320,8 +315,8 @@ export function TableView({
               <TableRow>
                 <TableCell colSpan={columns.length} className="text-center py-8">
                   <div className="text-muted-foreground">
-                    {searchQuery || Object.values(filters).some(f => f) 
-                      ? '검색 결과가 없습니다.' 
+                    {searchQuery || Object.values(filters).some((f) => f)
+                      ? '검색 결과가 없습니다.'
                       : '데이터가 없습니다.'}
                   </div>
                 </TableCell>
@@ -329,10 +324,8 @@ export function TableView({
             ) : (
               paginatedData.map((item, index) => (
                 <TableRow key={index}>
-                  {columns.map(column => (
-                    <TableCell key={column.key}>
-                      {renderCell(item, column)}
-                    </TableCell>
+                  {columns.map((column) => (
+                    <TableCell key={column.key}>{renderCell(item, column)}</TableCell>
                   ))}
                 </TableRow>
               ))
@@ -345,21 +338,22 @@ export function TableView({
       {pagination && totalPages > 1 && (
         <div className="flex items-center justify-between">
           <div className="text-sm text-muted-foreground">
-            {((currentPage - 1) * itemsPerPage) + 1} - {Math.min(currentPage * itemsPerPage, sortedData.length)} / {sortedData.length}
+            {(currentPage - 1) * itemsPerPage + 1} -{' '}
+            {Math.min(currentPage * itemsPerPage, sortedData.length)} / {sortedData.length}
           </div>
           <div className="flex gap-2">
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setCurrentPage(current => Math.max(1, current - 1))}
+              onClick={() => setCurrentPage((current) => Math.max(1, current - 1))}
               disabled={currentPage === 1}
             >
               이전
             </Button>
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
               <Button
                 key={page}
-                variant={currentPage === page ? "default" : "outline"}
+                variant={currentPage === page ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => setCurrentPage(page)}
               >
@@ -369,7 +363,7 @@ export function TableView({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setCurrentPage(current => Math.min(totalPages, current + 1))}
+              onClick={() => setCurrentPage((current) => Math.min(totalPages, current + 1))}
               disabled={currentPage === totalPages}
             >
               다음
@@ -379,4 +373,4 @@ export function TableView({
       )}
     </div>
   );
-} 
+}

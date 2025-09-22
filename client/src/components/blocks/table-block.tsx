@@ -21,14 +21,14 @@ interface TableData {
   headers: boolean;
 }
 
-export function TableBlock({ 
-  block, 
-  isFocused, 
-  onFocus, 
-  onBlur, 
-  onUpdate, 
-  onDelete, 
-  onAddBlock 
+export function TableBlock({
+  block,
+  isFocused,
+  onFocus,
+  onBlur,
+  onUpdate,
+  onDelete,
+  onAddBlock,
 }: TableBlockProps) {
   const [tableData, setTableData] = useState<TableData>(() => {
     const saved = block.properties?.tableData;
@@ -38,11 +38,13 @@ export function TableBlock({
     return {
       rows: 3,
       cols: 3,
-      cells: Array(3).fill(null).map(() => Array(3).fill('')),
-      headers: true
+      cells: Array(3)
+        .fill(null)
+        .map(() => Array(3).fill('')),
+      headers: true,
     };
   });
-  const [isEditingCell, setIsEditingCell] = useState<{row: number, col: number} | null>(null);
+  const [isEditingCell, setIsEditingCell] = useState<{ row: number; col: number } | null>(null);
   const [editingValue, setEditingValue] = useState('');
 
   // 테이블 데이터가 변경될 때마다 블록 업데이트
@@ -50,8 +52,8 @@ export function TableBlock({
     onUpdate({
       properties: {
         ...block.properties,
-        tableData
-      }
+        tableData,
+      },
     });
   }, [tableData, onUpdate, block.properties]);
 
@@ -63,7 +65,12 @@ export function TableBlock({
       } else {
         onAddBlock('paragraph');
       }
-    } else if (e.key === 'Backspace' && tableData.rows === 1 && tableData.cols === 1 && tableData.cells[0][0] === '') {
+    } else if (
+      e.key === 'Backspace' &&
+      tableData.rows === 1 &&
+      tableData.cols === 1 &&
+      tableData.cells[0][0] === ''
+    ) {
       e.preventDefault();
       onDelete();
     } else if (e.key === 'Escape' && isEditingCell) {
@@ -72,45 +79,45 @@ export function TableBlock({
   };
 
   const addRow = () => {
-    setTableData(prev => ({
+    setTableData((prev) => ({
       ...prev,
       rows: prev.rows + 1,
-      cells: [...prev.cells, Array(prev.cols).fill('')]
+      cells: [...prev.cells, Array(prev.cols).fill('')],
     }));
   };
 
   const removeRow = () => {
     if (tableData.rows > 1) {
-      setTableData(prev => ({
+      setTableData((prev) => ({
         ...prev,
         rows: prev.rows - 1,
-        cells: prev.cells.slice(0, -1)
+        cells: prev.cells.slice(0, -1),
       }));
     }
   };
 
   const addColumn = () => {
-    setTableData(prev => ({
+    setTableData((prev) => ({
       ...prev,
       cols: prev.cols + 1,
-      cells: prev.cells.map(row => [...row, ''])
+      cells: prev.cells.map((row) => [...row, '']),
     }));
   };
 
   const removeColumn = () => {
     if (tableData.cols > 1) {
-      setTableData(prev => ({
+      setTableData((prev) => ({
         ...prev,
         cols: prev.cols - 1,
-        cells: prev.cells.map(row => row.slice(0, -1))
+        cells: prev.cells.map((row) => row.slice(0, -1)),
       }));
     }
   };
 
   const toggleHeaders = () => {
-    setTableData(prev => ({
+    setTableData((prev) => ({
       ...prev,
-      headers: !prev.headers
+      headers: !prev.headers,
     }));
   };
 
@@ -121,15 +128,13 @@ export function TableBlock({
 
   const handleCellSave = () => {
     if (isEditingCell) {
-      setTableData(prev => ({
+      setTableData((prev) => ({
         ...prev,
         cells: prev.cells.map((row, rowIndex) =>
           rowIndex === isEditingCell.row
-            ? row.map((cell, colIndex) =>
-                colIndex === isEditingCell.col ? editingValue : cell
-              )
+            ? row.map((cell, colIndex) => (colIndex === isEditingCell.col ? editingValue : cell))
             : row
-        )
+        ),
       }));
       setIsEditingCell(null);
       setEditingValue('');
@@ -156,7 +161,7 @@ export function TableBlock({
   };
 
   return (
-    <div 
+    <div
       className={`relative group ${isFocused ? 'bg-blue-50 dark:bg-blue-950/20' : ''} rounded-lg p-4 transition-colors`}
       onFocus={onFocus}
       onBlur={onBlur}
@@ -232,8 +237,9 @@ export function TableBlock({
               <tr key={rowIndex}>
                 {row.map((cell, colIndex) => {
                   const isHeader = tableData.headers && rowIndex === 0;
-                  const isEditing = isEditingCell?.row === rowIndex && isEditingCell?.col === colIndex;
-                  
+                  const isEditing =
+                    isEditingCell?.row === rowIndex && isEditingCell?.col === colIndex;
+
                   return (
                     <td
                       key={colIndex}
@@ -255,9 +261,7 @@ export function TableBlock({
                         />
                       ) : (
                         <div className="min-h-[20px]">
-                          {cell || (
-                            <span className="text-gray-400 text-sm">클릭하여 편집</span>
-                          )}
+                          {cell || <span className="text-gray-400 text-sm">클릭하여 편집</span>}
                         </div>
                       )}
                     </td>
@@ -271,9 +275,8 @@ export function TableBlock({
 
       {/* 테이블 정보 */}
       <div className="mt-2 text-xs text-muted-foreground">
-        {tableData.rows}행 × {tableData.cols}열
-        {tableData.headers && ' (헤더 포함)'}
+        {tableData.rows}행 × {tableData.cols}열{tableData.headers && ' (헤더 포함)'}
       </div>
     </div>
   );
-} 
+}

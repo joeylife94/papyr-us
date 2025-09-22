@@ -13,14 +13,14 @@ interface ParagraphBlockProps {
   onAddBlock: (type?: BlockType) => void;
 }
 
-export function ParagraphBlock({ 
-  block, 
-  isFocused, 
-  onFocus, 
-  onBlur, 
-  onUpdate, 
-  onDelete, 
-  onAddBlock 
+export function ParagraphBlock({
+  block,
+  isFocused,
+  onFocus,
+  onBlur,
+  onUpdate,
+  onDelete,
+  onAddBlock,
 }: ParagraphBlockProps) {
   const [content, setContent] = useState(block.content);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -62,7 +62,7 @@ export function ParagraphBlock({
   };
 
   return (
-    <div 
+    <div
       className={`relative group ${isFocused ? 'bg-blue-50 dark:bg-blue-950/20' : ''} rounded-lg p-2 transition-colors`}
       onFocus={onFocus}
       onBlur={onBlur}
@@ -100,4 +100,4 @@ export function ParagraphBlock({
       )}
     </div>
   );
-} 
+}

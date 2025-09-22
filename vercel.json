@@ -11,7 +11,7 @@
   ],
   "routes": [
     {
-              "src": "/papyr-us/api/(.*)",
+      "src": "/papyr-us/api/(.*)",
       "dest": "server/index.ts"
     },
     {

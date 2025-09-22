@@ -1,30 +1,43 @@
-import { useState, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useLocation } from "wouter";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { Save, Eye, ArrowLeft, Plus } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
-import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
-import { WikiPage, InsertWikiPage, Block } from "@shared/schema";
-import { MarkdownRenderer } from "@/components/wiki/markdown-renderer";
-import { BlockEditor } from "@/components/blocks/block-editor";
-import { getUserId, getUserName } from "@/lib/user";
+import { useState, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useLocation } from 'wouter';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { Save, Eye, ArrowLeft, Plus } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/hooks/use-toast';
+import { apiRequest } from '@/lib/queryClient';
+import { WikiPage, InsertWikiPage, Block } from '@shared/schema';
+import { MarkdownRenderer } from '@/components/wiki/markdown-renderer';
+import { BlockEditor } from '@/components/blocks/block-editor';
+import { getUserId, getUserName } from '@/lib/user';
 
 const pageFormSchema = z.object({
-  title: z.string().min(1, "Title is required"),
-  content: z.string().min(1, "Content is required"),
-  folder: z.string().min(1, "Folder is required"),
+  title: z.string().min(1, 'Title is required'),
+  content: z.string().min(1, 'Content is required'),
+  folder: z.string().min(1, 'Folder is required'),
   tags: z.string(),
-  author: z.string().min(1, "Author is required"),
+  author: z.string().min(1, 'Author is required'),
 });
 
 type PageFormData = z.infer<typeof pageFormSchema>;
@@ -35,10 +48,14 @@ interface PageEditorProps {
   teamName?: string;
 }
 
-export default function PageEditor({ pageId, initialFolder = "docs", teamName }: PageEditorProps) {
+export default function PageEditor({ pageId, initialFolder = 'docs', teamName }: PageEditorProps) {
   // Extract teamName from URL if not provided as prop
   const currentLocation = window.location;
-  const urlTeamName = teamName || (currentLocation.pathname.includes('/teams/') ? currentLocation.pathname.split('/teams/')[1]?.split('/')[0] : undefined);
+  const urlTeamName =
+    teamName ||
+    (currentLocation.pathname.includes('/teams/')
+      ? currentLocation.pathname.split('/teams/')[1]?.split('/')[0]
+      : undefined);
   const [, navigate] = useLocation();
   const [isPreview, setIsPreview] = useState(false);
   const [blocks, setBlocks] = useState<Block[]>([]);
@@ -55,17 +72,17 @@ export default function PageEditor({ pageId, initialFolder = "docs", teamName }:
   });
 
   const { data: folders = [] } = useQuery<string[]>({
-          queryKey: ["/api/folders"],
+    queryKey: ['/api/folders'],
   });
 
   const form = useForm<PageFormData>({
     resolver: zodResolver(pageFormSchema),
     defaultValues: {
-      title: "",
-      content: "",
+      title: '',
+      content: '',
       folder: initialFolder,
-      tags: "",
-      author: "User",
+      tags: '',
+      author: 'User',
     },
   });
 
@@ -76,12 +93,16 @@ export default function PageEditor({ pageId, initialFolder = "docs", teamName }:
         title: existingPage.title,
         content: existingPage.content,
         folder: existingPage.folder,
-        tags: existingPage.tags.join(", "),
+        tags: existingPage.tags.join(', '),
         author: existingPage.author,
       });
-      
+
       // Load blocks if available, otherwise convert content to blocks
-      if (existingPage.blocks && Array.isArray(existingPage.blocks) && existingPage.blocks.length > 0) {
+      if (
+        existingPage.blocks &&
+        Array.isArray(existingPage.blocks) &&
+        existingPage.blocks.length > 0
+      ) {
         setBlocks(existingPage.blocks as Block[]);
       } else {
         // Convert existing content to blocks
@@ -98,18 +119,18 @@ export default function PageEditor({ pageId, initialFolder = "docs", teamName }:
     } else if (templateData) {
       // Apply template data
       form.reset({
-        title: templateData.title || "",
-        content: templateData.content || "",
+        title: templateData.title || '',
+        content: templateData.content || '',
         folder: initialFolder,
-        tags: templateData.tags?.join(", ") || "",
-        author: "User",
+        tags: templateData.tags?.join(', ') || '',
+        author: 'User',
       });
-      
+
       // Convert template content to blocks
       const defaultBlock: Block = {
         id: `block_${Date.now()}`,
         type: 'paragraph',
-        content: templateData.content || "",
+        content: templateData.content || '',
         properties: {},
         order: 0,
         children: [],
@@ -122,29 +143,29 @@ export default function PageEditor({ pageId, initialFolder = "docs", teamName }:
     mutationFn: async (data: InsertWikiPage) => {
       const pageData = urlTeamName ? { ...data, teamId: urlTeamName } : data;
       const response = await fetch(`/api/pages`, {
-        method: "POST",
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify(pageData),
       });
-      if (!response.ok) throw new Error("Failed to create page");
+      if (!response.ok) throw new Error('Failed to create page');
       return response.json();
     },
     onSuccess: (newPage: WikiPage) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/pages"] });
+      queryClient.invalidateQueries({ queryKey: ['/api/pages'] });
       queryClient.invalidateQueries({ queryKey: [`/api/folders/${newPage.folder}/pages`] });
       toast({
-        title: "Page created",
-        description: "Your new page has been created successfully.",
+        title: 'Page created',
+        description: 'Your new page has been created successfully.',
       });
       navigate(`/page/${newPage.slug}`);
     },
     onError: () => {
       toast({
-        title: "Error",
-        description: "Failed to create page. Please try again.",
-        variant: "destructive",
+        title: 'Error',
+        description: 'Failed to create page. Please try again.',
+        variant: 'destructive',
       });
     },
   });
@@ -152,30 +173,30 @@ export default function PageEditor({ pageId, initialFolder = "docs", teamName }:
   const updatePageMutation = useMutation({
     mutationFn: async (data: Partial<WikiPage>) => {
       const response = await fetch(`/api/pages/${pageId}`, {
-        method: "PATCH",
+        method: 'PATCH',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify(data),
       });
-      if (!response.ok) throw new Error("Failed to update page");
+      if (!response.ok) throw new Error('Failed to update page');
       return response.json();
     },
     onSuccess: (updatedPage: WikiPage) => {
       queryClient.invalidateQueries({ queryKey: [`/api/pages/${pageId}`] });
-      queryClient.invalidateQueries({ queryKey: ["/api/pages"] });
+      queryClient.invalidateQueries({ queryKey: ['/api/pages'] });
       queryClient.invalidateQueries({ queryKey: [`/api/folders/${updatedPage.folder}/pages`] });
       toast({
-        title: "Page updated",
-        description: "Your changes have been saved successfully.",
+        title: 'Page updated',
+        description: 'Your changes have been saved successfully.',
       });
       navigate(`/page/${updatedPage.slug}`);
     },
     onError: () => {
       toast({
-        title: "Error",
-        description: "Failed to update page. Please try again.",
-        variant: "destructive",
+        title: 'Error',
+        description: 'Failed to update page. Please try again.',
+        variant: 'destructive',
       });
     },
   });
@@ -183,16 +204,16 @@ export default function PageEditor({ pageId, initialFolder = "docs", teamName }:
   const onSubmit = (data: PageFormData) => {
     const slug = data.title
       .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/(^-|-$)/g, "");
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
 
     const tags = data.tags
-      .split(",")
-      .map(tag => tag.trim())
-      .filter(tag => tag.length > 0);
+      .split(',')
+      .map((tag) => tag.trim())
+      .filter((tag) => tag.length > 0);
 
     // Convert blocks to content for backward compatibility
-    const content = blocks.map(block => block.content).join('\n\n');
+    const content = blocks.map((block) => block.content).join('\n\n');
 
     if (pageId) {
       // Update existing page
@@ -220,14 +241,18 @@ export default function PageEditor({ pageId, initialFolder = "docs", teamName }:
 
   const getFolderDisplayName = (folder: string) => {
     switch (folder) {
-      case "docs": return "Documentation";
-      case "team1": return "Team Alpha";
-      case "team2": return "Team Beta";
-      default: return folder.charAt(0).toUpperCase() + folder.slice(1);
+      case 'docs':
+        return 'Documentation';
+      case 'team1':
+        return 'Team Alpha';
+      case 'team2':
+        return 'Team Beta';
+      default:
+        return folder.charAt(0).toUpperCase() + folder.slice(1);
     }
   };
 
-  const currentContent = form.watch("content");
+  const currentContent = form.watch('content');
   const isLoading = createPageMutation.isPending || updatePageMutation.isPending;
 
   return (
@@ -235,40 +260,42 @@ export default function PageEditor({ pageId, initialFolder = "docs", teamName }:
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center space-x-4">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => window.history.back()}
-          >
+          <Button variant="ghost" size="sm" onClick={() => window.history.back()}>
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back
           </Button>
           <div>
             <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-              {pageId 
-                ? (urlTeamName ? `${urlTeamName} 팀 문서 수정` : "Edit Page")
-                : (urlTeamName ? `${urlTeamName} 팀 새 문서 작성` : "Create New Page")
-              }
+              {pageId
+                ? urlTeamName
+                  ? `${urlTeamName} 팀 문서 수정`
+                  : 'Edit Page'
+                : urlTeamName
+                  ? `${urlTeamName} 팀 새 문서 작성`
+                  : 'Create New Page'}
             </h1>
             <p className="text-slate-600 dark:text-slate-400">
-              {pageId 
-                ? (urlTeamName ? "팀 문서를 수정합니다" : "Update your existing page")
-                : (urlTeamName ? "팀에 새로운 문서를 추가합니다" : "Add a new page to your wiki")
-              }
+              {pageId
+                ? urlTeamName
+                  ? '팀 문서를 수정합니다'
+                  : 'Update your existing page'
+                : urlTeamName
+                  ? '팀에 새로운 문서를 추가합니다'
+                  : 'Add a new page to your wiki'}
             </p>
           </div>
         </div>
-        
+
         <div className="flex items-center space-x-2">
           <Button
-            variant={isPreview ? "outline" : "default"}
+            variant={isPreview ? 'outline' : 'default'}
             size="sm"
             onClick={() => setIsPreview(false)}
           >
             Edit
           </Button>
           <Button
-            variant={isPreview ? "default" : "outline"}
+            variant={isPreview ? 'default' : 'outline'}
             size="sm"
             onClick={() => setIsPreview(true)}
           >
@@ -280,7 +307,7 @@ export default function PageEditor({ pageId, initialFolder = "docs", teamName }:
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Editor Form */}
-        <Card className={isPreview ? "lg:block hidden" : ""}>
+        <Card className={isPreview ? 'lg:block hidden' : ''}>
           <CardHeader>
             <CardTitle className="flex items-center">
               <Plus className="h-5 w-5 mr-2" />
@@ -317,7 +344,7 @@ export default function PageEditor({ pageId, initialFolder = "docs", teamName }:
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {folders.map(folder => (
+                          {folders.map((folder) => (
                             <SelectItem key={folder} value={folder}>
                               {getFolderDisplayName(folder)}
                             </SelectItem>
@@ -336,14 +363,9 @@ export default function PageEditor({ pageId, initialFolder = "docs", teamName }:
                     <FormItem>
                       <FormLabel>Tags</FormLabel>
                       <FormControl>
-                        <Input 
-                          placeholder="tag1, tag2, tag3..." 
-                          {...field} 
-                        />
+                        <Input placeholder="tag1, tag2, tag3..." {...field} />
                       </FormControl>
-                      <p className="text-sm text-slate-500">
-                        Separate tags with commas
-                      </p>
+                      <p className="text-sm text-slate-500">Separate tags with commas</p>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -375,9 +397,9 @@ export default function PageEditor({ pageId, initialFolder = "docs", teamName }:
                             blocks={blocks}
                             onChange={setBlocks}
                             teamName={urlTeamName}
-          pageId={pageId ? parseInt(pageId) : undefined}
-          userId={getUserId()}
-          userName={getUserName()}
+                            pageId={pageId ? parseInt(pageId) : undefined}
+                            userId={getUserId()}
+                            userName={getUserName()}
                           />
                         </div>
                       </FormControl>
@@ -387,19 +409,18 @@ export default function PageEditor({ pageId, initialFolder = "docs", teamName }:
                 />
 
                 <div className="flex justify-end space-x-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => window.history.back()}
-                  >
+                  <Button type="button" variant="outline" onClick={() => window.history.back()}>
                     Cancel
                   </Button>
                   <Button type="submit" disabled={isLoading}>
                     <Save className="h-4 w-4 mr-2" />
-                    {isLoading 
-                      ? (pageId ? "Updating..." : "Creating...") 
-                      : (pageId ? "Update Page" : "Create Page")
-                    }
+                    {isLoading
+                      ? pageId
+                        ? 'Updating...'
+                        : 'Creating...'
+                      : pageId
+                        ? 'Update Page'
+                        : 'Create Page'}
                   </Button>
                 </div>
               </form>
@@ -408,7 +429,7 @@ export default function PageEditor({ pageId, initialFolder = "docs", teamName }:
         </Card>
 
         {/* Preview */}
-        <Card className={!isPreview ? "lg:block hidden" : ""}>
+        <Card className={!isPreview ? 'lg:block hidden' : ''}>
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
               <span className="flex items-center">
@@ -416,11 +437,12 @@ export default function PageEditor({ pageId, initialFolder = "docs", teamName }:
                 Preview
               </span>
               <div className="flex flex-wrap gap-1">
-                {form.watch("tags")
-                  .split(",")
-                  .map(tag => tag.trim())
-                  .filter(tag => tag.length > 0)
-                  .map(tag => (
+                {form
+                  .watch('tags')
+                  .split(',')
+                  .map((tag) => tag.trim())
+                  .filter((tag) => tag.length > 0)
+                  .map((tag) => (
                     <Badge key={tag} variant="outline" className="text-xs">
                       {tag}
                     </Badge>
@@ -432,16 +454,14 @@ export default function PageEditor({ pageId, initialFolder = "docs", teamName }:
             <div className="space-y-4">
               <div className="border-b pb-4">
                 <h1 className="text-2xl font-bold mb-2">
-                  {form.watch("title") || "Untitled Page"}
+                  {form.watch('title') || 'Untitled Page'}
                 </h1>
                 <div className="flex items-center space-x-4 text-sm text-slate-500">
-                  <span>By {form.watch("author") || "Unknown"}</span>
-                  <Badge variant="secondary">
-                    {getFolderDisplayName(form.watch("folder"))}
-                  </Badge>
+                  <span>By {form.watch('author') || 'Unknown'}</span>
+                  <Badge variant="secondary">{getFolderDisplayName(form.watch('folder'))}</Badge>
                 </div>
               </div>
-              
+
               <div className="prose prose-slate dark:prose-invert max-w-none">
                 {currentContent ? (
                   <MarkdownRenderer content={currentContent} />

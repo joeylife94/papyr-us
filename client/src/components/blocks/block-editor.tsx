@@ -7,9 +7,21 @@ import { ImageBlock } from './image-block';
 import { TableBlock } from './table-block';
 import { CodeBlock } from './code-block';
 import { QuoteBlock } from './quote-block';
-import { Plus, Type, AlignLeft, CheckSquare, Image as ImageIcon, Table as TableIcon, Code, Quote, Users, Wifi, WifiOff } from 'lucide-react';
+import {
+  Plus,
+  Type,
+  AlignLeft,
+  CheckSquare,
+  Image as ImageIcon,
+  Table as TableIcon,
+  Code,
+  Quote,
+  Users,
+  Wifi,
+  WifiOff,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { 
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -28,9 +40,16 @@ interface BlockEditorProps {
   userName?: string;
 }
 
-export function BlockEditor({ blocks, onChange, teamName, pageId, userId, userName }: BlockEditorProps) {
+export function BlockEditor({
+  blocks,
+  onChange,
+  teamName,
+  pageId,
+  userId,
+  userName,
+}: BlockEditorProps) {
   const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null);
-  
+
   // 실시간 협업 설정
   const collaboration = useCollaboration(
     pageId || 0,
@@ -48,7 +67,7 @@ export function BlockEditor({ blocks, onChange, teamName, pageId, userId, userNa
       if (change.userId === userId) return;
 
       console.log('Received remote change:', change);
-      
+
       // 충돌 해결 및 블록 업데이트
       const updatedBlocks = collaborationSync.processRemoteChange(change, blocks);
       if (updatedBlocks !== blocks) {
@@ -64,74 +83,83 @@ export function BlockEditor({ blocks, onChange, teamName, pageId, userId, userNa
   }, [collaboration.socket, blocks, onChange, userId]);
 
   // 블록 추가 함수
-  const addBlock = useCallback((index: number, type: BlockType = 'paragraph') => {
-    const newBlock: Block = {
-      id: `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      type,
-      content: '',
-      properties: {},
-      order: index,
-      children: [],
-    };
+  const addBlock = useCallback(
+    (index: number, type: BlockType = 'paragraph') => {
+      const newBlock: Block = {
+        id: `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        type,
+        content: '',
+        properties: {},
+        order: index,
+        children: [],
+      };
 
-    const newBlocks = [...blocks];
-    newBlocks.splice(index, 0, newBlock);
-    
-    // 순서 재정렬
-    newBlocks.forEach((block, idx) => {
-      block.order = idx;
-    });
+      const newBlocks = [...blocks];
+      newBlocks.splice(index, 0, newBlock);
 
-    onChange(newBlocks);
-    setFocusedBlockId(newBlock.id);
-    
-    // 실시간 협업: 추가 변경사항 전송
-    if (pageId && collaboration.isConnected) {
-      collaboration.sendDocumentChange({
-        pageId,
-        blockId: newBlock.id,
-        type: 'insert',
-        data: { blocks: newBlocks }
+      // 순서 재정렬
+      newBlocks.forEach((block, idx) => {
+        block.order = idx;
       });
-    }
-  }, [blocks, onChange, pageId, collaboration]);
+
+      onChange(newBlocks);
+      setFocusedBlockId(newBlock.id);
+
+      // 실시간 협업: 추가 변경사항 전송
+      if (pageId && collaboration.isConnected) {
+        collaboration.sendDocumentChange({
+          pageId,
+          blockId: newBlock.id,
+          type: 'insert',
+          data: { blocks: newBlocks },
+        });
+      }
+    },
+    [blocks, onChange, pageId, collaboration]
+  );
 
   // 블록 삭제 함수
-  const deleteBlock = useCallback((blockId: string) => {
-    const newBlocks = blocks.filter(block => block.id !== blockId);
-    newBlocks.forEach((block, idx) => {
-      block.order = idx;
-    });
-    onChange(newBlocks);
-    
-    // 실시간 협업: 삭제 변경사항 전송
-    if (pageId && collaboration.isConnected) {
-      collaboration.sendDocumentChange({
-        pageId,
-        blockId,
-        type: 'delete',
-        data: { blocks: newBlocks }
+  const deleteBlock = useCallback(
+    (blockId: string) => {
+      const newBlocks = blocks.filter((block) => block.id !== blockId);
+      newBlocks.forEach((block, idx) => {
+        block.order = idx;
       });
-    }
-  }, [blocks, onChange, pageId, collaboration]);
+      onChange(newBlocks);
+
+      // 실시간 협업: 삭제 변경사항 전송
+      if (pageId && collaboration.isConnected) {
+        collaboration.sendDocumentChange({
+          pageId,
+          blockId,
+          type: 'delete',
+          data: { blocks: newBlocks },
+        });
+      }
+    },
+    [blocks, onChange, pageId, collaboration]
+  );
 
   // 블록 업데이트 함수
-  const updateBlock = useCallback((blockId: string, updates: Partial<Block>) => {
-    const newBlocks = blocks.map(block => 
-      block.id === blockId ? { ...block, ...updates } : block
-    );
-    onChange(newBlocks);
-    
-    // 실시간 협업: 변경사항 전송
-    if (pageId && collaboration.isConnected) {
-      collaboration.sendDocumentChange({
-        pageId,
-        blockId,
-        type: 'update',
-        data: { blocks: newBlocks }
-      });
-    }
-  }, [blocks, onChange, pageId, collaboration]);
+  const updateBlock = useCallback(
+    (blockId: string, updates: Partial<Block>) => {
+      const newBlocks = blocks.map((block) =>
+        block.id === blockId ? { ...block, ...updates } : block
+      );
+      onChange(newBlocks);
+
+      // 실시간 협업: 변경사항 전송
+      if (pageId && collaboration.isConnected) {
+        collaboration.sendDocumentChange({
+          pageId,
+          blockId,
+          type: 'update',
+          data: { blocks: newBlocks },
+        });
+      }
+    },
+    [blocks, onChange, pageId, collaboration]
+  );
 
   // 블록 렌더링 함수
   const renderBlock = (block: Block, index: number) => {
@@ -215,7 +243,7 @@ export function BlockEditor({ blocks, onChange, teamName, pageId, userId, userNa
                 {collaboration.isConnected ? '실시간 연결됨' : '연결 끊김'}
               </span>
             </div>
-            
+
             {collaboration.users.length > 0 && (
               <div className="flex items-center space-x-1">
                 <Users className="h-4 w-4 text-blue-500" />
@@ -225,14 +253,14 @@ export function BlockEditor({ blocks, onChange, teamName, pageId, userId, userNa
               </div>
             )}
           </div>
-          
+
           <div className="flex items-center space-x-2">
             {collaboration.users.map((user) => (
               <Badge key={user.id} variant="secondary" className="text-xs">
                 {user.name}
               </Badge>
             ))}
-            
+
             {collaboration.typingUsers.length > 0 && (
               <Badge variant="outline" className="text-xs text-blue-600">
                 {collaboration.typingUsers.length}명 입력 중...
@@ -242,14 +270,22 @@ export function BlockEditor({ blocks, onChange, teamName, pageId, userId, userNa
         </div>
       )}
       {blocks.length === 0 ? (
-        <div 
-          className="flex items-center justify-center h-64 border-2 border-dashed border-gray-300 rounded-lg hover:border-gray-400 transition-colors"
-        >
+        <div className="flex items-center justify-center h-64 border-2 border-dashed border-gray-300 rounded-lg hover:border-gray-400 transition-colors">
           <div className="text-center space-y-4">
             <Plus className="h-8 w-8 mx-auto text-gray-400" />
             <p className="text-gray-500">첫 번째 블록을 추가하세요</p>
             <div className="flex flex-wrap justify-center gap-2">
-              {(['paragraph', 'heading1', 'checkbox', 'image', 'table', 'code', 'quote'] as BlockType[]).map((type) => (
+              {(
+                [
+                  'paragraph',
+                  'heading1',
+                  'checkbox',
+                  'image',
+                  'table',
+                  'code',
+                  'quote',
+                ] as BlockType[]
+              ).map((type) => (
                 <Button
                   key={type}
                   variant="outline"
@@ -275,19 +311,19 @@ export function BlockEditor({ blocks, onChange, teamName, pageId, userId, userNa
       ) : (
         <div className="space-y-2">
           {blocks.map((block, index) => renderBlock(block, index))}
-          
+
           {/* 마지막에 새 블록 추가 버튼 */}
           <div className="flex justify-center pt-4">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="opacity-60 hover:opacity-100 transition-opacity"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              블록 추가
-            </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="opacity-60 hover:opacity-100 transition-opacity"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  블록 추가
+                </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="center">
                 <DropdownMenuItem onClick={() => addBlock(blocks.length, 'paragraph')}>
@@ -333,4 +369,4 @@ export function BlockEditor({ blocks, onChange, teamName, pageId, userId, userNa
       )}
     </div>
   );
-} 
+}

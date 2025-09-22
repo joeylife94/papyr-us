@@ -13,9 +13,7 @@ export default function AISearchPage() {
           </div>
           <div>
             <h1 className="text-3xl font-bold">AI 검색</h1>
-            <p className="text-gray-600 dark:text-gray-400">
-              자연어로 원하는 내용을 찾아보세요
-            </p>
+            <p className="text-gray-600 dark:text-gray-400">자연어로 원하는 내용을 찾아보세요</p>
           </div>
         </div>
       </div>
@@ -46,7 +44,7 @@ export default function AISearchPage() {
                     </p>
                   </div>
                 </div>
-                
+
                 <div className="flex items-start space-x-3">
                   <Zap className="h-4 w-4 text-green-500 mt-1" />
                   <div>
@@ -56,7 +54,7 @@ export default function AISearchPage() {
                     </p>
                   </div>
                 </div>
-                
+
                 <div className="flex items-start space-x-3">
                   <Sparkles className="h-4 w-4 text-purple-500 mt-1" />
                   <div>
@@ -101,4 +99,4 @@ export default function AISearchPage() {
       </div>
     </div>
   );
-} 
+}

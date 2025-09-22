@@ -90,12 +90,8 @@
           "name": "calendar_events_linked_page_id_wiki_pages_id_fk",
           "tableFrom": "calendar_events",
           "tableTo": "wiki_pages",
-          "columnsFrom": [
-            "linked_page_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["linked_page_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -161,12 +157,8 @@
           "name": "comments_page_id_wiki_pages_id_fk",
           "tableFrom": "comments",
           "tableTo": "wiki_pages",
-          "columnsFrom": [
-            "page_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["page_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -241,9 +233,7 @@
         "directories_name_unique": {
           "name": "directories_name_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "name"
-          ]
+          "columns": ["name"]
         }
       },
       "policies": {},
@@ -344,12 +334,8 @@
           "name": "members_team_id_teams_id_fk",
           "tableFrom": "members",
           "tableTo": "teams",
-          "columnsFrom": [
-            "team_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["team_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -359,9 +345,7 @@
         "members_email_unique": {
           "name": "members_email_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "email"
-          ]
+          "columns": ["email"]
         }
       },
       "policies": {},
@@ -447,12 +431,8 @@
           "name": "notifications_recipient_id_members_id_fk",
           "tableFrom": "notifications",
           "tableTo": "members",
-          "columnsFrom": [
-            "recipient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["recipient_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -460,12 +440,8 @@
           "name": "notifications_sender_id_members_id_fk",
           "tableFrom": "notifications",
           "tableTo": "members",
-          "columnsFrom": [
-            "sender_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["sender_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         },
@@ -473,12 +449,8 @@
           "name": "notifications_related_page_id_wiki_pages_id_fk",
           "tableFrom": "notifications",
           "tableTo": "wiki_pages",
-          "columnsFrom": [
-            "related_page_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["related_page_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -486,12 +458,8 @@
           "name": "notifications_related_task_id_tasks_id_fk",
           "tableFrom": "notifications",
           "tableTo": "tasks",
-          "columnsFrom": [
-            "related_task_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["related_task_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -499,12 +467,8 @@
           "name": "notifications_related_comment_id_comments_id_fk",
           "tableFrom": "notifications",
           "tableTo": "comments",
-          "columnsFrom": [
-            "related_comment_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["related_comment_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -578,12 +542,8 @@
           "name": "progress_stats_member_id_members_id_fk",
           "tableFrom": "progress_stats",
           "tableTo": "members",
-          "columnsFrom": [
-            "member_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["member_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -707,12 +667,8 @@
           "name": "tasks_assigned_to_members_id_fk",
           "tableFrom": "tasks",
           "tableTo": "members",
-          "columnsFrom": [
-            "assigned_to"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["assigned_to"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         },
@@ -720,12 +676,8 @@
           "name": "tasks_linked_page_id_wiki_pages_id_fk",
           "tableFrom": "tasks",
           "tableTo": "wiki_pages",
-          "columnsFrom": [
-            "linked_page_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["linked_page_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         },
@@ -733,12 +685,8 @@
           "name": "tasks_created_by_members_id_fk",
           "tableFrom": "tasks",
           "tableTo": "members",
-          "columnsFrom": [
-            "created_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["created_by"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -831,9 +779,7 @@
         "teams_name_unique": {
           "name": "teams_name_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "name"
-          ]
+          "columns": ["name"]
         }
       },
       "policies": {},
@@ -916,9 +862,7 @@
         "template_categories_name_unique": {
           "name": "template_categories_name_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "name"
-          ]
+          "columns": ["name"]
         }
       },
       "policies": {},
@@ -1027,12 +971,8 @@
           "name": "templates_category_id_template_categories_id_fk",
           "tableFrom": "templates",
           "tableTo": "template_categories",
-          "columnsFrom": [
-            "category_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["category_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1105,9 +1045,7 @@
         "users_email_unique": {
           "name": "users_email_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "email"
-          ]
+          "columns": ["email"]
         }
       },
       "policies": {},
@@ -1209,12 +1147,8 @@
           "name": "wiki_pages_team_id_teams_id_fk",
           "tableFrom": "wiki_pages",
           "tableTo": "teams",
-          "columnsFrom": [
-            "team_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["team_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -1224,9 +1158,7 @@
         "wiki_pages_slug_unique": {
           "name": "wiki_pages_slug_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "slug"
-          ]
+          "columns": ["slug"]
         }
       },
       "policies": {},

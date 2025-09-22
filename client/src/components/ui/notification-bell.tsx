@@ -128,7 +128,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
     if (!notification.isRead) {
       markAsReadMutation.mutate(notification.id);
     }
-    
+
     // Navigate to related content
     if (notification.relatedPageId) {
       // Navigate to page
@@ -152,21 +152,21 @@ export function NotificationBell({ userId }: NotificationBellProps) {
     const date = new Date(dateString);
     const now = new Date();
     const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
-    
+
     if (diffInMinutes < 1) return '방금 전';
     if (diffInMinutes < 60) return `${diffInMinutes}분 전`;
-    
+
     const diffInHours = Math.floor(diffInMinutes / 60);
     if (diffInHours < 24) return `${diffInHours}시간 전`;
-    
+
     const diffInDays = Math.floor(diffInHours / 24);
     if (diffInDays < 7) return `${diffInDays}일 전`;
-    
+
     return date.toLocaleDateString('ko-KR');
   };
 
-  const unreadNotifications = notifications.filter(n => !n.isRead);
-  const readNotifications = notifications.filter(n => n.isRead);
+  const unreadNotifications = notifications.filter((n) => !n.isRead);
+  const readNotifications = notifications.filter((n) => n.isRead);
 
   return (
     <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
@@ -174,8 +174,8 @@ export function NotificationBell({ userId }: NotificationBellProps) {
         <Button variant="ghost" size="sm" className="relative">
           <Bell className="h-5 w-5" />
           {unreadCount.count > 0 && (
-            <Badge 
-              variant="destructive" 
+            <Badge
+              variant="destructive"
               className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 text-xs flex items-center justify-center"
             >
               {unreadCount.count > 99 ? '99+' : unreadCount.count}
@@ -183,27 +183,20 @@ export function NotificationBell({ userId }: NotificationBellProps) {
           )}
         </Button>
       </DropdownMenuTrigger>
-      
+
       <DropdownMenuContent align="end" className="w-80">
         <div className="flex items-center justify-between p-4 border-b">
           <h3 className="font-semibold">알림</h3>
           {unreadCount.count > 0 && (
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              onClick={handleMarkAllAsRead}
-              className="text-xs"
-            >
+            <Button variant="ghost" size="sm" onClick={handleMarkAllAsRead} className="text-xs">
               모두 읽음 처리
             </Button>
           )}
         </div>
-        
+
         <ScrollArea className="h-96">
           {notifications.length === 0 ? (
-            <div className="p-4 text-center text-muted-foreground">
-              알림이 없습니다
-            </div>
+            <div className="p-4 text-center text-muted-foreground">알림이 없습니다</div>
           ) : (
             <div className="p-2">
               {/* Unread notifications */}
@@ -212,7 +205,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
                   {unreadNotifications.map((notification) => {
                     const Icon = notificationIcons[notification.type];
                     const iconColor = notificationColors[notification.type];
-                    
+
                     return (
                       <DropdownMenuItem
                         key={notification.id}
@@ -224,9 +217,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-start justify-between">
-                            <p className="text-sm font-medium line-clamp-1">
-                              {notification.title}
-                            </p>
+                            <p className="text-sm font-medium line-clamp-1">{notification.title}</p>
                             <Button
                               variant="ghost"
                               size="sm"
@@ -249,16 +240,16 @@ export function NotificationBell({ userId }: NotificationBellProps) {
                       </DropdownMenuItem>
                     );
                   })}
-                  
+
                   {readNotifications.length > 0 && <DropdownMenuSeparator />}
                 </>
               )}
-              
+
               {/* Read notifications */}
               {readNotifications.map((notification) => {
                 const Icon = notificationIcons[notification.type];
                 const iconColor = notificationColors[notification.type];
-                
+
                 return (
                   <DropdownMenuItem
                     key={notification.id}
@@ -270,9 +261,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between">
-                        <p className="text-sm font-medium line-clamp-1">
-                          {notification.title}
-                        </p>
+                        <p className="text-sm font-medium line-clamp-1">{notification.title}</p>
                         <Button
                           variant="ghost"
                           size="sm"
@@ -298,4 +287,4 @@ export function NotificationBell({ userId }: NotificationBellProps) {
       </DropdownMenuContent>
     </DropdownMenu>
   );
-} 
+}

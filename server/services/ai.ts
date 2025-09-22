@@ -1,8 +1,8 @@
-import OpenAI from "openai";
+import OpenAI from 'openai';
 
 // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
-const openai = new OpenAI({ 
-  apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR || "default_key"
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR || 'default_key',
 });
 
 export interface ContentSuggestion {
@@ -18,7 +18,10 @@ export interface ContentSummary {
   readingTime: number;
 }
 
-export async function generateContentSuggestions(content: string, title: string): Promise<ContentSuggestion[]> {
+export async function generateContentSuggestions(
+  content: string,
+  title: string
+): Promise<ContentSuggestion[]> {
   try {
     const prompt = `Analyze the following wiki page content and suggest improvements or additional sections that would enhance the documentation. Focus on practical, actionable suggestions.
 
@@ -36,25 +39,26 @@ Respond with JSON in this format: {
 }`;
 
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: 'gpt-4o',
       messages: [
         {
-          role: "system",
-          content: "You are an expert technical writer and documentation specialist. Provide helpful, specific suggestions for improving wiki content."
+          role: 'system',
+          content:
+            'You are an expert technical writer and documentation specialist. Provide helpful, specific suggestions for improving wiki content.',
         },
         {
-          role: "user",
-          content: prompt
-        }
+          role: 'user',
+          content: prompt,
+        },
       ],
-      response_format: { type: "json_object" },
-      max_tokens: 1000
+      response_format: { type: 'json_object' },
+      max_tokens: 1000,
     });
 
     const result = JSON.parse(response.choices[0].message.content || '{"suggestions": []}');
     return result.suggestions || [];
   } catch (error) {
-    console.error("Failed to generate content suggestions:", error);
+    console.error('Failed to generate content suggestions:', error);
     return [];
   }
 }
@@ -72,62 +76,69 @@ Respond with JSON in this format: {
 }`;
 
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: 'gpt-4o',
       messages: [
         {
-          role: "system",
-          content: "You are an expert at summarizing technical documentation. Provide clear, concise summaries with key takeaways."
+          role: 'system',
+          content:
+            'You are an expert at summarizing technical documentation. Provide clear, concise summaries with key takeaways.',
         },
         {
-          role: "user",
-          content: prompt
-        }
+          role: 'user',
+          content: prompt,
+        },
       ],
-      response_format: { type: "json_object" },
-      max_tokens: 500
+      response_format: { type: 'json_object' },
+      max_tokens: 500,
     });
 
-    const result = JSON.parse(response.choices[0].message.content || '{"summary": "", "keyPoints": [], "readingTime": 0}');
+    const result = JSON.parse(
+      response.choices[0].message.content || '{"summary": "", "keyPoints": [], "readingTime": 0}'
+    );
     return {
-      summary: result.summary || "",
+      summary: result.summary || '',
       keyPoints: result.keyPoints || [],
-      readingTime: result.readingTime || Math.ceil(content.split(' ').length / 200) // fallback: ~200 words per minute
+      readingTime: result.readingTime || Math.ceil(content.split(' ').length / 200), // fallback: ~200 words per minute
     };
   } catch (error) {
-    console.error("Failed to summarize content:", error);
+    console.error('Failed to summarize content:', error);
     return {
-      summary: "Summary unavailable",
+      summary: 'Summary unavailable',
       keyPoints: [],
-      readingTime: Math.ceil(content.split(' ').length / 200)
+      readingTime: Math.ceil(content.split(' ').length / 200),
     };
   }
 }
 
-export async function generateContent(prompt: string, type: 'page' | 'section' = 'section'): Promise<string> {
+export async function generateContent(
+  prompt: string,
+  type: 'page' | 'section' = 'section'
+): Promise<string> {
   try {
-    const systemPrompt = type === 'page' 
-      ? "You are an expert technical writer. Generate well-structured markdown content for wiki pages. Use proper headings, formatting, and include practical examples where appropriate."
-      : "You are an expert technical writer. Generate a well-structured markdown section that can be added to existing documentation. Focus on clarity and usefulness.";
+    const systemPrompt =
+      type === 'page'
+        ? 'You are an expert technical writer. Generate well-structured markdown content for wiki pages. Use proper headings, formatting, and include practical examples where appropriate.'
+        : 'You are an expert technical writer. Generate a well-structured markdown section that can be added to existing documentation. Focus on clarity and usefulness.';
 
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: 'gpt-4o',
       messages: [
         {
-          role: "system",
-          content: systemPrompt
+          role: 'system',
+          content: systemPrompt,
         },
         {
-          role: "user",
-          content: prompt
-        }
+          role: 'user',
+          content: prompt,
+        },
       ],
-      max_tokens: 2000
+      max_tokens: 2000,
     });
 
-    return response.choices[0].message.content || "";
+    return response.choices[0].message.content || '';
   } catch (error) {
-    console.error("Failed to generate content:", error);
-    throw new Error("Failed to generate content: " + (error as Error).message);
+    console.error('Failed to generate content:', error);
+    throw new Error('Failed to generate content: ' + (error as Error).message);
   }
 }
 
@@ -142,15 +153,28 @@ export interface SearchResult {
   url: string;
 }
 
-export async function smartSearch(query: string, documents: Array<{id: number, title: string, content: string, type: 'page' | 'task' | 'file', url: string}>): Promise<SearchResult[]> {
+export async function smartSearch(
+  query: string,
+  documents: Array<{
+    id: number;
+    title: string;
+    content: string;
+    type: 'page' | 'task' | 'file';
+    url: string;
+  }>
+): Promise<SearchResult[]> {
   try {
     const prompt = `Analyze the following search query and documents to find the most relevant matches. Consider semantic meaning, context, and user intent.
 
 Search Query: "${query}"
 
 Available Documents:
-${documents.map((doc, index) => `${index + 1}. ${doc.title} (${doc.type})
-   Content: ${doc.content.substring(0, 500)}...`).join('\n')}
+${documents
+  .map(
+    (doc, index) => `${index + 1}. ${doc.title} (${doc.type})
+   Content: ${doc.content.substring(0, 500)}...`
+  )
+  .join('\n')}
 
 Respond with JSON in this format: {
   "results": [
@@ -166,52 +190,58 @@ Respond with JSON in this format: {
 Rank by relevance (0.0-1.0) and provide specific matched terms and reasoning.`;
 
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: 'gpt-4o',
       messages: [
         {
-          role: "system",
-          content: "You are an expert search and information retrieval specialist. Analyze search queries and documents to find the most relevant matches based on semantic meaning and user intent."
+          role: 'system',
+          content:
+            'You are an expert search and information retrieval specialist. Analyze search queries and documents to find the most relevant matches based on semantic meaning and user intent.',
         },
         {
-          role: "user",
-          content: prompt
-        }
+          role: 'user',
+          content: prompt,
+        },
       ],
-      response_format: { type: "json_object" },
-      max_tokens: 1500
+      response_format: { type: 'json_object' },
+      max_tokens: 1500,
     });
 
     const result = JSON.parse(response.choices[0].message.content || '{"results": []}');
-    
-    return result.results.map((item: any) => {
-      const doc = documents[item.documentIndex];
-      return {
-        id: doc.id,
-        title: doc.title,
-        content: doc.content,
-        relevance: item.relevance || 0,
-        matchedTerms: item.matchedTerms || [],
-        summary: item.summary || "",
-        type: doc.type,
-        url: doc.url
-      };
-    }).sort((a: SearchResult, b: SearchResult) => b.relevance - a.relevance);
+
+    return result.results
+      .map((item: any) => {
+        const doc = documents[item.documentIndex];
+        return {
+          id: doc.id,
+          title: doc.title,
+          content: doc.content,
+          relevance: item.relevance || 0,
+          matchedTerms: item.matchedTerms || [],
+          summary: item.summary || '',
+          type: doc.type,
+          url: doc.url,
+        };
+      })
+      .sort((a: SearchResult, b: SearchResult) => b.relevance - a.relevance);
   } catch (error) {
-    console.error("Failed to perform smart search:", error);
+    console.error('Failed to perform smart search:', error);
     // Fallback to simple text search
     return documents
-      .map(doc => ({
+      .map((doc) => ({
         id: doc.id,
         title: doc.title,
         content: doc.content,
-        relevance: doc.title.toLowerCase().includes(query.toLowerCase()) ? 0.8 : 
-                   doc.content.toLowerCase().includes(query.toLowerCase()) ? 0.6 : 0.3,
+        relevance: doc.title.toLowerCase().includes(query.toLowerCase())
+          ? 0.8
+          : doc.content.toLowerCase().includes(query.toLowerCase())
+            ? 0.6
+            : 0.3,
         matchedTerms: [query],
         summary: `Found "${query}" in ${doc.type}`,
         type: doc.type,
-        url: doc.url
+        url: doc.url,
       }))
-      .filter(result => result.relevance > 0.3)
+      .filter((result) => result.relevance > 0.3)
       .sort((a, b) => b.relevance - a.relevance);
   }
 }
@@ -225,25 +255,26 @@ Respond with JSON in this format: {
 }`;
 
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: 'gpt-4o',
       messages: [
         {
-          role: "system",
-          content: "You are an expert at understanding search intent and suggesting related search terms. Provide helpful, relevant suggestions that expand on the user's query."
+          role: 'system',
+          content:
+            "You are an expert at understanding search intent and suggesting related search terms. Provide helpful, relevant suggestions that expand on the user's query.",
         },
         {
-          role: "user",
-          content: prompt
-        }
+          role: 'user',
+          content: prompt,
+        },
       ],
-      response_format: { type: "json_object" },
-      max_tokens: 300
+      response_format: { type: 'json_object' },
+      max_tokens: 300,
     });
 
     const result = JSON.parse(response.choices[0].message.content || '{"suggestions": []}');
     return result.suggestions || [];
   } catch (error) {
-    console.error("Failed to generate search suggestions:", error);
+    console.error('Failed to generate search suggestions:', error);
     return [];
   }
 }

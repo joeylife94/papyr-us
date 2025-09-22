@@ -32,15 +32,15 @@ export default function LoginPage() {
       await login(email, password);
       navigate('/');
       toast({
-        title: "Login Successful",
-        description: "Welcome back!",
+        title: 'Login Successful',
+        description: 'Welcome back!',
       });
     } catch (error) {
       console.error('Failed to login:', error);
       toast({
-        title: "Login Failed",
-        description: "Please check your credentials and try again.",
-        variant: "destructive",
+        title: 'Login Failed',
+        description: 'Please check your credentials and try again.',
+        variant: 'destructive',
       });
     }
   };
@@ -51,12 +51,12 @@ export default function LoginPage() {
         <h2 className="text-2xl font-bold text-center">Login</h2>
 
         <div className="space-y-4">
-            <Button variant="outline" className="w-full" onClick={() => handleSocialLogin('google')}>
-              Continue with Google
-            </Button>
-            <Button variant="outline" className="w-full" onClick={() => handleSocialLogin('github')}>
-              Continue with GitHub
-            </Button>
+          <Button variant="outline" className="w-full" onClick={() => handleSocialLogin('google')}>
+            Continue with Google
+          </Button>
+          <Button variant="outline" className="w-full" onClick={() => handleSocialLogin('github')}>
+            Continue with GitHub
+          </Button>
         </div>
 
         <div className="relative">
@@ -64,9 +64,7 @@ export default function LoginPage() {
             <span className="w-full border-t" />
           </div>
           <div className="relative flex justify-center text-xs uppercase">
-            <span className="px-2 bg-card text-muted-foreground">
-              Or continue with
-            </span>
+            <span className="px-2 bg-card text-muted-foreground">Or continue with</span>
           </div>
         </div>
 
@@ -93,7 +91,9 @@ export default function LoginPage() {
               className="bg-input"
             />
           </div>
-          <Button type="submit" className="w-full">Login with Email</Button>
+          <Button type="submit" className="w-full">
+            Login with Email
+          </Button>
         </form>
 
         <p className="text-sm text-center text-muted-foreground">

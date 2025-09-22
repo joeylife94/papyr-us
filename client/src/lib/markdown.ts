@@ -37,7 +37,7 @@ export function extractHeadings(content: string) {
       .toLowerCase()
       .replace(/[^\w\s-]/g, '')
       .replace(/\s+/g, '-');
-    
+
     headings.push({ id, text, level });
   }
 

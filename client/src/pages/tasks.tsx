@@ -6,23 +6,37 @@ import { Progress } from '../components/ui/progress';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '../components/ui/dialog';
 import { Textarea } from '../components/ui/textarea';
-import { 
-  Plus, 
-  Calendar, 
-  Clock, 
-  User, 
-  Tag, 
-  Edit, 
+import {
+  Plus,
+  Calendar,
+  Clock,
+  User,
+  Tag,
+  Edit,
   Trash2,
   CheckCircle,
   Circle,
   AlertCircle,
   TrendingUp,
   Filter,
-  Search
+  Search,
 } from 'lucide-react';
 
 interface Task {
@@ -54,14 +68,14 @@ const statusColors = {
   todo: 'bg-gray-100 text-gray-800',
   in_progress: 'bg-blue-100 text-blue-800',
   review: 'bg-yellow-100 text-yellow-800',
-  done: 'bg-green-100 text-green-800'
+  done: 'bg-green-100 text-green-800',
 };
 
 const statusLabels = {
   todo: '할 일',
   in_progress: '진행 중',
   review: '검토',
-  done: '완료'
+  done: '완료',
 };
 
 const priorityColors = {
@@ -69,7 +83,7 @@ const priorityColors = {
   2: 'bg-orange-100 text-orange-800',
   3: 'bg-yellow-100 text-yellow-800',
   4: 'bg-blue-100 text-blue-800',
-  5: 'bg-gray-100 text-gray-800'
+  5: 'bg-gray-100 text-gray-800',
 };
 
 const priorityLabels = {
@@ -77,7 +91,7 @@ const priorityLabels = {
   2: '높음',
   3: '보통',
   4: '낮음',
-  5: '매우 낮음'
+  5: '매우 낮음',
 };
 
 interface TasksPageProps {
@@ -90,7 +104,7 @@ export default function TasksPage({ teamName }: TasksPageProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
-  
+
   const queryClient = useQueryClient();
 
   // Fetch tasks
@@ -100,7 +114,7 @@ export default function TasksPage({ teamName }: TasksPageProps) {
       const params = new URLSearchParams();
       if (teamName) params.append('teamId', teamName);
       if (selectedStatus !== 'all') params.append('status', selectedStatus);
-      
+
       const response = await fetch(`/api/tasks?${params.toString()}`);
       if (!response.ok) {
         throw new Error('Failed to fetch tasks');
@@ -113,9 +127,7 @@ export default function TasksPage({ teamName }: TasksPageProps) {
   const { data: members = [] } = useQuery<Member[]>({
     queryKey: ['members', teamName],
     queryFn: async () => {
-      const url = teamName 
-        ? `/api/members?teamId=${teamName}`
-        : '/api/members';
+      const url = teamName ? `/api/members?teamId=${teamName}` : '/api/members';
       const response = await fetch(url);
       if (!response.ok) {
         throw new Error('Failed to fetch members');
@@ -197,10 +209,11 @@ export default function TasksPage({ teamName }: TasksPageProps) {
   });
 
   // Filter tasks based on search query
-  const filteredTasks = tasks.filter(task =>
-    task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (task.description && task.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
-    task.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()))
+  const filteredTasks = tasks.filter(
+    (task) =>
+      task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (task.description && task.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      task.tags.some((tag) => tag.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
   const handleCreateTask = (formData: any) => {
@@ -223,7 +236,7 @@ export default function TasksPage({ teamName }: TasksPageProps) {
 
   const getAssignedMemberName = (memberId: number | null) => {
     if (!memberId) return '미배정';
-    const member = members.find(m => m.id === memberId);
+    const member = members.find((m) => m.id === memberId);
     return member ? member.name : '알 수 없음';
   };
 
@@ -258,18 +271,15 @@ export default function TasksPage({ teamName }: TasksPageProps) {
         <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
           <DialogTrigger asChild>
             <Button>
-              <Plus className="w-4 h-4 mr-2" />
-              새 과제 추가
+              <Plus className="w-4 h-4 mr-2" />새 과제 추가
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-[600px]">
             <DialogHeader>
               <DialogTitle>새 과제 추가</DialogTitle>
-              <DialogDescription>
-                새로운 과제를 생성하고 담당자를 배정하세요.
-              </DialogDescription>
+              <DialogDescription>새로운 과제를 생성하고 담당자를 배정하세요.</DialogDescription>
             </DialogHeader>
-            <TaskForm 
+            <TaskForm
               onSubmit={handleCreateTask}
               members={members}
               onCancel={() => setIsCreateDialogOpen(false)}
@@ -337,11 +347,9 @@ export default function TasksPage({ teamName }: TasksPageProps) {
                     <DialogContent className="sm:max-w-[600px]">
                       <DialogHeader>
                         <DialogTitle>과제 수정</DialogTitle>
-                        <DialogDescription>
-                          과제 정보를 수정하세요.
-                        </DialogDescription>
+                        <DialogDescription>과제 정보를 수정하세요.</DialogDescription>
                       </DialogHeader>
-                      <TaskForm 
+                      <TaskForm
                         task={task}
                         onSubmit={(data) => handleUpdateTask(task.id, data)}
                         members={members}
@@ -349,23 +357,17 @@ export default function TasksPage({ teamName }: TasksPageProps) {
                       />
                     </DialogContent>
                   </Dialog>
-                  <Button 
-                    variant="ghost" 
-                    size="sm"
-                    onClick={() => handleDeleteTask(task.id)}
-                  >
+                  <Button variant="ghost" size="sm" onClick={() => handleDeleteTask(task.id)}>
                     <Trash2 className="w-4 h-4" />
                   </Button>
                 </div>
               </div>
             </CardHeader>
-            
+
             <CardContent className="space-y-4">
               {/* Status and Priority */}
               <div className="flex items-center gap-2">
-                <Badge className={statusColors[task.status]}>
-                  {statusLabels[task.status]}
-                </Badge>
+                <Badge className={statusColors[task.status]}>{statusLabels[task.status]}</Badge>
                 <Badge className={priorityColors[task.priority as keyof typeof priorityColors]}>
                   {priorityLabels[task.priority as keyof typeof priorityLabels]}
                 </Badge>
@@ -409,9 +411,7 @@ export default function TasksPage({ teamName }: TasksPageProps) {
                     <Clock className="w-4 h-4" />
                     <span>예상: {task.estimatedHours || 0}h</span>
                   </div>
-                  {task.actualHours && (
-                    <span>실제: {task.actualHours}h</span>
-                  )}
+                  {task.actualHours && <span>실제: {task.actualHours}h</span>}
                 </div>
               )}
 
@@ -434,8 +434,8 @@ export default function TasksPage({ teamName }: TasksPageProps) {
       {filteredTasks.length === 0 && (
         <div className="text-center py-12">
           <div className="text-muted-foreground">
-            {searchQuery || selectedTeam !== 'all' || selectedStatus !== 'all' 
-              ? '검색 조건에 맞는 과제가 없습니다.' 
+            {searchQuery || selectedTeam !== 'all' || selectedStatus !== 'all'
+              ? '검색 조건에 맞는 과제가 없습니다.'
               : '아직 과제가 없습니다. 새 과제를 추가해보세요!'}
           </div>
         </div>
@@ -488,7 +488,10 @@ function TaskForm({ task, onSubmit, members, onCancel }: TaskFormProps) {
         </div>
         <div className="space-y-2">
           <Label htmlFor="teamId">팀</Label>
-          <Select value={formData.teamId} onValueChange={(value) => setFormData({ ...formData, teamId: value })}>
+          <Select
+            value={formData.teamId}
+            onValueChange={(value) => setFormData({ ...formData, teamId: value })}
+          >
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
@@ -513,7 +516,10 @@ function TaskForm({ task, onSubmit, members, onCancel }: TaskFormProps) {
       <div className="grid grid-cols-3 gap-4">
         <div className="space-y-2">
           <Label htmlFor="status">상태</Label>
-          <Select value={formData.status} onValueChange={(value) => setFormData({ ...formData, status: value as any })}>
+          <Select
+            value={formData.status}
+            onValueChange={(value) => setFormData({ ...formData, status: value as any })}
+          >
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
@@ -527,7 +533,10 @@ function TaskForm({ task, onSubmit, members, onCancel }: TaskFormProps) {
         </div>
         <div className="space-y-2">
           <Label htmlFor="priority">우선순위</Label>
-          <Select value={String(formData.priority)} onValueChange={(value) => setFormData({ ...formData, priority: parseInt(value) })}>
+          <Select
+            value={String(formData.priority)}
+            onValueChange={(value) => setFormData({ ...formData, priority: parseInt(value) })}
+          >
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
@@ -542,7 +551,12 @@ function TaskForm({ task, onSubmit, members, onCancel }: TaskFormProps) {
         </div>
         <div className="space-y-2">
           <Label htmlFor="assignedTo">담당자</Label>
-          <Select value={String(formData.assignedTo) || ''} onValueChange={(value) => setFormData({ ...formData, assignedTo: value ? parseInt(value) : null })}>
+          <Select
+            value={String(formData.assignedTo) || ''}
+            onValueChange={(value) =>
+              setFormData({ ...formData, assignedTo: value ? parseInt(value) : null })
+            }
+          >
             <SelectTrigger>
               <SelectValue placeholder="담당자 선택" />
             </SelectTrigger>
@@ -584,10 +598,8 @@ function TaskForm({ task, onSubmit, members, onCancel }: TaskFormProps) {
         <Button type="button" variant="outline" onClick={onCancel}>
           취소
         </Button>
-        <Button type="submit">
-          {task ? '수정' : '생성'}
-        </Button>
+        <Button type="submit">{task ? '수정' : '생성'}</Button>
       </DialogFooter>
     </form>
   );
-} 
+}

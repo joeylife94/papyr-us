@@ -42,7 +42,7 @@ const ALLOWED_FILE_TYPES = [
   'application/vnd.ms-excel',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/zip',
-  'application/x-zip-compressed'
+  'application/x-zip-compressed',
 ];
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
@@ -53,10 +53,11 @@ function generateUniqueFilename(originalName: string): string {
   const timestamp = Date.now();
   const randomBytes = crypto.randomBytes(8).toString('hex');
   const extension = path.extname(originalName);
-  const baseName = path.basename(originalName, extension)
+  const baseName = path
+    .basename(originalName, extension)
     .replace(/[^a-zA-Z0-9\-_]/g, '')
     .substring(0, 50);
-  
+
   return `${timestamp}-${randomBytes}-${baseName}${extension}`;
 }
 
@@ -70,7 +71,7 @@ function fileFilter(req: any, file: Express.Multer.File, cb: multer.FileFilterCa
   if (!ALLOWED_FILE_TYPES.includes(file.mimetype)) {
     return cb(new Error(`File type ${file.mimetype} is not allowed`));
   }
-  
+
   cb(null, true);
 }
 
@@ -83,12 +84,15 @@ export const upload = multer({
   fileFilter,
   limits: {
     fileSize: MAX_FILE_SIZE,
-    files: 5 // Maximum 5 files per request
-  }
+    files: 5, // Maximum 5 files per request
+  },
 });
 
 // Process and save uploaded file
-export async function processUploadedFile(file: Express.Multer.File, teamId?: string): Promise<{
+export async function processUploadedFile(
+  file: Express.Multer.File,
+  teamId?: string
+): Promise<{
   filename: string;
   originalName: string;
   size: number;
@@ -98,15 +102,15 @@ export async function processUploadedFile(file: Express.Multer.File, teamId?: st
   teamId?: string;
 }> {
   const uniqueFilename = generateUniqueFilename(file.originalname);
-  
+
   if (isImage(file.mimetype)) {
     // Process image with sharp
     const processedImagePath = path.join(IMAGES_DIR, uniqueFilename);
-    
+
     await sharp(file.buffer)
-      .resize(1920, 1080, { 
+      .resize(1920, 1080, {
         fit: 'inside',
-        withoutEnlargement: true 
+        withoutEnlargement: true,
       })
       .jpeg({ quality: 85, progressive: true })
       .png({ quality: 85, progressive: true })
@@ -115,7 +119,7 @@ export async function processUploadedFile(file: Express.Multer.File, teamId?: st
 
     // Get file stats
     const stats = await fs.stat(processedImagePath);
-    
+
     return {
       filename: uniqueFilename,
       originalName: file.originalname,
@@ -123,13 +127,13 @@ export async function processUploadedFile(file: Express.Multer.File, teamId?: st
       mimetype: file.mimetype,
       url: `/api/uploads/images/${uniqueFilename}`,
       path: processedImagePath,
-      teamId
+      teamId,
     };
   } else {
     // Save regular file
     const filePath = path.join(FILES_DIR, uniqueFilename);
     await fs.writeFile(filePath, file.buffer);
-    
+
     return {
       filename: uniqueFilename,
       originalName: file.originalname,
@@ -137,18 +141,19 @@ export async function processUploadedFile(file: Express.Multer.File, teamId?: st
       mimetype: file.mimetype,
       url: `/api/uploads/files/${uniqueFilename}`,
       path: filePath,
-      teamId
+      teamId,
     };
   }
 }
 
 // Delete uploaded file
-export async function deleteUploadedFile(filename: string, isImage: boolean = false): Promise<boolean> {
+export async function deleteUploadedFile(
+  filename: string,
+  isImage: boolean = false
+): Promise<boolean> {
   try {
-    const filePath = isImage 
-      ? path.join(IMAGES_DIR, filename)
-      : path.join(FILES_DIR, filename);
-    
+    const filePath = isImage ? path.join(IMAGES_DIR, filename) : path.join(FILES_DIR, filename);
+
     if (existsSync(filePath)) {
       await fs.unlink(filePath);
       return true;
@@ -163,24 +168,22 @@ export async function deleteUploadedFile(filename: string, isImage: boolean = fa
 // Get file info
 export async function getFileInfo(filename: string, isImage: boolean = false) {
   try {
-    const filePath = isImage 
-      ? path.join(IMAGES_DIR, filename)
-      : path.join(FILES_DIR, filename);
-    
+    const filePath = isImage ? path.join(IMAGES_DIR, filename) : path.join(FILES_DIR, filename);
+
     if (!existsSync(filePath)) {
       return null;
     }
-    
+
     const stats = await fs.stat(filePath);
     const mimeType = mime.lookup(filePath) || 'application/octet-stream';
-    
+
     return {
       filename,
       size: stats.size,
       mimetype: mimeType,
       created: stats.birthtime,
       modified: stats.mtime,
-      path: filePath
+      path: filePath,
     };
   } catch (error) {
     console.error('Error getting file info:', error);
@@ -196,12 +199,12 @@ export async function listUploadedFiles(teamId?: string): Promise<{
   try {
     const [imageFiles, regularFiles] = await Promise.all([
       fs.readdir(IMAGES_DIR).catch(() => []),
-      fs.readdir(FILES_DIR).catch(() => [])
+      fs.readdir(FILES_DIR).catch(() => []),
     ]);
 
     const images = await Promise.all(
       imageFiles
-        .filter(file => file !== '.gitkeep')
+        .filter((file) => file !== '.gitkeep')
         .map(async (filename) => {
           const info = await getFileInfo(filename, true);
           return info ? { ...info, url: `/api/uploads/images/${filename}` } : null;
@@ -210,7 +213,7 @@ export async function listUploadedFiles(teamId?: string): Promise<{
 
     const files = await Promise.all(
       regularFiles
-        .filter(file => file !== '.gitkeep')
+        .filter((file) => file !== '.gitkeep')
         .map(async (filename) => {
           const info = await getFileInfo(filename, false);
           return info ? { ...info, url: `/api/uploads/files/${filename}` } : null;
@@ -219,7 +222,7 @@ export async function listUploadedFiles(teamId?: string): Promise<{
 
     return {
       images: images.filter(Boolean),
-      files: files.filter(Boolean)
+      files: files.filter(Boolean),
     };
   } catch (error) {
     console.error('Error listing files:', error);
@@ -231,32 +234,32 @@ export async function listUploadedFiles(teamId?: string): Promise<{
 export async function cleanupOldFiles(daysOld: number = 30): Promise<number> {
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - daysOld);
-  
+
   let deletedCount = 0;
-  
+
   try {
     const directories = [IMAGES_DIR, FILES_DIR];
-    
+
     for (const dir of directories) {
       const files = await fs.readdir(dir).catch(() => []);
-      
+
       for (const filename of files) {
         if (filename === '.gitkeep') continue;
-        
+
         const filePath = path.join(dir, filename);
         const stats = await fs.stat(filePath);
-        
+
         if (stats.birthtime < cutoffDate) {
           await fs.unlink(filePath);
           deletedCount++;
         }
       }
     }
-    
+
     console.log(`Cleanup completed: deleted ${deletedCount} old files`);
     return deletedCount;
   } catch (error) {
     console.error('Error during cleanup:', error);
     return 0;
   }
-} 
+}

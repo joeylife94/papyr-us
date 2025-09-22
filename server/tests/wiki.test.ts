@@ -8,21 +8,21 @@ import { insertWikiPageSchema } from '../../shared/schema';
 
 // Mock the storage module
 vi.mock('../storage', async (importOriginal) => {
-    const actual = await importOriginal() as any;
-    const dbStorageInstance = new actual.DBStorage();
+  const actual = (await importOriginal()) as any;
+  const dbStorageInstance = new actual.DBStorage();
 
-    // Replace all methods with vi.fn() to allow for mocking in tests
-    for (const key of Object.getOwnPropertyNames(actual.DBStorage.prototype)) {
-        if (key !== 'constructor' && typeof dbStorageInstance[key] === 'function') {
-            dbStorageInstance[key] = vi.fn();
-        }
+  // Replace all methods with vi.fn() to allow for mocking in tests
+  for (const key of Object.getOwnPropertyNames(actual.DBStorage.prototype)) {
+    if (key !== 'constructor' && typeof dbStorageInstance[key] === 'function') {
+      dbStorageInstance[key] = vi.fn();
     }
+  }
 
-    return {
-        ...actual,
-        DBStorage: vi.fn(() => dbStorageInstance),
-        storage: dbStorageInstance,
-    };
+  return {
+    ...actual,
+    DBStorage: vi.fn(() => dbStorageInstance),
+    storage: dbStorageInstance,
+  };
 });
 
 import { storage } from '../storage.js';
@@ -45,138 +45,137 @@ afterAll((done) => {
 });
 
 describe('Wiki Page Management API', () => {
-    const mockPage = {
-        id: 1,
-        slug: 'test-page',
-        title: 'Test Page',
-        content: 'This is a test page.',
-        author: 'test-user',
-        tags: ['test', 'wiki'],
+  const mockPage = {
+    id: 1,
+    slug: 'test-page',
+    title: 'Test Page',
+    content: 'This is a test page.',
+    author: 'test-user',
+    tags: ['test', 'wiki'],
+    folder: 'tests',
+    teamId: 1,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  describe('POST ', () => {
+    it('TC-PAGE-001: should create a new wiki page successfully', async () => {
+      const newPageData = {
+        title: 'New Test Page',
+        slug: 'new-test-page',
+        content: 'Content of the new page.',
         folder: 'tests',
+        author: 'vitest',
         teamId: 1,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-    };
+      };
+      const expectedPage = { ...newPageData, id: 2 };
+      (storage.createWikiPage as vi.Mock).mockResolvedValue(expectedPage);
 
-    describe('POST ', () => {
-        it('TC-PAGE-001: should create a new wiki page successfully', async () => {
-            const newPageData = {
-                title: 'New Test Page',
-                slug: 'new-test-page',
-                content: 'Content of the new page.',
-                folder: 'tests',
-                author: 'vitest',
-                teamId: 1,
-            };
-            const expectedPage = { ...newPageData, id: 2 };
-            (storage.createWikiPage as vi.Mock).mockResolvedValue(expectedPage);
+      const response = await request(app).post('/api/pages').send(newPageData);
 
-            const response = await request(app)
-                .post('/api/pages')
-                .send(newPageData);
-
-            expect(response.status).toBe(201);
-            expect(response.body).toEqual(expectedPage);
-            expect(storage.createWikiPage).toHaveBeenCalledWith(expect.objectContaining(newPageData));
-        });
-
-        it('TC-PAGE-002: should fail to create a page with invalid data (missing title)', async () => {
-            const invalidPageData = {
-                content: 'This page has no title.',
-                author: 'vitest',
-            };
-
-            const response = await request(app)
-                .post('/api/pages')
-                .send(invalidPageData);
-
-            expect(response.status).toBe(400);
-            expect(response.body.message).toBe('Invalid page data');
-        });
+      expect(response.status).toBe(201);
+      expect(response.body).toEqual(expectedPage);
+      expect(storage.createWikiPage).toHaveBeenCalledWith(expect.objectContaining(newPageData));
     });
 
-    describe('GET /:id', () => {
-        it('TC-PAGE-004: should retrieve a single page by ID', async () => {
-            (storage.getWikiPage as vi.Mock).mockResolvedValue(mockPage);
+    it('TC-PAGE-002: should fail to create a page with invalid data (missing title)', async () => {
+      const invalidPageData = {
+        content: 'This page has no title.',
+        author: 'vitest',
+      };
 
-            const response = await request(app).get(`/api/pages/${mockPage.id}`);
+      const response = await request(app).post('/api/pages').send(invalidPageData);
 
-            expect(response.status).toBe(200);
-            expect(response.body).toEqual(mockPage);
-            expect(storage.getWikiPage).toHaveBeenCalledWith(mockPage.id);
-        });
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe('Invalid page data');
+    });
+  });
 
-        it('TC-PAGE-006: should fail to retrieve a non-existent page by ID', async () => {
-            const nonExistentId = 999;
-            (storage.getWikiPage as vi.Mock).mockResolvedValue(null);
+  describe('GET /:id', () => {
+    it('TC-PAGE-004: should retrieve a single page by ID', async () => {
+      (storage.getWikiPage as vi.Mock).mockResolvedValue(mockPage);
 
-            const response = await request(app).get(`/api/pages/${nonExistentId}`);
+      const response = await request(app).get(`/api/pages/${mockPage.id}`);
 
-            expect(response.status).toBe(404);
-            expect(response.body.message).toBe('Page not found');
-        });
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual(mockPage);
+      expect(storage.getWikiPage).toHaveBeenCalledWith(mockPage.id);
     });
 
-    describe('GET /slug/:slug', () => {
-        it('TC-PAGE-005: should retrieve a single page by slug', async () => {
-            (storage.getWikiPageBySlug as vi.Mock).mockResolvedValue(mockPage);
+    it('TC-PAGE-006: should fail to retrieve a non-existent page by ID', async () => {
+      const nonExistentId = 999;
+      (storage.getWikiPage as vi.Mock).mockResolvedValue(null);
 
-            const response = await request(app).get(`/api/pages/slug/${mockPage.slug}`);
+      const response = await request(app).get(`/api/pages/${nonExistentId}`);
 
-            expect(response.status).toBe(200);
-            expect(response.body).toEqual(mockPage);
-            expect(storage.getWikiPageBySlug).toHaveBeenCalledWith(mockPage.slug);
-        });
+      expect(response.status).toBe(404);
+      expect(response.body.message).toBe('Page not found');
+    });
+  });
+
+  describe('GET /slug/:slug', () => {
+    it('TC-PAGE-005: should retrieve a single page by slug', async () => {
+      (storage.getWikiPageBySlug as vi.Mock).mockResolvedValue(mockPage);
+
+      const response = await request(app).get(`/api/pages/slug/${mockPage.slug}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual(mockPage);
+      expect(storage.getWikiPageBySlug).toHaveBeenCalledWith(mockPage.slug);
+    });
+  });
+
+  describe('PUT /:id', () => {
+    it('TC-PAGE-007: should update an existing page', async () => {
+      const updateData = { title: 'Updated Test Page' };
+      const updatedPage = { ...mockPage, ...updateData };
+      (storage.updateWikiPage as vi.Mock).mockResolvedValue(updatedPage);
+
+      const response = await request(app).put(`/api/pages/${mockPage.id}`).send(updateData);
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual(updatedPage);
+      expect(storage.updateWikiPage).toHaveBeenCalledWith(mockPage.id, updateData);
+    });
+  });
+
+  describe('DELETE /:id', () => {
+    it('TC-PAGE-008: should delete a page', async () => {
+      (storage.deleteWikiPage as vi.Mock).mockResolvedValue({ success: true });
+
+      const response = await request(app).delete(`/api/pages/${mockPage.id}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.message).toBe('Page deleted successfully');
+      expect(storage.deleteWikiPage).toHaveBeenCalledWith(mockPage.id);
+    });
+  });
+
+  describe('GET ', () => {
+    it('TC-PAGE-009: should search/filter pages by query', async () => {
+      const searchResult = { pages: [mockPage], total: 1 };
+      (storage.searchWikiPages as vi.Mock).mockResolvedValue(searchResult);
+
+      const response = await request(app).get('/api/pages?q=test');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual(searchResult);
+      expect(storage.searchWikiPages).toHaveBeenCalledWith(
+        expect.objectContaining({ query: 'test' })
+      );
     });
 
-    describe('PUT /:id', () => {
-        it('TC-PAGE-007: should update an existing page', async () => {
-            const updateData = { title: 'Updated Test Page' };
-            const updatedPage = { ...mockPage, ...updateData };
-            (storage.updateWikiPage as vi.Mock).mockResolvedValue(updatedPage);
+    it('TC-PAGE-003: should retrieve all pages when no query is provided', async () => {
+      const allPagesResult = {
+        pages: [mockPage, { ...mockPage, id: 2, title: 'Another Page' }],
+        total: 2,
+      };
+      (storage.searchWikiPages as vi.Mock).mockResolvedValue(allPagesResult);
 
-            const response = await request(app)
-                .put(`/api/pages/${mockPage.id}`)
-                .send(updateData);
+      const response = await request(app).get('/api/pages');
 
-            expect(response.status).toBe(200);
-            expect(response.body).toEqual(updatedPage);
-            expect(storage.updateWikiPage).toHaveBeenCalledWith(mockPage.id, updateData);
-        });
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual(allPagesResult);
     });
-
-    describe('DELETE /:id', () => {
-        it('TC-PAGE-008: should delete a page', async () => {
-            (storage.deleteWikiPage as vi.Mock).mockResolvedValue({ success: true });
-
-            const response = await request(app).delete(`/api/pages/${mockPage.id}`);
-
-            expect(response.status).toBe(200);
-            expect(response.body.message).toBe('Page deleted successfully');
-            expect(storage.deleteWikiPage).toHaveBeenCalledWith(mockPage.id);
-        });
-    });
-
-    describe('GET ', () => {
-        it('TC-PAGE-009: should search/filter pages by query', async () => {
-            const searchResult = { pages: [mockPage], total: 1 };
-            (storage.searchWikiPages as vi.Mock).mockResolvedValue(searchResult);
-
-            const response = await request(app).get('/api/pages?q=test');
-
-            expect(response.status).toBe(200);
-            expect(response.body).toEqual(searchResult);
-            expect(storage.searchWikiPages).toHaveBeenCalledWith(expect.objectContaining({ query: 'test' }));
-        });
-
-        it('TC-PAGE-003: should retrieve all pages when no query is provided', async () => {
-            const allPagesResult = { pages: [mockPage, { ...mockPage, id: 2, title: 'Another Page' }], total: 2 };
-            (storage.searchWikiPages as vi.Mock).mockResolvedValue(allPagesResult);
-
-            const response = await request(app).get('/api/pages');
-
-            expect(response.status).toBe(200);
-            expect(response.body).toEqual(allPagesResult);
-        });
-    });
+  });
 });

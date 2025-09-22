@@ -3,7 +3,7 @@ import { Block, BlockType } from '@shared/schema';
 import { Trash2, Code, Copy, Check, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { 
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -49,14 +49,14 @@ const LANGUAGE_OPTIONS = [
   { value: 'plaintext', label: 'Plain Text' },
 ];
 
-export function CodeBlock({ 
-  block, 
-  isFocused, 
-  onFocus, 
-  onBlur, 
-  onUpdate, 
-  onDelete, 
-  onAddBlock 
+export function CodeBlock({
+  block,
+  isFocused,
+  onFocus,
+  onBlur,
+  onUpdate,
+  onDelete,
+  onAddBlock,
 }: CodeBlockProps) {
   const [content, setContent] = useState(block.content);
   const [language, setLanguage] = useState(block.properties?.language || 'javascript');
@@ -95,8 +95,8 @@ export function CodeBlock({
     onUpdate({
       properties: {
         ...block.properties,
-        language: newLanguage
-      }
+        language: newLanguage,
+      },
     });
   };
 
@@ -105,15 +105,15 @@ export function CodeBlock({
       await navigator.clipboard.writeText(content);
       setIsCopied(true);
       toast({
-        title: "코드 복사됨",
-        description: "코드가 클립보드에 복사되었습니다."
+        title: '코드 복사됨',
+        description: '코드가 클립보드에 복사되었습니다.',
       });
       setTimeout(() => setIsCopied(false), 2000);
     } catch (error) {
       toast({
-        title: "복사 실패",
-        description: "코드를 복사할 수 없습니다.",
-        variant: "destructive"
+        title: '복사 실패',
+        description: '코드를 복사할 수 없습니다.',
+        variant: 'destructive',
       });
     }
   };
@@ -132,7 +132,7 @@ export function CodeBlock({
       const newContent = content.substring(0, start) + '  ' + content.substring(end);
       setContent(newContent);
       onUpdate({ content: newContent });
-      
+
       // 커서 위치 조정
       setTimeout(() => {
         if (textareaRef.current) {
@@ -144,12 +144,12 @@ export function CodeBlock({
   };
 
   const getLanguageLabel = (lang: string) => {
-    const option = LANGUAGE_OPTIONS.find(opt => opt.value === lang);
+    const option = LANGUAGE_OPTIONS.find((opt) => opt.value === lang);
     return option?.label || lang;
   };
 
   return (
-    <div 
+    <div
       className={`relative group ${isFocused ? 'bg-blue-50 dark:bg-blue-950/20' : ''} rounded-lg p-4 transition-colors`}
       onFocus={onFocus}
       onBlur={onBlur}
@@ -176,9 +176,7 @@ export function CodeBlock({
               ))}
             </SelectContent>
           </Select>
-          <span className="text-xs text-muted-foreground">
-            {getLanguageLabel(language)}
-          </span>
+          <span className="text-xs text-muted-foreground">{getLanguageLabel(language)}</span>
         </div>
 
         {/* 액션 버튼들 */}
@@ -190,11 +188,7 @@ export function CodeBlock({
               onClick={handleCopy}
               className="h-6 w-6 p-0 text-gray-400 hover:text-green-600"
             >
-              {isCopied ? (
-                <Check className="h-3 w-3" />
-              ) : (
-                <Copy className="h-3 w-3" />
-              )}
+              {isCopied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
             </Button>
             <Button
               variant="ghost"
@@ -227,7 +221,7 @@ export function CodeBlock({
           rows={Math.max(3, content.split('\n').length)}
           spellCheck={false}
         />
-        
+
         {/* 라인 번호 (선택사항) */}
         {content.includes('\n') && (
           <div className="absolute left-3 top-3 text-xs text-gray-400 select-none pointer-events-none">
@@ -246,4 +240,4 @@ export function CodeBlock({
       </div>
     </div>
   );
-} 
+}

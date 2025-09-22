@@ -1,6 +1,6 @@
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
-import path from "path";
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 
@@ -9,22 +9,22 @@ const __dirname = dirname(__filename);
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  root: path.resolve(__dirname, "client"),
-  base: "/",
+  root: path.resolve(__dirname, 'client'),
+  base: '/',
   plugins: [react()],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./client/src"),
+      '@': path.resolve(__dirname, './client/src'),
     },
   },
   build: {
-    outDir: path.resolve(__dirname, "dist/public"),
+    outDir: path.resolve(__dirname, 'dist/public'),
     rollupOptions: {
       output: {
         manualChunks: {
           // React and core dependencies
           'react-vendor': ['react', 'react-dom'],
-          
+
           // UI libraries
           'ui-vendor': [
             '@radix-ui/react-accordion',
@@ -37,24 +37,15 @@ export default defineConfig({
             '@radix-ui/react-select',
             '@radix-ui/react-tabs',
             '@radix-ui/react-toast',
-            'framer-motion'
+            'framer-motion',
           ],
-          
+
           // Utility libraries
-          'utils-vendor': [
-            'clsx',
-            'class-variance-authority',
-            'tailwind-merge',
-            'date-fns',
-            'zod'
-          ],
-          
+          'utils-vendor': ['clsx', 'class-variance-authority', 'tailwind-merge', 'date-fns', 'zod'],
+
           // Query and routing
-          'app-vendor': [
-            '@tanstack/react-query',
-            'wouter'
-          ],
-          
+          'app-vendor': ['@tanstack/react-query', 'wouter'],
+
           // Markdown and content
           'content-vendor': [
             'remark',
@@ -63,15 +54,15 @@ export default defineConfig({
             'remark-rehype',
             'rehype-highlight',
             'rehype-stringify',
-            'gray-matter'
-          ]
-        }
-      }
+            'gray-matter',
+          ],
+        },
+      },
     },
     // Increase chunk size warning limit
     chunkSizeWarningLimit: 600,
     // Enable source maps for better debugging
-    sourcemap: false
+    sourcemap: false,
   },
   server: {
     proxy: {

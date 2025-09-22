@@ -1,32 +1,30 @@
-import { useParams, useNavigate } from "react-router-dom";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import { MarkdownRenderer } from "@/components/wiki/markdown-renderer";
-import { TableOfContents } from "@/components/layout/table-of-contents";
-import { Comments } from "@/components/wiki/comments";
-import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
-import { extractHeadings, estimateReadingTime } from "@/lib/markdown";
-import { formatDistanceToNow } from "date-fns";
-import { 
-  Edit, 
-  Share, 
-  User, 
-  Clock, 
+import { useParams, useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
+import { MarkdownRenderer } from '@/components/wiki/markdown-renderer';
+import { TableOfContents } from '@/components/layout/table-of-contents';
+import { Comments } from '@/components/wiki/comments';
+import { useToast } from '@/hooks/use-toast';
+import { apiRequest } from '@/lib/queryClient';
+import { extractHeadings, estimateReadingTime } from '@/lib/markdown';
+import { formatDistanceToNow } from 'date-fns';
+import {
+  Edit,
+  Share,
+  User,
+  Clock,
   Calendar,
   ThumbsUp,
   ThumbsDown,
   AlertTriangle,
   FileEdit,
   Sparkles,
-  X
-} from "lucide-react";
-import type { WikiPage } from "@shared/schema";
-
-
+  X,
+} from 'lucide-react';
+import type { WikiPage } from '@shared/schema';
 
 export default function WikiPageView() {
   const { slug } = useParams();
@@ -34,13 +32,14 @@ export default function WikiPageView() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-
-  const { data: page, isLoading, error } = useQuery<WikiPage>({
+  const {
+    data: page,
+    isLoading,
+    error,
+  } = useQuery<WikiPage>({
     queryKey: [`/api/pages/slug/${slug}`],
     enabled: !!slug,
   });
-
-
 
   const headings = page ? extractHeadings(page.content) : [];
   const readingTime = page ? estimateReadingTime(page.content) : 0;
@@ -56,20 +55,18 @@ export default function WikiPageView() {
       try {
         await navigator.clipboard.writeText(window.location.href);
         toast({
-          title: "Link Copied",
-          description: "Page link copied to clipboard.",
+          title: 'Link Copied',
+          description: 'Page link copied to clipboard.',
         });
       } catch (clipboardError) {
         toast({
-          title: "Share Failed",
-          description: "Unable to share or copy link.",
-          variant: "destructive",
+          title: 'Share Failed',
+          description: 'Unable to share or copy link.',
+          variant: 'destructive',
         });
       }
     }
   };
-
-
 
   if (isLoading) {
     return (
@@ -100,9 +97,7 @@ export default function WikiPageView() {
       <div className="flex items-center justify-center min-h-96">
         <div className="text-center">
           <AlertTriangle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
-            Page Not Found
-          </h1>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Page Not Found</h1>
           <p className="text-slate-600 dark:text-slate-400">
             The page you're looking for doesn't exist or has been moved.
           </p>
@@ -119,7 +114,11 @@ export default function WikiPageView() {
           {/* Breadcrumb */}
           <nav className="mb-6">
             <ol className="flex items-center space-x-2 text-sm text-slate-500 dark:text-slate-400">
-              <li><a href="/" className="hover:text-primary transition-colors">Home</a></li>
+              <li>
+                <a href="/" className="hover:text-primary transition-colors">
+                  Home
+                </a>
+              </li>
               <li>/</li>
               <li className="capitalize">
                 <a href={`#${page.folder}`} className="hover:text-primary transition-colors">
@@ -135,9 +134,7 @@ export default function WikiPageView() {
           <header className="mb-8">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center space-x-3">
-                <h1 className="text-3xl font-bold text-slate-900 dark:text-white">
-                  {page.title}
-                </h1>
+                <h1 className="text-3xl font-bold text-slate-900 dark:text-white">{page.title}</h1>
                 <div className="flex space-x-2">
                   <Badge variant="secondary" className="capitalize">
                     {page.folder}
@@ -158,12 +155,7 @@ export default function WikiPageView() {
                 >
                   <Edit className="h-4 w-4" />
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleShare}
-                  title="Share Page"
-                >
+                <Button variant="ghost" size="icon" onClick={handleShare} title="Share Page">
                   <Share className="h-4 w-4" />
                 </Button>
               </div>
@@ -171,7 +163,9 @@ export default function WikiPageView() {
             <div className="flex items-center space-x-4 text-sm text-slate-500 dark:text-slate-400">
               <span className="flex items-center space-x-1">
                 <Calendar className="h-3 w-3" />
-                <span>Last updated: {formatDistanceToNow(new Date(page.updatedAt), { addSuffix: true })}</span>
+                <span>
+                  Last updated: {formatDistanceToNow(new Date(page.updatedAt), { addSuffix: true })}
+                </span>
               </span>
               <span>•</span>
               <span className="flex items-center space-x-1">
@@ -186,8 +180,6 @@ export default function WikiPageView() {
             </div>
           </header>
 
-
-
           {/* Content */}
           <MarkdownRenderer content={page.content} />
 
@@ -195,20 +187,14 @@ export default function WikiPageView() {
           <footer className="mt-12 pt-8 border-t border-slate-200 dark:border-slate-700">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-4">
-                <span className="text-sm text-slate-500 dark:text-slate-400">Was this helpful?</span>
+                <span className="text-sm text-slate-500 dark:text-slate-400">
+                  Was this helpful?
+                </span>
                 <div className="flex space-x-2">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                  >
+                  <Button variant="ghost" size="icon" className="h-8 w-8">
                     <ThumbsUp className="h-4 w-4" />
                   </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                  >
+                  <Button variant="ghost" size="icon" className="h-8 w-8">
                     <ThumbsDown className="h-4 w-4" />
                   </Button>
                 </div>

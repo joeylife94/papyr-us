@@ -16,18 +16,18 @@ const buildServer = async () => {
       outdir: 'dist',
       // Exclude problematic dependencies from the bundle
       external: [
-        '@babel/preset-typescript', 
+        '@babel/preset-typescript',
         'lightningcss',
         'bcrypt',
         'dotenv', // Exclude dotenv from bundling
-        'depd'
+        'depd',
       ],
       minify: false,
       sourcemap: false,
       logLevel: 'info',
       define: {
-        'process.env.NODE_ENV': '"production"'
-      }
+        'process.env.NODE_ENV': '"production"',
+      },
     });
     console.log('✓ Server build completed successfully');
   } catch (error) {

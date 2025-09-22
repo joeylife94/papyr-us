@@ -13,14 +13,14 @@ interface HeadingBlockProps {
   onAddBlock: (type?: BlockType) => void;
 }
 
-export function HeadingBlock({ 
-  block, 
-  isFocused, 
-  onFocus, 
-  onBlur, 
-  onUpdate, 
-  onDelete, 
-  onAddBlock 
+export function HeadingBlock({
+  block,
+  isFocused,
+  onFocus,
+  onBlur,
+  onUpdate,
+  onDelete,
+  onAddBlock,
 }: HeadingBlockProps) {
   const [content, setContent] = useState(block.content);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -88,7 +88,7 @@ export function HeadingBlock({
   };
 
   return (
-    <div 
+    <div
       className={`relative group ${isFocused ? 'bg-blue-50 dark:bg-blue-950/20' : ''} rounded-lg p-2 transition-colors`}
       onFocus={onFocus}
       onBlur={onBlur}
@@ -126,4 +126,4 @@ export function HeadingBlock({
       )}
     </div>
   );
-} 
+}

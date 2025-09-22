@@ -14,6 +14,7 @@ Papyr.us는 React와 Express.js를 기반으로 구축된 현대적인 팀 협�
 ## 기술 스택
 
 ### Frontend
+
 - **React 18** - 사용자 인터페이스 라이브러리
 - **TypeScript** - 타입 안전성 보장
 - **Vite** - 빠른 개발 서버 및 번들러
@@ -24,6 +25,7 @@ Papyr.us는 React와 Express.js를 기반으로 구축된 현대적인 팀 협�
 - **react-router-dom** - 클라이언트 사이드 라우팅 라이브러리
 
 ### Backend
+
 - **Express.js** - Node.js 웹 프레임워크
 - **TypeScript** - 서버사이드 타입 안전성
 - **Drizzle ORM** - 타입 안전한 SQL 쿼리 빌더
@@ -34,10 +36,12 @@ Papyr.us는 React와 Express.js를 기반으로 구축된 현대적인 팀 협�
 - **jsonwebtoken** - JWT 기반 인증
 
 ### Database
+
 - **PostgreSQL 16** - 관계형 데이터베이스
 - **Drizzle Kit** - 마이그레이션 및 스키마 관리
 
 ### Development & Deployment
+
 - **Docker** - 컨테이너화 및 배포
 - **Vercel** - 프론트엔드 배포 플랫폼
 - **Ubuntu Server** - 백엔드 호스팅
@@ -47,6 +51,7 @@ Papyr.us는 React와 Express.js를 기반으로 구축된 현대적인 팀 협�
 ### 핵심 테이블
 
 #### users
+
 ```sql
 CREATE TABLE users (
   id SERIAL PRIMARY KEY,
@@ -59,6 +64,7 @@ CREATE TABLE users (
 ```
 
 #### wiki_pages
+
 ```sql
 CREATE TABLE wiki_pages (
   id SERIAL PRIMARY KEY,
@@ -78,6 +84,7 @@ CREATE TABLE wiki_pages (
 ```
 
 #### teams
+
 ```sql
 CREATE TABLE teams (
   id SERIAL PRIMARY KEY,
@@ -94,10 +101,11 @@ CREATE TABLE teams (
 );
 ```
 
-> **참고**: 2024-12-17에 `relation "teams" does not exist` 에러가 발생하여 수동 마이그레이션으로 해결. 
+> **참고**: 2024-12-17에 `relation "teams" does not exist` 에러가 발생하여 수동 마이그레이션으로 해결.
 > drizzle-kit 버전 호환성 문제로 introspect 명령어 사용 불가하여 Docker 컨테이너에 직접 SQL 실행으로 테이블 생성.
 
 #### members
+
 ```sql
 CREATE TABLE members (
   id SERIAL PRIMARY KEY,
@@ -117,6 +125,7 @@ CREATE TABLE members (
 ```
 
 #### tasks
+
 ```sql
 CREATE TABLE tasks (
   id SERIAL PRIMARY KEY,
@@ -139,6 +148,7 @@ CREATE TABLE tasks (
 ```
 
 #### calendar_events
+
 ```sql
 CREATE TABLE calendar_events (
   id SERIAL PRIMARY KEY,
@@ -154,6 +164,7 @@ CREATE TABLE calendar_events (
 ```
 
 #### comments
+
 ```sql
 CREATE TABLE comments (
   id SERIAL PRIMARY KEY,
@@ -166,6 +177,7 @@ CREATE TABLE comments (
 ```
 
 #### notifications
+
 ```sql
 CREATE TABLE notifications (
   id SERIAL PRIMARY KEY,
@@ -179,6 +191,7 @@ CREATE TABLE notifications (
 ```
 
 #### progress_stats
+
 ```sql
 CREATE TABLE progress_stats (
   id SERIAL PRIMARY KEY,
@@ -193,6 +206,7 @@ CREATE TABLE progress_stats (
 ```
 
 #### templates
+
 ```sql
 CREATE TABLE templates (
   id SERIAL PRIMARY KEY,
@@ -212,6 +226,7 @@ CREATE TABLE templates (
 ```
 
 #### ai_search_logs
+
 ```sql
 CREATE TABLE ai_search_logs (
   id SERIAL PRIMARY KEY,
@@ -228,6 +243,7 @@ CREATE TABLE ai_search_logs (
 ## API 엔드포인트
 
 ### 사용자 인증 (Authentication)
+
 ```
 POST   /api/auth/register      # 회원 가입
 POST   /api/auth/login         # 로그인
@@ -236,6 +252,7 @@ GET    /api/auth/me            # 현재 로그인된 사용자 정보 조회
 ```
 
 ### 위키 페이지
+
 ```
 GET    /api/pages              # 페이지 목록 조회
 GET    /api/pages/:id          # 특정 페이지 조회
@@ -246,6 +263,7 @@ GET    /api/pages/search       # 페이지 검색
 ```
 
 ### 팀 관리
+
 ```
 GET    /api/teams              # 팀 목록 조회
 GET    /api/teams/:id          # 특정 팀 조회
@@ -256,6 +274,7 @@ POST   /api/teams/verify       # 팀 비밀번호 검증
 ```
 
 ### 과제 관리
+
 ```
 GET    /api/tasks              # 과제 목록 조회
 GET    /api/tasks/:id          # 특정 과제 조회
@@ -265,6 +284,7 @@ DELETE /api/tasks/:id          # 과제 삭제
 ```
 
 ### 캘린더
+
 ```
 GET    /api/calendar           # 이벤트 목록 조회
 GET    /api/calendar/:id       # 특정 이벤트 조회
@@ -274,6 +294,7 @@ DELETE /api/calendar/:id       # 이벤트 삭제
 ```
 
 ### 파일 업로드
+
 ```
 POST   /api/uploads/images     # 이미지 업로드
 POST   /api/uploads/files      # 파일 업로드
@@ -283,6 +304,7 @@ DELETE /api/uploads/files/:filename   # 파일 삭제
 ```
 
 ### 대시보드
+
 ```
 GET    /api/dashboard/overview # 대시보드 통계
 GET    /api/dashboard/activity # 최근 활동
@@ -290,6 +312,7 @@ GET    /api/dashboard/teams    # 팀별 통계
 ```
 
 ### AI 서비스
+
 ```
 POST   /api/ai/generate        # AI 콘텐츠 생성
 POST   /api/ai/improve         # 콘텐츠 개선 제안
@@ -298,6 +321,7 @@ GET    /api/ai/suggestions     # 검색 제안
 ```
 
 ### 템플릿 관리
+
 ```
 GET    /api/templates          # 템플릿 목록 조회
 GET    /api/templates/:id      # 특정 템플릿 조회
@@ -309,6 +333,7 @@ POST   /api/templates/:id/use  # 템플릿 사용 (사용 횟수 증가)
 ```
 
 ### 실시간 협업 (WebSocket)
+
 ```
 Socket.IO Events:
 - join-document     # 문서 세션 참여
@@ -326,6 +351,7 @@ Socket.IO Events:
 ### 블록 에디터 시스템
 
 #### 핵심 컴포넌트
+
 - **BlockEditor** - 메인 블록 에디터 (실시간 협업 통합)
 - **HeadingBlock** - 제목 블록 (H1, H2, H3)
 - **ParagraphBlock** - 단락 블록
@@ -339,6 +365,7 @@ Socket.IO Events:
 - **AIAssistant** - AI 검색 및 제안 컴포넌트
 
 #### 블록 데이터 구조
+
 ```typescript
 interface Block {
   id: string;
@@ -354,12 +381,14 @@ interface Block {
 ### 데이터베이스 뷰 시스템
 
 #### 뷰 컴포넌트
+
 - **TableView** - 테이블 형태 데이터 표시
 - **KanbanView** - 칸반 보드 형태 작업 관리
 - **GalleryView** - 갤러리/리스트 형태 데이터 표시
 - **DatabaseView** - 통합 데이터베이스 뷰 페이지
 
 #### 뷰 기능
+
 - **정렬**: 컬럼별 오름차순/내림차순 정렬
 - **필터링**: 검색 및 조건별 필터링
 - **페이지네이션**: 대용량 데이터 분할 표시
@@ -369,12 +398,14 @@ interface Block {
 ### 네비게이션 시스템
 
 #### 사이드바 컴포넌트
+
 - **Sidebar** - 메인 네비게이션
 - **팀 섹션**: 팀 목록 및 서브메뉴
 - **폴더 섹션**: 위키 페이지 폴더 구조
 - **검색 섹션**: 실시간 검색 기능
 
 #### 라우팅 구조
+
 ```
 /                    # 홈페이지
 /login               # 로그인 페이지
@@ -396,6 +427,7 @@ interface Block {
 ## 인증 시스템 (Frontend)
 
 ### 핵심 컴포넌트 및 훅
+
 - **`LoginPage`**, **`RegisterPage`**: 사용자가 이메일/비밀번호 또는 소셜 계정(Google, GitHub)을 통해 인증할 수 있는 UI를 제공합니다.
 - **`useAuth`**: `AuthContext`를 통해 전역적으로 사용자의 인증 상태(`isAuthenticated`), 사용자 정보(`user`), 그리고 `login`, `logout`, `socialLogin`과 같은 함수를 제공하는 커스텀 훅입니다.
 - **`AuthProvider`**: `useAuth` 훅이 제공하는 모든 상태와 함수를 애플리케이션 전체에 공급하는 컨텍스트 제공자입니다.
@@ -403,6 +435,7 @@ interface Block {
 - **`Header` (동적 UI)**: `useAuth` 훅을 사용하여 로그인 상태에 따라 "Login" 버튼 또는 사용자 아바타와 드롭다운 메뉴(사용자 정보, 로그아웃 버튼 포함)를 동적으로 렌더링합니다.
 
 ### 인증 흐름
+
 1.  사용자가 로그인/회원가입 페이지를 통해 인증을 시도합니다.
 2.  `useAuth` 훅의 `login` 또는 `socialLogin` 함수가 백엔드 API와 통신하여 JWT 토큰을 받아옵니다.
 3.  토큰은 `localStorage`에 저장되고, `AuthProvider`는 사용자 정보를 가져와 `isAuthenticated` 상태를 `true`로 설정합니다.
@@ -414,8 +447,10 @@ interface Block {
 ### 블록 에디터 시스템
 
 #### 핵심 컴포넌트
-- **BlockEditor** - 메인 블록 에디터 (실시간 협업 통합)   # 팀별 페이지
-```
+
+- **BlockEditor** - 메인 블록 에디터 (실시간 협업 통합) # 팀별 페이지
+
+````
 
 ## AI 검색 시스템
 
@@ -534,7 +569,7 @@ services:
       - DATABASE_URL=postgresql://user:pass@db:5432/papyrus
     depends_on:
       - db
-  
+
   db:
     image: postgres:16-alpine
     environment:
@@ -546,9 +581,10 @@ services:
 
 volumes:
   postgres_data:
-```
+````
 
 ### 환경 변수
+
 ```env
 # .env
 NODE_ENV=production
@@ -559,6 +595,7 @@ ADMIN_PASSWORD=404vibe!
 ```
 
 ### 모니터링
+
 - **로그 관리**: 구조화된 로깅
 - **성능 모니터링**: 응답 시간 및 에러율 추적
 - **데이터베이스 모니터링**: 쿼리 성능 및 연결 상태
@@ -567,6 +604,7 @@ ADMIN_PASSWORD=404vibe!
 ## 개발 가이드
 
 ### 개발 환경 설정
+
 ```bash
 # 저장소 클론
 git clone https://github.com/your-org.git
@@ -585,14 +623,15 @@ npm run db:migrate
 npm run dev
 ```
 
-
 ### 코드 스타일
+
 - **TypeScript**: 엄격한 타입 체크
 - **ESLint**: 코드 품질 관리
 - **Prettier**: 코드 포맷팅
 - **Husky**: Git 훅을 통한 품질 관리
 
 ### 테스트 전략
+
 - **단위/통합 테스트 (Backend)**: `Vitest`와 `Supertest`를 사용하여 모든 API 엔드포인트의 동작을 검증합니다. 스토리지 계층은 의존성 주입과 `vi.mock`을 통해 모의(mock) 처리하여 외부 의존성 없이 안정적으로 테스트합니다. 모든 테스트 케이스는 성공적으로 통과하며, CI/CD 파이프라인의 일부로 실행될 수 있는 기반이 마련되었습니다.
 - **단위 테스트 (Frontend)**: `Vitest`와 `React Testing Library`를 사용하여 개별 컴포넌트의 렌더링 및 상호작용을 테스트합니다.
 - **E2E 테스트**: `Playwright`를 사용하여 사용자의 실제 시나리오를 시뮬레이션하고 전체 애플리케이션의 흐름을 검증합니다. 테스트 안정성을 높이기 위해, API 직접 호출이나 `localStorage` 조작 대신 모든 테스트가 UI를 통해 상호작용하도록 리팩토링되었습니다. 이 접근 방식은 실제 사용자 경험에 더 가까우며 테스트의 신뢰도를 높입니다.
@@ -601,18 +640,21 @@ npm run dev
 ## 확장성 계획
 
 ### Phase 4: 실시간 협업
+
 - **WebSocket**: Socket.io 기반 실시간 통신
 - **동시 편집**: Operational Transformation 알고리즘
 - **충돌 해결**: 자동 충돌 해결 시스템
 - **버전 관리**: Git 기반 변경 이력 관리
 
 ### Phase 5: 고급 기능
+
 - **AI 검색**: 자연어 처리 기반 검색
 - **템플릿 시스템**: 사용자 정의 템플릿
 - **API 확장**: GraphQL 및 REST API
 - **플러그인 시스템**: 확장 가능한 아키텍처
 
 ### 미래 계획
+
 - **마이크로서비스**: 서비스 분리 및 확장
 - **모바일 앱**: React Native 기반
 - **오프라인 지원**: Service Worker 활용
@@ -621,36 +663,42 @@ npm run dev
 ## 테스트 및 안정화 (2025-07-17)
 
 ### TypeScript 타입 안전성
+
 - **완전한 타입 체크**: 모든 26개 타입 오류 해결
 - **의존성 패키지 통합**: 누락된 패키지들 설치 및 타입 정의
 - **라우터 타입 호환성**: Wouter 컴포넌트 타입 불일치 해결
 - **소켓 이벤트 타입**: 구체적인 콜백 시그니처 정의
 
 ### 프로덕션 빌드 최적화
+
 - **번들 크기**: 1.2MB gzip 압축으로 최적화
 - **코드 분할**: 효율적인 청크 분할 전략
 - **트리 쉐이킹**: 사용하지 않는 코드 제거
 - **압축 최적화**: gzip 압축률 최적화
 
 ### Docker 환경 안정성
+
 - **컨테이너 정상 기동**: Docker Compose 환경 안정성 확인
 - **API 응답 테스트**: 주요 엔드포인트 정상 응답 확인
 - **데이터베이스 연결**: PostgreSQL 연결 상태 검증
 - **환경 변수 관리**: 프로덕션 환경 설정 검증
 
 ### 테스트 전략
+
 - **단위 테스트**: TypeScript 타입 체크 완료
 - **빌드 테스트**: 프로덕션 빌드 성공 확인
 - **통합 테스트**: Docker 환경 API 테스트
 - **문서화**: 테스트 결과 체계적 기록
 
 ### 성능 지표
+
 - **빌드 시간**: 최적화된 빌드 프로세스
 - **번들 크기**: 효율적인 코드 분할
 - **API 응답**: 빠른 엔드포인트 응답 시간
 - **메모리 사용량**: 최적화된 메모리 관리
 
 ### 다음 테스트 계획
+
 - **브라우저 기능별 테스트**: 실제 사용자 시나리오
 - **성능 테스트**: 로딩 속도 및 동시 사용자 처리
 - **보안 테스트**: 입력 검증 및 취약점 점검
@@ -661,6 +709,7 @@ npm run dev
 ## 팀 관리 기능 명세
 
 ### 팀 생성/수정/삭제
+
 - **API 엔드포인트**:
   - `POST /api/teams`: 팀 생성
   - `PUT /api/teams/:id`: 팀 수정
@@ -669,6 +718,7 @@ npm run dev
 - **관리자 UI**: Teams 탭에서 모든 기능 접근 가능
 
 ### 팀 비밀번호 보호
+
 - **비밀번호 해싱**: `bcrypt` 라이브러리를 사용하여 비밀번호를 안전하게 해싱하여 저장
 - **비밀번호 검증**:
   - `POST /api/teams/verify`: 팀 이름과 비밀번호를 받아 유효성 검증
@@ -679,6 +729,7 @@ npm run dev
   - 검증된 팀의 상태를 로컬 상태(React `useState`)로 관리하여, 동일 세션 내에서 반복적인 비밀번호 입력을 방지
 
 ### 기술적 세부사항
+
 - **비밀번호 저장**: `teams` 테이블의 `password` 필드에 해시된 비밀번호 저장
 - **API 보안**: 비밀번호와 같은 민감한 정보는 HTTPS를 통해 전송되어야 함
 - **UI/UX**:
@@ -689,5 +740,6 @@ npm run dev
 ---
 
 ## 최종 업데이트: 2025-07-25
+
 - **작성자**: AI Assistant
 - **상태**: 최신화 완료 ✅

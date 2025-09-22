@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { List, Download, Printer, History } from "lucide-react";
+import { useEffect, useState } from 'react';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { List, Download, Printer, History } from 'lucide-react';
 
 interface Heading {
   id: string;
@@ -15,7 +15,7 @@ interface TableOfContentsProps {
 }
 
 export function TableOfContents({ headings, className }: TableOfContentsProps) {
-  const [activeId, setActiveId] = useState<string>("");
+  const [activeId, setActiveId] = useState<string>('');
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -27,7 +27,7 @@ export function TableOfContents({ headings, className }: TableOfContentsProps) {
         });
       },
       {
-        rootMargin: "-20% 0px -80% 0px",
+        rootMargin: '-20% 0px -80% 0px',
         threshold: 0,
       }
     );
@@ -46,8 +46,8 @@ export function TableOfContents({ headings, className }: TableOfContentsProps) {
     const element = document.getElementById(id);
     if (element) {
       element.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
+        behavior: 'smooth',
+        block: 'start',
       });
     }
   };
@@ -55,7 +55,7 @@ export function TableOfContents({ headings, className }: TableOfContentsProps) {
   if (headings.length === 0) return null;
 
   return (
-    <aside className={cn("hidden xl:block w-64 ml-8", className)}>
+    <aside className={cn('hidden xl:block w-64 ml-8', className)}>
       <div className="sticky top-24 p-4">
         <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-4 flex items-center">
           <List className="h-4 w-4 text-primary mr-2" />
@@ -67,14 +67,14 @@ export function TableOfContents({ headings, className }: TableOfContentsProps) {
               key={id}
               onClick={() => scrollToHeading(id)}
               className={cn(
-                "block text-sm py-1 border-l-2 transition-colors text-left w-full",
-                level === 1 && "pl-3",
-                level === 2 && "pl-3",
-                level === 3 && "pl-6",
-                level >= 4 && "pl-9",
+                'block text-sm py-1 border-l-2 transition-colors text-left w-full',
+                level === 1 && 'pl-3',
+                level === 2 && 'pl-3',
+                level === 3 && 'pl-6',
+                level >= 4 && 'pl-9',
                 activeId === id
-                  ? "text-primary border-primary font-medium"
-                  : "text-slate-600 dark:text-slate-400 border-transparent hover:text-primary hover:border-primary"
+                  ? 'text-primary border-primary font-medium'
+                  : 'text-slate-600 dark:text-slate-400 border-transparent hover:text-primary hover:border-primary'
               )}
             >
               {text}
@@ -106,11 +106,7 @@ export function TableOfContents({ headings, className }: TableOfContentsProps) {
               <Printer className="h-3 w-3 mr-2" />
               Print Page
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start h-auto p-1 text-sm"
-            >
+            <Button variant="ghost" size="sm" className="w-full justify-start h-auto p-1 text-sm">
               <History className="h-3 w-3 mr-2" />
               View History
             </Button>

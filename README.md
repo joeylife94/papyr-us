@@ -16,6 +16,7 @@ A comprehensive wiki platform built with React and Express.js, enabling collabor
 ## Tech Stack
 
 ### Frontend
+
 - React 18 with TypeScript
 - Vite for fast development
 - Tailwind CSS for styling
@@ -24,6 +25,7 @@ A comprehensive wiki platform built with React and Express.js, enabling collabor
 - Wouter for routing
 
 ### Backend
+
 - Express.js with TypeScript
 - PostgreSQL 16 with Drizzle ORM
 - RESTful API design
@@ -36,19 +38,22 @@ A comprehensive wiki platform built with React and Express.js, enabling collabor
 이 프로젝트는 **Docker 환경에서 개발**하는 것을 권장합니다.
 
 #### Prerequisites
+
 - Docker Desktop
 - Docker Compose
 
 #### Docker Development
 
 1. **Clone and start with Docker:**
+
    ```bash
    git clone <your-repo-url>
-   
+
    docker-compose up --build
    ```
 
 2. **Set up environment (optional):**
+
    ```bash
    cp .env.example .env
    # Edit .env file with your preferred settings
@@ -63,41 +68,46 @@ A comprehensive wiki platform built with React and Express.js, enabling collabor
 Docker 환경을 사용할 수 없는 경우에만 사용하세요.
 
 #### Prerequisites
-- Node.js 18+ 
+
+- Node.js 18+
 - npm or yarn
 - PostgreSQL 16 (선택사항)
 
 #### Local Development
 
 1. **Clone and install dependencies:**
+
    ```bash
    git clone <your-repo-url>
-   
+
    npm install
    ```
 
 2. **Set up environment:**
+
    ```bash
    cp .env.example .env
    # Edit .env file with your preferred settings
    ```
 
 3. **Start development server:**
-   
+
    **Option A: Using npm scripts**
+
    ```bash
    npm run dev
    ```
-   
+
    **Option B: Using convenience scripts**
+
    ```bash
    # For Linux/Mac
    ./local-dev.sh
-   
+
    # For Windows
    local-dev.bat
    ```
-   
+
    The application will be available at `http://localhost:5001`
 
 4. **Build for production:**
@@ -166,22 +176,26 @@ The application uses **PostgreSQL 16** as the primary database:
 ## Features Overview
 
 ### Wiki Pages
+
 - Create, edit, and delete wiki pages
 - Markdown support with live preview
 - Tag-based organization
 - Full-text search
 
 ### Directory Management
+
 - Organize pages into folders
 - Custom directory structures
 - Password-protected directories
 
 ### Team Collaboration
+
 - Team-specific calendars
 - Shared workspaces
 - Member management
 
 ### AI Integration (Optional)
+
 - Content suggestions
 - Auto-summarization
 - Smart content generation
@@ -215,6 +229,7 @@ NODE_ENV=production npm start
 ### Cloud Platforms
 
 This application works on:
+
 - Replit (pre-configured)
 - Vercel
 - Netlify

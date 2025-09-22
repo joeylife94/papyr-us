@@ -7,8 +7,22 @@ import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '../components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
 import { Trash2, Edit, Plus, Github, Mail, User, Calendar } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
 
@@ -39,23 +53,42 @@ interface MemberFormData {
 }
 
 const roleOptions = [
-  "팀장",
-  "프론트엔드 개발자", 
-  "백엔드 개발자",
-  "풀스택 개발자",
-  "디자이너",
-  "PM",
-  "기획자",
-  "QA"
+  '팀장',
+  '프론트엔드 개발자',
+  '백엔드 개발자',
+  '풀스택 개발자',
+  '디자이너',
+  'PM',
+  '기획자',
+  'QA',
 ];
 
 const skillOptions = [
-  "React", "Vue.js", "Angular", "TypeScript", "JavaScript",
-  "Node.js", "Express", "Python", "Java", "C++",
-  "PostgreSQL", "MySQL", "MongoDB", "Redis",
-  "Docker", "Kubernetes", "AWS", "Azure", "GCP",
-  "Figma", "Adobe XD", "Sketch",
-  "Git", "Jira", "Slack"
+  'React',
+  'Vue.js',
+  'Angular',
+  'TypeScript',
+  'JavaScript',
+  'Node.js',
+  'Express',
+  'Python',
+  'Java',
+  'C++',
+  'PostgreSQL',
+  'MySQL',
+  'MongoDB',
+  'Redis',
+  'Docker',
+  'Kubernetes',
+  'AWS',
+  'Azure',
+  'GCP',
+  'Figma',
+  'Adobe XD',
+  'Sketch',
+  'Git',
+  'Jira',
+  'Slack',
 ];
 
 interface MembersProps {
@@ -74,7 +107,7 @@ export default function Members({ teamName }: MembersProps) {
     bio: '',
     githubUsername: '',
     skills: [],
-    isActive: true
+    isActive: true,
   });
   const [skillInput, setSkillInput] = useState('');
 
@@ -85,16 +118,14 @@ export default function Members({ teamName }: MembersProps) {
   const { data: members = [], isLoading } = useQuery<Member[]>({
     queryKey: ['members', teamName],
     queryFn: async () => {
-      const url = teamName 
-        ? `/api/members?teamId=${teamName}`
-        : '/api/members';
+      const url = teamName ? `/api/members?teamId=${teamName}` : '/api/members';
       const response = await fetch(url);
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to fetch members');
       }
       return response.json();
-    }
+    },
   });
 
   // Create member mutation
@@ -104,7 +135,7 @@ export default function Members({ teamName }: MembersProps) {
       const response = await fetch('/api/members', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(memberData)
+        body: JSON.stringify(memberData),
       });
       if (!response.ok) {
         const errorData = await response.json();
@@ -117,17 +148,17 @@ export default function Members({ teamName }: MembersProps) {
       setIsDialogOpen(false);
       resetForm();
       toast({
-        title: "멤버 추가 완료",
-        description: "새로운 팀원이 성공적으로 추가되었습니다."
+        title: '멤버 추가 완료',
+        description: '새로운 팀원이 성공적으로 추가되었습니다.',
       });
     },
     onError: () => {
       toast({
-        title: "오류",
-        description: "멤버 추가 중 오류가 발생했습니다.",
-        variant: "destructive"
+        title: '오류',
+        description: '멤버 추가 중 오류가 발생했습니다.',
+        variant: 'destructive',
       });
-    }
+    },
   });
 
   // Update member mutation
@@ -136,7 +167,7 @@ export default function Members({ teamName }: MembersProps) {
       const response = await fetch(`/api/members/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
+        body: JSON.stringify(data),
       });
       if (!response.ok) {
         throw new Error('Failed to update member');
@@ -149,24 +180,24 @@ export default function Members({ teamName }: MembersProps) {
       setIsEditing(false);
       resetForm();
       toast({
-        title: "멤버 수정 완료",
-        description: "팀원 정보가 성공적으로 업데이트되었습니다."
+        title: '멤버 수정 완료',
+        description: '팀원 정보가 성공적으로 업데이트되었습니다.',
       });
     },
     onError: () => {
       toast({
-        title: "오류", 
-        description: "멤버 정보 수정 중 오류가 발생했습니다.",
-        variant: "destructive"
+        title: '오류',
+        description: '멤버 정보 수정 중 오류가 발생했습니다.',
+        variant: 'destructive',
       });
-    }
+    },
   });
 
   // Delete member mutation
   const deleteMember = useMutation({
     mutationFn: async (id: number) => {
       const response = await fetch(`/api/members/${id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
       });
       if (!response.ok) {
         throw new Error('Failed to delete member');
@@ -176,17 +207,17 @@ export default function Members({ teamName }: MembersProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['members', teamName] });
       toast({
-        title: "멤버 삭제 완료",
-        description: "팀원이 성공적으로 삭제되었습니다."
+        title: '멤버 삭제 완료',
+        description: '팀원이 성공적으로 삭제되었습니다.',
       });
     },
     onError: () => {
       toast({
-        title: "오류",
-        description: "멤버 삭제 중 오류가 발생했습니다.",
-        variant: "destructive"
+        title: '오류',
+        description: '멤버 삭제 중 오류가 발생했습니다.',
+        variant: 'destructive',
       });
-    }
+    },
   });
 
   const resetForm = () => {
@@ -198,7 +229,7 @@ export default function Members({ teamName }: MembersProps) {
       bio: '',
       githubUsername: '',
       skills: [],
-      isActive: true
+      isActive: true,
     });
     setSkillInput('');
     setSelectedMember(null);
@@ -214,7 +245,7 @@ export default function Members({ teamName }: MembersProps) {
       bio: member.bio || '',
       githubUsername: member.githubUsername || '',
       skills: member.skills,
-      isActive: member.isActive
+      isActive: member.isActive,
     });
     setIsEditing(true);
     setIsDialogOpen(true);
@@ -231,23 +262,27 @@ export default function Members({ teamName }: MembersProps) {
 
   const addSkill = () => {
     if (skillInput.trim() && !formData.skills.includes(skillInput.trim())) {
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
-        skills: [...prev.skills, skillInput.trim()]
+        skills: [...prev.skills, skillInput.trim()],
       }));
       setSkillInput('');
     }
   };
 
   const removeSkill = (skill: string) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      skills: prev.skills.filter(s => s !== skill)
+      skills: prev.skills.filter((s) => s !== skill),
     }));
   };
 
   const getInitials = (name: string) => {
-    return name.split(' ').map(n => n[0]).join('').toUpperCase();
+    return name
+      .split(' ')
+      .map((n) => n[0])
+      .join('')
+      .toUpperCase();
   };
 
   const formatDate = (dateString: string) => {
@@ -268,19 +303,23 @@ export default function Members({ teamName }: MembersProps) {
     <div className="container mx-auto p-6">
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-3xl font-bold">
-            {teamName ? `${teamName} 팀원 관리` : '팀원 관리'}
-          </h1>
+          <h1 className="text-3xl font-bold">{teamName ? `${teamName} 팀원 관리` : '팀원 관리'}</h1>
           <p className="text-muted-foreground mt-2">
-            {teamName ? `${teamName} 팀의 팀원들을 관리합니다` : '바이브코딩 스터디 팀원들의 프로필을 관리합니다'}
+            {teamName
+              ? `${teamName} 팀의 팀원들을 관리합니다`
+              : '바이브코딩 스터디 팀원들의 프로필을 관리합니다'}
           </p>
         </div>
-        
+
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
-            <Button onClick={() => { resetForm(); setIsEditing(false); }}>
-              <Plus className="w-4 h-4 mr-2" />
-              새 멤버 추가
+            <Button
+              onClick={() => {
+                resetForm();
+                setIsEditing(false);
+              }}
+            >
+              <Plus className="w-4 h-4 mr-2" />새 멤버 추가
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -290,7 +329,7 @@ export default function Members({ teamName }: MembersProps) {
                 팀원의 정보를 입력해주세요. 모든 필드는 선택사항입니다.
               </DialogDescription>
             </DialogHeader>
-            
+
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -298,7 +337,7 @@ export default function Members({ teamName }: MembersProps) {
                   <Input
                     id="name"
                     value={formData.name}
-                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
                     required
                   />
                 </div>
@@ -308,7 +347,7 @@ export default function Members({ teamName }: MembersProps) {
                     id="email"
                     type="email"
                     value={formData.email}
-                    onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, email: e.target.value }))}
                     required
                   />
                 </div>
@@ -317,16 +356,18 @@ export default function Members({ teamName }: MembersProps) {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="role">역할 *</Label>
-                  <Select 
-                    value={formData.role} 
-                    onValueChange={(value) => setFormData(prev => ({ ...prev, role: value }))}
+                  <Select
+                    value={formData.role}
+                    onValueChange={(value) => setFormData((prev) => ({ ...prev, role: value }))}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="역할을 선택하세요" />
                     </SelectTrigger>
                     <SelectContent>
-                      {roleOptions.map(role => (
-                        <SelectItem key={role} value={role}>{role}</SelectItem>
+                      {roleOptions.map((role) => (
+                        <SelectItem key={role} value={role}>
+                          {role}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -336,7 +377,9 @@ export default function Members({ teamName }: MembersProps) {
                   <Input
                     id="githubUsername"
                     value={formData.githubUsername}
-                    onChange={(e) => setFormData(prev => ({ ...prev, githubUsername: e.target.value }))}
+                    onChange={(e) =>
+                      setFormData((prev) => ({ ...prev, githubUsername: e.target.value }))
+                    }
                     placeholder="username"
                   />
                 </div>
@@ -347,7 +390,7 @@ export default function Members({ teamName }: MembersProps) {
                 <Input
                   id="avatarUrl"
                   value={formData.avatarUrl}
-                  onChange={(e) => setFormData(prev => ({ ...prev, avatarUrl: e.target.value }))}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, avatarUrl: e.target.value }))}
                   placeholder="https://example.com/avatar.jpg"
                 />
               </div>
@@ -357,7 +400,7 @@ export default function Members({ teamName }: MembersProps) {
                 <Textarea
                   id="bio"
                   value={formData.bio}
-                  onChange={(e) => setFormData(prev => ({ ...prev, bio: e.target.value }))}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, bio: e.target.value }))}
                   placeholder="간단한 자기소개를 작성해주세요"
                   rows={3}
                 />
@@ -371,8 +414,10 @@ export default function Members({ teamName }: MembersProps) {
                       <SelectValue placeholder="기술을 선택하거나 직접 입력하세요" />
                     </SelectTrigger>
                     <SelectContent>
-                      {skillOptions.map(skill => (
-                        <SelectItem key={skill} value={skill}>{skill}</SelectItem>
+                      {skillOptions.map((skill) => (
+                        <SelectItem key={skill} value={skill}>
+                          {skill}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -388,8 +433,13 @@ export default function Members({ teamName }: MembersProps) {
                   </Button>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {formData.skills.map(skill => (
-                    <Badge key={skill} variant="secondary" className="cursor-pointer" onClick={() => removeSkill(skill)}>
+                  {formData.skills.map((skill) => (
+                    <Badge
+                      key={skill}
+                      variant="secondary"
+                      className="cursor-pointer"
+                      onClick={() => removeSkill(skill)}
+                    >
                       {skill} ×
                     </Badge>
                   ))}
@@ -437,7 +487,7 @@ export default function Members({ teamName }: MembersProps) {
                 {member.bio && (
                   <p className="text-sm text-muted-foreground line-clamp-2">{member.bio}</p>
                 )}
-                
+
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Mail className="w-4 h-4" />
                   <span className="truncate">{member.email}</span>
@@ -446,7 +496,7 @@ export default function Members({ teamName }: MembersProps) {
                 {member.githubUsername && (
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <Github className="w-4 h-4" />
-                    <a 
+                    <a
                       href={`https://github.com/${member.githubUsername}`}
                       target="_blank"
                       rel="noopener noreferrer"
@@ -466,7 +516,7 @@ export default function Members({ teamName }: MembersProps) {
                   <div>
                     <div className="text-sm font-medium mb-2">기술 스택</div>
                     <div className="flex flex-wrap gap-1">
-                      {member.skills.slice(0, 6).map(skill => (
+                      {member.skills.slice(0, 6).map((skill) => (
                         <Badge key={skill} variant="outline" className="text-xs">
                           {skill}
                         </Badge>
@@ -490,12 +540,17 @@ export default function Members({ teamName }: MembersProps) {
           <User className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
           <h3 className="text-lg font-medium mb-2">아직 등록된 멤버가 없습니다</h3>
           <p className="text-muted-foreground mb-4">첫 번째 팀원을 추가해보세요!</p>
-          <Button onClick={() => { resetForm(); setIsEditing(false); setIsDialogOpen(true); }}>
-            <Plus className="w-4 h-4 mr-2" />
-            새 멤버 추가
+          <Button
+            onClick={() => {
+              resetForm();
+              setIsEditing(false);
+              setIsDialogOpen(true);
+            }}
+          >
+            <Plus className="w-4 h-4 mr-2" />새 멤버 추가
           </Button>
         </div>
       )}
     </div>
   );
-} 
+}

@@ -27,15 +27,15 @@ interface UploadedFile {
   path: string;
 }
 
-export function ImageBlock({ 
-  block, 
-  isFocused, 
-  onFocus, 
-  onBlur, 
-  onUpdate, 
-  onDelete, 
+export function ImageBlock({
+  block,
+  isFocused,
+  onFocus,
+  onBlur,
+  onUpdate,
+  onDelete,
   onAddBlock,
-  teamName 
+  teamName,
 }: ImageBlockProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [isEditingCaption, setIsEditingCaption] = useState(false);
@@ -50,7 +50,7 @@ export function ImageBlock({
     mutationFn: async (file: File): Promise<UploadedFile> => {
       const formData = new FormData();
       formData.append('files', file);
-      
+
       if (teamName) {
         formData.append('teamId', teamName);
       }
@@ -77,23 +77,23 @@ export function ImageBlock({
           originalName: uploadedFile.originalName,
           size: uploadedFile.size,
           mimetype: uploadedFile.mimetype,
-          alt: uploadedFile.originalName
-        }
+          alt: uploadedFile.originalName,
+        },
       });
       setIsUploading(false);
       toast({
-        title: "이미지 업로드 완료",
-        description: "이미지가 성공적으로 업로드되었습니다."
+        title: '이미지 업로드 완료',
+        description: '이미지가 성공적으로 업로드되었습니다.',
       });
     },
     onError: (error: Error) => {
       setIsUploading(false);
       toast({
-        title: "업로드 실패",
+        title: '업로드 실패',
         description: error.message,
-        variant: "destructive"
+        variant: 'destructive',
       });
-    }
+    },
   });
 
   const onDrop = (acceptedFiles: File[]) => {
@@ -106,11 +106,11 @@ export function ImageBlock({
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
-      'image/*': ['.jpeg', '.jpg', '.png', '.gif', '.webp']
+      'image/*': ['.jpeg', '.jpg', '.png', '.gif', '.webp'],
     },
     maxFiles: 1,
     maxSize: 5 * 1024 * 1024, // 5MB
-    disabled: isUploading
+    disabled: isUploading,
   });
 
   const handleCaptionChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -122,8 +122,8 @@ export function ImageBlock({
       properties: {
         ...block.properties,
         caption: caption,
-        alt: caption || block.properties?.originalName || '이미지'
-      }
+        alt: caption || block.properties?.originalName || '이미지',
+      },
     });
     setIsEditingCaption(false);
   };
@@ -152,7 +152,7 @@ export function ImageBlock({
   // 이미지가 없는 경우 업로드 영역 표시
   if (!imageUrl) {
     return (
-      <div 
+      <div
         className={`relative group ${isFocused ? 'bg-blue-50 dark:bg-blue-950/20' : ''} rounded-lg p-4 transition-colors`}
         onFocus={onFocus}
         onBlur={onBlur}
@@ -168,15 +168,16 @@ export function ImageBlock({
           {...getRootProps()}
           className={`
             border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors
-            ${isDragActive 
-              ? 'border-primary bg-primary/5' 
-              : 'border-muted-foreground/25 hover:border-primary/50'
+            ${
+              isDragActive
+                ? 'border-primary bg-primary/5'
+                : 'border-muted-foreground/25 hover:border-primary/50'
             }
             ${isUploading && 'cursor-not-allowed opacity-50'}
           `}
         >
           <input {...getInputProps()} />
-          
+
           {isUploading ? (
             <div className="space-y-2">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
@@ -186,11 +187,11 @@ export function ImageBlock({
             <div className="space-y-2">
               <Upload className="h-8 w-8 mx-auto text-muted-foreground" />
               <p className="text-sm text-muted-foreground">
-                {isDragActive ? '이미지를 여기에 놓으세요' : '이미지를 드래그하거나 클릭하여 업로드하세요'}
+                {isDragActive
+                  ? '이미지를 여기에 놓으세요'
+                  : '이미지를 드래그하거나 클릭하여 업로드하세요'}
               </p>
-              <p className="text-xs text-muted-foreground">
-                PNG, JPG, GIF, WebP (최대 5MB)
-              </p>
+              <p className="text-xs text-muted-foreground">PNG, JPG, GIF, WebP (최대 5MB)</p>
             </div>
           )}
         </div>
@@ -214,7 +215,7 @@ export function ImageBlock({
 
   // 이미지가 있는 경우 이미지 표시
   return (
-    <div 
+    <div
       className={`relative group ${isFocused ? 'bg-blue-50 dark:bg-blue-950/20' : ''} rounded-lg p-4 transition-colors`}
       onFocus={onFocus}
       onBlur={onBlur}
@@ -238,7 +239,7 @@ export function ImageBlock({
             target.nextElementSibling?.classList.remove('hidden');
           }}
         />
-        
+
         {/* 이미지 로드 실패 시 표시 */}
         <div className="hidden w-full h-32 bg-gray-100 dark:bg-gray-800 rounded-lg flex items-center justify-center">
           <div className="text-center text-gray-500">
@@ -297,20 +298,10 @@ export function ImageBlock({
               className="text-sm"
               autoFocus
             />
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleCaptionSave}
-              className="h-8 px-2"
-            >
+            <Button variant="ghost" size="sm" onClick={handleCaptionSave} className="h-8 px-2">
               저장
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleCaptionCancel}
-              className="h-8 px-2"
-            >
+            <Button variant="ghost" size="sm" onClick={handleCaptionCancel} className="h-8 px-2">
               <X className="h-3 w-3" />
             </Button>
           </div>
@@ -348,4 +339,4 @@ export function ImageBlock({
       )}
     </div>
   );
-} 
+}

@@ -5,7 +5,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
-import { BookOpen, FolderOpen, Users, RefreshCw, Star, Eye, FileText, Plus, Edit, Trash2 } from 'lucide-react';
+import {
+  BookOpen,
+  FolderOpen,
+  Users,
+  RefreshCw,
+  Star,
+  Eye,
+  FileText,
+  Plus,
+  Edit,
+  Trash2,
+} from 'lucide-react';
 import { TemplateEditor } from '@/components/templates/template-editor';
 
 interface TemplateCategory {
@@ -63,7 +74,7 @@ const TemplatesPage: React.FC = () => {
   const { data: templates = [] } = useQuery<Template[]>({
     queryKey: ['templates', selectedCategory],
     queryFn: async () => {
-      const url = selectedCategory 
+      const url = selectedCategory
         ? `/api/templates?categoryId=${selectedCategory}`
         : '/api/templates';
       const response = await fetch(url);
@@ -73,8 +84,8 @@ const TemplatesPage: React.FC = () => {
   });
 
   // Filter templates by selected category
-  const filteredTemplates = selectedCategory 
-    ? templates.filter(t => t.categoryId === selectedCategory)
+  const filteredTemplates = selectedCategory
+    ? templates.filter((t) => t.categoryId === selectedCategory)
     : templates;
 
   const handleTemplateSelect = async (template: Template) => {
@@ -91,8 +102,8 @@ const TemplatesPage: React.FC = () => {
             title: template.title,
             content: template.content,
             tags: template.tags,
-          }
-        }
+          },
+        },
       });
     } catch (error) {
       console.error('Error selecting template:', error);
@@ -138,10 +149,10 @@ const TemplatesPage: React.FC = () => {
       <div className="mb-8">
         <div className="flex items-center justify-between">
           <div>
-        <h1 className="text-3xl font-bold mb-2">템플릿 갤러리</h1>
-        <p className="text-muted-foreground">
-          다양한 템플릿을 선택하여 새로운 페이지를 빠르게 시작하세요
-        </p>
+            <h1 className="text-3xl font-bold mb-2">템플릿 갤러리</h1>
+            <p className="text-muted-foreground">
+              다양한 템플릿을 선택하여 새로운 페이지를 빠르게 시작하세요
+            </p>
           </div>
           <Button onClick={handleCreateTemplate} className="flex items-center space-x-2">
             <Plus className="h-4 w-4" />
@@ -151,9 +162,9 @@ const TemplatesPage: React.FC = () => {
       </div>
 
       {/* Category Tabs */}
-      <Tabs 
-        value={selectedCategory?.toString() || "all"} 
-        onValueChange={(value) => setSelectedCategory(value === "all" ? null : parseInt(value))}
+      <Tabs
+        value={selectedCategory?.toString() || 'all'}
+        onValueChange={(value) => setSelectedCategory(value === 'all' ? null : parseInt(value))}
         className="mb-8"
       >
         <TabsList className="grid w-full grid-cols-5">
@@ -174,7 +185,7 @@ const TemplatesPage: React.FC = () => {
               <TemplateCard
                 key={template.id}
                 template={template}
-                category={categories.find(c => c.id === template.categoryId)}
+                category={categories.find((c) => c.id === template.categoryId)}
                 onSelect={handleTemplateSelect}
                 onEdit={handleEditTemplate}
                 renderStars={renderStars}
@@ -244,9 +255,7 @@ const TemplateCard: React.FC<TemplateCardProps> = ({
         <div className="flex items-start justify-between">
           <div className="flex-1">
             <CardTitle className="text-lg mb-2">{template.title}</CardTitle>
-            <CardDescription className="line-clamp-2">
-              {template.description}
-            </CardDescription>
+            <CardDescription className="line-clamp-2">{template.description}</CardDescription>
           </div>
           {category && (
             <Badge variant="secondary" className="ml-2">
@@ -279,14 +288,12 @@ const TemplateCard: React.FC<TemplateCardProps> = ({
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-1">
               <Eye className="w-4 h-4" />
-            <span>{template.usageCount || 0}</span>
+              <span>{template.usageCount || 0}</span>
             </div>
-            <div className="flex items-center gap-1">
-            {renderStars(template.rating || 0)}
-            </div>
+            <div className="flex items-center gap-1">{renderStars(template.rating || 0)}</div>
           </div>
           <div className="text-xs">
-          {template.createdAt ? new Date(template.createdAt).toLocaleDateString() : '-'}
+            {template.createdAt ? new Date(template.createdAt).toLocaleDateString() : '-'}
           </div>
         </div>
 
@@ -302,21 +309,12 @@ const TemplateCard: React.FC<TemplateCardProps> = ({
             미리보기
           </Button>
           {onEdit && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onEdit(template)}
-              className="flex-1"
-            >
+            <Button variant="outline" size="sm" onClick={() => onEdit(template)} className="flex-1">
               <Edit className="w-4 h-4 mr-2" />
               편집
             </Button>
           )}
-          <Button
-            size="sm"
-            onClick={() => onSelect(template)}
-            className="flex-1"
-          >
+          <Button size="sm" onClick={() => onSelect(template)} className="flex-1">
             <FileText className="w-4 h-4 mr-2" />
             사용하기
           </Button>
@@ -329,25 +327,15 @@ const TemplateCard: React.FC<TemplateCardProps> = ({
           <div className="bg-white rounded-lg max-w-4xl w-full max-h-[80vh] overflow-hidden">
             <div className="flex items-center justify-between p-4 border-b">
               <h3 className="text-lg font-semibold">{template.title}</h3>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setIsPreviewOpen(false)}
-              >
+              <Button variant="ghost" size="sm" onClick={() => setIsPreviewOpen(false)}>
                 ✕
               </Button>
             </div>
             <div className="p-4 overflow-y-auto max-h-[calc(80vh-80px)]">
-              <pre className="whitespace-pre-wrap text-sm font-mono">
-                {template.content}
-              </pre>
+              <pre className="whitespace-pre-wrap text-sm font-mono">{template.content}</pre>
             </div>
             <div className="p-4 border-t flex gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setIsPreviewOpen(false)}
-                className="flex-1"
-              >
+              <Button variant="outline" onClick={() => setIsPreviewOpen(false)} className="flex-1">
                 닫기
               </Button>
               <Button
@@ -367,4 +355,4 @@ const TemplateCard: React.FC<TemplateCardProps> = ({
   );
 };
 
-export default TemplatesPage; 
+export default TemplatesPage;

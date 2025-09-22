@@ -18,7 +18,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const response = await fetch('/api/auth/me', {
         headers: {
-          'Authorization': `Bearer ${token}`,
+          Authorization: `Bearer ${token}`,
         },
       });
       if (response.ok) {
@@ -29,7 +29,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         logout();
       }
     } catch (error) {
-      console.error("Failed to fetch user", error);
+      console.error('Failed to fetch user', error);
       logout();
     }
   };

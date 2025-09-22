@@ -4,7 +4,7 @@ const http = require('http');
 const testEndpoints = [
   '/api/dashboard/overview',
   '/api/dashboard/team/team1',
-  '/api/dashboard/member/1'
+  '/api/dashboard/member/1',
 ];
 
 function testEndpoint(endpoint) {
@@ -13,21 +13,21 @@ function testEndpoint(endpoint) {
       hostname: 'localhost',
       port: 5001,
       path: endpoint,
-      method: 'GET'
+      method: 'GET',
     };
 
     const req = http.request(options, (res) => {
       let data = '';
-      
+
       res.on('data', (chunk) => {
         data += chunk;
       });
-      
+
       res.on('end', () => {
         resolve({
           endpoint,
           status: res.statusCode,
-          data: data ? JSON.parse(data) : null
+          data: data ? JSON.parse(data) : null,
         });
       });
     });
@@ -35,7 +35,7 @@ function testEndpoint(endpoint) {
     req.on('error', (error) => {
       reject({
         endpoint,
-        error: error.message
+        error: error.message,
       });
     });
 
@@ -43,7 +43,7 @@ function testEndpoint(endpoint) {
       req.destroy();
       reject({
         endpoint,
-        error: 'Request timeout'
+        error: 'Request timeout',
       });
     });
 
@@ -53,12 +53,12 @@ function testEndpoint(endpoint) {
 
 async function runTests() {
   console.log('🧪 Testing Dashboard API endpoints...\n');
-  
+
   for (const endpoint of testEndpoints) {
     try {
       console.log(`Testing ${endpoint}...`);
       const result = await testEndpoint(endpoint);
-      
+
       if (result.status === 200) {
         console.log(`✅ ${endpoint} - Status: ${result.status}`);
         console.log(`   Data: ${JSON.stringify(result.data, null, 2)}`);
@@ -73,4 +73,4 @@ async function runTests() {
   }
 }
 
-runTests().catch(console.error); 
+runTests().catch(console.error);

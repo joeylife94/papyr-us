@@ -1,12 +1,12 @@
-import express, { type Express, type Request, Response, NextFunction } from "express";
+import express, { type Express, type Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { config } from "./config.js";
+import { config } from './config.js';
 
-export function log(message: string, source = "express") {
-  const formattedTime = new Date().toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
+export function log(message: string, source = 'express') {
+  const formattedTime = new Date().toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
     hour12: true,
   });
   console.log(`${formattedTime} [${source}] ${message}`);
@@ -29,16 +29,16 @@ export function setupLoggingMiddleware(app: Express) {
       return originalResJson.apply(res, [bodyJson, ...args]);
     };
 
-    res.on("finish", () => {
+    res.on('finish', () => {
       const duration = Date.now() - start;
-      if (path.startsWith("/api")) {
+      if (path.startsWith('/api')) {
         let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
         if (capturedJsonResponse) {
           logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
         }
 
         if (logLine.length > 80) {
-          logLine = logLine.slice(0, 79) + "…";
+          logLine = logLine.slice(0, 79) + '…';
         }
 
         log(logLine);
@@ -57,9 +57,22 @@ interface ErrorWithStatus extends Error {
 export function setupErrorHandler(app: Express) {
   app.use((err: ErrorWithStatus, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
+    const message = err.message || 'Internal Server Error';
 
-    res.status(status).json({ message });
+    // Log detailed error server-side for debugging
+    console.error('[ERROR HANDLER]', {
+      status,
+      message: err.message,
+      stack: err.stack,
+    });
+
+    // In production, do not leak internal error details to clients
+    if (process.env.NODE_ENV === 'production') {
+      res.status(status).json({ message });
+    } else {
+      // In non-production environments include basic error info for easier debugging
+      res.status(status).json({ message, stack: err.stack });
+    }
   });
 }
 
@@ -68,7 +81,7 @@ export function getServerConfig() {
   const isReplit = config.isReplit;
   const isProduction = config.isProduction;
   const host = config.host;
-  
+
   return { port, host, isProduction, isReplit };
 }
 
@@ -92,4 +105,4 @@ export function authMiddleware(req: AuthRequest, res: Response, next: NextFuncti
   } catch (error) {
     return res.status(401).json({ message: 'Invalid token' });
   }
-} 
+}

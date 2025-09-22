@@ -2,20 +2,13 @@ import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { 
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { 
-  MoreHorizontal,
-  Plus,
-  User,
-  Calendar,
-  Tag,
-  GripVertical
-} from 'lucide-react';
+import { MoreHorizontal, Plus, User, Calendar, Tag, GripVertical } from 'lucide-react';
 interface KanbanItem {
   id: string;
   title: string;
@@ -47,13 +40,13 @@ interface KanbanViewProps {
 }
 
 // 드래그 가능한 아이템 컴포넌트
-function DraggableItem({ 
-  item, 
-  onEdit, 
-  onDelete, 
-  getPriorityColor 
-}: { 
-  item: KanbanItem; 
+function DraggableItem({
+  item,
+  onEdit,
+  onDelete,
+  getPriorityColor,
+}: {
+  item: KanbanItem;
   onEdit?: (item: KanbanItem) => void;
   onDelete?: (item: KanbanItem) => void;
   getPriorityColor?: (priority: string) => string;
@@ -83,9 +76,7 @@ function DraggableItem({
       <div className="flex items-start justify-between mb-2">
         <div className="flex items-center gap-2">
           <GripVertical className="h-4 w-4 text-gray-400" />
-          {item.priority && (
-            <div className={`w-2 h-2 rounded-full ${priorityColor}`} />
-          )}
+          {item.priority && <div className={`w-2 h-2 rounded-full ${priorityColor}`} />}
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -94,16 +85,9 @@ function DraggableItem({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            {onEdit && (
-              <DropdownMenuItem onClick={() => onEdit(item)}>
-                편집
-              </DropdownMenuItem>
-            )}
+            {onEdit && <DropdownMenuItem onClick={() => onEdit(item)}>편집</DropdownMenuItem>}
             {onDelete && (
-              <DropdownMenuItem 
-                onClick={() => onDelete(item)}
-                className="text-red-600"
-              >
+              <DropdownMenuItem onClick={() => onDelete(item)} className="text-red-600">
                 삭제
               </DropdownMenuItem>
             )}
@@ -111,10 +95,8 @@ function DraggableItem({
         </DropdownMenu>
       </div>
 
-      <h4 className="font-medium text-sm mb-1 line-clamp-2">
-        {item.title}
-      </h4>
-      
+      <h4 className="font-medium text-sm mb-1 line-clamp-2">{item.title}</h4>
+
       {item.description && (
         <p className="text-xs text-gray-600 dark:text-gray-400 mb-2 line-clamp-2">
           {item.description}
@@ -157,12 +139,12 @@ function DraggableItem({
 }
 
 // 드롭 가능한 컬럼 컴포넌트
-function DroppableColumn({ 
-  column, 
-  onDrop, 
-  children 
-}: { 
-  column: KanbanColumn; 
+function DroppableColumn({
+  column,
+  onDrop,
+  children,
+}: {
+  column: KanbanColumn;
   onDrop: (item: any) => void;
   children: React.ReactNode;
 }) {
@@ -180,7 +162,7 @@ function DroppableColumn({
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsOver(false);
-    
+
     try {
       const data = JSON.parse(e.dataTransfer.getData('text/plain'));
       onDrop(data);
@@ -195,8 +177,8 @@ function DroppableColumn({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       className={`min-h-[500px] p-4 rounded-lg border-2 border-dashed transition-colors ${
-        isOver 
-          ? 'border-blue-400 bg-blue-50 dark:bg-blue-950/20' 
+        isOver
+          ? 'border-blue-400 bg-blue-50 dark:bg-blue-950/20'
           : 'border-gray-200 dark:border-gray-700'
       }`}
     >
@@ -213,13 +195,13 @@ export function KanbanView({
   onItemEdit,
   onItemDelete,
   onItemAdd,
-  getPriorityColor
+  getPriorityColor,
 }: KanbanViewProps) {
   // 컬럼별로 아이템 분류
   const kanbanColumns = useMemo(() => {
-    return columns.map(column => ({
+    return columns.map((column) => ({
       ...column,
-      items: data.filter(item => item.status === column.id)
+      items: data.filter((item) => item.status === column.id),
     }));
   }, [data, columns]);
 
@@ -236,23 +218,18 @@ export function KanbanView({
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold">{title}</h2>
-          <p className="text-muted-foreground">
-            총 {data.length}개 작업
-          </p>
+          <p className="text-muted-foreground">총 {data.length}개 작업</p>
         </div>
       </div>
 
       {/* 칸반 보드 */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        {kanbanColumns.map(column => (
+        {kanbanColumns.map((column) => (
           <div key={column.id} className="space-y-4">
             {/* 컬럼 헤더 */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div 
-                  className="w-3 h-3 rounded-full"
-                  style={{ backgroundColor: column.color }}
-                />
+                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: column.color }} />
                 <h3 className="font-semibold">{column.title}</h3>
                 <Badge variant="secondary" className="text-xs">
                   {column.items.length}
@@ -271,12 +248,9 @@ export function KanbanView({
             </div>
 
             {/* 컬럼 컨텐츠 */}
-            <DroppableColumn 
-              column={column} 
-              onDrop={(item) => handleDrop(item, column.id)}
-            >
+            <DroppableColumn column={column} onDrop={(item) => handleDrop(item, column.id)}>
               <div className="space-y-3">
-                {column.items.map(item => (
+                {column.items.map((item) => (
                   <DraggableItem
                     key={item.id}
                     item={item}
@@ -285,11 +259,9 @@ export function KanbanView({
                     getPriorityColor={getPriorityColor}
                   />
                 ))}
-                
+
                 {column.items.length === 0 && (
-                  <div className="text-center py-8 text-gray-500 text-sm">
-                    작업이 없습니다
-                  </div>
+                  <div className="text-center py-8 text-gray-500 text-sm">작업이 없습니다</div>
                 )}
               </div>
             </DroppableColumn>
@@ -298,4 +270,4 @@ export function KanbanView({
       </div>
     </div>
   );
-} 
+}

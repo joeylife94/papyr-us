@@ -3,16 +3,16 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { 
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { 
-  Search, 
-  Grid3X3, 
-  List, 
+import {
+  Search,
+  Grid3X3,
+  List,
   MoreHorizontal,
   Edit,
   Trash2,
@@ -20,7 +20,7 @@ import {
   Plus,
   Calendar,
   User,
-  Tag
+  Tag,
 } from 'lucide-react';
 
 interface GalleryItem {
@@ -66,7 +66,7 @@ export function GalleryView({
   sortable = true,
   pagination = true,
   itemsPerPage = 12,
-  getStatusColor
+  getStatusColor,
 }: GalleryViewProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -79,8 +79,8 @@ export function GalleryView({
 
     // 검색 필터
     if (searchQuery) {
-      result = result.filter(item =>
-        Object.values(item).some(value =>
+      result = result.filter((item) =>
+        Object.values(item).some((value) =>
           String(value).toLowerCase().includes(searchQuery.toLowerCase())
         )
       );
@@ -118,7 +118,7 @@ export function GalleryView({
   // 정렬 핸들러
   const handleSort = (field: string) => {
     if (sortField === field) {
-      setSortDirection(current => current === 'asc' ? 'desc' : 'asc');
+      setSortDirection((current) => (current === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortField(field);
       setSortDirection('asc');
@@ -137,8 +137,8 @@ export function GalleryView({
       <CardHeader className="pb-3">
         {item.image && (
           <div className="aspect-video rounded-lg overflow-hidden bg-muted mb-3">
-            <img 
-              src={item.image} 
+            <img
+              src={item.image}
               alt={item.title}
               className="w-full h-full object-cover"
               loading="lazy"
@@ -167,10 +167,7 @@ export function GalleryView({
                 </DropdownMenuItem>
               )}
               {onDelete && (
-                <DropdownMenuItem 
-                  onClick={() => onDelete(item)}
-                  className="text-red-600"
-                >
+                <DropdownMenuItem onClick={() => onDelete(item)} className="text-red-600">
                   <Trash2 className="h-4 w-4 mr-2" />
                   삭제
                 </DropdownMenuItem>
@@ -179,12 +176,10 @@ export function GalleryView({
           </DropdownMenu>
         </div>
       </CardHeader>
-      
+
       <CardContent className="space-y-3">
         {item.description && (
-          <p className="text-sm text-muted-foreground line-clamp-3">
-            {item.description}
-          </p>
+          <p className="text-sm text-muted-foreground line-clamp-3">{item.description}</p>
         )}
 
         <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -203,11 +198,11 @@ export function GalleryView({
         </div>
 
         {item.status && (
-          <Badge 
-            variant="secondary" 
+          <Badge
+            variant="secondary"
             className="text-xs"
-            style={{ 
-              backgroundColor: getStatusColor?.(item.status) || undefined 
+            style={{
+              backgroundColor: getStatusColor?.(item.status) || undefined,
             }}
           >
             {item.status}
@@ -239,15 +234,15 @@ export function GalleryView({
         <div className="flex items-center gap-4">
           {item.image && (
             <div className="w-16 h-16 rounded-lg overflow-hidden bg-muted flex-shrink-0">
-              <img 
-                src={item.image} 
+              <img
+                src={item.image}
                 alt={item.title}
                 className="w-full h-full object-cover"
                 loading="lazy"
               />
             </div>
           )}
-          
+
           <div className="flex-1 min-w-0">
             <div className="flex items-start justify-between">
               <div className="flex-1 min-w-0">
@@ -278,10 +273,7 @@ export function GalleryView({
                     </DropdownMenuItem>
                   )}
                   {onDelete && (
-                    <DropdownMenuItem 
-                      onClick={() => onDelete(item)}
-                      className="text-red-600"
-                    >
+                    <DropdownMenuItem onClick={() => onDelete(item)} className="text-red-600">
                       <Trash2 className="h-4 w-4 mr-2" />
                       삭제
                     </DropdownMenuItem>
@@ -304,11 +296,11 @@ export function GalleryView({
                 </div>
               )}
               {item.status && (
-                <Badge 
-                  variant="secondary" 
+                <Badge
+                  variant="secondary"
                   className="text-xs"
-                  style={{ 
-                    backgroundColor: getStatusColor?.(item.status) || undefined 
+                  style={{
+                    backgroundColor: getStatusColor?.(item.status) || undefined,
                   }}
                 >
                   {item.status}
@@ -337,9 +329,7 @@ export function GalleryView({
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold">{title}</h2>
-          <p className="text-muted-foreground">
-            총 {sortedData.length}개 항목
-          </p>
+          <p className="text-muted-foreground">총 {sortedData.length}개 항목</p>
         </div>
         <div className="flex items-center gap-2">
           {onViewModeChange && (
@@ -388,9 +378,7 @@ export function GalleryView({
       {paginatedData.length === 0 ? (
         <div className="text-center py-12">
           <div className="text-muted-foreground">
-            {searchQuery 
-              ? '검색 결과가 없습니다.' 
-              : '데이터가 없습니다.'}
+            {searchQuery ? '검색 결과가 없습니다.' : '데이터가 없습니다.'}
           </div>
         </div>
       ) : (
@@ -415,21 +403,22 @@ export function GalleryView({
       {pagination && totalPages > 1 && (
         <div className="flex items-center justify-between">
           <div className="text-sm text-muted-foreground">
-            {((currentPage - 1) * itemsPerPage) + 1} - {Math.min(currentPage * itemsPerPage, sortedData.length)} / {sortedData.length}
+            {(currentPage - 1) * itemsPerPage + 1} -{' '}
+            {Math.min(currentPage * itemsPerPage, sortedData.length)} / {sortedData.length}
           </div>
           <div className="flex gap-2">
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setCurrentPage(current => Math.max(1, current - 1))}
+              onClick={() => setCurrentPage((current) => Math.max(1, current - 1))}
               disabled={currentPage === 1}
             >
               이전
             </Button>
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
               <Button
                 key={page}
-                variant={currentPage === page ? "default" : "outline"}
+                variant={currentPage === page ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => setCurrentPage(page)}
               >
@@ -439,7 +428,7 @@ export function GalleryView({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setCurrentPage(current => Math.min(totalPages, current + 1))}
+              onClick={() => setCurrentPage((current) => Math.min(totalPages, current + 1))}
               disabled={currentPage === totalPages}
             >
               다음
@@ -449,4 +438,4 @@ export function GalleryView({
       )}
     </div>
   );
-} 
+}

@@ -39,29 +39,29 @@ export function AISearch({ teamId }: { teamId?: string }) {
   // AI 검색 뮤테이션
   const searchMutation = useMutation({
     mutationFn: async (searchQuery: string) => {
-      const response = await apiRequest("POST", "/api/ai/search", {
+      const response = (await apiRequest('POST', '/api/ai/search', {
         query: searchQuery,
-        teamId
-      }) as unknown as SearchResponse;
+        teamId,
+      })) as unknown as SearchResponse;
       return response;
     },
     onError: (error) => {
       toast({
-        title: "검색 실패",
-        description: "AI 검색 중 오류가 발생했습니다.",
-        variant: "destructive"
+        title: '검색 실패',
+        description: 'AI 검색 중 오류가 발생했습니다.',
+        variant: 'destructive',
       });
-    }
+    },
   });
 
   // 검색 제안 뮤테이션
   const suggestionsMutation = useMutation({
     mutationFn: async (searchQuery: string) => {
-      const response = await apiRequest("POST", "/api/ai/search-suggestions", {
-        query: searchQuery
-      }) as unknown as SearchSuggestionsResponse;
+      const response = (await apiRequest('POST', '/api/ai/search-suggestions', {
+        query: searchQuery,
+      })) as unknown as SearchSuggestionsResponse;
       return response;
-    }
+    },
   });
 
   // 검색어 변경 시 제안 생성
@@ -155,7 +155,7 @@ export function AISearch({ teamId }: { teamId?: string }) {
               </Button>
             )}
           </div>
-          <Button 
+          <Button
             onClick={() => handleSearch()}
             disabled={!query.trim() || searchMutation.isPending}
             className="flex items-center space-x-2"
@@ -216,15 +216,16 @@ export function AISearch({ teamId }: { teamId?: string }) {
               <CardContent className="p-8 text-center">
                 <Search className="h-12 w-12 mx-auto text-gray-400 mb-4" />
                 <h3 className="text-lg font-semibold mb-2">검색 결과가 없습니다</h3>
-                <p className="text-gray-600 dark:text-gray-400">
-                  다른 검색어를 시도해보세요.
-                </p>
+                <p className="text-gray-600 dark:text-gray-400">다른 검색어를 시도해보세요.</p>
               </CardContent>
             </Card>
           ) : (
             <div className="space-y-4">
               {searchMutation.data.results.map((result) => (
-                <Card key={`${result.type}-${result.id}`} className="hover:shadow-md transition-shadow">
+                <Card
+                  key={`${result.type}-${result.id}`}
+                  className="hover:shadow-md transition-shadow"
+                >
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex items-center space-x-2">
@@ -290,4 +291,4 @@ export function AISearch({ teamId }: { teamId?: string }) {
       )}
     </div>
   );
-} 
+}

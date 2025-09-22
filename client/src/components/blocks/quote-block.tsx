@@ -2,13 +2,7 @@ import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
-import { 
-  Quote,
-  Trash2,
-  Edit3,
-  Check,
-  X
-} from 'lucide-react';
+import { Quote, Trash2, Edit3, Check, X } from 'lucide-react';
 
 interface QuoteBlockProps {
   block: any;
@@ -20,7 +14,15 @@ interface QuoteBlockProps {
   onAddBlock: (type?: any) => void;
 }
 
-export function QuoteBlock({ block, isFocused, onFocus, onBlur, onUpdate, onDelete, onAddBlock }: QuoteBlockProps) {
+export function QuoteBlock({
+  block,
+  isFocused,
+  onFocus,
+  onBlur,
+  onUpdate,
+  onDelete,
+  onAddBlock,
+}: QuoteBlockProps) {
   const content = block.content || '';
   const source = block.properties?.source || '';
   const author = block.properties?.author || '';
@@ -35,8 +37,8 @@ export function QuoteBlock({ block, isFocused, onFocus, onBlur, onUpdate, onDele
       properties: {
         ...block.properties,
         source: editSource || undefined,
-        author: editAuthor || undefined
-      }
+        author: editAuthor || undefined,
+      },
     });
     setIsEditing(false);
   };
@@ -60,7 +62,7 @@ export function QuoteBlock({ block, isFocused, onFocus, onBlur, onUpdate, onDele
               placeholder="인용문을 입력하세요..."
               className="min-h-[80px] resize-none border-0 bg-transparent p-0 text-base font-medium italic focus-visible:ring-0"
             />
-            
+
             <div className="space-y-2">
               <Input
                 value={editAuthor}
@@ -77,7 +79,7 @@ export function QuoteBlock({ block, isFocused, onFocus, onBlur, onUpdate, onDele
             </div>
           </div>
         </div>
-        
+
         <div className="flex items-center gap-2 mt-3">
           <Button size="sm" onClick={handleSave} className="h-8">
             <Check className="h-4 w-4 mr-1" />
@@ -100,7 +102,7 @@ export function QuoteBlock({ block, isFocused, onFocus, onBlur, onUpdate, onDele
           <blockquote className="text-base font-medium italic text-foreground mb-2">
             "{content}"
           </blockquote>
-          
+
           {(author || source) && (
             <div className="text-sm text-muted-foreground">
               {author && <span className="font-medium">— {author}</span>}
@@ -110,7 +112,7 @@ export function QuoteBlock({ block, isFocused, onFocus, onBlur, onUpdate, onDele
           )}
         </div>
       </div>
-      
+
       {/* 편집 버튼들 */}
       <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
         <div className="flex items-center gap-1">
@@ -134,4 +136,4 @@ export function QuoteBlock({ block, isFocused, onFocus, onBlur, onUpdate, onDele
       </div>
     </div>
   );
-} 
+}

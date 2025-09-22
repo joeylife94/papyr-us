@@ -8,20 +8,20 @@ import jwt from 'jsonwebtoken';
 
 // Use vi.doMock to ensure the mock is hoisted
 vi.doMock('../storage', async (importOriginal) => {
-    const actual = await importOriginal() as any;
-    const dbMock = {
-        select: vi.fn().mockReturnThis(),
-        from: vi.fn().mockReturnThis(),
-        where: vi.fn().mockResolvedValue([]),
-        insert: vi.fn().mockReturnThis(),
-        values: vi.fn().mockReturnThis(),
-        returning: vi.fn().mockResolvedValue([]),
-    };
-    return {
-        ...actual,
-        MemStorage: vi.fn(),
-        storage: { db: dbMock },
-    };
+  const actual = (await importOriginal()) as any;
+  const dbMock = {
+    select: vi.fn().mockReturnThis(),
+    from: vi.fn().mockReturnThis(),
+    where: vi.fn().mockResolvedValue([]),
+    insert: vi.fn().mockReturnThis(),
+    values: vi.fn().mockReturnThis(),
+    returning: vi.fn().mockResolvedValue([]),
+  };
+  return {
+    ...actual,
+    MemStorage: vi.fn(),
+    storage: { db: dbMock },
+  };
 });
 
 // Mock external libraries
@@ -64,16 +64,16 @@ describe('Authentication API', () => {
       (storage.db.where as vi.Mock).mockResolvedValue([]);
       (storage.db.insert as vi.Mock).mockReturnThis();
       (storage.db.values as vi.Mock).mockReturnThis();
-      (storage.db.returning as vi.Mock).mockResolvedValue([{ id: 1, name: 'Test User', email: 'new.user@test.com' }]);
+      (storage.db.returning as vi.Mock).mockResolvedValue([
+        { id: 1, name: 'Test User', email: 'new.user@test.com' },
+      ]);
       (bcrypt.hash as vi.Mock).mockResolvedValue('hashed_password');
 
-      const response = await request(app)
-        .post('/api/auth/register')
-        .send({
-          name: 'Test User',
-          email: 'new.user@test.com',
-          password: 'password123',
-        });
+      const response = await request(app).post('/api/auth/register').send({
+        name: 'Test User',
+        email: 'new.user@test.com',
+        password: 'password123',
+      });
 
       expect(response.status).toBe(201);
       expect(response.body.message).toBe('User registered successfully');
@@ -86,26 +86,22 @@ describe('Authentication API', () => {
       (storage.db.from as vi.Mock).mockReturnThis();
       (storage.db.where as vi.Mock).mockResolvedValue([{ id: 2, email: 'existing.user@test.com' }]);
 
-      const response = await request(app)
-        .post('/api/auth/register')
-        .send({
-          name: 'Existing User',
-          email: 'existing.user@test.com',
-          password: 'password123',
-        });
+      const response = await request(app).post('/api/auth/register').send({
+        name: 'Existing User',
+        email: 'existing.user@test.com',
+        password: 'password123',
+      });
 
       expect(response.status).toBe(409);
       expect(response.body.message).toBe('User with this email already exists');
     });
 
-     it('TC-AUTH-003: should fail to register with missing fields', async () => {
-      const response = await request(app)
-        .post('/api/auth/register')
-        .send({
-          name: 'Test User',
-          email: 'test@test.com',
-          // password is intentionally omitted
-        });
+    it('TC-AUTH-003: should fail to register with missing fields', async () => {
+      const response = await request(app).post('/api/auth/register').send({
+        name: 'Test User',
+        email: 'test@test.com',
+        // password is intentionally omitted
+      });
 
       expect(response.status).toBe(400);
       expect(response.body.message).toBe('Name, email, and password are required');
@@ -113,7 +109,12 @@ describe('Authentication API', () => {
   });
 
   describe('POST /api/auth/login', () => {
-    const mockUser = { id: 1, name: 'Test User', email: 'user@test.com', hashedPassword: 'hashed_password' };
+    const mockUser = {
+      id: 1,
+      name: 'Test User',
+      email: 'user@test.com',
+      hashedPassword: 'hashed_password',
+    };
 
     it('TC-AUTH-004: should log in a user successfully', async () => {
       (storage.db.select as vi.Mock).mockReturnThis();

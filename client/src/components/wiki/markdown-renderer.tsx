@@ -1,13 +1,13 @@
-import { useEffect, useState } from "react";
-import { markdownToHtml } from "@/lib/markdown";
+import { useEffect, useState } from 'react';
+import { markdownToHtml } from '@/lib/markdown';
 
 interface MarkdownRendererProps {
   content: string;
   className?: string;
 }
 
-export function MarkdownRenderer({ content, className = "" }: MarkdownRendererProps) {
-  const [html, setHtml] = useState("");
+export function MarkdownRenderer({ content, className = '' }: MarkdownRendererProps) {
+  const [html, setHtml] = useState('');
 
   useEffect(() => {
     let isCancelled = false;
@@ -39,7 +39,7 @@ export function MarkdownRenderer({ content, className = "" }: MarkdownRendererPr
   }
 
   return (
-    <div 
+    <div
       className={`prose prose-slate dark:prose-invert max-w-none ${className}`}
       dangerouslySetInnerHTML={{ __html: html }}
     />

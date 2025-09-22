@@ -11,7 +11,9 @@ async function login(page: Page, email: string, password: string) {
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Login with Email' }).click();
   await expect(page).toHaveURL('/', { timeout: 15000 });
-  await expect(page.locator('button > .flex.items-center.space-x-2')).toBeVisible({ timeout: 30000 });
+  await expect(page.locator('button > .flex.items-center.space-x-2')).toBeVisible({
+    timeout: 30000,
+  });
 }
 
 async function registerUser(page: Page, name: string, email: string, pass: string) {
@@ -20,11 +22,15 @@ async function registerUser(page: Page, name: string, email: string, pass: strin
   await page.getByLabel('Name').fill(name);
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password').fill(pass);
-  const responsePromise = page.waitForResponse(response => response.url().includes('/api/auth/register') && response.status() === 201);
+  const responsePromise = page.waitForResponse(
+    (response) => response.url().includes('/api/auth/register') && response.status() === 201
+  );
   await page.getByRole('button', { name: 'Register' }).click();
   await responsePromise;
   await expect(page).toHaveURL('/login');
-  await expect(page.locator('div.text-sm.font-semibold', { hasText: 'Registration Successful' })).toBeVisible();
+  await expect(
+    page.locator('div.text-sm.font-semibold', { hasText: 'Registration Successful' })
+  ).toBeVisible();
 }
 
 /**
@@ -41,7 +47,9 @@ async function createPage(page: Page, title: string, content: string): Promise<s
   await page.getByLabel('Title').fill(title);
   await page.locator('.ProseMirror[contenteditable="true"]').fill(content);
 
-  const responsePromise = page.waitForResponse(response => response.url().includes('/api/pages') && response.status() === 201);
+  const responsePromise = page.waitForResponse(
+    (response) => response.url().includes('/api/pages') && response.status() === 201
+  );
   await page.getByRole('button', { name: 'Create Page' }).click();
   const response = await responsePromise;
   expect(response.ok()).toBeTruthy();
@@ -150,7 +158,9 @@ test.describe('Wiki Page Management', () => {
     await page.locator('.ProseMirror[contenteditable="true"]').fill(updatedContent);
 
     // 4. Click the "Update Page" button.
-    const responsePromise = page.waitForResponse(response => response.url().match(/\/api\/pages\/\d+/) && response.status() === 200);
+    const responsePromise = page.waitForResponse(
+      (response) => response.url().match(/\/api\/pages\/\d+/) && response.status() === 200
+    );
     await page.getByRole('button', { name: 'Update Page' }).click();
     await responsePromise;
 
@@ -189,17 +199,19 @@ test.describe('Wiki Page Management', () => {
 
     // 2. Go to the page and delete it.
     await page.goto(`/page/${slug}`);
-    page.on('dialog', dialog => dialog.accept()); // Auto-accept confirmation dialog
+    page.on('dialog', (dialog) => dialog.accept()); // Auto-accept confirmation dialog
     // Assuming a delete button exists on the page. Adjust selector if needed.
     await page.getByRole('button', { name: 'Delete' }).click();
 
     // 3. Verify it redirects, e.g., to the homepage.
     await expect(page).toHaveURL('/', { timeout: 10000 });
-    
+
     // 4. Go to the deleted page's URL and verify it's not found.
     await page.goto(`/page/${slug}`);
     await expect(page.getByRole('heading', { name: 'Page Not Found' })).toBeVisible();
-    await expect(page.getByText("The page you're looking for doesn't exist or has been moved.")).toBeVisible();
+    await expect(
+      page.getByText("The page you're looking for doesn't exist or has been moved.")
+    ).toBeVisible();
   });
 
   test('TC-WIKI-005: 페이지 내 댓글 작성 및 확인', async ({ page }) => {
@@ -218,7 +230,9 @@ test.describe('Wiki Page Management', () => {
     await page.getByPlaceholder('Write a comment...').fill(commentText);
 
     // 4. Post the comment.
-    const responsePromise = page.waitForResponse(response => response.url().match(/\/api\/pages\/\d+\/comments/) && response.status() === 201);
+    const responsePromise = page.waitForResponse(
+      (response) => response.url().match(/\/api\/pages\/\d+\/comments/) && response.status() === 201
+    );
     await page.getByRole('button', { name: 'Post Comment' }).click();
     await responsePromise;
 
@@ -239,13 +253,17 @@ test.describe('Wiki Page Management', () => {
     // 3. Verify redirection to the editor with template content.
     await expect(page).toHaveURL(/create/); // Should go to create page with template
     await expect(page.getByLabel('Title')).toHaveValue('일반 스터디 노트');
-    await expect(page.locator('.ProseMirror[contenteditable="true"]')).toContainText('📚 스터디 노트');
+    await expect(page.locator('.ProseMirror[contenteditable="true"]')).toContainText(
+      '📚 스터디 노트'
+    );
 
     // 4. Change the title and create the page.
     const newPageTitle = `My Study Note - ${Date.now()}`;
     await page.getByLabel('Title').fill(newPageTitle);
-    
-    const responsePromise = page.waitForResponse(response => response.url().includes('/api/pages') && response.status() === 201);
+
+    const responsePromise = page.waitForResponse(
+      (response) => response.url().includes('/api/pages') && response.status() === 201
+    );
     await page.getByRole('button', { name: 'Create Page' }).click();
     const response = await responsePromise;
     const { slug } = await response.json();
@@ -314,7 +332,9 @@ test.describe('Productivity & Collaboration', () => {
     await expect(searchButton).toBeVisible();
 
     await searchInput.fill('test');
-    const responsePromise = page.waitForResponse(response => response.url().includes('/api/ai/search') && response.status() === 200);
+    const responsePromise = page.waitForResponse(
+      (response) => response.url().includes('/api/ai/search') && response.status() === 200
+    );
     await searchButton.click();
     await responsePromise;
 
@@ -345,15 +365,17 @@ test.describe('Admin Features', () => {
   async function adminLogin(page: Page) {
     // 1. First, log in as a regular user to be able to access the /admin route
     await login(page, testUserEmail, testUserPassword);
-    
+
     // 2. Navigate to the admin page
     await page.goto('/admin');
-    
+
     // 3. Enter password and log in as admin
     await expect(page.getByRole('heading', { name: 'Admin Access' })).toBeVisible();
     await page.getByPlaceholder('Admin password').fill(adminPassword);
     await page.getByRole('button', { name: 'Login' }).click();
-    await expect(page.getByRole('heading', { name: 'Admin Panel' })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('heading', { name: 'Admin Panel' })).toBeVisible({
+      timeout: 15000,
+    });
   }
 
   test.beforeAll(async ({ browser }) => {
@@ -387,7 +409,7 @@ test.describe('Admin Features', () => {
     await expect(page.getByRole('heading', { name: updatedDirDisplayName })).toBeVisible();
 
     // 3. Delete directory
-    page.on('dialog', dialog => dialog.accept());
+    page.on('dialog', (dialog) => dialog.accept());
     const updatedDirectoryCard = page.locator('.card', { hasText: updatedDirDisplayName });
     await updatedDirectoryCard.getByRole('button', { name: 'Delete' }).click();
     await expect(page.getByRole('heading', { name: updatedDirDisplayName })).not.toBeVisible();
@@ -415,7 +437,7 @@ test.describe('Admin Features', () => {
     await expect(page.getByRole('heading', { name: updatedTeamDisplayName })).toBeVisible();
 
     // 3. Delete team
-    page.on('dialog', dialog => dialog.accept());
+    page.on('dialog', (dialog) => dialog.accept());
     const updatedTeamCard = page.locator('.card', { hasText: updatedTeamDisplayName });
     await updatedTeamCard.getByRole('button', { name: 'Delete' }).click();
     await expect(page.getByRole('heading', { name: updatedTeamDisplayName })).not.toBeVisible();

@@ -1,35 +1,41 @@
-import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
-import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
-import { Bot, Sparkles, Loader2 } from "lucide-react";
+import { useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+import { useToast } from '@/hooks/use-toast';
+import { apiRequest } from '@/lib/queryClient';
+import { Bot, Sparkles, Loader2 } from 'lucide-react';
 
 export function AIAssistant() {
   const [isOpen, setIsOpen] = useState(false);
-  const [prompt, setPrompt] = useState("");
-  const [generatedContent, setGeneratedContent] = useState("");
+  const [prompt, setPrompt] = useState('');
+  const [generatedContent, setGeneratedContent] = useState('');
   const { toast } = useToast();
 
   const generateContentMutation = useMutation({
     mutationFn: async (data: { prompt: string; type: string }) => {
-      const response = await apiRequest("POST", "/api/ai/generate", data);
+      const response = await apiRequest('POST', '/api/ai/generate', data);
       return response.json();
     },
     onSuccess: (data) => {
       setGeneratedContent(data.content);
       toast({
-        title: "Content Generated",
-        description: "AI has generated content based on your prompt.",
+        title: 'Content Generated',
+        description: 'AI has generated content based on your prompt.',
       });
     },
     onError: (error) => {
       toast({
-        title: "Generation Failed",
-        description: "Failed to generate content. Please try again.",
-        variant: "destructive",
+        title: 'Generation Failed',
+        description: 'Failed to generate content. Please try again.',
+        variant: 'destructive',
       });
     },
   });
@@ -37,28 +43,28 @@ export function AIAssistant() {
   const handleGenerate = () => {
     if (!prompt.trim()) {
       toast({
-        title: "Prompt Required",
-        description: "Please enter a prompt to generate content.",
-        variant: "destructive",
+        title: 'Prompt Required',
+        description: 'Please enter a prompt to generate content.',
+        variant: 'destructive',
       });
       return;
     }
 
-    generateContentMutation.mutate({ prompt, type: "section" });
+    generateContentMutation.mutate({ prompt, type: 'section' });
   };
 
   const copyToClipboard = async () => {
     try {
       await navigator.clipboard.writeText(generatedContent);
       toast({
-        title: "Copied",
-        description: "Content copied to clipboard.",
+        title: 'Copied',
+        description: 'Content copied to clipboard.',
       });
     } catch (error) {
       toast({
-        title: "Copy Failed",
-        description: "Failed to copy content to clipboard.",
-        variant: "destructive",
+        title: 'Copy Failed',
+        description: 'Failed to copy content to clipboard.',
+        variant: 'destructive',
       });
     }
   };
@@ -72,7 +78,7 @@ export function AIAssistant() {
       <p className="text-xs text-slate-600 dark:text-slate-400 mb-3">
         Get AI-powered suggestions and summaries for your content.
       </p>
-      
+
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
         <DialogTrigger asChild>
           <Button className="w-full" size="sm">
@@ -87,7 +93,7 @@ export function AIAssistant() {
               AI Content Generator
             </DialogTitle>
           </DialogHeader>
-          
+
           <div className="space-y-4">
             <div>
               <label className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2 block">
@@ -101,8 +107,8 @@ export function AIAssistant() {
                 className="resize-none"
               />
             </div>
-            
-            <Button 
+
+            <Button
               onClick={handleGenerate}
               disabled={generateContentMutation.isPending}
               className="w-full"
@@ -119,7 +125,7 @@ export function AIAssistant() {
                 </>
               )}
             </Button>
-            
+
             {generatedContent && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between">

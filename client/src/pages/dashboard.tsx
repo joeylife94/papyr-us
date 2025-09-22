@@ -3,15 +3,15 @@ import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Progress } from '../components/ui/progress';
-import { 
-  Users, 
-  FileText, 
-  MessageSquare, 
-  CheckCircle, 
+import {
+  Users,
+  FileText,
+  MessageSquare,
+  CheckCircle,
   TrendingUp,
   Calendar,
   Activity,
-  Target
+  Target,
 } from 'lucide-react';
 
 interface DashboardOverview {
@@ -104,8 +104,16 @@ export default function DashboardPage() {
   }
 
   const totalContributions = overview.totalPages + overview.totalComments + overview.totalTasks;
-  const team1Total = team1Stats?.reduce((sum, stat) => sum + stat.pagesCreated + stat.commentsWritten + stat.tasksCompleted, 0) || 0;
-  const team2Total = team2Stats?.reduce((sum, stat) => sum + stat.pagesCreated + stat.commentsWritten + stat.tasksCompleted, 0) || 0;
+  const team1Total =
+    team1Stats?.reduce(
+      (sum, stat) => sum + stat.pagesCreated + stat.commentsWritten + stat.tasksCompleted,
+      0
+    ) || 0;
+  const team2Total =
+    team2Stats?.reduce(
+      (sum, stat) => sum + stat.pagesCreated + stat.commentsWritten + stat.tasksCompleted,
+      0
+    ) || 0;
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -130,9 +138,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{overview.totalPages}</div>
-            <p className="text-xs text-muted-foreground">
-              지식 베이스 구축
-            </p>
+            <p className="text-xs text-muted-foreground">지식 베이스 구축</p>
           </CardContent>
         </Card>
 
@@ -143,9 +149,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{overview.totalComments}</div>
-            <p className="text-xs text-muted-foreground">
-              활발한 소통
-            </p>
+            <p className="text-xs text-muted-foreground">활발한 소통</p>
           </CardContent>
         </Card>
 
@@ -156,9 +160,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{overview.totalMembers}</div>
-            <p className="text-xs text-muted-foreground">
-              참여 중인 멤버
-            </p>
+            <p className="text-xs text-muted-foreground">참여 중인 멤버</p>
           </CardContent>
         </Card>
 
@@ -169,9 +171,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{overview.totalTasks}</div>
-            <p className="text-xs text-muted-foreground">
-              달성한 목표
-            </p>
+            <p className="text-xs text-muted-foreground">달성한 목표</p>
           </CardContent>
         </Card>
       </div>
@@ -193,18 +193,24 @@ export default function DashboardPage() {
               <span className="text-sm text-muted-foreground">{team1Total}개</span>
             </div>
             <Progress value={(team1Total / totalContributions) * 100} className="h-2" />
-            
+
             <div className="grid grid-cols-3 gap-4 text-center">
               <div>
-                <div className="text-2xl font-bold text-blue-600">{team1Stats?.find(s => !s.memberId)?.pagesCreated || 0}</div>
+                <div className="text-2xl font-bold text-blue-600">
+                  {team1Stats?.find((s) => !s.memberId)?.pagesCreated || 0}
+                </div>
                 <div className="text-xs text-muted-foreground">페이지</div>
               </div>
               <div>
-                <div className="text-2xl font-bold text-green-600">{team1Stats?.find(s => !s.memberId)?.commentsWritten || 0}</div>
+                <div className="text-2xl font-bold text-green-600">
+                  {team1Stats?.find((s) => !s.memberId)?.commentsWritten || 0}
+                </div>
                 <div className="text-xs text-muted-foreground">댓글</div>
               </div>
               <div>
-                <div className="text-2xl font-bold text-purple-600">{team1Stats?.find(s => !s.memberId)?.tasksCompleted || 0}</div>
+                <div className="text-2xl font-bold text-purple-600">
+                  {team1Stats?.find((s) => !s.memberId)?.tasksCompleted || 0}
+                </div>
                 <div className="text-xs text-muted-foreground">과제</div>
               </div>
             </div>
@@ -212,14 +218,16 @@ export default function DashboardPage() {
             {/* Member breakdown */}
             <div className="space-y-2">
               <h4 className="text-sm font-medium">팀원별 기여도</h4>
-              {team1Stats?.filter(s => s.memberId).map((member) => (
-                <div key={member.id} className="flex justify-between items-center text-sm">
-                  <span>{member.memberName}</span>
-                  <span className="text-muted-foreground">
-                    {member.pagesCreated + member.commentsWritten + member.tasksCompleted}개
-                  </span>
-                </div>
-              ))}
+              {team1Stats
+                ?.filter((s) => s.memberId)
+                .map((member) => (
+                  <div key={member.id} className="flex justify-between items-center text-sm">
+                    <span>{member.memberName}</span>
+                    <span className="text-muted-foreground">
+                      {member.pagesCreated + member.commentsWritten + member.tasksCompleted}개
+                    </span>
+                  </div>
+                ))}
             </div>
           </CardContent>
         </Card>
@@ -239,18 +247,24 @@ export default function DashboardPage() {
               <span className="text-sm text-muted-foreground">{team2Total}개</span>
             </div>
             <Progress value={(team2Total / totalContributions) * 100} className="h-2" />
-            
+
             <div className="grid grid-cols-3 gap-4 text-center">
               <div>
-                <div className="text-2xl font-bold text-blue-600">{team2Stats?.find(s => !s.memberId)?.pagesCreated || 0}</div>
+                <div className="text-2xl font-bold text-blue-600">
+                  {team2Stats?.find((s) => !s.memberId)?.pagesCreated || 0}
+                </div>
                 <div className="text-xs text-muted-foreground">페이지</div>
               </div>
               <div>
-                <div className="text-2xl font-bold text-green-600">{team2Stats?.find(s => !s.memberId)?.commentsWritten || 0}</div>
+                <div className="text-2xl font-bold text-green-600">
+                  {team2Stats?.find((s) => !s.memberId)?.commentsWritten || 0}
+                </div>
                 <div className="text-xs text-muted-foreground">댓글</div>
               </div>
               <div>
-                <div className="text-2xl font-bold text-purple-600">{team2Stats?.find(s => !s.memberId)?.tasksCompleted || 0}</div>
+                <div className="text-2xl font-bold text-purple-600">
+                  {team2Stats?.find((s) => !s.memberId)?.tasksCompleted || 0}
+                </div>
                 <div className="text-xs text-muted-foreground">과제</div>
               </div>
             </div>
@@ -258,14 +272,16 @@ export default function DashboardPage() {
             {/* Member breakdown */}
             <div className="space-y-2">
               <h4 className="text-sm font-medium">팀원별 기여도</h4>
-              {team2Stats?.filter(s => s.memberId).map((member) => (
-                <div key={member.id} className="flex justify-between items-center text-sm">
-                  <span>{member.memberName}</span>
-                  <span className="text-muted-foreground">
-                    {member.pagesCreated + member.commentsWritten + member.tasksCompleted}개
-                  </span>
-                </div>
-              ))}
+              {team2Stats
+                ?.filter((s) => s.memberId)
+                .map((member) => (
+                  <div key={member.id} className="flex justify-between items-center text-sm">
+                    <span>{member.memberName}</span>
+                    <span className="text-muted-foreground">
+                      {member.pagesCreated + member.commentsWritten + member.tasksCompleted}개
+                    </span>
+                  </div>
+                ))}
             </div>
           </CardContent>
         </Card>
@@ -312,4 +328,4 @@ export default function DashboardPage() {
       </Card>
     </div>
   );
-} 
+}

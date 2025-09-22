@@ -22,7 +22,7 @@ export function createSuccessResponse<T>(data: T, message?: string): ApiResponse
   return {
     success: true,
     data,
-    ...(message && { message })
+    ...(message && { message }),
   };
 }
 
@@ -32,7 +32,7 @@ export function createErrorResponse(message: string, code?: string, details?: an
     error: {
       message,
       ...(code && { code }),
-      ...(details && { details })
-    }
+      ...(details && { details }),
+    },
   };
-} 
+}

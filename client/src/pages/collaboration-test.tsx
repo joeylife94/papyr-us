@@ -17,7 +17,7 @@ export default function CollaborationTest() {
       properties: {},
       order: 0,
       children: [],
-    }
+    },
   ]);
 
   const [userName, setUserName] = useState(getUserName());
@@ -92,4 +92,4 @@ export default function CollaborationTest() {
       </Card>
     </div>
   );
-} 
+}

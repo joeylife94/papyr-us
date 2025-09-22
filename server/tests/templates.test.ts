@@ -7,21 +7,21 @@ import http from 'http';
 
 // Mock storage module if it hits a real database
 vi.mock('../storage', async (importOriginal) => {
-    const actual = await importOriginal() as any;
-    const dbStorageInstance = new actual.DBStorage();
+  const actual = (await importOriginal()) as any;
+  const dbStorageInstance = new actual.DBStorage();
 
-    // Replace all methods with vi.fn() to allow for mocking in tests
-    for (const key of Object.getOwnPropertyNames(actual.DBStorage.prototype)) {
-        if (key !== 'constructor' && typeof dbStorageInstance[key] === 'function') {
-            dbStorageInstance[key] = vi.fn();
-        }
+  // Replace all methods with vi.fn() to allow for mocking in tests
+  for (const key of Object.getOwnPropertyNames(actual.DBStorage.prototype)) {
+    if (key !== 'constructor' && typeof dbStorageInstance[key] === 'function') {
+      dbStorageInstance[key] = vi.fn();
     }
+  }
 
-    return {
-        ...actual,
-        DBStorage: vi.fn(() => dbStorageInstance),
-        storage: dbStorageInstance,
-    };
+  return {
+    ...actual,
+    DBStorage: vi.fn(() => dbStorageInstance),
+    storage: dbStorageInstance,
+  };
 });
 
 import { storage } from '../storage.js';
@@ -45,15 +45,13 @@ describe('POST /api/templates', () => {
     const { storage } = await import('../storage.js');
     (storage.createTemplate as any).mockRejectedValueOnce(new Error('Category not found'));
 
-    const response = await request(app)
-      .post('/api/templates')
-      .send({
-        title: 'Test Template',
-        description: 'A test template',
-        content: 'Some content',
-        author: 'Vitest',
-        categoryId: 999, // Non-existent category
-      });
+    const response = await request(app).post('/api/templates').send({
+      title: 'Test Template',
+      description: 'A test template',
+      content: 'Some content',
+      author: 'Vitest',
+      categoryId: 999, // Non-existent category
+    });
 
     expect(response.status).toBe(400);
     expect(response.body.error).toContain('Failed to create template');
@@ -64,38 +62,34 @@ describe('POST /api/templates', () => {
     const categoryId = 1;
 
     // Mock the storage calls for this test
-    (storage.createTemplateCategory as vi.Mock).mockResolvedValue({ 
-        id: categoryId, 
-        name: 'api-test-category', 
-        displayName: 'API Test Category' 
+    (storage.createTemplateCategory as vi.Mock).mockResolvedValue({
+      id: categoryId,
+      name: 'api-test-category',
+      displayName: 'API Test Category',
     });
-    (storage.createTemplate as vi.Mock).mockResolvedValue({ 
-        id: 1, 
-        title: 'API Test Template', 
-        categoryId: categoryId 
+    (storage.createTemplate as vi.Mock).mockResolvedValue({
+      id: 1,
+      title: 'API Test Template',
+      categoryId: categoryId,
     });
 
     // First, let's "create" a category to ensure it exists.
-    const categoryResponse = await request(app)
-      .post('/api/template-categories')
-      .send({
-        name: 'api-test-category',
-        displayName: 'API Test Category',
-      });
-    
+    const categoryResponse = await request(app).post('/api/template-categories').send({
+      name: 'api-test-category',
+      displayName: 'API Test Category',
+    });
+
     expect(categoryResponse.status).toBe(201);
     expect(categoryResponse.body).toHaveProperty('id', categoryId);
 
     // Now, create the template using the new category ID
-    const templateResponse = await request(app)
-      .post('/api/templates')
-      .send({
-        title: 'API Test Template',
-        description: 'A test template',
-        content: 'Some content',
-        author: 'Vitest',
-        categoryId: categoryId,
-      });
+    const templateResponse = await request(app).post('/api/templates').send({
+      title: 'API Test Template',
+      description: 'A test template',
+      content: 'Some content',
+      author: 'Vitest',
+      categoryId: categoryId,
+    });
 
     expect(templateResponse.status).toBe(201);
     expect(templateResponse.body).toHaveProperty('id');

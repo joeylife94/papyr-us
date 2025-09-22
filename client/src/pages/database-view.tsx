@@ -5,19 +5,8 @@ import { KanbanView } from '../components/views/kanban-view';
 import { GalleryView } from '../components/views/gallery-view';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { 
-  Tabs, 
-  TabsContent, 
-  TabsList, 
-  TabsTrigger 
-} from '../components/ui/tabs';
-import { 
-  Table, 
-  Kanban, 
-  Grid3X3,
-  Plus,
-  Settings
-} from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { Table, Kanban, Grid3X3, Plus, Settings } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
 
 interface DatabaseViewProps {
@@ -29,7 +18,7 @@ type ViewMode = 'table' | 'kanban' | 'gallery';
 export default function DatabaseView({ teamName }: DatabaseViewProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('table');
   const [galleryViewMode, setGalleryViewMode] = useState<'grid' | 'list'>('grid');
-  
+
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -37,40 +26,34 @@ export default function DatabaseView({ teamName }: DatabaseViewProps) {
   const { data: pages = [], isLoading: pagesLoading } = useQuery<any[]>({
     queryKey: ['/api/pages', teamName],
     queryFn: async () => {
-      const url = teamName 
-        ? `/api/pages?teamId=${teamName}`
-        : '/api/pages';
+      const url = teamName ? `/api/pages?teamId=${teamName}` : '/api/pages';
       const response = await fetch(url);
       if (!response.ok) return [];
       const data = await response.json();
       return data.pages || [];
-    }
+    },
   });
 
   // 과제 데이터 가져오기
   const { data: tasks = [], isLoading: tasksLoading } = useQuery<any[]>({
     queryKey: ['/api/tasks', teamName],
     queryFn: async () => {
-      const url = teamName 
-        ? `/api/tasks?teamId=${teamName}`
-        : '/api/tasks';
+      const url = teamName ? `/api/tasks?teamId=${teamName}` : '/api/tasks';
       const response = await fetch(url);
       if (!response.ok) return [];
       return response.json();
-    }
+    },
   });
 
   // 파일 데이터 가져오기
   const { data: files = { images: [], files: [] }, isLoading: filesLoading } = useQuery<any>({
     queryKey: ['/api/uploads', teamName],
     queryFn: async () => {
-      const url = teamName 
-        ? `/api/uploads?teamId=${teamName}`
-        : '/api/uploads';
+      const url = teamName ? `/api/uploads?teamId=${teamName}` : '/api/uploads';
       const response = await fetch(url);
       if (!response.ok) return { images: [], files: [] };
       return response.json();
-    }
+    },
   });
 
   // 과제 상태 업데이트
@@ -79,7 +62,7 @@ export default function DatabaseView({ teamName }: DatabaseViewProps) {
       const response = await fetch(`/api/tasks/${taskId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status })
+        body: JSON.stringify({ status }),
       });
       if (!response.ok) throw new Error('Failed to update task');
       return response.json();
@@ -87,37 +70,46 @@ export default function DatabaseView({ teamName }: DatabaseViewProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/tasks', teamName] });
       toast({
-        title: "과제 업데이트 완료",
-        description: "과제 상태가 성공적으로 변경되었습니다."
+        title: '과제 업데이트 완료',
+        description: '과제 상태가 성공적으로 변경되었습니다.',
       });
     },
     onError: () => {
       toast({
-        title: "업데이트 실패",
-        description: "과제 상태 변경에 실패했습니다.",
-        variant: "destructive"
+        title: '업데이트 실패',
+        description: '과제 상태 변경에 실패했습니다.',
+        variant: 'destructive',
       });
-    }
+    },
   });
 
   // 우선순위 색상 함수
   const getPriorityColor = (priority: string) => {
     switch (priority) {
-      case 'high': return '#ef4444';
-      case 'medium': return '#f59e0b';
-      case 'low': return '#10b981';
-      default: return '#6b7280';
+      case 'high':
+        return '#ef4444';
+      case 'medium':
+        return '#f59e0b';
+      case 'low':
+        return '#10b981';
+      default:
+        return '#6b7280';
     }
   };
 
   // 상태 색상 함수
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'todo': return '#6b7280';
-      case 'in-progress': return '#f59e0b';
-      case 'review': return '#3b82f6';
-      case 'done': return '#10b981';
-      default: return '#6b7280';
+      case 'todo':
+        return '#6b7280';
+      case 'in-progress':
+        return '#f59e0b';
+      case 'review':
+        return '#3b82f6';
+      case 'done':
+        return '#10b981';
+      default:
+        return '#6b7280';
     }
   };
 
@@ -128,29 +120,37 @@ export default function DatabaseView({ teamName }: DatabaseViewProps) {
     { key: 'author', label: '작성자', type: 'text' as const, sortable: true },
     { key: 'createdAt', label: '작성일', type: 'date' as const, sortable: true },
     { key: 'tags', label: '태그', type: 'badge' as const },
-    { key: 'actions', label: '작업', type: 'action' as const }
+    { key: 'actions', label: '작업', type: 'action' as const },
   ];
 
   const taskColumns = [
     { key: 'title', label: '제목', type: 'text' as const, sortable: true },
-    { key: 'status', label: '상태', type: 'select' as const, sortable: true, 
+    {
+      key: 'status',
+      label: '상태',
+      type: 'select' as const,
+      sortable: true,
       options: [
         { value: 'todo', label: '할 일' },
         { value: 'in-progress', label: '진행 중' },
         { value: 'review', label: '검토' },
-        { value: 'done', label: '완료' }
-      ]
+        { value: 'done', label: '완료' },
+      ],
     },
-    { key: 'priority', label: '우선순위', type: 'select' as const, sortable: true,
+    {
+      key: 'priority',
+      label: '우선순위',
+      type: 'select' as const,
+      sortable: true,
       options: [
         { value: 'low', label: '낮음' },
         { value: 'medium', label: '보통' },
-        { value: 'high', label: '높음' }
-      ]
+        { value: 'high', label: '높음' },
+      ],
     },
     { key: 'assignedTo', label: '담당자', type: 'text' as const, sortable: true },
     { key: 'dueDate', label: '마감일', type: 'date' as const, sortable: true },
-    { key: 'actions', label: '작업', type: 'action' as const }
+    { key: 'actions', label: '작업', type: 'action' as const },
   ];
 
   const fileColumns = [
@@ -158,7 +158,7 @@ export default function DatabaseView({ teamName }: DatabaseViewProps) {
     { key: 'mimetype', label: '타입', type: 'text' as const, sortable: true },
     { key: 'size', label: '크기', type: 'number' as const, sortable: true },
     { key: 'created', label: '업로드일', type: 'date' as const, sortable: true },
-    { key: 'actions', label: '작업', type: 'action' as const }
+    { key: 'actions', label: '작업', type: 'action' as const },
   ];
 
   // 칸반 컬럼 정의
@@ -166,25 +166,25 @@ export default function DatabaseView({ teamName }: DatabaseViewProps) {
     { id: 'todo', title: '할 일', color: '#6b7280' },
     { id: 'in-progress', title: '진행 중', color: '#f59e0b' },
     { id: 'review', title: '검토', color: '#3b82f6' },
-    { id: 'done', title: '완료', color: '#10b981' }
+    { id: 'done', title: '완료', color: '#10b981' },
   ];
 
   // 데이터 변환
-  const transformedPages = pages.map(page => ({
+  const transformedPages = pages.map((page) => ({
     ...page,
     tags: page.tags?.join(', ') || '',
-    createdAt: new Date(page.createdAt).toISOString()
+    createdAt: new Date(page.createdAt).toISOString(),
   }));
 
-  const transformedTasks = tasks.map(task => ({
+  const transformedTasks = tasks.map((task) => ({
     ...task,
     assignedTo: task.assignedTo || '미배정',
-    dueDate: task.dueDate ? new Date(task.dueDate).toISOString() : null
+    dueDate: task.dueDate ? new Date(task.dueDate).toISOString() : null,
   }));
 
   const transformedFiles = [
     ...files.images.map((file: any) => ({ ...file, type: 'image' })),
-    ...files.files.map((file: any) => ({ ...file, type: 'file' }))
+    ...files.files.map((file: any) => ({ ...file, type: 'file' })),
   ];
 
   // 이벤트 핸들러
@@ -290,14 +290,14 @@ export default function DatabaseView({ teamName }: DatabaseViewProps) {
           )}
           {viewMode === 'gallery' && (
             <GalleryView
-              data={transformedPages.map(page => ({
+              data={transformedPages.map((page) => ({
                 id: page.id.toString(),
                 title: page.title,
                 description: page.content?.substring(0, 100) + '...',
                 tags: page.tags?.split(', ') || [],
                 author: page.author,
                 date: page.createdAt,
-                status: page.isPublished ? 'published' : 'draft'
+                status: page.isPublished ? 'published' : 'draft',
               }))}
               title="위키 페이지"
               viewMode={galleryViewMode}
@@ -325,7 +325,7 @@ export default function DatabaseView({ teamName }: DatabaseViewProps) {
           )}
           {viewMode === 'kanban' && (
             <KanbanView
-              data={transformedTasks.map(task => ({
+              data={transformedTasks.map((task) => ({
                 id: task.id.toString(),
                 title: task.title,
                 description: task.description,
@@ -333,7 +333,7 @@ export default function DatabaseView({ teamName }: DatabaseViewProps) {
                 priority: task.priority,
                 assignee: task.assignedTo,
                 dueDate: task.dueDate,
-                tags: task.tags || []
+                tags: task.tags || [],
               }))}
               columns={kanbanColumns}
               title="과제 관리"
@@ -346,14 +346,14 @@ export default function DatabaseView({ teamName }: DatabaseViewProps) {
           )}
           {viewMode === 'gallery' && (
             <GalleryView
-              data={transformedTasks.map(task => ({
+              data={transformedTasks.map((task) => ({
                 id: task.id.toString(),
                 title: task.title,
                 description: task.description,
                 tags: task.tags || [],
                 author: task.assignedTo,
                 date: task.dueDate,
-                status: task.status
+                status: task.status,
               }))}
               title="과제"
               viewMode={galleryViewMode}
@@ -381,14 +381,14 @@ export default function DatabaseView({ teamName }: DatabaseViewProps) {
           )}
           {viewMode === 'gallery' && (
             <GalleryView
-              data={transformedFiles.map(file => ({
+              data={transformedFiles.map((file) => ({
                 id: file.filename,
                 title: file.filename,
                 description: `${file.mimetype} • ${(file.size / 1024).toFixed(1)}KB`,
                 image: file.type === 'image' ? file.url : undefined,
                 tags: [file.type, file.mimetype.split('/')[1]],
                 date: file.created,
-                status: file.type
+                status: file.type,
               }))}
               title="파일"
               viewMode={galleryViewMode}
@@ -404,4 +404,4 @@ export default function DatabaseView({ teamName }: DatabaseViewProps) {
       </Tabs>
     </div>
   );
-} 
+}

@@ -13,14 +13,14 @@ interface CheckboxBlockProps {
   onAddBlock: (type?: BlockType) => void;
 }
 
-export function CheckboxBlock({ 
-  block, 
-  isFocused, 
-  onFocus, 
-  onBlur, 
-  onUpdate, 
-  onDelete, 
-  onAddBlock 
+export function CheckboxBlock({
+  block,
+  isFocused,
+  onFocus,
+  onBlur,
+  onUpdate,
+  onDelete,
+  onAddBlock,
 }: CheckboxBlockProps) {
   const [content, setContent] = useState(block.content);
   const [isChecked, setIsChecked] = useState(block.properties?.checked || false);
@@ -55,11 +55,11 @@ export function CheckboxBlock({
   const handleCheckboxToggle = () => {
     const newChecked = !isChecked;
     setIsChecked(newChecked);
-    onUpdate({ 
-      properties: { 
-        ...block.properties, 
-        checked: newChecked 
-      } 
+    onUpdate({
+      properties: {
+        ...block.properties,
+        checked: newChecked,
+      },
     });
   };
 
@@ -77,7 +77,7 @@ export function CheckboxBlock({
   };
 
   return (
-    <div 
+    <div
       className={`relative group ${isFocused ? 'bg-blue-50 dark:bg-blue-950/20' : ''} rounded-lg p-2 transition-colors`}
       onFocus={onFocus}
       onBlur={onBlur}
@@ -89,11 +89,7 @@ export function CheckboxBlock({
           onClick={handleCheckboxToggle}
           className={`mt-1 flex-shrink-0 ${isChecked ? 'text-green-600' : 'text-gray-400'} hover:text-green-600 transition-colors`}
         >
-          {isChecked ? (
-            <CheckSquare className="h-5 w-5" />
-          ) : (
-            <Square className="h-5 w-5" />
-          )}
+          {isChecked ? <CheckSquare className="h-5 w-5" /> : <Square className="h-5 w-5" />}
         </button>
 
         {/* 텍스트 입력 */}
@@ -106,9 +102,7 @@ export function CheckboxBlock({
           onBlur={onBlur}
           placeholder="할 일을 입력하세요..."
           className={`flex-1 resize-none border-none outline-none bg-transparent text-base placeholder-gray-400 dark:placeholder-gray-500 leading-relaxed ${
-            isChecked 
-              ? 'text-gray-500 line-through' 
-              : 'text-gray-900 dark:text-white'
+            isChecked ? 'text-gray-500 line-through' : 'text-gray-900 dark:text-white'
           }`}
           rows={1}
         />
@@ -129,4 +123,4 @@ export function CheckboxBlock({
       </div>
     </div>
   );
-} 
+}

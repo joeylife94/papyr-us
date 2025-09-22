@@ -3,11 +3,13 @@
 ## 🖥️ Windows 개발 환경 설정
 
 ### 1. Docker Desktop 설치
+
 1. [Docker Desktop for Windows](https://www.docker.com/products/docker-desktop/) 다운로드
 2. 설치 후 WSL2 백엔드 활성화
 3. PowerShell 재시작
 
 ### 2. 개발 서버 시작
+
 ```bash
 # PostgreSQL + 앱 컨테이너 시작
 docker compose up -d
@@ -23,6 +25,7 @@ docker compose exec db psql -U papyrus_user -d papyrus_db -c "\dt"
 ```
 
 ### 3. 개발 워크플로우
+
 ```bash
 # 코드 변경 후 재빌드
 docker compose build app
@@ -38,6 +41,7 @@ docker compose down -v
 ## 🐧 우분투 서버 배포
 
 ### 1. 서버 사전 준비
+
 ```bash
 # Docker 설치 (우분투 서버에서 실행)
 sudo apt update
@@ -51,6 +55,7 @@ sudo usermod -aG docker $USER
 ```
 
 ### 2. 프로젝트 배포
+
 ```bash
 # 프로젝트 클론 (우분투 서버에서)
 git clone <your-repo> papyr-us
@@ -73,6 +78,7 @@ docker compose logs app
 ```
 
 ### 3. 서버 관리 스크립트
+
 ```bash
 # 백업 스크립트 (우분투 서버에서)
 #!/bin/bash
@@ -90,6 +96,7 @@ docker compose up -d
 ## 🔒 보안 고려사항 (우분투 서버)
 
 ### 1. 방화벽 설정
+
 ```bash
 # UFW 활성화
 sudo ufw enable
@@ -101,6 +108,7 @@ sudo ufw allow 5001  # 앱 포트
 ```
 
 ### 2. 리버스 프록시 (Nginx)
+
 ```bash
 # Nginx 설치
 sudo apt install nginx
@@ -109,7 +117,7 @@ sudo apt install nginx
 server {
     listen 80;
     server_name your-domain.com;
-    
+
     location / {
         proxy_pass http://localhost:5001;
         proxy_set_header Host $host;
@@ -125,6 +133,7 @@ sudo certbot --nginx -d your-domain.com
 ## 📊 데이터 마이그레이션 계획
 
 ### 현재 메모리 데이터 → PostgreSQL 이전
+
 ```bash
 # 1. 현재 메모리 데이터 확인 (개발 환경에서)
 # MemStorage의 initializeDefaultPages(), initializeDefaultEvents() 내용 확인
@@ -140,6 +149,7 @@ docker compose exec app node server/migrate-data.js
 ## 🔄 지속적 배포 워크플로우
 
 ### Git 기반 배포
+
 ```bash
 # 로컬에서 개발 완료 후
 git add .
@@ -154,4 +164,4 @@ git pull origin main
 docker compose build
 docker compose up -d
 echo "배포 완료: $(date)"
-``` 
+```

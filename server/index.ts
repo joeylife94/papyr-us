@@ -5,17 +5,17 @@ import path from 'path';
 const envPath = process.env.NODE_ENV === 'test' ? '.env.test' : '.env';
 dotenv.config({ path: path.resolve(process.cwd(), envPath) });
 
-import express from "express";
-import { registerRoutes } from "./routes.js";
-import { serveStaticAssets, serveIndex } from "./static.js";
-import { 
-  log, 
-  setupBasicMiddleware, 
-  setupLoggingMiddleware, 
-  setupErrorHandler, 
-  getServerConfig
-} from "./middleware.js";
-import { DBStorage } from "./storage.js";
+import express from 'express';
+import { registerRoutes } from './routes.js';
+import { serveStaticAssets, serveIndex } from './static.js';
+import {
+  log,
+  setupBasicMiddleware,
+  setupLoggingMiddleware,
+  setupErrorHandler,
+  getServerConfig,
+} from './middleware.js';
+import { DBStorage } from './storage.js';
 
 const app = express();
 const storage = new DBStorage(); // Create a single storage instance
@@ -36,10 +36,10 @@ setupLoggingMiddleware(app);
     serveIndex(app);
   } else {
     try {
-      const { setupVite } = await import("./vite.js");
+      const { setupVite } = await import('./vite.js');
       await setupVite(app, httpServer);
     } catch (error) {
-      console.warn("Vite setup failed, falling back to static files:", error);
+      console.warn('Vite setup failed, falling back to static files:', error);
       serveIndex(app);
     }
   }

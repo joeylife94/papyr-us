@@ -1,10 +1,54 @@
 import dotenv from 'dotenv';
 dotenv.config();
-import { wikiPages, type WikiPage, type InsertWikiPage, type UpdateWikiPage, type Tag, type SearchParams, type CalendarEvent, type InsertCalendarEvent, type UpdateCalendarEvent, type Directory, type InsertDirectory, type UpdateDirectory, type Comment, type InsertComment, type UpdateComment, type Member, type InsertMember, type UpdateMember, type Task, type InsertTask, type UpdateTask, type Notification, type InsertNotification, type UpdateNotification, type Template, type InsertTemplate, type UpdateTemplate, type TemplateCategory, type InsertTemplateCategory, type UpdateTemplateCategory, type Team, type InsertTeam, type UpdateTeam, users, calendarEvents, directories, comments, members, tasks, notifications, templates, templateCategories, teams } from "../shared/schema.js";
-import { drizzle } from "drizzle-orm/node-postgres";
-import { eq, like, and, sql, desc, asc } from "drizzle-orm";
-import { Pool } from "pg";
-import bcrypt from "bcryptjs";
+import {
+  wikiPages,
+  type WikiPage,
+  type InsertWikiPage,
+  type UpdateWikiPage,
+  type Tag,
+  type SearchParams,
+  type CalendarEvent,
+  type InsertCalendarEvent,
+  type UpdateCalendarEvent,
+  type Directory,
+  type InsertDirectory,
+  type UpdateDirectory,
+  type Comment,
+  type InsertComment,
+  type UpdateComment,
+  type Member,
+  type InsertMember,
+  type UpdateMember,
+  type Task,
+  type InsertTask,
+  type UpdateTask,
+  type Notification,
+  type InsertNotification,
+  type UpdateNotification,
+  type Template,
+  type InsertTemplate,
+  type UpdateTemplate,
+  type TemplateCategory,
+  type InsertTemplateCategory,
+  type UpdateTemplateCategory,
+  type Team,
+  type InsertTeam,
+  type UpdateTeam,
+  users,
+  calendarEvents,
+  directories,
+  comments,
+  members,
+  tasks,
+  notifications,
+  templates,
+  templateCategories,
+  teams,
+} from '../shared/schema.js';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { eq, like, and, sql, desc, asc } from 'drizzle-orm';
+import { Pool } from 'pg';
+import bcrypt from 'bcryptjs';
 
 // Simplified and unified DBStorage
 export class DBStorage {
@@ -13,9 +57,9 @@ export class DBStorage {
 
   constructor() {
     if (!process.env.DATABASE_URL) {
-      throw new Error("DATABASE_URL is required for database storage");
+      throw new Error('DATABASE_URL is required for database storage');
     }
-    
+
     this.pool = new Pool({
       connectionString: process.env.DATABASE_URL,
     });
@@ -27,7 +71,7 @@ export class DBStorage {
     const result = await this.db.select().from(wikiPages).where(eq(wikiPages.id, id));
     return result[0];
   }
-  
+
   async getWikiPageBySlug(slug: string): Promise<WikiPage | undefined> {
     const result = await this.db.select().from(wikiPages).where(eq(wikiPages.slug, slug));
     return result[0];
@@ -39,7 +83,11 @@ export class DBStorage {
   }
 
   async updateWikiPage(id: number, page: UpdateWikiPage): Promise<WikiPage | undefined> {
-    const result = await this.db.update(wikiPages).set(page).where(eq(wikiPages.id, id)).returning();
+    const result = await this.db
+      .update(wikiPages)
+      .set(page)
+      .where(eq(wikiPages.id, id))
+      .returning();
     return result[0];
   }
 
@@ -74,14 +122,21 @@ export class DBStorage {
     const totalResult = await countQuery;
     const total = totalResult[0].count;
 
-    query.limit(params.limit || 20).offset(params.offset || 0).orderBy(desc(wikiPages.updatedAt));
+    query
+      .limit(params.limit || 20)
+      .offset(params.offset || 0)
+      .orderBy(desc(wikiPages.updatedAt));
 
     const pages = await query;
     return { pages, total };
   }
-  
+
   async getWikiPagesByFolder(folder: string): Promise<WikiPage[]> {
-    return this.db.select().from(wikiPages).where(eq(wikiPages.folder, folder)).orderBy(desc(wikiPages.updatedAt));
+    return this.db
+      .select()
+      .from(wikiPages)
+      .where(eq(wikiPages.folder, folder))
+      .orderBy(desc(wikiPages.updatedAt));
   }
 
   async getAllTags(): Promise<Tag[]> {
@@ -103,7 +158,7 @@ export class DBStorage {
   async getCalendarEvents(teamId?: number): Promise<CalendarEvent[]> {
     const query = this.db.select().from(calendarEvents);
     if (teamId) {
-  query.where(eq(calendarEvents.teamId, String(teamId)));
+      query.where(eq(calendarEvents.teamId, String(teamId)));
     }
     return query.orderBy(asc(calendarEvents.startDate));
   }
@@ -118,13 +173,23 @@ export class DBStorage {
     return result[0];
   }
 
-  async updateCalendarEvent(id: number, event: UpdateCalendarEvent): Promise<CalendarEvent | undefined> {
-    const result = await this.db.update(calendarEvents).set(event).where(eq(calendarEvents.id, id)).returning();
+  async updateCalendarEvent(
+    id: number,
+    event: UpdateCalendarEvent
+  ): Promise<CalendarEvent | undefined> {
+    const result = await this.db
+      .update(calendarEvents)
+      .set(event)
+      .where(eq(calendarEvents.id, id))
+      .returning();
     return result[0];
   }
 
   async deleteCalendarEvent(id: number): Promise<boolean> {
-    const result = await this.db.delete(calendarEvents).where(eq(calendarEvents.id, id)).returning();
+    const result = await this.db
+      .delete(calendarEvents)
+      .where(eq(calendarEvents.id, id))
+      .returning();
     return result.length > 0;
   }
 
@@ -143,7 +208,11 @@ export class DBStorage {
   }
 
   async updateDirectory(id: number, directory: UpdateDirectory): Promise<Directory | undefined> {
-    const result = await this.db.update(directories).set(directory).where(eq(directories.id, id)).returning();
+    const result = await this.db
+      .update(directories)
+      .set(directory)
+      .where(eq(directories.id, id))
+      .returning();
     return result[0];
   }
 
@@ -153,14 +222,21 @@ export class DBStorage {
   }
 
   async verifyDirectoryPassword(directoryName: string, password: string): Promise<boolean> {
-    const result = await this.db.select({ password: directories.password }).from(directories).where(eq(directories.name, directoryName));
+    const result = await this.db
+      .select({ password: directories.password })
+      .from(directories)
+      .where(eq(directories.name, directoryName));
     const dir = result[0];
     if (!dir || !dir.password) return true;
     return dir.password === password;
   }
 
   async getCommentsByPageId(pageId: number): Promise<Comment[]> {
-    return this.db.select().from(comments).where(eq(comments.pageId, pageId)).orderBy(asc(comments.createdAt));
+    return this.db
+      .select()
+      .from(comments)
+      .where(eq(comments.pageId, pageId))
+      .orderBy(asc(comments.createdAt));
   }
 
   async getComment(id: number): Promise<Comment | undefined> {
@@ -174,7 +250,11 @@ export class DBStorage {
   }
 
   async updateComment(id: number, comment: UpdateComment): Promise<Comment | undefined> {
-    const result = await this.db.update(comments).set(comment).where(eq(comments.id, id)).returning();
+    const result = await this.db
+      .update(comments)
+      .set(comment)
+      .where(eq(comments.id, id))
+      .returning();
     return result[0];
   }
 
@@ -266,8 +346,11 @@ export class DBStorage {
     return undefined;
   }
 
-  async updateProgressStats(teamId: string, memberId: number | null, type: 'page' | 'comment' | 'task'): Promise<void> {
-  }
+  async updateProgressStats(
+    teamId: string,
+    memberId: number | null,
+    type: 'page' | 'comment' | 'task'
+  ): Promise<void> {}
 
   async getDashboardOverview(): Promise<any> {
     const pageCountResult = await this.db.select({ count: sql`count(*)` }).from(wikiPages);
@@ -314,12 +397,20 @@ export class DBStorage {
   }
 
   async updateTaskProgress(id: number, progress: number): Promise<Task | undefined> {
-    const result = await this.db.update(tasks).set({ progress, updatedAt: new Date() }).where(eq(tasks.id, id)).returning();
+    const result = await this.db
+      .update(tasks)
+      .set({ progress, updatedAt: new Date() })
+      .where(eq(tasks.id, id))
+      .returning();
     return result[0];
   }
 
   async getNotifications(recipientId: number): Promise<Notification[]> {
-    return this.db.select().from(notifications).where(eq(notifications.recipientId, recipientId)).orderBy(desc(notifications.createdAt));
+    return this.db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.recipientId, recipientId))
+      .orderBy(desc(notifications.createdAt));
   }
 
   async getNotification(id: number): Promise<Notification | undefined> {
@@ -332,8 +423,15 @@ export class DBStorage {
     return result[0];
   }
 
-  async updateNotification(id: number, notification: UpdateNotification): Promise<Notification | undefined> {
-    const result = await this.db.update(notifications).set(notification).where(eq(notifications.id, id)).returning();
+  async updateNotification(
+    id: number,
+    notification: UpdateNotification
+  ): Promise<Notification | undefined> {
+    const result = await this.db
+      .update(notifications)
+      .set(notification)
+      .where(eq(notifications.id, id))
+      .returning();
     return result[0];
   }
 
@@ -343,16 +441,26 @@ export class DBStorage {
   }
 
   async markNotificationAsRead(id: number): Promise<Notification | undefined> {
-    const result = await this.db.update(notifications).set({ isRead: true }).where(eq(notifications.id, id)).returning();
+    const result = await this.db
+      .update(notifications)
+      .set({ isRead: true })
+      .where(eq(notifications.id, id))
+      .returning();
     return result[0];
   }
 
   async markAllNotificationsAsRead(recipientId: number): Promise<void> {
-    await this.db.update(notifications).set({ isRead: true }).where(eq(notifications.recipientId, recipientId));
+    await this.db
+      .update(notifications)
+      .set({ isRead: true })
+      .where(eq(notifications.recipientId, recipientId));
   }
 
   async getUnreadNotificationCount(recipientId: number): Promise<number> {
-    const result = await this.db.select({ count: sql`count(*)` }).from(notifications).where(and(eq(notifications.recipientId, recipientId), eq(notifications.isRead, false)));
+    const result = await this.db
+      .select({ count: sql`count(*)` })
+      .from(notifications)
+      .where(and(eq(notifications.recipientId, recipientId), eq(notifications.isRead, false)));
     return Number(result[0].count);
   }
 
@@ -361,7 +469,10 @@ export class DBStorage {
   }
 
   async getTemplateCategory(id: number): Promise<TemplateCategory | undefined> {
-    const result = await this.db.select().from(templateCategories).where(eq(templateCategories.id, id));
+    const result = await this.db
+      .select()
+      .from(templateCategories)
+      .where(eq(templateCategories.id, id));
     return result[0];
   }
 
@@ -370,13 +481,23 @@ export class DBStorage {
     return result[0];
   }
 
-  async updateTemplateCategory(id: number, category: UpdateTemplateCategory): Promise<TemplateCategory | undefined> {
-    const result = await this.db.update(templateCategories).set(category).where(eq(templateCategories.id, id)).returning();
+  async updateTemplateCategory(
+    id: number,
+    category: UpdateTemplateCategory
+  ): Promise<TemplateCategory | undefined> {
+    const result = await this.db
+      .update(templateCategories)
+      .set(category)
+      .where(eq(templateCategories.id, id))
+      .returning();
     return result[0];
   }
 
   async deleteTemplateCategory(id: number): Promise<boolean> {
-    const result = await this.db.delete(templateCategories).where(eq(templateCategories.id, id)).returning();
+    const result = await this.db
+      .delete(templateCategories)
+      .where(eq(templateCategories.id, id))
+      .returning();
     return result.length > 0;
   }
 
@@ -399,7 +520,11 @@ export class DBStorage {
   }
 
   async updateTemplate(id: number, template: UpdateTemplate): Promise<Template | undefined> {
-    const result = await this.db.update(templates).set(template).where(eq(templates.id, id)).returning();
+    const result = await this.db
+      .update(templates)
+      .set(template)
+      .where(eq(templates.id, id))
+      .returning();
     return result[0];
   }
 
@@ -409,7 +534,11 @@ export class DBStorage {
   }
 
   async incrementTemplateUsage(id: number): Promise<boolean> {
-    const result = await this.db.update(templates).set({ usageCount: sql`${templates.usageCount} + 1` }).where(eq(templates.id, id)).returning();
+    const result = await this.db
+      .update(templates)
+      .set({ usageCount: sql`${templates.usageCount} + 1` })
+      .where(eq(templates.id, id))
+      .returning();
     return result.length > 0;
   }
 }

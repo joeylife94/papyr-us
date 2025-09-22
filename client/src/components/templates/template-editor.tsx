@@ -6,24 +6,19 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
-import { 
-  Save, 
-  X, 
-  Eye, 
-  EyeOff, 
-  Tag, 
-  Plus, 
-  Trash2,
-  FileText,
-  Settings,
-  Palette
-} from 'lucide-react';
+import { Save, X, Eye, EyeOff, Tag, Plus, Trash2, FileText, Settings, Palette } from 'lucide-react';
 
 interface TemplateCategory {
   id: number;
@@ -68,9 +63,9 @@ export function TemplateEditor({ template, onSave, onCancel }: TemplateEditorPro
     tags: [],
     author: '',
     isPublic: true,
-    ...template
+    ...template,
   });
-  
+
   const [newTag, setNewTag] = useState('');
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const { toast } = useToast();
@@ -100,8 +95,8 @@ export function TemplateEditor({ template, onSave, onCancel }: TemplateEditorPro
     },
     onSuccess: (data: any) => {
       toast({
-        title: template?.id ? "템플릿 업데이트" : "템플릿 생성",
-        description: "템플릿이 성공적으로 저장되었습니다.",
+        title: template?.id ? '템플릿 업데이트' : '템플릿 생성',
+        description: '템플릿이 성공적으로 저장되었습니다.',
       });
       queryClient.invalidateQueries({ queryKey: ['templates'] });
       if (onSave) {
@@ -112,52 +107,52 @@ export function TemplateEditor({ template, onSave, onCancel }: TemplateEditorPro
     },
     onError: (error) => {
       toast({
-        title: "오류",
-        description: "템플릿 저장 중 오류가 발생했습니다.",
-        variant: "destructive"
+        title: '오류',
+        description: '템플릿 저장 중 오류가 발생했습니다.',
+        variant: 'destructive',
       });
-    }
+    },
   });
 
   const handleInputChange = (field: keyof Template, value: any) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      [field]: value
+      [field]: value,
     }));
   };
 
   const handleAddTag = () => {
     if (newTag.trim() && !formData.tags.includes(newTag.trim())) {
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
-        tags: [...prev.tags, newTag.trim()]
+        tags: [...prev.tags, newTag.trim()],
       }));
       setNewTag('');
     }
   };
 
   const handleRemoveTag = (tagToRemove: string) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      tags: prev.tags.filter(tag => tag !== tagToRemove)
+      tags: prev.tags.filter((tag) => tag !== tagToRemove),
     }));
   };
 
   const handleSave = () => {
     if (!formData.title.trim()) {
       toast({
-        title: "제목 필요",
-        description: "템플릿 제목을 입력해주세요.",
-        variant: "destructive"
+        title: '제목 필요',
+        description: '템플릿 제목을 입력해주세요.',
+        variant: 'destructive',
       });
       return;
     }
 
     if (!formData.content.trim()) {
       toast({
-        title: "내용 필요",
-        description: "템플릿 내용을 입력해주세요.",
-        variant: "destructive"
+        title: '내용 필요',
+        description: '템플릿 내용을 입력해주세요.',
+        variant: 'destructive',
       });
       return;
     }
@@ -198,7 +193,7 @@ export function TemplateEditor({ template, onSave, onCancel }: TemplateEditorPro
               <X className="h-4 w-4 mr-2" />
               취소
             </Button>
-            <Button 
+            <Button
               onClick={handleSave}
               disabled={saveMutation.isPending}
               className="flex items-center space-x-2"
@@ -231,7 +226,7 @@ export function TemplateEditor({ template, onSave, onCancel }: TemplateEditorPro
                   placeholder="템플릿 제목을 입력하세요"
                 />
               </div>
-              
+
               <div>
                 <Label htmlFor="description">설명</Label>
                 <Textarea
@@ -312,7 +307,7 @@ export function TemplateEditor({ template, onSave, onCancel }: TemplateEditorPro
                   <Plus className="h-4 w-4" />
                 </Button>
               </div>
-              
+
               <div className="flex flex-wrap gap-2">
                 {formData.tags.map((tag, index) => (
                   <Badge key={index} variant="secondary" className="flex items-center space-x-1">
@@ -384,11 +379,15 @@ export function TemplateEditor({ template, onSave, onCancel }: TemplateEditorPro
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">생성일:</span>
-                  <span>{template.createdAt ? new Date(template.createdAt).toLocaleDateString() : '-'}</span>
+                  <span>
+                    {template.createdAt ? new Date(template.createdAt).toLocaleDateString() : '-'}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">수정일:</span>
-                  <span>{template.updatedAt ? new Date(template.updatedAt).toLocaleDateString() : '-'}</span>
+                  <span>
+                    {template.updatedAt ? new Date(template.updatedAt).toLocaleDateString() : '-'}
+                  </span>
                 </div>
               </CardContent>
             </Card>
@@ -397,4 +396,4 @@ export function TemplateEditor({ template, onSave, onCancel }: TemplateEditorPro
       </div>
     </div>
   );
-} 
+}

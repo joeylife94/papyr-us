@@ -24,25 +24,25 @@ export default function RegisterPage() {
 
       if (response.ok) {
         toast({
-          title: "Registration Successful",
-          description: "You can now log in with your new account.",
+          title: 'Registration Successful',
+          description: 'You can now log in with your new account.',
         });
         navigate('/login');
       } else {
         const errorData = await response.json();
         console.error('Failed to register:', errorData);
         toast({
-          title: "Registration Failed",
-          description: errorData.message || "An unknown error occurred.",
-          variant: "destructive",
+          title: 'Registration Failed',
+          description: errorData.message || 'An unknown error occurred.',
+          variant: 'destructive',
         });
       }
     } catch (error) {
       console.error('Failed to register:', error);
       toast({
-        title: "Registration Failed",
-        description: "An unexpected error occurred. Please try again.",
-        variant: "destructive",
+        title: 'Registration Failed',
+        description: 'An unexpected error occurred. Please try again.',
+        variant: 'destructive',
       });
     }
   };
@@ -85,7 +85,9 @@ export default function RegisterPage() {
               className="bg-input"
             />
           </div>
-          <Button type="submit" className="w-full">Register</Button>
+          <Button type="submit" className="w-full">
+            Register
+          </Button>
         </form>
         <p className="text-sm text-center text-muted-foreground">
           Already have an account?{' '}

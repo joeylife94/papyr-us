@@ -1,32 +1,57 @@
-import { useState, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { Settings, Plus, Edit, Trash2, Eye, EyeOff, ArrowLeft, Lock } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useToast } from "@/hooks/use-toast";
-import { Directory, InsertDirectory, Team, InsertTeam } from "@shared/schema";
+import { useState, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { Settings, Plus, Edit, Trash2, Eye, EyeOff, ArrowLeft, Lock } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useToast } from '@/hooks/use-toast';
+import { Directory, InsertDirectory, Team, InsertTeam } from '@shared/schema';
 
 const directoryFormSchema = z.object({
-  name: z.string().min(1, "Name is required").regex(/^[a-z0-9-_]+$/, "Name must be lowercase letters, numbers, hyphens, or underscores only"),
-  displayName: z.string().min(1, "Display name is required"),
+  name: z
+    .string()
+    .min(1, 'Name is required')
+    .regex(
+      /^[a-z0-9-_]+$/,
+      'Name must be lowercase letters, numbers, hyphens, or underscores only'
+    ),
+  displayName: z.string().min(1, 'Display name is required'),
   password: z.string().optional(),
   isVisible: z.boolean().default(true),
   order: z.number().min(0).default(0),
 });
 
 const teamFormSchema = z.object({
-  name: z.string().min(1, "Name is required").regex(/^[a-z0-9-_]+$/, "Name must be lowercase letters, numbers, hyphens, or underscores only"),
-  displayName: z.string().min(1, "Display name is required"),
+  name: z
+    .string()
+    .min(1, 'Name is required')
+    .regex(
+      /^[a-z0-9-_]+$/,
+      'Name must be lowercase letters, numbers, hyphens, or underscores only'
+    ),
+  displayName: z.string().min(1, 'Display name is required'),
   description: z.string().optional(),
   password: z.string().optional(),
   icon: z.string().optional(),
@@ -41,8 +66,8 @@ type TeamFormData = z.infer<typeof teamFormSchema>;
 export default function AdminPage() {
   const navigate = useNavigate();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [authPassword, setAuthPassword] = useState("");
-  const [activeTab, setActiveTab] = useState<"directories" | "teams">("directories");
+  const [authPassword, setAuthPassword] = useState('');
+  const [activeTab, setActiveTab] = useState<'directories' | 'teams'>('directories');
   const [editingDirectory, setEditingDirectory] = useState<Directory | null>(null);
   const [editingTeam, setEditingTeam] = useState<Team | null>(null);
   const [isDirectoryDialogOpen, setIsDirectoryDialogOpen] = useState(false);
@@ -53,9 +78,9 @@ export default function AdminPage() {
   const directoryForm = useForm<DirectoryFormData>({
     resolver: zodResolver(directoryFormSchema),
     defaultValues: {
-      name: "",
-      displayName: "",
-      password: "",
+      name: '',
+      displayName: '',
+      password: '',
       isVisible: true,
       order: 0,
     },
@@ -64,12 +89,12 @@ export default function AdminPage() {
   const teamForm = useForm<TeamFormData>({
     resolver: zodResolver(teamFormSchema),
     defaultValues: {
-      name: "",
-      displayName: "",
-      description: "",
-      password: "",
-      icon: "",
-      color: "",
+      name: '',
+      displayName: '',
+      description: '',
+      password: '',
+      icon: '',
+      color: '',
       isActive: true,
       order: 0,
     },
@@ -77,18 +102,18 @@ export default function AdminPage() {
 
   // Check authentication on page load
   useEffect(() => {
-    const stored = sessionStorage.getItem("adminAuth");
+    const stored = sessionStorage.getItem('adminAuth');
     if (stored) {
       // Verify stored password with server
-      fetch("/api/admin/auth", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      fetch('/api/admin/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password: stored }),
-      }).then(response => {
+      }).then((response) => {
         if (response.ok) {
           setIsAuthenticated(true);
         } else {
-          sessionStorage.removeItem("adminAuth");
+          sessionStorage.removeItem('adminAuth');
         }
       });
     }
@@ -96,51 +121,51 @@ export default function AdminPage() {
 
   const handleAuth = async () => {
     try {
-      const response = await fetch("/api/admin/auth", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const response = await fetch('/api/admin/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password: authPassword }),
       });
 
       if (response.ok) {
         setIsAuthenticated(true);
-        sessionStorage.setItem("adminAuth", authPassword);
+        sessionStorage.setItem('adminAuth', authPassword);
         toast({
-          title: "Authentication successful",
-          description: "Welcome to the admin panel",
+          title: 'Authentication successful',
+          description: 'Welcome to the admin panel',
         });
       } else {
         toast({
-          title: "Authentication failed",
-          description: "Invalid password",
-          variant: "destructive",
+          title: 'Authentication failed',
+          description: 'Invalid password',
+          variant: 'destructive',
         });
       }
     } catch (error) {
       toast({
-        title: "Error",
-        description: "Failed to authenticate",
-        variant: "destructive",
+        title: 'Error',
+        description: 'Failed to authenticate',
+        variant: 'destructive',
       });
     }
   };
 
   const { data: directories = [], refetch: refetchDirectories } = useQuery<Directory[]>({
-    queryKey: ["/api/admin/directories"],
+    queryKey: ['/api/admin/directories'],
     queryFn: async () => {
-      const storedPassword = sessionStorage.getItem("adminAuth") || "";
+      const storedPassword = sessionStorage.getItem('adminAuth') || '';
       const response = await fetch(`/api/admin/directories?adminPassword=${storedPassword}`);
-      if (!response.ok) throw new Error("Failed to fetch directories");
+      if (!response.ok) throw new Error('Failed to fetch directories');
       return response.json();
     },
     enabled: isAuthenticated,
   });
 
   const { data: teams = [], refetch: refetchTeams } = useQuery<Team[]>({
-    queryKey: ["/api/teams"],
+    queryKey: ['/api/teams'],
     queryFn: async () => {
-      const response = await fetch("/api/teams");
-      if (!response.ok) throw new Error("Failed to fetch teams");
+      const response = await fetch('/api/teams');
+      if (!response.ok) throw new Error('Failed to fetch teams');
       return response.json();
     },
     enabled: isAuthenticated,
@@ -148,13 +173,13 @@ export default function AdminPage() {
 
   const createDirectoryMutation = useMutation({
     mutationFn: async (data: InsertDirectory) => {
-      const storedPassword = sessionStorage.getItem("adminAuth") || "";
-              const response = await fetch("/api/admin/directories", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const storedPassword = sessionStorage.getItem('adminAuth') || '';
+      const response = await fetch('/api/admin/directories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...data, adminPassword: storedPassword }),
       });
-      if (!response.ok) throw new Error("Failed to create directory");
+      if (!response.ok) throw new Error('Failed to create directory');
       return response.json();
     },
     onSuccess: () => {
@@ -162,28 +187,28 @@ export default function AdminPage() {
       setIsDirectoryDialogOpen(false);
       directoryForm.reset();
       toast({
-        title: "Directory created",
-        description: "New directory has been added successfully",
+        title: 'Directory created',
+        description: 'New directory has been added successfully',
       });
     },
     onError: () => {
       toast({
-        title: "Error",
-        description: "Failed to create directory",
-        variant: "destructive",
+        title: 'Error',
+        description: 'Failed to create directory',
+        variant: 'destructive',
       });
     },
   });
 
   const updateDirectoryMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: Partial<Directory> }) => {
-      const storedPassword = sessionStorage.getItem("adminAuth") || "";
+      const storedPassword = sessionStorage.getItem('adminAuth') || '';
       const response = await fetch(`/api/admin/directories/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...data, adminPassword: storedPassword }),
       });
-      if (!response.ok) throw new Error("Failed to update directory");
+      if (!response.ok) throw new Error('Failed to update directory');
       return response.json();
     },
     onSuccess: () => {
@@ -192,41 +217,41 @@ export default function AdminPage() {
       setIsDirectoryDialogOpen(false);
       directoryForm.reset();
       toast({
-        title: "Directory updated",
-        description: "Directory has been updated successfully",
+        title: 'Directory updated',
+        description: 'Directory has been updated successfully',
       });
     },
     onError: () => {
       toast({
-        title: "Error",
-        description: "Failed to update directory",
-        variant: "destructive",
+        title: 'Error',
+        description: 'Failed to update directory',
+        variant: 'destructive',
       });
     },
   });
 
   const deleteDirectoryMutation = useMutation({
     mutationFn: async (id: number) => {
-      const storedPassword = sessionStorage.getItem("adminAuth") || "";
+      const storedPassword = sessionStorage.getItem('adminAuth') || '';
       const response = await fetch(`/api/admin/directories/${id}`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ adminPassword: storedPassword }),
       });
-      if (!response.ok) throw new Error("Failed to delete directory");
+      if (!response.ok) throw new Error('Failed to delete directory');
     },
     onSuccess: () => {
       refetchDirectories();
       toast({
-        title: "Directory deleted",
-        description: "Directory has been removed successfully",
+        title: 'Directory deleted',
+        description: 'Directory has been removed successfully',
       });
     },
     onError: () => {
       toast({
-        title: "Error",
-        description: "Failed to delete directory",
-        variant: "destructive",
+        title: 'Error',
+        description: 'Failed to delete directory',
+        variant: 'destructive',
       });
     },
   });
@@ -234,12 +259,12 @@ export default function AdminPage() {
   // Team mutations
   const createTeamMutation = useMutation({
     mutationFn: async (data: InsertTeam) => {
-      const response = await fetch("/api/teams", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const response = await fetch('/api/teams', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
-      if (!response.ok) throw new Error("Failed to create team");
+      if (!response.ok) throw new Error('Failed to create team');
       return response.json();
     },
     onSuccess: () => {
@@ -247,15 +272,15 @@ export default function AdminPage() {
       setIsTeamDialogOpen(false);
       teamForm.reset();
       toast({
-        title: "Team created",
-        description: "New team has been added successfully",
+        title: 'Team created',
+        description: 'New team has been added successfully',
       });
     },
     onError: () => {
       toast({
-        title: "Error",
-        description: "Failed to create team",
-        variant: "destructive",
+        title: 'Error',
+        description: 'Failed to create team',
+        variant: 'destructive',
       });
     },
   });
@@ -263,11 +288,11 @@ export default function AdminPage() {
   const updateTeamMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: Partial<Team> }) => {
       const response = await fetch(`/api/teams/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
-      if (!response.ok) throw new Error("Failed to update team");
+      if (!response.ok) throw new Error('Failed to update team');
       return response.json();
     },
     onSuccess: () => {
@@ -276,15 +301,15 @@ export default function AdminPage() {
       setIsTeamDialogOpen(false);
       teamForm.reset();
       toast({
-        title: "Team updated",
-        description: "Team has been updated successfully",
+        title: 'Team updated',
+        description: 'Team has been updated successfully',
       });
     },
     onError: () => {
       toast({
-        title: "Error",
-        description: "Failed to update team",
-        variant: "destructive",
+        title: 'Error',
+        description: 'Failed to update team',
+        variant: 'destructive',
       });
     },
   });
@@ -292,28 +317,28 @@ export default function AdminPage() {
   const deleteTeamMutation = useMutation({
     mutationFn: async (id: number) => {
       const response = await fetch(`/api/teams/${id}`, {
-        method: "DELETE",
+        method: 'DELETE',
       });
-      if (!response.ok) throw new Error("Failed to delete team");
+      if (!response.ok) throw new Error('Failed to delete team');
     },
     onSuccess: () => {
       refetchTeams();
       toast({
-        title: "Team deleted",
-        description: "Team has been removed successfully",
+        title: 'Team deleted',
+        description: 'Team has been removed successfully',
       });
     },
     onError: () => {
       toast({
-        title: "Error",
-        description: "Failed to delete team",
-        variant: "destructive",
+        title: 'Error',
+        description: 'Failed to delete team',
+        variant: 'destructive',
       });
     },
   });
 
   const onSubmit = (data: DirectoryFormData | TeamFormData) => {
-    if (activeTab === "directories") {
+    if (activeTab === 'directories') {
       const directoryData = data as DirectoryFormData;
       if (editingDirectory) {
         updateDirectoryMutation.mutate({
@@ -329,7 +354,7 @@ export default function AdminPage() {
           password: directoryData.password || undefined,
         });
       }
-    } else if (activeTab === "teams") {
+    } else if (activeTab === 'teams') {
       const teamData = data as TeamFormData;
       if (editingTeam) {
         updateTeamMutation.mutate({
@@ -359,7 +384,7 @@ export default function AdminPage() {
     directoryForm.reset({
       name: directory.name,
       displayName: directory.displayName,
-      password: directory.password || "",
+      password: directory.password || '',
       isVisible: directory.isVisible,
       order: directory.order,
     });
@@ -367,7 +392,7 @@ export default function AdminPage() {
   };
 
   const handleDelete = (id: number) => {
-    if (confirm("Are you sure you want to delete this directory?")) {
+    if (confirm('Are you sure you want to delete this directory?')) {
       deleteDirectoryMutation.mutate(id);
     }
   };
@@ -377,10 +402,10 @@ export default function AdminPage() {
     teamForm.reset({
       name: team.name,
       displayName: team.displayName,
-      description: team.description || "",
-      password: team.password || "",
-      icon: team.icon || "",
-      color: team.color || "",
+      description: team.description || '',
+      password: team.password || '',
+      icon: team.icon || '',
+      color: team.color || '',
       isActive: team.isActive,
       order: team.order,
     });
@@ -388,7 +413,7 @@ export default function AdminPage() {
   };
 
   const handleDeleteTeam = (id: number) => {
-    if (confirm("Are you sure you want to delete this team?")) {
+    if (confirm('Are you sure you want to delete this team?')) {
       deleteTeamMutation.mutate(id);
     }
   };
@@ -412,16 +437,12 @@ export default function AdminPage() {
               placeholder="Admin password"
               value={authPassword}
               onChange={(e) => setAuthPassword(e.target.value)}
-              onKeyPress={(e) => e.key === "Enter" && handleAuth()}
+              onKeyPress={(e) => e.key === 'Enter' && handleAuth()}
             />
             <Button onClick={handleAuth} className="w-full">
               Login
             </Button>
-            <Button
-              variant="outline"
-              onClick={() => navigate("/")}
-              className="w-full"
-            >
+            <Button variant="outline" onClick={() => navigate('/')} className="w-full">
               Back to Home
             </Button>
           </CardContent>
@@ -435,11 +456,7 @@ export default function AdminPage() {
       <div className="max-w-6xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-center space-x-4">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => navigate("/")}
-          >
+          <Button variant="ghost" size="sm" onClick={() => navigate('/')}>
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to Wiki
           </Button>
@@ -454,12 +471,16 @@ export default function AdminPage() {
           </div>
         </div>
 
-        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "directories" | "teams")} className="w-full">
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) => setActiveTab(value as 'directories' | 'teams')}
+          className="w-full"
+        >
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="directories">Directories</TabsTrigger>
             <TabsTrigger value="teams">Teams</TabsTrigger>
           </TabsList>
-          
+
           <TabsContent value="directories" className="space-y-6">
             <div className="flex items-center justify-between">
               <div>
@@ -470,201 +491,196 @@ export default function AdminPage() {
                   Manage directories and access permissions
                 </p>
               </div>
-              
+
               <Dialog open={isDirectoryDialogOpen} onOpenChange={setIsDirectoryDialogOpen}>
-            <DialogTrigger asChild>
-              <Button
-                                  onClick={() => {
-                    setEditingDirectory(null);
-                    directoryForm.reset();
-                  }}
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Add Directory
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[425px]">
-              <DialogHeader>
-                <DialogTitle>
-                  {editingDirectory ? "Edit Directory" : "Create Directory"}
-                </DialogTitle>
-              </DialogHeader>
-              <Form {...directoryForm}>
-                <form onSubmit={directoryForm.handleSubmit(onSubmit)} className="space-y-4">
-                  <FormField
-                    control={directoryForm.control}
-                    name="name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Directory Name</FormLabel>
-                        <FormControl>
-                          <Input placeholder="docs, team1, etc." {...field} />
-                        </FormControl>
-                        <p className="text-xs text-slate-500">
-                          Lowercase letters, numbers, hyphens, and underscores only
-                        </p>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  
-                  <FormField
-                    control={directoryForm.control}
-                    name="displayName"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Display Name</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Documentation, Team Alpha, etc." {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  
-                  <FormField
-                    control={directoryForm.control}
-                    name="password"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Password (Optional)</FormLabel>
-                        <FormControl>
-                          <Input type="password" placeholder="Leave empty for no password" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  
-                  <FormField
-                    control={directoryForm.control}
-                    name="order"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Sort Order</FormLabel>
-                        <FormControl>
-                          <Input 
-                            type="number" 
-                            {...field} 
-                            onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  
-                  <FormField
-                    control={directoryForm.control}
-                    name="isVisible"
-                    render={({ field }) => (
-                      <FormItem className="flex items-center justify-between">
-                        <FormLabel>Visible in Sidebar</FormLabel>
-                        <FormControl>
-                          <Switch
-                            checked={field.value}
-                            onCheckedChange={field.onChange}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                <DialogTrigger asChild>
+                  <Button
+                    onClick={() => {
+                      setEditingDirectory(null);
+                      directoryForm.reset();
+                    }}
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Directory
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[425px]">
+                  <DialogHeader>
+                    <DialogTitle>
+                      {editingDirectory ? 'Edit Directory' : 'Create Directory'}
+                    </DialogTitle>
+                  </DialogHeader>
+                  <Form {...directoryForm}>
+                    <form onSubmit={directoryForm.handleSubmit(onSubmit)} className="space-y-4">
+                      <FormField
+                        control={directoryForm.control}
+                        name="name"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Directory Name</FormLabel>
+                            <FormControl>
+                              <Input placeholder="docs, team1, etc." {...field} />
+                            </FormControl>
+                            <p className="text-xs text-slate-500">
+                              Lowercase letters, numbers, hyphens, and underscores only
+                            </p>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
 
-                  <div className="flex justify-end space-x-2">
-                    <Button 
-                      type="button" 
-                      variant="outline" 
-                      onClick={() => setIsDirectoryDialogOpen(false)}
-                    >
-                      Cancel
-                    </Button>
-                    <Button type="submit">
-                      {editingDirectory ? "Update" : "Create"}
-                    </Button>
-                  </div>
-                </form>
-              </Form>
-            </DialogContent>
-          </Dialog>
-        </div>
+                      <FormField
+                        control={directoryForm.control}
+                        name="displayName"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Display Name</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Documentation, Team Alpha, etc." {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
 
-        {/* Directories Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {directories.map((directory) => (
-            <Card key={directory.id} className="hover:shadow-lg transition-shadow">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg flex items-center">
-                    {directory.isVisible ? (
-                      <Eye className="h-4 w-4 mr-2 text-green-500" />
-                    ) : (
-                      <EyeOff className="h-4 w-4 mr-2 text-slate-400" />
-                    )}
-                    {directory.displayName}
-                  </CardTitle>
-                  <div className="flex space-x-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleEdit(directory)}
-                    >
-                      <Edit className="h-3 w-3" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDelete(directory.id)}
-                      className="text-red-500 hover:text-red-700"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-500">Name:</span>
-                  <Badge variant="outline">{directory.name}</Badge>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-500">Order:</span>
-                  <span className="font-mono">{directory.order}</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-500">Protected:</span>
-                  <Badge variant={directory.password ? "destructive" : "secondary"}>
-                    {directory.password ? "Yes" : "No"}
-                  </Badge>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-500">Status:</span>
-                  <Badge variant={directory.isVisible ? "default" : "secondary"}>
-                    {directory.isVisible ? "Visible" : "Hidden"}
-                  </Badge>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                      <FormField
+                        control={directoryForm.control}
+                        name="password"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Password (Optional)</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="password"
+                                placeholder="Leave empty for no password"
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
 
-        {directories.length === 0 && (
-          <Card className="text-center py-12">
-            <CardContent>
-              <Settings className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">
-                No directories found
-              </h3>
-              <p className="text-slate-600 dark:text-slate-400 mb-4">
-                Create your first directory to get started
-              </p>
-              <Button onClick={() => setIsDirectoryDialogOpen(true)}>
-                <Plus className="h-4 w-4 mr-2" />
-                Add Directory
-              </Button>
-            </CardContent>
-          </Card>
-        )}
+                      <FormField
+                        control={directoryForm.control}
+                        name="order"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Sort Order</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                {...field}
+                                onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={directoryForm.control}
+                        name="isVisible"
+                        render={({ field }) => (
+                          <FormItem className="flex items-center justify-between">
+                            <FormLabel>Visible in Sidebar</FormLabel>
+                            <FormControl>
+                              <Switch checked={field.value} onCheckedChange={field.onChange} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <div className="flex justify-end space-x-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setIsDirectoryDialogOpen(false)}
+                        >
+                          Cancel
+                        </Button>
+                        <Button type="submit">{editingDirectory ? 'Update' : 'Create'}</Button>
+                      </div>
+                    </form>
+                  </Form>
+                </DialogContent>
+              </Dialog>
+            </div>
+
+            {/* Directories Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {directories.map((directory) => (
+                <Card key={directory.id} className="hover:shadow-lg transition-shadow">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-lg flex items-center">
+                        {directory.isVisible ? (
+                          <Eye className="h-4 w-4 mr-2 text-green-500" />
+                        ) : (
+                          <EyeOff className="h-4 w-4 mr-2 text-slate-400" />
+                        )}
+                        {directory.displayName}
+                      </CardTitle>
+                      <div className="flex space-x-1">
+                        <Button variant="ghost" size="sm" onClick={() => handleEdit(directory)}>
+                          <Edit className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDelete(directory.id)}
+                          className="text-red-500 hover:text-red-700"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-slate-500">Name:</span>
+                      <Badge variant="outline">{directory.name}</Badge>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-slate-500">Order:</span>
+                      <span className="font-mono">{directory.order}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-slate-500">Protected:</span>
+                      <Badge variant={directory.password ? 'destructive' : 'secondary'}>
+                        {directory.password ? 'Yes' : 'No'}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-slate-500">Status:</span>
+                      <Badge variant={directory.isVisible ? 'default' : 'secondary'}>
+                        {directory.isVisible ? 'Visible' : 'Hidden'}
+                      </Badge>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            {directories.length === 0 && (
+              <Card className="text-center py-12">
+                <CardContent>
+                  <Settings className="h-12 w-12 text-slate-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">
+                    No directories found
+                  </h3>
+                  <p className="text-slate-600 dark:text-slate-400 mb-4">
+                    Create your first directory to get started
+                  </p>
+                  <Button onClick={() => setIsDirectoryDialogOpen(true)}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Directory
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           <TabsContent value="teams" className="space-y-6">
@@ -673,11 +689,9 @@ export default function AdminPage() {
                 <h2 className="text-2xl font-bold text-slate-900 dark:text-white">
                   Team Management
                 </h2>
-                <p className="text-slate-600 dark:text-slate-400">
-                  Manage teams and their members
-                </p>
+                <p className="text-slate-600 dark:text-slate-400">Manage teams and their members</p>
               </div>
-              
+
               <Dialog open={isTeamDialogOpen} onOpenChange={setIsTeamDialogOpen}>
                 <DialogTrigger asChild>
                   <Button
@@ -692,15 +706,13 @@ export default function AdminPage() {
                 </DialogTrigger>
                 <DialogContent className="sm:max-w-[425px]">
                   <DialogHeader>
-                    <DialogTitle>
-                      {editingTeam ? "Edit Team" : "Create Team"}
-                    </DialogTitle>
+                    <DialogTitle>{editingTeam ? 'Edit Team' : 'Create Team'}</DialogTitle>
                   </DialogHeader>
                   <Form {...teamForm}>
                     <form onSubmit={teamForm.handleSubmit(onSubmit)} className="space-y-4">
-                                              <FormField
-                          control={teamForm.control}
-                          name="name"
+                      <FormField
+                        control={teamForm.control}
+                        name="name"
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Team Name</FormLabel>
@@ -714,10 +726,10 @@ export default function AdminPage() {
                           </FormItem>
                         )}
                       />
-                      
-                                              <FormField
-                          control={teamForm.control}
-                          name="displayName"
+
+                      <FormField
+                        control={teamForm.control}
+                        name="displayName"
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Display Name</FormLabel>
@@ -728,10 +740,10 @@ export default function AdminPage() {
                           </FormItem>
                         )}
                       />
-                      
-                                              <FormField
-                          control={teamForm.control}
-                          name="description"
+
+                      <FormField
+                        control={teamForm.control}
+                        name="description"
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Description</FormLabel>
@@ -742,24 +754,28 @@ export default function AdminPage() {
                           </FormItem>
                         )}
                       />
-                      
-                                              <FormField
-                          control={teamForm.control}
-                          name="password"
+
+                      <FormField
+                        control={teamForm.control}
+                        name="password"
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Access Password</FormLabel>
                             <FormControl>
-                              <Input type="password" placeholder="Leave empty for no password" {...field} />
+                              <Input
+                                type="password"
+                                placeholder="Leave empty for no password"
+                                {...field}
+                              />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
                         )}
                       />
-                      
-                                              <FormField
-                          control={teamForm.control}
-                          name="icon"
+
+                      <FormField
+                        control={teamForm.control}
+                        name="icon"
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Icon (Lucide)</FormLabel>
@@ -770,10 +786,10 @@ export default function AdminPage() {
                           </FormItem>
                         )}
                       />
-                      
-                                              <FormField
-                          control={teamForm.control}
-                          name="color"
+
+                      <FormField
+                        control={teamForm.control}
+                        name="color"
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Color Class</FormLabel>
@@ -784,17 +800,17 @@ export default function AdminPage() {
                           </FormItem>
                         )}
                       />
-                      
-                                              <FormField
-                          control={teamForm.control}
-                          name="order"
+
+                      <FormField
+                        control={teamForm.control}
+                        name="order"
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Sort Order</FormLabel>
                             <FormControl>
-                              <Input 
-                                type="number" 
-                                {...field} 
+                              <Input
+                                type="number"
+                                {...field}
                                 onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
                               />
                             </FormControl>
@@ -802,18 +818,15 @@ export default function AdminPage() {
                           </FormItem>
                         )}
                       />
-                      
-                                              <FormField
-                          control={teamForm.control}
-                          name="isActive"
+
+                      <FormField
+                        control={teamForm.control}
+                        name="isActive"
                         render={({ field }) => (
                           <FormItem className="flex items-center justify-between">
                             <FormLabel>Active</FormLabel>
                             <FormControl>
-                              <Switch
-                                checked={field.value}
-                                onCheckedChange={field.onChange}
-                              />
+                              <Switch checked={field.value} onCheckedChange={field.onChange} />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -821,16 +834,14 @@ export default function AdminPage() {
                       />
 
                       <div className="flex justify-end space-x-2">
-                        <Button 
-                          type="button" 
-                          variant="outline" 
+                        <Button
+                          type="button"
+                          variant="outline"
                           onClick={() => setIsTeamDialogOpen(false)}
                         >
                           Cancel
                         </Button>
-                        <Button type="submit">
-                          {editingTeam ? "Update" : "Create"}
-                        </Button>
+                        <Button type="submit">{editingTeam ? 'Update' : 'Create'}</Button>
                       </div>
                     </form>
                   </Form>
@@ -853,11 +864,7 @@ export default function AdminPage() {
                         {team.displayName}
                       </CardTitle>
                       <div className="flex space-x-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleEditTeam(team)}
-                        >
+                        <Button variant="ghost" size="sm" onClick={() => handleEditTeam(team)}>
                           <Edit className="h-3 w-3" />
                         </Button>
                         <Button
@@ -887,14 +894,14 @@ export default function AdminPage() {
                     </div>
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-slate-500">Protected:</span>
-                      <Badge variant={team.password ? "destructive" : "secondary"}>
-                        {team.password ? "Yes" : "No"}
+                      <Badge variant={team.password ? 'destructive' : 'secondary'}>
+                        {team.password ? 'Yes' : 'No'}
                       </Badge>
                     </div>
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-slate-500">Status:</span>
-                      <Badge variant={team.isActive ? "default" : "secondary"}>
-                        {team.isActive ? "Active" : "Inactive"}
+                      <Badge variant={team.isActive ? 'default' : 'secondary'}>
+                        {team.isActive ? 'Active' : 'Inactive'}
                       </Badge>
                     </div>
                   </CardContent>

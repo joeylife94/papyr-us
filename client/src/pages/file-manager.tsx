@@ -6,13 +6,21 @@ import { Badge } from '../components/ui/badge';
 import { Input } from '../components/ui/input';
 import { FileUpload } from '../components/ui/file-upload';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
-import { 
-  Upload, 
-  Search, 
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '../components/ui/dialog';
+import {
+  Upload,
+  Search,
   Filter,
-  Trash2, 
-  Download, 
+  Trash2,
+  Download,
   Eye,
   Copy,
   Image as ImageIcon,
@@ -20,7 +28,7 @@ import {
   FileText,
   Archive,
   Calendar,
-  HardDrive
+  HardDrive,
 } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
 
@@ -59,7 +67,7 @@ const formatDate = (dateString: string): string => {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
-    minute: '2-digit'
+    minute: '2-digit',
   });
 };
 
@@ -80,15 +88,13 @@ export default function FileManager({ teamName }: FileManagerProps) {
   const { data: fileList, isLoading } = useQuery<FileList>({
     queryKey: ['uploads', teamName],
     queryFn: async () => {
-      const url = teamName 
-        ? `/api/uploads?teamId=${teamName}`
-        : '/api/uploads';
+      const url = teamName ? `/api/uploads?teamId=${teamName}` : '/api/uploads';
       const response = await fetch(url);
       if (!response.ok) {
         throw new Error('Failed to fetch files');
       }
       return response.json();
-    }
+    },
   });
 
   // Delete file mutation
@@ -96,49 +102,49 @@ export default function FileManager({ teamName }: FileManagerProps) {
     mutationFn: async ({ filename, isImage }: { filename: string; isImage: boolean }) => {
       const type = isImage ? 'images' : 'files';
       const response = await fetch(`/api/uploads/${type}/${filename}`, {
-        method: 'DELETE'
+        method: 'DELETE',
       });
-      
+
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.message || 'Delete failed');
       }
-      
+
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['uploads', teamName] });
       toast({
-        title: "파일 삭제 완료",
-        description: "파일이 성공적으로 삭제되었습니다."
+        title: '파일 삭제 완료',
+        description: '파일이 성공적으로 삭제되었습니다.',
       });
     },
     onError: (error: Error) => {
       toast({
-        title: "삭제 실패",
+        title: '삭제 실패',
         description: error.message,
-        variant: "destructive"
+        variant: 'destructive',
       });
-    }
+    },
   });
 
   const copyUrl = (file: UploadedFile) => {
     navigator.clipboard.writeText(window.location.origin + file.url);
     toast({
-      title: "URL 복사됨",
-      description: "파일 URL이 클립보드에 복사되었습니다."
+      title: 'URL 복사됨',
+      description: '파일 URL이 클립보드에 복사되었습니다.',
     });
   };
 
   const copyMarkdown = (file: UploadedFile) => {
-    const markdown = file.mimetype.startsWith('image/') 
+    const markdown = file.mimetype.startsWith('image/')
       ? `![파일](${file.url})`
       : `[${file.filename}](${file.url})`;
-    
+
     navigator.clipboard.writeText(markdown);
     toast({
-      title: "마크다운 복사됨",
-      description: "마크다운 코드가 클립보드에 복사되었습니다."
+      title: '마크다운 복사됨',
+      description: '마크다운 코드가 클립보드에 복사되었습니다.',
     });
   };
 
@@ -160,10 +166,8 @@ export default function FileManager({ teamName }: FileManagerProps) {
   const filteredFiles = React.useMemo(() => {
     if (!fileList) return { images: [], files: [] };
 
-    const filterBySearch = (files: UploadedFile[]) => 
-      files.filter(file => 
-        file.filename.toLowerCase().includes(searchQuery.toLowerCase())
-      );
+    const filterBySearch = (files: UploadedFile[]) =>
+      files.filter((file) => file.filename.toLowerCase().includes(searchQuery.toLowerCase()));
 
     const images = filterBySearch(fileList.images);
     const files = filterBySearch(fileList.files);
@@ -196,14 +200,14 @@ export default function FileManager({ teamName }: FileManagerProps) {
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-3xl font-bold">
-            {teamName ? `${teamName} 파일 관리` : '파일 관리'}
-          </h1>
+          <h1 className="text-3xl font-bold">{teamName ? `${teamName} 파일 관리` : '파일 관리'}</h1>
           <p className="text-muted-foreground mt-2">
-            {teamName ? `${teamName} 팀의 파일들을 관리하고 마크다운에서 사용하세요` : '업로드된 파일들을 관리하고 마크다운에서 사용하세요'}
+            {teamName
+              ? `${teamName} 팀의 파일들을 관리하고 마크다운에서 사용하세요`
+              : '업로드된 파일들을 관리하고 마크다운에서 사용하세요'}
           </p>
         </div>
-        
+
         <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
           <DialogTrigger asChild>
             <Button>
@@ -218,8 +222,8 @@ export default function FileManager({ teamName }: FileManagerProps) {
                 이미지, 문서, 압축파일 등을 업로드할 수 있습니다.
               </DialogDescription>
             </DialogHeader>
-            
-            <FileUpload 
+
+            <FileUpload
               teamName={teamName}
               onFilesUploaded={() => {
                 queryClient.invalidateQueries({ queryKey: ['uploads', teamName] });
@@ -243,7 +247,7 @@ export default function FileManager({ teamName }: FileManagerProps) {
             </div>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
@@ -255,7 +259,7 @@ export default function FileManager({ teamName }: FileManagerProps) {
             </div>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
@@ -267,7 +271,7 @@ export default function FileManager({ teamName }: FileManagerProps) {
             </div>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
@@ -303,15 +307,33 @@ export default function FileManager({ teamName }: FileManagerProps) {
         </TabsList>
 
         <TabsContent value="all" className="space-y-4">
-          <FileGrid files={allFiles} onCopyUrl={copyUrl} onCopyMarkdown={copyMarkdown} onDownload={downloadFile} onDelete={deleteFile} />
+          <FileGrid
+            files={allFiles}
+            onCopyUrl={copyUrl}
+            onCopyMarkdown={copyMarkdown}
+            onDownload={downloadFile}
+            onDelete={deleteFile}
+          />
         </TabsContent>
 
         <TabsContent value="images" className="space-y-4">
-          <FileGrid files={filteredFiles.images} onCopyUrl={copyUrl} onCopyMarkdown={copyMarkdown} onDownload={downloadFile} onDelete={deleteFile} />
+          <FileGrid
+            files={filteredFiles.images}
+            onCopyUrl={copyUrl}
+            onCopyMarkdown={copyMarkdown}
+            onDownload={downloadFile}
+            onDelete={deleteFile}
+          />
         </TabsContent>
 
         <TabsContent value="files" className="space-y-4">
-          <FileGrid files={filteredFiles.files} onCopyUrl={copyUrl} onCopyMarkdown={copyMarkdown} onDownload={downloadFile} onDelete={deleteFile} />
+          <FileGrid
+            files={filteredFiles.files}
+            onCopyUrl={copyUrl}
+            onCopyMarkdown={copyMarkdown}
+            onDownload={downloadFile}
+            onDelete={deleteFile}
+          />
         </TabsContent>
       </Tabs>
     </div>
@@ -341,7 +363,7 @@ function FileGrid({ files, onCopyUrl, onCopyMarkdown, onDownload, onDelete }: Fi
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
       {files.map((file, index) => {
         const Icon = getFileIcon(file.mimetype);
-        
+
         return (
           <Card key={index} className="hover:shadow-lg transition-shadow">
             <CardHeader className="pb-3">
@@ -352,21 +374,21 @@ function FileGrid({ files, onCopyUrl, onCopyMarkdown, onDownload, onDelete }: Fi
                 </Badge>
               </div>
             </CardHeader>
-            
+
             <CardContent>
               <div className="space-y-3">
                 {/* Preview for images */}
                 {file.mimetype.startsWith('image/') && (
                   <div className="aspect-video rounded-lg overflow-hidden bg-muted">
-                    <img 
-                      src={file.url} 
+                    <img
+                      src={file.url}
                       alt={file.filename}
                       className="w-full h-full object-cover"
                       loading="lazy"
                     />
                   </div>
                 )}
-                
+
                 <div>
                   <h4 className="font-medium truncate" title={file.filename}>
                     {file.filename}
@@ -379,13 +401,28 @@ function FileGrid({ files, onCopyUrl, onCopyMarkdown, onDownload, onDelete }: Fi
                 </div>
 
                 <div className="flex gap-1">
-                  <Button variant="ghost" size="sm" onClick={() => onCopyUrl(file)} title="URL 복사">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onCopyUrl(file)}
+                    title="URL 복사"
+                  >
                     <Copy className="w-4 h-4" />
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => onCopyMarkdown(file)} title="마크다운 복사">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onCopyMarkdown(file)}
+                    title="마크다운 복사"
+                  >
                     <FileText className="w-4 h-4" />
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => onDownload(file)} title="다운로드">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onDownload(file)}
+                    title="다운로드"
+                  >
                     <Download className="w-4 h-4" />
                   </Button>
                   <Button variant="ghost" size="sm" onClick={() => onDelete(file)} title="삭제">
@@ -399,4 +436,4 @@ function FileGrid({ files, onCopyUrl, onCopyMarkdown, onDownload, onDelete }: Fi
       })}
     </div>
   );
-} 
+}
