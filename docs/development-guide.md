@@ -23,6 +23,21 @@ docker-compose up --build
 docker-compose up -d --build
 ```
 
+## History
+
+### 2025-09-22 — CI 및 문서 업데이트
+
+- CI에 Playwright E2E 리포트 및 아티팩트 업로드 단계가 추가되었습니다 (HTML 리포트, 스크린샷, 비디오, trace 등). 아티팩트는 실패 시에도 업로드되도록 구성되어 있어, CI 실패 디버깅에 도움이 됩니다.
+- 린트(ESLint) 및 포매터(Prettier) 표준화 작업이 적용되었고, Husky + lint-staged로 로컬 커밋 훅이 설정되어 PR 이전에 자동으로 포맷과 린트가 적용됩니다.
+- 관련 문서(`docs/`)에 린트/CI 사용법 및 간단한 개발 워크플로가 추가되었습니다.
+
+## Next steps
+
+- CI를 푸시/PR로 트리거하여 Playwright 리포트가 정상적으로 업로드되는지 확인하세요.
+- Playwright 아티팩트(스크린샷/트레이스)를 검토해 반복적으로 실패하는 E2E 테스트를 식별합니다.
+- 불안정한 테스트를 리팩토링하거나 타임아웃/리트라이를 조정해 CI 안정성 향상 작업을 진행하세요.
+- 추후 비밀번호 필드 해싱 마이그레이션 설계를 우선적으로 계획해 보안 리스크를 줄이세요.
+
 #### Docker 환경 접근
 
 - **프론트엔드**: `http://localhost:5001/`
@@ -142,6 +157,7 @@ npm run format
 ```
 
 권장 워크플로:
+
 - PR 생성 전 `npm run lint:fix`와 `npm run format`를 실행합니다.
 - CI에서는 자동으로 `npm run lint`가 실행되어 린트 오류가 있는 PR은 차단됩니다.
 

@@ -160,3 +160,16 @@ This document defines the test cases for the Papyr-us backend API to ensure its 
 | **TC-ADM-004** | `PATCH /api/admin/directories/:id`  | Update a directory as admin.           | Authenticated as admin; a directory exists. | 1. Send PATCH request with `adminPassword` and updated data.      | 1. HTTP status 200. <br> 2. Response body contains the updated directory object. | Pass   |
 | **TC-ADM-005** | `DELETE /api/admin/directories/:id` | Delete a directory as admin.           | Authenticated as admin; a directory exists. | 1. Send DELETE request with `adminPassword` in the body.          | 1. HTTP status 204.                                                              | Pass   |
 | **TC-ADM-006** | `POST /api/directory/verify`        | Verify a password-protected directory. | A directory with a password exists.         | 1. Send POST request with `directoryName` and correct `password`. | 1. HTTP status 200. <br> 2. Response body is `{ "success": true }`.              | Pass   |
+
+## History
+
+### 2025-09-22 — CI 및 테스트 관찰성 향상
+
+- Playwright E2E가 GitHub Actions에 통합되었고, 테스트 실패 시 디버그용 아티팩트(HTML 리포트, 스크린샷, 비디오, trace 등)가 업로드되도록 워크플로가 개선되었습니다.
+- 백엔드 단위/통합 테스트(`vitest`)는 CI에서 타입체크 및 린트와 함께 실행되도록 구성되어 있으며, 현재 주요 시나리오(인증, 페이지, 템플릿 등)는 통과 상태로 문서화되어 있습니다.
+
+## Next steps
+
+- CI에서 업로드된 아티팩트를 기반으로 flaky 테스트 목록을 수집하고 우선순위를 매겨 리팩토링 계획을 수립하세요.
+- 테스트 커버리지 도구(c8 등)를 도입해 커버리지가 낮은 엔드포인트를 식별하고 보완 테스트를 추가하세요.
+- E2E 실패 재현을 위한 로컬 재현 가이드(예: 최소 재현 환경 스크립트)를 문서화하면 디버깅 속도가 빨라집니다.
