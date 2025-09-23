@@ -77,3 +77,4 @@ replit.nix
 # Test reports
 playwright-report/
 test-results/
+.env.test

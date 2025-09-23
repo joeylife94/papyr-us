@@ -96,12 +96,10 @@ export async function registerRoutes(
       const newUser = newUserResult[0];
       console.log(`[REGISTER] User created successfully with ID: ${newUser.id}`);
 
-      res
-        .status(201)
-        .json({
-          message: 'User registered successfully',
-          user: { id: newUser.id, name: newUser.name, email: newUser.email },
-        });
+      res.status(201).json({
+        message: 'User registered successfully',
+        user: { id: newUser.id, name: newUser.name, email: newUser.email },
+      });
       console.log('--- [REGISTER] Response sent ---');
     } catch (error: any) {
       console.error('--- [REGISTER] Critical error ---', error);
@@ -1473,12 +1471,10 @@ export async function registerRoutes(
       res.json({ suggestions });
     } catch (error) {
       console.error('Search suggestions error:', error);
-      res
-        .status(500)
-        .json({
-          message: 'Failed to generate search suggestions',
-          error: (error as Error).message,
-        });
+      res.status(500).json({
+        message: 'Failed to generate search suggestions',
+        error: (error as Error).message,
+      });
     }
   });
 
