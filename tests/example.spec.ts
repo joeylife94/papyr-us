@@ -11,7 +11,9 @@ async function login(page: Page, email: string, password: string) {
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Login with Email' }).click();
   await expect(page).toHaveURL('/', { timeout: 15000 });
-  await expect(page.locator('button > .flex.items-center.space-x-2')).toBeVisible({
+  // Wait for the user avatar button (it exposes an accessible name equal to user initials).
+  // Match short uppercase initials like "LTU" to avoid other header buttons.
+  await expect(page.getByRole('button', { name: /^[A-Z]{1,3}$/ })).toBeVisible({
     timeout: 30000,
   });
 }
@@ -87,7 +89,8 @@ test.describe('Authentication', () => {
     await login(page, uniqueEmail, password);
 
     // 2. Click the user avatar button to open the dropdown menu.
-    await page.locator('button > .flex.items-center.space-x-2').click();
+    // Target by accessible name (short uppercase initials) to pick the logged-in user avatar.
+    await page.getByRole('button', { name: /^[A-Z]{1,3}$/ }).click();
 
     // 3. Click the "Log out" menu item.
     await page.getByRole('menuitem', { name: 'Log out' }).click();
@@ -103,8 +106,19 @@ test.describe('Authentication', () => {
   });
 
   test('TC-AUTH-004: 테마 변경', async ({ page }) => {
-    await page.goto('/');
-    await expect(page.getByRole('heading', { name: '모든 페이지' })).toBeVisible();
+    // Ensure an authenticated session so the homepage renders the expected content
+    const uniqueEmail = `theme-user-${Date.now()}@example.com`;
+    const password = 'password123';
+    // Register and login the user first
+    await registerUser(page, 'Theme Test User', uniqueEmail, password);
+    await login(page, uniqueEmail, password);
+
+    // At this point we should be authenticated and on the homepage.
+    // Rely on the user avatar/menu button (accessible name = initials) as a stable check
+    await expect(page).toHaveURL('/');
+    await expect(page.getByRole('button', { name: /^[A-Z]{1,3}$/ })).toBeVisible({
+      timeout: 15000,
+    });
 
     const html = page.locator('html');
     await expect(html).not.toHaveClass(/dark/);

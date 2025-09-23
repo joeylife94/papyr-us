@@ -50,3 +50,24 @@
 - CI에서 업로드된 아티팩트를 다운로드하여 최근 실패 사례의 증거(스크린샷, trace)를 분석하세요.
 - 테스트 결과를 주기적으로 수집하여 flaky 테스트 목록을 만들고, 우선순위에 따라 수정하세요.
 - 테스트 결과(성공/실패, 소요시간)를 자동으로 집계하는 대시보드를 도입하면 QA 모니터링에 도움이 됩니다.
+
+## History
+
+### 2025-09-23 — 로컬 E2E 트리아지 및 인증 안정화 작업
+
+- 오늘 한 일 (요약):
+  - 로컬 환경에서 Playwright E2E를 반복 실행하여 문제 범위를 조사함 (특히 `tests/example.spec.ts` 중심).
+  - `.env.test`를 보완하여 `ADMIN_PASSWORD` 값을 추가하고, `package.json`의 E2E 스크립트가 `.env.test`를 사용하도록 확인함.
+  - 일부 인증 관련 테스트(Authentication 그룹)의 셀렉터를 접근성 기반으로 교체하고, 로그인 전제(precondition)를 강화하여 Authentication 그룹(12개)을 통과시킴.
+  - Chromium 단일-브라우저 전체 스위트를 실행해 빠른 검증을 진행했고, Wiki / Productivity 그룹에서 인증 리다이렉트로 인한 실패(대부분)가 발견됨. 실패 아티팩트(`test-results/*/error-context.md`, `trace.zip`)를 수집함.
+  - 실패 원인으로 우선 추정한 항목: (1) 테스트가 보호된 페이지에 접근할 때 인증 상태가 없음 → 로그인 페이지로 리다이렉트, (2) Playwright가 띄운 웹서버에 `.env.test`가 완전히 반영되지 않았을 가능성.
+
+- 내일(우선순위 및 권장 작업):
+  1.  인증 상태를 미리 저장(storageState)하는 스크립트 또는 global setup을 추가하여 테스트 시작 시 인증된 세션을 재사용하도록 구성 (우선 순위: 높음). 이 작업으로 Wiki/Productivity/Admin의 다수 실패를 해결할 가능성이 큼.
+  2.  Playwright가 시작하는 웹서버 로그와 환경변수(`ADMIN_PASSWORD`, `DATABASE_URL`)를 재확인하여 로컬 실행과 CI 환경이 일치하는지 점검.
+  3.  storageState 적용 후 실패했던 그룹만 빠르게 재실행(Chromium)하여 잔여 문제를 확인하고, 남은 flaky 테스트를 우선순위별로 목록화.
+  4.  주요 수정(예: storageState 스크립트, 테스트 보강)은 작은 커밋 단위로 푸시하여 CI에서 재실행되도록 함.
+
+- 참고 아티팩트 경로 예시:
+  - D:\workspace\papyr-us\test-results\example-Wiki-Page-Management-새-위키-페이지-생성-chromium\error-context.md
+  - D:\workspace\papyr-us\test-results\example-Wiki-Page-Management-새-위키-페이지-생성-chromium-retry1\trace.zip

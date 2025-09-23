@@ -12,7 +12,7 @@ cd papyr-us
 npm ci
 ```
 
-2. Create a local .env file (copy from example if present):
+2. Create a local `.env` file (copy from example if present):
 
 ```bash
 cp .env.example .env
@@ -45,10 +45,25 @@ docker-compose up --build
 npm test
 ```
 
-- End-to-end tests (Playwright):
+## End-to-end tests (Playwright):
 
-1. Create `.env.test` with a test database URL (ex: `postgresql://papyrus_user:papyrus_password_2024@localhost:5433/papyrus_db`)
-2. Run:
+1. Copy the example test env and edit values for your local environment:
+
+```bash
+# Unix / Git Bash
+cp .env.test.example .env.test
+
+# PowerShell
+Copy-Item .env.test.example .env.test
+```
+
+2. Make sure you have a local Postgres instance matching `DATABASE_URL` in `.env.test` and run the test DB setup:
+
+```bash
+npm run test:setup
+```
+
+3. Run Playwright E2E:
 
 ```bash
 npm run e2e
@@ -57,6 +72,7 @@ npm run e2e
 Notes:
 
 - E2E requires a running DB and the `start:e2e` script will launch the test server on port 5001.
+- If you run into Playwright browser errors, run `npx playwright install` to install required browsers.
 
 ## Code style
 
