@@ -12,6 +12,9 @@ import { defineConfig, devices } from '@playwright/test';
  * See https://playwright.dev/docs/test-configuration.
  */
 export default defineConfig({
+  // Choose API-based globalSetup by default for stability; set USE_API_AUTH=0 to use UI global setup
+  globalSetup:
+    process.env.USE_API_AUTH === '0' ? './tests/global-setup' : './tests/global-setup-api',
   testDir: './tests',
   /* Run tests in files in parallel */
   fullyParallel: true,
@@ -36,6 +39,9 @@ export default defineConfig({
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
     baseURL: 'http://localhost:5001',
+
+    /* Use storage state produced by globalSetup if available */
+    storageState: process.env.STORAGE_STATE_PATH || 'tests/storageState.json',
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',

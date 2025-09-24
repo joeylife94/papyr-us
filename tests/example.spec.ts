@@ -137,10 +137,12 @@ test.describe('Wiki Page Management', () => {
   const testUserPassword = 'password123';
 
   test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
+    const storagePath = process.env.STORAGE_STATE_PATH || 'tests/storageState.json';
+    const context = await browser.newContext({ storageState: storagePath });
+    const page = await context.newPage();
     // Create user once for this test suite for efficiency
     await registerUser(page, 'Wiki User', testUserEmail, testUserPassword);
-    await page.close();
+    await context.close();
   });
 
   test.beforeEach(async ({ page }) => {
@@ -173,7 +175,7 @@ test.describe('Wiki Page Management', () => {
 
     // 4. Click the "Update Page" button.
     const responsePromise = page.waitForResponse(
-      (response) => response.url().match(/\/api\/pages\/\d+/) && response.status() === 200
+      (response) => /\/api\/pages\/\d+/.test(response.url()) && response.status() === 200
     );
     await page.getByRole('button', { name: 'Update Page' }).click();
     await responsePromise;
@@ -245,7 +247,7 @@ test.describe('Wiki Page Management', () => {
 
     // 4. Post the comment.
     const responsePromise = page.waitForResponse(
-      (response) => response.url().match(/\/api\/pages\/\d+\/comments/) && response.status() === 201
+      (response) => /\/api\/pages\/\d+\/comments/.test(response.url()) && response.status() === 201
     );
     await page.getByRole('button', { name: 'Post Comment' }).click();
     await responsePromise;
@@ -295,9 +297,11 @@ test.describe('Productivity & Collaboration', () => {
   const testUserPassword = 'password123';
 
   test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
+    const storagePath = process.env.STORAGE_STATE_PATH || 'tests/storageState.json';
+    const context = await browser.newContext({ storageState: storagePath });
+    const page = await context.newPage();
     await registerUser(page, 'Prod User', testUserEmail, testUserPassword);
-    await page.close();
+    await context.close();
   });
 
   test.beforeEach(async ({ page }) => {
@@ -393,9 +397,11 @@ test.describe('Admin Features', () => {
   }
 
   test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
+    const storagePath = process.env.STORAGE_STATE_PATH || 'tests/storageState.json';
+    const context = await browser.newContext({ storageState: storagePath });
+    const page = await context.newPage();
     await registerUser(page, 'Admin User', testUserEmail, testUserPassword);
-    await page.close();
+    await context.close();
   });
 
   test.beforeEach(async ({ page }) => {
