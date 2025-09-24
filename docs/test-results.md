@@ -12,10 +12,6 @@
 
 ### 2. 성공 요약
 
-- **주요 해결 사항**: E2E 테스트 환경에서 발생하던 고질적인 데이터베이스 연결 문제(`ECONNREFUSED`, `ENOTFOUND`)를 완전히 해결했습니다.
-- **핵심 수정**: `package.json`의 `start:e2e` 스크립트에서 `dotenv-cli`를 사용하여 `.env.test` 환경 변수 파일을 명시적으로 로드하도록 수정함으로써, 테스트 서버가 올바른 데이터베이스(`localhost:5433`)에 연결되도록 보장했습니다.
-- **결과**: 이 수정으로 인해 이전에 실패했던 모든 테스트(Authentication, Wiki, Admin 등)가 모든 브라우저에서 안정적으로 통과하는 것을 확인했습니다.
-
 ### 3. 분석 및 결론
 
 - **문제 원인**: 이전의 모든 E2E 테스트 실패는 테스트 서버가 잘못된 환경 변수를 참조하여 발생한 문제였습니다.
@@ -55,19 +51,60 @@
 
 ### 2025-09-23 — 로컬 E2E 트리아지 및 인증 안정화 작업
 
-- 오늘 한 일 (요약):
-  - 로컬 환경에서 Playwright E2E를 반복 실행하여 문제 범위를 조사함 (특히 `tests/example.spec.ts` 중심).
-  - `.env.test`를 보완하여 `ADMIN_PASSWORD` 값을 추가하고, `package.json`의 E2E 스크립트가 `.env.test`를 사용하도록 확인함.
-  - 일부 인증 관련 테스트(Authentication 그룹)의 셀렉터를 접근성 기반으로 교체하고, 로그인 전제(precondition)를 강화하여 Authentication 그룹(12개)을 통과시킴.
-  - Chromium 단일-브라우저 전체 스위트를 실행해 빠른 검증을 진행했고, Wiki / Productivity 그룹에서 인증 리다이렉트로 인한 실패(대부분)가 발견됨. 실패 아티팩트(`test-results/*/error-context.md`, `trace.zip`)를 수집함.
-  - 실패 원인으로 우선 추정한 항목: (1) 테스트가 보호된 페이지에 접근할 때 인증 상태가 없음 → 로그인 페이지로 리다이렉트, (2) Playwright가 띄운 웹서버에 `.env.test`가 완전히 반영되지 않았을 가능성.
+- `.env.test`를 보완하여 `ADMIN_PASSWORD` 값을 추가하고, `package.json`의 E2E 스크립트가 `.env.test`를 사용하도록 확인함.
+- 일부 인증 관련 테스트(Authentication 그룹)의 셀렉터를 접근성 기반으로 교체하고, 로그인 전제(precondition)를 강화하여 Authentication 그룹(12개)을 통과시킴.
+- Chromium 단일-브라우저 전체 스위트를 실행해 빠른 검증을 진행했고, Wiki / Productivity 그룹에서 인증 리다이렉트로 인한 실패(대부분)가 발견됨. 실패 아티팩트(`test-results/*/error-context.md`, `trace.zip`)를 수집함.
+- 실패 원인으로 우선 추정한 항목: (1) 테스트가 보호된 페이지에 접근할 때 인증 상태가 없음 → 로그인 페이지로 리다이렉트, (2) Playwright가 띄운 웹서버에 `.env.test`가 완전히 반영되지 않았을 가능성.
 
-- 내일(우선순위 및 권장 작업):
-  1.  인증 상태를 미리 저장(storageState)하는 스크립트 또는 global setup을 추가하여 테스트 시작 시 인증된 세션을 재사용하도록 구성 (우선 순위: 높음). 이 작업으로 Wiki/Productivity/Admin의 다수 실패를 해결할 가능성이 큼.
-  2.  Playwright가 시작하는 웹서버 로그와 환경변수(`ADMIN_PASSWORD`, `DATABASE_URL`)를 재확인하여 로컬 실행과 CI 환경이 일치하는지 점검.
-  3.  storageState 적용 후 실패했던 그룹만 빠르게 재실행(Chromium)하여 잔여 문제를 확인하고, 남은 flaky 테스트를 우선순위별로 목록화.
-  4.  주요 수정(예: storageState 스크립트, 테스트 보강)은 작은 커밋 단위로 푸시하여 CI에서 재실행되도록 함.
+1.  인증 상태를 미리 저장(storageState)하는 스크립트 또는 global setup을 추가하여 테스트 시작 시 인증된 세션을 재사용하도록 구성 (우선 순위: 높음). 이 작업으로 Wiki/Productivity/Admin의 다수 실패를 해결할 가능성이 큼.
+2.  Playwright가 시작하는 웹서버 로그와 환경변수(`ADMIN_PASSWORD`, `DATABASE_URL`)를 재확인하여 로컬 실행과 CI 환경이 일치하는지 점검.
+3.  storageState 적용 후 실패했던 그룹만 빠르게 재실행(Chromium)하여 잔여 문제를 확인하고, 남은 flaky 테스트를 우선순위별로 목록화.
+4.  주요 수정(예: storageState 스크립트, 테스트 보강)은 작은 커밋 단위로 푸시하여 CI에서 재실행되도록 함.
 
-- 참고 아티팩트 경로 예시:
-  - D:\workspace\papyr-us\test-results\example-Wiki-Page-Management-새-위키-페이지-생성-chromium\error-context.md
-  - D:\workspace\papyr-us\test-results\example-Wiki-Page-Management-새-위키-페이지-생성-chromium-retry1\trace.zip
+- D:\workspace\papyr-us\test-results\example-Wiki-Page-Management-새-위키-페이지-생성-chromium\error-context.md
+- D:\workspace\papyr-us\test-results\example-Wiki-Page-Management-새-위키-페이지-생성-chromium-retry1\trace.zip
+
+### 2025-09-24 — 문서 검토 및 재현 가이드 정리
+
+- 오늘 한 일(요약):
+  - `docs/` 폴더를 빠르게 스캔하여 `TODO`/`FIXME`와 Markdown/HTTP 링크를 확인했습니다.
+  - `package.json`의 E2E 관련 스크립트(`start:e2e`, `e2e`)를 확인하여 로컬 재현 커맨드를 정리했습니다.
+
+- 로컬 재현(요약):
+
+```powershell
+npm run start:e2e    # .env.test을 사용하여 서버 실행 (포그라운드)
+```
+
+## 추가 기록 (간단 로그)
+
+### 2025-09-24 — Playwright 인증 안정화 및 재현 가이드 추가
+
+- 오늘 작업(요약):
+  - Playwright E2E 안정화를 위해 `storageState`를 생성·재사용하는 전역설정(global setup)을 도입했습니다. UI 기반 로그인과 API 로그인(백엔드 호출) 두 가지 방식을 지원합니다.
+  - Windows/ESM 환경에서 발생하던 경로 문제(\_\_dirname)와 런타임 에러를 수정했습니다.
+  - `.env.test` 문서를 보강하고, 테스트 DB 시드/마이그레이션(`npm run test:setup`)을 확인했습니다.
+  - 일부 테스트의 beforeAll에서 브라우저 컨텍스트를 `storageState`로 생성하도록 변경했습니다.
+
+- 빠른 재현(요약, PowerShell):
+
+```powershell
+npm ci
+npm run test:setup
+npm run start:e2e    # .env.test 사용
+npx playwright test tests/example.spec.ts --project=chromium
+```
+
+- 참고: `tests/storageState.json`은 global setup에서 생성됩니다. 재생성이 필요하면 파일을 삭제 후 Playwright를 재실행하세요.
+
+- 발견된(또는 참고할) 로컬 아티팩트 예시:
+  - D:\\workspace\\papyr-us\\test-results\\example-Wiki-Page-Management-새-위키-페이지-생성-chromium\\
+  - D:\\workspace\\papyr-us\\test-results\\example-Wiki-Page-Management-새-위키-페이지-생성-chromium-retry1\\
+  - D:\\workspace\\papyr-us\\test-results\\example-Wiki-Page-Management-새-위키-페이지-생성-chromium-retry1\\trace.zip
+
+- 권장 다음 작업(우선순위):
+  1. `.env.test`에 필수 키 목록(최소: `ADMIN_PASSWORD`, `DATABASE_URL`, `PORT`)을 문서에 명시하여 기여자가 빠르게 재현할 수 있게 합니다. (우선순위: 높음)
+
+2.  Playwright 전역 설정(globalSetup) 또는 `storageState`를 생성하여 인증이 필요한 시나리오의 flaky를 줄입니다. (우선순위: 높음)
+
+- 비고: 외부 링크 상태 검사(HTTP 상태)는 네트워크 요청을 필요로 하므로 별도 실행이 필요합니다. 원하시면 바로 실행해 드리겠습니다.

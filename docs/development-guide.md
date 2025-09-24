@@ -131,7 +131,50 @@ npm run dev
 
 ## API 엔드포인트
 
+### `.env.test` 권장 항목 (E2E 재현용)
+
+로컬 및 CI에서 E2E를 안정적으로 실행하려면 `./.env.test`에 최소한 다음 항목을 설정하세요. 민감한 값은 로컬에만 두고 절대 저장소에 커밋하지 마세요.
+
+- 필수(최소):
+  - `ADMIN_PASSWORD` — 테스트용 관리자 비밀번호 (예: `admin123`)
+  - `DATABASE_URL` — 테스트 DB 연결 문자열 (예: `postgres://testuser:testpass@localhost:5433/papyr_test`)
+  - `PORT` — 테스트 서버 포트 (기본: `5001`)
+  - `NODE_ENV` — `test` 권장
+
+- 권장(조건부):
+  - `ADMIN_EMAIL` — 테스트용 관리자 이메일 (로그인 헬퍼 사용 시)
+  - `STORAGE_STATE_PATH` — Playwright가 사용할 저장된 인증 상태 파일 경로 (예: `tests/storageState.json`)
+
+예시 `.env.test` (로컬 전용, 절대 커밋 금지):
+
+```text
+ADMIN_PASSWORD=admin123
+ADMIN_EMAIL=admin@example.com
+DATABASE_URL=postgres://testuser:testpass@localhost:5433/papyr_test
+PORT=5001
+NODE_ENV=test
+STORAGE_STATE_PATH=tests/storageState.json
+```
+
+로컬 재현 요약:
+
+```powershell
+npm ci
+npm run start:e2e    # .env.test을 사용하여 서버 실행
+npm run e2e          # 테스트 DB 준비 후 Playwright 실행
+```
+
 (기존 내용과 동일)
+
+## History (간단 로그 추가)
+
+### 2025-09-24 — Playwright storageState 적용 및 재현 가이드 보강
+
+- 변경 사항 요약:
+  - Playwright global setup으로 인증 상태를 저장하는 `storageState` 생성 스크립트를 추가하였고, 테스트 헬퍼에서 이를 활용하도록 수정했습니다.
+  - `.env.test`의 권장 항목(ADMIN_EMAIL/ADMIN_PASSWORD/STORAGE_STATE_PATH)을 문서화하였습니다.
+
+- 간단 팁: `STORAGE_STATE_PATH`에 지정된 파일이 존재하면 Playwright가 그 상태를 브라우저 컨텍스트에 주입합니다. 인증이 누락되어 테스트가 로그인 화면으로 리다이렉트되는 경우, `tests/storageState.json` 파일이 생성되어 있는지 확인하거나 수동으로 삭제 후 재생성해 보세요.
 
 ## 데이터 모델
 

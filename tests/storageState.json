@@ -1,0 +1,29 @@
+{
+  "cookies": [
+    {
+      "name": "__cf_bm",
+      "value": "nPjq1GrEhC1Jp6NDZkTNeJKzJf6qDpFnNsLTfksZwEM-1758698767-1.0.1.1-vAztWUVHTavKCjURVDOljJWqN6Kwthe5srts5YaCbdUjpW17QbUaU1YRsgGWiRVQ_f91IQzIA.Qp2W0slZy490_3d9XABlHFjgWoZ78LQOk",
+      "domain": ".replit.com",
+      "path": "/",
+      "expires": 1758700564.359084,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "None"
+    }
+  ],
+  "origins": [
+    {
+      "origin": "http://localhost:5001",
+      "localStorage": [
+        {
+          "name": "theme",
+          "value": "light"
+        },
+        {
+          "name": "token",
+          "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MywiZW1haWwiOiJ0ZXN0QGV4YW1wbGUuY29tIiwiaWF0IjoxNzU4Njk4NzYxLCJleHAiOjE3NTg3ODUxNjF9.FQnShgcu1yAFQdD3eYvC5_pwHyVn1ZnBYY1yTDuysoo"
+        }
+      ]
+    }
+  ]
+}
