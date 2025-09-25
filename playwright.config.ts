@@ -12,9 +12,8 @@ import { defineConfig, devices } from '@playwright/test';
  * See https://playwright.dev/docs/test-configuration.
  */
 export default defineConfig({
-  // Choose API-based globalSetup by default for stability; set USE_API_AUTH=0 to use UI global setup
-  globalSetup:
-    process.env.USE_API_AUTH === '0' ? './tests/global-setup' : './tests/global-setup-api',
+  // globalSetup should be a path string in ESM environments
+  globalSetup: './tests/global-setup',
   testDir: './tests',
   /* Run tests in files in parallel */
   fullyParallel: true,
