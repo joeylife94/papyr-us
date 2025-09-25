@@ -76,27 +76,6 @@
 npm run start:e2e    # .env.test을 사용하여 서버 실행 (포그라운드)
 ```
 
-## 추가 기록 (간단 로그)
-
-### 2025-09-24 — Playwright 인증 안정화 및 재현 가이드 추가
-
-- 오늘 작업(요약):
-  - Playwright E2E 안정화를 위해 `storageState`를 생성·재사용하는 전역설정(global setup)을 도입했습니다. UI 기반 로그인과 API 로그인(백엔드 호출) 두 가지 방식을 지원합니다.
-  - Windows/ESM 환경에서 발생하던 경로 문제(\_\_dirname)와 런타임 에러를 수정했습니다.
-  - `.env.test` 문서를 보강하고, 테스트 DB 시드/마이그레이션(`npm run test:setup`)을 확인했습니다.
-  - 일부 테스트의 beforeAll에서 브라우저 컨텍스트를 `storageState`로 생성하도록 변경했습니다.
-
-- 빠른 재현(요약, PowerShell):
-
-```powershell
-npm ci
-npm run test:setup
-npm run start:e2e    # .env.test 사용
-npx playwright test tests/example.spec.ts --project=chromium
-```
-
-- 참고: `tests/storageState.json`은 global setup에서 생성됩니다. 재생성이 필요하면 파일을 삭제 후 Playwright를 재실행하세요.
-
 - 발견된(또는 참고할) 로컬 아티팩트 예시:
   - D:\\workspace\\papyr-us\\test-results\\example-Wiki-Page-Management-새-위키-페이지-생성-chromium\\
   - D:\\workspace\\papyr-us\\test-results\\example-Wiki-Page-Management-새-위키-페이지-생성-chromium-retry1\\

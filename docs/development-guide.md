@@ -166,16 +166,6 @@ npm run e2e          # 테스트 DB 준비 후 Playwright 실행
 
 (기존 내용과 동일)
 
-## History (간단 로그 추가)
-
-### 2025-09-24 — Playwright storageState 적용 및 재현 가이드 보강
-
-- 변경 사항 요약:
-  - Playwright global setup으로 인증 상태를 저장하는 `storageState` 생성 스크립트를 추가하였고, 테스트 헬퍼에서 이를 활용하도록 수정했습니다.
-  - `.env.test`의 권장 항목(ADMIN_EMAIL/ADMIN_PASSWORD/STORAGE_STATE_PATH)을 문서화하였습니다.
-
-- 간단 팁: `STORAGE_STATE_PATH`에 지정된 파일이 존재하면 Playwright가 그 상태를 브라우저 컨텍스트에 주입합니다. 인증이 누락되어 테스트가 로그인 화면으로 리다이렉트되는 경우, `tests/storageState.json` 파일이 생성되어 있는지 확인하거나 수동으로 삭제 후 재생성해 보세요.
-
 ## 데이터 모델
 
 (기존 내용과 동일)
