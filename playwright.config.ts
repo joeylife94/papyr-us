@@ -37,10 +37,13 @@ export default defineConfig({
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
-    baseURL: 'http://localhost:5001',
+    baseURL: process.env.BASE_URL || 'http://localhost:5001',
 
-    /* Use storage state produced by globalSetup if available */
-    storageState: process.env.STORAGE_STATE_PATH || 'tests/storageState.json',
+    /* Use storage state only when explicitly enabled to avoid interfering with tests that perform UI login */
+    storageState:
+      process.env.E2E_USE_STORAGE_STATE === '1'
+        ? process.env.STORAGE_STATE_PATH || 'tests/storageState.json'
+        : undefined,
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
@@ -86,8 +89,8 @@ export default defineConfig({
 
   webServer: {
     command: 'npm run start:e2e',
-    url: 'http://localhost:5001',
-    reuseExistingServer: true,
+    url: process.env.BASE_URL || 'http://localhost:5001',
+    reuseExistingServer: false,
     timeout: 240 * 1000,
   },
 });

@@ -1408,6 +1408,13 @@ export async function registerRoutes(
         return res.status(400).json({ message: 'Search query is required' });
       }
 
+      // In test or when OPENAI is not configured, return mocked results to keep E2E stable
+      const mockAI =
+        process.env.MOCK_AI === '1' ||
+        process.env.NODE_ENV === 'test' ||
+        !process.env.OPENAI_API_KEY ||
+        process.env.OPENAI_API_KEY === 'default_key';
+
       // 모든 관련 데이터 수집
       const pagesResult = await storage.searchWikiPages({
         query: '',
@@ -1443,7 +1450,31 @@ export async function registerRoutes(
         })),
       ];
 
-      // AI 검색 수행
+      // AI 검색 수행 (혹은 모의 응답)
+      if (mockAI) {
+        const lower = String(query).toLowerCase();
+        const simpleResults = documents
+          .map((doc) => {
+            const inTitle = doc.title.toLowerCase().includes(lower);
+            const inContent = doc.content.toLowerCase().includes(lower);
+            const relevance = inTitle ? 0.9 : inContent ? 0.7 : 0.4;
+            return {
+              id: doc.id,
+              title: doc.title,
+              content: doc.content,
+              relevance,
+              matchedTerms: [query],
+              summary: inTitle || inContent ? `"${query}" 관련 내용 발견` : '관련도 낮음',
+              type: doc.type,
+              url: doc.url,
+            };
+          })
+          .filter((r) => r.relevance >= 0.5)
+          .sort((a, b) => b.relevance - a.relevance);
+
+        return res.json({ results: simpleResults, query, totalResults: simpleResults.length });
+      }
+
       const results = await smartSearch(query, documents);
 
       res.json({
@@ -1465,6 +1496,24 @@ export async function registerRoutes(
 
       if (!query || query.trim().length === 0) {
         return res.json({ suggestions: [] });
+      }
+
+      const mockAI =
+        process.env.MOCK_AI === '1' ||
+        process.env.NODE_ENV === 'test' ||
+        !process.env.OPENAI_API_KEY ||
+        process.env.OPENAI_API_KEY === 'default_key';
+
+      if (mockAI) {
+        const base = String(query).trim();
+        const suggestions = [
+          base,
+          `${base} 가이드`,
+          `${base} 예제`,
+          `${base} 베스트 프랙티스`,
+          `${base} 문제 해결`,
+        ];
+        return res.json({ suggestions });
       }
 
       const suggestions = await generateSearchSuggestions(query);
