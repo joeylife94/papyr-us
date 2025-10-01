@@ -1,15 +1,9 @@
-import { useState, useEffect } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 
@@ -21,7 +15,6 @@ import {
   Archive,
   ChevronDown,
   ChevronRight,
-  Bot,
   Tags,
   Plus,
   Calendar,
@@ -31,12 +24,10 @@ import {
   CheckSquare,
   BookOpen,
   Database,
-  Search,
   Sparkles,
   X,
 } from 'lucide-react';
 import type { WikiPage } from '@shared/schema';
-import { Badge } from '@/components/ui/badge';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -64,7 +55,6 @@ const folderColors: Record<string, string> = {
 
 export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: SidebarProps) {
   const { pathname } = useLocation();
-  const navigate = useNavigate();
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     docs: true, // docs expanded by default
   });
