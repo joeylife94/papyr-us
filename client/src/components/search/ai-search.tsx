@@ -39,12 +39,11 @@ export function AISearch({ teamId }: { teamId?: string }) {
   // AI 검색 뮤테이션
   const searchMutation = useMutation({
     mutationFn: async (searchQuery: string) => {
-      const response = await apiRequest('POST', '/api/ai/search', {
+      const response = (await apiRequest('POST', '/api/ai/search', {
         query: searchQuery,
         teamId,
-      });
-      const json = (await response.json()) as SearchResponse;
-      return json;
+      })) as unknown as SearchResponse;
+      return response;
     },
     onError: (error) => {
       toast({
@@ -58,11 +57,10 @@ export function AISearch({ teamId }: { teamId?: string }) {
   // 검색 제안 뮤테이션
   const suggestionsMutation = useMutation({
     mutationFn: async (searchQuery: string) => {
-      const response = await apiRequest('POST', '/api/ai/search-suggestions', {
+      const response = (await apiRequest('POST', '/api/ai/search-suggestions', {
         query: searchQuery,
-      });
-      const json = (await response.json()) as SearchSuggestionsResponse;
-      return json;
+      })) as unknown as SearchSuggestionsResponse;
+      return response;
     },
   });
 

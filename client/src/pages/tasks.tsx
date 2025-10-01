@@ -250,6 +250,16 @@ export default function TasksPage({ teamName }: TasksPageProps) {
     return new Date(dueDate) < new Date();
   };
 
+  if (isLoading) {
+    return (
+      <div className="container mx-auto p-6">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-lg">로딩 중...</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto p-6 space-y-6">
       {/* Header */}
@@ -278,12 +288,6 @@ export default function TasksPage({ teamName }: TasksPageProps) {
         </Dialog>
       </div>
 
-      {isLoading && (
-        <div className="flex items-center justify-center h-32">
-          <div className="text-lg">로딩 중...</div>
-        </div>
-      )}
-
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-4">
         <div className="flex-1">
@@ -298,7 +302,7 @@ export default function TasksPage({ teamName }: TasksPageProps) {
           </div>
         </div>
         <Select value={selectedTeam} onValueChange={setSelectedTeam}>
-          <SelectTrigger className="w-full sm:w-[180px]" aria-label="팀 선택">
+          <SelectTrigger className="w-full sm:w-[180px]">
             <SelectValue placeholder="팀 선택" />
           </SelectTrigger>
           <SelectContent>
@@ -308,7 +312,7 @@ export default function TasksPage({ teamName }: TasksPageProps) {
           </SelectContent>
         </Select>
         <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-          <SelectTrigger className="w-full sm:w-[180px]" aria-label="상태 선택">
+          <SelectTrigger className="w-full sm:w-[180px]">
             <SelectValue placeholder="상태 선택" />
           </SelectTrigger>
           <SelectContent>
@@ -427,7 +431,7 @@ export default function TasksPage({ teamName }: TasksPageProps) {
         ))}
       </div>
 
-      {filteredTasks.length === 0 && !isLoading && (
+      {filteredTasks.length === 0 && (
         <div className="text-center py-12">
           <div className="text-muted-foreground">
             {searchQuery || selectedTeam !== 'all' || selectedStatus !== 'all'

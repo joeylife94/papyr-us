@@ -3,7 +3,6 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 interface AuthContextType {
   isAuthenticated: boolean;
   user: any;
-  initializing: boolean;
   login: (email: string, password: string) => Promise<void>;
   socialLogin: (token: string) => Promise<void>;
   logout: () => void;
@@ -14,7 +13,6 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState(null);
-  const [initializing, setInitializing] = useState(true);
 
   const fetchUser = async (token: string) => {
     try {
@@ -23,23 +21,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           Authorization: `Bearer ${token}`,
         },
       });
-      if (response.ok) {
+      // Treat 200 and 304 (Not Modified from cache) as successful for our E2E flows
+      if (response.ok || response.status === 304) {
         const userData = await response.json();
         setUser(userData);
         setIsAuthenticated(true);
-        setInitializing(false);
       } else {
-        localStorage.removeItem('token');
-        setIsAuthenticated(false);
-        setUser(null);
-        setInitializing(false);
+        logout();
       }
     } catch (error) {
       console.error('Failed to fetch user', error);
-      localStorage.removeItem('token');
-      setIsAuthenticated(false);
-      setUser(null);
-      setInitializing(false);
+      logout();
     }
   };
 
@@ -47,8 +39,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const token = localStorage.getItem('token');
     if (token) {
       fetchUser(token);
-    } else {
-      setInitializing(false);
     }
   }, []);
 
@@ -72,7 +62,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const socialLogin = async (token: string) => {
     localStorage.setItem('token', token);
-    setInitializing(true);
     await fetchUser(token);
   };
 
@@ -80,13 +69,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('token');
     setIsAuthenticated(false);
     setUser(null);
-    setInitializing(false);
   };
 
   return (
-    <AuthContext.Provider
-      value={{ isAuthenticated, user, initializing, login, socialLogin, logout }}
-    >
+    <AuthContext.Provider value={{ isAuthenticated, user, login, socialLogin, logout }}>
       {children}
     </AuthContext.Provider>
   );
