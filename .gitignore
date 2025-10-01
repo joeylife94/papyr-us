@@ -78,3 +78,6 @@ replit.nix
 playwright-report/
 test-results/
 .env.test
+
+# Playwright / test session state (contains tokens, cookies, sensitive data)
+tests/storageState.json
