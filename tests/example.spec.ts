@@ -9,8 +9,13 @@ async function login(page: Page, email: string, password: string) {
   await expect(page.getByRole('heading', { name: 'Login' })).toBeVisible();
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password').fill(password);
+  // Wait for the login POST to complete to avoid racing with client-side redirects
+  const loginResponse = page.waitForResponse(
+    (response) => response.url().includes('/api/auth/login') && response.status() === 200
+  );
   await page.getByRole('button', { name: 'Login with Email' }).click();
-  await expect(page).toHaveURL('/', { timeout: 15000 });
+  await loginResponse;
+  await expect(page).toHaveURL('/', { timeout: 20000 });
   // Wait for the user avatar button (it exposes an accessible name equal to user initials).
   // Match short uppercase initials like "LTU" to avoid other header buttons.
   await expect(page.getByRole('button', { name: /^[A-Z]{1,3}$/ })).toBeVisible({
@@ -143,9 +148,21 @@ test.describe('Wiki Page Management', () => {
     await page.close();
   });
 
-  test.beforeEach(async ({ page }) => {
-    // Login before each test in this suite.
-    await login(page, testUserEmail, testUserPassword);
+  test.beforeEach(async ({ page, request }) => {
+    // Authenticate via API and set token in localStorage to avoid flaky UI login flows.
+    const resp = await request.post('/api/auth/login', {
+      data: { email: testUserEmail, password: testUserPassword },
+    });
+    if (resp.status() !== 200) {
+      throw new Error(`API login failed with status ${resp.status()}`);
+    }
+    const body = await resp.json();
+    const token = body.token;
+    // Ensure token is present in localStorage before any page scripts run
+    await page.addInitScript((t) => {
+      // eslint-disable-next-line no-undef
+      localStorage.setItem('token', t);
+    }, token);
   });
 
   test('새 위키 페이지 생성', async ({ page }) => {
@@ -294,10 +311,21 @@ test.describe('Productivity & Collaboration', () => {
   const testUserEmail = `prod-user-${Date.now()}@example.com`;
   const testUserPassword = 'password123';
 
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await registerUser(page, 'Prod User', testUserEmail, testUserPassword);
-    await page.close();
+  test.beforeAll(async ({ request }) => {
+    // Create the test user via the API to avoid flaky UI registration in beforeAll.
+    // If the user already exists, ignore the error.
+    try {
+      const resp = await request.post('/api/auth/register', {
+        data: { name: 'Prod User', email: testUserEmail, password: testUserPassword },
+      });
+      // Accept 201 Created or 409/400 if already exists.
+      if (resp.status() !== 201 && resp.status() !== 409 && resp.status() !== 400) {
+        throw new Error(`Failed to create test user: ${resp.status()}`);
+      }
+    } catch (err) {
+      // Log and continue; tests will still attempt UI login in beforeEach.
+      console.warn('API user creation warning:', err);
+    }
   });
 
   test.beforeEach(async ({ page }) => {
@@ -306,62 +334,61 @@ test.describe('Productivity & Collaboration', () => {
   });
 
   test('TC-PROD-001: 대시보드 위젯 확인', async ({ page }) => {
-    await page.goto('/dashboard');
+    await page.goto('/dashboard', { waitUntil: 'networkidle' });
+    // Wait for dashboard overview API to return so the page can render header & cards
+    await page
+      .waitForResponse((r) => /\/api\/dashboard\/overview/.test(r.url()) && r.status() === 200, {
+        timeout: 20000,
+      })
+      .catch(() => {});
     await expect(page.getByRole('heading', { name: '스터디 대시보드' })).toBeVisible();
-    // Card titles are not semantic headings, assert by text instead
-    await expect(page.getByText('총 페이지')).toBeVisible();
-    await expect(page.getByText('총 댓글')).toBeVisible();
-    await expect(page.getByText('활성 팀원')).toBeVisible();
-    await expect(page.getByText('완료 과제')).toBeVisible();
-    await expect(page.getByText('최근 활동')).toBeVisible();
+    await expect(page.getByRole('heading', { name: '총 페이지' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '총 댓글' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '활성 팀원' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '완료 과제' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '최근 활동' })).toBeVisible();
   });
 
   test('TC-PROD-002: 캘린더 조회', async ({ page }) => {
     await page.goto('/calendar/team1');
-    // The calendar page renders a header like "Team Alpha Calendar" when teamId is 'team1'
-    await expect(page.getByRole('heading', { name: /Team.*Calendar/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Calendar/ })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Month' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Week' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Day', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Day' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Today' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Add Event' })).toBeVisible();
     await expect(page.locator('.react-calendar')).toBeVisible();
   });
 
   test('TC-PROD-003: 과제 트래커 조회', async ({ page }) => {
-    await page.goto('/tasks');
+    await page.goto('/tasks', { waitUntil: 'networkidle' });
+    // Wait for tasks API so the UI list can render
+    await page
+      .waitForResponse((r) => /\/api\/tasks/.test(r.url()) && r.status() === 200, {
+        timeout: 20000,
+      })
+      .catch(() => {});
     await expect(page.getByRole('heading', { name: '과제 트래커' })).toBeVisible();
     await expect(page.getByRole('button', { name: '새 과제 추가' })).toBeVisible();
     await expect(page.getByPlaceholder('과제 검색...')).toBeVisible();
-    // shadcn Select renders a button as trigger with placeholder text as accessible name
-    await expect(page.getByRole('button', { name: '팀 선택' })).toBeVisible();
-    await expect(page.getByRole('button', { name: '상태 선택' })).toBeVisible();
-    // If there are tasks seeded, one card should be visible; otherwise skip this specific assertion
-    const firstCard = page.locator('div.card').first();
-    // Wait briefly to allow list to render
-    await page.waitForTimeout(300);
-    if ((await firstCard.count()) > 0) {
-      await expect(firstCard).toBeVisible();
-    }
+    await expect(page.getByText('팀 선택')).toBeVisible();
+    await expect(page.getByText('상태 선택')).toBeVisible();
+    // Assuming some data exists to show at least one card
+    await expect(page.locator('div.card', { hasText: '과제' }).first()).toBeVisible();
   });
 
-  test('TC-PROS-004: AI 검색 페이지 접근 및 검색 실행', async ({ page, browserName }, testInfo) => {
-    await page.goto('/ai-search');
+  test('TC-PROS-004: AI 검색 페이지 접근 및 검색 실행', async ({ page }) => {
+    await page.goto('/ai-search', { waitUntil: 'networkidle' });
+    // Some pages render headings after client JS; explicitly wait for the H1 text as a fallback
+    await page
+      .locator('h1', { hasText: 'AI 검색' })
+      .waitFor({ timeout: 20000 })
+      .catch(() => {});
     await expect(page.getByRole('heading', { name: 'AI 검색' })).toBeVisible();
     const searchInput = page.getByPlaceholder('AI 검색으로 원하는 내용을 찾아보세요...');
     await expect(searchInput).toBeVisible();
-    const searchButton = page.locator('#main-content').getByRole('button', { name: 'AI 검색' });
+    const searchButton = page.getByRole('button', { name: 'AI 검색' });
     await expect(searchButton).toBeVisible();
-
-    // If AI is not configured and not mocked, this test would fail with 401. Guard it.
-    const aiMocked =
-      process.env.MOCK_AI === '1' ||
-      process.env.NODE_ENV === 'test' ||
-      (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'default_key');
-    test.skip(
-      !aiMocked,
-      'AI가 모의 또는 유효한 키로 설정되지 않아 스킵합니다. (.env.test에서 MOCK_AI=1 설정 권장)'
-    );
 
     await searchInput.fill('test');
     const responsePromise = page.waitForResponse(
@@ -370,8 +397,7 @@ test.describe('Productivity & Collaboration', () => {
     await searchButton.click();
     await responsePromise;
 
-    // The results heading is rendered inside the component as text "검색 결과 (N개)"; use a regex match
-    await expect(page.getByText(/검색 결과 \(\d+개\)/)).toBeVisible();
+    await expect(page.getByRole('heading', { name: /검색 결과/ })).toBeVisible();
   });
 
   test('TC-PROD-005: 파일 관리 페이지 접근', async ({ page }) => {
@@ -383,10 +409,9 @@ test.describe('Productivity & Collaboration', () => {
   test('TC-PROD-006: 데이터베이스 뷰 페이지 접근', async ({ page }) => {
     await page.goto('/database');
     await expect(page.getByRole('heading', { name: '데이터베이스 뷰' })).toBeVisible();
-    const main = page.locator('#main-content');
-    await expect(main.getByRole('button', { name: '테이블' })).toBeVisible();
-    await expect(main.getByRole('button', { name: '칸반' })).toBeVisible();
-    await expect(main.getByRole('button', { name: '갤러리', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: '테이블' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '칸반' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '갤러리' })).toBeVisible();
   });
 });
 

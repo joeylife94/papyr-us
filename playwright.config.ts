@@ -90,7 +90,8 @@ export default defineConfig({
   webServer: {
     command: 'npm run start:e2e',
     url: process.env.BASE_URL || 'http://localhost:5001',
-    reuseExistingServer: false,
+    // Allow reusing an existing server (useful in local dev with docker-compose)
+    reuseExistingServer: true,
     timeout: 240 * 1000,
   },
 });

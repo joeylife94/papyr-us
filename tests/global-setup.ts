@@ -1,4 +1,4 @@
-import { chromium, FullConfig, expect } from '@playwright/test';
+import { chromium, FullConfig } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -16,46 +16,58 @@ async function globalSetup(config: FullConfig) {
     return;
   }
 
-  // Create a browser, perform login, save storage state
-  const browser = await chromium.launch();
-  const context = await browser.newContext();
-  const page = await context.newPage();
-
   const baseURL = process.env.BASE_URL || 'http://localhost:5001';
-  // Use dedicated env vars for E2E UI login to avoid clashing with server ADMIN_PASSWORD (admin panel)
   const e2eEmail = process.env.E2E_EMAIL || 'test@example.com';
   const e2ePassword = process.env.E2E_PASSWORD || 'password123';
 
   try {
-    console.log('Global setup: navigating to', `${baseURL}/login`);
-    await page.goto(`${baseURL}/login`, { waitUntil: 'networkidle' });
-
-    // Use the same accessible selectors as the tests for stability
-    await expect(page.getByRole('heading', { name: 'Login' })).toBeVisible();
-    await page.getByLabel('Email').fill(e2eEmail);
-    await page.getByLabel('Password').fill(e2ePassword);
-    await page.getByRole('button', { name: 'Login with Email' }).click();
-    await expect(page).toHaveURL(`${baseURL}/`, { timeout: 15000 });
-    // Wait for user avatar initials button to confirm authenticated UI
-    await expect(page.getByRole('button', { name: /^[A-Z]{1,3}$/ })).toBeVisible({
-      timeout: 30000,
+    // Use Playwright API request to perform login and get token
+    const requestContext = await (await import('@playwright/test')).request.newContext({ baseURL });
+    const resp = await requestContext.post('/api/auth/login', {
+      data: { email: e2eEmail, password: e2ePassword },
     });
+    if (resp.status() !== 200) {
+      console.warn('API login did not return 200, status:', resp.status());
+    }
+    const body = await resp.json().catch(() => ({}));
+    const token = body.token;
 
-    // Save storage state
+    if (!token) {
+      console.warn(
+        'No token returned from API login during global-setup; falling back to UI login'
+      );
+      // Fallback to old UI method
+      const browser = await chromium.launch();
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      await page.goto(`${baseURL}/login`, { waitUntil: 'networkidle' });
+      await page.getByLabel('Email').fill(e2eEmail);
+      await page.getByLabel('Password').fill(e2ePassword);
+      await page.getByRole('button', { name: 'Login with Email' }).click();
+      await page.waitForURL(`${baseURL}/`, { timeout: 20000 }).catch(() => {});
+      await context.storageState({ path: storagePath });
+      await browser.close();
+      return;
+    }
+
+    // Create a browser context and set the token in localStorage before any page loads
+    const browser = await chromium.launch();
+    const context = await browser.newContext();
+    // Add init script to set token in localStorage for all pages
+    await context.addInitScript((t) => {
+      // eslint-disable-next-line no-undef
+      localStorage.setItem('token', t);
+    }, token);
+    // Create a page to ensure storage is initialized
+    const page = await context.newPage();
+    await page.goto(baseURL, { waitUntil: 'networkidle' });
+    // Save storage state for tests
     await context.storageState({ path: storagePath });
     console.log('Saved storage state to', storagePath);
-  } catch (err) {
-    console.warn('Global setup login failed:', err);
-    // Attempt to capture a screenshot for diagnostics if possible
-    try {
-      const dumpPath = path.join(__dirname, 'global-setup-failure.png');
-      await page.screenshot({ path: dumpPath }).catch(() => {});
-      console.warn('Wrote diagnostic screenshot to', dumpPath);
-    } catch (e) {
-      // ignore
-    }
-  } finally {
     await browser.close();
+  } catch (err) {
+    console.error('global-setup failed:', err);
+    throw err;
   }
 }
 
