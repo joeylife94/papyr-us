@@ -280,3 +280,76 @@ npm run dev
 - 실시간 동시 편집을 바로 시도하려면 작은 프로토타입(문서 텍스트 하나를 Yjs로 동기화)을 만들고 Socket.IO와 연동해보자.
 
 작업 시작할 항목을 골라주세요 — 제가 필요한 코드/문서 템플릿이나 작은 PR을 바로 만들어 드릴게요.
+
+---
+
+## 2025-10-01: E2E 안정화 작업 요약 및 내일 할 일 (히스토리 항목)
+
+### 오늘(요약)
+
+- Playwright 관련 로컬 상태 파일 `tests/storageState.json`을 `.gitignore`에 추가하고 git에서 언트랙 처리하여 로컬 세션 상태가 보존되도록 했습니다.
+- `client/src/components/layout/sidebar.tsx`의 사용하지 않는 import/변수 정리 및 소규모 UI 정리 커밋을 했습니다.
+- `client/src/pages/dashboard.tsx`의 헤딩 텍스트(테스트 기대치와의 불일치)를 수정해 커밋했습니다.
+- `playwright.config.ts`를 조정해 로컬에서 이미 실행 중인 서버를 재사용하도록 설정(`reuseExistingServer=true`)했습니다.
+- E2E 안정화를 위해 테스트 전처리/시드 방식을 변경했습니다:
+  - `tests/global-setup.ts`를 수정해 Playwright request API로 로그인 토큰을 받아 `tests/storageState.json`을 생성하는 흐름을 추가(필요 시 UI 로그인 폴백 유지).
+  - `tests/example.spec.ts`에서 UI 기반 등록/로그인을 API 기반 시드로 전환하고, 로그인 토큰을 `page.addInitScript`로 주입해 UI 로그인 의존성을 줄였습니다.
+  - 테스트 내 일부 null/정규식 안전성 문제를 고쳤고, 특정 API 응답/요소에 대해 명시적인 `waitForResponse`/`waitForSelector`를 추가했습니다.
+- 로컬 `.env.test` 파일(커밋하지 않음)을 만들어 Docker/Postgres 매핑을 통해 테스트 환경을 맞췄고 `docker-compose up -d`로 DB+앱을 올려서 테스트를 여러 차례 실행했습니다.
+- Playwright 실행 결과(Chromium, 필터: 대시보드|과제 트래커|AI 검색): 마이그레이션은 성공적으로 적용되었으나, 3개 필터링된 테스트가 여전히 `locator` 타임아웃으로 실패했습니다. 각 실패마다 Playwright trace (`trace.zip`)와 HTML 리포트가 생성되어 진단용으로 보관되어 있습니다.
+- 서버 로그는 정상적인 API 응답(POST /api/auth/login 200, GET /api/auth/me 200/304 등)을 보여주며 서버측 500 에러는 보이지 않습니다. 즉 문제는 인증/클라이언트 렌더/테스트 셀렉터/타이밍 쪽일 가능성이 높습니다.
+
+### 현재 상태 (한줄)
+
+- 안전하게 멈출 수 있음: 모든 의도한 변경은 커밋되었고 로컬 저장 상태는 `.gitignore`로 보호되어 있습니다. 다만, E2E 3건은 추가 진단이 필요합니다.
+
+### 진단에 도움이 될 아티팩트(경로)
+
+- Playwright 리포트/trace (예시):
+  - `test-results/example-Productivity-Collaboration-TC-PROD-001-대시보드-위젯-확인-chromium-retry1/trace.zip`
+  - `test-results/example-Productivity-Collaboration-TC-PROD-003-과제-트래커-조회-chromium-retry1/trace.zip`
+  - 각 리포트 폴더의 `error-context.md`
+
+### 내일(우선순위별 할 일, 시간 추정 포함)
+
+1. Playwright trace + HTML 리포트 분석 (15–30분)
+
+- 목표: 실패 시점의 DOM 스냅샷, `console.error`/`pageerror`, 네트워크 요청(특히 `/api/auth/me`, 대시보드/과제/AI 관련 API) 확인
+- 권장 명령:
+
+```powershell
+npx playwright show-trace "d:/workspace/papyr-us/test-results/example-Productivity-Collaboration-TC-PROD-001-대시보드-위젯-확인-chromium-retry1/trace.zip"
+npx playwright show-report d:/workspace/papyr-us/test-results/example-Productivity-Collaboration-TC-PROD-001-대시보드-위젯-확인-chromium-retry1
+```
+
+2. 단일 실패 테스트를 headed/디버그 모드로 재현 (15–30분)
+
+- 목표: 브라우저에서 직접 렌더 흐름을 관찰하고 언제/왜 헤딩이 없는지 확인
+- 권장 명령:
+
+```powershell
+$env:PWDEBUG='1'
+npx playwright test tests/example.spec.ts -g "대시보드" --project=chromium --headed
+```
+
+3. 원인에 따라 1차 수정 (15–40분)
+
+- 원인 A: 클라이언트 JS 예외 → 콘솔 에러 파악 후 패치
+- 원인 B: 인증/세션 문제 → `tests/global-setup.ts`로 storage state 재생성하거나 토큰 발급/만료 정책 확인
+- 원인 C: 셀렉터 불일치 또는 타이밍 → 테스트 셀렉터 보강 및 명시적 `waitForResponse`/`waitForSelector` 추가
+
+4. 수정 후 필터된 테스트 재실행 (10–25분)
+
+- `npm run -s e2e -- --project=chromium --grep "(대시보드|과제 트래커|AI 검색)"`
+
+5. 안정화가 되면 전체 E2E와 CI 파이프라인에서 재검증 (30–60분)
+
+### 메모 / 권장 체크포인트
+
+- 서버 로그는 정상입니다 — 클라이언트 렌더 또는 테스트 상태가 핵심입니다.
+- trace 뷰어에서 가장 먼저 볼 항목: console errors → page error → final DOM 스냅샷 → network 요청/응답 순서.
+- 제가 바로 계속 진행하길 원하면 지금 trace를 열어 분석하고(1) 원인 요약(2) 1–2개 소규모 수정을 적용(테스트 또는 클라이언트) → 재실행해서 결과 공유해드리겠습니다.
+
+---
+
+_이 항목은 2025-10-01 오전 세션 기준으로 자동 기록되었습니다. 진행 내역은 계속해서 이 파일에 누적 기록 형태로 추가됩니다._
