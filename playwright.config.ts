@@ -1,4 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
+import fs from 'fs';
+import path from 'path';
 
 /**
  * Read environment variables from file.
@@ -39,11 +41,20 @@ export default defineConfig({
     /* Base URL to use in actions like `await page.goto('/')`. */
     baseURL: process.env.BASE_URL || 'http://localhost:5001',
 
-    /* Use storage state only when explicitly enabled to avoid interfering with tests that perform UI login */
-    storageState:
-      process.env.E2E_USE_STORAGE_STATE === '1'
-        ? process.env.STORAGE_STATE_PATH || 'tests/storageState.json'
-        : undefined,
+    /* Use storage state when explicitly enabled OR when a storage state file already exists.
+       This makes local runs more reliable: global-setup writes tests/storageState.json and
+       this will automatically be picked up without requiring extra env vars. */
+    storageState: (() => {
+      const storageStatePath = process.env.STORAGE_STATE_PATH || 'tests/storageState.json';
+      const resolved = path.resolve(process.cwd(), storageStatePath);
+      if (process.env.E2E_USE_STORAGE_STATE === '1') return storageStatePath;
+      try {
+        if (fs.existsSync(resolved)) return storageStatePath;
+      } catch (e) {
+        // ignore
+      }
+      return undefined;
+    })(),
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
