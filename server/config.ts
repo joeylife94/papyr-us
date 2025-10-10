@@ -17,6 +17,11 @@ export const config = {
 
   // Admin configuration
   adminPassword: process.env.ADMIN_PASSWORD || '404vibe!',
+  // Comma-separated list of admin emails for RBAC
+  adminEmails: (process.env.ADMIN_EMAILS || '')
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean),
 
   // AI configuration
   openaiApiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR,

@@ -106,3 +106,41 @@ export function authMiddleware(req: AuthRequest, res: Response, next: NextFuncti
     return res.status(401).json({ message: 'Invalid token' });
   }
 }
+
+// RBAC: Require admin access middleware
+export function requireAdmin(req: AuthRequest, res: Response, next: NextFunction) {
+  // Try to decode JWT directly if provided (so this middleware can be used standalone)
+  try {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+      const payload = jwt.verify(token, config.jwtSecret) as {
+        id?: number;
+        email?: string;
+        role?: string;
+      };
+      req.user = payload;
+    }
+  } catch (_) {
+    // ignore token errors here; we'll fall back to password check
+  }
+
+  // 1) If authenticated via JWT and role/email matches admin, allow
+  const user = req.user as { id?: number; email?: string; role?: string } | undefined;
+  if (user) {
+    const isRoleAdmin = user.role === 'admin';
+    const isEmailAdmin = user.email && config.adminEmails.includes(user.email.toLowerCase());
+    if (isRoleAdmin || isEmailAdmin) return next();
+  }
+
+  // 2) Backward compatibility: allow if adminPassword provided in header/query/body
+  const pwdFromHeader = req.header('x-admin-password');
+  const pwdFromQuery = (req.query?.adminPassword as string) || undefined;
+  const pwdFromBody = (req.body?.adminPassword as string) || (req.body?.password as string);
+  const provided = pwdFromHeader || pwdFromQuery || pwdFromBody;
+  if (provided && provided === config.adminPassword) return next();
+
+  return res.status(403).json({ message: 'Forbidden: admin required' });
+}
+
+export type { AuthRequest };

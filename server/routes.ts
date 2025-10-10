@@ -1,7 +1,7 @@
 import type { Express } from 'express';
 import { createServer, type Server as HttpServer } from 'http';
 import { Server as SocketIoServer } from 'socket.io';
-import { authMiddleware } from './middleware.js';
+import { authMiddleware, requireAdmin } from './middleware.js';
 import { config } from './config.js';
 import {
   insertWikiPageSchema,
@@ -133,11 +133,16 @@ export async function registerRoutes(
         return res.status(401).json({ message: 'Invalid credentials' });
       }
 
-      const token = jwt.sign({ id: user.id, email: user.email }, config.jwtSecret, {
+      const role =
+        Array.isArray((config as any).adminEmails) &&
+        (config as any).adminEmails.includes((user.email || '').toLowerCase())
+          ? 'admin'
+          : 'user';
+      const token = jwt.sign({ id: user.id, email: user.email, role }, config.jwtSecret, {
         expiresIn: '1d',
       });
 
-      res.json({ token, user: { id: user.id, name: user.name, email: user.email } });
+      res.json({ token, user: { id: user.id, name: user.name, email: user.email, role } });
     } catch (error) {
       res.status(500).json({ message: 'Server error during login', error });
     }
@@ -153,7 +158,14 @@ export async function registerRoutes(
       if (userResult.length === 0) {
         return res.status(404).json({ message: 'User not found' });
       }
-      res.json(userResult[0]);
+      const base = userResult[0];
+      const role =
+        req.user?.role ||
+        (Array.isArray((config as any).adminEmails) &&
+        (config as any).adminEmails.includes((base.email || '').toLowerCase())
+          ? 'admin'
+          : 'user');
+      res.json({ ...base, role });
     } catch (error) {
       res.status(500).json({ message: 'Server error' });
     }
@@ -711,7 +723,15 @@ export async function registerRoutes(
     try {
       const { password } = req.body;
       if (password === config.adminPassword) {
-        res.json({ success: true });
+        // Optional: issue a short-lived admin token for convenience
+        const token = jwt.sign(
+          { role: 'admin', via: 'password' },
+          (config as any).jwtSecret || 'your-default-secret',
+          {
+            expiresIn: '2h',
+          }
+        );
+        res.json({ success: true, token });
       } else {
         res.status(401).json({ message: 'Invalid password' });
       }
@@ -732,12 +752,8 @@ export async function registerRoutes(
   });
 
   // Admin Directory Management
-  app.get('/api/admin/directories', async (req, res) => {
+  app.get('/api/admin/directories', requireAdmin, async (req, res) => {
     try {
-      const { adminPassword } = req.query;
-      if (adminPassword !== config.adminPassword) {
-        return res.status(401).json({ message: 'Unauthorized' });
-      }
       const directories = await storage.getDirectories();
       res.json(directories);
     } catch (error) {
@@ -745,12 +761,9 @@ export async function registerRoutes(
     }
   });
 
-  app.post('/api/admin/directories', async (req, res) => {
+  app.post('/api/admin/directories', requireAdmin, async (req, res) => {
     try {
-      const { adminPassword, ...directoryData } = req.body;
-      if (adminPassword !== config.adminPassword) {
-        return res.status(401).json({ message: 'Unauthorized' });
-      }
+      const { adminPassword, ...directoryData } = req.body; // adminPassword ignored by middleware
       const validatedData = insertDirectorySchema.parse(directoryData);
       const directory = await storage.createDirectory(validatedData);
       res.status(201).json(directory);
@@ -759,12 +772,9 @@ export async function registerRoutes(
     }
   });
 
-  app.patch('/api/admin/directories/:id', async (req, res) => {
+  app.patch('/api/admin/directories/:id', requireAdmin, async (req, res) => {
     try {
       const { adminPassword, ...updateData } = req.body;
-      if (adminPassword !== config.adminPassword) {
-        return res.status(401).json({ message: 'Unauthorized' });
-      }
       const id = parseInt(req.params.id);
       const validatedData = updateDirectorySchema.parse(updateData);
       const directory = await storage.updateDirectory(id, validatedData);
@@ -777,12 +787,8 @@ export async function registerRoutes(
     }
   });
 
-  app.delete('/api/admin/directories/:id', async (req, res) => {
+  app.delete('/api/admin/directories/:id', requireAdmin, async (req, res) => {
     try {
-      const { adminPassword } = req.body;
-      if (adminPassword !== config.adminPassword) {
-        return res.status(401).json({ message: 'Unauthorized' });
-      }
       const id = parseInt(req.params.id);
       const deleted = await storage.deleteDirectory(id);
       if (!deleted) {
