@@ -1,7 +1,7 @@
 import type { Express } from 'express';
 import { createServer, type Server as HttpServer } from 'http';
 import { Server as SocketIoServer } from 'socket.io';
-import { authMiddleware, requireAdmin } from './middleware.js';
+import { authMiddleware, requireAdmin, writeAuthGate } from './middleware.js';
 import { config } from './config.js';
 import {
   insertWikiPageSchema,
@@ -66,6 +66,9 @@ export async function registerRoutes(
   }
 
   // --- Authentication Routes ---
+
+  // Optional global write guard (no-op unless ENFORCE_AUTH_WRITES=true)
+  app.use(writeAuthGate);
 
   // User Registration
   app.post('/api/auth/register', async (req, res) => {
@@ -158,14 +161,8 @@ export async function registerRoutes(
       if (userResult.length === 0) {
         return res.status(404).json({ message: 'User not found' });
       }
-      const base = userResult[0];
-      const role =
-        req.user?.role ||
-        (Array.isArray((config as any).adminEmails) &&
-        (config as any).adminEmails.includes((base.email || '').toLowerCase())
-          ? 'admin'
-          : 'user');
-      res.json({ ...base, role });
+      // Backward-compat: return only base user info here; role is available from JWT if needed
+      res.json(userResult[0]);
     } catch (error) {
       res.status(500).json({ message: 'Server error' });
     }

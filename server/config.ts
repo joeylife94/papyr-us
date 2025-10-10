@@ -26,6 +26,12 @@ export const config = {
   // AI configuration
   openaiApiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR,
 
+  // RBAC/Authorization toggles
+  get enforceAuthForWrites() {
+    const v = (process.env.ENFORCE_AUTH_WRITES || '').toLowerCase();
+    return v === '1' || v === 'true' || v === 'yes';
+  },
+
   // Environment checks
   get isProduction() {
     return this.nodeEnv === 'production';

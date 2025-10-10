@@ -140,7 +140,35 @@ export function requireAdmin(req: AuthRequest, res: Response, next: NextFunction
   const provided = pwdFromHeader || pwdFromQuery || pwdFromBody;
   if (provided && provided === config.adminPassword) return next();
 
+  log(`Denied admin access: method=${req.method} path=${req.path} ip=${req.ip}`, 'rbac');
   return res.status(403).json({ message: 'Forbidden: admin required' });
 }
 
 export type { AuthRequest };
+
+// Optional global write guard: when enabled via ENFORCE_AUTH_WRITES, require JWT for write methods
+export function writeAuthGate(req: AuthRequest, res: Response, next: NextFunction) {
+  if (!config.enforceAuthForWrites) return next();
+  const isWrite =
+    req.method === 'POST' ||
+    req.method === 'PUT' ||
+    req.method === 'PATCH' ||
+    req.method === 'DELETE';
+  if (!isWrite) return next();
+  const path = req.path || '';
+  // Allow auth endpoints and leave admin endpoints to requireAdmin
+  if (path.startsWith('/api/auth') || path.startsWith('/api/admin')) return next();
+
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+  const token = authHeader.split(' ')[1];
+  try {
+    const payload = jwt.verify(token, config.jwtSecret);
+    req.user = payload;
+    next();
+  } catch {
+    return res.status(401).json({ message: 'Invalid token' });
+  }
+}
