@@ -13,6 +13,7 @@
     "db:generate": "drizzle-kit generate",
     "db:seed": "node --loader ts-node/esm server/migrate-data.js",
     "test": "vitest run",
+    "test:smoke": "vitest run server/tests/smoke",
     "test:watch": "vitest",
     "lint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix",
@@ -21,7 +22,7 @@
     "test:db:seed": "cross-env NODE_ENV=test node --loader ts-node/esm server/migrate-data.js",
     "test:setup": "npm run test:db:migrate && npm run test:db:seed",
     "start:e2e": "cross-env PORT=5001 dotenv -e .env.test -- tsx server/index.ts",
-    "e2e": "dotenv -e .env.test -- npm run test:setup && cross-env E2E_USE_STORAGE_STATE=1 dotenv -e .env.test -- npx playwright test",
+    "e2e": "dotenv -e .env.test -- npm run test:setup && dotenv -e .env.test -- npx playwright test",
     "prepare": "husky install"
   },
   "prepare": "husky install",

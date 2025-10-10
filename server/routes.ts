@@ -800,23 +800,6 @@ export async function registerRoutes(
       const overview = await storage.getDashboardOverview();
       res.json(overview);
     } catch (error) {
-      // Log the error stack for debugging
-      try {
-        // prefer existing log if available
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        if (typeof (global as any).log === 'function') {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (global as any).log('[ERROR] /api/dashboard/overview', (error as any).stack || error);
-        } else {
-          // fallback to console
-          // eslint-disable-next-line no-console
-          console.error('[ERROR] /api/dashboard/overview', error);
-        }
-      } catch (err) {
-        // ensure logging failure doesn't throw
-        // eslint-disable-next-line no-console
-        console.error('Failed to log error for /api/dashboard/overview', err);
-      }
       res.status(500).json({ message: 'Server error' });
     }
   });

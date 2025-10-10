@@ -87,16 +87,3 @@ npm run start:e2e    # .env.test을 사용하여 서버 실행 (포그라운드)
 2.  Playwright 전역 설정(globalSetup) 또는 `storageState`를 생성하여 인증이 필요한 시나리오의 flaky를 줄입니다. (우선순위: 높음)
 
 - 비고: 외부 링크 상태 검사(HTTP 상태)는 네트워크 요청을 필요로 하므로 별도 실행이 필요합니다. 원하시면 바로 실행해 드리겠습니다.
-
-### 2025-10-02 — 로컬/도커 환경 정비 및 E2E 전체 실행
-
-- 오늘 한 일 요약:
-  - 의존성 재설치(EPERM 문제 해결), 개발 서버 포트 충돌 해결, Docker Compose로 Postgres + 앱 컨테이너 기동 및 `/api/dashboard/overview` 확인(200).
-  - Playwright 전체 E2E(`npm run e2e`) 실행으로 다수의 실패(주로 요소 탐색 타임아웃)와 trace/artifact를 수집함.
-  - `playwright.config.ts`를 수정하여 존재하는 `tests/storageState.json`를 자동으로 사용하도록 개선하고, `package.json`의 `e2e` 스크립트에 `E2E_USE_STORAGE_STATE=1`을 추가하여 storageState 재사용을 명시함.
-  - `tests/global-setup.ts` 동작을 검토하여 API 로그인 실패 시 UI 폴백 경로가 동작함을 확인함.
-
-- 권장 다음 작업(우선순위):
-  1. 대표 실패 2~3건을 trace viewer로 분석하여 근본 원인(인증/시드/타이밍)을 확정하고, 간단한 수정(스토리지 상태 보장 또는 시드 보강) 후 단일 스펙을 재실행하여 효과 검증.
-  2. storageState 자동 생성/재사용이 안정화되지 않았다면 global-setup의 로그인 흐름을 우선 보강.
-  3. 테스트 코드에서 불필요히 짧은 타임아웃을 늘리거나, flaky locator를 고정하는 작업을 병행.

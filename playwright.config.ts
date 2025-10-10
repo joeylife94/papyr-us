@@ -1,6 +1,4 @@
 import { defineConfig, devices } from '@playwright/test';
-import fs from 'fs';
-import path from 'path';
 
 /**
  * Read environment variables from file.
@@ -18,11 +16,12 @@ export default defineConfig({
   globalSetup: './tests/global-setup',
   testDir: './tests',
   /* Run tests in files in parallel */
-  fullyParallel: true,
+  // Disable fullyParallel to avoid intra-file parallelism which can cause flakiness
+  fullyParallel: false,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
   forbidOnly: !!process.env.CI,
-  /* Retry on CI only */
-  retries: process.env.CI ? 2 : 1,
+  /* Retry on CI only (reduced from 2 to 1 to avoid long CI runs while keeping retry protection) */
+  retries: process.env.CI ? 1 : 0,
   /* Opt out of parallel tests on CI. */
   workers: process.env.CI ? 1 : 2,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
@@ -41,20 +40,11 @@ export default defineConfig({
     /* Base URL to use in actions like `await page.goto('/')`. */
     baseURL: process.env.BASE_URL || 'http://localhost:5001',
 
-    /* Use storage state when explicitly enabled OR when a storage state file already exists.
-       This makes local runs more reliable: global-setup writes tests/storageState.json and
-       this will automatically be picked up without requiring extra env vars. */
-    storageState: (() => {
-      const storageStatePath = process.env.STORAGE_STATE_PATH || 'tests/storageState.json';
-      const resolved = path.resolve(process.cwd(), storageStatePath);
-      if (process.env.E2E_USE_STORAGE_STATE === '1') return storageStatePath;
-      try {
-        if (fs.existsSync(resolved)) return storageStatePath;
-      } catch (e) {
-        // ignore
-      }
-      return undefined;
-    })(),
+    /* Use storage state only when explicitly enabled to avoid interfering with tests that perform UI login */
+    storageState:
+      process.env.E2E_USE_STORAGE_STATE === '1'
+        ? process.env.STORAGE_STATE_PATH || 'tests/storageState.json'
+        : undefined,
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
@@ -102,7 +92,8 @@ export default defineConfig({
     command: 'npm run start:e2e',
     url: process.env.BASE_URL || 'http://localhost:5001',
     // Allow reusing an existing server (useful in local dev with docker-compose)
-    reuseExistingServer: true,
+    // In CI start a fresh server to avoid reusing a possibly stale process; locally allow reuse for faster dev feedback.
+    reuseExistingServer: process.env.CI ? false : true,
     timeout: 240 * 1000,
   },
 });

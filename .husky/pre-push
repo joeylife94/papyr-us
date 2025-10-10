@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Run a lightweight smoke test before pushing to avoid long pre-push waits
+npm run test:smoke
