@@ -5,10 +5,13 @@ import express from 'express';
 import http from 'http';
 import { registerRoutes } from '../routes';
 
-// Mock the config to have a predictable admin password
+// Mock the config to have a predictable admin password and allow password fallback in this suite
 vi.mock('../config', () => ({
   config: {
     adminPassword: 'test-admin-password',
+    allowAdminPassword: true,
+    adminEmails: [],
+    jwtSecret: 'your-default-secret',
   },
 }));
 

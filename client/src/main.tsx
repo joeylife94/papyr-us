@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import './index.css';
+// Install a global fetch wrapper for auth handling
+import './setup-fetch';
 
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

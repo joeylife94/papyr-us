@@ -97,6 +97,21 @@ npm test       # 단위/통합 테스트
 - Playwright E2E 리포트(HTML) 및 관련 아티팩트 업로드가 CI에 추가되었습니다. CI 실패 시 아티팩트를 다운로드해 문제를 재현하고 디버그할 수 있습니다.
 - 코드 스타일 및 린트 정책이 정비되어 Husky + lint-staged 훅으로 PR 품질을 유지하도록 설정되었습니다.
 
+### 2025-10-10 — RBAC 보강, 보안 미들웨어, 401/403 UX, E2E(401 리다이렉트) 진행
+
+- 서버 RBAC/보안 강화
+  - requireAdmin 미들웨어: JWT의 role/email 기반 관리자 확인, 레거시 비밀번호 폴백은 `ALLOW_ADMIN_PASSWORD` 토글로 비활성화 가능(프로덕션 기본 비활성화).
+  - 글로벌 쓰기 가드: `ENFORCE_AUTH_WRITES=true`일 때 모든 쓰기 메서드에 JWT 필요(`writeAuthGate` + 각 엔드포인트 `requireAuthIfEnabled`).
+  - 레이트리밋: auth/admin/upload 엔드포인트에 적용. 사용자별 키(JWT id/email) + IP 폴백, 관리자 IP 화이트리스트 우회 지원.
+  - 보안 미들웨어: Helmet 보안 헤더 적용, CORS 허용 도메인/크리덴셜을 env로 제어(`CORS_ALLOWED_ORIGINS`, `CORS_ALLOW_CREDENTIALS`).
+- 클라이언트 인증 UX 개선
+  - 전역 fetch 래퍼 도입: 로컬 스토리지의 JWT 자동 첨부, 401/403 발생 시 토큰 제거 후 `/login?redirect=<현재경로>`로 리다이렉트.
+  - 앱 부트스트랩 시 설치(`client/src/setup-fetch.ts` → `main.tsx`).
+- E2E(Playwright) 추가/보완
+  - 401 쓰기 요청 시 로그인 페이지로 리다이렉트되는지 검증하는 테스트(`tests/auth-redirect.spec.ts`) 작성.
+  - 실제 UI와 정합을 맞추기 위해 create 페이지 진입 방식을 사이드바 Quick Action 버튼 사용으로 조정, 폼 필드/블록 에디터 상호작용을 placeholder 기반 셀렉터로 안정화.
+  - 추가적인 타이밍/시드 데이터 의존성 점검 중. 상세 진행 상황은 `docs/daily_summary/2025-10-10-work-summary.md` 참고.
+
 ## Next steps
 
 - CI에서 업로드된 아티팩트를 검토하여 flaky 테스트를 식별하고 우선순위를 매겨 고치세요.

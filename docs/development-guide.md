@@ -131,6 +131,20 @@ npm run dev
 
 ## API 엔드포인트
 
+### RBAC 및 보안 토글 안내
+
+- RBAC 구성과 운영 가이드는 `docs/rbac-guide.md`를 참고하세요.
+- 개발 중 빠르게 안전 모드를 켜려면:
+
+```powershell
+npm run dev:secure  # ENFORCE_AUTH_WRITES, RATE_LIMIT_ENABLED 활성화
+```
+
+- 주요 토글 환경변수
+  - `ENFORCE_AUTH_WRITES` — 쓰기 메서드(POST/PUT/PATCH/DELETE)에 JWT 요구 여부. 기본값: 프로덕션에서 활성화.
+  - `ALLOW_ADMIN_PASSWORD` — 관리자 비밀번호 기반 접근 허용 여부. 기본값: 프로덕션에서 비활성화.
+  - `RATE_LIMIT_ENABLED`, `RATE_LIMIT_WINDOW_MS`, `RATE_LIMIT_MAX` — 레이트리밋 설정. 기본값: 프로덕션에서 활성화.
+
 ### `.env.test` 권장 항목 (E2E 재현용)
 
 로컬 및 CI에서 E2E를 안정적으로 실행하려면 `./.env.test`에 최소한 다음 항목을 설정하세요. 민감한 값은 로컬에만 두고 절대 저장소에 커밋하지 마세요.

@@ -14,6 +14,7 @@ import {
   setupLoggingMiddleware,
   setupErrorHandler,
   getServerConfig,
+  setupSecurity,
 } from './middleware.js';
 import { DBStorage } from './storage.js';
 
@@ -23,6 +24,7 @@ const storage = new DBStorage(); // Create a single storage instance
 // Setup basic middleware
 setupBasicMiddleware(app);
 setupLoggingMiddleware(app);
+setupSecurity(app);
 
 (async () => {
   serveStaticAssets(app);

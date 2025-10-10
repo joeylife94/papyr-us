@@ -29,7 +29,34 @@ export const config = {
   // RBAC/Authorization toggles
   get enforceAuthForWrites() {
     const v = (process.env.ENFORCE_AUTH_WRITES || '').toLowerCase();
-    return v === '1' || v === 'true' || v === 'yes';
+    if (v === '1' || v === 'true' || v === 'yes') return true;
+    if (v === '0' || v === 'false' || v === 'no') return false;
+    // default: enabled in production, disabled otherwise
+    return this.isProduction;
+  },
+  get allowAdminPassword() {
+    const v = (process.env.ALLOW_ADMIN_PASSWORD || '').toLowerCase();
+    if (v === '1' || v === 'true' || v === 'yes') return true;
+    if (v === '0' || v === 'false' || v === 'no') return false;
+    // default: disallow in production, allow in non-production for dev convenience
+    return !this.isProduction;
+  },
+
+  // Rate limiting (basic, in-memory)
+  get rateLimitEnabled() {
+    const v = (process.env.RATE_LIMIT_ENABLED || '').toLowerCase();
+    if (v === '1' || v === 'true' || v === 'yes') return true;
+    if (v === '0' || v === 'false' || v === 'no') return false;
+    // default: enabled in production, disabled otherwise
+    return this.isProduction;
+  },
+  get rateLimitWindowMs() {
+    const n = Number(process.env.RATE_LIMIT_WINDOW_MS || '60000');
+    return Number.isFinite(n) && n > 0 ? n : 60000; // 1 minute
+  },
+  get rateLimitMax() {
+    const n = Number(process.env.RATE_LIMIT_MAX || '60');
+    return Number.isFinite(n) && n > 0 ? n : 60; // 60 reqs per window
   },
 
   // Environment checks
@@ -48,5 +75,29 @@ export const config = {
   // Server host determination
   get host() {
     return this.isProduction || this.isReplit ? '0.0.0.0' : 'localhost';
+  },
+
+  // CORS & Security
+  get corsAllowedOrigins() {
+    // Comma-separated list of allowed origins; empty means allow same-origin only
+    const raw = process.env.CORS_ALLOWED_ORIGINS || '';
+    return raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+  },
+  get corsAllowCredentials() {
+    const v = (process.env.CORS_ALLOW_CREDENTIALS || '').toLowerCase();
+    if (v === '1' || v === 'true' || v === 'yes') return true;
+    if (v === '0' || v === 'false' || v === 'no') return false;
+    // default safe: false
+    return false;
+  },
+  get adminIpWhitelist() {
+    const raw = process.env.ADMIN_IP_WHITELIST || '';
+    return raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
   },
 };

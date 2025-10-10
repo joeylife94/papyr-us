@@ -1,7 +1,13 @@
 import type { Express } from 'express';
 import { createServer, type Server as HttpServer } from 'http';
 import { Server as SocketIoServer } from 'socket.io';
-import { authMiddleware, requireAdmin, writeAuthGate } from './middleware.js';
+import {
+  authMiddleware,
+  requireAdmin,
+  writeAuthGate,
+  buildRateLimiter,
+  requireAuthIfEnabled,
+} from './middleware.js';
 import { config } from './config.js';
 import {
   insertWikiPageSchema,
@@ -70,8 +76,13 @@ export async function registerRoutes(
   // Optional global write guard (no-op unless ENFORCE_AUTH_WRITES=true)
   app.use(writeAuthGate);
 
+  // Rate limiters (enabled by config)
+  const rlAuth = buildRateLimiter({ windowMs: 60_000, max: 20 }); // tighter for auth endpoints
+  const rlAdmin = buildRateLimiter({ windowMs: 60_000, max: 30 });
+  const rlUpload = buildRateLimiter({ windowMs: 60_000, max: 30 });
+
   // User Registration
-  app.post('/api/auth/register', async (req, res) => {
+  app.post('/api/auth/register', rlAuth, async (req, res) => {
     console.log('--- [REGISTER] Received request ---');
     try {
       const { name, email, password } = req.body;
@@ -115,7 +126,7 @@ export async function registerRoutes(
   });
 
   // User Login
-  app.post('/api/auth/login', async (req, res) => {
+  app.post('/api/auth/login', rlAuth, async (req, res) => {
     try {
       const { email, password } = req.body;
       if (!email || !password) {
@@ -242,7 +253,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post('/api/pages', async (req, res) => {
+  app.post('/api/pages', requireAuthIfEnabled, async (req, res) => {
     try {
       const pageData = insertWikiPageSchema.parse(req.body);
 
@@ -263,7 +274,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put('/api/pages/:id', async (req, res) => {
+  app.put('/api/pages/:id', requireAuthIfEnabled, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const updateData = updateWikiPageSchema.parse(req.body);
@@ -279,7 +290,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete('/api/pages/:id', async (req, res) => {
+  app.delete('/api/pages/:id', requireAuthIfEnabled, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const deleted = await storage.deleteWikiPage(id);
@@ -377,7 +388,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post('/api/calendar', async (req, res) => {
+  app.post('/api/calendar', requireAuthIfEnabled, async (req, res) => {
     try {
       // Convert ISO string dates to Date objects
       const requestData = { ...req.body };
@@ -423,7 +434,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch('/api/calendar/event/:id', async (req, res) => {
+  app.patch('/api/calendar/event/:id', requireAuthIfEnabled, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
 
@@ -474,7 +485,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete('/api/calendar/event/:id', async (req, res) => {
+  app.delete('/api/calendar/event/:id', requireAuthIfEnabled, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const deleted = await storage.deleteCalendarEvent(id);
@@ -498,7 +509,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post('/api/pages/:pageId/comments', async (req, res) => {
+  app.post('/api/pages/:pageId/comments', requireAuthIfEnabled, async (req, res) => {
     try {
       const pageId = parseInt(req.params.pageId);
       const commentData = insertCommentSchema.parse({
@@ -512,7 +523,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put('/api/comments/:id', async (req, res) => {
+  app.put('/api/comments/:id', requireAuthIfEnabled, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const updateData = updateCommentSchema.parse(req.body);
@@ -528,7 +539,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete('/api/comments/:id', async (req, res) => {
+  app.delete('/api/comments/:id', requireAuthIfEnabled, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const deleted = await storage.deleteComment(id);
@@ -616,29 +627,35 @@ export async function registerRoutes(
   });
 
   // File Upload API
-  app.post('/api/upload', upload.array('files', 5), async (req: any, res) => {
-    try {
-      if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
-        return res.status(400).json({ message: 'No files uploaded' });
+  app.post(
+    '/api/upload',
+    rlUpload,
+    requireAuthIfEnabled,
+    upload.array('files', 5),
+    async (req: any, res) => {
+      try {
+        if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
+          return res.status(400).json({ message: 'No files uploaded' });
+        }
+
+        const teamId = req.body.teamId;
+        const uploadedFiles = await Promise.all(
+          req.files.map((file: any) => processUploadedFile(file, teamId))
+        );
+
+        res.status(201).json({
+          message: `${uploadedFiles.length} file(s) uploaded successfully`,
+          files: uploadedFiles,
+        });
+      } catch (error: any) {
+        console.error('Upload error:', error);
+        res.status(400).json({
+          message: 'Upload failed',
+          error: error.message,
+        });
       }
-
-      const teamId = req.body.teamId;
-      const uploadedFiles = await Promise.all(
-        req.files.map((file: any) => processUploadedFile(file, teamId))
-      );
-
-      res.status(201).json({
-        message: `${uploadedFiles.length} file(s) uploaded successfully`,
-        files: uploadedFiles,
-      });
-    } catch (error: any) {
-      console.error('Upload error:', error);
-      res.status(400).json({
-        message: 'Upload failed',
-        error: error.message,
-      });
     }
-  });
+  );
 
   // Serve uploaded images
   app.get('/api/uploads/images/:filename', async (req, res) => {
@@ -694,7 +711,7 @@ export async function registerRoutes(
   });
 
   // Delete uploaded file
-  app.delete('/api/uploads/:type/:filename', async (req, res) => {
+  app.delete('/api/uploads/:type/:filename', requireAuthIfEnabled, async (req, res) => {
     try {
       const { type, filename } = req.params;
       const isImage = type === 'images';
@@ -716,7 +733,7 @@ export async function registerRoutes(
   });
 
   // Admin Authentication
-  app.post('/api/admin/auth', async (req, res) => {
+  app.post('/api/admin/auth', rlAdmin, async (req, res) => {
     try {
       const { password } = req.body;
       if (password === config.adminPassword) {
@@ -738,7 +755,7 @@ export async function registerRoutes(
   });
 
   // Directory password verification
-  app.post('/api/directory/verify', async (req, res) => {
+  app.post('/api/directory/verify', rlAdmin, async (req, res) => {
     try {
       const { directoryName, password } = req.body;
       const isValid = await storage.verifyDirectoryPassword(directoryName, password);
@@ -749,7 +766,7 @@ export async function registerRoutes(
   });
 
   // Admin Directory Management
-  app.get('/api/admin/directories', requireAdmin, async (req, res) => {
+  app.get('/api/admin/directories', rlAdmin, requireAdmin, async (req, res) => {
     try {
       const directories = await storage.getDirectories();
       res.json(directories);
@@ -758,7 +775,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post('/api/admin/directories', requireAdmin, async (req, res) => {
+  app.post('/api/admin/directories', rlAdmin, requireAdmin, async (req, res) => {
     try {
       const { adminPassword, ...directoryData } = req.body; // adminPassword ignored by middleware
       const validatedData = insertDirectorySchema.parse(directoryData);
@@ -769,7 +786,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch('/api/admin/directories/:id', requireAdmin, async (req, res) => {
+  app.patch('/api/admin/directories/:id', rlAdmin, requireAdmin, async (req, res) => {
     try {
       const { adminPassword, ...updateData } = req.body;
       const id = parseInt(req.params.id);
@@ -784,7 +801,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete('/api/admin/directories/:id', requireAdmin, async (req, res) => {
+  app.delete('/api/admin/directories/:id', rlAdmin, requireAdmin, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const deleted = await storage.deleteDirectory(id);
@@ -857,7 +874,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post('/api/tasks', async (req, res) => {
+  app.post('/api/tasks', requireAuthIfEnabled, async (req, res) => {
     try {
       const taskData = insertTaskSchema.parse(req.body);
       const task = await storage.createTask(taskData);
@@ -867,7 +884,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put('/api/tasks/:id', async (req, res) => {
+  app.put('/api/tasks/:id', requireAuthIfEnabled, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const updateData = updateTaskSchema.parse(req.body);
@@ -883,7 +900,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete('/api/tasks/:id', async (req, res) => {
+  app.delete('/api/tasks/:id', requireAuthIfEnabled, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const deleted = await storage.deleteTask(id);
@@ -898,7 +915,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch('/api/tasks/:id/progress', async (req, res) => {
+  app.patch('/api/tasks/:id/progress', requireAuthIfEnabled, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const { progress } = req.body;
@@ -963,7 +980,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post('/api/notifications', async (req, res) => {
+  app.post('/api/notifications', requireAuthIfEnabled, async (req, res) => {
     try {
       const notificationData = insertNotificationSchema.parse(req.body);
       const notification = await storage.createNotification(notificationData);
@@ -973,7 +990,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put('/api/notifications/:id', async (req, res) => {
+  app.put('/api/notifications/:id', requireAuthIfEnabled, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const updateData = updateNotificationSchema.parse(req.body);
@@ -989,7 +1006,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete('/api/notifications/:id', async (req, res) => {
+  app.delete('/api/notifications/:id', requireAuthIfEnabled, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const deleted = await storage.deleteNotification(id);
@@ -1004,7 +1021,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch('/api/notifications/:id/read', async (req, res) => {
+  app.patch('/api/notifications/:id/read', requireAuthIfEnabled, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const notification = await storage.markNotificationAsRead(id);
@@ -1019,7 +1036,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch('/api/notifications/read-all', async (req, res) => {
+  app.patch('/api/notifications/read-all', requireAuthIfEnabled, async (req, res) => {
     try {
       const { recipientId } = req.body;
       if (!recipientId) {
@@ -1063,7 +1080,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post('/api/template-categories', async (req, res) => {
+  app.post('/api/template-categories', requireAuthIfEnabled, async (req, res) => {
     try {
       const validatedData = insertTemplateCategorySchema.parse(req.body);
       const category = await storage.createTemplateCategory(validatedData);
@@ -1074,7 +1091,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put('/api/template-categories/:id', async (req, res) => {
+  app.put('/api/template-categories/:id', requireAuthIfEnabled, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1094,7 +1111,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete('/api/template-categories/:id', async (req, res) => {
+  app.delete('/api/template-categories/:id', requireAuthIfEnabled, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1150,7 +1167,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post('/api/templates', async (req, res) => {
+  app.post('/api/templates', requireAuthIfEnabled, async (req, res) => {
     try {
       const validatedData = insertTemplateSchema.parse(req.body);
       const template = await storage.createTemplate(validatedData);
@@ -1161,7 +1178,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put('/api/templates/:id', async (req, res) => {
+  app.put('/api/templates/:id', requireAuthIfEnabled, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1181,7 +1198,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete('/api/templates/:id', async (req, res) => {
+  app.delete('/api/templates/:id', requireAuthIfEnabled, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1200,7 +1217,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post('/api/templates/:id/use', async (req, res) => {
+  app.post('/api/templates/:id/use', requireAuthIfEnabled, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1244,7 +1261,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post('/api/teams', async (req, res) => {
+  app.post('/api/teams', requireAuthIfEnabled, async (req, res) => {
     try {
       const validatedData = insertTeamSchema.parse(req.body);
       const team = await storage.createTeam(validatedData);
@@ -1255,7 +1272,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put('/api/teams/:id', async (req, res) => {
+  app.put('/api/teams/:id', requireAuthIfEnabled, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const team = await storage.updateTeam(id, req.body);
@@ -1269,7 +1286,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete('/api/teams/:id', async (req, res) => {
+  app.delete('/api/teams/:id', requireAuthIfEnabled, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const success = await storage.deleteTeam(id);
@@ -1324,7 +1341,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post('/api/members', async (req, res) => {
+  app.post('/api/members', requireAuthIfEnabled, async (req, res) => {
     try {
       const memberData = insertMemberSchema.parse(req.body);
 
@@ -1346,7 +1363,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put('/api/members/:id', async (req, res) => {
+  app.put('/api/members/:id', requireAuthIfEnabled, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const memberData = updateMemberSchema.parse(req.body);
@@ -1361,7 +1378,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete('/api/members/:id', async (req, res) => {
+  app.delete('/api/members/:id', requireAuthIfEnabled, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const success = await storage.deleteMember(id);
@@ -1376,7 +1393,7 @@ export async function registerRoutes(
   });
 
   // AI 서비스 API
-  app.post('/api/ai/generate', async (req, res) => {
+  app.post('/api/ai/generate', requireAuthIfEnabled, async (req, res) => {
     try {
       const { prompt, type } = req.body;
       const { generateContent } = await import('./services/ai.js');
@@ -1389,7 +1406,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post('/api/ai/improve', async (req, res) => {
+  app.post('/api/ai/improve', requireAuthIfEnabled, async (req, res) => {
     try {
       const { content, title } = req.body;
       const { generateContentSuggestions } = await import('./services/ai.js');
@@ -1403,7 +1420,7 @@ export async function registerRoutes(
   });
 
   // AI 검색 API
-  app.post('/api/ai/search', async (req, res) => {
+  app.post('/api/ai/search', requireAuthIfEnabled, async (req, res) => {
     try {
       const { query, teamId } = req.body;
 
@@ -1462,7 +1479,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post('/api/ai/search-suggestions', async (req, res) => {
+  app.post('/api/ai/search-suggestions', requireAuthIfEnabled, async (req, res) => {
     try {
       const { query } = req.body;
 

@@ -1,4 +1,6 @@
 import express, { type Express, type Request, Response, NextFunction } from 'express';
+import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
 import { config } from './config.js';
 
@@ -133,12 +135,14 @@ export function requireAdmin(req: AuthRequest, res: Response, next: NextFunction
     if (isRoleAdmin || isEmailAdmin) return next();
   }
 
-  // 2) Backward compatibility: allow if adminPassword provided in header/query/body
-  const pwdFromHeader = req.header('x-admin-password');
-  const pwdFromQuery = (req.query?.adminPassword as string) || undefined;
-  const pwdFromBody = (req.body?.adminPassword as string) || (req.body?.password as string);
-  const provided = pwdFromHeader || pwdFromQuery || pwdFromBody;
-  if (provided && provided === config.adminPassword) return next();
+  // 2) Backward compatibility (optional): allow if adminPassword provided
+  if (config.allowAdminPassword) {
+    const pwdFromHeader = req.header('x-admin-password');
+    const pwdFromQuery = (req.query?.adminPassword as string) || undefined;
+    const pwdFromBody = (req.body?.adminPassword as string) || (req.body?.password as string);
+    const provided = pwdFromHeader || pwdFromQuery || pwdFromBody;
+    if (provided && provided === config.adminPassword) return next();
+  }
 
   log(`Denied admin access: method=${req.method} path=${req.path} ip=${req.ip}`, 'rbac');
   return res.status(403).json({ message: 'Forbidden: admin required' });
@@ -171,4 +175,69 @@ export function writeAuthGate(req: AuthRequest, res: Response, next: NextFunctio
   } catch {
     return res.status(401).json({ message: 'Invalid token' });
   }
+}
+
+export function buildRateLimiter(opts?: { windowMs?: number; max?: number }) {
+  return rateLimit({
+    windowMs: opts?.windowMs ?? config.rateLimitWindowMs,
+    max: opts?.max ?? config.rateLimitMax,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req) => {
+      if (!config.rateLimitEnabled) return true;
+      // Admin IP whitelist skip
+      const ip = req.ip || '';
+      if (config.adminIpWhitelist.some((w) => ip.includes(w))) return true;
+      return false;
+    },
+    keyGenerator: (req) => {
+      // Prefer user id/email from JWT, fallback to IP
+      try {
+        const auth = req.headers['authorization'];
+        if (typeof auth === 'string' && auth.startsWith('Bearer ')) {
+          const token = auth.split(' ')[1];
+          const payload: any = jwt.decode(token);
+          if (payload?.id || payload?.email) {
+            return `${payload.id || ''}|${payload.email || ''}`;
+          }
+        }
+      } catch {}
+      return req.ip || 'unknown';
+    },
+  });
+}
+
+export function setupSecurity(app: Express) {
+  // Helmet-like secure headers via small set; if helmet is installed, use it directly
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const helmet = require('helmet') as (opts?: any) => any;
+  app.use(
+    helmet({
+      contentSecurityPolicy: false, // keep simple for now; can be tightened later
+      crossOriginEmbedderPolicy: false,
+    })
+  );
+
+  const allowed = config.corsAllowedOrigins;
+  if (allowed.length > 0) {
+    app.use(
+      cors({
+        origin: allowed,
+        credentials: config.corsAllowCredentials,
+      })
+    );
+  } else {
+    // Default: allow same-origin fetches; for dev, most tooling uses same origin
+    app.use(
+      cors({
+        origin: false,
+      })
+    );
+  }
+}
+
+// Per-endpoint helper: require JWT only when ENFORCE_AUTH_WRITES is enabled
+export function requireAuthIfEnabled(req: AuthRequest, res: Response, next: NextFunction) {
+  if (!config.enforceAuthForWrites) return next();
+  return authMiddleware(req, res, next);
 }
