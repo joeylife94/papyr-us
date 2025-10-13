@@ -16,7 +16,7 @@ async function globalSetup(config: FullConfig) {
     return;
   }
 
-  const baseURL = process.env.BASE_URL || 'http://localhost:5001';
+  const baseURL = process.env.BASE_URL || 'http://localhost:5003';
   const e2eEmail = process.env.E2E_EMAIL || 'test@example.com';
   const e2ePassword = process.env.E2E_PASSWORD || 'password123';
 

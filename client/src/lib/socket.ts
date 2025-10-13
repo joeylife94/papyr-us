@@ -33,7 +33,9 @@ class SocketManager {
   private socket: Socket | null = null;
   private listeners: Map<string, Set<Function>> = new Map();
 
-  connect(url: string = 'http://localhost:5001'): Socket {
+  connect(
+    url: string = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5001'
+  ): Socket {
     if (this.socket?.connected) {
       return this.socket;
     }

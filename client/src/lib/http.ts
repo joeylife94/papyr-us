@@ -5,8 +5,8 @@ export async function http(input: RequestInfo | URL, init: RequestInit = {}) {
   if (token && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${token}`);
   }
-
-  const res = await fetch(input, { ...init, headers });
+  const realFetch: typeof fetch = (window as any).__ORIGINAL_FETCH__ || fetch;
+  const res = await realFetch(input, { ...init, headers });
 
   if (res.status === 401 || res.status === 403) {
     try {

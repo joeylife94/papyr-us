@@ -3,6 +3,7 @@ import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
 import { config } from './config.js';
+import helmet from 'helmet';
 
 export function log(message: string, source = 'express') {
   const formattedTime = new Date().toLocaleTimeString('en-US', {
@@ -209,8 +210,6 @@ export function buildRateLimiter(opts?: { windowMs?: number; max?: number }) {
 
 export function setupSecurity(app: Express) {
   // Helmet-like secure headers via small set; if helmet is installed, use it directly
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const helmet = require('helmet') as (opts?: any) => any;
   app.use(
     helmet({
       contentSecurityPolicy: false, // keep simple for now; can be tightened later

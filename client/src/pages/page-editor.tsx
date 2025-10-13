@@ -86,6 +86,15 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
     },
   });
 
+  // Keep the hidden form field 'content' in sync with block contents so validation can pass
+  useEffect(() => {
+    try {
+      const computed = blocks.map((b) => b?.content ?? '').join('\n\n');
+      // Update without marking as dirty to avoid surprising UI, but validate so submit can proceed
+      form.setValue('content', computed, { shouldValidate: true, shouldDirty: false });
+    } catch {}
+  }, [blocks]);
+
   // Update form when existing page loads or template data is available
   useEffect(() => {
     if (existingPage) {

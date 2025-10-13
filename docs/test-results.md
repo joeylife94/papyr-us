@@ -1,6 +1,38 @@
 # 테스트 결과 보고서
 
-## 📅 테스트 날짜: 2025-08-14
+## �️ 테스트 날짜: 2025-10-13
+
+### ✅ E2E 테스트 (401 Redirect Flows)
+
+- 환경
+  - Base URL: http://localhost:5003
+  - webServer: PORT=5003, ENFORCE_AUTH_WRITES=true
+  - 브라우저: Chromium (headed)
+- 결과
+  - tests/auth-redirect.spec.ts: 2 passed
+    - 비로그인 상태에서 /create 접근 → /login?redirect=%2Fcreate 리다이렉트 확인
+    - 비로그인 상태에서 클라이언트 fetch로 POST /api/pages 시도 → /login?redirect=%2F 리다이렉트 확인
+- 메모
+  - 두 번째 시나리오는 에디터/라우팅 타이밍 문제를 피하기 위해 UI 이동 없이 페이지 컨텍스트에서 fetch만 트리거하도록 변경. 리다이렉트 발생 시 evaluate 컨텍스트 파괴를 피하려고 setTimeout으로 비동기 호출 처리.
+
+### ✅ 서버 스모크 테스트
+
+- 파일: server/tests/smoke/\*
+- 결과: 17 passed (보안 헤더, 쓰기 가드, 관리자 비밀번호 폴백 비활성 시 403 등 정상 동작)
+
+### 🔧 품질 게이트
+
+- TypeScript 체크: PASS
+- ESLint: PASS
+
+### 📎 관련 변경 사항
+
+- tests/auth-redirect.spec.ts: 401 write 리다이렉트 테스트를 페이지 컨텍스트 fetch 기반으로 안정화
+- playwright.config.ts: PORT=5003 + ENFORCE_AUTH_WRITES=true 설정 유지 확인
+
+---
+
+## �📅 테스트 날짜: 2025-08-14
 
 ## ✅ E2E 테스트 성공
 

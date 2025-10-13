@@ -38,7 +38,7 @@ export default defineConfig({
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
-    baseURL: process.env.BASE_URL || 'http://localhost:5001',
+    baseURL: process.env.BASE_URL || 'http://localhost:5003',
 
     /* Use storage state only when explicitly enabled to avoid interfering with tests that perform UI login */
     storageState:
@@ -89,11 +89,13 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: 'npm run start:e2e',
-    url: process.env.BASE_URL || 'http://localhost:5001',
+    // Force write-guard for E2E so token removal yields 401 on write endpoints
+    command:
+      'dotenv -e .env.test -- cross-env PORT=5003 ENFORCE_AUTH_WRITES=true tsx server/index.ts',
+    url: process.env.BASE_URL || 'http://localhost:5003',
     // Allow reusing an existing server (useful in local dev with docker-compose)
-    // In CI start a fresh server to avoid reusing a possibly stale process; locally allow reuse for faster dev feedback.
-    reuseExistingServer: process.env.CI ? false : true,
+    // Always start a fresh server so E2E-specific env flags take effect reliably
+    reuseExistingServer: false,
     timeout: 240 * 1000,
   },
 });
