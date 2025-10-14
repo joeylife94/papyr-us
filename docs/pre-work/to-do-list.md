@@ -353,3 +353,15 @@ npx playwright test tests/example.spec.ts -g "대시보드" --project=chromium -
 ---
 
 _이 항목은 2025-10-01 오전 세션 기준으로 자동 기록되었습니다. 진행 내역은 계속해서 이 파일에 누적 기록 형태로 추가됩니다._
+
+## 2025-10-14: E2E 안정화 시도 및 서버 진단 (간단 기록)
+
+- 오늘 작업 요약:
+  - `tests/example.spec.ts`의 `createPage` 헬퍼를 API-폴백을 포함하도록 재작성해 UI 실패 시 토큰을 통한 API 생성 시도를 하도록 변경했습니다.
+  - ProseMirror 에디터 입력 안정화를 위해 fill → focus+keyboard.type → innerText 폴백을 추가했습니다.
+  - 여러 차례 로컬에서 서버를 기동하려 했으나 `http://localhost:5003`의 API에 연결할 수 없어 테스트가 `/create` 접근 시 로그인으로 리다이렉트되는 문제가 계속되었습니다.
+  - 서버가 정상적으로 올라오면 단일 실패 테스트를 재실행해 API 폴백이 동작하는지 확인할 예정입니다.
+
+- 결정 및 다음 단계:
+  - 우선 서버(포트 5003)를 기동하여 API 응답(특히 POST /api/auth/login과 POST /api/pages)을 확인합니다.
+  - 서버 기동이 즉시 불가능하면 테스트를 UI 전용 흐름으로 되돌리거나, CI 환경에서 API-first 전략을 적용할지를 팀과 결정합니다.
