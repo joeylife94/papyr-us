@@ -41,7 +41,7 @@ import {
 } from './services/upload.js';
 import { smartSearch, generateSearchSuggestions } from './services/ai.js';
 import path from 'path';
-import { existsSync } from 'fs';
+import { existsSync, appendFileSync } from 'fs';
 import type { Request } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -255,6 +255,9 @@ export async function registerRoutes(
 
   app.post('/api/pages', requireAuthIfEnabled, async (req, res) => {
     try {
+      // Removed temporary E2E triage logging. The instrumentation used to write
+      // `test-server-received-posts.log` during debugging has been cleaned up.
+
       const pageData = insertWikiPageSchema.parse(req.body);
 
       // If teamId is provided, find the actual team ID
