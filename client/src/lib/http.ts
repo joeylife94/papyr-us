@@ -8,7 +8,12 @@ export async function http(input: RequestInfo | URL, init: RequestInit = {}) {
   const realFetch: typeof fetch = (window as any).__ORIGINAL_FETCH__ || fetch;
   const res = await realFetch(input, { ...init, headers });
 
-  if (res.status === 401 || res.status === 403) {
+  // Only treat 401 (unauthorized) as an authentication failure. 403 means
+  // "forbidden" (insufficient permissions) and should not force a logout in
+  // normal authenticated flows — removing the token here caused users who
+  // aren't admins to be logged out immediately after a successful login when
+  // the client requested an admin-only endpoint and received 403.
+  if (res.status === 401) {
     try {
       localStorage.removeItem('token');
     } catch {}

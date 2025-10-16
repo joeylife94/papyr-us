@@ -1,0 +1,18 @@
+# Page snapshot
+
+```yaml
+- region "Notifications (F8)":
+  - list
+- heading "Login" [level=2]
+- button "Continue with Google"
+- button "Continue with GitHub"
+- text: Or continue with Email
+- textbox "Email"
+- text: Password
+- textbox "Password"
+- button "Login with Email"
+- paragraph:
+  - text: Don't have an account?
+  - link "Sign up":
+    - /url: /register
+```

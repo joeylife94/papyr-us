@@ -23,7 +23,7 @@
     "test:db:migrate": "cross-env NODE_ENV=test drizzle-kit migrate",
     "test:db:seed": "cross-env NODE_ENV=test node --loader ts-node/esm server/migrate-data.js",
     "test:setup": "npm run test:db:migrate && npm run test:db:seed",
-    "start:e2e": "cross-env PORT=5001 dotenv -e .env.test -- tsx server/index.ts",
+    "start:e2e": "cross-env PORT=5003 dotenv -e .env.test -- tsx server/index.ts",
     "e2e": "dotenv -e .env.test -- npm run test:setup && dotenv -e .env.test -- npx playwright test",
     "prepare": "husky install"
   },

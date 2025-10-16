@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <script type="module">
+      import { injectIntoGlobalHook } from '/@react-refresh';
+      injectIntoGlobalHook(window);
+      window.$RefreshReg$ = () => {};
+      window.$RefreshSig$ = () => (type) => type;
+    </script>
+
+    <script type="module" src="/@vite/client"></script>
+
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <title>Papyr.us - Modern Wiki & Documentation Platform</title>
+    <meta
+      name="description"
+      content="A modern, collaborative wiki platform for organizing documentation, ideas, and knowledge. Built with React and Express.js featuring markdown support, AI integration, and modular architecture."
+    />
+    <meta
+      name="keywords"
+      content="wiki, documentation, markdown, collaboration, knowledge base, AI-powered"
+    />
+    <meta name="author" content="Papyr.us" />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://papyr.us/" />
+    <meta property="og:title" content="Papyr.us - Modern Wiki & Documentation Platform" />
+    <meta
+      property="og:description"
+      content="A modern, collaborative wiki platform for organizing documentation, ideas, and knowledge. Built with React and Express.js featuring markdown support, AI integration, and modular architecture."
+    />
+    <meta property="og:image" content="/og-image.png" />
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:url" content="https://papyr.us/" />
+    <meta property="twitter:title" content="Papyr.us - Modern Wiki & Documentation Platform" />
+    <meta
+      property="twitter:description"
+      content="A modern, collaborative wiki platform for organizing documentation, ideas, and knowledge. Built with React and Express.js featuring markdown support, AI integration, and modular architecture."
+    />
+    <meta property="twitter:image" content="/og-image.png" />
+
+    <!-- Favicon -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%232563eb'><path d='M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z'/></svg>"
+    />
+
+    <!-- Preload fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script>
+      window.__PLAYWRIGHT__ = true;
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx?v=DqYX1_VK78jklNrOceGi7"></script>
+    <!-- This is a replit script which adds a banner on the top of the page when opened in development mode outside the replit environment -->
+    <script type="text/javascript" src="https://replit.com/public/js/replit-dev-banner.js"></script>
+  </body>
+</html>

@@ -73,23 +73,86 @@ test('401 -> redirects to /login with redirect param when accessing protected ro
 test('401 write -> redirects to /login with redirect param when posting /api/pages while logged out', async ({
   page,
 }) => {
-  // Start logged out on home
+  // Ensure fully logged-out: clear cookies and localStorage before navigating
+  await page.context().clearCookies();
   await page.addInitScript(() => localStorage.removeItem('token'));
+
+  // Navigate to a known page and capture the pathname to assert redirect param
   await page.goto('/', { waitUntil: 'domcontentloaded' });
+  const currentPath = new URL(page.url()).pathname; // e.g. '/'
+  const encoded = encodeURIComponent(currentPath);
 
   // Trigger a write via client fetch without awaiting it (navigation will occur on 401)
-  await page.evaluate(() => {
-    setTimeout(() => {
-      fetch('/api/pages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: 't', content: 'c' }),
-      }).catch(() => {
-        // ignore errors due to navigation
+  try {
+    // Use page.route to reliably intercept the POST even if navigation happens.
+    let sawPost = false;
+    const postSeen = new Promise<void>((resolve) => {
+      // route will be attached; we'll unroute in finally to avoid leaking into other tests
+      page.route('**/api/pages', async (route, request) => {
+        if (request.method() === 'POST') {
+          sawPost = true;
+          resolve();
+        }
+        try {
+          await route.continue();
+        } catch (e) {
+          // ignore if route continuation fails due to navigation
+        }
       });
-    }, 0);
-  });
+    });
 
-  // Expect redirect to login with current path as redirect
-  await expect(page).toHaveURL(/\/login\?redirect=%2F/);
+    try {
+      await page.evaluate(() => {
+        // start a fire-and-forget fetch from the page context immediately
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (window as any)
+          .fetch('/api/pages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: 't', content: 'c' }),
+          })
+          .catch(() => {
+            // ignore network/navigation errors
+          });
+      });
+
+      // Wait up to 5s for the route to observe the POST. If not seen, fail the test explicitly.
+      const timeoutMs = 5000;
+      const saw = await Promise.race([
+        postSeen.then(() => true),
+        (async () => {
+          await page.waitForTimeout(timeoutMs);
+          return false;
+        })(),
+      ]);
+
+      if (!saw) {
+        // Give a clearer failure message: either the fetch never fired or navigation aborted it before the router could observe.
+        throw new Error(
+          `POST to /api/pages was not observed within ${timeoutMs}ms. This may be due to navigation aborting the request.`
+        );
+      }
+    } finally {
+      // ensure we detach the route so later tests are unaffected
+      try {
+        page.unroute('**/api/pages');
+      } catch (e) {
+        // ignore if unroute fails for any reason
+      }
+    }
+  } catch (err) {
+    // navigation may destroy the execution context; rethrow to surface assertion failures only
+    // If the error is our explicit missing-POST error, rethrow. Otherwise ignore navigation-induced evaluate errors.
+    if (
+      err instanceof Error &&
+      err.message &&
+      err.message.startsWith('POST to /api/pages was not observed')
+    ) {
+      throw err;
+    }
+  }
+
+  // Wait explicitly for the login redirect that includes the encoded current path
+  await page.waitForURL(new RegExp(`/login\\?redirect=${encoded}`), { timeout: 10000 });
+  await expect(page).toHaveURL(new RegExp(`/login\\?redirect=${encoded}`));
 });
