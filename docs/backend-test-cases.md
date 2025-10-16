@@ -14,6 +14,24 @@ This document defines the test cases for the Papyr-us backend API to ensure its 
 
 ## 3. Test Cases
 
+### Test matrix (TC ID → test file)
+
+| Test Case ID range | Primary test file(s)                                        |
+| :----------------- | :---------------------------------------------------------- |
+| TC-AUTH-\*         | `server/tests/auth.test.ts`                                 |
+| TC-PAGE-\*         | `server/tests/wiki.test.ts`, `tests/*.spec.ts` (E2E)        |
+| TC-CMT-\*          | `server/tests/comments.test.ts`                             |
+| TC-TPL-\*          | `server/tests/templates.test.ts`                            |
+| TC-TEAM-\*         | `server/tests/teams.test.ts`                                |
+| TC-TASK-\*         | `server/tests/tasks.test.ts`                                |
+| TC-UPL-\*          | `server/tests/upload.test.ts`                               |
+| TC-CAL-\*          | `server/tests/calendar.test.ts`                             |
+| TC-NOTIF-\*        | `server/tests/notifications.test.ts`                        |
+| TC-AI-\*           | `server/tests/ai.test.ts`                                   |
+| TC-ADM-\*          | `server/tests/rbac.test.ts`, `server/tests/*` (admin flows) |
+
+Add this mapping to help engineers quickly find and run the relevant test for a given test case ID. If a TC is not covered, add the test file path here when implemented.
+
 ### 3.1. Template Category Management
 
 | Test Case ID   | API Endpoint                          | Description                                                       | Pre-conditions                     | Steps                                                         | Expected Result                                                                                          | Status |
