@@ -180,10 +180,10 @@ curl https://your-app.example.com/api/admin/directories?adminPassword=<ADMIN_PAS
 아래는 문서에 스크린샷을 삽입할 때 사용할 자리표시자 예시입니다. 실제 이미지를 `docs/assets/`에 업로드한 뒤 파일명을 대체하세요.
 
 ```markdown
-![관리자 로그인](./assets/admin-login-YYYYMMDD.png)
+![관리자 로그인](./assets/admin-login-20251016.png)
 _관리자 로그인 (JWT 기반 권장)_
 
-![디렉토리 생성](./assets/admin-create-directory-YYYYMMDD.png)
+![디렉토리 생성](./assets/admin-login-20251016.png)
 _디렉토리 생성: 디렉토리 이름, 표시 이름, 비밀번호(선택)_
 ```
 
