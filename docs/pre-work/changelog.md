@@ -1,3 +1,19 @@
+## 버전 2.3.1 - 2025-10-16 (문서 정리 및 E2E 임시로그 제거)
+
+### ✅ 변경 사항
+
+- `server/routes.ts`에서 Playwright 조사 중 추가된 임시 POST 디버그 로깅(`test-server-received-posts.log` 생성)을 제거했습니다.
+- `docs/backend-test-cases.md`에 테스트 매핑(테스트 케이스 ID ↔ 구현된 테스트 파일)을 추가했습니다.
+- `docs/rbac-guide.md` 및 `docs/admin-panel-guide.md`를 `server/middleware.ts` 및 `server/routes.ts`와 일치하도록 업데이트했습니다. 주로 JWT 기반 관리자 인증 권장 및 비밀번호 기반 하위 호환 흐름을 명확히 문서화했습니다.
+
+### 📝 후속 권장 작업
+
+1. 운영 환경에서 비밀번호 기반 관리자 접근을 비활성화(`ALLOW_ADMIN_PASSWORD=false`)하고 내부 도구가 이를 사용하지 않는지 확인하세요.
+2. 관리자 토큰 발급 흐름과 만료 시간을 검토하고 배포 노트에 반영하세요.
+3. CI에서 관리자 엔드포인트 보안 회귀 검사를 추가하는 것을 고려하세요.
+
+---
+
 ## 버전 2.3.0 - 2025-09-15 (E2E 테스트 안정성 및 신뢰도 향상)
 
 ### ✅ 해결된 문제
