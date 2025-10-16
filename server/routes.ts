@@ -85,6 +85,13 @@ export async function registerRoutes(
   app.post('/api/auth/register', rlAuth, async (req, res) => {
     console.log('--- [REGISTER] Received request ---');
     try {
+      if (process.env.E2E_DEBUG_AUTH === '1' || process.env.NODE_ENV !== 'production') {
+        // avoid logging sensitive fields like full password in logs
+        console.log('[E2E DEBUG] /api/auth/register body:', {
+          name: req.body?.name,
+          email: req.body?.email,
+        });
+      }
       const { name, email, password } = req.body;
       console.log(`[REGISTER] Data: email=${email}, name=${name}`);
       if (!name || !email || !password) {
@@ -109,6 +116,12 @@ export async function registerRoutes(
         .returning();
       const newUser = newUserResult[0];
       console.log(`[REGISTER] User created successfully with ID: ${newUser.id}`);
+      if (process.env.E2E_DEBUG_AUTH === '1' || process.env.NODE_ENV !== 'production') {
+        console.log('[E2E DEBUG] /api/auth/register response user:', {
+          id: newUser.id,
+          email: newUser.email,
+        });
+      }
 
       res.status(201).json({
         message: 'User registered successfully',
@@ -128,6 +141,10 @@ export async function registerRoutes(
   // User Login
   app.post('/api/auth/login', rlAuth, async (req, res) => {
     try {
+      if (process.env.E2E_DEBUG_AUTH === '1' || process.env.NODE_ENV !== 'production') {
+        // Log email but not password
+        console.log('[E2E DEBUG] POST /api/auth/login body:', { email: req.body?.email });
+      }
       const { email, password } = req.body;
       if (!email || !password) {
         return res.status(400).json({ message: 'Email and password are required' });
@@ -156,6 +173,15 @@ export async function registerRoutes(
         expiresIn: '1d',
       });
 
+      if (process.env.E2E_DEBUG_AUTH === '1' || process.env.NODE_ENV !== 'production') {
+        console.log('[E2E DEBUG] login success:', {
+          id: user.id,
+          email: user.email,
+          role,
+          tokenPresent: !!token,
+        });
+      }
+
       res.json({ token, user: { id: user.id, name: user.name, email: user.email, role } });
     } catch (error) {
       res.status(500).json({ message: 'Server error during login', error });
@@ -165,6 +191,12 @@ export async function registerRoutes(
   // Get current user info (Protected Route)
   app.get('/api/auth/me', authMiddleware, async (req: any, res) => {
     try {
+      if (process.env.E2E_DEBUG_AUTH === '1' || process.env.NODE_ENV !== 'production') {
+        console.log('[E2E DEBUG] GET /api/auth/me headers:', {
+          authorization: !!req.headers.authorization,
+        });
+        console.log('[E2E DEBUG] GET /api/auth/me decodedUser:', req.user);
+      }
       const userResult = await storage.db
         .select({ id: users.id, name: users.name, email: users.email })
         .from(users)
