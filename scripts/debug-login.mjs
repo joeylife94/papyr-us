@@ -1,7 +1,7 @@
 import { chromium } from 'playwright';
 import { request as pwRequest } from '@playwright/test';
 
-(async function(){
+(async function () {
   const baseURL = process.env.BASE_URL || 'http://localhost:5003';
   const email = process.env.DEBUG_EMAIL || `debug-${Date.now()}@example.com`;
   const pass = process.env.DEBUG_PASSWORD || 'password123';
@@ -11,7 +11,9 @@ import { request as pwRequest } from '@playwright/test';
   // Use Playwright request to create/register user via API
   try {
     const req = await pwRequest.newContext({ baseURL });
-    const reg = await req.post('/api/auth/register', { data: { name: 'Debug User', email, password: pass } });
+    const reg = await req.post('/api/auth/register', {
+      data: { name: 'Debug User', email, password: pass },
+    });
     console.log('API register status', reg.status());
     // ignore body
     await req.dispose();

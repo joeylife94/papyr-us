@@ -1,0 +1,133 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Papyr.us Realtime Prototype</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        padding: 1rem;
+      }
+      textarea {
+        width: 100%;
+        height: 200px;
+      }
+      .presence {
+        margin-top: 0.5rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Papyr.us Realtime Prototype</h1>
+    <p>Open this page in two tabs to test realtime sync of a single text block.</p>
+
+    <label>Document ID: <input id="docId" value="page-1" /></label>
+    <label
+      >Token: <input id="token" value="" placeholder="paste JWT here" style="width: 40%"
+    /></label>
+    <button id="joinBtn">Join</button>
+    <button id="snapshotBtn">Save Snapshot</button>
+
+    <div class="presence" id="presence">No users</div>
+    <textarea id="editor"></textarea>
+
+    <script src="https://cdn.jsdelivr.net/npm/socket.io-client/dist/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/yjs/dist/yjs.js"></script>
+    <script>
+      // Minimal Yjs + Socket.IO bridge (prototype)
+      const joinBtn = document.getElementById('joinBtn');
+      const snapshotBtn = document.getElementById('snapshotBtn');
+      const editor = document.getElementById('editor');
+      const docIdInput = document.getElementById('docId');
+      const tokenInput = document.getElementById('token');
+      const presenceEl = document.getElementById('presence');
+
+      let socket;
+      let ydoc;
+      let ytext;
+      let applyingRemote = false;
+
+      function connect(documentId, token) {
+        socket = io('/collab', { transports: ['websocket'] });
+
+        socket.on('connect_error', (err) => {
+          console.error('socket connect error', err);
+          alert('Socket connect error: ' + err.message);
+        });
+
+        socket.on('init', (buf) => {
+          console.log('init received', buf);
+          if (buf) {
+            try {
+              const state = new Uint8Array(buf.data ? buf.data : buf);
+              Y.applyUpdate(ydoc, state);
+            } catch (err) {
+              console.error('apply init failed', err);
+            }
+          }
+          // populate editor with current state
+          editor.value = ytext.toString();
+        });
+
+        socket.on('update', (data) => {
+          try {
+            const state = new Uint8Array(data.data ? data.data : data);
+            applyingRemote = true;
+            Y.applyUpdate(ydoc, state);
+            editor.value = ytext.toString();
+            applyingRemote = false;
+          } catch (err) {
+            console.error('apply update failed', err);
+          }
+        });
+
+        socket.on('awareness', (payload) => {
+          presenceEl.textContent = JSON.stringify(payload);
+        });
+
+        socket.on('saved', (info) => {
+          console.log('saved', info);
+          alert('Snapshot saved at ' + new Date(info.timestamp).toLocaleTimeString());
+        });
+
+        socket.emit('join', { documentId, token });
+      }
+
+      joinBtn.addEventListener('click', () => {
+        const docId = docIdInput.value.trim();
+        const token = tokenInput.value.trim();
+        if (!docId) return alert('documentId required');
+        ydoc = new Y.Doc();
+        ytext = ydoc.getText('content');
+
+        // Listen to local changes
+        ytext.observe((event) => {
+          if (applyingRemote) return;
+          const update = Y.encodeStateAsUpdate(ydoc);
+          socket.emit('update', update);
+        });
+
+        // Reflect editor changes into Yjs
+        editor.addEventListener('input', () => {
+          if (applyingRemote) return;
+          // simple replace for prototype
+          ydoc.transact(() => {
+            ytext.delete(0, ytext.length);
+            ytext.insert(0, editor.value);
+          });
+        });
+
+        connect(docId, token);
+      });
+
+      snapshotBtn.addEventListener('click', () => {
+        if (!ydoc || !socket) return alert('Not connected');
+        const update = Y.encodeStateAsUpdate(ydoc);
+        // send as base64 string for simplicity
+        const b64 = Buffer.from(update).toString('base64');
+        socket.emit('snapshot', b64);
+      });
+    </script>
+  </body>
+</html>

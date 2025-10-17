@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Block, BlockType } from '@shared/schema';
 import { HeadingBlock } from './heading-block';
 import { ParagraphBlock } from './paragraph-block';
@@ -63,8 +63,9 @@ export function BlockEditor({
     if (!collaboration.socket) return;
 
     const handleDocumentChange = (change: any) => {
-      // 자신의 변경사항은 무시
-      if (change.userId === userId) return;
+      // validate payload and ignore own changes
+      if (!change || typeof change !== 'object') return;
+      if (change.userId && change.userId === userId) return;
 
       console.log('Received remote change:', change);
 
@@ -77,10 +78,33 @@ export function BlockEditor({
 
     collaboration.socket.on('document-change', handleDocumentChange);
 
+    const handleCursorUpdate = (payload: any) => {
+      // ignore own
+      if (!payload || payload.userId === userId) return;
+      // future: render live cursor for user
+    };
+
+    const handleTypingStart = (payload: any) => {
+      // handled by useCollaboration's state
+    };
+
+    const handleTypingStop = (payload: any) => {
+      // handled by useCollaboration's state
+    };
+
+    collaboration.socket.on('cursor-update', handleCursorUpdate);
+    collaboration.socket.on('typing-start', handleTypingStart);
+    collaboration.socket.on('typing-stop', handleTypingStop);
+
     return () => {
       collaboration.socket?.off('document-change', handleDocumentChange);
+      collaboration.socket?.off('cursor-update', handleCursorUpdate);
+      collaboration.socket?.off('typing-start', handleTypingStart);
+      collaboration.socket?.off('typing-stop', handleTypingStop);
     };
   }, [collaboration.socket, blocks, onChange, userId]);
+
+  const typingTimerRef = useRef<number | null>(null);
 
   // 블록 추가 함수
   const addBlock = useCallback(
@@ -156,6 +180,18 @@ export function BlockEditor({
           type: 'update',
           data: { blocks: newBlocks },
         });
+
+        // typing start/stop (debounced)
+        try {
+          collaboration.sendTypingStart();
+          if (typingTimerRef.current) window.clearTimeout(typingTimerRef.current);
+          typingTimerRef.current = window.setTimeout(() => {
+            collaboration.sendTypingStop();
+            typingTimerRef.current = null;
+          }, 2000);
+        } catch (err) {
+          // noop
+        }
       }
     },
     [blocks, onChange, pageId, collaboration]
@@ -180,7 +216,21 @@ export function BlockEditor({
       case 'heading3':
         return <HeadingBlock {...commonProps} />;
       case 'paragraph':
-        return <ParagraphBlock {...commonProps} />;
+        return (
+          <div
+            onMouseMove={(e) => {
+              if (pageId && collaboration.isConnected) {
+                try {
+                  collaboration.sendCursorUpdate({ x: (e as any).clientX, y: (e as any).clientY });
+                } catch (err) {
+                  // ignore
+                }
+              }
+            }}
+          >
+            <ParagraphBlock {...commonProps} />
+          </div>
+        );
       case 'checkbox':
         return <CheckboxBlock {...commonProps} />;
       case 'image':
