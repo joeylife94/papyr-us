@@ -74,6 +74,15 @@ export const config = {
 
   // Server host determination
   get host() {
+    // Allow explicit override for tricky environments (IPv6/localhost resolution issues)
+    // but only when ALLOW_HOST_OVERRIDE is explicitly enabled to avoid surprising defaults in tests
+    const explicit = process.env.HOST?.trim();
+    const allowOverride = (() => {
+      const v = (process.env.ALLOW_HOST_OVERRIDE || '').toLowerCase();
+      return v === '1' || v === 'true' || v === 'yes';
+    })();
+
+    if (allowOverride && explicit) return explicit;
     return this.isProduction || this.isReplit ? '0.0.0.0' : 'localhost';
   },
 

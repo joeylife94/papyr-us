@@ -24,6 +24,62 @@ docker compose exec app npm run db:migrate
 docker compose exec db psql -U papyrus_user -d papyrus_db -c "\dt"
 ```
 
+### 2-1. PowerShell에서 직접 서버 실행 (Windows)
+
+```powershell
+# .env.test를 사용해 로컬 DB(5433)에 연결하고 5002 포트로 서버 실행
+$env:NODE_ENV='test'; $env:PORT='5002'; $env:COLLAB_REQUIRE_AUTH='0'; $env:ENFORCE_AUTH_WRITES='0'; $env:RATE_LIMIT_ENABLED='0'; npx tsx -r dotenv/config server/index.ts
+
+# 새 터미널에서 소켓 스모크 테스트 실행
+$env:PORT='5002'; $env:COLLAB_REQUIRE_AUTH='0'; node server/tests/socket-smoke.mjs
+
+# 새 터미널에서 알림 스모크 테스트 실행
+$env:PORT='5002'; node server/tests/notification-smoke.mjs
+```
+
+주의: cross-env는 PowerShell에서 인식되지 않을 수 있습니다. 위처럼 `$env:` 구문을 사용해 환경변수를 설정해주세요.
+
+#### HOST 바인딩 강제(ALLOW_HOST_OVERRIDE)
+
+기본 바인딩 규칙은 다음과 같습니다.
+
+- 개발 환경: `localhost`
+- 프로덕션 또는 Replit: `0.0.0.0`
+
+일부 Windows 환경에서는 IPv6/루프백 해석 문제로 소켓 연결이 실패할 수 있습니다. 이 경우 명시적으로 IPv4 루프백에 바인딩하도록 강제하세요.
+
+```powershell
+# HOST 오버라이드 허용 후 IPv4 루프백으로 바인딩
+$env:ALLOW_HOST_OVERRIDE='1'
+$env:HOST='127.0.0.1'
+$env:PORT='5002'
+npx tsx -r dotenv/config server/index.ts
+
+# (선택) 테스트 후 기본값으로 원복
+Remove-Item Env:ALLOW_HOST_OVERRIDE -ErrorAction SilentlyContinue
+Remove-Item Env:HOST -ErrorAction SilentlyContinue
+```
+
+### 2-2. 소켓 스모크 테스트(선택)
+
+환경에 따라 WebSocket/폴링이 차단될 수 있습니다(회사 프록시, 방화벽, 일부 WSL/루프백 설정 등). 이 경우 아래 스모크가 실패할 수 있으며, 그럴 땐 자동화된 Vitest 통합 테스트를 권장합니다.
+
+```powershell
+# 인증 비활성화로 간단히 체크
+$env:PORT='5002'
+$env:COLLAB_REQUIRE_AUTH='0'
+# 서버를 HOST=127.0.0.1로 올렸다면, 클라이언트도 동일하게 맞추세요.
+# $env:ALLOW_HOST_OVERRIDE='1'; $env:HOST='127.0.0.1'
+node server/tests/socket-smoke.mjs
+```
+
+문제가 지속되면 다음을 확인하세요.
+
+- 서버가 동일한 host/port로 실제로 리스닝 중인지
+- `ALLOW_HOST_OVERRIDE`를 켰다면 서버/클라이언트 모두 동일한 HOST를 사용하는지
+- 방화벽/프록시를 우회하거나 WSL/컨테이너 환경에서 재시도
+- `npm test`로 UI 없이 동작을 검증(소켓/REST 통합 테스트 포함)
+
 ### 3. 개발 워크플로우
 
 ```bash

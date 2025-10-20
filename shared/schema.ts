@@ -86,6 +86,7 @@ export const searchSchema = z.object({
   folder: z.string().optional(),
   tags: z.array(z.string()).optional(),
   teamId: z.string().optional(),
+  sort: z.enum(['rank', 'updated']).optional(),
   limit: z.number().optional().default(20),
   offset: z.number().optional().default(0),
 });

@@ -40,9 +40,20 @@ class SocketManager {
       return this.socket;
     }
 
-    this.socket = io(url, {
+    // Use the /collab namespace and pass JWT if present
+    const base = url.replace(/\/$/, '');
+    const nsUrl = `${base}/collab`;
+    let token: string | undefined;
+    if (typeof window !== 'undefined') {
+      try {
+        token = window.localStorage.getItem('token') || undefined;
+      } catch (_) {}
+    }
+
+    this.socket = io(nsUrl, {
       transports: ['websocket', 'polling'],
       autoConnect: true,
+      auth: token ? { token } : undefined,
     });
 
     this.socket.on('connect', () => {
@@ -98,6 +109,22 @@ class SocketManager {
     }
   }
 
+  // Convenience: join a member's room to receive notification events
+  joinMember(memberId: number | string): void {
+    if (!this.socket) return;
+    this.socket.emit('join-member', { memberId });
+  }
+
+  onNotificationNew(callback: (notification: any) => void): void {
+    this.on('notification:new', callback);
+  }
+
+  onNotificationUnreadCount(
+    callback: (data: { recipientId: number; count: number }) => void
+  ): void {
+    this.on('notification:unread-count', callback as any);
+  }
+
   private emitInternal(event: string, ...args: any[]): void {
     const listeners = this.listeners.get(event);
     if (listeners) {
@@ -140,6 +167,9 @@ export function useSocket() {
     emit: socketManager.emit.bind(socketManager),
     on: socketManager.on.bind(socketManager),
     off: socketManager.off.bind(socketManager),
+    joinMember: socketManager.joinMember.bind(socketManager),
+    onNotificationNew: socketManager.onNotificationNew.bind(socketManager),
+    onNotificationUnreadCount: socketManager.onNotificationUnreadCount.bind(socketManager),
   };
 }
 

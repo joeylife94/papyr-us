@@ -1,14 +1,24 @@
 import { io } from 'socket.io-client';
 
 async function run() {
-  const url = 'http://localhost:5001/collab';
+  const port = process.env.PORT || '5001';
+  const url = process.env.SOCKET_URL || `http://localhost:${port}/collab`;
   console.log('Connecting to', url);
-  const socket = io(url, { transports: ['websocket'] });
+  const token = process.env.JWT_TOKEN || process.env.TOKEN;
+  const socket = io(url, {
+    transports: ['websocket', 'polling'],
+    auth: token ? { token } : undefined,
+  });
 
   socket.on('connect', () => {
     console.log('connected, id=', socket.id);
     // send join-document
-    socket.emit('join-document', { pageId: 9999, userId: 'smoke-1', userName: 'Smoke Tester' });
+    socket.emit('join-document', {
+      pageId: 9999,
+      userId: 'smoke-1',
+      userName: 'Smoke Tester',
+      ...(token ? { token } : {}),
+    });
 
     // request current session users by listening
   });

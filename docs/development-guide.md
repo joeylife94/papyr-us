@@ -1,3 +1,13 @@
+## 변경 이력: 2025-10-20
+
+- Windows PowerShell에서 `ALLOW_HOST_OVERRIDE`/`HOST`로 IPv4 루프백 바인딩 강제 가이드 추가
+  - 기본값: 개발=localhost, 프로덕션/Replit=0.0.0.0
+  - 필요 시: `ALLOW_HOST_OVERRIDE=1`일 때만 `HOST` 적용
+  - 예시(PowerShell):
+    - `$env:ALLOW_HOST_OVERRIDE='1'; $env:HOST='127.0.0.1'; $env:PORT='5002'; npx tsx -r dotenv/config server/index.ts`
+- 소켓 스모크 실패 시 대처법 추가: 동일 HOST 사용, 방화벽/프록시 점검, WSL/컨테이너 재시도, 또는 `npm test`로 UI 없는 통합 테스트 권장
+- 헬스체크 엔드포인트 문서화: `GET /health` 응답에 status/time/uptimeSeconds/version 포함
+
 # 개발 가이드
 
 ## 목차

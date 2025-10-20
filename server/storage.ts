@@ -50,6 +50,12 @@ import { eq, like, and, sql, desc, asc } from 'drizzle-orm';
 import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 
+// Helper: detect if a string looks like a bcrypt hash
+function isBcryptHash(value: string): boolean {
+  // bcrypt hashes typically start with $2a$, $2b$, or $2y$ and are ~60 chars
+  return typeof value === 'string' && /^\$2[aby]?\$\d{2}\$[./A-Za-z0-9]{53}$/.test(value);
+}
+
 // Simplified and unified DBStorage
 export class DBStorage {
   public db: any;
@@ -101,8 +107,16 @@ export class DBStorage {
     const countQuery = this.db.select({ count: sql`count(*)` }).from(wikiPages);
 
     const conditions = [];
-    if (params.query) {
-      conditions.push(like(wikiPages.title, `%${params.query}%`));
+    const useFts = (process.env.SEARCH_USE_FTS || '').toLowerCase() === 'true';
+    const hasQuery = !!(params.query && params.query.trim().length > 0);
+    if (hasQuery) {
+      if (useFts) {
+        // Use to_tsquery with simple config; sanitize basic symbols
+        const q = params.query!.trim().replace(/[:&|!]/g, ' ');
+        conditions.push(sql`search_vector @@ plainto_tsquery('simple', ${q})`);
+      } else {
+        conditions.push(like(wikiPages.title, `%${params.query}%`));
+      }
     }
     if (params.folder) {
       conditions.push(eq(wikiPages.folder, params.folder));
@@ -122,10 +136,18 @@ export class DBStorage {
     const totalResult = await countQuery;
     const total = totalResult[0].count;
 
-    query
-      .limit(params.limit || 20)
-      .offset(params.offset || 0)
-      .orderBy(desc(wikiPages.updatedAt));
+    if (useFts && hasQuery && params.sort === 'rank') {
+      // Optionally rank by ts_rank if using FTS
+      query
+        .limit(params.limit || 20)
+        .offset(params.offset || 0)
+        .orderBy(sql`ts_rank(search_vector, plainto_tsquery('simple', ${params.query})) DESC`);
+    } else {
+      query
+        .limit(params.limit || 20)
+        .offset(params.offset || 0)
+        .orderBy(desc(wikiPages.updatedAt));
+    }
 
     const pages = await query;
     return { pages, total };
@@ -203,11 +225,21 @@ export class DBStorage {
   }
 
   async createDirectory(directory: InsertDirectory): Promise<Directory> {
+    if (directory.password) {
+      // Hash plaintext password before saving
+      directory.password = await bcrypt.hash(directory.password, 10);
+    }
     const result = await this.db.insert(directories).values(directory).returning();
     return result[0];
   }
 
   async updateDirectory(id: number, directory: UpdateDirectory): Promise<Directory | undefined> {
+    if (directory.password) {
+      // Hash only if it's not already a bcrypt hash
+      if (!isBcryptHash(directory.password)) {
+        directory.password = await bcrypt.hash(directory.password, 10);
+      }
+    }
     const result = await this.db
       .update(directories)
       .set(directory)
@@ -228,6 +260,13 @@ export class DBStorage {
       .where(eq(directories.name, directoryName));
     const dir = result[0];
     if (!dir || !dir.password) return true;
+    // Prefer bcrypt compare; fall back to plain equality for legacy rows
+    try {
+      if (isBcryptHash(dir.password)) {
+        return await bcrypt.compare(password, dir.password);
+      }
+    } catch (_) {}
+    // Legacy fallback (pre-migration)
     return dir.password === password;
   }
 

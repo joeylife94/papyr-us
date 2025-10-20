@@ -76,6 +76,19 @@ export async function registerRoutes(
   // Optional global write guard (no-op unless ENFORCE_AUTH_WRITES=true)
   app.use(writeAuthGate);
 
+  // --- Health Check ---
+  app.get('/health', (req, res) => {
+    const uptime = process.uptime();
+    const now = new Date();
+    const version = process.env.npm_package_version || '0.0.0';
+    res.json({
+      status: 'ok',
+      time: now.toISOString(),
+      uptimeSeconds: Math.round(uptime),
+      version,
+    });
+  });
+
   // Rate limiters (enabled by config)
   const rlAuth = buildRateLimiter({ windowMs: 60_000, max: 20 }); // tighter for auth endpoints
   const rlAdmin = buildRateLimiter({ windowMs: 60_000, max: 30 });
@@ -242,6 +255,7 @@ export async function registerRoutes(
       const searchParams = searchSchema.parse({
         query: req.query.q as string,
         folder: req.query.folder as string,
+        sort: req.query.sort as string as any,
         tags: req.query.tags ? (req.query.tags as string).split(',') : undefined,
         limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
         offset: req.query.offset ? parseInt(req.query.offset as string) : undefined,
@@ -1019,6 +1033,21 @@ export async function registerRoutes(
     try {
       const notificationData = insertNotificationSchema.parse(req.body);
       const notification = await storage.createNotification(notificationData);
+      // Realtime: emit to member room and update unread count
+      try {
+        const ns = io?.of('/collab');
+        if (ns) {
+          ns.to(`member:${notification.recipientId}`).emit('notification:new', notification);
+          const count = await storage.getUnreadNotificationCount(notification.recipientId);
+          ns.to(`member:${notification.recipientId}`).emit('notification:unread-count', {
+            recipientId: notification.recipientId,
+            count,
+          });
+        }
+      } catch (emitErr) {
+        console.warn('Socket emit failed for notification:new', emitErr);
+      }
+
       res.status(201).json(notification);
     } catch (error) {
       res.status(400).json({ message: 'Invalid notification data', error });
@@ -1033,6 +1062,21 @@ export async function registerRoutes(
 
       if (!notification) {
         return res.status(404).json({ message: 'Notification not found' });
+      }
+
+      // Realtime: emit updated notification and possibly unread count change
+      try {
+        const ns = io?.of('/collab');
+        if (ns) {
+          ns.to(`member:${notification.recipientId}`).emit('notification:updated', notification);
+          const count = await storage.getUnreadNotificationCount(notification.recipientId);
+          ns.to(`member:${notification.recipientId}`).emit('notification:unread-count', {
+            recipientId: notification.recipientId,
+            count,
+          });
+        }
+      } catch (emitErr) {
+        console.warn('Socket emit failed for notification:updated', emitErr);
       }
 
       res.json(notification);
@@ -1050,6 +1094,18 @@ export async function registerRoutes(
         return res.status(404).json({ message: 'Notification not found' });
       }
 
+      // Realtime: emit deletion and refresh unread count (need recipientId; attempt best-effort)
+      try {
+        // If storage can fetch notification before deletion, consider enhancing storage API to return deleted entity
+        // For now, clients should refetch list on delete event
+        const ns = io?.of('/collab');
+        if (ns) {
+          ns.emit('notification:deleted', { id });
+        }
+      } catch (emitErr) {
+        console.warn('Socket emit failed for notification:deleted', emitErr);
+      }
+
       res.json({ message: 'Notification deleted successfully' });
     } catch (error) {
       res.status(400).json({ message: 'Invalid notification ID' });
@@ -1063,6 +1119,21 @@ export async function registerRoutes(
 
       if (!notification) {
         return res.status(404).json({ message: 'Notification not found' });
+      }
+
+      // Realtime: emit updated notification and new unread count
+      try {
+        const ns = io?.of('/collab');
+        if (ns) {
+          ns.to(`member:${notification.recipientId}`).emit('notification:updated', notification);
+          const count = await storage.getUnreadNotificationCount(notification.recipientId);
+          ns.to(`member:${notification.recipientId}`).emit('notification:unread-count', {
+            recipientId: notification.recipientId,
+            count,
+          });
+        }
+      } catch (emitErr) {
+        console.warn('Socket emit failed for notification:read', emitErr);
       }
 
       res.json(notification);
@@ -1079,6 +1150,18 @@ export async function registerRoutes(
       }
 
       await storage.markAllNotificationsAsRead(recipientId);
+
+      // Realtime: emit unread count reset for recipient
+      try {
+        const ns = io?.of('/collab');
+        if (ns) {
+          const count = await storage.getUnreadNotificationCount(recipientId);
+          ns.to(`member:${recipientId}`).emit('notification:unread-count', { recipientId, count });
+        }
+      } catch (emitErr) {
+        console.warn('Socket emit failed for notification:read-all', emitErr);
+      }
+
       res.json({ message: 'All notifications marked as read' });
     } catch (error) {
       res.status(400).json({ message: 'Invalid request data' });

@@ -1,3 +1,9 @@
+### 2025-10-20 문서 업데이트
+
+- Roadmap: 서버 host 기본값 정책, Windows 바인딩 가이드, `/health` 추가, 테스트 확장 반영
+- Development Guide: PowerShell 환경에서 `ALLOW_HOST_OVERRIDE`/`HOST` 사용법, 소켓 스모크 대처법 추가
+- Backend Test Cases: 실시간 알림/검색 페이지네이션/헬스체크 테스트 추가 및 결과 요약
+
 ```markdown
 # Papyr.us Documentation Index
 

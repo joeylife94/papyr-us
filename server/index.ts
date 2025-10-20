@@ -67,6 +67,13 @@ setupSecurity(app);
     });
   };
 
-  process.on('SIGINT', () => shutdown('SIGINT'));
+  // Allow disabling SIGINT handling in dev/smoke to avoid shared-terminal Ctrl+C side effects
+  const ignoreSigint =
+    (process.env.IGNORE_SIGINT || '').toLowerCase() === '1' ||
+    (process.env.IGNORE_SIGINT || '').toLowerCase() === 'true';
+  // In test/dev smokes, prevent CTRL+C or child process exits from taking down the server
+  if (!ignoreSigint) {
+    process.on('SIGINT', () => shutdown('SIGINT'));
+  }
   process.on('SIGTERM', () => shutdown('SIGTERM'));
 })();

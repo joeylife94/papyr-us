@@ -1,3 +1,15 @@
+## 2025-10-20 테스트 케이스 업데이트
+
+- 실시간 알림(Socket.IO) 통합 테스트 추가
+  - 멤버 룸 조인 후 `/api/notifications` 생성 시 `notification:new` 수신 검증
+  - 읽음 처리/일괄 읽음 시 `notification:unread-count` 갱신 이벤트 커버리지 확장 예정
+- 검색 페이지네이션 테스트 추가
+  - `limit/offset` 조합에 따른 `pages`, `total` 검증
+  - FTS 사용 시 정렬 옵션(rank vs updated) 추가 커버리지 계획
+- 헬스체크 스모크 테스트 추가
+  - `GET /health` 응답의 `status`, `version`, `uptimeSeconds` 검증
+- 전체 테스트 결과: 모든 테스트 통과(92/92)
+
 # Papyr-us Backend Test Case (TC) Specification
 
 ## 1. Introduction

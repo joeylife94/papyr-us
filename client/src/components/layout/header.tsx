@@ -25,6 +25,7 @@ import {
   User as UserIcon,
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { useMemberByEmail } from '@/hooks/useMember';
 
 interface HeaderProps {
   onToggleSidebar: () => void;
@@ -37,6 +38,7 @@ export function Header({ onToggleSidebar, searchQuery, onSearchChange }: HeaderP
   const { isAuthenticated, user, logout } = useAuth();
   const navigate = useNavigate();
   const [showMobileSearch, setShowMobileSearch] = useState(false);
+  const { data: member } = useMemberByEmail(user?.email);
 
   const handleLogout = () => {
     logout();
@@ -107,7 +109,8 @@ export function Header({ onToggleSidebar, searchQuery, onSearchChange }: HeaderP
 
           {isAuthenticated && user ? (
             <>
-              <NotificationBell userId={user.id} />
+              {/* Use member.id for notifications (mapped from user.email) */}
+              <NotificationBell recipientId={member?.id} />
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" className="relative h-8 w-8 rounded-full">

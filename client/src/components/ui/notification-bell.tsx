@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Bell, Check, Trash2, MessageSquare, AtSign, Calendar, AlertTriangle } from 'lucide-react';
 import { Button } from './button';
@@ -27,7 +27,7 @@ interface Notification {
 }
 
 interface NotificationBellProps {
-  userId: number;
+  recipientId?: number; // member.id
 }
 
 const notificationIcons = {
@@ -44,15 +44,54 @@ const notificationColors = {
   task_assigned: 'text-green-500',
 };
 
-export function NotificationBell({ userId }: NotificationBellProps) {
+import { useSocket } from '@/lib/socket';
+
+export function NotificationBell({ recipientId }: NotificationBellProps) {
   const [isOpen, setIsOpen] = useState(false);
   const queryClient = useQueryClient();
+  const { joinMember, onNotificationNew, onNotificationUnreadCount, off } = useSocket();
+
+  // Join member room and wire socket listeners
+  useEffect(() => {
+    if (!recipientId) return;
+    // join member room
+    joinMember(recipientId);
+
+    const handleNew = (notif: any) => {
+      if (!notif || notif.recipientId !== recipientId) return;
+      // Optimistically update notifications list
+      queryClient.setQueryData<Notification[] | undefined>(['notifications', recipientId], (old) =>
+        old ? [notif, ...old] : [notif]
+      );
+      // Also bump unread count
+      queryClient.setQueryData<{ count: number } | undefined>(
+        ['notifications', 'unread-count', recipientId],
+        (old) => ({ count: (old?.count || 0) + 1 })
+      );
+    };
+
+    const handleCount = (data: { recipientId: number; count: number }) => {
+      if (!data || data.recipientId !== recipientId) return;
+      queryClient.setQueryData<{ count: number }>(['notifications', 'unread-count', recipientId], {
+        count: data.count,
+      });
+    };
+
+    onNotificationNew(handleNew);
+    onNotificationUnreadCount(handleCount);
+
+    return () => {
+      off('notification:new', handleNew as any);
+      off('notification:unread-count', handleCount as any);
+    };
+  }, [recipientId]);
 
   // Fetch notifications
   const { data: notifications = [] } = useQuery<Notification[]>({
-    queryKey: ['notifications', userId],
+    queryKey: ['notifications', recipientId],
+    enabled: !!recipientId,
     queryFn: async () => {
-      const response = await fetch(`/api/notifications?recipientId=${userId}`);
+      const response = await fetch(`/api/notifications?recipientId=${recipientId}`);
       if (!response.ok) {
         throw new Error('Failed to fetch notifications');
       }
@@ -62,9 +101,10 @@ export function NotificationBell({ userId }: NotificationBellProps) {
 
   // Fetch unread count
   const { data: unreadCount = { count: 0 } } = useQuery<{ count: number }>({
-    queryKey: ['notifications', 'unread-count', userId],
+    queryKey: ['notifications', 'unread-count', recipientId],
+    enabled: !!recipientId,
     queryFn: async () => {
-      const response = await fetch(`/api/notifications/unread-count?recipientId=${userId}`);
+      const response = await fetch(`/api/notifications/unread-count?recipientId=${recipientId}`);
       if (!response.ok) {
         throw new Error('Failed to fetch unread count');
       }
@@ -84,8 +124,10 @@ export function NotificationBell({ userId }: NotificationBellProps) {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['notifications', userId] });
-      queryClient.invalidateQueries({ queryKey: ['notifications', 'unread-count', userId] });
+      if (recipientId) {
+        queryClient.invalidateQueries({ queryKey: ['notifications', recipientId] });
+        queryClient.invalidateQueries({ queryKey: ['notifications', 'unread-count', recipientId] });
+      }
     },
   });
 
@@ -95,7 +137,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
       const response = await fetch('/api/notifications/read-all', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recipientId: userId }),
+        body: JSON.stringify({ recipientId }),
       });
       if (!response.ok) {
         throw new Error('Failed to mark all notifications as read');
@@ -103,8 +145,12 @@ export function NotificationBell({ userId }: NotificationBellProps) {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['notifications', userId] });
-      queryClient.invalidateQueries({ queryKey: ['notifications', 'unread-count', userId] });
+      if (recipientId) {
+        queryClient.invalidateQueries({ queryKey: ['notifications', recipientId] });
+        queryClient.invalidateQueries({
+          queryKey: ['notifications', 'unread-count', recipientId],
+        });
+      }
     },
   });
 
@@ -119,23 +165,38 @@ export function NotificationBell({ userId }: NotificationBellProps) {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['notifications', userId] });
-      queryClient.invalidateQueries({ queryKey: ['notifications', 'unread-count', userId] });
+      if (recipientId) {
+        queryClient.invalidateQueries({ queryKey: ['notifications', recipientId] });
+        queryClient.invalidateQueries({
+          queryKey: ['notifications', 'unread-count', recipientId],
+        });
+      }
     },
   });
 
-  const handleNotificationClick = (notification: Notification) => {
+  const handleNotificationClick = async (notification: Notification) => {
     if (!notification.isRead) {
       markAsReadMutation.mutate(notification.id);
     }
 
-    // Navigate to related content
-    if (notification.relatedPageId) {
-      // Navigate to page
-      window.location.href = `/page/${notification.relatedPageId}`;
-    } else if (notification.relatedTaskId) {
-      // Navigate to task
-      window.location.href = `/tasks`;
+    try {
+      if (notification.relatedPageId) {
+        // Fetch page to resolve slug for navigation
+        const res = await fetch(`/api/pages/${notification.relatedPageId}`);
+        if (res.ok) {
+          const page = await res.json();
+          if (page?.slug) {
+            window.location.href = `/page/${page.slug}`;
+            return;
+          }
+        }
+        // Fallback: go to page by id
+        window.location.href = `/page/${notification.relatedPageId}`;
+      } else if (notification.relatedTaskId) {
+        window.location.href = `/tasks`;
+      }
+    } catch (_) {
+      // Silent fallback
     }
   };
 
@@ -173,7 +234,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="sm" className="relative">
           <Bell className="h-5 w-5" />
-          {unreadCount.count > 0 && (
+          {recipientId && unreadCount.count > 0 && (
             <Badge
               variant="destructive"
               className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 text-xs flex items-center justify-center"
@@ -187,7 +248,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
       <DropdownMenuContent align="end" className="w-80">
         <div className="flex items-center justify-between p-4 border-b">
           <h3 className="font-semibold">알림</h3>
-          {unreadCount.count > 0 && (
+          {recipientId && unreadCount.count > 0 && (
             <Button variant="ghost" size="sm" onClick={handleMarkAllAsRead} className="text-xs">
               모두 읽음 처리
             </Button>
