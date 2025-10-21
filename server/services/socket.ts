@@ -99,34 +99,41 @@ export function setupSocketIO(server: HTTPServer, storage: DBStorage) {
     },
   });
 
-  // Setup /collab namespace with JWT authentication
+  // Setup /collab namespace with optional JWT authentication
   const collabNamespace = io.of('/collab');
 
+  // Check if authentication is required (can be disabled for testing)
+  const requireAuth = process.env.COLLAB_REQUIRE_AUTH !== '0';
+
   // JWT authentication middleware for /collab namespace
-  collabNamespace.use((socket: AuthenticatedSocket, next) => {
-    const token =
-      socket.handshake.auth?.token ||
-      socket.handshake.headers?.authorization?.replace('Bearer ', '');
+  if (requireAuth) {
+    collabNamespace.use((socket: AuthenticatedSocket, next) => {
+      const token =
+        socket.handshake.auth?.token ||
+        socket.handshake.headers?.authorization?.replace('Bearer ', '');
 
-    if (!token) {
-      console.warn('[Socket.IO] Connection rejected: No token provided');
-      return next(new Error('Authentication required'));
-    }
+      if (!token) {
+        console.warn('[Socket.IO] Connection rejected: No token provided');
+        return next(new Error('Authentication required'));
+      }
 
-    try {
-      const decoded = jwt.verify(token, config.jwtSecret) as { id: string; email: string };
-      socket.userId = decoded.id;
-      socket.userEmail = decoded.email;
-      console.log(`[Socket.IO] User authenticated: ${socket.userEmail} (${socket.userId})`);
-      next();
-    } catch (error) {
-      console.warn(
-        '[Socket.IO] Invalid token:',
-        error instanceof Error ? error.message : 'Unknown error'
-      );
-      return next(new Error('Invalid token'));
-    }
-  });
+      try {
+        const decoded = jwt.verify(token, config.jwtSecret) as { id: string; email: string };
+        socket.userId = decoded.id;
+        socket.userEmail = decoded.email;
+        console.log(`[Socket.IO] User authenticated: ${socket.userEmail} (${socket.userId})`);
+        next();
+      } catch (error) {
+        console.warn(
+          '[Socket.IO] Invalid token:',
+          error instanceof Error ? error.message : 'Unknown error'
+        );
+        return next(new Error('Invalid token'));
+      }
+    });
+  } else {
+    console.warn('[Socket.IO] Authentication disabled (COLLAB_REQUIRE_AUTH=0)');
+  }
 
   collabNamespace.on('connection', (socket: AuthenticatedSocket) => {
     console.log(`[Collab] User connected: ${socket.userEmail} (${socket.id})`);

@@ -4,27 +4,29 @@
 -- 1) Add tsvector column
 ALTER TABLE wiki_pages ADD COLUMN IF NOT EXISTS search_vector tsvector;
 
--- 2) Backfill existing rows
+-- 2) Backfill existing rows (title: A, content: B, tags: C)
 UPDATE wiki_pages
 SET search_vector =
   setweight(to_tsvector('simple', coalesce(title, '')), 'A') ||
-  setweight(to_tsvector('simple', coalesce(content, '')), 'B');
+  setweight(to_tsvector('simple', coalesce(content, '')), 'B') ||
+  setweight(to_tsvector('simple', coalesce(array_to_string(tags, ' '), '')), 'C');
 
 -- 3) Index
 CREATE INDEX IF NOT EXISTS idx_wiki_pages_search_vector ON wiki_pages USING GIN (search_vector);
 
--- 4) Trigger function to auto-update on insert/update
+-- 4) Trigger function to auto-update on insert/update (includes tags)
 CREATE OR REPLACE FUNCTION wiki_pages_search_vector_update() RETURNS trigger AS $$
 BEGIN
   NEW.search_vector :=
     setweight(to_tsvector('simple', coalesce(NEW.title, '')), 'A') ||
-    setweight(to_tsvector('simple', coalesce(NEW.content, '')), 'B');
+    setweight(to_tsvector('simple', coalesce(NEW.content, '')), 'B') ||
+    setweight(to_tsvector('simple', coalesce(array_to_string(NEW.tags, ' '), '')), 'C');
   RETURN NEW;
 END
 $$ LANGUAGE plpgsql;
 
--- 5) Trigger
+-- 5) Trigger (watch title, content, and tags)
 DROP TRIGGER IF EXISTS trg_wiki_pages_search_vector ON wiki_pages;
 CREATE TRIGGER trg_wiki_pages_search_vector
-BEFORE INSERT OR UPDATE OF title, content ON wiki_pages
+BEFORE INSERT OR UPDATE OF title, content, tags ON wiki_pages
 FOR EACH ROW EXECUTE FUNCTION wiki_pages_search_vector_update();

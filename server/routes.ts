@@ -1033,13 +1033,13 @@ export async function registerRoutes(
     try {
       const notificationData = insertNotificationSchema.parse(req.body);
       const notification = await storage.createNotification(notificationData);
-      // Realtime: emit to member room and update unread count
+      // Realtime: emit to user room and update unread count
       try {
         const ns = io?.of('/collab');
         if (ns) {
-          ns.to(`member:${notification.recipientId}`).emit('notification:new', notification);
+          ns.to(`user:${notification.recipientId}`).emit('notification:new', notification);
           const count = await storage.getUnreadNotificationCount(notification.recipientId);
-          ns.to(`member:${notification.recipientId}`).emit('notification:unread-count', {
+          ns.to(`user:${notification.recipientId}`).emit('notification:unread-count', {
             recipientId: notification.recipientId,
             count,
           });
@@ -1068,9 +1068,9 @@ export async function registerRoutes(
       try {
         const ns = io?.of('/collab');
         if (ns) {
-          ns.to(`member:${notification.recipientId}`).emit('notification:updated', notification);
+          ns.to(`user:${notification.recipientId}`).emit('notification:updated', notification);
           const count = await storage.getUnreadNotificationCount(notification.recipientId);
-          ns.to(`member:${notification.recipientId}`).emit('notification:unread-count', {
+          ns.to(`user:${notification.recipientId}`).emit('notification:unread-count', {
             recipientId: notification.recipientId,
             count,
           });
@@ -1125,9 +1125,9 @@ export async function registerRoutes(
       try {
         const ns = io?.of('/collab');
         if (ns) {
-          ns.to(`member:${notification.recipientId}`).emit('notification:updated', notification);
+          ns.to(`user:${notification.recipientId}`).emit('notification:updated', notification);
           const count = await storage.getUnreadNotificationCount(notification.recipientId);
-          ns.to(`member:${notification.recipientId}`).emit('notification:unread-count', {
+          ns.to(`user:${notification.recipientId}`).emit('notification:unread-count', {
             recipientId: notification.recipientId,
             count,
           });
@@ -1156,7 +1156,7 @@ export async function registerRoutes(
         const ns = io?.of('/collab');
         if (ns) {
           const count = await storage.getUnreadNotificationCount(recipientId);
-          ns.to(`member:${recipientId}`).emit('notification:unread-count', { recipientId, count });
+          ns.to(`user:${recipientId}`).emit('notification:unread-count', { recipientId, count });
         }
       } catch (emitErr) {
         console.warn('Socket emit failed for notification:read-all', emitErr);

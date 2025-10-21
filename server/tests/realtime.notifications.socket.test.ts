@@ -35,13 +35,14 @@ describe('Realtime notifications over Socket.IO', () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
-  it('emits notification:new to member room when a notification is created', async () => {
+  it('emits notification:new to user room when a notification is created', async () => {
     const nsUrl = `${baseUrl}/collab`;
     const client = Client(nsUrl, { transports: ['polling', 'websocket'] });
 
     const received = new Promise<void>((resolve, reject) => {
       const t = setTimeout(() => reject(new Error('timeout waiting for notification:new')), 8000);
       client.on('connect', async () => {
+        // Join user room to receive notifications
         client.emit('join-member', { memberId: recipientId });
         // REST 호출을 통해 알림 생성 (registerRoutes 내부 io를 통해 브로드캐스트됨)
         try {

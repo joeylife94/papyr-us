@@ -107,15 +107,24 @@ export class DBStorage {
     const countQuery = this.db.select({ count: sql`count(*)` }).from(wikiPages);
 
     const conditions = [];
-    const useFts = (process.env.SEARCH_USE_FTS || '').toLowerCase() === 'true';
+    // Enable FTS by default (can be disabled with SEARCH_USE_FTS=false)
+    const useFts = (process.env.SEARCH_USE_FTS || 'true').toLowerCase() === 'true';
     const hasQuery = !!(params.query && params.query.trim().length > 0);
+
     if (hasQuery) {
       if (useFts) {
-        // Use to_tsquery with simple config; sanitize basic symbols
-        const q = params.query!.trim().replace(/[:&|!]/g, ' ');
+        // Use plainto_tsquery with simple config for better user experience
+        // Sanitize basic operators that could cause query errors
+        const q = params
+          .query!.trim()
+          .replace(/[:&|!()]/g, ' ')
+          .replace(/\s+/g, ' ');
         conditions.push(sql`search_vector @@ plainto_tsquery('simple', ${q})`);
       } else {
-        conditions.push(like(wikiPages.title, `%${params.query}%`));
+        // Fallback to LIKE search on title and content
+        conditions.push(
+          sql`(${wikiPages.title} ILIKE ${'%' + params.query + '%'} OR ${wikiPages.content} ILIKE ${'%' + params.query + '%'})`
+        );
       }
     }
     if (params.folder) {
@@ -125,7 +134,13 @@ export class DBStorage {
       conditions.push(eq(wikiPages.teamId, Number(params.teamId)));
     }
     if (params.tags && params.tags.length > 0) {
-      conditions.push(sql`${wikiPages.tags} && ${params.tags}`);
+      // Use ARRAY constructor to ensure proper type casting
+      conditions.push(
+        sql`${wikiPages.tags} && ARRAY[${sql.join(
+          params.tags.map((t) => sql`${t}`),
+          sql`, `
+        )}]::text[]`
+      );
     }
 
     if (conditions.length > 0) {
@@ -134,15 +149,21 @@ export class DBStorage {
     }
 
     const totalResult = await countQuery;
-    const total = totalResult[0].count;
+    const total = Number(totalResult[0].count);
 
+    // Apply ordering and pagination
     if (useFts && hasQuery && params.sort === 'rank') {
-      // Optionally rank by ts_rank if using FTS
+      // Rank by relevance (ts_rank) when using FTS
+      const q = params
+        .query!.trim()
+        .replace(/[:&|!()]/g, ' ')
+        .replace(/\s+/g, ' ');
       query
         .limit(params.limit || 20)
         .offset(params.offset || 0)
-        .orderBy(sql`ts_rank(search_vector, plainto_tsquery('simple', ${params.query})) DESC`);
+        .orderBy(sql`ts_rank(search_vector, plainto_tsquery('simple', ${q})) DESC`);
     } else {
+      // Default: order by update time
       query
         .limit(params.limit || 20)
         .offset(params.offset || 0)
