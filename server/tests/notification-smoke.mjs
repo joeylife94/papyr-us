@@ -4,7 +4,9 @@ async function ensureMember(baseUrl, email, authHeader) {
   // Try to fetch by email first
   try {
     const res = await fetch(`${baseUrl}/api/members/email/${encodeURIComponent(email)}`, {
-      headers: authHeader ? { Authorization: authHeader, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' },
+      headers: authHeader
+        ? { Authorization: authHeader, 'Content-Type': 'application/json' }
+        : { 'Content-Type': 'application/json' },
     });
     if (res.ok) {
       return await res.json();
@@ -19,7 +21,9 @@ async function ensureMember(baseUrl, email, authHeader) {
   };
   const res = await fetch(`${baseUrl}/api/members`, {
     method: 'POST',
-    headers: authHeader ? { Authorization: authHeader, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' },
+    headers: authHeader
+      ? { Authorization: authHeader, 'Content-Type': 'application/json' }
+      : { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
   if (!res.ok) {
@@ -37,7 +41,9 @@ async function createNotification(baseUrl, recipientId, authHeader) {
   };
   const res = await fetch(`${baseUrl}/api/notifications`, {
     method: 'POST',
-    headers: authHeader ? { Authorization: authHeader, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' },
+    headers: authHeader
+      ? { Authorization: authHeader, 'Content-Type': 'application/json' }
+      : { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
   if (!res.ok) {
@@ -67,7 +73,9 @@ async function run() {
   });
 
   const onDone = (code) => {
-    try { socket.disconnect(); } catch (_) {}
+    try {
+      socket.disconnect();
+    } catch (_) {}
     process.exit(code);
   };
 

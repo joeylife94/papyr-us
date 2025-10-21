@@ -1,6 +1,8 @@
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import { Server as HTTPServer } from 'http';
 import { DBStorage } from '../storage.js';
+import jwt from 'jsonwebtoken';
+import { config } from '../config.js';
 
 interface User {
   id: string;
@@ -21,6 +23,11 @@ interface CollaborationSession {
   pageId: number;
   users: Map<string, User>;
   changes: DocumentChange[];
+}
+
+interface AuthenticatedSocket extends Socket {
+  userId?: string;
+  userEmail?: string;
 }
 
 class CollaborationManager {
@@ -92,8 +99,37 @@ export function setupSocketIO(server: HTTPServer, storage: DBStorage) {
     },
   });
 
-  io.on('connection', (socket: Socket) => {
-    console.log(`User connected: ${socket.id}`);
+  // Setup /collab namespace with JWT authentication
+  const collabNamespace = io.of('/collab');
+
+  // JWT authentication middleware for /collab namespace
+  collabNamespace.use((socket: AuthenticatedSocket, next) => {
+    const token =
+      socket.handshake.auth?.token ||
+      socket.handshake.headers?.authorization?.replace('Bearer ', '');
+
+    if (!token) {
+      console.warn('[Socket.IO] Connection rejected: No token provided');
+      return next(new Error('Authentication required'));
+    }
+
+    try {
+      const decoded = jwt.verify(token, config.jwtSecret) as { id: string; email: string };
+      socket.userId = decoded.id;
+      socket.userEmail = decoded.email;
+      console.log(`[Socket.IO] User authenticated: ${socket.userEmail} (${socket.userId})`);
+      next();
+    } catch (error) {
+      console.warn(
+        '[Socket.IO] Invalid token:',
+        error instanceof Error ? error.message : 'Unknown error'
+      );
+      return next(new Error('Invalid token'));
+    }
+  });
+
+  collabNamespace.on('connection', (socket: AuthenticatedSocket) => {
+    console.log(`[Collab] User connected: ${socket.userEmail} (${socket.id})`);
 
     // Join a document session
     socket.on(
@@ -107,11 +143,12 @@ export function setupSocketIO(server: HTTPServer, storage: DBStorage) {
 
         collaborationManager.joinSession(data.pageId, user);
 
-        // Join the room for this document
-        socket.join(`document-${data.pageId}`);
+        // Join the room for this document using page:<id> format
+        const roomName = `page:${data.pageId}`;
+        socket.join(roomName);
 
         // Notify others that user joined
-        socket.to(`document-${data.pageId}`).emit('user-joined', {
+        socket.to(roomName).emit('user-joined', {
           userId: data.userId,
           userName: data.userName,
           timestamp: Date.now(),
@@ -121,7 +158,7 @@ export function setupSocketIO(server: HTTPServer, storage: DBStorage) {
         const users = collaborationManager.getUsersInSession(data.pageId);
         socket.emit('session-users', users);
 
-        console.log(`User ${data.userName} joined document ${data.pageId}`);
+        console.log(`[Collab] User ${data.userName} joined document ${data.pageId}`);
       }
     );
 
@@ -143,8 +180,9 @@ export function setupSocketIO(server: HTTPServer, storage: DBStorage) {
         // Store the change
         collaborationManager.addChange(data.pageId, change);
 
-        // Broadcast to other users in the same document
-        socket.to(`document-${data.pageId}`).emit('document-change', change);
+        // Broadcast to other users in the same document using page:<id> format
+        const roomName = `page:${data.pageId}`;
+        socket.to(roomName).emit('document-change', change);
 
         // Save to database if it's a significant change
         if (data.type === 'update' && data.data) {
@@ -153,7 +191,7 @@ export function setupSocketIO(server: HTTPServer, storage: DBStorage) {
               blocks: data.data.blocks,
             });
           } catch (error) {
-            console.error('Error saving document change:', error);
+            console.error('[Collab] Error saving document change:', error);
           }
         }
       }
@@ -169,7 +207,8 @@ export function setupSocketIO(server: HTTPServer, storage: DBStorage) {
         position: { x: number; y: number };
         selection?: { start: number; end: number };
       }) => {
-        socket.to(`document-${data.pageId}`).emit('cursor-update', {
+        const roomName = `page:${data.pageId}`;
+        socket.to(roomName).emit('cursor-update', {
           ...data,
           timestamp: Date.now(),
         });
@@ -178,37 +217,44 @@ export function setupSocketIO(server: HTTPServer, storage: DBStorage) {
 
     // Handle typing indicators
     socket.on('typing-start', (data: { pageId: number; userId: string; userName: string }) => {
-      socket.to(`document-${data.pageId}`).emit('typing-start', {
+      const roomName = `page:${data.pageId}`;
+      socket.to(roomName).emit('typing-start', {
         ...data,
         timestamp: Date.now(),
       });
     });
 
     socket.on('typing-stop', (data: { pageId: number; userId: string }) => {
-      socket.to(`document-${data.pageId}`).emit('typing-stop', {
+      const roomName = `page:${data.pageId}`;
+      socket.to(roomName).emit('typing-stop', {
         ...data,
         timestamp: Date.now(),
       });
     });
 
+    // Handle user presence for member notifications
+    socket.on('join-member', (data: { memberId: number | string }) => {
+      const memberRoom = `user:${data.memberId}`;
+      socket.join(memberRoom);
+      console.log(`[Collab] User ${socket.userEmail} joined member room: ${memberRoom}`);
+    });
+
     // Handle disconnection
     socket.on('disconnect', () => {
-      console.log(`User disconnected: ${socket.id}`);
+      console.log(`[Collab] User disconnected: ${socket.userEmail} (${socket.id})`);
 
       // Find which document this user was in
-      const userId = socket.id; // In a real app, you'd get the actual user ID
+      const userId = socket.userId || socket.id;
       collaborationManager.leaveSession(userId);
-
-      // Notify others (this would need the actual pageId and user info)
-      // For now, we'll handle this in a more robust way later
     });
 
     // Handle leaving a document
     socket.on('leave-document', (data: { pageId: number; userId: string }) => {
       collaborationManager.leaveSession(data.userId);
-      socket.leave(`document-${data.pageId}`);
+      const roomName = `page:${data.pageId}`;
+      socket.leave(roomName);
 
-      socket.to(`document-${data.pageId}`).emit('user-left', {
+      socket.to(roomName).emit('user-left', {
         userId: data.userId,
         timestamp: Date.now(),
       });
