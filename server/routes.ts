@@ -72,8 +72,13 @@ export async function registerRoutes(
   try {
     const { setupSocketIO } = await import('./services/socket.js');
     io = setupSocketIO(httpServer, storage);
+
+    // Setup Yjs CRDT collaboration for conflict-free concurrent editing
+    const { setupYjsCollaboration } = await import('./services/yjs-collaboration.js');
+    setupYjsCollaboration(io, storage);
+    logger.info('Yjs CRDT collaboration system initialized');
   } catch (error) {
-    logger.warn('Socket.IO setup failed:', { error });
+    logger.warn('Socket.IO/Yjs setup failed:', { error });
   }
 
   // --- Authentication Routes ---

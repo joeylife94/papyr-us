@@ -30,6 +30,8 @@ import {
 import { useCollaboration } from '@/lib/socket';
 import { Badge } from '@/components/ui/badge';
 import { collaborationSync } from '@/lib/collaboration';
+import { useYjsCollaboration } from '@/hooks/useYjsCollaboration';
+import { UserCursors } from '@/components/collaboration/user-cursor';
 
 interface BlockEditorProps {
   blocks: Block[];
@@ -38,6 +40,7 @@ interface BlockEditorProps {
   pageId?: number;
   userId?: string;
   userName?: string;
+  useYjs?: boolean; // Enable Yjs CRDT collaboration (default: false)
 }
 
 export function BlockEditor({
@@ -47,10 +50,29 @@ export function BlockEditor({
   pageId,
   userId,
   userName,
+  useYjs = false, // Default to false for backward compatibility
 }: BlockEditorProps) {
   const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null);
+  const editorContainerRef = useRef<HTMLDivElement>(null);
 
-  // 실시간 협업 설정
+  // Yjs CRDT-based collaboration (new, conflict-free)
+  const yjsCollaboration = useYjsCollaboration({
+    pageId: pageId || 0,
+    userId,
+    userName,
+    onBlocksChange: onChange,
+    onUsersChange: (users) => {
+      console.log('[Yjs] Users changed:', users);
+    },
+    onUserCountChange: (count) => {
+      console.log('[Yjs] User count changed:', count);
+    },
+    onError: (error) => {
+      console.error('[Yjs] Collaboration error:', error);
+    },
+  });
+
+  // Legacy Socket.IO collaboration (old, timestamp-based conflict resolution)
   const collaboration = useCollaboration(
     pageId || 0,
     userId || 'anonymous',
@@ -118,83 +140,108 @@ export function BlockEditor({
         children: [],
       };
 
-      const newBlocks = [...blocks];
-      newBlocks.splice(index, 0, newBlock);
+      if (useYjs && yjsCollaboration.isConnected) {
+        // Yjs CRDT: Conflict-free insertion
+        yjsCollaboration.insertBlock(index, newBlock);
+      } else {
+        // Legacy: Manual conflict resolution
+        const newBlocks = [...blocks];
+        newBlocks.splice(index, 0, newBlock);
 
-      // 순서 재정렬
-      newBlocks.forEach((block, idx) => {
-        block.order = idx;
-      });
-
-      onChange(newBlocks);
-      setFocusedBlockId(newBlock.id);
-
-      // 실시간 협업: 추가 변경사항 전송
-      if (pageId && collaboration.isConnected) {
-        collaboration.sendDocumentChange({
-          pageId,
-          blockId: newBlock.id,
-          type: 'insert',
-          data: { blocks: newBlocks },
+        // 순서 재정렬
+        newBlocks.forEach((block, idx) => {
+          block.order = idx;
         });
+
+        onChange(newBlocks);
+
+        // 실시간 협업: 추가 변경사항 전송
+        if (pageId && collaboration.isConnected) {
+          collaboration.sendDocumentChange({
+            pageId,
+            blockId: newBlock.id,
+            type: 'insert',
+            data: { blocks: newBlocks },
+          });
+        }
       }
+
+      setFocusedBlockId(newBlock.id);
     },
-    [blocks, onChange, pageId, collaboration]
+    [blocks, onChange, pageId, collaboration, useYjs, yjsCollaboration]
   );
 
   // 블록 삭제 함수
   const deleteBlock = useCallback(
     (blockId: string) => {
-      const newBlocks = blocks.filter((block) => block.id !== blockId);
-      newBlocks.forEach((block, idx) => {
-        block.order = idx;
-      });
-      onChange(newBlocks);
-
-      // 실시간 협업: 삭제 변경사항 전송
-      if (pageId && collaboration.isConnected) {
-        collaboration.sendDocumentChange({
-          pageId,
-          blockId,
-          type: 'delete',
-          data: { blocks: newBlocks },
+      if (useYjs && yjsCollaboration.isConnected) {
+        // Yjs CRDT: Find index and delete
+        const index = blocks.findIndex((b) => b.id === blockId);
+        if (index !== -1) {
+          yjsCollaboration.deleteBlock(index);
+        }
+      } else {
+        // Legacy: Manual conflict resolution
+        const newBlocks = blocks.filter((block) => block.id !== blockId);
+        newBlocks.forEach((block, idx) => {
+          block.order = idx;
         });
+        onChange(newBlocks);
+
+        // 실시간 협업: 삭제 변경사항 전송
+        if (pageId && collaboration.isConnected) {
+          collaboration.sendDocumentChange({
+            pageId,
+            blockId,
+            type: 'delete',
+            data: { blocks: newBlocks },
+          });
+        }
       }
     },
-    [blocks, onChange, pageId, collaboration]
+    [blocks, onChange, pageId, collaboration, useYjs, yjsCollaboration]
   );
 
   // 블록 업데이트 함수
   const updateBlock = useCallback(
     (blockId: string, updates: Partial<Block>) => {
-      const newBlocks = blocks.map((block) =>
-        block.id === blockId ? { ...block, ...updates } : block
-      );
-      onChange(newBlocks);
+      if (useYjs && yjsCollaboration.isConnected) {
+        // Yjs CRDT: Find index and update
+        const index = blocks.findIndex((b) => b.id === blockId);
+        if (index !== -1) {
+          yjsCollaboration.updateBlock(index, updates);
+        }
+      } else {
+        // Legacy: Manual conflict resolution
+        const newBlocks = blocks.map((block) =>
+          block.id === blockId ? { ...block, ...updates } : block
+        );
+        onChange(newBlocks);
 
-      // 실시간 협업: 변경사항 전송
-      if (pageId && collaboration.isConnected) {
-        collaboration.sendDocumentChange({
-          pageId,
-          blockId,
-          type: 'update',
-          data: { blocks: newBlocks },
-        });
+        // 실시간 협업: 변경사항 전송
+        if (pageId && collaboration.isConnected) {
+          collaboration.sendDocumentChange({
+            pageId,
+            blockId,
+            type: 'update',
+            data: { blocks: newBlocks },
+          });
 
-        // typing start/stop (debounced)
-        try {
-          collaboration.sendTypingStart();
-          if (typingTimerRef.current) window.clearTimeout(typingTimerRef.current);
-          typingTimerRef.current = window.setTimeout(() => {
-            collaboration.sendTypingStop();
-            typingTimerRef.current = null;
-          }, 2000);
-        } catch (err) {
-          // noop
+          // typing start/stop (debounced)
+          try {
+            collaboration.sendTypingStart();
+            if (typingTimerRef.current) window.clearTimeout(typingTimerRef.current);
+            typingTimerRef.current = window.setTimeout(() => {
+              collaboration.sendTypingStop();
+              typingTimerRef.current = null;
+            }, 2000);
+          } catch (err) {
+            // noop
+          }
         }
       }
     },
-    [blocks, onChange, pageId, collaboration]
+    [blocks, onChange, pageId, collaboration, useYjs, yjsCollaboration]
   );
 
   // 블록 렌더링 함수
@@ -278,40 +325,105 @@ export function BlockEditor({
   };
 
   return (
-    <div className="block-editor min-h-[400px] p-4">
+    <div
+      ref={editorContainerRef}
+      className="block-editor min-h-[400px] p-4 relative"
+      onMouseMove={(e) => {
+        // Update cursor position for Yjs collaboration
+        if (useYjs && yjsCollaboration.isConnected && pageId) {
+          yjsCollaboration.updateCursor({
+            x: e.clientX,
+            y: e.clientY,
+          });
+        }
+      }}
+    >
+      {/* Multi-user cursors (Yjs only) */}
+      {useYjs && yjsCollaboration.users.length > 0 && (
+        <UserCursors users={yjsCollaboration.users} containerRef={editorContainerRef} />
+      )}
+
       {/* 실시간 협업 상태 표시 */}
       {pageId && (
         <div className="flex items-center justify-between mb-4 p-2 bg-gray-50 rounded-lg">
           <div className="flex items-center space-x-2">
             <div className="flex items-center space-x-1">
-              {collaboration.isConnected ? (
-                <Wifi className="h-4 w-4 text-green-500" />
+              {useYjs ? (
+                // Yjs CRDT collaboration status
+                <>
+                  {yjsCollaboration.isConnected ? (
+                    <Wifi className="h-4 w-4 text-green-500" />
+                  ) : (
+                    <WifiOff className="h-4 w-4 text-red-500" />
+                  )}
+                  <span className="text-sm text-gray-600">
+                    {yjsCollaboration.isConnected
+                      ? yjsCollaboration.isSynced
+                        ? '🟢 Yjs 동기화됨'
+                        : '🟡 Yjs 연결 중...'
+                      : '🔴 Yjs 연결 끊김'}
+                  </span>
+                </>
               ) : (
-                <WifiOff className="h-4 w-4 text-red-500" />
+                // Legacy Socket.IO collaboration status
+                <>
+                  {collaboration.isConnected ? (
+                    <Wifi className="h-4 w-4 text-green-500" />
+                  ) : (
+                    <WifiOff className="h-4 w-4 text-red-500" />
+                  )}
+                  <span className="text-sm text-gray-600">
+                    {collaboration.isConnected ? '실시간 연결됨' : '연결 끊김'}
+                  </span>
+                </>
               )}
-              <span className="text-sm text-gray-600">
-                {collaboration.isConnected ? '실시간 연결됨' : '연결 끊김'}
-              </span>
             </div>
 
-            {collaboration.users.length > 0 && (
-              <div className="flex items-center space-x-1">
-                <Users className="h-4 w-4 text-blue-500" />
-                <span className="text-sm text-gray-600">
-                  {collaboration.users.length}명 참여 중
-                </span>
-              </div>
-            )}
+            {useYjs
+              ? // Yjs user count
+                yjsCollaboration.userCount > 0 && (
+                  <div className="flex items-center space-x-1">
+                    <Users className="h-4 w-4 text-blue-500" />
+                    <span className="text-sm text-gray-600">
+                      {yjsCollaboration.userCount}명 참여 중
+                    </span>
+                  </div>
+                )
+              : // Legacy user count
+                collaboration.users.length > 0 && (
+                  <div className="flex items-center space-x-1">
+                    <Users className="h-4 w-4 text-blue-500" />
+                    <span className="text-sm text-gray-600">
+                      {collaboration.users.length}명 참여 중
+                    </span>
+                  </div>
+                )}
           </div>
 
           <div className="flex items-center space-x-2">
-            {collaboration.users.map((user) => (
-              <Badge key={user.id} variant="secondary" className="text-xs">
-                {user.name}
-              </Badge>
-            ))}
+            {useYjs
+              ? // Yjs active users with color indicators
+                yjsCollaboration.users.map((user) => (
+                  <div
+                    key={user.id}
+                    className="flex items-center space-x-1 px-2 py-1 rounded text-xs"
+                    style={{
+                      backgroundColor: `${user.color}20`,
+                      borderLeft: `3px solid ${user.color}`,
+                    }}
+                  >
+                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: user.color }} />
+                    <span className="font-medium">{user.name}</span>
+                  </div>
+                ))
+              : // Legacy user badges
+                collaboration.users.map((user) => (
+                  <Badge key={user.id} variant="secondary" className="text-xs">
+                    {user.name}
+                  </Badge>
+                ))}
 
-            {collaboration.typingUsers.length > 0 && (
+            {!useYjs && collaboration.typingUsers.length > 0 && (
               <Badge variant="outline" className="text-xs text-blue-600">
                 {collaboration.typingUsers.length}명 입력 중...
               </Badge>

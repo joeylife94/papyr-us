@@ -409,6 +409,7 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
                             pageId={pageId ? parseInt(pageId) : undefined}
                             userId={getUserId()}
                             userName={getUserName()}
+                            useYjs={true} // ✨ Enable Yjs CRDT collaboration
                           />
                         </div>
                       </FormControl>
