@@ -44,6 +44,7 @@ import {
 import { smartSearch, generateSearchSuggestions } from './services/ai.js';
 import * as aiService from './services/ai.js';
 import { triggerWorkflows } from './services/workflow.js';
+import logger from './services/logger.js';
 import path from 'path';
 import { existsSync, appendFileSync } from 'fs';
 import type { Request } from 'express';
@@ -72,7 +73,7 @@ export async function registerRoutes(
     const { setupSocketIO } = await import('./services/socket.js');
     io = setupSocketIO(httpServer, storage);
   } catch (error) {
-    console.warn('Socket.IO setup failed:', error);
+    logger.warn('Socket.IO setup failed:', { error });
   }
 
   // --- Authentication Routes ---
@@ -146,7 +147,11 @@ export async function registerRoutes(
       });
       console.log('--- [REGISTER] Response sent ---');
     } catch (error: any) {
-      console.error('--- [REGISTER] Critical error ---', error);
+      logger.error('Registration critical error:', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        code: error.code,
+        stack: error instanceof Error ? error.stack : undefined,
+      });
       // Handle unique constraint violation for PostgreSQL (code 23505)
       if (error.code === '23505') {
         return res.status(409).json({ message: 'User with this email already exists' });
@@ -333,7 +338,10 @@ export async function registerRoutes(
         author: page.author,
         teamId: page.teamId,
       }).catch((error) => {
-        console.error('Failed to trigger workflows for page_created:', error);
+        logger.error('Failed to trigger workflows for page_created:', {
+          pageId: page.id,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
       });
 
       res.status(201).json(page);
@@ -652,7 +660,11 @@ export async function registerRoutes(
           pageTitle: page.title,
           teamId: page.teamId,
         }).catch((error) => {
-          console.error('Failed to trigger workflows for comment_added:', error);
+          logger.error('Failed to trigger workflows for comment_added:', {
+            commentId: comment.id,
+            pageId: page.id,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
         });
       }
 
@@ -1029,7 +1041,10 @@ export async function registerRoutes(
         dueDate: task.dueDate,
         teamId: task.teamId,
       }).catch((error) => {
-        console.error('Failed to trigger workflows for task_created:', error);
+        logger.error('Failed to trigger workflows for task_created:', {
+          taskId: task.id,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
       });
 
       res.status(201).json(task);
@@ -1063,7 +1078,12 @@ export async function registerRoutes(
           assignedTo: task.assignedTo,
           teamId: task.teamId,
         }).catch((error) => {
-          console.error('Failed to trigger workflows for task_status_changed:', error);
+          logger.error('Failed to trigger workflows for task_status_changed:', {
+            taskId: task.id,
+            oldStatus: oldTask.status,
+            newStatus: task.status,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
         });
       }
 
@@ -1078,7 +1098,12 @@ export async function registerRoutes(
           newAssignee: task.assignedTo,
           teamId: task.teamId,
         }).catch((error) => {
-          console.error('Failed to trigger workflows for task_assigned:', error);
+          logger.error('Failed to trigger workflows for task_assigned:', {
+            taskId: task.id,
+            oldAssignee: oldTask.assignedTo,
+            newAssignee: task.assignedTo,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
         });
       }
 

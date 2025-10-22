@@ -8,6 +8,7 @@ import type {
 } from '@shared/schema';
 import { getStorage } from '../storage.js';
 import * as aiService from './ai.js';
+import logger from './logger.js';
 
 const storage = getStorage();
 
@@ -90,7 +91,10 @@ async function executeAction(
             });
             notifications.push(notification);
           } catch (error) {
-            console.error(`Failed to create notification for recipient ${recipientId}:`, error);
+            logger.error('Failed to create notification for recipient', {
+              recipientId,
+              error: error instanceof Error ? error.message : 'Unknown error',
+            });
           }
         }
 
@@ -183,7 +187,10 @@ async function executeAction(
 
       case 'send_email':
         // TODO: Implement email service
-        console.log('Email:', processedConfig.message, 'to', processedConfig.recipients);
+        logger.info('Email action triggered', {
+          message: processedConfig.message,
+          recipients: processedConfig.recipients,
+        });
         return { success: true, result: { sent: true } };
 
       case 'assign_task':
@@ -208,7 +215,11 @@ async function executeAction(
         return { success: false, error: `Unknown action type: ${action.type}` };
     }
   } catch (error) {
-    console.error('Action execution error:', error);
+    logger.error('Action execution error:', {
+      actionType: action.type,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
@@ -284,7 +295,12 @@ export async function executeWorkflow(
 
     return await storage.getWorkflowRun(runId);
   } catch (error) {
-    console.error('Workflow execution error:', error);
+    logger.error('Workflow execution error:', {
+      workflowId: workflow.id,
+      workflowName: workflow.name,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     await storage.updateWorkflowRun(runId, {
       status: 'failed',
       error: error instanceof Error ? error.message : 'Unknown error',
@@ -292,6 +308,49 @@ export async function executeWorkflow(
     });
     return await storage.getWorkflowRun(runId);
   }
+}
+
+/**
+ * Execute workflow with automatic retry logic
+ */
+async function executeWorkflowWithRetry(
+  workflow: Workflow,
+  triggerData: Record<string, any>,
+  maxRetries = 3
+): Promise<void> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await executeWorkflow(workflow, triggerData);
+      return; // Success - exit retry loop
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+
+      logger.warn('Workflow execution failed, will retry:', {
+        workflowId: workflow.id,
+        workflowName: workflow.name,
+        attempt,
+        maxRetries,
+        error: lastError.message,
+      });
+
+      // Exponential backoff: wait 2^attempt seconds before retry
+      if (attempt < maxRetries) {
+        const delayMs = Math.pow(2, attempt) * 1000;
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+  }
+
+  // All retries exhausted - log final failure
+  logger.error('Workflow execution failed after all retries:', {
+    workflowId: workflow.id,
+    workflowName: workflow.name,
+    maxRetries,
+    error: lastError?.message,
+    stack: lastError?.stack,
+  });
 }
 
 // Trigger workflows based on event type
@@ -309,14 +368,22 @@ export async function triggerWorkflows(
 
       // Check if trigger config matches
       if (shouldTriggerWorkflow(trigger, triggerType, data)) {
-        // Execute workflow in background (don't await)
-        executeWorkflow(workflow, data).catch((error) => {
-          console.error(`Failed to execute workflow ${workflow.id}:`, error);
+        // Execute workflow with retry in background (don't await)
+        executeWorkflowWithRetry(workflow, data).catch((error) => {
+          logger.error('Failed to execute workflow', {
+            workflowId: workflow.id,
+            workflowName: workflow.name,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
         });
       }
     }
   } catch (error) {
-    console.error('Failed to trigger workflows:', error);
+    logger.error('Failed to trigger workflows:', {
+      triggerType,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+    });
   }
 }
 
