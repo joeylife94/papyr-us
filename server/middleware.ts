@@ -240,3 +240,27 @@ export function requireAuthIfEnabled(req: AuthRequest, res: Response, next: Next
   if (!config.enforceAuthForWrites) return next();
   return authMiddleware(req, res, next);
 }
+
+// Team role-based authorization middleware
+export function requireTeamRole(requiredRoles: Array<'owner' | 'admin' | 'member'>) {
+  return async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      // Ensure user is authenticated
+      if (!req.user || !req.user.id) {
+        return res.status(401).json({ message: 'Authentication required' });
+      }
+
+      // Get teamId from params or body
+      const teamId = req.params.teamId || req.body.teamId;
+      if (!teamId) {
+        return res.status(400).json({ message: 'Team ID required' });
+      }
+
+      // Check user's role in the team (to be implemented in storage)
+      // For now, skip this check - will be implemented after storage methods are added
+      next();
+    } catch (error) {
+      return res.status(500).json({ message: 'Authorization check failed' });
+    }
+  };
+}

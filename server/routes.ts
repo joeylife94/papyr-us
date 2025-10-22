@@ -141,9 +141,25 @@ export async function registerRoutes(
         });
       }
 
+      // Issue access token (7 days) and refresh token (30 days)
+      const role = config.adminEmails.includes(email.toLowerCase()) ? 'admin' : 'user';
+      const accessToken = jwt.sign(
+        { id: newUser.id, email: newUser.email, role },
+        config.jwtSecret,
+        {
+          expiresIn: '7d',
+        }
+      );
+      const refreshToken = jwt.sign({ id: newUser.id, type: 'refresh' }, config.jwtSecret, {
+        expiresIn: '30d',
+      });
+
       res.status(201).json({
         message: 'User registered successfully',
-        user: { id: newUser.id, name: newUser.name, email: newUser.email },
+        token: accessToken,
+        accessToken,
+        refreshToken,
+        user: { id: newUser.id, name: newUser.name, email: newUser.email, role },
       });
       console.log('--- [REGISTER] Response sent ---');
     } catch (error: any) {
@@ -191,8 +207,13 @@ export async function registerRoutes(
         (config as any).adminEmails.includes((user.email || '').toLowerCase())
           ? 'admin'
           : 'user';
-      const token = jwt.sign({ id: user.id, email: user.email, role }, config.jwtSecret, {
-        expiresIn: '1d',
+
+      // Issue access token (7 days) and refresh token (30 days)
+      const accessToken = jwt.sign({ id: user.id, email: user.email, role }, config.jwtSecret, {
+        expiresIn: '7d',
+      });
+      const refreshToken = jwt.sign({ id: user.id, type: 'refresh' }, config.jwtSecret, {
+        expiresIn: '30d',
       });
 
       if (process.env.E2E_DEBUG_AUTH === '1' || process.env.NODE_ENV !== 'production') {
@@ -200,13 +221,67 @@ export async function registerRoutes(
           id: user.id,
           email: user.email,
           role,
-          tokenPresent: !!token,
+          accessTokenPresent: !!accessToken,
+          refreshTokenPresent: !!refreshToken,
         });
       }
 
-      res.json({ token, user: { id: user.id, name: user.name, email: user.email, role } });
+      res.json({
+        token: accessToken,
+        accessToken,
+        refreshToken,
+        user: { id: user.id, name: user.name, email: user.email, role },
+      });
     } catch (error) {
       res.status(500).json({ message: 'Server error during login', error });
+    }
+  });
+
+  // Refresh access token using refresh token
+  app.post('/api/auth/refresh', async (req, res) => {
+    try {
+      const { refreshToken } = req.body;
+
+      if (!refreshToken) {
+        return res.status(401).json({ message: 'Refresh token required' });
+      }
+
+      // Verify refresh token
+      const payload = jwt.verify(refreshToken, config.jwtSecret) as { id: number; type: string };
+
+      if (payload.type !== 'refresh') {
+        return res.status(401).json({ message: 'Invalid refresh token' });
+      }
+
+      // Get user info
+      const userResult = await storage.db.select().from(users).where(eq(users.id, payload.id));
+
+      if (userResult.length === 0) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      const user = userResult[0];
+      const role = config.adminEmails.includes(user.email.toLowerCase()) ? 'admin' : 'user';
+
+      // Issue new access token (7 days) and refresh token (30 days) - token rotation
+      const newAccessToken = jwt.sign({ id: user.id, email: user.email, role }, config.jwtSecret, {
+        expiresIn: '7d',
+      });
+      const newRefreshToken = jwt.sign({ id: user.id, type: 'refresh' }, config.jwtSecret, {
+        expiresIn: '30d',
+      });
+
+      res.json({
+        token: newAccessToken,
+        accessToken: newAccessToken,
+        refreshToken: newRefreshToken,
+        user: { id: user.id, name: user.name, email: user.email, role },
+      });
+    } catch (error) {
+      logger.error('Token refresh failed:', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      res.status(401).json({ message: 'Invalid or expired refresh token' });
     }
   });
 
