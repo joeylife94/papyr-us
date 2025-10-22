@@ -42,6 +42,7 @@ import {
   getFileInfo,
 } from './services/upload.js';
 import { smartSearch, generateSearchSuggestions } from './services/ai.js';
+import * as aiService from './services/ai.js';
 import path from 'path';
 import { existsSync, appendFileSync } from 'fs';
 import type { Request } from 'express';
@@ -1613,6 +1614,77 @@ export async function registerRoutes(
       console.error('Search suggestions error:', error);
       res.status(500).json({
         message: 'Failed to generate search suggestions',
+        error: (error as Error).message,
+      });
+    }
+  });
+
+  // AI Copilot Chat
+  app.post('/api/ai/copilot/chat', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const { messages, context } = req.body;
+
+      if (!messages || !Array.isArray(messages)) {
+        return res.status(400).json({ error: 'Messages array is required' });
+      }
+
+      const response = await aiService.chatWithCopilot(messages, context || {});
+      res.json({ response });
+    } catch (error) {
+      console.error('Copilot chat error:', error);
+      res.status(500).json({
+        message: 'Failed to chat with copilot',
+        error: (error as Error).message,
+      });
+    }
+  });
+
+  // Extract tasks from content
+  app.post('/api/ai/extract-tasks', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const { content } = req.body;
+
+      if (!content) {
+        return res.status(400).json({ error: 'Content is required' });
+      }
+
+      const tasks = await aiService.extractTasks(content);
+      res.json({ tasks });
+    } catch (error) {
+      console.error('Extract tasks error:', error);
+      res.status(500).json({
+        message: 'Failed to extract tasks',
+        error: (error as Error).message,
+      });
+    }
+  });
+
+  // Find related pages
+  app.post('/api/ai/related-pages', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const { content, title, pageId } = req.body;
+
+      if (!content || !title) {
+        return res.status(400).json({ error: 'Content and title are required' });
+      }
+
+      // Get all pages except current one using search
+      const searchResults = await storage.searchWikiPages({ query: '', limit: 100, offset: 0 });
+      const availablePages = searchResults.pages
+        .filter((p: any) => p.id !== pageId)
+        .map((p: any) => ({
+          id: p.id,
+          title: p.title,
+          content: p.content,
+          tags: p.tags || [],
+        }));
+
+      const relatedPages = await aiService.findRelatedPages(content, title, availablePages);
+      res.json({ relatedPages });
+    } catch (error) {
+      console.error('Find related pages error:', error);
+      res.status(500).json({
+        message: 'Failed to find related pages',
         error: (error as Error).message,
       });
     }

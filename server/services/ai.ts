@@ -278,3 +278,199 @@ Respond with JSON in this format: {
     return [];
   }
 }
+
+// AI Copilot - Chat with context
+export interface CopilotMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: number;
+}
+
+export interface CopilotContext {
+  pageId?: number;
+  pageTitle?: string;
+  pageContent?: string;
+  selectedText?: string;
+  recentPages?: Array<{ title: string; content: string }>;
+}
+
+export async function chatWithCopilot(
+  messages: CopilotMessage[],
+  context: CopilotContext
+): Promise<string> {
+  try {
+    // Build context-aware system prompt
+    let systemPrompt = `You are an intelligent AI assistant integrated into a collaborative wiki platform. You help users with:
+- Summarizing and explaining content
+- Suggesting improvements and related topics
+- Extracting action items and tasks
+- Answering questions about the workspace
+- Generating new content based on context
+
+Current Context:`;
+
+    if (context.pageTitle) {
+      systemPrompt += `\n- Current Page: "${context.pageTitle}"`;
+    }
+    if (context.pageContent) {
+      systemPrompt += `\n- Page Content: ${context.pageContent.substring(0, 1000)}...`;
+    }
+    if (context.selectedText) {
+      systemPrompt += `\n- Selected Text: "${context.selectedText}"`;
+    }
+    if (context.recentPages && context.recentPages.length > 0) {
+      systemPrompt += `\n- Recent Pages: ${context.recentPages.map((p) => p.title).join(', ')}`;
+    }
+
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        {
+          role: 'system',
+          content: systemPrompt,
+        },
+        ...messages.map((msg) => ({
+          role: msg.role,
+          content: msg.content,
+        })),
+      ],
+      max_tokens: 2000,
+      temperature: 0.7,
+    });
+
+    return response.choices[0].message.content || '';
+  } catch (error) {
+    console.error('Failed to chat with copilot:', error);
+    throw new Error('AI Copilot is currently unavailable: ' + (error as Error).message);
+  }
+}
+
+// Extract tasks from text
+export interface ExtractedTask {
+  title: string;
+  description?: string;
+  priority: number;
+  estimatedHours?: number;
+}
+
+export async function extractTasks(content: string): Promise<ExtractedTask[]> {
+  try {
+    const prompt = `Analyze the following content and extract any tasks, action items, or TODO items mentioned. Look for patterns like:
+- "해야 한다", "필요하다", "구현해야", "작성해야"
+- TODO, FIXME, etc.
+- Action items in meeting notes
+- Tasks mentioned in discussions
+
+Content: ${content}
+
+Respond with JSON in this format: {
+  "tasks": [
+    {
+      "title": "Task title",
+      "description": "Optional description",
+      "priority": 1-5 (1=highest),
+      "estimatedHours": estimated hours if mentioned
+    }
+  ]
+}`;
+
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are an expert at analyzing text and extracting actionable tasks. Be specific and practical.',
+        },
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+      response_format: { type: 'json_object' },
+      max_tokens: 1500,
+    });
+
+    const result = JSON.parse(response.choices[0].message.content || '{"tasks": []}');
+    return result.tasks || [];
+  } catch (error) {
+    console.error('Failed to extract tasks:', error);
+    return [];
+  }
+}
+
+// Find related pages based on content
+export interface RelatedPage {
+  pageId: number;
+  title: string;
+  relevance: number;
+  reason: string;
+}
+
+export async function findRelatedPages(
+  currentContent: string,
+  currentTitle: string,
+  availablePages: Array<{ id: number; title: string; content: string; tags: string[] }>
+): Promise<RelatedPage[]> {
+  try {
+    const prompt = `Given the current page, find the most related pages from the available pages list.
+
+Current Page: "${currentTitle}"
+Content: ${currentContent.substring(0, 1000)}...
+
+Available Pages:
+${availablePages
+  .map(
+    (p, i) => `${i + 1}. "${p.title}" - Tags: ${p.tags.join(', ')}
+   ${p.content.substring(0, 200)}...`
+  )
+  .join('\n')}
+
+Respond with JSON in this format: {
+  "relatedPages": [
+    {
+      "pageIndex": 0,
+      "relevance": 0.95,
+      "reason": "Brief explanation of the relationship"
+    }
+  ]
+}
+
+Find up to 5 most related pages, ranked by relevance (0.0-1.0).`;
+
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are an expert at finding semantic relationships between documents. Consider topic similarity, complementary information, and practical connections.',
+        },
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+      response_format: { type: 'json_object' },
+      max_tokens: 1000,
+    });
+
+    const result = JSON.parse(response.choices[0].message.content || '{"relatedPages": []}');
+
+    return result.relatedPages
+      .map((item: any) => {
+        const page = availablePages[item.pageIndex];
+        return {
+          pageId: page.id,
+          title: page.title,
+          relevance: item.relevance || 0,
+          reason: item.reason || '',
+        };
+      })
+      .sort((a: RelatedPage, b: RelatedPage) => b.relevance - a.relevance)
+      .slice(0, 5);
+  } catch (error) {
+    console.error('Failed to find related pages:', error);
+    return [];
+  }
+}

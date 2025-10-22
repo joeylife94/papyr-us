@@ -13,6 +13,7 @@ import { useCollaboration } from '@/hooks/useCollaboration';
 import { CollaboratorCursors } from '@/components/collaboration/CollaboratorCursors';
 import { TypingIndicator } from '@/components/collaboration/TypingIndicator';
 import { CollaboratorPresence } from '@/components/collaboration/CollaboratorPresence';
+import { AICopilotSidebar } from '@/components/ai/AICopilotSidebar';
 import { apiRequest } from '@/lib/queryClient';
 import { extractHeadings, estimateReadingTime } from '@/lib/markdown';
 import { formatDistanceToNow } from 'date-fns';
@@ -39,6 +40,9 @@ export default function WikiPageView() {
   const { user } = useAuth();
   const contentRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
+  const [showAICopilot, setShowAICopilot] = useState(false);
+  const [isCopilotMinimized, setIsCopilotMinimized] = useState(false);
+  const [selectedText, setSelectedText] = useState('');
 
   const {
     data: page,
@@ -101,19 +105,30 @@ export default function WikiPageView() {
     }, 1000);
   }, [page, user, sendTypingStart, sendTypingStop]);
 
+  // Track text selection
+  const handleTextSelection = useCallback(() => {
+    const selection = window.getSelection();
+    const text = selection?.toString().trim();
+    if (text) {
+      setSelectedText(text);
+    }
+  }, []);
+
   // Setup event listeners
   useEffect(() => {
     if (!page || !user) return;
 
     window.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('input', handleInput);
+    document.addEventListener('mouseup', handleTextSelection);
 
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('input', handleInput);
+      document.removeEventListener('mouseup', handleTextSelection);
       sendTypingStop();
     };
-  }, [page, user, handleMouseMove, handleInput, sendTypingStop]);
+  }, [page, user, handleMouseMove, handleInput, handleTextSelection, sendTypingStop]);
 
   const handleShare = async () => {
     try {
@@ -230,6 +245,18 @@ export default function WikiPageView() {
               </div>
               <div className="flex items-center space-x-2">
                 <Button
+                  variant={showAICopilot ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => {
+                    setShowAICopilot(!showAICopilot);
+                    setIsCopilotMinimized(false);
+                  }}
+                  className="gap-2"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  AI 코파일럿
+                </Button>
+                <Button
                   variant="ghost"
                   size="icon"
                   onClick={() => navigate(`/edit/${page.id}`)}
@@ -304,6 +331,19 @@ export default function WikiPageView() {
 
       {/* Table of Contents */}
       <TableOfContents headings={headings} />
+
+      {/* AI Copilot Sidebar */}
+      {showAICopilot && (
+        <AICopilotSidebar
+          pageId={page.id}
+          pageTitle={page.title}
+          pageContent={page.content}
+          selectedText={selectedText}
+          onClose={() => setShowAICopilot(false)}
+          isMinimized={isCopilotMinimized}
+          onToggleMinimize={() => setIsCopilotMinimized(!isCopilotMinimized)}
+        />
+      )}
     </div>
   );
 }
