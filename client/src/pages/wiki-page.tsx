@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -8,6 +8,11 @@ import { MarkdownRenderer } from '@/components/wiki/markdown-renderer';
 import { TableOfContents } from '@/components/layout/table-of-contents';
 import { Comments } from '@/components/wiki/comments';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/useAuth';
+import { useCollaboration } from '@/hooks/useCollaboration';
+import { CollaboratorCursors } from '@/components/collaboration/CollaboratorCursors';
+import { TypingIndicator } from '@/components/collaboration/TypingIndicator';
+import { CollaboratorPresence } from '@/components/collaboration/CollaboratorPresence';
 import { apiRequest } from '@/lib/queryClient';
 import { extractHeadings, estimateReadingTime } from '@/lib/markdown';
 import { formatDistanceToNow } from 'date-fns';
@@ -31,6 +36,9 @@ export default function WikiPageView() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const contentRef = useRef<HTMLDivElement>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout>();
 
   const {
     data: page,
@@ -43,6 +51,69 @@ export default function WikiPageView() {
 
   const headings = page ? extractHeadings(page.content) : [];
   const readingTime = page ? estimateReadingTime(page.content) : 0;
+
+  // Initialize collaboration
+  const {
+    isConnected,
+    cursors,
+    typingUsers,
+    sessionUsers,
+    sendCursorPosition,
+    sendTypingStart,
+    sendTypingStop,
+  } = useCollaboration({
+    pageId: page?.id || 0,
+    userId: user?.id?.toString() || 'anonymous',
+    userName: user?.name || 'Anonymous',
+    enabled: !!page && !!user,
+  });
+
+  // Track mouse movement for cursor position
+  const handleMouseMove = useCallback(
+    (e: MouseEvent) => {
+      if (!page || !user) return;
+
+      // Throttle cursor updates
+      if (Math.random() > 0.1) return; // Only send 10% of movements
+
+      sendCursorPosition({
+        x: e.clientX,
+        y: e.clientY,
+      });
+    },
+    [page, user, sendCursorPosition]
+  );
+
+  // Track typing
+  const handleInput = useCallback(() => {
+    if (!page || !user) return;
+
+    sendTypingStart();
+
+    // Clear existing timeout
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    // Stop typing after 1 second of inactivity
+    typingTimeoutRef.current = setTimeout(() => {
+      sendTypingStop();
+    }, 1000);
+  }, [page, user, sendTypingStart, sendTypingStop]);
+
+  // Setup event listeners
+  useEffect(() => {
+    if (!page || !user) return;
+
+    window.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('input', handleInput);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('input', handleInput);
+      sendTypingStop();
+    };
+  }, [page, user, handleMouseMove, handleInput, sendTypingStop]);
 
   const handleShare = async () => {
     try {
@@ -107,10 +178,21 @@ export default function WikiPageView() {
   }
 
   return (
-    <div className="flex">
+    <div className="flex relative">
+      {/* Collaborator Cursors Overlay */}
+      <CollaboratorCursors cursors={cursors} />
+
       {/* Content Area */}
       <div className="flex-1 max-w-4xl">
-        <article className="px-6 py-8">
+        <article className="px-6 py-8" ref={contentRef}>
+          {/* Collaboration Status Bar */}
+          {isConnected && sessionUsers.length > 0 && (
+            <div className="mb-6 flex items-center justify-between">
+              <CollaboratorPresence sessionUsers={sessionUsers} isConnected={isConnected} />
+              <TypingIndicator typingUsers={typingUsers} />
+            </div>
+          )}
+
           {/* Breadcrumb */}
           <nav className="mb-6">
             <ol className="flex items-center space-x-2 text-sm text-slate-500 dark:text-slate-400">
