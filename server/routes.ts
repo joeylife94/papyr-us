@@ -43,6 +43,7 @@ import {
 } from './services/upload.js';
 import { smartSearch, generateSearchSuggestions } from './services/ai.js';
 import * as aiService from './services/ai.js';
+import { triggerWorkflows } from './services/workflow.js';
 import path from 'path';
 import { existsSync, appendFileSync } from 'fs';
 import type { Request } from 'express';
@@ -320,6 +321,21 @@ export async function registerRoutes(
       }
 
       const page = await storage.createWikiPage(pageData);
+
+      // Trigger workflows for page_created event
+      triggerWorkflows('page_created', {
+        id: page.id,
+        title: page.title,
+        slug: page.slug,
+        content: page.content,
+        folder: page.folder,
+        tags: page.tags,
+        author: page.author,
+        teamId: page.teamId,
+      }).catch((error) => {
+        console.error('Failed to trigger workflows for page_created:', error);
+      });
+
       res.status(201).json(page);
     } catch (error) {
       res.status(400).json({ message: 'Invalid page data', error });
@@ -330,10 +346,45 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.id);
       const updateData = updateWikiPageSchema.parse(req.body);
+
+      // Get old page data for comparison
+      const oldPage = await storage.getWikiPage(id);
+
       const page = await storage.updateWikiPage(id, updateData);
 
       if (!page) {
         return res.status(404).json({ message: 'Page not found' });
+      }
+
+      // Trigger workflows for page_updated event
+      triggerWorkflows('page_updated', {
+        id: page.id,
+        title: page.title,
+        slug: page.slug,
+        content: page.content,
+        folder: page.folder,
+        tags: page.tags,
+        author: page.author,
+        teamId: page.teamId,
+        oldTags: oldPage?.tags || [],
+        newTags: page.tags,
+      }).catch((error) => {
+        console.error('Failed to trigger workflows for page_updated:', error);
+      });
+
+      // Check if tags were added
+      if (oldPage && updateData.tags) {
+        const addedTags = updateData.tags.filter((tag) => !oldPage.tags.includes(tag));
+        if (addedTags.length > 0) {
+          triggerWorkflows('tag_added', {
+            id: page.id,
+            title: page.title,
+            tags: addedTags,
+            teamId: page.teamId,
+          }).catch((error) => {
+            console.error('Failed to trigger workflows for tag_added:', error);
+          });
+        }
       }
 
       res.json(page);
@@ -345,10 +396,28 @@ export async function registerRoutes(
   app.delete('/api/pages/:id', requireAuthIfEnabled, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
+
+      // Get page data before deletion
+      const page = await storage.getWikiPage(id);
+
       const deleted = await storage.deleteWikiPage(id);
 
       if (!deleted) {
         return res.status(404).json({ message: 'Page not found' });
+      }
+
+      // Trigger workflows for page_deleted event
+      if (page) {
+        triggerWorkflows('page_deleted', {
+          id: page.id,
+          title: page.title,
+          slug: page.slug,
+          folder: page.folder,
+          tags: page.tags,
+          teamId: page.teamId,
+        }).catch((error) => {
+          console.error('Failed to trigger workflows for page_deleted:', error);
+        });
       }
 
       res.json({ message: 'Page deleted successfully' });
@@ -569,6 +638,24 @@ export async function registerRoutes(
         pageId,
       });
       const comment = await storage.createComment(commentData);
+
+      // Get page information for trigger context
+      const page = await storage.getWikiPage(pageId);
+
+      // Trigger workflows for comment_added event
+      if (page) {
+        triggerWorkflows('comment_added', {
+          id: comment.id,
+          content: comment.content,
+          author: comment.author,
+          pageId: page.id,
+          pageTitle: page.title,
+          teamId: page.teamId,
+        }).catch((error) => {
+          console.error('Failed to trigger workflows for comment_added:', error);
+        });
+      }
+
       res.status(201).json(comment);
     } catch (error) {
       res.status(400).json({ message: 'Invalid comment data', error });
@@ -930,6 +1017,21 @@ export async function registerRoutes(
     try {
       const taskData = insertTaskSchema.parse(req.body);
       const task = await storage.createTask(taskData);
+
+      // Trigger workflows for task_created event
+      triggerWorkflows('task_created', {
+        id: task.id,
+        title: task.title,
+        description: task.description,
+        status: task.status,
+        priority: task.priority,
+        assignedTo: task.assignedTo,
+        dueDate: task.dueDate,
+        teamId: task.teamId,
+      }).catch((error) => {
+        console.error('Failed to trigger workflows for task_created:', error);
+      });
+
       res.status(201).json(task);
     } catch (error) {
       res.status(400).json({ message: 'Invalid task data', error });
@@ -940,10 +1042,44 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.id);
       const updateData = updateTaskSchema.parse(req.body);
+
+      // Get old task data for comparison
+      const oldTask = await storage.getTask(id);
+
       const task = await storage.updateTask(id, updateData);
 
       if (!task) {
         return res.status(404).json({ message: 'Task not found' });
+      }
+
+      // Trigger workflows for task_status_changed event
+      if (oldTask && updateData.status && oldTask.status !== updateData.status) {
+        triggerWorkflows('task_status_changed', {
+          id: task.id,
+          title: task.title,
+          oldStatus: oldTask.status,
+          newStatus: task.status,
+          priority: task.priority,
+          assignedTo: task.assignedTo,
+          teamId: task.teamId,
+        }).catch((error) => {
+          console.error('Failed to trigger workflows for task_status_changed:', error);
+        });
+      }
+
+      // Trigger workflows for task_assigned event
+      if (oldTask && updateData.assignedTo && oldTask.assignedTo !== updateData.assignedTo) {
+        triggerWorkflows('task_assigned', {
+          id: task.id,
+          title: task.title,
+          status: task.status,
+          priority: task.priority,
+          oldAssignee: oldTask.assignedTo,
+          newAssignee: task.assignedTo,
+          teamId: task.teamId,
+        }).catch((error) => {
+          console.error('Failed to trigger workflows for task_assigned:', error);
+        });
       }
 
       res.json(task);
