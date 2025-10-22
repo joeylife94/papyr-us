@@ -336,6 +336,8 @@ export async function registerRoutes(
   app.get('/api/pages', async (req, res) => {
     try {
       const teamId = req.query.teamId as string;
+      const cursor = req.query.cursor as string | undefined;
+
       const searchParams = searchSchema.parse({
         query: req.query.q as string,
         folder: req.query.folder as string,
@@ -347,7 +349,19 @@ export async function registerRoutes(
       });
 
       const result = await storage.searchWikiPages(searchParams);
-      res.json(result);
+
+      // Add cursor-based pagination metadata
+      const hasMore = result.pages.length === (searchParams.limit || 20);
+      const nextCursor = hasMore ? result.pages[result.pages.length - 1]?.id : null;
+
+      res.json({
+        ...result,
+        pagination: {
+          hasMore,
+          nextCursor,
+          count: result.pages.length,
+        },
+      });
     } catch (error) {
       res.status(400).json({ message: 'Invalid search parameters' });
     }
@@ -1078,8 +1092,40 @@ export async function registerRoutes(
     try {
       const teamId = req.query.teamId as string;
       const status = req.query.status as string;
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+      const cursor = req.query.cursor as string | undefined;
+
       const tasks = await storage.getTasks(teamId, status);
-      res.json(tasks);
+
+      // Apply cursor-based pagination if cursor provided
+      let paginatedTasks = tasks;
+      if (cursor) {
+        const cursorId = parseInt(cursor);
+        const cursorIndex = tasks.findIndex((t) => t.id === cursorId);
+        if (cursorIndex >= 0) {
+          paginatedTasks = tasks.slice(cursorIndex + 1, cursorIndex + 1 + limit);
+        }
+      } else {
+        paginatedTasks = tasks.slice(0, limit);
+      }
+
+      const hasMore = cursor
+        ? tasks.length > tasks.findIndex((t) => t.id === parseInt(cursor)) + 1 + limit
+        : tasks.length > limit;
+      const nextCursor =
+        hasMore && paginatedTasks.length > 0
+          ? paginatedTasks[paginatedTasks.length - 1]?.id.toString()
+          : null;
+
+      res.json({
+        tasks: paginatedTasks,
+        pagination: {
+          hasMore,
+          nextCursor,
+          count: paginatedTasks.length,
+          total: tasks.length,
+        },
+      });
     } catch (error) {
       res.status(500).json({ message: 'Server error' });
     }
@@ -1232,8 +1278,41 @@ export async function registerRoutes(
         return res.status(400).json({ message: 'recipientId is required' });
       }
 
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+      const cursor = req.query.cursor as string | undefined;
+
       const notifications = await storage.getNotifications(recipientId);
-      res.json(notifications);
+
+      // Apply cursor-based pagination
+      let paginatedNotifications = notifications;
+      if (cursor) {
+        const cursorId = parseInt(cursor);
+        const cursorIndex = notifications.findIndex((n) => n.id === cursorId);
+        if (cursorIndex >= 0) {
+          paginatedNotifications = notifications.slice(cursorIndex + 1, cursorIndex + 1 + limit);
+        }
+      } else {
+        paginatedNotifications = notifications.slice(0, limit);
+      }
+
+      const hasMore = cursor
+        ? notifications.length >
+          notifications.findIndex((n) => n.id === parseInt(cursor)) + 1 + limit
+        : notifications.length > limit;
+      const nextCursor =
+        hasMore && paginatedNotifications.length > 0
+          ? paginatedNotifications[paginatedNotifications.length - 1]?.id.toString()
+          : null;
+
+      res.json({
+        notifications: paginatedNotifications,
+        pagination: {
+          hasMore,
+          nextCursor,
+          count: paginatedNotifications.length,
+          total: notifications.length,
+        },
+      });
     } catch (error) {
       res.status(500).json({ message: 'Server error' });
     }
