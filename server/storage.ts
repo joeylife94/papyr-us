@@ -34,6 +34,9 @@ import {
   type Team,
   type InsertTeam,
   type UpdateTeam,
+  type SavedView,
+  type InsertSavedView,
+  type UpdateSavedView,
   users,
   calendarEvents,
   directories,
@@ -44,6 +47,7 @@ import {
   templates,
   templateCategories,
   teams,
+  savedViews,
 } from '../shared/schema.js';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { eq, like, and, sql, desc, asc } from 'drizzle-orm';
@@ -600,5 +604,72 @@ export class DBStorage {
       .where(eq(templates.id, id))
       .returning();
     return result.length > 0;
+  }
+
+  // ==================== Saved Views ====================
+
+  async getSavedViews(params: {
+    teamId?: number;
+    createdBy?: number;
+    entityType?: string;
+    isPublic?: boolean;
+  }): Promise<SavedView[]> {
+    const conditions = [];
+
+    if (params.teamId) {
+      conditions.push(eq(savedViews.teamId, params.teamId));
+    }
+    if (params.createdBy) {
+      conditions.push(eq(savedViews.createdBy, params.createdBy));
+    }
+    if (params.entityType) {
+      conditions.push(eq(savedViews.entityType, params.entityType));
+    }
+    if (params.isPublic !== undefined) {
+      conditions.push(eq(savedViews.isPublic, params.isPublic));
+    }
+
+    const query = this.db.select().from(savedViews).orderBy(desc(savedViews.updatedAt));
+
+    if (conditions.length > 0) {
+      query.where(and(...conditions));
+    }
+
+    return await query;
+  }
+
+  async getSavedView(id: number): Promise<SavedView | undefined> {
+    const result = await this.db.select().from(savedViews).where(eq(savedViews.id, id));
+    return result[0];
+  }
+
+  async createSavedView(view: InsertSavedView): Promise<SavedView> {
+    const result = await this.db.insert(savedViews).values(view).returning();
+    return result[0];
+  }
+
+  async updateSavedView(id: number, view: UpdateSavedView): Promise<SavedView | undefined> {
+    const result = await this.db
+      .update(savedViews)
+      .set({ ...view, updatedAt: sql`NOW()` })
+      .where(eq(savedViews.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteSavedView(id: number): Promise<boolean> {
+    const result = await this.db.delete(savedViews).where(eq(savedViews.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async setDefaultView(id: number, teamId: number, entityType: string): Promise<void> {
+    // Unset any existing default for this team and entity type
+    await this.db
+      .update(savedViews)
+      .set({ isDefault: false })
+      .where(and(eq(savedViews.teamId, teamId), eq(savedViews.entityType, entityType)));
+
+    // Set this view as default
+    await this.db.update(savedViews).set({ isDefault: true }).where(eq(savedViews.id, id));
   }
 }

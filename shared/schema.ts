@@ -373,3 +373,68 @@ export const users = pgTable('users', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
+
+// Saved Views schema for customizable data views (table, kanban, calendar)
+export const savedViews = pgTable('saved_views', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  description: text('description'),
+  viewType: text('view_type').notNull(), // table, kanban, calendar, list
+  entityType: text('entity_type').notNull(), // tasks, pages, events
+  teamId: integer('team_id').references(() => teams.id, { onDelete: 'cascade' }),
+  createdBy: integer('created_by').references(() => members.id, { onDelete: 'set null' }),
+  isDefault: boolean('is_default').notNull().default(false),
+  isPublic: boolean('is_public').notNull().default(false), // Shared with team
+  config: jsonb('config').notNull().default({}), // Filters, sorts, columns, grouping
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+export const insertSavedViewSchema = createInsertSchema(savedViews).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateSavedViewSchema = insertSavedViewSchema.partial();
+
+export type InsertSavedView = z.infer<typeof insertSavedViewSchema>;
+export type UpdateSavedView = z.infer<typeof updateSavedViewSchema>;
+export type SavedView = typeof savedViews.$inferSelect;
+
+// View configuration types
+export interface ViewConfig {
+  // Filters
+  filters?: {
+    field: string;
+    operator: 'equals' | 'contains' | 'greater_than' | 'less_than' | 'in' | 'not_in';
+    value: any;
+  }[];
+
+  // Sorting
+  sorts?: {
+    field: string;
+    direction: 'asc' | 'desc';
+  }[];
+
+  // Column visibility (for table view)
+  columns?: {
+    field: string;
+    visible: boolean;
+    width?: number;
+    order?: number;
+  }[];
+
+  // Grouping (for kanban view)
+  groupBy?: string; // Field to group by (e.g., 'status', 'assignedTo', 'priority')
+
+  // Calendar settings
+  dateField?: string; // Field to use for calendar date
+
+  // Display options
+  displayOptions?: {
+    showCompletedTasks?: boolean;
+    cardFields?: string[]; // Fields to show on kanban cards
+    colorBy?: string; // Field to use for color coding
+  };
+}

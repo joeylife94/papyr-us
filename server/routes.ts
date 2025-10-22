@@ -30,6 +30,8 @@ import {
   insertTemplateSchema,
   updateTemplateSchema,
   insertTeamSchema,
+  insertSavedViewSchema,
+  updateSavedViewSchema,
   users,
 } from '../shared/schema.js';
 import {
@@ -1613,6 +1615,119 @@ export async function registerRoutes(
         message: 'Failed to generate search suggestions',
         error: (error as Error).message,
       });
+    }
+  });
+
+  // ==================== Saved Views API ====================
+
+  app.get('/api/saved-views', async (req, res) => {
+    try {
+      const teamId = req.query.teamId ? parseInt(req.query.teamId as string) : undefined;
+      const createdBy = req.query.createdBy ? parseInt(req.query.createdBy as string) : undefined;
+      const entityType = req.query.entityType as string | undefined;
+      const isPublic =
+        req.query.isPublic === 'true' ? true : req.query.isPublic === 'false' ? false : undefined;
+
+      const views = await storage.getSavedViews({
+        teamId,
+        createdBy,
+        entityType,
+        isPublic,
+      });
+
+      res.json(views);
+    } catch (error) {
+      console.error('Error fetching saved views:', error);
+      res.status(500).json({ error: 'Failed to fetch saved views' });
+    }
+  });
+
+  app.get('/api/saved-views/:id', async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: 'Invalid view ID' });
+      }
+
+      const view = await storage.getSavedView(id);
+      if (!view) {
+        return res.status(404).json({ error: 'View not found' });
+      }
+
+      res.json(view);
+    } catch (error) {
+      console.error('Error fetching saved view:', error);
+      res.status(500).json({ error: 'Failed to fetch saved view' });
+    }
+  });
+
+  app.post('/api/saved-views', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const validatedData = insertSavedViewSchema.parse(req.body);
+      const view = await storage.createSavedView(validatedData);
+      res.status(201).json(view);
+    } catch (error) {
+      console.error('Error creating saved view:', error);
+      res.status(400).json({ error: 'Failed to create saved view' });
+    }
+  });
+
+  app.put('/api/saved-views/:id', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: 'Invalid view ID' });
+      }
+
+      const validatedData = updateSavedViewSchema.parse(req.body);
+      const view = await storage.updateSavedView(id, validatedData);
+      if (!view) {
+        return res.status(404).json({ error: 'View not found' });
+      }
+
+      res.json(view);
+    } catch (error) {
+      console.error('Error updating saved view:', error);
+      res.status(400).json({ error: 'Failed to update saved view' });
+    }
+  });
+
+  app.delete('/api/saved-views/:id', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: 'Invalid view ID' });
+      }
+
+      const success = await storage.deleteSavedView(id);
+      if (!success) {
+        return res.status(404).json({ error: 'View not found' });
+      }
+
+      res.status(204).send();
+    } catch (error) {
+      console.error('Error deleting saved view:', error);
+      res.status(500).json({ error: 'Failed to delete saved view' });
+    }
+  });
+
+  app.post('/api/saved-views/:id/set-default', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: 'Invalid view ID' });
+      }
+
+      const { teamId, entityType } = req.body;
+      if (!teamId || !entityType) {
+        return res.status(400).json({ error: 'teamId and entityType are required' });
+      }
+
+      await storage.setDefaultView(id, teamId, entityType);
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error setting default view:', error);
+      res.status(500).json({ error: 'Failed to set default view' });
     }
   });
 
