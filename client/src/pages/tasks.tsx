@@ -39,8 +39,10 @@ import {
   Search,
   LayoutGrid,
   List,
+  BarChart3,
 } from 'lucide-react';
 import KanbanBoard from '../components/views/kanban-board';
+import { TaskCharts } from '../components/tasks/TaskCharts';
 
 interface Task {
   id: number;
@@ -107,7 +109,7 @@ export default function TasksPage({ teamName }: TasksPageProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
-  const [viewMode, setViewMode] = useState<'table' | 'kanban'>('table');
+  const [viewMode, setViewMode] = useState<'table' | 'kanban' | 'charts'>('table');
 
   const queryClient = useQueryClient();
 
@@ -322,6 +324,14 @@ export default function TasksPage({ teamName }: TasksPageProps) {
             <LayoutGrid className="w-4 h-4 mr-2" />
             칸반
           </Button>
+          <Button
+            variant={viewMode === 'charts' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setViewMode('charts')}
+          >
+            <BarChart3 className="w-4 h-4 mr-2" />
+            차트
+          </Button>
         </div>
         <Select value={selectedTeam} onValueChange={setSelectedTeam}>
           <SelectTrigger className="w-full sm:w-[180px]">
@@ -347,8 +357,10 @@ export default function TasksPage({ teamName }: TasksPageProps) {
         </Select>
       </div>
 
-      {/* Tasks View - Kanban or Grid */}
-      {viewMode === 'kanban' ? (
+      {/* Tasks View - Table, Kanban or Charts */}
+      {viewMode === 'charts' ? (
+        <TaskCharts tasks={filteredTasks} />
+      ) : viewMode === 'kanban' ? (
         <KanbanBoard
           columns={[
             {
