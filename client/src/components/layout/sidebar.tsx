@@ -26,6 +26,7 @@ import {
   Database,
   Sparkles,
   Network,
+  Zap,
   X,
 } from 'lucide-react';
 import type { WikiPage } from '@shared/schema';
@@ -289,6 +290,12 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                 <Button variant="outline" className="w-full justify-start">
                   <Network className="h-4 w-4 mr-2 text-cyan-500" />
                   지식 그래프
+                </Button>
+              </Link>
+              <Link to="/automation">
+                <Button variant="outline" className="w-full justify-start">
+                  <Zap className="h-4 w-4 mr-2 text-amber-500" />
+                  자동화
                 </Button>
               </Link>
             </div>

@@ -438,3 +438,140 @@ export interface ViewConfig {
     colorBy?: string; // Field to use for color coding
   };
 }
+
+// ==================== Automation Workflows ====================
+
+export const workflows = pgTable('workflows', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  description: text('description'),
+  teamId: integer('team_id').references(() => teams.id, { onDelete: 'cascade' }),
+  isActive: boolean('is_active').notNull().default(true),
+  trigger: jsonb('trigger').notNull(), // { type, config }
+  actions: jsonb('actions').notNull(), // [{ type, config }]
+  conditions: jsonb('conditions').default([]), // [{ field, operator, value }]
+  createdBy: text('created_by').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+export const workflowRuns = pgTable('workflow_runs', {
+  id: serial('id').primaryKey(),
+  workflowId: integer('workflow_id')
+    .notNull()
+    .references(() => workflows.id, { onDelete: 'cascade' }),
+  status: text('status').notNull(), // 'running', 'success', 'failed'
+  triggerData: jsonb('trigger_data').notNull(), // Data that triggered the workflow
+  results: jsonb('results').default([]), // Results from each action
+  error: text('error'),
+  startedAt: timestamp('started_at').notNull().defaultNow(),
+  completedAt: timestamp('completed_at'),
+});
+
+export const insertWorkflowSchema = createInsertSchema(workflows).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateWorkflowSchema = insertWorkflowSchema.partial();
+
+export type InsertWorkflow = z.infer<typeof insertWorkflowSchema>;
+export type UpdateWorkflow = z.infer<typeof updateWorkflowSchema>;
+export type Workflow = typeof workflows.$inferSelect;
+export type WorkflowRun = typeof workflowRuns.$inferSelect;
+
+// Workflow trigger types
+export const triggerTypes = [
+  'page_created',
+  'page_updated',
+  'page_deleted',
+  'task_created',
+  'task_status_changed',
+  'task_assigned',
+  'task_due_soon',
+  'comment_added',
+  'tag_added',
+  'scheduled', // Cron-based trigger
+] as const;
+
+export type TriggerType = (typeof triggerTypes)[number];
+
+// Workflow action types
+export const actionTypes = [
+  'send_notification',
+  'create_task',
+  'update_task',
+  'send_email',
+  'create_page',
+  'add_comment',
+  'add_tag',
+  'assign_task',
+  'move_page',
+  'run_ai_summary',
+  'webhook',
+] as const;
+
+export type ActionType = (typeof actionTypes)[number];
+
+// Workflow trigger configuration
+export interface WorkflowTrigger {
+  type: TriggerType;
+  config: {
+    // For page/task triggers
+    folder?: string;
+    tags?: string[];
+
+    // For scheduled triggers
+    cron?: string; // e.g., "0 9 * * 1" for every Monday at 9am
+
+    // For task_due_soon
+    daysBeforeDue?: number;
+
+    // For task_status_changed
+    fromStatus?: string;
+    toStatus?: string;
+  };
+}
+
+// Workflow action configuration
+export interface WorkflowAction {
+  type: ActionType;
+  config: {
+    // For notifications
+    message?: string;
+    recipients?: string[]; // user IDs or emails
+
+    // For task actions
+    title?: string;
+    description?: string;
+    status?: string;
+    priority?: string;
+    assignedTo?: string;
+    dueDate?: string;
+
+    // For page actions
+    folder?: string;
+    content?: string;
+    tags?: string[];
+
+    // For AI actions
+    prompt?: string;
+
+    // For webhook
+    url?: string;
+    method?: 'GET' | 'POST' | 'PUT';
+    headers?: Record<string, string>;
+    body?: any;
+
+    // Variable substitution support
+    useVariables?: boolean; // {{trigger.title}}, {{trigger.author}}, etc.
+  };
+}
+
+// Workflow condition
+export interface WorkflowCondition {
+  field: string; // e.g., 'trigger.priority', 'trigger.tags'
+  operator: 'equals' | 'not_equals' | 'contains' | 'greater_than' | 'less_than' | 'in' | 'not_in';
+  value: any;
+}

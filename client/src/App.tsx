@@ -25,6 +25,7 @@ import DatabaseView from '@/pages/database-view';
 import CollaborationTest from '@/pages/collaboration-test';
 import AISearchPage from '@/pages/ai-search';
 import KnowledgeGraphPage from '@/pages/knowledge-graph';
+import AutomationPage from '@/pages/automation';
 import NotFound from '@/pages/not-found';
 import LoginPage from '@/pages/login';
 import RegisterPage from '@/pages/register';
@@ -136,10 +137,12 @@ function App() {
                     <Route path="/collaboration-test" element={<CollaborationTest />} />
                     <Route path="/ai-search" element={<AISearchPage />} />
                     <Route path="/knowledge-graph" element={<KnowledgeGraphPage />} />
+                    <Route path="/automation" element={<AutomationPage />} />
                     <Route
                       path="/teams/:teamName/knowledge-graph"
                       element={<KnowledgeGraphPage />}
                     />
+                    <Route path="/teams/:teamName/automation" element={<AutomationPage />} />
                     <Route path="/teams/:teamName/members" element={<MembersWrapper />} />
                     <Route path="/teams/:teamName/tasks" element={<TasksPageWrapper />} />
                     <Route path="/teams/:teamName/files" element={<FileManagerWrapper />} />

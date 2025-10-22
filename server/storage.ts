@@ -37,6 +37,11 @@ import {
   type SavedView,
   type InsertSavedView,
   type UpdateSavedView,
+  type Workflow,
+  type InsertWorkflow,
+  type UpdateWorkflow,
+  type WorkflowRun,
+  type TriggerType,
   users,
   calendarEvents,
   directories,
@@ -48,6 +53,8 @@ import {
   templateCategories,
   teams,
   savedViews,
+  workflows,
+  workflowRuns,
 } from '../shared/schema.js';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { eq, like, and, sql, desc, asc } from 'drizzle-orm';
@@ -672,4 +679,120 @@ export class DBStorage {
     // Set this view as default
     await this.db.update(savedViews).set({ isDefault: true }).where(eq(savedViews.id, id));
   }
+
+  // ==================== Workflow Methods ====================
+
+  async getWorkflows(teamId?: number): Promise<Workflow[]> {
+    if (teamId) {
+      return await this.db
+        .select()
+        .from(workflows)
+        .where(eq(workflows.teamId, teamId))
+        .orderBy(desc(workflows.createdAt));
+    }
+    return await this.db.select().from(workflows).orderBy(desc(workflows.createdAt));
+  }
+
+  async getWorkflow(id: number): Promise<Workflow | undefined> {
+    const result = await this.db.select().from(workflows).where(eq(workflows.id, id));
+    return result[0];
+  }
+
+  async getActiveWorkflowsByTrigger(
+    triggerType: TriggerType,
+    teamId?: number
+  ): Promise<Workflow[]> {
+    let query = this.db.select().from(workflows).where(eq(workflows.isActive, true));
+
+    if (teamId) {
+      query = query.where(eq(workflows.teamId, teamId));
+    }
+
+    const allWorkflows = await query;
+
+    // Filter by trigger type (since JSONB query is complex, filter in memory)
+    return allWorkflows.filter((w: Workflow) => {
+      const trigger = w.trigger as any;
+      return trigger?.type === triggerType;
+    });
+  }
+
+  async createWorkflow(workflow: InsertWorkflow): Promise<Workflow> {
+    const result = await this.db.insert(workflows).values(workflow).returning();
+    return result[0];
+  }
+
+  async updateWorkflow(id: number, workflow: UpdateWorkflow): Promise<Workflow | undefined> {
+    const result = await this.db
+      .update(workflows)
+      .set({ ...workflow, updatedAt: sql`NOW()` })
+      .where(eq(workflows.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteWorkflow(id: number): Promise<boolean> {
+    const result = await this.db.delete(workflows).where(eq(workflows.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async toggleWorkflow(id: number, isActive: boolean): Promise<Workflow | undefined> {
+    const result = await this.db
+      .update(workflows)
+      .set({ isActive, updatedAt: sql`NOW()` })
+      .where(eq(workflows.id, id))
+      .returning();
+    return result[0];
+  }
+
+  // Workflow Runs
+  async createWorkflowRun(run: {
+    workflowId: number;
+    status: string;
+    triggerData: any;
+  }): Promise<number> {
+    const result = await this.db.insert(workflowRuns).values(run).returning();
+    return result[0].id;
+  }
+
+  async getWorkflowRun(id: number): Promise<WorkflowRun> {
+    const result = await this.db.select().from(workflowRuns).where(eq(workflowRuns.id, id));
+    return result[0];
+  }
+
+  async updateWorkflowRun(
+    id: number,
+    update: {
+      status?: string;
+      results?: any;
+      error?: string;
+      completedAt?: Date;
+    }
+  ): Promise<WorkflowRun | undefined> {
+    const result = await this.db
+      .update(workflowRuns)
+      .set(update)
+      .where(eq(workflowRuns.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async getWorkflowRuns(workflowId: number, limit = 50): Promise<WorkflowRun[]> {
+    return await this.db
+      .select()
+      .from(workflowRuns)
+      .where(eq(workflowRuns.workflowId, workflowId))
+      .orderBy(desc(workflowRuns.startedAt))
+      .limit(limit);
+  }
+}
+
+// Export singleton instance
+let storageInstance: DBStorage | null = null;
+
+export function getStorage(): DBStorage {
+  if (!storageInstance) {
+    storageInstance = new DBStorage();
+  }
+  return storageInstance;
 }

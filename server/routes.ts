@@ -1864,6 +1864,100 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== Workflows API ====================
+
+  app.get('/api/workflows', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const teamId = req.query.teamId ? parseInt(req.query.teamId as string) : undefined;
+      const workflows = await storage.getWorkflows(teamId);
+      res.json(workflows);
+    } catch (error) {
+      console.error('Error fetching workflows:', error);
+      res.status(500).json({ error: 'Failed to fetch workflows' });
+    }
+  });
+
+  app.get('/api/workflows/:id', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const workflow = await storage.getWorkflow(id);
+      if (!workflow) {
+        return res.status(404).json({ error: 'Workflow not found' });
+      }
+      res.json(workflow);
+    } catch (error) {
+      console.error('Error fetching workflow:', error);
+      res.status(500).json({ error: 'Failed to fetch workflow' });
+    }
+  });
+
+  app.post('/api/workflows', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const workflowData = req.body;
+      const workflow = await storage.createWorkflow(workflowData);
+      res.status(201).json(workflow);
+    } catch (error) {
+      console.error('Error creating workflow:', error);
+      res.status(400).json({ error: 'Failed to create workflow' });
+    }
+  });
+
+  app.put('/api/workflows/:id', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const workflowData = req.body;
+      const workflow = await storage.updateWorkflow(id, workflowData);
+      if (!workflow) {
+        return res.status(404).json({ error: 'Workflow not found' });
+      }
+      res.json(workflow);
+    } catch (error) {
+      console.error('Error updating workflow:', error);
+      res.status(400).json({ error: 'Failed to update workflow' });
+    }
+  });
+
+  app.delete('/api/workflows/:id', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const success = await storage.deleteWorkflow(id);
+      if (!success) {
+        return res.status(404).json({ error: 'Workflow not found' });
+      }
+      res.status(204).send();
+    } catch (error) {
+      console.error('Error deleting workflow:', error);
+      res.status(500).json({ error: 'Failed to delete workflow' });
+    }
+  });
+
+  app.post('/api/workflows/:id/toggle', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { isActive } = req.body;
+      const workflow = await storage.toggleWorkflow(id, isActive);
+      if (!workflow) {
+        return res.status(404).json({ error: 'Workflow not found' });
+      }
+      res.json(workflow);
+    } catch (error) {
+      console.error('Error toggling workflow:', error);
+      res.status(500).json({ error: 'Failed to toggle workflow' });
+    }
+  });
+
+  app.get('/api/workflows/:id/runs', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+      const runs = await storage.getWorkflowRuns(id, limit);
+      res.json(runs);
+    } catch (error) {
+      console.error('Error fetching workflow runs:', error);
+      res.status(500).json({ error: 'Failed to fetch workflow runs' });
+    }
+  });
+
   // ==================== Saved Views API ====================
 
   app.get('/api/saved-views', async (req, res) => {
