@@ -72,9 +72,32 @@ async function executeAction(
 
     switch (action.type) {
       case 'send_notification':
-        // TODO: Implement notification system
-        console.log('Notification:', processedConfig.message, 'to', processedConfig.recipients);
-        return { success: true, result: { sent: true } };
+        // Create notifications for recipients
+        const recipients = processedConfig.recipients || [];
+        const content =
+          processedConfig.message || processedConfig.content || 'Workflow notification';
+        const title = processedConfig.title || 'Workflow Alert';
+
+        const notifications: any[] = [];
+        for (const recipientId of recipients) {
+          try {
+            const notification = await storage.createNotification({
+              recipientId,
+              type: 'system',
+              title,
+              content,
+              isRead: false,
+            });
+            notifications.push(notification);
+          } catch (error) {
+            console.error(`Failed to create notification for recipient ${recipientId}:`, error);
+          }
+        }
+
+        return {
+          success: notifications.length > 0,
+          result: { sent: notifications.length, notifications },
+        };
 
       case 'create_task':
         const newTask = await storage.createTask({
