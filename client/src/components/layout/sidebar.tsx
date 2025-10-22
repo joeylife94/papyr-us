@@ -25,6 +25,7 @@ import {
   BookOpen,
   Database,
   Sparkles,
+  Network,
   X,
 } from 'lucide-react';
 import type { WikiPage } from '@shared/schema';
@@ -282,6 +283,12 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                 <Button variant="outline" className="w-full justify-start">
                   <Sparkles className="h-4 w-4 mr-2 text-purple-500" />
                   AI 검색
+                </Button>
+              </Link>
+              <Link to="/knowledge-graph">
+                <Button variant="outline" className="w-full justify-start">
+                  <Network className="h-4 w-4 mr-2 text-cyan-500" />
+                  지식 그래프
                 </Button>
               </Link>
             </div>

@@ -14,6 +14,7 @@ import { CollaboratorCursors } from '@/components/collaboration/CollaboratorCurs
 import { TypingIndicator } from '@/components/collaboration/TypingIndicator';
 import { CollaboratorPresence } from '@/components/collaboration/CollaboratorPresence';
 import { AICopilotSidebar } from '@/components/ai/AICopilotSidebar';
+import { RelatedPages } from '@/components/wiki/RelatedPages';
 import { apiRequest } from '@/lib/queryClient';
 import { extractHeadings, estimateReadingTime } from '@/lib/markdown';
 import { formatDistanceToNow } from 'date-fns';
@@ -324,6 +325,13 @@ export default function WikiPageView() {
           {page && (
             <div className="mt-12 pt-8 border-t border-slate-200 dark:border-slate-700">
               <Comments pageId={page.id} />
+            </div>
+          )}
+
+          {/* Related Pages Section */}
+          {page && (
+            <div className="mt-12">
+              <RelatedPages pageId={page.id} pageTitle={page.title} pageContent={page.content} />
             </div>
           )}
         </article>
