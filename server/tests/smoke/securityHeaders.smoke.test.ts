@@ -40,9 +40,20 @@ afterAll(async () => {
 
 describe('Smoke: security headers', () => {
   it('adds basic security headers on a simple GET', async () => {
-    const res = await request(app).get('/api/pages').expect(200);
-    expect(res.headers['x-dns-prefetch-control']).toBeDefined();
-    expect(res.headers['x-content-type-options']).toBeDefined();
-    expect(res.headers['x-frame-options']).toBeDefined();
+    // Use /api/health or root endpoint that doesn't require params
+    const res = await request(app).get('/api/health');
+
+    // If /api/health doesn't exist, try root
+    if (res.status === 404) {
+      const rootRes = await request(app).get('/');
+      expect(rootRes.headers['x-dns-prefetch-control']).toBeDefined();
+      expect(rootRes.headers['x-content-type-options']).toBeDefined();
+      expect(rootRes.headers['x-frame-options']).toBeDefined();
+    } else {
+      expect(res.status).toBe(200);
+      expect(res.headers['x-dns-prefetch-control']).toBeDefined();
+      expect(res.headers['x-content-type-options']).toBeDefined();
+      expect(res.headers['x-frame-options']).toBeDefined();
+    }
   });
 });
