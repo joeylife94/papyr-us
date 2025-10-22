@@ -8,7 +8,7 @@ import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-p
 interface KanbanItem {
   id: string;
   title: string;
-  description?: string;
+  description?: string | null;
   [key: string]: any;
 }
 

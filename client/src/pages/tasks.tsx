@@ -37,7 +37,10 @@ import {
   TrendingUp,
   Filter,
   Search,
+  LayoutGrid,
+  List,
 } from 'lucide-react';
+import KanbanBoard from '../components/views/kanban-board';
 
 interface Task {
   id: number;
@@ -104,6 +107,7 @@ export default function TasksPage({ teamName }: TasksPageProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [viewMode, setViewMode] = useState<'table' | 'kanban'>('table');
 
   const queryClient = useQueryClient();
 
@@ -288,7 +292,7 @@ export default function TasksPage({ teamName }: TasksPageProps) {
         </Dialog>
       </div>
 
-      {/* Filters */}
+      {/* Filters and View Toggle */}
       <div className="flex flex-col sm:flex-row gap-4">
         <div className="flex-1">
           <div className="relative">
@@ -300,6 +304,24 @@ export default function TasksPage({ teamName }: TasksPageProps) {
               className="pl-10"
             />
           </div>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            variant={viewMode === 'table' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setViewMode('table')}
+          >
+            <List className="w-4 h-4 mr-2" />
+            목록
+          </Button>
+          <Button
+            variant={viewMode === 'kanban' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setViewMode('kanban')}
+          >
+            <LayoutGrid className="w-4 h-4 mr-2" />
+            칸반
+          </Button>
         </div>
         <Select value={selectedTeam} onValueChange={setSelectedTeam}>
           <SelectTrigger className="w-full sm:w-[180px]">
@@ -325,111 +347,217 @@ export default function TasksPage({ teamName }: TasksPageProps) {
         </Select>
       </div>
 
-      {/* Tasks Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredTasks.map((task) => (
-          <Card key={task.id} className="relative">
-            <CardHeader className="pb-3">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <CardTitle className="text-lg line-clamp-2">{task.title}</CardTitle>
-                  <CardDescription className="line-clamp-2 mt-2">
-                    {task.description || '설명 없음'}
-                  </CardDescription>
-                </div>
-                <div className="flex items-center gap-2 ml-2">
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <Button variant="ghost" size="sm">
-                        <Edit className="w-4 h-4" />
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent className="sm:max-w-[600px]">
-                      <DialogHeader>
-                        <DialogTitle>과제 수정</DialogTitle>
-                        <DialogDescription>과제 정보를 수정하세요.</DialogDescription>
-                      </DialogHeader>
-                      <TaskForm
-                        task={task}
-                        onSubmit={(data) => handleUpdateTask(task.id, data)}
-                        members={members}
-                        onCancel={() => setEditingTask(null)}
-                      />
-                    </DialogContent>
-                  </Dialog>
-                  <Button variant="ghost" size="sm" onClick={() => handleDeleteTask(task.id)}>
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
+      {/* Tasks View - Kanban or Grid */}
+      {viewMode === 'kanban' ? (
+        <KanbanBoard
+          columns={[
+            {
+              id: 'todo',
+              title: '할 일',
+              items: filteredTasks
+                .filter((t) => t.status === 'todo')
+                .map((t) => ({ ...t, id: String(t.id) })),
+            },
+            {
+              id: 'in_progress',
+              title: '진행 중',
+              items: filteredTasks
+                .filter((t) => t.status === 'in_progress')
+                .map((t) => ({ ...t, id: String(t.id) })),
+            },
+            {
+              id: 'review',
+              title: '검토',
+              items: filteredTasks
+                .filter((t) => t.status === 'review')
+                .map((t) => ({ ...t, id: String(t.id) })),
+            },
+            {
+              id: 'done',
+              title: '완료',
+              items: filteredTasks
+                .filter((t) => t.status === 'done')
+                .map((t) => ({ ...t, id: String(t.id) })),
+            },
+          ]}
+          onItemMove={(itemId, fromColumn, toColumn) => {
+            const taskId = Number(itemId);
+            const task = filteredTasks.find((t) => t.id === taskId);
+            if (task && toColumn !== task.status) {
+              handleUpdateTask(taskId, { status: toColumn });
+            }
+          }}
+          renderCard={(item) => {
+            const task = filteredTasks.find((t) => t.id === Number(item.id));
+            if (!task) return null;
 
-            <CardContent className="space-y-4">
-              {/* Status and Priority */}
-              <div className="flex items-center gap-2">
-                <Badge className={statusColors[task.status]}>{statusLabels[task.status]}</Badge>
-                <Badge className={priorityColors[task.priority as keyof typeof priorityColors]}>
-                  {priorityLabels[task.priority as keyof typeof priorityLabels]}
-                </Badge>
-              </div>
-
-              {/* Progress */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span>진도</span>
-                  <span>{task.progress}%</span>
+            return (
+              <Card className="mb-2 cursor-move">
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <CardTitle className="text-sm line-clamp-2">{task.title}</CardTitle>
+                    <div className="flex items-center gap-1 ml-2">
+                      <Dialog>
+                        <DialogTrigger asChild>
+                          <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                            <Edit className="w-3 h-3" />
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="sm:max-w-[600px]">
+                          <DialogHeader>
+                            <DialogTitle>과제 수정</DialogTitle>
+                            <DialogDescription>과제 정보를 수정하세요.</DialogDescription>
+                          </DialogHeader>
+                          <TaskForm
+                            task={task}
+                            onSubmit={(data) => handleUpdateTask(task.id, data)}
+                            members={members}
+                            onCancel={() => setEditingTask(null)}
+                          />
+                        </DialogContent>
+                      </Dialog>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Badge className={priorityColors[task.priority as keyof typeof priorityColors]}>
+                      {priorityLabels[task.priority as keyof typeof priorityLabels]}
+                    </Badge>
+                  </div>
+                  <Progress value={task.progress} className="h-2" />
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <div className="flex items-center gap-1">
+                      <User className="w-3 h-3" />
+                      <span>{getAssignedMemberName(task.assignedTo)}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Calendar className="w-3 h-3" />
+                      <span className={isOverdue(task.dueDate) ? 'text-red-500' : ''}>
+                        {formatDate(task.dueDate)}
+                      </span>
+                    </div>
+                  </div>
+                  {task.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {task.tags.slice(0, 2).map((tag: string, index: number) => (
+                        <Badge key={index} variant="outline" className="text-xs">
+                          {tag}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          }}
+        />
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredTasks.map((task) => (
+            <Card key={task.id} className="relative">
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <CardTitle className="text-lg line-clamp-2">{task.title}</CardTitle>
+                    <CardDescription className="line-clamp-2 mt-2">
+                      {task.description || '설명 없음'}
+                    </CardDescription>
+                  </div>
+                  <div className="flex items-center gap-2 ml-2">
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button variant="ghost" size="sm">
+                          <Edit className="w-4 h-4" />
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="sm:max-w-[600px]">
+                        <DialogHeader>
+                          <DialogTitle>과제 수정</DialogTitle>
+                          <DialogDescription>과제 정보를 수정하세요.</DialogDescription>
+                        </DialogHeader>
+                        <TaskForm
+                          task={task}
+                          onSubmit={(data) => handleUpdateTask(task.id, data)}
+                          members={members}
+                          onCancel={() => setEditingTask(null)}
+                        />
+                      </DialogContent>
+                    </Dialog>
+                    <Button variant="ghost" size="sm" onClick={() => handleDeleteTask(task.id)}>
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
                 </div>
-                <Progress value={task.progress} className="h-2" />
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={task.progress}
-                  onChange={(e) => handleProgressChange(task.id, parseInt(e.target.value))}
-                  className="w-full"
-                />
-              </div>
+              </CardHeader>
 
-              {/* Assignment and Due Date */}
-              <div className="flex items-center justify-between text-sm text-muted-foreground">
-                <div className="flex items-center gap-1">
-                  <User className="w-4 h-4" />
-                  <span>{getAssignedMemberName(task.assignedTo)}</span>
+              <CardContent className="space-y-4">
+                {/* Status and Priority */}
+                <div className="flex items-center gap-2">
+                  <Badge className={statusColors[task.status]}>{statusLabels[task.status]}</Badge>
+                  <Badge className={priorityColors[task.priority as keyof typeof priorityColors]}>
+                    {priorityLabels[task.priority as keyof typeof priorityLabels]}
+                  </Badge>
                 </div>
-                <div className="flex items-center gap-1">
-                  <Calendar className="w-4 h-4" />
-                  <span className={isOverdue(task.dueDate) ? 'text-red-500' : ''}>
-                    {formatDate(task.dueDate)}
-                  </span>
-                </div>
-              </div>
 
-              {/* Time Estimates */}
-              {(task.estimatedHours || task.actualHours) && (
+                {/* Progress */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span>진도</span>
+                    <span>{task.progress}%</span>
+                  </div>
+                  <Progress value={task.progress} className="h-2" />
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={task.progress}
+                    onChange={(e) => handleProgressChange(task.id, parseInt(e.target.value))}
+                    className="w-full"
+                  />
+                </div>
+
+                {/* Assignment and Due Date */}
                 <div className="flex items-center justify-between text-sm text-muted-foreground">
                   <div className="flex items-center gap-1">
-                    <Clock className="w-4 h-4" />
-                    <span>예상: {task.estimatedHours || 0}h</span>
+                    <User className="w-4 h-4" />
+                    <span>{getAssignedMemberName(task.assignedTo)}</span>
                   </div>
-                  {task.actualHours && <span>실제: {task.actualHours}h</span>}
+                  <div className="flex items-center gap-1">
+                    <Calendar className="w-4 h-4" />
+                    <span className={isOverdue(task.dueDate) ? 'text-red-500' : ''}>
+                      {formatDate(task.dueDate)}
+                    </span>
+                  </div>
                 </div>
-              )}
 
-              {/* Tags */}
-              {task.tags.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {task.tags.map((tag, index) => (
-                    <Badge key={index} variant="outline" className="text-xs">
-                      <Tag className="w-3 h-3 mr-1" />
-                      {tag}
-                    </Badge>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+                {/* Time Estimates */}
+                {(task.estimatedHours || task.actualHours) && (
+                  <div className="flex items-center justify-between text-sm text-muted-foreground">
+                    <div className="flex items-center gap-1">
+                      <Clock className="w-4 h-4" />
+                      <span>예상: {task.estimatedHours || 0}h</span>
+                    </div>
+                    {task.actualHours && <span>실제: {task.actualHours}h</span>}
+                  </div>
+                )}
+
+                {/* Tags */}
+                {task.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {task.tags.map((tag, index) => (
+                      <Badge key={index} variant="outline" className="text-xs">
+                        <Tag className="w-3 h-3 mr-1" />
+                        {tag}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
 
       {filteredTasks.length === 0 && (
         <div className="text-center py-12">
