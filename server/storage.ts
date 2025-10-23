@@ -42,6 +42,18 @@ import {
   type UpdateWorkflow,
   type WorkflowRun,
   type TriggerType,
+  type PagePermission,
+  type InsertPagePermission,
+  type UpdatePagePermission,
+  type PublicLink,
+  type InsertPublicLink,
+  type UpdatePublicLink,
+  type PermissionLevel,
+  databaseSchemas,
+  databaseRows,
+  databaseRelations,
+  syncedBlocks,
+  syncedBlockReferences,
   users,
   calendarEvents,
   directories,
@@ -55,6 +67,8 @@ import {
   savedViews,
   workflows,
   workflowRuns,
+  pagePermissions,
+  publicLinks,
 } from '../shared/schema.js';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { eq, like, and, sql, desc, asc } from 'drizzle-orm';
@@ -784,6 +798,546 @@ export class DBStorage {
       .where(eq(workflowRuns.workflowId, workflowId))
       .orderBy(desc(workflowRuns.startedAt))
       .limit(limit);
+  }
+
+  // ==================== Page Permissions ====================
+
+  /**
+   * Check if a user has the required permission level for a page
+   * Permission hierarchy: owner > editor > commenter > viewer
+   */
+  async checkPagePermission(
+    userId: number | undefined,
+    pageId: number,
+    requiredPermission: PermissionLevel
+  ): Promise<boolean> {
+    // Define permission hierarchy
+    const permissionLevels: Record<PermissionLevel, number> = {
+      viewer: 1,
+      commenter: 2,
+      editor: 3,
+      owner: 4,
+    };
+
+    const requiredLevel = permissionLevels[requiredPermission];
+
+    // Get all permissions for this page
+    const permissions = await this.db
+      .select()
+      .from(pagePermissions)
+      .where(eq(pagePermissions.pageId, pageId));
+
+    // Check public permissions first
+    const publicPermission = permissions.find((p: PagePermission) => p.entityType === 'public');
+    if (
+      publicPermission &&
+      permissionLevels[publicPermission.permission as PermissionLevel] >= requiredLevel
+    ) {
+      return true;
+    }
+
+    // If no user ID, only public access is allowed
+    if (!userId) {
+      return false;
+    }
+
+    // Check user-specific permissions
+    const userPermission = permissions.find(
+      (p: PagePermission) => p.entityType === 'user' && p.entityId === userId
+    );
+    if (
+      userPermission &&
+      permissionLevels[userPermission.permission as PermissionLevel] >= requiredLevel
+    ) {
+      return true;
+    }
+
+    // Check team permissions (if user belongs to a team)
+    // TODO: Add team membership check when needed
+    // const userTeams = await this.getUserTeams(userId);
+    // const teamPermission = permissions.find(
+    //   (p) => p.entityType === 'team' && userTeams.includes(p.entityId)
+    // );
+
+    return false;
+  }
+
+  /**
+   * Get all permissions for a page
+   */
+  async getPagePermissions(pageId: number): Promise<PagePermission[]> {
+    return await this.db.select().from(pagePermissions).where(eq(pagePermissions.pageId, pageId));
+  }
+
+  /**
+   * Get a user's permission level for a page (returns highest level)
+   */
+  async getUserPagePermission(userId: number, pageId: number): Promise<PermissionLevel | null> {
+    const permissions = await this.db
+      .select()
+      .from(pagePermissions)
+      .where(
+        and(
+          eq(pagePermissions.pageId, pageId),
+          eq(pagePermissions.entityType, 'user'),
+          eq(pagePermissions.entityId, userId)
+        )
+      );
+
+    if (permissions.length === 0) {
+      return null;
+    }
+
+    // Return highest permission level
+    const permissionLevels: Record<PermissionLevel, number> = {
+      viewer: 1,
+      commenter: 2,
+      editor: 3,
+      owner: 4,
+    };
+
+    const highest = permissions.reduce((max: PermissionLevel, p: PagePermission) => {
+      const level = permissionLevels[p.permission as PermissionLevel];
+      const maxLevel = permissionLevels[max as PermissionLevel];
+      return level > maxLevel ? (p.permission as PermissionLevel) : max;
+    }, 'viewer' as PermissionLevel);
+
+    return highest;
+  }
+
+  /**
+   * Add a permission for a page
+   */
+  async addPagePermission(permission: InsertPagePermission): Promise<PagePermission> {
+    // Check if permission already exists
+    const existing = await this.db
+      .select()
+      .from(pagePermissions)
+      .where(
+        and(
+          eq(pagePermissions.pageId, permission.pageId),
+          eq(pagePermissions.entityType, permission.entityType),
+          permission.entityId
+            ? eq(pagePermissions.entityId, permission.entityId)
+            : sql`entity_id IS NULL`
+        )
+      );
+
+    // Update if exists, insert if new
+    if (existing.length > 0) {
+      const result = await this.db
+        .update(pagePermissions)
+        .set({
+          permission: permission.permission,
+          updatedAt: new Date(),
+        })
+        .where(eq(pagePermissions.id, existing[0].id))
+        .returning();
+      return result[0];
+    }
+
+    const result = await this.db.insert(pagePermissions).values(permission).returning();
+    return result[0];
+  }
+
+  /**
+   * Remove a permission from a page
+   */
+  async removePagePermission(permissionId: number): Promise<boolean> {
+    const result = await this.db
+      .delete(pagePermissions)
+      .where(eq(pagePermissions.id, permissionId))
+      .returning();
+    return result.length > 0;
+  }
+
+  /**
+   * Set page owner (creates owner permission if doesn't exist)
+   */
+  async setPageOwner(pageId: number, userId: number, grantedBy?: number): Promise<PagePermission> {
+    return await this.addPagePermission({
+      pageId,
+      entityType: 'user',
+      entityId: userId,
+      permission: 'owner',
+      grantedBy,
+    });
+  }
+
+  // ==================== Public Links ====================
+
+  /**
+   * Create a public link for a page
+   */
+  async createPublicLink(link: InsertPublicLink): Promise<PublicLink> {
+    const result = await this.db.insert(publicLinks).values(link).returning();
+    return result[0];
+  }
+
+  /**
+   * Get public link by token
+   */
+  async getPublicLink(token: string): Promise<PublicLink | undefined> {
+    const result = await this.db.select().from(publicLinks).where(eq(publicLinks.token, token));
+    return result[0];
+  }
+
+  /**
+   * Get all public links for a page
+   */
+  async getPagePublicLinks(pageId: number): Promise<PublicLink[]> {
+    return await this.db.select().from(publicLinks).where(eq(publicLinks.pageId, pageId));
+  }
+
+  /**
+   * Delete a public link
+   */
+  async deletePublicLink(linkId: number): Promise<boolean> {
+    const result = await this.db.delete(publicLinks).where(eq(publicLinks.id, linkId)).returning();
+    return result.length > 0;
+  }
+
+  /**
+   * Delete public link by token
+   */
+  async deletePublicLinkByToken(token: string): Promise<boolean> {
+    const result = await this.db
+      .delete(publicLinks)
+      .where(eq(publicLinks.token, token))
+      .returning();
+    return result.length > 0;
+  }
+
+  /**
+   * Verify public link (check expiration and update access stats)
+   */
+  async verifyPublicLink(
+    token: string,
+    password?: string
+  ): Promise<{
+    valid: boolean;
+    link?: PublicLink;
+    error?: string;
+  }> {
+    const link = await this.getPublicLink(token);
+
+    if (!link) {
+      return { valid: false, error: 'Link not found' };
+    }
+
+    // Check expiration
+    if (link.expiresAt && new Date(link.expiresAt) < new Date()) {
+      return { valid: false, error: 'Link expired' };
+    }
+
+    // Check password if required
+    if (link.password) {
+      if (!password) {
+        return { valid: false, error: 'Password required' };
+      }
+      const match = await bcrypt.compare(password, link.password);
+      if (!match) {
+        return { valid: false, error: 'Invalid password' };
+      }
+    }
+
+    // Update access stats
+    await this.db
+      .update(publicLinks)
+      .set({
+        lastAccessedAt: new Date(),
+        accessCount: sql`${publicLinks.accessCount} + 1`,
+      })
+      .where(eq(publicLinks.id, link.id));
+
+    return { valid: true, link };
+  }
+
+  /**
+   * Generate a random token for public links
+   */
+  generatePublicLinkToken(): string {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let token = '';
+    for (let i = 0; i < 16; i++) {
+      token += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return token;
+  }
+
+  // ==================== Database Schema Operations ====================
+
+  async createDatabaseSchema(
+    pageId: number,
+    userId: number,
+    schema: {
+      name: string;
+      fields: any[];
+      primaryDisplay?: string;
+    }
+  ) {
+    const [newSchema] = await this.db
+      .insert(databaseSchemas)
+      .values({
+        pageId,
+        createdBy: userId,
+        name: schema.name,
+        fields: schema.fields,
+        primaryDisplay: schema.primaryDisplay,
+      })
+      .returning();
+    return newSchema;
+  }
+
+  async getDatabaseSchema(schemaId: number) {
+    return await this.db.query.databaseSchemas.findFirst({
+      where: eq(databaseSchemas.id, schemaId),
+    });
+  }
+
+  async updateDatabaseSchema(
+    schemaId: number,
+    updates: { name?: string; fields?: any[]; primaryDisplay?: string }
+  ) {
+    const [updated] = await this.db
+      .update(databaseSchemas)
+      .set({
+        ...updates,
+        updatedAt: new Date(),
+      })
+      .where(eq(databaseSchemas.id, schemaId))
+      .returning();
+    return updated;
+  }
+
+  async deleteDatabaseSchema(schemaId: number) {
+    await this.db.delete(databaseSchemas).where(eq(databaseSchemas.id, schemaId));
+  }
+
+  // ==================== Database Row Operations ====================
+
+  async createDatabaseRow(schemaId: number, userId: number, data: Record<string, any>) {
+    const [newRow] = await this.db
+      .insert(databaseRows)
+      .values({
+        schemaId,
+        createdBy: userId,
+        data,
+      })
+      .returning();
+    return newRow;
+  }
+
+  async getDatabaseRow(rowId: number) {
+    return await this.db.query.databaseRows.findFirst({
+      where: eq(databaseRows.id, rowId),
+    });
+  }
+
+  async getDatabaseRows(schemaId: number) {
+    return await this.db.query.databaseRows.findMany({
+      where: eq(databaseRows.schemaId, schemaId),
+      orderBy: (rows: any, { desc }: any) => [desc(rows.createdAt)],
+    });
+  }
+
+  async updateDatabaseRow(rowId: number, data: Record<string, any>) {
+    const [updated] = await this.db
+      .update(databaseRows)
+      .set({
+        data,
+        updatedAt: new Date(),
+      })
+      .where(eq(databaseRows.id, rowId))
+      .returning();
+    return updated;
+  }
+
+  async deleteDatabaseRow(rowId: number) {
+    await this.db.delete(databaseRows).where(eq(databaseRows.id, rowId));
+  }
+
+  // ==================== Database Relations Operations ====================
+
+  async addRelation(
+    fromSchemaId: number,
+    fromRowId: number,
+    propertyName: string,
+    toSchemaId: number,
+    toRowId: number
+  ) {
+    const [relation] = await this.db
+      .insert(databaseRelations)
+      .values({
+        fromSchemaId,
+        fromRowId,
+        propertyName,
+        toSchemaId,
+        toRowId,
+      })
+      .returning();
+    return relation;
+  }
+
+  async getRelations(rowId: number, propertyName?: string) {
+    const conditions = [eq(databaseRelations.fromRowId, rowId)];
+    if (propertyName) {
+      conditions.push(eq(databaseRelations.propertyName, propertyName));
+    }
+
+    return await this.db.query.databaseRelations.findMany({
+      where: and(...conditions),
+    });
+  }
+
+  async deleteRelation(relationId: number) {
+    await this.db.delete(databaseRelations).where(eq(databaseRelations.id, relationId));
+  }
+
+  /**
+   * Calculate rollup value based on relations
+   */
+  async calculateRollup(
+    rowId: number,
+    fieldName: string,
+    config: {
+      relationField: string;
+      targetField: string;
+      aggregation: 'count' | 'sum' | 'avg' | 'min' | 'max' | 'unique';
+    }
+  ) {
+    const relations = await this.getRelations(rowId, config.relationField);
+
+    if (relations.length === 0) {
+      return config.aggregation === 'count' ? 0 : null;
+    }
+
+    // Get related rows data
+    const relatedRowIds = relations.map((r: any) => r.toRowId);
+    const relatedRows = await this.db.query.databaseRows.findMany({
+      where: sql`id = ANY(${relatedRowIds})`,
+    });
+
+    const values = relatedRows
+      .map((row: any) => row.data[config.targetField])
+      .filter((v: any) => v !== null && v !== undefined);
+
+    switch (config.aggregation) {
+      case 'count':
+        return values.length;
+      case 'sum':
+        return values.reduce((sum: number, val: any) => sum + Number(val), 0);
+      case 'avg':
+        return values.length > 0
+          ? values.reduce((sum: number, val: any) => sum + Number(val), 0) / values.length
+          : null;
+      case 'min':
+        return values.length > 0 ? Math.min(...values.map(Number)) : null;
+      case 'max':
+        return values.length > 0 ? Math.max(...values.map(Number)) : null;
+      case 'unique':
+        return new Set(values).size;
+      default:
+        return null;
+    }
+  }
+
+  // ==================== Synced Block Operations ====================
+
+  async createSyncedBlock(originalBlockId: string, userId: number, content: any[]) {
+    const [syncedBlock] = await this.db
+      .insert(syncedBlocks)
+      .values({
+        originalBlockId,
+        createdBy: userId,
+        content,
+      })
+      .returning();
+    return syncedBlock;
+  }
+
+  async getSyncedBlock(originalBlockId: string) {
+    return await this.db.query.syncedBlocks.findFirst({
+      where: eq(syncedBlocks.originalBlockId, originalBlockId),
+    });
+  }
+
+  async updateSyncedBlockContent(originalBlockId: string, content: any[]) {
+    const [updated] = await this.db
+      .update(syncedBlocks)
+      .set({
+        content,
+        lastSyncedAt: new Date(),
+      })
+      .where(eq(syncedBlocks.originalBlockId, originalBlockId))
+      .returning();
+    return updated;
+  }
+
+  async deleteSyncedBlock(originalBlockId: string) {
+    await this.db.delete(syncedBlocks).where(eq(syncedBlocks.originalBlockId, originalBlockId));
+  }
+
+  /**
+   * Add synced block reference
+   */
+  async addSyncedBlockReference(syncedBlockId: number, pageId: number, blockId: string) {
+    const [reference] = await this.db
+      .insert(syncedBlockReferences)
+      .values({
+        syncedBlockId,
+        pageId,
+        blockId,
+      })
+      .returning();
+    return reference;
+  }
+
+  async getSyncedBlockReferences(syncedBlockId: number) {
+    return await this.db.query.syncedBlockReferences.findMany({
+      where: eq(syncedBlockReferences.syncedBlockId, syncedBlockId),
+    });
+  }
+
+  async deleteSyncedBlockReference(referenceId: number) {
+    await this.db.delete(syncedBlockReferences).where(eq(syncedBlockReferences.id, referenceId));
+  }
+
+  /**
+   * Get all synced blocks accessible to user
+   */
+  async getUserSyncedBlocks(userId: number) {
+    // Get all pages where user is author or has access
+    // TODO: Also check page permissions for more comprehensive access control
+    const user = await this.db.query.users.findFirst({
+      where: eq(users.id, userId),
+    });
+
+    if (!user) return [];
+
+    const userPages = await this.db.query.wikiPages.findMany({
+      where: eq(wikiPages.author, user.email),
+    });
+
+    const pageIds = userPages.map((p: any) => p.id);
+
+    if (pageIds.length === 0) return [];
+
+    const references = await this.db.query.syncedBlockReferences.findMany({
+      where: sql`page_id = ANY(${pageIds})`,
+    });
+
+    const syncedBlockIds = Array.from(new Set(references.map((r: any) => r.syncedBlockId)));
+
+    const blocks = await this.db.query.syncedBlocks.findMany({
+      where: sql`id = ANY(${syncedBlockIds})`,
+    });
+
+    // Count references for each block
+    return blocks.map((block: any) => ({
+      ...block,
+      referenceCount: references.filter((r: any) => r.syncedBlockId === block.id).length,
+    }));
   }
 }
 

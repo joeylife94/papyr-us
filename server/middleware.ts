@@ -264,3 +264,80 @@ export function requireTeamRole(requiredRoles: Array<'owner' | 'admin' | 'member
     }
   };
 }
+
+// Page permission middleware - requires specific permission level for a page
+export function requirePagePermission(
+  requiredPermission: 'owner' | 'editor' | 'viewer' | 'commenter'
+) {
+  return async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      // Import storage dynamically to avoid circular dependencies
+      const { getStorage } = await import('./storage.js');
+      const storage = getStorage();
+
+      // Get page ID from params
+      const pageId = parseInt(req.params.id || req.params.pageId);
+      if (!pageId || isNaN(pageId)) {
+        return res.status(400).json({ message: 'Invalid page ID' });
+      }
+
+      // Get user ID from JWT (if authenticated)
+      const userId = req.user?.id;
+
+      // Check permission
+      const hasPermission = await storage.checkPagePermission(userId, pageId, requiredPermission);
+
+      if (!hasPermission) {
+        if (!userId) {
+          return res.status(401).json({ message: 'Authentication required to access this page' });
+        }
+        return res
+          .status(403)
+          .json({ message: `Insufficient permissions: ${requiredPermission} required` });
+      }
+
+      // Store permission in request for later use
+      req.user = {
+        ...req.user,
+        pagePermission: requiredPermission,
+      };
+
+      next();
+    } catch (error) {
+      console.error('Permission check error:', error);
+      return res.status(500).json({ message: 'Permission check failed' });
+    }
+  };
+}
+
+// Optional page permission check - continues even if user doesn't have permission
+// Useful for pages that can be public but need to check permission level
+export function checkPagePermission() {
+  return async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const { getStorage } = await import('./storage.js');
+      const storage = getStorage();
+
+      const pageId = parseInt(req.params.id || req.params.pageId);
+      if (!pageId || isNaN(pageId)) {
+        return next();
+      }
+
+      const userId = req.user?.id;
+
+      // Get user's permission level (if any)
+      const userPermission = await storage.getUserPagePermission(userId, pageId);
+
+      // Store permission in request
+      req.user = {
+        ...req.user,
+        pagePermission: userPermission,
+      };
+
+      next();
+    } catch (error) {
+      console.error('Permission check error:', error);
+      next(); // Continue anyway for optional checks
+    }
+  };
+}

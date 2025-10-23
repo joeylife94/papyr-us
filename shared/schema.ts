@@ -27,6 +27,14 @@ export const blockTypes = [
   'toggle', // 토글 블록
   'mention', // 멘션 블록
   'comment', // 댓글 블록
+  'callout', // ✨ 정보 강조 블록 (아이콘 + 색상)
+  'embed', // ✨ 외부 콘텐츠 임베드 (YouTube, Figma, etc.)
+  'math', // ✨ LaTeX 수식 블록
+  'synced_block', // ✨ 동기화 블록
+  'database_inline', // ✨ 데이터베이스 인라인 뷰
+  'relation', // ✨ 관계형 필드
+  'rollup', // ✨ 집계 필드
+  'formula', // ✨ 계산 필드
 ] as const;
 
 export type BlockType = (typeof blockTypes)[number];
@@ -575,3 +583,274 @@ export interface WorkflowCondition {
   operator: 'equals' | 'not_equals' | 'contains' | 'greater_than' | 'less_than' | 'in' | 'not_in';
   value: any;
 }
+
+// ==================== Page Permissions & Sharing ====================
+
+// Permission levels for pages
+export const permissionLevels = ['owner', 'editor', 'viewer', 'commenter'] as const;
+export type PermissionLevel = (typeof permissionLevels)[number];
+
+// Entity types that can have permissions
+export const entityTypes = ['user', 'team', 'public'] as const;
+export type EntityType = (typeof entityTypes)[number];
+
+// Page permissions table
+export const pagePermissions = pgTable('page_permissions', {
+  id: serial('id').primaryKey(),
+  pageId: integer('page_id')
+    .notNull()
+    .references(() => wikiPages.id, { onDelete: 'cascade' }),
+  entityType: text('entity_type').notNull(), // 'user', 'team', 'public'
+  entityId: integer('entity_id'), // user_id or team_id (NULL for public)
+  permission: text('permission').notNull(), // 'owner', 'editor', 'viewer', 'commenter'
+  grantedBy: integer('granted_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+export const insertPagePermissionSchema = createInsertSchema(pagePermissions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updatePagePermissionSchema = insertPagePermissionSchema.partial();
+
+export type InsertPagePermission = z.infer<typeof insertPagePermissionSchema>;
+export type UpdatePagePermission = z.infer<typeof updatePagePermissionSchema>;
+export type PagePermission = typeof pagePermissions.$inferSelect;
+
+// Public/shared links table
+export const publicLinks = pgTable('public_links', {
+  id: serial('id').primaryKey(),
+  pageId: integer('page_id')
+    .notNull()
+    .references(() => wikiPages.id, { onDelete: 'cascade' }),
+  token: text('token').notNull().unique(),
+  password: text('password'), // Optional bcrypt hash
+  permission: text('permission').notNull().default('viewer'), // 'viewer', 'commenter', 'editor'
+  expiresAt: timestamp('expires_at'),
+  createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  lastAccessedAt: timestamp('last_accessed_at'),
+  accessCount: integer('access_count').notNull().default(0),
+});
+
+export const insertPublicLinkSchema = createInsertSchema(publicLinks).omit({
+  id: true,
+  createdAt: true,
+  lastAccessedAt: true,
+  accessCount: true,
+});
+
+export const updatePublicLinkSchema = insertPublicLinkSchema.partial();
+
+export type InsertPublicLink = z.infer<typeof insertPublicLinkSchema>;
+export type UpdatePublicLink = z.infer<typeof updatePublicLinkSchema>;
+export type PublicLink = typeof publicLinks.$inferSelect;
+
+// ==================== Advanced Block Types ====================
+
+// Callout block configuration
+export interface CalloutBlockProperties {
+  icon?: string; // Emoji or Lucide icon name
+  color?: 'blue' | 'yellow' | 'red' | 'green' | 'purple' | 'gray' | 'orange';
+  content: string;
+}
+
+// Embed block configuration
+export interface EmbedBlockProperties {
+  url: string;
+  provider?: 'youtube' | 'figma' | 'miro' | 'loom' | 'twitter' | 'codepen' | 'github' | 'generic';
+  title?: string;
+  thumbnail?: string;
+  aspectRatio?: string; // e.g., '16:9', '4:3'
+}
+
+// Math block configuration
+export interface MathBlockProperties {
+  expression: string; // LaTeX expression
+  displayMode?: 'inline' | 'block'; // inline or display mode
+}
+
+// Synced block configuration
+export interface SyncedBlockProperties {
+  originalBlockId?: string; // null if this is the original, otherwise ID of original
+  syncedContent?: any[]; // Content to sync
+}
+
+// ==================== Database & Relation Fields ====================
+
+// Database field types
+export const databaseFieldTypes = [
+  'text',
+  'number',
+  'select',
+  'multi_select',
+  'date',
+  'checkbox',
+  'url',
+  'email',
+  'phone',
+  'file',
+  'relation', // ⭐ Link to another database
+  'rollup', // ⭐ Aggregate related data
+  'formula', // ⭐ Computed field
+  'created_time',
+  'created_by',
+  'last_edited_time',
+  'last_edited_by',
+] as const;
+
+export type DatabaseFieldType = (typeof databaseFieldTypes)[number];
+
+// Relation field configuration
+export interface RelationFieldConfig {
+  type: 'relation';
+  targetSchemaId: number; // Target database schema ID
+  relationshipType: 'one_to_many' | 'many_to_many';
+  reverseProperty?: string; // Name in target database
+}
+
+// Rollup field configuration
+export interface RollupFieldConfig {
+  type: 'rollup';
+  relationProperty: string; // Which relation to follow
+  targetProperty: string; // Property to aggregate
+  aggregation: 'count' | 'sum' | 'average' | 'min' | 'max' | 'first' | 'last' | 'unique';
+}
+
+// Formula field configuration
+export interface FormulaFieldConfig {
+  type: 'formula';
+  expression: string; // e.g., "prop('Price') * prop('Quantity')"
+  returnType: 'number' | 'text' | 'boolean' | 'date';
+}
+
+// Database field definition
+export interface DatabaseField {
+  name: string;
+  type: DatabaseFieldType;
+  config?: RelationFieldConfig | RollupFieldConfig | FormulaFieldConfig | any;
+  required?: boolean;
+  defaultValue?: any;
+}
+
+// Database schemas table
+export const databaseSchemas = pgTable('database_schemas', {
+  id: serial('id').primaryKey(),
+  pageId: integer('page_id')
+    .notNull()
+    .references(() => wikiPages.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  description: text('description'),
+  fields: jsonb('fields').notNull().default([]), // Array of DatabaseField
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+export const insertDatabaseSchemaSchema = createInsertSchema(databaseSchemas).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateDatabaseSchemaSchema = insertDatabaseSchemaSchema.partial();
+
+export type InsertDatabaseSchema = z.infer<typeof insertDatabaseSchemaSchema>;
+export type UpdateDatabaseSchema = z.infer<typeof updateDatabaseSchemaSchema>;
+export type DatabaseSchema = typeof databaseSchemas.$inferSelect;
+
+// Database rows table
+export const databaseRows = pgTable('database_rows', {
+  id: serial('id').primaryKey(),
+  schemaId: integer('schema_id')
+    .notNull()
+    .references(() => databaseSchemas.id, { onDelete: 'cascade' }),
+  data: jsonb('data').notNull().default({}), // Row data as key-value pairs
+  orderIndex: integer('order_index').notNull().default(0),
+  createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+export const insertDatabaseRowSchema = createInsertSchema(databaseRows).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateDatabaseRowSchema = insertDatabaseRowSchema.partial();
+
+export type InsertDatabaseRow = z.infer<typeof insertDatabaseRowSchema>;
+export type UpdateDatabaseRow = z.infer<typeof updateDatabaseRowSchema>;
+export type DatabaseRow = typeof databaseRows.$inferSelect;
+
+// Database relations table
+export const databaseRelations = pgTable('database_relations', {
+  id: serial('id').primaryKey(),
+  fromSchemaId: integer('from_schema_id')
+    .notNull()
+    .references(() => databaseSchemas.id, { onDelete: 'cascade' }),
+  fromRowId: integer('from_row_id')
+    .notNull()
+    .references(() => databaseRows.id, { onDelete: 'cascade' }),
+  toSchemaId: integer('to_schema_id')
+    .notNull()
+    .references(() => databaseSchemas.id, { onDelete: 'cascade' }),
+  toRowId: integer('to_row_id')
+    .notNull()
+    .references(() => databaseRows.id, { onDelete: 'cascade' }),
+  propertyName: text('property_name').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const insertDatabaseRelationSchema = createInsertSchema(databaseRelations).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertDatabaseRelation = z.infer<typeof insertDatabaseRelationSchema>;
+export type DatabaseRelation = typeof databaseRelations.$inferSelect;
+
+// Synced blocks table
+export const syncedBlocks = pgTable('synced_blocks', {
+  id: serial('id').primaryKey(),
+  originalBlockId: text('original_block_id').notNull().unique(),
+  pageId: integer('page_id')
+    .notNull()
+    .references(() => wikiPages.id, { onDelete: 'cascade' }),
+  content: jsonb('content').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+export const insertSyncedBlockSchema = createInsertSchema(syncedBlocks).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertSyncedBlock = z.infer<typeof insertSyncedBlockSchema>;
+export type SyncedBlock = typeof syncedBlocks.$inferSelect;
+
+// Synced block references table
+export const syncedBlockReferences = pgTable('synced_block_references', {
+  id: serial('id').primaryKey(),
+  syncedBlockId: integer('synced_block_id')
+    .notNull()
+    .references(() => syncedBlocks.id, { onDelete: 'cascade' }),
+  pageId: integer('page_id')
+    .notNull()
+    .references(() => wikiPages.id, { onDelete: 'cascade' }),
+  blockId: text('block_id').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const insertSyncedBlockReferenceSchema = createInsertSchema(syncedBlockReferences).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertSyncedBlockReference = z.infer<typeof insertSyncedBlockReferenceSchema>;
+export type SyncedBlockReference = typeof syncedBlockReferences.$inferSelect;

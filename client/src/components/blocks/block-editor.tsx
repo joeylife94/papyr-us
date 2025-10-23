@@ -7,6 +7,10 @@ import { ImageBlock } from './image-block';
 import { TableBlock } from './table-block';
 import { CodeBlock } from './code-block';
 import { QuoteBlock } from './quote-block';
+import { CalloutBlock } from './callout-block';
+import { EmbedBlock } from './embed-block';
+import { MathBlock } from './math-block';
+import { SyncedBlock } from './synced-block';
 import {
   Plus,
   Type,
@@ -19,6 +23,10 @@ import {
   Users,
   Wifi,
   WifiOff,
+  Lightbulb,
+  Video,
+  Sigma,
+  Link2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -288,6 +296,68 @@ export function BlockEditor({
         return <CodeBlock {...commonProps} />;
       case 'quote':
         return <QuoteBlock {...commonProps} />;
+      case 'callout':
+        return (
+          <CalloutBlock
+            content={block.content}
+            color={(block.properties?.color as any) || 'blue'}
+            icon={(block.properties?.icon as string) || 'lightbulb'}
+            onContentChange={(content: string) => updateBlock(block.id, { content })}
+            readOnly={false}
+          />
+        );
+      case 'embed':
+        return (
+          <EmbedBlock
+            url={(block.properties?.url as string) || ''}
+            onUrlChange={(url: string) =>
+              updateBlock(block.id, { properties: { ...block.properties, url } })
+            }
+            readOnly={false}
+          />
+        );
+      case 'math':
+        return (
+          <MathBlock
+            expression={block.content}
+            displayMode={(block.properties?.displayMode as 'inline' | 'block') || 'block'}
+            onExpressionChange={(expression: string) =>
+              updateBlock(block.id, { content: expression })
+            }
+            readOnly={false}
+          />
+        );
+      case 'synced_block':
+        return (
+          <SyncedBlock
+            originalBlockId={block.properties?.originalBlockId as string}
+            syncedContent={(block.properties?.syncedContent as any[]) || []}
+            isOriginal={(block.properties?.isOriginal as boolean) || false}
+            onContentChange={(content: any[]) =>
+              updateBlock(block.id, { properties: { ...block.properties, syncedContent: content } })
+            }
+            onCreateOriginal={() => {
+              const originalId = `synced_${Date.now()}`;
+              updateBlock(block.id, {
+                properties: {
+                  ...block.properties,
+                  isOriginal: true,
+                  originalBlockId: originalId,
+                },
+              });
+            }}
+            onUnlink={() => {
+              updateBlock(block.id, {
+                properties: {
+                  ...block.properties,
+                  originalBlockId: undefined,
+                  isOriginal: false,
+                },
+              });
+            }}
+            readOnly={false}
+          />
+        );
       default:
         return <ParagraphBlock {...commonProps} />;
     }
@@ -319,6 +389,14 @@ export function BlockEditor({
         return <Code className="h-4 w-4" />;
       case 'quote':
         return <Quote className="h-4 w-4" />;
+      case 'callout':
+        return <Lightbulb className="h-4 w-4" />;
+      case 'embed':
+        return <Video className="h-4 w-4" />;
+      case 'math':
+        return <Sigma className="h-4 w-4" />;
+      case 'synced_block':
+        return <Link2 className="h-4 w-4" />;
       default:
         return <AlignLeft className="h-4 w-4" />;
     }
@@ -442,10 +520,14 @@ export function BlockEditor({
                   'paragraph',
                   'heading1',
                   'checkbox',
+                  'callout',
                   'image',
+                  'embed',
                   'table',
                   'code',
+                  'math',
                   'quote',
+                  'synced_block',
                 ] as BlockType[]
               ).map((type) => (
                 <Button
@@ -460,10 +542,14 @@ export function BlockEditor({
                     {type === 'paragraph' && '단락'}
                     {type === 'heading1' && '제목'}
                     {type === 'checkbox' && '체크박스'}
+                    {type === 'callout' && 'Callout'}
                     {type === 'image' && '이미지'}
+                    {type === 'embed' && 'Embed'}
                     {type === 'table' && '테이블'}
                     {type === 'code' && '코드'}
+                    {type === 'math' && '수식'}
                     {type === 'quote' && '인용'}
+                    {type === 'synced_block' && '동기화'}
                   </span>
                 </Button>
               ))}
@@ -523,6 +609,22 @@ export function BlockEditor({
                 <DropdownMenuItem onClick={() => addBlock(blocks.length, 'quote')}>
                   <Quote className="h-4 w-4 mr-2" />
                   인용
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => addBlock(blocks.length, 'callout')}>
+                  <Lightbulb className="h-4 w-4 mr-2" />
+                  Callout
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => addBlock(blocks.length, 'embed')}>
+                  <Video className="h-4 w-4 mr-2" />
+                  Embed
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => addBlock(blocks.length, 'math')}>
+                  <Sigma className="h-4 w-4 mr-2" />
+                  수식
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => addBlock(blocks.length, 'synced_block')}>
+                  <Link2 className="h-4 w-4 mr-2" />
+                  동기화 블록
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

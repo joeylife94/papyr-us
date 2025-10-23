@@ -7,6 +7,7 @@ import {
   writeAuthGate,
   buildRateLimiter,
   requireAuthIfEnabled,
+  type AuthRequest,
 } from './middleware.js';
 import { config } from './config.js';
 import {
@@ -43,6 +44,7 @@ import {
 } from './services/upload.js';
 import { smartSearch, generateSearchSuggestions } from './services/ai.js';
 import * as aiService from './services/ai.js';
+import { aiAssistant } from './services/ai-assistant.js';
 import { triggerWorkflows } from './services/workflow.js';
 import logger from './services/logger.js';
 import path from 'path';
@@ -796,6 +798,211 @@ export async function registerRoutes(
       res.json({ message: 'Comment deleted successfully' });
     } catch (error) {
       res.status(400).json({ message: 'Invalid comment ID' });
+    }
+  });
+
+  // ==================== Page Permissions API ====================
+
+  // Get all permissions for a page
+  app.get('/api/pages/:id/permissions', authMiddleware, async (req: AuthRequest, res) => {
+    try {
+      const pageId = parseInt(req.params.id);
+
+      // Check if user has owner permission to view permissions
+      const hasOwnerPermission = await storage.checkPagePermission(req.user?.id, pageId, 'owner');
+      if (!hasOwnerPermission) {
+        return res.status(403).json({ message: 'Only page owners can view permissions' });
+      }
+
+      const permissions = await storage.getPagePermissions(pageId);
+      res.json(permissions);
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to get permissions', error });
+    }
+  });
+
+  // Add or update a permission for a page
+  app.post('/api/pages/:id/permissions', authMiddleware, async (req: AuthRequest, res) => {
+    try {
+      const pageId = parseInt(req.params.id);
+
+      // Check if user has owner permission to manage permissions
+      const hasOwnerPermission = await storage.checkPagePermission(req.user?.id, pageId, 'owner');
+      if (!hasOwnerPermission) {
+        return res.status(403).json({ message: 'Only page owners can manage permissions' });
+      }
+
+      const permissionData = {
+        pageId,
+        entityType: req.body.entityType,
+        entityId: req.body.entityId,
+        permission: req.body.permission,
+        grantedBy: req.user?.id,
+      };
+
+      const permission = await storage.addPagePermission(permissionData);
+      res.status(201).json(permission);
+    } catch (error) {
+      res.status(400).json({ message: 'Invalid permission data', error });
+    }
+  });
+
+  // Remove a permission from a page
+  app.delete(
+    '/api/pages/:id/permissions/:permissionId',
+    authMiddleware,
+    async (req: AuthRequest, res) => {
+      try {
+        const pageId = parseInt(req.params.id);
+        const permissionId = parseInt(req.params.permissionId);
+
+        // Check if user has owner permission to manage permissions
+        const hasOwnerPermission = await storage.checkPagePermission(req.user?.id, pageId, 'owner');
+        if (!hasOwnerPermission) {
+          return res.status(403).json({ message: 'Only page owners can manage permissions' });
+        }
+
+        const deleted = await storage.removePagePermission(permissionId);
+        if (!deleted) {
+          return res.status(404).json({ message: 'Permission not found' });
+        }
+
+        res.json({ message: 'Permission removed successfully' });
+      } catch (error) {
+        res.status(500).json({ message: 'Failed to remove permission', error });
+      }
+    }
+  );
+
+  // ==================== Public Links API ====================
+
+  // Get all public links for a page
+  app.get('/api/pages/:id/share', authMiddleware, async (req: AuthRequest, res) => {
+    try {
+      const pageId = parseInt(req.params.id);
+
+      // Check if user has owner or editor permission
+      const hasPermission = await storage.checkPagePermission(req.user?.id, pageId, 'editor');
+      if (!hasPermission) {
+        return res.status(403).json({ message: 'Insufficient permissions to view share links' });
+      }
+
+      const links = await storage.getPagePublicLinks(pageId);
+      res.json(links);
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to get share links', error });
+    }
+  });
+
+  // Create a public link for a page
+  app.post('/api/pages/:id/share', authMiddleware, async (req: AuthRequest, res) => {
+    try {
+      const pageId = parseInt(req.params.id);
+
+      // Check if user has editor or owner permission
+      const hasPermission = await storage.checkPagePermission(req.user?.id, pageId, 'editor');
+      if (!hasPermission) {
+        return res.status(403).json({ message: 'Insufficient permissions to create share links' });
+      }
+
+      // Generate random token
+      const token = storage.generatePublicLinkToken();
+
+      // Hash password if provided
+      let hashedPassword: string | undefined;
+      if (req.body.password) {
+        hashedPassword = await bcrypt.hash(req.body.password, 10);
+      }
+
+      const linkData = {
+        pageId,
+        token,
+        password: hashedPassword,
+        permission: req.body.permission || 'viewer',
+        expiresAt: req.body.expiresAt ? new Date(req.body.expiresAt) : undefined,
+        createdBy: req.user?.id,
+      };
+
+      const link = await storage.createPublicLink(linkData);
+
+      // Don't send password hash to client
+      const { password, ...publicLink } = link;
+      res.status(201).json(publicLink);
+    } catch (error) {
+      res.status(400).json({ message: 'Failed to create share link', error });
+    }
+  });
+
+  // Delete a public link
+  app.delete('/api/pages/:id/share/:token', authMiddleware, async (req: AuthRequest, res) => {
+    try {
+      const pageId = parseInt(req.params.id);
+      const token = req.params.token;
+
+      // Check if user has editor or owner permission
+      const hasPermission = await storage.checkPagePermission(req.user?.id, pageId, 'editor');
+      if (!hasPermission) {
+        return res.status(403).json({ message: 'Insufficient permissions to delete share links' });
+      }
+
+      const deleted = await storage.deletePublicLinkByToken(token);
+      if (!deleted) {
+        return res.status(404).json({ message: 'Share link not found' });
+      }
+
+      res.json({ message: 'Share link deleted successfully' });
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to delete share link', error });
+    }
+  });
+
+  // Access a page via public link
+  app.get('/api/share/:token', async (req, res) => {
+    try {
+      const token = req.params.token;
+      const password = req.query.password as string | undefined;
+
+      // Verify the link
+      const verification = await storage.verifyPublicLink(token, password);
+
+      if (!verification.valid) {
+        return res.status(403).json({ message: verification.error });
+      }
+
+      const link = verification.link!;
+
+      // Get the page
+      const page = await storage.getWikiPage(link.pageId);
+      if (!page) {
+        return res.status(404).json({ message: 'Page not found' });
+      }
+
+      // Return page with permission level
+      res.json({
+        page,
+        permission: link.permission,
+        isPublicLink: true,
+      });
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to access shared page', error });
+    }
+  });
+
+  // Verify public link password (for password-protected links)
+  app.post('/api/share/:token/verify', async (req, res) => {
+    try {
+      const token = req.params.token;
+      const password = req.body.password;
+
+      const verification = await storage.verifyPublicLink(token, password);
+
+      if (!verification.valid) {
+        return res.status(403).json({ valid: false, message: verification.error });
+      }
+
+      res.json({ valid: true, permission: verification.link?.permission });
+    } catch (error) {
+      res.status(500).json({ valid: false, message: 'Verification failed' });
     }
   });
 
@@ -2388,6 +2595,459 @@ export async function registerRoutes(
     } catch (error) {
       console.error('Error setting default view:', error);
       res.status(500).json({ error: 'Failed to set default view' });
+    }
+  });
+
+  // ==================== Database Schema Routes ====================
+
+  // Create database schema
+  app.post('/api/database/schemas', requireAuthIfEnabled, async (req: AuthRequest, res) => {
+    try {
+      const { pageId, name, fields, primaryDisplay } = req.body;
+
+      if (!pageId || !name || !fields) {
+        return res.status(400).json({ error: 'pageId, name, and fields are required' });
+      }
+
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: 'User not authenticated' });
+      }
+
+      const schema = await storage.createDatabaseSchema(pageId, userId, {
+        name,
+        fields,
+        primaryDisplay,
+      });
+
+      res.status(201).json(schema);
+    } catch (error) {
+      console.error('Error creating database schema:', error);
+      res.status(500).json({ error: 'Failed to create database schema' });
+    }
+  });
+
+  // Get database schema
+  app.get('/api/database/schemas/:id', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: 'Invalid schema ID' });
+      }
+
+      const schema = await storage.getDatabaseSchema(id);
+      if (!schema) {
+        return res.status(404).json({ error: 'Schema not found' });
+      }
+
+      res.json(schema);
+    } catch (error) {
+      console.error('Error fetching database schema:', error);
+      res.status(500).json({ error: 'Failed to fetch database schema' });
+    }
+  });
+
+  // Update database schema
+  app.patch('/api/database/schemas/:id', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: 'Invalid schema ID' });
+      }
+
+      const { name, fields, primaryDisplay } = req.body;
+      const schema = await storage.updateDatabaseSchema(id, {
+        name,
+        fields,
+        primaryDisplay,
+      });
+
+      res.json(schema);
+    } catch (error) {
+      console.error('Error updating database schema:', error);
+      res.status(500).json({ error: 'Failed to update database schema' });
+    }
+  });
+
+  // Delete database schema
+  app.delete('/api/database/schemas/:id', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: 'Invalid schema ID' });
+      }
+
+      await storage.deleteDatabaseSchema(id);
+      res.status(204).send();
+    } catch (error) {
+      console.error('Error deleting database schema:', error);
+      res.status(500).json({ error: 'Failed to delete database schema' });
+    }
+  });
+
+  // ==================== Database Row Routes ====================
+
+  // Create database row
+  app.post('/api/database/rows', requireAuthIfEnabled, async (req: AuthRequest, res) => {
+    try {
+      const { schemaId, data } = req.body;
+
+      if (!schemaId || !data) {
+        return res.status(400).json({ error: 'schemaId and data are required' });
+      }
+
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: 'User not authenticated' });
+      }
+
+      const row = await storage.createDatabaseRow(schemaId, userId, data);
+      res.status(201).json(row);
+    } catch (error) {
+      console.error('Error creating database row:', error);
+      res.status(500).json({ error: 'Failed to create database row' });
+    }
+  });
+
+  // Get database row
+  app.get('/api/database/rows/:id', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: 'Invalid row ID' });
+      }
+
+      const row = await storage.getDatabaseRow(id);
+      if (!row) {
+        return res.status(404).json({ error: 'Row not found' });
+      }
+
+      res.json(row);
+    } catch (error) {
+      console.error('Error fetching database row:', error);
+      res.status(500).json({ error: 'Failed to fetch database row' });
+    }
+  });
+
+  // Get all rows for a schema
+  app.get('/api/database/schemas/:schemaId/rows', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const schemaId = parseInt(req.params.schemaId);
+      if (isNaN(schemaId)) {
+        return res.status(400).json({ error: 'Invalid schema ID' });
+      }
+
+      const rows = await storage.getDatabaseRows(schemaId);
+      res.json(rows);
+    } catch (error) {
+      console.error('Error fetching database rows:', error);
+      res.status(500).json({ error: 'Failed to fetch database rows' });
+    }
+  });
+
+  // Update database row
+  app.patch('/api/database/rows/:id', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: 'Invalid row ID' });
+      }
+
+      const { data } = req.body;
+      if (!data) {
+        return res.status(400).json({ error: 'data is required' });
+      }
+
+      const row = await storage.updateDatabaseRow(id, data);
+      res.json(row);
+    } catch (error) {
+      console.error('Error updating database row:', error);
+      res.status(500).json({ error: 'Failed to update database row' });
+    }
+  });
+
+  // Delete database row
+  app.delete('/api/database/rows/:id', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: 'Invalid row ID' });
+      }
+
+      await storage.deleteDatabaseRow(id);
+      res.status(204).send();
+    } catch (error) {
+      console.error('Error deleting database row:', error);
+      res.status(500).json({ error: 'Failed to delete database row' });
+    }
+  });
+
+  // ==================== Database Relations Routes ====================
+
+  // Add relation
+  app.post('/api/database/relations', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const { fromSchemaId, fromRowId, propertyName, toSchemaId, toRowId } = req.body;
+
+      if (!fromSchemaId || !fromRowId || !propertyName || !toSchemaId || !toRowId) {
+        return res.status(400).json({
+          error: 'fromSchemaId, fromRowId, propertyName, toSchemaId, and toRowId are required',
+        });
+      }
+
+      const relation = await storage.addRelation(
+        fromSchemaId,
+        fromRowId,
+        propertyName,
+        toSchemaId,
+        toRowId
+      );
+
+      res.status(201).json(relation);
+    } catch (error) {
+      console.error('Error adding relation:', error);
+      res.status(500).json({ error: 'Failed to add relation' });
+    }
+  });
+
+  // Get relations for a row
+  app.get('/api/database/rows/:rowId/relations', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const rowId = parseInt(req.params.rowId);
+      if (isNaN(rowId)) {
+        return res.status(400).json({ error: 'Invalid row ID' });
+      }
+
+      const propertyName = req.query.propertyName as string | undefined;
+      const relations = await storage.getRelations(rowId, propertyName);
+
+      res.json(relations);
+    } catch (error) {
+      console.error('Error fetching relations:', error);
+      res.status(500).json({ error: 'Failed to fetch relations' });
+    }
+  });
+
+  // Delete relation
+  app.delete('/api/database/relations/:id', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: 'Invalid relation ID' });
+      }
+
+      await storage.deleteRelation(id);
+      res.status(204).send();
+    } catch (error) {
+      console.error('Error deleting relation:', error);
+      res.status(500).json({ error: 'Failed to delete relation' });
+    }
+  });
+
+  // Calculate rollup
+  app.post('/api/database/rows/:rowId/rollup', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const rowId = parseInt(req.params.rowId);
+      if (isNaN(rowId)) {
+        return res.status(400).json({ error: 'Invalid row ID' });
+      }
+
+      const { fieldName, relationField, targetField, aggregation } = req.body;
+
+      if (!fieldName || !relationField || !targetField || !aggregation) {
+        return res.status(400).json({
+          error: 'fieldName, relationField, targetField, and aggregation are required',
+        });
+      }
+
+      const value = await storage.calculateRollup(rowId, fieldName, {
+        relationField,
+        targetField,
+        aggregation,
+      });
+
+      res.json({ value });
+    } catch (error) {
+      console.error('Error calculating rollup:', error);
+      res.status(500).json({ error: 'Failed to calculate rollup' });
+    }
+  });
+
+  // ==================== Synced Block Routes ====================
+
+  // Create synced block
+  app.post('/api/synced-blocks', requireAuthIfEnabled, async (req: AuthRequest, res) => {
+    try {
+      const { originalBlockId, content } = req.body;
+
+      if (!originalBlockId || !content) {
+        return res.status(400).json({ error: 'originalBlockId and content are required' });
+      }
+
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: 'User not authenticated' });
+      }
+
+      const syncedBlock = await storage.createSyncedBlock(originalBlockId, userId, content);
+      res.status(201).json(syncedBlock);
+    } catch (error) {
+      console.error('Error creating synced block:', error);
+      res.status(500).json({ error: 'Failed to create synced block' });
+    }
+  });
+
+  // Get synced block
+  app.get('/api/synced-blocks/:originalBlockId', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const { originalBlockId } = req.params;
+
+      const syncedBlock = await storage.getSyncedBlock(originalBlockId);
+      if (!syncedBlock) {
+        return res.status(404).json({ error: 'Synced block not found' });
+      }
+
+      res.json(syncedBlock);
+    } catch (error) {
+      console.error('Error fetching synced block:', error);
+      res.status(500).json({ error: 'Failed to fetch synced block' });
+    }
+  });
+
+  // Update synced block content
+  app.patch('/api/synced-blocks/:originalBlockId', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const { originalBlockId } = req.params;
+      const { content } = req.body;
+
+      if (!content) {
+        return res.status(400).json({ error: 'content is required' });
+      }
+
+      const syncedBlock = await storage.updateSyncedBlockContent(originalBlockId, content);
+      res.json(syncedBlock);
+    } catch (error) {
+      console.error('Error updating synced block:', error);
+      res.status(500).json({ error: 'Failed to update synced block' });
+    }
+  });
+
+  // Delete synced block
+  app.delete('/api/synced-blocks/:originalBlockId', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const { originalBlockId } = req.params;
+
+      await storage.deleteSyncedBlock(originalBlockId);
+      res.status(204).send();
+    } catch (error) {
+      console.error('Error deleting synced block:', error);
+      res.status(500).json({ error: 'Failed to delete synced block' });
+    }
+  });
+
+  // Get user's synced blocks
+  app.get('/api/synced-blocks', requireAuthIfEnabled, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: 'User not authenticated' });
+      }
+
+      const syncedBlocks = await storage.getUserSyncedBlocks(userId);
+      res.json(syncedBlocks);
+    } catch (error) {
+      console.error('Error fetching synced blocks:', error);
+      res.status(500).json({ error: 'Failed to fetch synced blocks' });
+    }
+  });
+
+  // ==================== AI Assistant Routes ====================
+
+  // Check AI availability
+  app.get('/api/ai/status', (req, res) => {
+    res.json({
+      available: aiAssistant.isAvailable(),
+      message: aiAssistant.isAvailable()
+        ? 'AI assistant is ready'
+        : 'AI assistant requires OPENAI_API_KEY configuration',
+    });
+  });
+
+  // AI text assistance
+  app.post('/api/ai/assist', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const { command, text, language, targetCase } = req.body;
+
+      if (!command || !text) {
+        return res.status(400).json({ error: 'command and text are required' });
+      }
+
+      const result = await aiAssistant.assist({
+        command,
+        text,
+        language,
+        targetCase,
+      });
+
+      res.json(result);
+    } catch (error) {
+      console.error('AI assist error:', error);
+      res.status(500).json({ error: 'Failed to process AI request' });
+    }
+  });
+
+  // AI block generation
+  app.post('/api/ai/generate-block', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const { prompt, blockType } = req.body;
+
+      if (!prompt || !blockType) {
+        return res.status(400).json({ error: 'prompt and blockType are required' });
+      }
+
+      if (!['table', 'list', 'code'].includes(blockType)) {
+        return res.status(400).json({ error: 'Invalid blockType. Must be: table, list, or code' });
+      }
+
+      const result = await aiAssistant.generateBlock(prompt, blockType);
+      res.json(result);
+    } catch (error) {
+      console.error('AI block generation error:', error);
+      res.status(500).json({ error: 'Failed to generate block' });
+    }
+  });
+
+  // AI smart suggestions
+  app.post('/api/ai/suggestions', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const { text, cursorPosition } = req.body;
+
+      if (text === undefined || cursorPosition === undefined) {
+        return res.status(400).json({ error: 'text and cursorPosition are required' });
+      }
+
+      const suggestions = await aiAssistant.getSuggestions(text, cursorPosition);
+      res.json({ suggestions });
+    } catch (error) {
+      console.error('AI suggestions error:', error);
+      res.status(500).json({ error: 'Failed to get suggestions' });
+    }
+  });
+
+  // AI auto-format
+  app.post('/api/ai/auto-format', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const { text } = req.body;
+
+      if (!text) {
+        return res.status(400).json({ error: 'text is required' });
+      }
+
+      const result = await aiAssistant.autoFormat(text);
+      res.json(result);
+    } catch (error) {
+      console.error('AI auto-format error:', error);
+      res.status(500).json({ error: 'Failed to format text' });
     }
   });
 

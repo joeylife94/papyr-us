@@ -107,9 +107,45 @@ export function setupYjsCollaboration(io: SocketIOServer, storage: DBStorage) {
     logger.info('Yjs client connected', { socketId: socket.id });
 
     // Join document
-    socket.on('yjs:join', async (data: { documentId: string; pageId: number }) => {
+    socket.on('yjs:join', async (data: { documentId: string; pageId: number; userId?: number }) => {
       try {
-        const { documentId, pageId } = data;
+        const { documentId, pageId, userId } = data;
+
+        // ===== PERMISSION CHECK =====
+        // Check if user has at least viewer permission to access this page
+        const hasPermission = await storage.checkPagePermission(userId, pageId, 'viewer');
+        if (!hasPermission) {
+          logger.warn('Permission denied for Yjs document access', {
+            socketId: socket.id,
+            documentId,
+            pageId,
+            userId,
+          });
+          socket.emit('yjs:error', {
+            message: 'Permission denied. You do not have access to this page.',
+            code: 'PERMISSION_DENIED',
+          });
+          return;
+        }
+
+        // Get user's permission level to determine edit rights
+        const userPermission = userId ? await storage.getUserPagePermission(userId, pageId) : null;
+        const canEdit = userPermission === 'owner' || userPermission === 'editor';
+
+        // Store permission info in socket data for later checks
+        socket.data.userId = userId;
+        socket.data.pageId = pageId;
+        socket.data.userPermission = userPermission;
+        socket.data.canEdit = canEdit;
+
+        logger.info('User permission for Yjs document', {
+          socketId: socket.id,
+          userId,
+          pageId,
+          permission: userPermission,
+          canEdit,
+        });
+        // ===== END PERMISSION CHECK =====
 
         // Get or create Yjs document
         const ydoc = yjsManager.getDocument(documentId);
@@ -141,6 +177,8 @@ export function setupYjsCollaboration(io: SocketIOServer, storage: DBStorage) {
         socket.emit('yjs:init', {
           stateVector: Buffer.from(stateVector).toString('base64'),
           userCount: yjsManager.getUserCount(documentId),
+          permission: userPermission, // Send user's permission level
+          canEdit, // Explicitly tell client if they can edit
         });
 
         // Setup update handler for this document
@@ -153,7 +191,7 @@ export function setupYjsCollaboration(io: SocketIOServer, storage: DBStorage) {
             update: Buffer.from(update).toString('base64'),
           });
 
-          // Save to database periodically
+          // Save to database periodically (only if someone with edit permission made changes)
           if (yjsManager.shouldSave(documentId)) {
             saveToDB(documentId, pageId, ydoc, storage);
           }
@@ -171,6 +209,7 @@ export function setupYjsCollaboration(io: SocketIOServer, storage: DBStorage) {
           documentId,
           pageId,
           userCount: yjsManager.getUserCount(documentId),
+          permission: userPermission,
         });
       } catch (error) {
         logger.error('Error joining Yjs document:', {
@@ -185,6 +224,24 @@ export function setupYjsCollaboration(io: SocketIOServer, storage: DBStorage) {
     socket.on('yjs:update', async (data: { documentId: string; update: string }) => {
       try {
         const { documentId, update } = data;
+
+        // ===== PERMISSION CHECK =====
+        // Only allow updates from users with edit permission
+        if (!socket.data.canEdit) {
+          logger.warn('Blocked Yjs update from user without edit permission', {
+            socketId: socket.id,
+            documentId,
+            userId: socket.data.userId,
+            permission: socket.data.userPermission,
+          });
+          socket.emit('yjs:error', {
+            message: 'You do not have permission to edit this page.',
+            code: 'EDIT_PERMISSION_REQUIRED',
+          });
+          return;
+        }
+        // ===== END PERMISSION CHECK =====
+
         const ydoc = yjsManager.getDocument(documentId);
 
         // Apply update to Yjs document
@@ -194,6 +251,7 @@ export function setupYjsCollaboration(io: SocketIOServer, storage: DBStorage) {
         logger.debug('Applied Yjs update', {
           documentId,
           socketId: socket.id,
+          userId: socket.data.userId,
           updateSize: updateBuffer.length,
         });
       } catch (error) {
