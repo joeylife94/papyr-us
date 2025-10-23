@@ -1,9 +1,0 @@
-{
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTA0NywiZW1haWwiOiJ0ZXN0dXNlci0xNzYwNTk1NjI3MjkzQGV4YW1wbGUuY29tIiwicm9sZSI6InVzZXIiLCJpYXQiOjE3NjA1OTU2MzEsImV4cCI6MTc2MDY4MjAzMX0.sZzuL-i_CUkENXuDfEhlYCikif27G6CCmi6YIzPNKgs",
-  "user": {
-    "id": 1047,
-    "name": "Login Test User",
-    "email": "testuser-1760595627293@example.com",
-    "role": "user"
-  }
-}
