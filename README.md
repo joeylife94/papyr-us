@@ -16,7 +16,8 @@ A comprehensive **team collaboration platform** built with React and Express.js,
 
 - **Block-based editor** with multiple content types (paragraphs, headings, code, quotes, checkboxes, images)
 - **Markdown support** with real-time preview and syntax highlighting
-- **Tag-based organization** and full-text search
+- **Postgres Full-Text Search (FTS)** with relevance ranking and automatic indexing ⭐ **NEW**
+- **Tag-based organization** with smart filtering
 - **Folder structure** with directory management
 - **Slug-based URLs** for SEO-friendly pages
 
@@ -37,18 +38,21 @@ A comprehensive **team collaboration platform** built with React and Express.js,
 
 ### ⚡ Real-time Collaboration
 
-- **Socket.IO** based real-time communication
+- **Socket.IO** with exponential backoff reconnection ⭐ **IMPROVED**
 - **Yjs CRDT** integration for conflict-free concurrent editing
-- **User presence** indicators
+- **Real-time cursor tracking** with user presence indicators ⭐ **NEW**
 - **Live notifications** with badge counts
+- **Connection status UI** with automatic recovery ⭐ **NEW**
 
 ### 🔐 Security & Authentication
 
 - **JWT-based authentication** with secure token management
+- **bcrypt password hashing** with salt rounds (10) ⭐ **IMPROVED**
 - **Role-based access control (RBAC)** for admin and team permissions
-- **Password-protected** directories and teams
+- **Password-protected** directories and teams with secure hashing ⭐ **IMPROVED**
 - **Rate limiting** on sensitive endpoints
 - **Security headers** (Helmet middleware)
+- **Migration tools** for upgrading security implementations ⭐ **NEW**
 
 ### 🎨 Modern UI/UX
 
