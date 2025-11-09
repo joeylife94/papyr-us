@@ -15,12 +15,14 @@ interface HomeProps {
 }
 
 export default function Home({ searchQuery, selectedFolder, teamName }: HomeProps) {
+  // Auto-switch to relevance ranking when searching
   const [sort, setSort] = useState<'updated' | 'rank'>('updated');
+  const effectiveSort = searchQuery ? 'rank' : sort;
   const limit = 12;
 
   const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useInfiniteQuery<{ pages: WikiPage[]; total: number; offset: number; limit: number }>({
-      queryKey: ['/api/pages', searchQuery, selectedFolder, teamName, sort],
+      queryKey: ['/api/pages', searchQuery, selectedFolder, teamName, effectiveSort],
       queryFn: async ({ pageParam = 0 }) => {
         try {
           const queryParams = new URLSearchParams();
@@ -29,7 +31,7 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
           if (teamName) queryParams.append('teamId', teamName);
           queryParams.append('limit', String(limit));
           queryParams.append('offset', String(pageParam));
-          queryParams.append('sort', sort);
+          queryParams.append('sort', effectiveSort);
 
           const response = await fetch(`/api/pages?${queryParams.toString()}`);
           if (!response.ok) {
@@ -127,8 +129,10 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
               <label className="text-sm text-slate-600 dark:text-slate-400">정렬</label>
               <select
                 className="text-sm border rounded-md px-2 py-1 bg-white dark:bg-slate-900"
-                value={sort}
+                value={effectiveSort}
                 onChange={(e) => setSort(e.target.value as 'updated' | 'rank')}
+                disabled={!!searchQuery}
+                title={searchQuery ? '검색 시 자동으로 관련도순 정렬됩니다' : '정렬 방식 선택'}
               >
                 <option value="updated">최신순</option>
                 <option value="rank">관련도순</option>

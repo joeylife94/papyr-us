@@ -32,6 +32,11 @@ interface CollaborationState {
 class SocketManager {
   private socket: Socket | null = null;
   private listeners: Map<string, Set<Function>> = new Map();
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 5;
+  private reconnectDelay = 1000; // Start with 1 second
+  private maxReconnectDelay = 30000; // Max 30 seconds
+  private reconnectTimer: NodeJS.Timeout | null = null;
 
   connect(
     url: string = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5001'
@@ -54,31 +59,106 @@ class SocketManager {
       transports: ['websocket', 'polling'],
       autoConnect: true,
       auth: token ? { token } : undefined,
+      // Disable built-in reconnection, we'll handle it ourselves
+      reconnection: false,
     });
 
     this.socket.on('connect', () => {
-      console.log('Connected to Socket.IO server');
-      this.emit('connect');
+      console.log('✅ Connected to Socket.IO server');
+      this.reconnectAttempts = 0; // Reset on successful connection
+      this.reconnectDelay = 1000; // Reset delay
+      this.emitInternal('connect');
     });
 
-    this.socket.on('disconnect', () => {
-      console.log('Disconnected from Socket.IO server');
-      this.emit('disconnect');
+    this.socket.on('disconnect', (reason) => {
+      console.log('⚠️ Disconnected from Socket.IO server:', reason);
+      this.emitInternal('disconnect', reason);
+
+      // Auto-reconnect for certain disconnect reasons
+      if (reason === 'io server disconnect') {
+        // Server initiated disconnect, don't auto-reconnect
+        console.log('❌ Server disconnected the client');
+      } else {
+        // Client-side disconnect or network issues, attempt reconnection
+        this.scheduleReconnect();
+      }
+    });
+
+    this.socket.on('connect_error', (error: any) => {
+      console.error('❌ Socket.IO connection error:', error.message);
+      this.emitInternal('connect_error', error);
+      this.scheduleReconnect();
     });
 
     this.socket.on('error', (error: any) => {
-      console.error('Socket.IO error:', error);
-      this.emit('error', error);
+      console.error('❌ Socket.IO error:', error);
+      this.emitInternal('error', error);
     });
 
     return this.socket;
   }
 
+  /**
+   * Schedule reconnection with exponential backoff
+   */
+  private scheduleReconnect(): void {
+    // Don't schedule if already scheduled or max attempts reached
+    if (this.reconnectTimer || this.reconnectAttempts >= this.maxReconnectAttempts) {
+      if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+        console.error(`❌ Max reconnection attempts (${this.maxReconnectAttempts}) reached`);
+        this.emitInternal('reconnect_failed');
+      }
+      return;
+    }
+
+    // Calculate delay with exponential backoff
+    const delay = Math.min(
+      this.reconnectDelay * Math.pow(2, this.reconnectAttempts),
+      this.maxReconnectDelay
+    );
+
+    this.reconnectAttempts++;
+
+    console.log(
+      `🔄 Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})...`
+    );
+
+    this.emitInternal('reconnecting', {
+      attempt: this.reconnectAttempts,
+      maxAttempts: this.maxReconnectAttempts,
+      delay,
+    });
+
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+
+      if (this.socket && !this.socket.connected) {
+        console.log(
+          `🔌 Attempting reconnection (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`
+        );
+        this.socket.connect();
+      }
+    }, delay);
+  }
+
+  /**
+   * Cancel pending reconnection
+   */
+  private cancelReconnect(): void {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+  }
+
   disconnect(): void {
+    this.cancelReconnect();
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;
     }
+    this.reconnectAttempts = 0;
+    this.reconnectDelay = 1000;
   }
 
   on(event: string, callback: (...args: any[]) => void): void {
@@ -143,27 +223,66 @@ const socketManager = new SocketManager();
 
 export function useSocket() {
   const [isConnected, setIsConnected] = useState(false);
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const [reconnectAttempt, setReconnectAttempt] = useState(0);
+  const [reconnectError, setReconnectError] = useState<string | null>(null);
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
     const socket = socketManager.connect();
     socketRef.current = socket;
 
-    const handleConnect = () => setIsConnected(true);
-    const handleDisconnect = () => setIsConnected(false);
+    const handleConnect = () => {
+      setIsConnected(true);
+      setIsReconnecting(false);
+      setReconnectAttempt(0);
+      setReconnectError(null);
+    };
 
-    socket.on('connect', handleConnect);
-    socket.on('disconnect', handleDisconnect);
+    const handleDisconnect = (reason: string) => {
+      setIsConnected(false);
+      if (reason !== 'io client disconnect') {
+        // Network issue or server disconnect
+        setReconnectError(`연결이 끊겼습니다: ${reason}`);
+      }
+    };
+
+    const handleReconnecting = (data: { attempt: number; maxAttempts: number; delay: number }) => {
+      setIsReconnecting(true);
+      setReconnectAttempt(data.attempt);
+      setReconnectError(null);
+    };
+
+    const handleReconnectFailed = () => {
+      setIsReconnecting(false);
+      setReconnectError('재연결에 실패했습니다. 페이지를 새로고침해주세요.');
+    };
+
+    const handleConnectError = (error: Error) => {
+      setReconnectError(`연결 오류: ${error.message}`);
+    };
+
+    socketManager.on('connect', handleConnect);
+    socketManager.on('disconnect', handleDisconnect);
+    socketManager.on('reconnecting', handleReconnecting);
+    socketManager.on('reconnect_failed', handleReconnectFailed);
+    socketManager.on('connect_error', handleConnectError);
 
     return () => {
-      socket.off('connect', handleConnect);
-      socket.off('disconnect', handleDisconnect);
+      socketManager.off('connect', handleConnect);
+      socketManager.off('disconnect', handleDisconnect);
+      socketManager.off('reconnecting', handleReconnecting);
+      socketManager.off('reconnect_failed', handleReconnectFailed);
+      socketManager.off('connect_error', handleConnectError);
     };
   }, []);
 
   return {
     socket: socketRef.current,
     isConnected,
+    isReconnecting,
+    reconnectAttempt,
+    reconnectError,
     emit: socketManager.emit.bind(socketManager),
     on: socketManager.on.bind(socketManager),
     off: socketManager.off.bind(socketManager),

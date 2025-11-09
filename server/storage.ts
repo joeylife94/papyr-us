@@ -128,22 +128,32 @@ export class DBStorage {
   }
 
   async searchWikiPages(params: SearchParams): Promise<{ pages: WikiPage[]; total: number }> {
-    const query = this.db.select().from(wikiPages);
-    const countQuery = this.db.select({ count: sql`count(*)` }).from(wikiPages);
-
-    const conditions = [];
     // Enable FTS by default (can be disabled with SEARCH_USE_FTS=false)
     const useFts = (process.env.SEARCH_USE_FTS || 'true').toLowerCase() === 'true';
     const hasQuery = !!(params.query && params.query.trim().length > 0);
 
+    // Sanitize query for FTS
+    const sanitizeQuery = (q: string) =>
+      q
+        .trim()
+        .replace(/[:&|!()]/g, ' ')
+        .replace(/\s+/g, ' ');
+
+    // Build select with optional rank column
+    const selectColumns: any = { ...wikiPages };
+    if (useFts && hasQuery && params.sort === 'rank') {
+      const q = sanitizeQuery(params.query!);
+      selectColumns.rank = sql<number>`ts_rank(search_vector, plainto_tsquery('simple', ${q}))`;
+    }
+
+    const query = this.db.select(selectColumns).from(wikiPages);
+    const countQuery = this.db.select({ count: sql`count(*)` }).from(wikiPages);
+
+    const conditions = [];
+
     if (hasQuery) {
       if (useFts) {
-        // Use plainto_tsquery with simple config for better user experience
-        // Sanitize basic operators that could cause query errors
-        const q = params
-          .query!.trim()
-          .replace(/[:&|!()]/g, ' ')
-          .replace(/\s+/g, ' ');
+        const q = sanitizeQuery(params.query!);
         conditions.push(sql`search_vector @@ plainto_tsquery('simple', ${q})`);
       } else {
         // Fallback to LIKE search on title and content
@@ -178,15 +188,11 @@ export class DBStorage {
 
     // Apply ordering and pagination
     if (useFts && hasQuery && params.sort === 'rank') {
-      // Rank by relevance (ts_rank) when using FTS
-      const q = params
-        .query!.trim()
-        .replace(/[:&|!()]/g, ' ')
-        .replace(/\s+/g, ' ');
+      // Rank by relevance (ts_rank) when using FTS - already in SELECT
       query
         .limit(params.limit || 20)
         .offset(params.offset || 0)
-        .orderBy(sql`ts_rank(search_vector, plainto_tsquery('simple', ${q})) DESC`);
+        .orderBy(sql`rank DESC`);
     } else {
       // Default: order by update time
       query
@@ -306,14 +312,16 @@ export class DBStorage {
       .where(eq(directories.name, directoryName));
     const dir = result[0];
     if (!dir || !dir.password) return true;
-    // Prefer bcrypt compare; fall back to plain equality for legacy rows
-    try {
-      if (isBcryptHash(dir.password)) {
-        return await bcrypt.compare(password, dir.password);
-      }
-    } catch (_) {}
-    // Legacy fallback (pre-migration)
-    return dir.password === password;
+
+    // Only accept bcrypt hashed passwords (no plaintext fallback)
+    if (!isBcryptHash(dir.password)) {
+      console.error(
+        `[Security Warning] Directory "${directoryName}" has unhashed password. Run migration script.`
+      );
+      return false; // Reject plaintext passwords
+    }
+
+    return await bcrypt.compare(password, dir.password);
   }
 
   async getCommentsByPageId(pageId: number): Promise<Comment[]> {
