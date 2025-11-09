@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
  * Migration script: Hash all plaintext directory passwords using bcrypt
- * 
+ *
  * This script:
  * 1. Finds all directories with plaintext passwords
  * 2. Hashes them using bcrypt (salt rounds: 10)
  * 3. Updates the database
  * 4. Sets password_is_hashed = true
- * 
+ *
  * Run with: node scripts/migrate-directory-passwords.mjs
  */
 
@@ -64,13 +64,10 @@ async function migrateDirectoryPasswords() {
       if (password_is_hashed || isBcryptHash(password)) {
         console.log(`⏭️  Skipped "${name}" (already hashed)`);
         skippedCount++;
-        
+
         // Update flag if not set
         if (!password_is_hashed) {
-          await pool.query(
-            'UPDATE directories SET password_is_hashed = true WHERE id = $1',
-            [id]
-          );
+          await pool.query('UPDATE directories SET password_is_hashed = true WHERE id = $1', [id]);
         }
         continue;
       }

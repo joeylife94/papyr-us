@@ -16,26 +16,31 @@
 ## 📚 핵심 문서
 
 ### 프로젝트 개요
+
 - **[최종 평가 문서](./PROJECT_FINAL_EVALUATION.md)** ⭐ — **[신규]** Gemini 평가용 종합 문서 (프로젝트 완성도, 기술 스택, 성과 등)
 - **[프로젝트 개요](./project-overview.md)** — 프로젝트 소개, 주요 기능, 기술 스택, 테스트 전략
 - **[로드맵](./roadmap.md)** — 향후 개발 계획 및 단계별 실행 전략
 
 ### 개발자 문서
+
 - **[개발 가이드](./development-guide.md)** — 로컬/Docker 환경 설정, 빌드, 테스트 실행 방법
 - **[기술 명세서](./pre-work/technical-specification.md)** — 상세 기술 스펙, API 엔드포인트, 데이터베이스 스키마
 - **[RBAC 가이드](./rbac-guide.md)** — 권한 관리 및 보안 설정
 - **[Yjs 아키텍처](./yjs-architecture.md)** — 실시간 협업 시스템 구조
 
 ### 사용자 & 관리자 문서
+
 - **[사용자 가이드](./user-guide.md)** — 최종 사용자를 위한 기능 사용법, 팁
 - **[AI 기능 가이드](./ai-features-guide.md)** — AI Assistant 사용법 및 구현 노트
 - **[관리자 패널 가이드](./admin-panel-guide.md)** — 관리자 UI, 디렉토리 관리, 보안 팁
 
 ### 테스트 & 품질
+
 - **[백엔드 테스트 케이스](./backend-test-cases.md)** — TC 매트릭스, 테스트 파일 매핑
 - **[테스트 결과](./test-results.md)** — E2E 및 스모크 테스트 결과 요약
 
 ### 배포 가이드
+
 - **[Render 배포 가이드](./render-deployment-guide.md)** — Render 플랫폼 배포 방법
 - **[Ubuntu 배포 가이드](./ubuntu-deployment-guide.md)** — Ubuntu 서버 배포 방법
 - **[PostgreSQL 로컬 설정](./setup-local-postgres.md)** — 로컬 PostgreSQL 설정 가이드
@@ -58,15 +63,17 @@
 ## 📋 문서 관리 가이드
 
 ### 문서 업데이트 시 체크리스트
+
 - [ ] 이 인덱스 파일 업데이트
 - [ ] 날짜 및 버전 정보 갱신
 - [ ] 관련 문서 간 링크 확인
 - [ ] 변경 사항 히스토리 기록
 
 ### 문서 작성 규칙
+
 1. 모든 문서는 마크다운 형식으로 작성
 2. 제목은 명확하고 간결하게
-3. 코드 예시는 언어 명시 (```typescript, ```bash 등)
+3. 코드 예시는 언어 명시 (`typescript, `bash 등)
 4. 스크린샷은 `docs/assets/` 디렉토리에 저장
 5. 외부 링크는 절대 경로 사용
 

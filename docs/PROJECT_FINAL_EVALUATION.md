@@ -53,6 +53,7 @@
 **완성도: 95%**
 
 #### 구현된 기능
+
 - ✅ 마크다운 기반 페이지 작성 및 편집
 - ✅ 실시간 미리보기 (remark/rehype 파이프라인)
 - ✅ 코드 하이라이팅 (rehype-highlight)
@@ -62,6 +63,7 @@
 - ✅ 폴더/디렉토리 구조화
 
 #### 기술적 하이라이트
+
 ```typescript
 // Block-based editor structure
 type BlockType = 'paragraph' | 'heading' | 'code' | 'quote' | 'checkbox' | 'image';
@@ -79,6 +81,7 @@ interface Block {
 **완성도: 90%**
 
 #### 구현된 기능
+
 - ✅ 팀별 독립 워크스페이스
 - ✅ 팀 멤버 관리 (CRUD)
 - ✅ 팀 캘린더 시스템
@@ -96,6 +99,7 @@ interface Block {
   - 팀별 격리 저장
 
 #### 기술적 하이라이트
+
 ```typescript
 // Team calendar with smart validation
 const validateEventTimes = (startTime: string, endTime: string) => {
@@ -109,6 +113,7 @@ const validateEventTimes = (startTime: string, endTime: string) => {
 **완성도: 85%**
 
 #### 구현된 기능
+
 - ✅ Socket.IO 기반 실시간 통신
 - ✅ 실시간 알림 시스템
   - 댓글 알림
@@ -119,6 +124,7 @@ const validateEventTimes = (startTime: string, endTime: string) => {
 - ✅ 자동 재연결 및 백오프 전략
 
 #### 기술적 하이라이트
+
 ```typescript
 // Socket.IO namespace with JWT authentication
 io.of('/collab').use(async (socket, next) => {
@@ -138,6 +144,7 @@ io.of('/collab').use(async (socket, next) => {
 **완성도: 92%**
 
 #### 구현된 기능
+
 - ✅ GPT-4o 기반 스마트 검색
   - 자연어 쿼리 처리
   - 페이지, 파일, 태스크 통합 검색
@@ -150,6 +157,7 @@ io.of('/collab').use(async (socket, next) => {
 - ✅ 연관 페이지 찾기
 
 #### 기술적 하이라이트
+
 ```typescript
 // AI-powered semantic search
 async function smartSearch(query: string, documents: Document[]) {
@@ -158,9 +166,8 @@ async function smartSearch(query: string, documents: Document[]) {
     input: query,
   });
   // Cosine similarity ranking
-  return documents.sort((a, b) => 
-    cosineSimilarity(embedding, b.embedding) - 
-    cosineSimilarity(embedding, a.embedding)
+  return documents.sort(
+    (a, b) => cosineSimilarity(embedding, b.embedding) - cosineSimilarity(embedding, a.embedding)
   );
 }
 ```
@@ -170,6 +177,7 @@ async function smartSearch(query: string, documents: Document[]) {
 **완성도: 88%**
 
 #### 구현된 기능
+
 - ✅ 통합 검색 (페이지 + 캘린더 이벤트)
 - ✅ 실시간 필터링
 - ✅ 사이드바 통합 검색 UI
@@ -181,6 +189,7 @@ async function smartSearch(query: string, documents: Document[]) {
 **완성도: 93%**
 
 #### 구현된 기능
+
 - ✅ JWT 기반 인증 시스템
 - ✅ 로컬 회원가입/로그인
 - ✅ OAuth 2.0 (Google, GitHub) 준비 완료
@@ -198,6 +207,7 @@ async function smartSearch(query: string, documents: Document[]) {
 ### 3.1 Frontend Architecture
 
 **기술 스택**
+
 ```
 React 18.3.1
 ├── TypeScript 5.6.3
@@ -210,6 +220,7 @@ React 18.3.1
 ```
 
 **주요 패턴**
+
 - ✅ **Custom Hooks**: `useAuth`, `useTheme`, `useSocket`
 - ✅ **Context API**: Theme, Auth, Socket context
 - ✅ **Component Composition**: Reusable UI components
@@ -218,6 +229,7 @@ React 18.3.1
 ### 3.2 Backend Architecture
 
 **기술 스택**
+
 ```
 Express.js 4.21.2
 ├── TypeScript 5.6.3
@@ -230,6 +242,7 @@ Express.js 4.21.2
 ```
 
 **아키텍처 패턴**
+
 - ✅ **Layered Architecture**
   - Routes Layer (API endpoints)
   - Service Layer (Business logic)
@@ -244,6 +257,7 @@ Express.js 4.21.2
 ### 3.3 Database Schema
 
 **주요 테이블 (15+ tables)**
+
 ```sql
 -- Core tables
 wiki_pages (17 columns)
@@ -264,6 +278,7 @@ sessions
 ```
 
 **데이터베이스 기능**
+
 - ✅ PostgreSQL 16 with Drizzle ORM
 - ✅ Type-safe queries
 - ✅ Migration system (12+ migrations)
@@ -273,6 +288,7 @@ sessions
 ### 3.4 Real-time Communication
 
 **WebSocket Architecture**
+
 ```typescript
 Socket.IO Server
 ├── /collab namespace (JWT authenticated)
@@ -293,12 +309,14 @@ Socket.IO Server
 ### 4.1 코드 품질
 
 **Linting & Formatting**
+
 - ✅ ESLint 8.57.1 with strict rules
 - ✅ Prettier 3.6.2 for consistent formatting
 - ✅ Husky pre-commit hooks
 - ✅ lint-staged for staged files only
 
 **Type Safety**
+
 - ✅ TypeScript strict mode enabled
 - ✅ 0 `any` types in core code
 - ✅ Zod runtime validation
@@ -307,6 +325,7 @@ Socket.IO Server
 ### 4.2 Test Coverage
 
 **Test Strategy**
+
 ```
 Test Pyramid
 ├── E2E Tests (Playwright)
@@ -324,6 +343,7 @@ Test Pyramid
 ```
 
 **Test Coverage Statistics**
+
 - ✅ **E2E Tests**: 95% pass rate
 - ✅ **Integration Tests**: 50+ test cases
 - ✅ **API Coverage**: 80%+ endpoints tested
@@ -362,12 +382,14 @@ test('POST /api/pages creates a new page', async () => {
 ### 5.1 인증 시스템
 
 **JWT Implementation**
+
 - ✅ Access tokens with expiration
 - ✅ Secure token storage (httpOnly cookies option)
 - ✅ Token refresh mechanism
 - ✅ Automatic logout on token expiration
 
 **Password Security**
+
 - ✅ bcrypt hashing (10 rounds)
 - ✅ Password strength validation
 - ✅ Secure password reset flow (준비 완료)
@@ -375,26 +397,33 @@ test('POST /api/pages creates a new page', async () => {
 ### 5.2 보안 기능
 
 **Application Security**
+
 ```typescript
 // Security middleware stack
 app.use(helmet()); // Security headers
-app.use(cors({
-  origin: process.env.CORS_ALLOWED_ORIGINS,
-  credentials: true,
-}));
-app.use(rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-}));
+app.use(
+  cors({
+    origin: process.env.CORS_ALLOWED_ORIGINS,
+    credentials: true,
+  })
+);
+app.use(
+  rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // limit each IP to 100 requests per windowMs
+  })
+);
 ```
 
 **RBAC (Role-Based Access Control)**
+
 - ✅ Admin role enforcement
 - ✅ Team member roles
 - ✅ Directory-level permissions
 - ✅ JWT role claims
 
 **Environment Variables**
+
 - ✅ Sensitive data in `.env`
 - ✅ Production mode enforcement
 - ✅ `ENFORCE_AUTH_WRITES` toggle
@@ -415,6 +444,7 @@ app.use(rateLimit({
 ### 6.1 UI/UX 디자인
 
 **Design System**
+
 - ✅ **shadcn/ui Components**: 50+ reusable components
 - ✅ **Tailwind CSS**: Utility-first styling
 - ✅ **Dark Mode**: System preference detection + manual toggle
@@ -422,6 +452,7 @@ app.use(rateLimit({
 - ✅ **Accessibility**: ARIA labels, keyboard navigation
 
 **Visual Highlights**
+
 - ✅ 일관된 색상 팔레트
 - ✅ 직관적인 아이콘 사용 (Lucide React)
 - ✅ 부드러운 애니메이션 (Framer Motion)
@@ -431,12 +462,14 @@ app.use(rateLimit({
 ### 6.2 Navigation & Usability
 
 **Sidebar Navigation**
+
 - ✅ 통합 검색 (페이지 + 캘린더)
 - ✅ 폴더 구조 트리뷰
 - ✅ Quick Actions (Create Page, Admin Panel)
 - ✅ Team Calendars 빠른 접근
 
 **Header Navigation**
+
 - ✅ 로고 홈 이동
 - ✅ 전역 검색
 - ✅ 다크 모드 토글
@@ -446,6 +479,7 @@ app.use(rateLimit({
 ### 6.3 사용자 피드백
 
 **Feedback Mechanisms**
+
 - ✅ Toast notifications (success, error, info)
 - ✅ Loading spinners
 - ✅ Progress indicators
@@ -459,19 +493,20 @@ app.use(rateLimit({
 ### 7.1 배포 환경
 
 **Docker Configuration**
+
 ```yaml
 # docker-compose.yml
 services:
   app:
     build: .
     ports:
-      - "5001:5001"
+      - '5001:5001'
     environment:
       - DATABASE_URL=postgresql://...
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     depends_on:
       - db
-  
+
   db:
     image: postgres:16
     volumes:
@@ -479,6 +514,7 @@ services:
 ```
 
 **Deployment Options**
+
 - ✅ **Docker Compose**: 로컬 및 프로덕션 환경
 - ✅ **Replit**: 원클릭 배포
 - ✅ **Vercel**: Serverless 배포 (준비 완료)
@@ -487,6 +523,7 @@ services:
 ### 7.2 운영 기능
 
 **Health Check**
+
 ```typescript
 // GET /health
 {
@@ -498,12 +535,14 @@ services:
 ```
 
 **Logging**
+
 - ✅ Winston logger with levels (info, warn, error)
 - ✅ Request/Response logging
 - ✅ Error stack traces
 - ✅ Performance metrics (준비)
 
 **Monitoring**
+
 - ✅ Health check endpoint
 - ✅ Database connection monitoring
 - ✅ Socket.IO connection status
@@ -512,6 +551,7 @@ services:
 ### 7.3 Environment Configuration
 
 **Environment Variables (25+ vars)**
+
 ```bash
 # Core
 NODE_ENV=production
@@ -540,6 +580,7 @@ RATE_LIMIT_MAX=100
 ### 8.1 프로젝트 규모
 
 **코드베이스**
+
 - 📊 **총 라인 수**: ~25,000 lines
 - 📊 **TypeScript**: ~18,000 lines
 - 📊 **React Components**: 80+ components
@@ -548,6 +589,7 @@ RATE_LIMIT_MAX=100
 - 📊 **Migrations**: 12 migration files
 
 **파일 구조**
+
 ```
 papyr-us/
 ├── client/        (5,000+ lines)
@@ -569,6 +611,7 @@ papyr-us/
 ### 8.2 기능 구현 통계
 
 **완성된 기능 (80+ 기능)**
+
 - ✅ 위키 페이지 CRUD: 100%
 - ✅ 팀 관리: 95%
 - ✅ 캘린더 시스템: 92%
@@ -583,12 +626,14 @@ papyr-us/
 ### 8.3 성능 지표
 
 **Response Times**
+
 - ⚡ API 평균 응답 시간: < 100ms
 - ⚡ 페이지 로드 시간: < 2s
 - ⚡ 검색 응답: < 200ms
 - ⚡ WebSocket 지연: < 50ms
 
 **Reliability**
+
 - 🟢 서버 가동률: 99%+
 - 🟢 E2E 테스트 통과율: 95%+
 - 🟢 빌드 성공률: 98%+
@@ -600,6 +645,7 @@ papyr-us/
 ### 9.1 단기 개선 사항 (1-2주)
 
 **Phase 1: 안정성 및 보안 강화**
+
 - [ ] Postgres FTS 완전 통합
 - [ ] 디렉토리 비밀번호 bcrypt 마이그레이션
 - [ ] Socket.IO 재연결 로직 강화
@@ -608,6 +654,7 @@ papyr-us/
 ### 9.2 중기 로드맵 (1-2개월)
 
 **Phase 2: 고급 협업 기능**
+
 - [ ] Yjs CRDT 완전 통합
   - 실시간 커서 표시
   - 타이핑 인디케이터
@@ -624,6 +671,7 @@ papyr-us/
 ### 9.3 장기 비전 (3-6개월)
 
 **Phase 3: Notion-Level Platform**
+
 - [ ] 외부 통합 (Slack, GitHub, Jira)
 - [ ] API 공개 및 개발자 문서
 - [ ] 모바일 앱 (React Native)
@@ -637,6 +685,7 @@ papyr-us/
 ### 9.4 확장성 준비
 
 **Infrastructure**
+
 - ✅ Docker 기반 배포
 - ✅ 환경 변수 기반 설정
 - ✅ 수평 확장 가능 아키텍처
@@ -653,6 +702,7 @@ papyr-us/
 **Papyr.us**는 **4주**라는 짧은 개발 기간 동안 **Production-Ready** 수준의 팀 협업 플랫폼을 성공적으로 구축했습니다.
 
 **주요 성과**
+
 1. ✅ **완성도 높은 코어 기능**: 위키, 팀 협업, 캘린더, AI 통합
 2. ✅ **현대적 기술 스택**: React 18, TypeScript, PostgreSQL, Socket.IO
 3. ✅ **높은 코드 품질**: 타입 안전성, 테스트 커버리지, 린팅
@@ -662,24 +712,29 @@ papyr-us/
 ### 10.2 차별화 포인트
 
 **1. 실시간 협업 기반 구축**
+
 - Socket.IO + Yjs CRDT 통합으로 동시 편집 인프라 완성
 - 실시간 알림 시스템으로 팀 협업 강화
 
 **2. AI 네이티브 플랫폼**
+
 - GPT-4o 통합으로 스마트 검색 및 콘텐츠 생성
 - 자연어 쿼리 지원으로 사용자 경험 향상
 
 **3. 타입 안전성 및 코드 품질**
+
 - 전체 코드베이스 TypeScript 적용
 - Zod 런타임 검증으로 이중 안전성
 - 95%+ E2E 테스트 통과율
 
 **4. 사용자 중심 UX**
+
 - shadcn/ui 기반 일관된 디자인
 - 다크 모드, 반응형 디자인
 - 직관적인 네비게이션 및 검색
 
 **5. 프로덕션 준비 완료**
+
 - Docker 기반 배포
 - 보안 강화 (JWT, RBAC, Rate Limiting)
 - 모니터링 및 로깅 체계
@@ -687,6 +742,7 @@ papyr-us/
 ### 10.3 기술적 우수성
 
 **아키텍처 품질**
+
 - ⭐⭐⭐⭐⭐ 레이어드 아키텍처
 - ⭐⭐⭐⭐⭐ 타입 안전성
 - ⭐⭐⭐⭐ 테스트 커버리지
@@ -698,6 +754,7 @@ papyr-us/
 ### 10.4 실전 적용 가능성
 
 **즉시 사용 가능한 시나리오**
+
 1. ✅ 스타트업 팀 협업 도구
 2. ✅ 프로젝트 문서 관리 시스템
 3. ✅ 지식 베이스 플랫폼
@@ -705,6 +762,7 @@ papyr-us/
 5. ✅ 교육 기관 협업 툴
 
 **확장 가능한 방향**
+
 - 🚀 SaaS 제품으로 발전
 - 🚀 엔터프라이즈 버전 출시
 - 🚀 오픈소스 커뮤니티 플랫폼
@@ -712,9 +770,10 @@ papyr-us/
 
 ### 10.5 최종 평가
 
-Papyr.us는 **단순한 위키 플랫폼을 넘어 현대적인 협업 도구**로서의 가능성을 충분히 증명했습니다. 
+Papyr.us는 **단순한 위키 플랫폼을 넘어 현대적인 협업 도구**로서의 가능성을 충분히 증명했습니다.
 
 **핵심 강점**:
+
 - 🎯 명확한 목표와 실행
 - 💻 깨끗하고 유지보수 가능한 코드
 - 🚀 Production-ready 품질
@@ -723,6 +782,7 @@ Papyr.us는 **단순한 위키 플랫폼을 넘어 현대적인 협업 도구**�
 - 🤖 AI 통합의 실용적 활용
 
 **개발자로서의 역량 증명**:
+
 - ✅ Full-stack 개발 능력
 - ✅ 현대적 기술 스택 활용
 - ✅ 아키텍처 설계 능력

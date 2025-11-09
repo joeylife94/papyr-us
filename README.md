@@ -13,6 +13,7 @@ A comprehensive **team collaboration platform** built with React and Express.js,
 ## ✨ Key Features
 
 ### 📝 Advanced Wiki System
+
 - **Block-based editor** with multiple content types (paragraphs, headings, code, quotes, checkboxes, images)
 - **Markdown support** with real-time preview and syntax highlighting
 - **Tag-based organization** and full-text search
@@ -20,6 +21,7 @@ A comprehensive **team collaboration platform** built with React and Express.js,
 - **Slug-based URLs** for SEO-friendly pages
 
 ### 👥 Team Collaboration
+
 - **Team workspaces** with isolated environments
 - **Team calendar** with priority levels and smart time validation
 - **Task management** with status tracking and assignments
@@ -27,18 +29,21 @@ A comprehensive **team collaboration platform** built with React and Express.js,
 - **Real-time notifications** for comments, tasks, and mentions
 
 ### 🤖 AI Integration (GPT-4o)
+
 - **Smart search** with natural language queries
 - **Content generation** with context-aware suggestions
 - **Auto-suggestions** for search queries
 - **Related pages** discovery
 
 ### ⚡ Real-time Collaboration
+
 - **Socket.IO** based real-time communication
 - **Yjs CRDT** integration for conflict-free concurrent editing
 - **User presence** indicators
 - **Live notifications** with badge counts
 
 ### 🔐 Security & Authentication
+
 - **JWT-based authentication** with secure token management
 - **Role-based access control (RBAC)** for admin and team permissions
 - **Password-protected** directories and teams
@@ -46,6 +51,7 @@ A comprehensive **team collaboration platform** built with React and Express.js,
 - **Security headers** (Helmet middleware)
 
 ### 🎨 Modern UI/UX
+
 - **shadcn/ui components** for consistent design
 - **Dark/Light mode** with system preference detection
 - **Responsive design** for mobile, tablet, and desktop
@@ -55,6 +61,7 @@ A comprehensive **team collaboration platform** built with React and Express.js,
 ## 🛠 Tech Stack
 
 ### Frontend
+
 ```
 React 18.3.1
 ├── TypeScript 5.6.3
@@ -67,6 +74,7 @@ React 18.3.1
 ```
 
 ### Backend
+
 ```
 Express.js 4.21.2
 ├── TypeScript 5.6.3
@@ -80,6 +88,7 @@ Express.js 4.21.2
 ```
 
 ### DevOps & Testing
+
 - **Docker & Docker Compose** for containerization
 - **Playwright** for E2E testing (95%+ pass rate)
 - **Vitest** for unit/integration tests
@@ -112,6 +121,7 @@ docker-compose up --build
 ```
 
 **Access the app:**
+
 - Frontend: http://localhost:5001
 - API: http://localhost:5001/api
 - Health Check: http://localhost:5001/health
@@ -161,7 +171,8 @@ OPENAI_API_KEY=sk-...
 ENFORCE_AUTH_WRITES=false  # Set to true in production
 RATE_LIMIT_ENABLED=true
 ```
-   ```bash
+
+````bash
 ## 📜 Available Scripts
 
 ```bash
@@ -190,7 +201,7 @@ npm run db:push          # Push schema changes to database
 npm run db:migrate       # Run migrations
 npm run db:generate      # Generate migration files
 npm run db:seed          # Seed database with initial data
-```
+````
 
 ## 📁 Project Structure
 
@@ -289,6 +300,7 @@ server/tests/
 The application uses **PostgreSQL 16** with **Drizzle ORM** for type-safe database operations.
 
 ### Main Tables (15+)
+
 - `wiki_pages` - Page content and metadata
 - `comments` - Page comments
 - `directories` - Folder structure
