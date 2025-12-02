@@ -10,6 +10,19 @@ A comprehensive **team collaboration platform** built with React and Express.js,
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791.svg)](https://www.postgresql.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+## 📌 TL;DR (For Hiring Managers)
+
+- **Real-time collaboration** via Socket.IO + Yjs CRDT for conflict-free concurrent editing
+- **AI integration** using GPT-4o: RAG pipeline, semantic search, document summarization, task extraction, smart tagging, and related content discovery
+- **Multi-tenant B2B SaaS architecture** with team-based isolation and comprehensive RBAC (Role-Based Access Control)
+- **Production-grade security**: JWT authentication, bcrypt hashing, rate limiting, Helmet middleware, input validation, and SQL injection prevention
+- **Scalable full-stack TypeScript** codebase with comprehensive test coverage, Docker containerization, and CI/CD pipeline
+- **Enterprise-grade storage**: PostgreSQL 16 with Full-Text Search (FTS), Drizzle ORM for type-safe queries, and migration system
+
+This project serves as a comprehensive portfolio piece demonstrating system design, AI integration, and security best practices for senior backend and AI engineering roles.
+
+---
+
 ## ✨ Key Features
 
 ### 📝 Advanced Wiki System
@@ -62,6 +75,86 @@ A comprehensive **team collaboration platform** built with React and Express.js,
 - **Smooth animations** with Framer Motion
 - **Accessible** with ARIA labels and keyboard navigation
 
+## 🏗️ System Architecture
+
+### High-Level Overview
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         Client Layer                            │
+│  React 18 + TypeScript + Vite + TanStack Query + Socket.IO     │
+└────────────────────────┬────────────────────────────────────────┘
+                         │
+                    HTTP/WebSocket
+                         │
+┌────────────────────────▼────────────────────────────────────────┐
+│                       Server Layer                              │
+│       Express.js + TypeScript + JWT Auth + Middleware          │
+│                                                                 │
+│  ┌─────────────┐  ┌──────────────┐  ┌────────────────────┐   │
+│  │   Routes    │  │   Services   │  │   Real-time        │   │
+│  │  (REST API) │─▶│  (Business)  │  │  (Socket.IO + Yjs) │   │
+│  └─────────────┘  └──────┬───────┘  └────────────────────┘   │
+│                           │                                     │
+└───────────────────────────┼─────────────────────────────────────┘
+                            │
+                ┌───────────┴──────────┐
+                │                      │
+        ┌───────▼──────┐      ┌───────▼──────┐
+        │  PostgreSQL  │      │   OpenAI     │
+        │  + Drizzle   │      │   GPT-4o     │
+        │  + FTS       │      │   API        │
+        └──────────────┘      └──────────────┘
+```
+
+### Architecture Layers
+
+**1. Client Layer (React SPA)**
+- Single Page Application with React 18
+- Real-time updates via Socket.IO client
+- TanStack Query for server state management
+- shadcn/ui + Tailwind CSS for consistent UI
+
+**2. Server Layer (Express.js)**
+- RESTful API with 100+ endpoints
+- JWT-based authentication & RBAC
+- Rate limiting & security middleware (Helmet)
+- Service layer for business logic separation
+
+**3. Real-time Communication**
+- **Socket.IO**: WebSocket connections for live updates
+- **Yjs CRDT**: Conflict-free concurrent editing
+- Automatic reconnection with exponential backoff
+- Real-time notifications, presence, and cursors
+
+**4. Data Layer**
+- **PostgreSQL 16**: Primary database with ACID guarantees
+- **Drizzle ORM**: Type-safe SQL query builder
+- **Full-Text Search (FTS)**: Postgres native search with ranking
+- Migration system for schema versioning
+
+**5. AI Integration**
+- **OpenAI GPT-4o**: Natural language processing
+- Smart search with semantic understanding
+- Content generation and summarization
+- RAG (Retrieval-Augmented Generation) pipeline for context-aware responses
+
+### Data Flow
+
+```
+User Action → Client Component → TanStack Query/Socket.IO
+                                          ↓
+                              API Route + Auth Middleware
+                                          ↓
+                              Service Layer (Business Logic)
+                                          ↓
+                      Storage Layer (Drizzle ORM + PostgreSQL)
+                                          ↓
+                              Response + Real-time Broadcast
+```
+
+---
+
 ## 🛠 Tech Stack
 
 ### Frontend
@@ -94,10 +187,245 @@ Express.js 4.21.2
 ### DevOps & Testing
 
 - **Docker & Docker Compose** for containerization
-- **Playwright** for E2E testing (95%+ pass rate)
+- **Playwright** for E2E testing with high test reliability
 - **Vitest** for unit/integration tests
 - **ESLint & Prettier** with Husky pre-commit hooks
 - **GitHub Actions** CI/CD pipeline
+
+## 🤖 AI-Powered Features
+
+Papyr.us integrates **GPT-4o** throughout the platform to enhance productivity and collaboration:
+
+### What AI Does in Papyr.us
+
+#### 🔍 Smart Search with Semantic Understanding
+- **Natural Language Queries**: Search using plain language (e.g., "pages about deployment")
+- **Relevance Ranking**: AI ranks results based on semantic meaning, not just keywords
+- **Multi-source Search**: Searches across pages, files, tasks, and calendar events
+- **Auto-suggestions**: Real-time query suggestions as you type
+
+```typescript
+// Example: Smart search with AI ranking
+const results = await smartSearch("how to deploy to production", documents);
+// Returns: Deployment guides, Docker configs, CI/CD workflows
+```
+
+#### 📝 Document Summarization & Analysis
+- **Automatic Summaries**: Generate concise summaries of long documents
+- **Key Points Extraction**: Extract main takeaways from meeting notes
+- **Reading Time Estimation**: Calculate reading time based on content length
+
+#### 💬 Wiki Context-based Q&A (RAG Pipeline)
+- **Context-aware Answers**: Ask questions about your workspace content
+- **Page-specific Assistance**: Get help based on current page context
+- **Related Content Discovery**: Find relevant pages and documents automatically
+
+```typescript
+// RAG pipeline: Question answering with workspace context
+const answer = await chatWithCopilot(
+  messages,
+  { pageTitle, pageContent, recentPages }
+);
+```
+
+#### ✍️ Content Generation
+- **Section Writing**: Generate well-structured markdown sections
+- **Template Expansion**: Expand outlines into full content
+- **Improvement Suggestions**: AI suggests ways to enhance documentation
+
+#### 🏷️ Tag & Task Recommendations
+- **Smart Tagging**: Auto-suggest relevant tags based on content
+- **Task Extraction**: Identify action items from meeting notes and discussions
+- **Priority Scoring**: Recommend task priorities based on content analysis
+
+```typescript
+// Extract tasks from meeting notes
+const tasks = await extractTasks(meetingContent);
+// Returns: [{title, description, priority, estimatedHours}, ...]
+```
+
+#### 🔗 Related Pages Discovery
+- **Semantic Linking**: Find related pages based on topic similarity
+- **Knowledge Graph**: Build connections between related content
+- **Navigation Suggestions**: Recommend next pages to read
+
+### AI Integration Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│                  User Query                         │
+└────────────────────┬────────────────────────────────┘
+                     │
+            ┌────────▼────────┐
+            │  AI Service     │
+            │  (GPT-4o API)   │
+            └────────┬────────┘
+                     │
+        ┌────────────┴────────────┐
+        │                         │
+   ┌────▼─────┐           ┌──────▼──────┐
+   │ Embeddings│           │  Chat       │
+   │ (Search)  │           │  Completion │
+   └────┬─────┘           └──────┬──────┘
+        │                         │
+   ┌────▼─────────────────────────▼────┐
+   │    Workspace Context (RAG)        │
+   │  • Pages  • Files  • Tasks        │
+   └────────────────┬──────────────────┘
+                    │
+            ┌───────▼────────┐
+            │   PostgreSQL   │
+            │   Full-Text    │
+            │   Search (FTS) │
+            └────────────────┘
+```
+
+**Key Benefits:**
+- 🚀 **Significantly Faster Search**: Find relevant content instantly
+- 💡 **Smarter Insights**: Discover connections between documents
+- ⏱️ **Time Savings**: Auto-generate summaries and content
+- 🎯 **Better Organization**: AI-powered tagging and recommendations
+
+---
+
+## 🔐 Security & Multi-Tenancy
+
+### Multi-Tenant Architecture
+
+Papyr.us is built with **team-based isolation** to support multiple teams securely:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Application Layer                    │
+└────────────────────────┬────────────────────────────────┘
+                         │
+         ┌───────────────┴───────────────┐
+         │                               │
+    ┌────▼─────┐                    ┌───▼──────┐
+    │  Team A  │                    │  Team B  │
+    │  Workspace│                    │  Workspace│
+    └────┬─────┘                    └───┬──────┘
+         │                               │
+    ┌────▼──────────┐              ┌────▼──────────┐
+    │ • Pages       │              │ • Pages       │
+    │ • Tasks       │              │ • Tasks       │
+    │ • Calendar    │              │ • Calendar    │
+    │ • Files       │              │ • Files       │
+    └───────────────┘              └───────────────┘
+```
+
+**Isolation Features:**
+- ✅ **Team-level Data Segregation**: Each team's data is logically isolated
+- ✅ **Workspace Boundaries**: Teams cannot access each other's content
+- ✅ **Team-specific Resources**: Calendar events, tasks, and files are team-scoped
+- ✅ **Password Protection**: Optional password gates for team access
+
+### Role-Based Access Control (RBAC)
+
+```typescript
+// Permission hierarchy
+Admin → Team Owner → Team Admin → Team Member → Viewer
+```
+
+**Role Levels:**
+
+1. **System Admin** (`admin` role)
+   - Full platform access
+   - User management
+   - Directory configuration
+   - System settings
+
+2. **Team Owner** (per team)
+   - Team configuration
+   - Member management
+   - Resource deletion
+
+3. **Team Admin** (per team)
+   - Content moderation
+   - Member invitation
+   - Settings management
+
+4. **Team Member** (per team)
+   - Create/edit pages
+   - Manage tasks
+   - Comment and collaborate
+
+5. **Page Viewer** (per page)
+   - Read-only access
+   - Comment (if permitted)
+
+**RBAC Implementation:**
+
+```typescript
+// Middleware-based authorization
+app.get('/api/admin/users', requireAdmin, async (req, res) => {
+  // Only admins can access
+});
+
+app.post('/api/teams/:teamId/pages', 
+  requireTeamRole(['owner', 'admin', 'member']),
+  async (req, res) => {
+    // Team members can create pages
+  }
+);
+
+app.get('/api/pages/:id',
+  requirePagePermission('viewer'),
+  async (req, res) => {
+    // Check page-level permissions
+  }
+);
+```
+
+### Security Features
+
+**Authentication & Authorization:**
+- ✅ JWT-based authentication with secure token storage
+- ✅ bcrypt password hashing (10 rounds)
+- ✅ Role-based middleware (`requireAdmin`, `requireTeamRole`)
+- ✅ Page-level permissions (`owner`, `editor`, `viewer`, `commenter`)
+- ✅ OAuth 2.0 ready (Google, GitHub)
+
+**Application Security:**
+- ✅ Helmet.js security headers
+- ✅ CORS with configurable origin whitelist
+- ✅ Rate limiting on auth and admin endpoints
+- ✅ SQL injection prevention (Drizzle ORM parameterized queries)
+- ✅ XSS protection (React built-in escaping)
+- ✅ CSRF protection (SameSite cookies)
+
+**Data Protection:**
+- ✅ Input validation with Zod schemas
+- ✅ Secure file upload validation (type, size limits)
+- ✅ Environment variable-based secrets management
+- ✅ Production mode enforcement (`NODE_ENV`)
+
+**Database Security:**
+```sql
+-- Row-level security examples
+SELECT * FROM wiki_pages WHERE teamId = :userTeamId;
+SELECT * FROM tasks WHERE teamId = :userTeamId;
+```
+
+### Security Configuration
+
+```bash
+# Environment variables for security
+JWT_SECRET=<random-256-bit-secret>
+ADMIN_PASSWORD=<strong-password>
+ENFORCE_AUTH_WRITES=true  # Require auth for all write operations
+ALLOW_ADMIN_PASSWORD=false  # Disable password-based admin (use JWT only)
+RATE_LIMIT_ENABLED=true
+RATE_LIMIT_MAX=100  # Max requests per window
+```
+
+**Perfect for B2B SaaS:**
+- 🏢 Clear tenant boundaries
+- 🔒 Enterprise-grade security
+- 👥 Flexible permission system
+- 📊 Audit-ready architecture (logs + trails)
+
+---
 
 ## 🚀 Quick Start
 
@@ -251,9 +579,9 @@ papyr-us/
 
 ### Test Coverage
 
-- **E2E Tests**: 95%+ pass rate with Playwright
+- **E2E Tests**: High test reliability with Playwright
 - **Integration Tests**: 50+ test cases with Vitest
-- **API Coverage**: 80%+ endpoints tested
+- **API Coverage**: Strong coverage across core modules
 - **Smoke Tests**: Quick sanity checks for core functionality
 
 ### Running Tests
@@ -379,7 +707,7 @@ Comprehensive documentation is available in the `docs/` directory:
 - **Components**: 80+ React components
 - **API Endpoints**: 100+ REST endpoints
 - **Database Tables**: 15 tables
-- **Test Coverage**: 95%+ E2E pass rate
+- **Test Coverage**: High reliability across E2E and integration tests
 - **Development Time**: 4 weeks
 - **Team Size**: 1 developer
 
