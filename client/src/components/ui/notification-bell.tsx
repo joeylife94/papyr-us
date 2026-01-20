@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from './dropdown-menu';
 import { ScrollArea } from './scroll-area';
+import { useFeatureFlags } from '@/features/FeatureFlagsContext';
 
 interface Notification {
   id: number;
@@ -49,11 +50,15 @@ import { useSocket } from '@/lib/socket';
 export function NotificationBell({ recipientId }: NotificationBellProps) {
   const [isOpen, setIsOpen] = useState(false);
   const queryClient = useQueryClient();
-  const { joinMember, onNotificationNew, onNotificationUnreadCount, off } = useSocket();
+  const { flags } = useFeatureFlags();
+  const enabled = flags.FEATURE_NOTIFICATIONS;
+  const { joinMember, onNotificationNew, onNotificationUnreadCount, off } = useSocket({ enabled });
+
+  if (!enabled) return null;
 
   // Join member room and wire socket listeners
   useEffect(() => {
-    if (!recipientId) return;
+    if (!enabled || !recipientId) return;
     // join member room
     joinMember(recipientId);
 
@@ -84,7 +89,15 @@ export function NotificationBell({ recipientId }: NotificationBellProps) {
       off('notification:new', handleNew as any);
       off('notification:unread-count', handleCount as any);
     };
-  }, [recipientId]);
+  }, [
+    enabled,
+    recipientId,
+    joinMember,
+    onNotificationNew,
+    onNotificationUnreadCount,
+    off,
+    queryClient,
+  ]);
 
   // Fetch notifications
   const { data: notifications = [] } = useQuery<Notification[]>({

@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import './index.css';
+import { FeatureFlagsProvider } from '@/features/FeatureFlagsContext';
 // Install a global fetch wrapper for auth handling
 import './setup-fetch';
 // Enable bypass for ProtectedRoute in E2E runs; server will still enforce writes
@@ -13,7 +14,9 @@ if (import.meta.env.MODE === 'test' || (window as any).__PLAYWRIGHT__) {
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter basename="/">
-      <App />
+      <FeatureFlagsProvider>
+        <App />
+      </FeatureFlagsProvider>
     </BrowserRouter>
   </React.StrictMode>
 );

@@ -9,10 +9,10 @@ export interface Member {
   avatarUrl?: string | null;
 }
 
-export function useMemberByEmail(email?: string) {
+export function useMemberByEmail(email?: string, enabledOverride?: boolean) {
   return useQuery<Member | undefined>({
     queryKey: ['member-by-email', email],
-    enabled: !!email,
+    enabled: enabledOverride ?? !!email,
     queryFn: async () => {
       const res = await fetch(`/api/members/email/${encodeURIComponent(email!)}`);
       if (res.status === 404) return undefined;

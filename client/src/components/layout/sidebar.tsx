@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
+import { useFeatureFlags } from '@/features/FeatureFlagsContext';
 
 import {
   Book,
@@ -57,6 +58,7 @@ const folderColors: Record<string, string> = {
 
 export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: SidebarProps) {
   const { pathname } = useLocation();
+  const { flags } = useFeatureFlags();
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     docs: true, // docs expanded by default
   });
@@ -67,20 +69,24 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
   const [verifiedTeams, setVerifiedTeams] = useState<string[]>([]);
   const { toast } = useToast();
 
-  const { data: directories = [] } = useQuery<any[]>({
+  const defaultDirectories = [
+    { name: 'docs', displayName: 'Documentation', order: 1 },
+    { name: 'ideas', displayName: 'Ideas', order: 2 },
+    { name: 'members', displayName: 'Members', order: 3 },
+    { name: 'logs', displayName: 'Logs', order: 4 },
+    { name: 'archive', displayName: 'Archive', order: 5 },
+  ];
+
+  const { data: directories = defaultDirectories } = useQuery<any[]>({
     queryKey: ['/api/admin/directories'],
+    enabled: flags.FEATURE_ADMIN,
+    initialData: defaultDirectories,
     queryFn: async () => {
       const adminPassword = sessionStorage.getItem('adminAuth') || '';
       const response = await fetch(`/api/admin/directories?adminPassword=${adminPassword}`);
       if (!response.ok) {
         // Fallback to static folders if admin API fails
-        return [
-          { name: 'docs', displayName: 'Documentation', order: 1 },
-          { name: 'ideas', displayName: 'Ideas', order: 2 },
-          { name: 'members', displayName: 'Members', order: 3 },
-          { name: 'logs', displayName: 'Logs', order: 4 },
-          { name: 'archive', displayName: 'Archive', order: 5 },
-        ];
+        return defaultDirectories;
       }
       return response.json();
     },
@@ -92,6 +98,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
     error: teamsError,
   } = useQuery<any[]>({
     queryKey: ['/api/teams'],
+    enabled: flags.FEATURE_TEAMS,
     queryFn: async () => {
       try {
         const response = await fetch('/api/teams');
@@ -114,6 +121,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
   // Query calendar events for search filtering
   const { data: teamEvents = [] } = useQuery<any[]>({
     queryKey: ['/api/calendar'],
+    enabled: flags.FEATURE_CALENDAR,
     queryFn: async () => {
       const response = await fetch('/api/calendar');
       if (!response.ok) return [];
@@ -221,7 +229,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
   };
 
   // Determine visibility based on search
-  const showTeams = hasMatchingEvents(teamEvents, searchQuery);
+  const showTeams = flags.FEATURE_TEAMS && hasMatchingEvents(teamEvents, searchQuery);
 
   return (
     <>
@@ -262,12 +270,14 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                   Create New Page
                 </Button>
               </Link>
-              <Link to="/templates">
-                <Button variant="outline" className="w-full justify-start">
-                  <BookOpen className="h-4 w-4 mr-2 text-blue-500" />
-                  템플릿 갤러리
-                </Button>
-              </Link>
+              {flags.FEATURE_TEMPLATES ? (
+                <Link to="/templates">
+                  <Button variant="outline" className="w-full justify-start">
+                    <BookOpen className="h-4 w-4 mr-2 text-blue-500" />
+                    템플릿 갤러리
+                  </Button>
+                </Link>
+              ) : null}
               <Link to="/database">
                 <Button variant="outline" className="w-full justify-start">
                   <Database className="h-4 w-4 mr-2 text-indigo-500" />
@@ -280,164 +290,172 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                   실시간 협업 테스트
                 </Button>
               </Link>
-              <Link to="/ai-search">
-                <Button variant="outline" className="w-full justify-start">
-                  <Sparkles className="h-4 w-4 mr-2 text-purple-500" />
-                  AI 검색
-                </Button>
-              </Link>
+              {flags.FEATURE_AI_SEARCH ? (
+                <Link to="/ai-search">
+                  <Button variant="outline" className="w-full justify-start">
+                    <Sparkles className="h-4 w-4 mr-2 text-purple-500" />
+                    AI 검색
+                  </Button>
+                </Link>
+              ) : null}
               <Link to="/knowledge-graph">
                 <Button variant="outline" className="w-full justify-start">
                   <Network className="h-4 w-4 mr-2 text-cyan-500" />
                   지식 그래프
                 </Button>
               </Link>
-              <Link to="/automation">
-                <Button variant="outline" className="w-full justify-start">
-                  <Zap className="h-4 w-4 mr-2 text-amber-500" />
-                  자동화
-                </Button>
-              </Link>
+              {flags.FEATURE_AUTOMATION ? (
+                <Link to="/automation">
+                  <Button variant="outline" className="w-full justify-start">
+                    <Zap className="h-4 w-4 mr-2 text-amber-500" />
+                    자동화
+                  </Button>
+                </Link>
+              ) : null}
             </div>
           </div>
 
           {/* Teams Section */}
-          <div className="mb-6">
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 flex items-center">
-              <Users className="h-4 w-4 text-emerald-500 mr-2" />
-              Teams
-              {teamsLoading && <span className="ml-2 text-xs text-slate-400">(로딩 중...)</span>}
-            </h3>
+          {showTeams ? (
+            <div className="mb-6">
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 flex items-center">
+                <Users className="h-4 w-4 text-emerald-500 mr-2" />
+                Teams
+                {teamsLoading && <span className="ml-2 text-xs text-slate-400">(로딩 중...)</span>}
+              </h3>
 
-            {teamsError && (
-              <div className="text-xs text-red-500 mb-2">팀 목록을 불러오는데 실패했습니다.</div>
-            )}
+              {teamsError && (
+                <div className="text-xs text-red-500 mb-2">팀 목록을 불러오는데 실패했습니다.</div>
+              )}
 
-            {teamsLoading ? (
-              <div className="space-y-2">
-                {[1, 2].map((i) => (
-                  <div
-                    key={i}
-                    className="h-10 bg-slate-200 dark:bg-slate-700 rounded-lg animate-pulse"
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {teams.map((team) => {
-                  const Icon = team.icon
-                    ? (() => {
-                        // Dynamic icon import - you might need to adjust this based on your icon library
-                        const iconMap: Record<string, React.ElementType> = {
-                          Server: Activity,
-                          Monitor: Activity,
-                          Cloud: Activity,
-                          Users: Users,
-                          Calendar: Calendar,
-                          File: File,
-                          CheckSquare: CheckSquare,
-                        };
-                        return iconMap[team.icon] || Users;
-                      })()
-                    : Users;
+              {teamsLoading ? (
+                <div className="space-y-2">
+                  {[1, 2].map((i) => (
+                    <div
+                      key={i}
+                      className="h-10 bg-slate-200 dark:bg-slate-700 rounded-lg animate-pulse"
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {teams.map((team) => {
+                    const Icon = team.icon
+                      ? (() => {
+                          // Dynamic icon import - you might need to adjust this based on your icon library
+                          const iconMap: Record<string, React.ElementType> = {
+                            Server: Activity,
+                            Monitor: Activity,
+                            Cloud: Activity,
+                            Users: Users,
+                            Calendar: Calendar,
+                            File: File,
+                            CheckSquare: CheckSquare,
+                          };
+                          return iconMap[team.icon] || Users;
+                        })()
+                      : Users;
 
-                  const iconColor = team.color || 'text-primary';
+                    const iconColor = team.color || 'text-primary';
 
-                  return (
-                    <div key={team.id} className="group">
-                      <Button
-                        variant="ghost"
-                        className="w-full justify-start p-3 h-auto rounded-xl hover:bg-gradient-to-r hover:from-primary/5 hover:to-primary/10 transition-all duration-200"
-                        onClick={() => handleTeamClick(team)}
-                      >
-                        <Icon className={cn('h-5 w-5 mr-3', iconColor)} />
-                        <span className="flex-1 text-left font-medium">{team.displayName}</span>
-                        {expandedSections[`team-${team.id}`] ? (
-                          <ChevronDown className="h-4 w-4 text-slate-400 group-hover:text-primary transition-colors" />
-                        ) : (
-                          <ChevronRight className="h-4 w-4 text-slate-400 group-hover:text-primary transition-colors" />
+                    return (
+                      <div key={team.id} className="group">
+                        <Button
+                          variant="ghost"
+                          className="w-full justify-start p-3 h-auto rounded-xl hover:bg-gradient-to-r hover:from-primary/5 hover:to-primary/10 transition-all duration-200"
+                          onClick={() => handleTeamClick(team)}
+                        >
+                          <Icon className={cn('h-5 w-5 mr-3', iconColor)} />
+                          <span className="flex-1 text-left font-medium">{team.displayName}</span>
+                          {expandedSections[`team-${team.id}`] ? (
+                            <ChevronDown className="h-4 w-4 text-slate-400 group-hover:text-primary transition-colors" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4 text-slate-400 group-hover:text-primary transition-colors" />
+                          )}
+                        </Button>
+
+                        {expandedSections[`team-${team.id}`] && (
+                          <div className="ml-8 mt-3 space-y-2">
+                            <Link to={`/teams/${team.name}/members`}>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="w-full justify-start h-9 text-xs rounded-lg hover:bg-gradient-to-r hover:from-emerald-50 hover:to-emerald-100 dark:hover:from-emerald-900/20 dark:hover:to-emerald-800/20 transition-all"
+                                onClick={onClose}
+                              >
+                                <Users className="h-4 w-4 mr-2 text-emerald-500" />
+                                팀원 관리
+                              </Button>
+                            </Link>
+                            <Link to={`/teams/${team.name}/tasks`}>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="w-full justify-start h-9 text-xs rounded-lg hover:bg-gradient-to-r hover:from-orange-50 hover:to-orange-100 dark:hover:from-orange-900/20 dark:hover:to-orange-800/20 transition-all"
+                                onClick={onClose}
+                              >
+                                <CheckSquare className="h-4 w-4 mr-2 text-orange-500" />
+                                과제 트래커
+                              </Button>
+                            </Link>
+                            <Link to={`/teams/${team.name}/files`}>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="w-full justify-start h-9 text-xs rounded-lg hover:bg-gradient-to-r hover:from-blue-50 hover:to-blue-100 dark:hover:from-blue-900/20 dark:hover:to-blue-800/20 transition-all"
+                                onClick={onClose}
+                              >
+                                <File className="h-4 w-4 mr-2 text-blue-500" />
+                                파일 관리
+                              </Button>
+                            </Link>
+                            {flags.FEATURE_CALENDAR ? (
+                              <Link to={`/teams/${team.name}/calendar`}>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="w-full justify-start h-9 text-xs rounded-lg hover:bg-gradient-to-r hover:from-purple-50 hover:to-purple-100 dark:hover:from-purple-900/20 dark:hover:to-purple-800/20 transition-all"
+                                  onClick={onClose}
+                                >
+                                  <Calendar className="h-4 w-4 mr-2 text-purple-500" />팀 캘린더
+                                </Button>
+                              </Link>
+                            ) : null}
+                            <Link to={`/teams/${team.name}/pages`}>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="w-full justify-start h-9 text-xs rounded-lg hover:bg-gradient-to-r hover:from-green-50 hover:to-green-100 dark:hover:from-green-900/20 dark:hover:to-green-800/20 transition-all"
+                                onClick={onClose}
+                              >
+                                <Plus className="h-4 w-4 mr-2 text-green-500" />팀 페이지
+                              </Button>
+                            </Link>
+                            <Link to={`/teams/${team.name}/database`}>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="w-full justify-start h-9 text-xs rounded-lg hover:bg-gradient-to-r hover:from-indigo-50 hover:to-indigo-100 dark:hover:from-indigo-900/20 dark:hover:to-indigo-800/20 transition-all"
+                                onClick={onClose}
+                              >
+                                <Database className="h-4 w-4 mr-2 text-indigo-500" />팀 데이터
+                              </Button>
+                            </Link>
+                          </div>
                         )}
-                      </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
 
-                      {expandedSections[`team-${team.id}`] && (
-                        <div className="ml-8 mt-3 space-y-2">
-                          <Link to={`/teams/${team.name}/members`}>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="w-full justify-start h-9 text-xs rounded-lg hover:bg-gradient-to-r hover:from-emerald-50 hover:to-emerald-100 dark:hover:from-emerald-900/20 dark:hover:to-emerald-800/20 transition-all"
-                              onClick={onClose}
-                            >
-                              <Users className="h-4 w-4 mr-2 text-emerald-500" />
-                              팀원 관리
-                            </Button>
-                          </Link>
-                          <Link to={`/teams/${team.name}/tasks`}>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="w-full justify-start h-9 text-xs rounded-lg hover:bg-gradient-to-r hover:from-orange-50 hover:to-orange-100 dark:hover:from-orange-900/20 dark:hover:to-orange-800/20 transition-all"
-                              onClick={onClose}
-                            >
-                              <CheckSquare className="h-4 w-4 mr-2 text-orange-500" />
-                              과제 트래커
-                            </Button>
-                          </Link>
-                          <Link to={`/teams/${team.name}/files`}>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="w-full justify-start h-9 text-xs rounded-lg hover:bg-gradient-to-r hover:from-blue-50 hover:to-blue-100 dark:hover:from-blue-900/20 dark:hover:to-blue-800/20 transition-all"
-                              onClick={onClose}
-                            >
-                              <File className="h-4 w-4 mr-2 text-blue-500" />
-                              파일 관리
-                            </Button>
-                          </Link>
-                          <Link to={`/teams/${team.name}/calendar`}>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="w-full justify-start h-9 text-xs rounded-lg hover:bg-gradient-to-r hover:from-purple-50 hover:to-purple-100 dark:hover:from-purple-900/20 dark:hover:to-purple-800/20 transition-all"
-                              onClick={onClose}
-                            >
-                              <Calendar className="h-4 w-4 mr-2 text-purple-500" />팀 캘린더
-                            </Button>
-                          </Link>
-                          <Link to={`/teams/${team.name}/pages`}>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="w-full justify-start h-9 text-xs rounded-lg hover:bg-gradient-to-r hover:from-green-50 hover:to-green-100 dark:hover:from-green-900/20 dark:hover:to-green-800/20 transition-all"
-                              onClick={onClose}
-                            >
-                              <Plus className="h-4 w-4 mr-2 text-green-500" />팀 페이지
-                            </Button>
-                          </Link>
-                          <Link to={`/teams/${team.name}/database`}>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="w-full justify-start h-9 text-xs rounded-lg hover:bg-gradient-to-r hover:from-indigo-50 hover:to-indigo-100 dark:hover:from-indigo-900/20 dark:hover:to-indigo-800/20 transition-all"
-                              onClick={onClose}
-                            >
-                              <Database className="h-4 w-4 mr-2 text-indigo-500" />팀 데이터
-                            </Button>
-                          </Link>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {!teamsLoading && teams.length === 0 && (
-              <div className="text-xs text-slate-400 italic p-3 bg-slate-50 dark:bg-slate-800/30 rounded-lg">
-                팀이 없습니다. 관리자 페이지에서 팀을 추가하세요.
-              </div>
-            )}
-          </div>
+              {!teamsLoading && teams.length === 0 && (
+                <div className="text-xs text-slate-400 italic p-3 bg-slate-50 dark:bg-slate-800/30 rounded-lg">
+                  팀이 없습니다. 관리자 페이지에서 팀을 추가하세요.
+                </div>
+              )}
+            </div>
+          ) : null}
 
           {/* Search */}
           <div className="mb-6">

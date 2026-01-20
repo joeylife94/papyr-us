@@ -24,9 +24,11 @@
 ### 개발자 문서
 
 - **[개발 가이드](./development-guide.md)** — 로컬/Docker 환경 설정, 빌드, 테스트 실행 방법
+- **[Personal Mode vs Team Mode](./mode-model.md)** — Notion-style 모드 모델, 기본값, 전환 방법
 - **[기술 명세서](./pre-work/technical-specification.md)** — 상세 기술 스펙, API 엔드포인트, 데이터베이스 스키마
 - **[RBAC 가이드](./rbac-guide.md)** — 권한 관리 및 보안 설정
 - **[Yjs 아키텍처](./yjs-architecture.md)** — 실시간 협업 시스템 구조
+- **[Collaboration Engine](./collaboration-engine.md)** — 협업 안정성(스냅샷/TTL/LRU/Rate Limit) 설정과 보장
 
 ### 사용자 & 관리자 문서
 
@@ -38,6 +40,8 @@
 
 - **[백엔드 테스트 케이스](./backend-test-cases.md)** — TC 매트릭스, 테스트 파일 매핑
 - **[테스트 결과](./test-results.md)** — E2E 및 스모크 테스트 결과 요약
+- **[Team Mode 스모크 테스트](./team-mode-smoke-test.md)** — 팀 모드 기본 동작(협업 ON) 확인
+- **[Personal Mode 스모크 테스트](./personal-mode-smoke-test.md)** — 개인 모드 기본 동작(협업 OFF) 확인
 
 ### 배포 가이드
 

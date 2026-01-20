@@ -55,6 +55,7 @@ import jwt from 'jsonwebtoken';
 import passport from 'passport';
 import { eq } from 'drizzle-orm';
 import { DBStorage } from './storage.js';
+import { featureFlags } from './features.js';
 
 interface MulterRequest extends Request {
   files?: any[];
@@ -70,17 +71,36 @@ export async function registerRoutes(
   // app.use(passport.initialize());
   // await import('./services/passport');
 
-  // Setup Socket.IO for real-time collaboration
-  try {
-    const { setupSocketIO } = await import('./services/socket.js');
-    io = setupSocketIO(httpServer, storage);
+  // Setup Socket.IO / Yjs collaboration (feature-gated)
+  // In personal mode, collaboration is disabled by default and should not:
+  // - initialize Socket.IO namespaces
+  // - register socket listeners
+  // - start Yjs persistence intervals
+  // - write to DB via realtime handlers
+  const enableRealtimeSockets =
+    featureFlags.FEATURE_COLLABORATION || featureFlags.FEATURE_NOTIFICATIONS;
+  if (enableRealtimeSockets) {
+    try {
+      const { setupSocketIO } = await import('./services/socket.js');
+      io = setupSocketIO(httpServer, storage, {
+        enableCollaboration: featureFlags.FEATURE_COLLABORATION,
+        enableNotifications: featureFlags.FEATURE_NOTIFICATIONS,
+      });
 
-    // Setup Yjs CRDT collaboration for conflict-free concurrent editing
-    const { setupYjsCollaboration } = await import('./services/yjs-collaboration.js');
-    setupYjsCollaboration(io, storage);
-    logger.info('Yjs CRDT collaboration system initialized');
-  } catch (error) {
-    logger.warn('Socket.IO/Yjs setup failed:', { error });
+      // Setup Yjs CRDT collaboration for conflict-free concurrent editing
+      if (featureFlags.FEATURE_COLLABORATION) {
+        const { setupYjsCollaboration } = await import('./services/yjs-collaboration.js');
+        setupYjsCollaboration(io, storage);
+        logger.info('Yjs CRDT collaboration system initialized');
+      }
+    } catch (error) {
+      logger.warn('Socket.IO/Yjs setup failed:', { error });
+    }
+  } else {
+    logger.info('Realtime sockets disabled by feature flags', {
+      FEATURE_COLLABORATION: featureFlags.FEATURE_COLLABORATION,
+      FEATURE_NOTIFICATIONS: featureFlags.FEATURE_NOTIFICATIONS,
+    });
   }
 
   // --- Authentication Routes ---
@@ -99,6 +119,12 @@ export async function registerRoutes(
       uptimeSeconds: Math.round(uptime),
       version,
     });
+  });
+
+  // --- Feature Flags (client runtime config) ---
+  // Source of truth is server env; client reads flags from this endpoint.
+  app.get('/api/features', (req, res) => {
+    res.json(featureFlags);
   });
 
   // Rate limiters (enabled by config)
@@ -559,169 +585,171 @@ export async function registerRoutes(
     }
   });
 
-  // Calendar Events API
-  app.get('/api/calendar', async (req, res) => {
-    try {
-      const teamId = req.query.teamId as string | undefined;
-      const events = await storage.getCalendarEvents(teamId ? Number(teamId) : undefined);
+  if (featureFlags.FEATURE_CALENDAR) {
+    // Calendar Events API
+    app.get('/api/calendar', async (req, res) => {
+      try {
+        const teamId = req.query.teamId as string | undefined;
+        const events = await storage.getCalendarEvents(teamId ? Number(teamId) : undefined);
 
-      // Ensure compatibility with new fields - add defaults if missing
-      const safeEvents = events.map((event) => ({
-        ...event,
-        startTime: event.startTime || null,
-        endTime: event.endTime || null,
-        priority: event.priority || 1,
-      }));
+        // Ensure compatibility with new fields - add defaults if missing
+        const safeEvents = events.map((event) => ({
+          ...event,
+          startTime: event.startTime || null,
+          endTime: event.endTime || null,
+          priority: event.priority || 1,
+        }));
 
-      res.json(safeEvents);
-    } catch (error) {
-      console.error('Error fetching calendar events:', error);
-      res.status(500).json({ message: 'Server error' });
-    }
-  });
-
-  app.get('/api/calendar/:teamId', async (req, res) => {
-    try {
-      const teamId = req.params.teamId;
-      const events = await storage.getCalendarEvents(Number(teamId));
-
-      // Ensure compatibility with new fields - add defaults if missing
-      const safeEvents = events.map((event) => ({
-        ...event,
-        startTime: event.startTime || null,
-        endTime: event.endTime || null,
-        priority: event.priority || 1,
-      }));
-
-      res.json(safeEvents);
-    } catch (error) {
-      console.error('Error fetching calendar events:', error);
-      res.status(500).json({ message: 'Server error' });
-    }
-  });
-
-  app.get('/api/calendar/event/:id', async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const event = await storage.getCalendarEvent(id);
-      if (!event) {
-        return res.status(404).json({ message: 'Event not found' });
+        res.json(safeEvents);
+      } catch (error) {
+        console.error('Error fetching calendar events:', error);
+        res.status(500).json({ message: 'Server error' });
       }
-      res.json(event);
-    } catch (error) {
-      res.status(500).json({ message: 'Server error' });
-    }
-  });
+    });
 
-  app.post('/api/calendar', requireAuthIfEnabled, async (req, res) => {
-    try {
-      // Convert ISO string dates to Date objects
-      const requestData = { ...req.body };
-      if (requestData.startDate && typeof requestData.startDate === 'string') {
-        requestData.startDate = new Date(requestData.startDate);
-      }
-      if (requestData.endDate && typeof requestData.endDate === 'string') {
-        requestData.endDate = new Date(requestData.endDate);
-      }
+    app.get('/api/calendar/:teamId', async (req, res) => {
+      try {
+        const teamId = req.params.teamId;
+        const events = await storage.getCalendarEvents(Number(teamId));
 
-      // If endDate is not provided or is null, set it to startDate
-      if (!requestData.endDate && requestData.startDate) {
-        requestData.endDate = new Date(requestData.startDate);
-      }
+        // Ensure compatibility with new fields - add defaults if missing
+        const safeEvents = events.map((event) => ({
+          ...event,
+          startTime: event.startTime || null,
+          endTime: event.endTime || null,
+          priority: event.priority || 1,
+        }));
 
-      // Handle time fields - convert empty strings to null
-      if (requestData.startTime === '' || requestData.startTime === undefined) {
-        requestData.startTime = null;
+        res.json(safeEvents);
+      } catch (error) {
+        console.error('Error fetching calendar events:', error);
+        res.status(500).json({ message: 'Server error' });
       }
-      if (requestData.endTime === '' || requestData.endTime === undefined) {
-        requestData.endTime = null;
-      }
+    });
 
-      // Handle priority field - convert to integer and set default
-      if (!requestData.priority || requestData.priority === undefined) {
-        requestData.priority = 1;
-      } else {
-        requestData.priority = parseInt(requestData.priority);
+    app.get('/api/calendar/event/:id', async (req, res) => {
+      try {
+        const id = parseInt(req.params.id);
+        const event = await storage.getCalendarEvent(id);
+        if (!event) {
+          return res.status(404).json({ message: 'Event not found' });
+        }
+        res.json(event);
+      } catch (error) {
+        res.status(500).json({ message: 'Server error' });
       }
+    });
 
-      const eventData = insertCalendarEventSchema.parse(requestData);
-      const event = await storage.createCalendarEvent(eventData);
-      res.status(201).json(event);
-    } catch (error: any) {
-      console.error('Calendar event creation error:', error);
-      if (error.name === 'ZodError') {
-        return res.status(400).json({
-          message: 'Invalid event data',
-          errors: error.errors,
-        });
-      }
-      res.status(400).json({ message: 'Invalid event data' });
-    }
-  });
+    app.post('/api/calendar', requireAuthIfEnabled, async (req, res) => {
+      try {
+        // Convert ISO string dates to Date objects
+        const requestData = { ...req.body };
+        if (requestData.startDate && typeof requestData.startDate === 'string') {
+          requestData.startDate = new Date(requestData.startDate);
+        }
+        if (requestData.endDate && typeof requestData.endDate === 'string') {
+          requestData.endDate = new Date(requestData.endDate);
+        }
 
-  app.patch('/api/calendar/event/:id', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
+        // If endDate is not provided or is null, set it to startDate
+        if (!requestData.endDate && requestData.startDate) {
+          requestData.endDate = new Date(requestData.startDate);
+        }
 
-      // Convert ISO string dates to Date objects (same logic as POST)
-      const requestData = { ...req.body };
-      if (requestData.startDate && typeof requestData.startDate === 'string') {
-        requestData.startDate = new Date(requestData.startDate);
-      }
-      if (requestData.endDate && typeof requestData.endDate === 'string') {
-        requestData.endDate = new Date(requestData.endDate);
-      }
+        // Handle time fields - convert empty strings to null
+        if (requestData.startTime === '' || requestData.startTime === undefined) {
+          requestData.startTime = null;
+        }
+        if (requestData.endTime === '' || requestData.endTime === undefined) {
+          requestData.endTime = null;
+        }
 
-      // If endDate is not provided or is null, set it to startDate
-      if (!requestData.endDate && requestData.startDate) {
-        requestData.endDate = new Date(requestData.startDate);
-      }
+        // Handle priority field - convert to integer and set default
+        if (!requestData.priority || requestData.priority === undefined) {
+          requestData.priority = 1;
+        } else {
+          requestData.priority = parseInt(requestData.priority);
+        }
 
-      // Handle time fields - convert empty strings to null
-      if (requestData.startTime === '' || requestData.startTime === undefined) {
-        requestData.startTime = null;
+        const eventData = insertCalendarEventSchema.parse(requestData);
+        const event = await storage.createCalendarEvent(eventData);
+        res.status(201).json(event);
+      } catch (error: any) {
+        console.error('Calendar event creation error:', error);
+        if (error.name === 'ZodError') {
+          return res.status(400).json({
+            message: 'Invalid event data',
+            errors: error.errors,
+          });
+        }
+        res.status(400).json({ message: 'Invalid event data' });
       }
-      if (requestData.endTime === '' || requestData.endTime === undefined) {
-        requestData.endTime = null;
-      }
+    });
 
-      // Handle priority field - convert to integer and set default
-      if (!requestData.priority || requestData.priority === undefined) {
-        requestData.priority = 1;
-      } else {
-        requestData.priority = parseInt(requestData.priority);
-      }
+    app.patch('/api/calendar/event/:id', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const id = parseInt(req.params.id);
 
-      const updateData = updateCalendarEventSchema.parse(requestData);
-      const event = await storage.updateCalendarEvent(id, updateData);
-      if (!event) {
-        return res.status(404).json({ message: 'Event not found' });
-      }
-      res.json(event);
-    } catch (error: any) {
-      console.error('Calendar event update error:', error);
-      if (error.name === 'ZodError') {
-        return res.status(400).json({
-          message: 'Invalid event data',
-          errors: error.errors,
-        });
-      }
-      res.status(400).json({ message: 'Invalid event data' });
-    }
-  });
+        // Convert ISO string dates to Date objects (same logic as POST)
+        const requestData = { ...req.body };
+        if (requestData.startDate && typeof requestData.startDate === 'string') {
+          requestData.startDate = new Date(requestData.startDate);
+        }
+        if (requestData.endDate && typeof requestData.endDate === 'string') {
+          requestData.endDate = new Date(requestData.endDate);
+        }
 
-  app.delete('/api/calendar/event/:id', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const deleted = await storage.deleteCalendarEvent(id);
-      if (!deleted) {
-        return res.status(404).json({ message: 'Event not found' });
+        // If endDate is not provided or is null, set it to startDate
+        if (!requestData.endDate && requestData.startDate) {
+          requestData.endDate = new Date(requestData.startDate);
+        }
+
+        // Handle time fields - convert empty strings to null
+        if (requestData.startTime === '' || requestData.startTime === undefined) {
+          requestData.startTime = null;
+        }
+        if (requestData.endTime === '' || requestData.endTime === undefined) {
+          requestData.endTime = null;
+        }
+
+        // Handle priority field - convert to integer and set default
+        if (!requestData.priority || requestData.priority === undefined) {
+          requestData.priority = 1;
+        } else {
+          requestData.priority = parseInt(requestData.priority);
+        }
+
+        const updateData = updateCalendarEventSchema.parse(requestData);
+        const event = await storage.updateCalendarEvent(id, updateData);
+        if (!event) {
+          return res.status(404).json({ message: 'Event not found' });
+        }
+        res.json(event);
+      } catch (error: any) {
+        console.error('Calendar event update error:', error);
+        if (error.name === 'ZodError') {
+          return res.status(400).json({
+            message: 'Invalid event data',
+            errors: error.errors,
+          });
+        }
+        res.status(400).json({ message: 'Invalid event data' });
       }
-      res.status(204).send();
-    } catch (error) {
-      res.status(500).json({ message: 'Server error' });
-    }
-  });
+    });
+
+    app.delete('/api/calendar/event/:id', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const id = parseInt(req.params.id);
+        const deleted = await storage.deleteCalendarEvent(id);
+        if (!deleted) {
+          return res.status(404).json({ message: 'Event not found' });
+        }
+        res.status(204).send();
+      } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+      }
+    });
+  }
 
   // Comments API
   app.get('/api/pages/:pageId/comments', async (req, res) => {
@@ -1184,87 +1212,89 @@ export async function registerRoutes(
     }
   });
 
-  // Admin Authentication
-  app.post('/api/admin/auth', rlAdmin, async (req, res) => {
-    try {
-      const { password } = req.body;
-      if (password === config.adminPassword) {
-        // Optional: issue a short-lived admin token for convenience
-        const token = jwt.sign(
-          { role: 'admin', via: 'password' },
-          (config as any).jwtSecret || 'your-default-secret',
-          {
-            expiresIn: '2h',
-          }
-        );
-        res.json({ success: true, token });
-      } else {
-        res.status(401).json({ message: 'Invalid password' });
+  if (featureFlags.FEATURE_ADMIN) {
+    // Admin Authentication
+    app.post('/api/admin/auth', rlAdmin, async (req, res) => {
+      try {
+        const { password } = req.body;
+        if (password === config.adminPassword) {
+          // Optional: issue a short-lived admin token for convenience
+          const token = jwt.sign(
+            { role: 'admin', via: 'password' },
+            (config as any).jwtSecret || 'your-default-secret',
+            {
+              expiresIn: '2h',
+            }
+          );
+          res.json({ success: true, token });
+        } else {
+          res.status(401).json({ message: 'Invalid password' });
+        }
+      } catch (error) {
+        res.status(500).json({ message: 'Server error' });
       }
-    } catch (error) {
-      res.status(500).json({ message: 'Server error' });
-    }
-  });
+    });
 
-  // Directory password verification
-  app.post('/api/directory/verify', rlAdmin, async (req, res) => {
-    try {
-      const { directoryName, password } = req.body;
-      const isValid = await storage.verifyDirectoryPassword(directoryName, password);
-      res.json({ success: isValid });
-    } catch (error) {
-      res.status(500).json({ message: 'Server error' });
-    }
-  });
-
-  // Admin Directory Management
-  app.get('/api/admin/directories', rlAdmin, requireAdmin, async (req, res) => {
-    try {
-      const directories = await storage.getDirectories();
-      res.json(directories);
-    } catch (error) {
-      res.status(500).json({ message: 'Server error' });
-    }
-  });
-
-  app.post('/api/admin/directories', rlAdmin, requireAdmin, async (req, res) => {
-    try {
-      const { adminPassword, ...directoryData } = req.body; // adminPassword ignored by middleware
-      const validatedData = insertDirectorySchema.parse(directoryData);
-      const directory = await storage.createDirectory(validatedData);
-      res.status(201).json(directory);
-    } catch (error) {
-      res.status(400).json({ message: 'Invalid directory data' });
-    }
-  });
-
-  app.patch('/api/admin/directories/:id', rlAdmin, requireAdmin, async (req, res) => {
-    try {
-      const { adminPassword, ...updateData } = req.body;
-      const id = parseInt(req.params.id);
-      const validatedData = updateDirectorySchema.parse(updateData);
-      const directory = await storage.updateDirectory(id, validatedData);
-      if (!directory) {
-        return res.status(404).json({ message: 'Directory not found' });
+    // Directory password verification
+    app.post('/api/directory/verify', rlAdmin, async (req, res) => {
+      try {
+        const { directoryName, password } = req.body;
+        const isValid = await storage.verifyDirectoryPassword(directoryName, password);
+        res.json({ success: isValid });
+      } catch (error) {
+        res.status(500).json({ message: 'Server error' });
       }
-      res.json(directory);
-    } catch (error) {
-      res.status(400).json({ message: 'Invalid directory data' });
-    }
-  });
+    });
 
-  app.delete('/api/admin/directories/:id', rlAdmin, requireAdmin, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const deleted = await storage.deleteDirectory(id);
-      if (!deleted) {
-        return res.status(404).json({ message: 'Directory not found' });
+    // Admin Directory Management
+    app.get('/api/admin/directories', rlAdmin, requireAdmin, async (req, res) => {
+      try {
+        const directories = await storage.getDirectories();
+        res.json(directories);
+      } catch (error) {
+        res.status(500).json({ message: 'Server error' });
       }
-      res.status(204).send();
-    } catch (error) {
-      res.status(500).json({ message: 'Server error' });
-    }
-  });
+    });
+
+    app.post('/api/admin/directories', rlAdmin, requireAdmin, async (req, res) => {
+      try {
+        const { adminPassword, ...directoryData } = req.body; // adminPassword ignored by middleware
+        const validatedData = insertDirectorySchema.parse(directoryData);
+        const directory = await storage.createDirectory(validatedData);
+        res.status(201).json(directory);
+      } catch (error) {
+        res.status(400).json({ message: 'Invalid directory data' });
+      }
+    });
+
+    app.patch('/api/admin/directories/:id', rlAdmin, requireAdmin, async (req, res) => {
+      try {
+        const { adminPassword, ...updateData } = req.body;
+        const id = parseInt(req.params.id);
+        const validatedData = updateDirectorySchema.parse(updateData);
+        const directory = await storage.updateDirectory(id, validatedData);
+        if (!directory) {
+          return res.status(404).json({ message: 'Directory not found' });
+        }
+        res.json(directory);
+      } catch (error) {
+        res.status(400).json({ message: 'Invalid directory data' });
+      }
+    });
+
+    app.delete('/api/admin/directories/:id', rlAdmin, requireAdmin, async (req, res) => {
+      try {
+        const id = parseInt(req.params.id);
+        const deleted = await storage.deleteDirectory(id);
+        if (!deleted) {
+          return res.status(404).json({ message: 'Directory not found' });
+        }
+        res.status(204).send();
+      } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+      }
+    });
+  }
 
   // Dashboard API
   app.get('/api/dashboard/overview', async (req, res) => {
@@ -1482,740 +1512,748 @@ export async function registerRoutes(
     }
   });
 
-  // Notifications API
-  app.get('/api/notifications', async (req, res) => {
-    try {
-      const recipientId = parseInt(req.query.recipientId as string);
-      if (!recipientId) {
-        return res.status(400).json({ message: 'recipientId is required' });
-      }
-
-      const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
-      const cursor = req.query.cursor as string | undefined;
-
-      const notifications = await storage.getNotifications(recipientId);
-
-      // Apply cursor-based pagination
-      let paginatedNotifications = notifications;
-      if (cursor) {
-        const cursorId = parseInt(cursor);
-        const cursorIndex = notifications.findIndex((n) => n.id === cursorId);
-        if (cursorIndex >= 0) {
-          paginatedNotifications = notifications.slice(cursorIndex + 1, cursorIndex + 1 + limit);
-        }
-      } else {
-        paginatedNotifications = notifications.slice(0, limit);
-      }
-
-      const hasMore = cursor
-        ? notifications.length >
-          notifications.findIndex((n) => n.id === parseInt(cursor)) + 1 + limit
-        : notifications.length > limit;
-      const nextCursor =
-        hasMore && paginatedNotifications.length > 0
-          ? paginatedNotifications[paginatedNotifications.length - 1]?.id.toString()
-          : null;
-
-      res.json({
-        notifications: paginatedNotifications,
-        pagination: {
-          hasMore,
-          nextCursor,
-          count: paginatedNotifications.length,
-          total: notifications.length,
-        },
-      });
-    } catch (error) {
-      res.status(500).json({ message: 'Server error' });
-    }
-  });
-
-  app.get('/api/notifications/unread-count', async (req, res) => {
-    try {
-      const recipientId = parseInt(req.query.recipientId as string);
-      if (!recipientId) {
-        return res.status(400).json({ message: 'recipientId is required' });
-      }
-
-      const count = await storage.getUnreadNotificationCount(recipientId);
-      res.json({ count });
-    } catch (error) {
-      res.status(500).json({ message: 'Server error' });
-    }
-  });
-
-  app.get('/api/notifications/:id', async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const notification = await storage.getNotification(id);
-
-      if (!notification) {
-        return res.status(404).json({ message: 'Notification not found' });
-      }
-
-      res.json(notification);
-    } catch (error) {
-      res.status(400).json({ message: 'Invalid notification ID' });
-    }
-  });
-
-  app.post('/api/notifications', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const notificationData = insertNotificationSchema.parse(req.body);
-      const notification = await storage.createNotification(notificationData);
-      // Realtime: emit to user room and update unread count
+  if (featureFlags.FEATURE_NOTIFICATIONS) {
+    // Notifications API
+    app.get('/api/notifications', async (req, res) => {
       try {
-        const ns = io?.of('/collab');
-        if (ns) {
-          ns.to(`user:${notification.recipientId}`).emit('notification:new', notification);
-          const count = await storage.getUnreadNotificationCount(notification.recipientId);
-          ns.to(`user:${notification.recipientId}`).emit('notification:unread-count', {
-            recipientId: notification.recipientId,
-            count,
-          });
+        const recipientId = parseInt(req.query.recipientId as string);
+        if (!recipientId) {
+          return res.status(400).json({ message: 'recipientId is required' });
         }
-      } catch (emitErr) {
-        console.warn('Socket emit failed for notification:new', emitErr);
-      }
 
-      res.status(201).json(notification);
-    } catch (error) {
-      res.status(400).json({ message: 'Invalid notification data', error });
-    }
-  });
+        const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+        const cursor = req.query.cursor as string | undefined;
 
-  app.put('/api/notifications/:id', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const updateData = updateNotificationSchema.parse(req.body);
-      const notification = await storage.updateNotification(id, updateData);
+        const notifications = await storage.getNotifications(recipientId);
 
-      if (!notification) {
-        return res.status(404).json({ message: 'Notification not found' });
-      }
-
-      // Realtime: emit updated notification and possibly unread count change
-      try {
-        const ns = io?.of('/collab');
-        if (ns) {
-          ns.to(`user:${notification.recipientId}`).emit('notification:updated', notification);
-          const count = await storage.getUnreadNotificationCount(notification.recipientId);
-          ns.to(`user:${notification.recipientId}`).emit('notification:unread-count', {
-            recipientId: notification.recipientId,
-            count,
-          });
-        }
-      } catch (emitErr) {
-        console.warn('Socket emit failed for notification:updated', emitErr);
-      }
-
-      res.json(notification);
-    } catch (error) {
-      res.status(400).json({ message: 'Invalid update data', error });
-    }
-  });
-
-  app.delete('/api/notifications/:id', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const deleted = await storage.deleteNotification(id);
-
-      if (!deleted) {
-        return res.status(404).json({ message: 'Notification not found' });
-      }
-
-      // Realtime: emit deletion and refresh unread count (need recipientId; attempt best-effort)
-      try {
-        // If storage can fetch notification before deletion, consider enhancing storage API to return deleted entity
-        // For now, clients should refetch list on delete event
-        const ns = io?.of('/collab');
-        if (ns) {
-          ns.emit('notification:deleted', { id });
-        }
-      } catch (emitErr) {
-        console.warn('Socket emit failed for notification:deleted', emitErr);
-      }
-
-      res.json({ message: 'Notification deleted successfully' });
-    } catch (error) {
-      res.status(400).json({ message: 'Invalid notification ID' });
-    }
-  });
-
-  app.patch('/api/notifications/:id/read', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const notification = await storage.markNotificationAsRead(id);
-
-      if (!notification) {
-        return res.status(404).json({ message: 'Notification not found' });
-      }
-
-      // Realtime: emit updated notification and new unread count
-      try {
-        const ns = io?.of('/collab');
-        if (ns) {
-          ns.to(`user:${notification.recipientId}`).emit('notification:updated', notification);
-          const count = await storage.getUnreadNotificationCount(notification.recipientId);
-          ns.to(`user:${notification.recipientId}`).emit('notification:unread-count', {
-            recipientId: notification.recipientId,
-            count,
-          });
-        }
-      } catch (emitErr) {
-        console.warn('Socket emit failed for notification:read', emitErr);
-      }
-
-      res.json(notification);
-    } catch (error) {
-      res.status(400).json({ message: 'Invalid notification ID' });
-    }
-  });
-
-  app.patch('/api/notifications/read-all', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const { recipientId } = req.body;
-      if (!recipientId) {
-        return res.status(400).json({ message: 'recipientId is required' });
-      }
-
-      await storage.markAllNotificationsAsRead(recipientId);
-
-      // Realtime: emit unread count reset for recipient
-      try {
-        const ns = io?.of('/collab');
-        if (ns) {
-          const count = await storage.getUnreadNotificationCount(recipientId);
-          ns.to(`user:${recipientId}`).emit('notification:unread-count', { recipientId, count });
-        }
-      } catch (emitErr) {
-        console.warn('Socket emit failed for notification:read-all', emitErr);
-      }
-
-      res.json({ message: 'All notifications marked as read' });
-    } catch (error) {
-      res.status(400).json({ message: 'Invalid request data' });
-    }
-  });
-
-  // Template Categories API
-  app.get('/api/template-categories', async (req, res) => {
-    try {
-      const categories = await storage.getTemplateCategories();
-      res.json(categories);
-    } catch (error) {
-      console.error('Error fetching template categories:', error);
-      res.status(500).json({ error: 'Failed to fetch template categories' });
-    }
-  });
-
-  app.get('/api/template-categories/:id', async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid category ID' });
-      }
-
-      const category = await storage.getTemplateCategory(id);
-      if (!category) {
-        return res.status(404).json({ error: 'Template category not found' });
-      }
-
-      res.json(category);
-    } catch (error) {
-      console.error('Error fetching template category:', error);
-      res.status(500).json({ error: 'Failed to fetch template category' });
-    }
-  });
-
-  app.post('/api/template-categories', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const validatedData = insertTemplateCategorySchema.parse(req.body);
-      const category = await storage.createTemplateCategory(validatedData);
-      res.status(201).json(category);
-    } catch (error) {
-      console.error('Error creating template category:', error);
-      res.status(400).json({ error: 'Failed to create template category' });
-    }
-  });
-
-  app.put('/api/template-categories/:id', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid category ID' });
-      }
-
-      const validatedData = updateTemplateCategorySchema.parse(req.body);
-      const category = await storage.updateTemplateCategory(id, validatedData);
-      if (!category) {
-        return res.status(404).json({ error: 'Template category not found' });
-      }
-
-      res.json(category);
-    } catch (error) {
-      console.error('Error updating template category:', error);
-      res.status(400).json({ error: 'Failed to update template category' });
-    }
-  });
-
-  app.delete('/api/template-categories/:id', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid category ID' });
-      }
-
-      const success = await storage.deleteTemplateCategory(id);
-      if (!success) {
-        return res.status(404).json({ error: 'Template category not found' });
-      }
-
-      res.status(204).send();
-    } catch (error) {
-      console.error('Error deleting template category:', error);
-      res.status(500).json({ error: 'Failed to delete template category' });
-    }
-  });
-
-  // Templates API
-  app.get('/api/templates', async (req, res) => {
-    try {
-      const categoryId = req.query.categoryId
-        ? parseInt(req.query.categoryId as string)
-        : undefined;
-      if (req.query.categoryId && isNaN(categoryId!)) {
-        return res.status(400).json({ error: 'Invalid category ID' });
-      }
-
-      const templates = await storage.getTemplates(categoryId);
-      res.json(templates);
-    } catch (error) {
-      console.error('Error fetching templates:', error);
-      res.status(500).json({ error: 'Failed to fetch templates' });
-    }
-  });
-
-  app.get('/api/templates/:id', async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid template ID' });
-      }
-
-      const template = await storage.getTemplate(id);
-      if (!template) {
-        return res.status(404).json({ error: 'Template not found' });
-      }
-
-      res.json(template);
-    } catch (error) {
-      console.error('Error fetching template:', error);
-      res.status(500).json({ error: 'Failed to fetch template' });
-    }
-  });
-
-  app.post('/api/templates', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const validatedData = insertTemplateSchema.parse(req.body);
-      const template = await storage.createTemplate(validatedData);
-      res.status(201).json(template);
-    } catch (error) {
-      console.error('Error creating template:', error);
-      res.status(400).json({ error: 'Failed to create template' });
-    }
-  });
-
-  app.put('/api/templates/:id', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid template ID' });
-      }
-
-      const validatedData = updateTemplateSchema.parse(req.body);
-      const template = await storage.updateTemplate(id, validatedData);
-      if (!template) {
-        return res.status(404).json({ error: 'Template not found' });
-      }
-
-      res.json(template);
-    } catch (error) {
-      console.error('Error updating template:', error);
-      res.status(400).json({ error: 'Failed to update template' });
-    }
-  });
-
-  app.delete('/api/templates/:id', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid template ID' });
-      }
-
-      const success = await storage.deleteTemplate(id);
-      if (!success) {
-        return res.status(404).json({ error: 'Template not found' });
-      }
-
-      res.status(204).send();
-    } catch (error) {
-      console.error('Error deleting template:', error);
-      res.status(500).json({ error: 'Failed to delete template' });
-    }
-  });
-
-  app.post('/api/templates/:id/use', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid template ID' });
-      }
-
-      const success = await storage.incrementTemplateUsage(id);
-      if (!success) {
-        return res.status(404).json({ error: 'Template not found' });
-      }
-
-      res.json({ success: true });
-    } catch (error) {
-      console.error('Error incrementing template usage:', error);
-      res.status(500).json({ error: 'Failed to increment template usage' });
-    }
-  });
-
-  // Teams API
-  app.get('/api/teams', async (req, res) => {
-    try {
-      const teams = await storage.getTeams();
-      res.json(teams);
-    } catch (error) {
-      console.error('Error fetching teams:', error);
-      res.status(500).json({ error: 'Failed to fetch teams' });
-    }
-  });
-
-  app.get('/api/teams/:id', async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const team = await storage.getTeam(id);
-      if (!team) {
-        return res.status(404).json({ error: 'Team not found' });
-      }
-      res.json(team);
-    } catch (error) {
-      console.error('Error fetching team:', error);
-      res.status(500).json({ error: 'Failed to fetch team' });
-    }
-  });
-
-  app.post('/api/teams', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const validatedData = insertTeamSchema.parse(req.body);
-      const team = await storage.createTeam(validatedData);
-      res.status(201).json(team);
-    } catch (error) {
-      console.error('Error creating team:', error);
-      res.status(500).json({ error: 'Failed to create team' });
-    }
-  });
-
-  app.put('/api/teams/:id', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const team = await storage.updateTeam(id, req.body);
-      if (!team) {
-        return res.status(404).json({ error: 'Team not found' });
-      }
-      res.json(team);
-    } catch (error) {
-      console.error('Error updating team:', error);
-      res.status(500).json({ error: 'Failed to update team' });
-    }
-  });
-
-  app.delete('/api/teams/:id', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const success = await storage.deleteTeam(id);
-      if (!success) {
-        return res.status(404).json({ error: 'Team not found' });
-      }
-      res.status(204).send();
-    } catch (error) {
-      console.error('Error deleting team:', error);
-      res.status(500).json({ error: 'Failed to delete team' });
-    }
-  });
-
-  app.post('/api/teams/verify', async (req, res) => {
-    try {
-      const { teamName, password } = req.body;
-      const isValid = await storage.verifyTeamPassword(teamName, password);
-      res.json({ isValid });
-    } catch (error) {
-      console.error('Error verifying team password:', error);
-      res.status(500).json({ error: 'Failed to verify team password' });
-    }
-  });
-
-  // Members API with team support
-  app.get('/api/members', async (req, res) => {
-    try {
-      let teamId: number | undefined;
-
-      if (req.query.teamId) {
-        const teamIdParam = req.query.teamId as string;
-
-        // Check if it's a number (team ID) or string (team name)
-        if (!isNaN(parseInt(teamIdParam))) {
-          teamId = parseInt(teamIdParam);
+        // Apply cursor-based pagination
+        let paginatedNotifications = notifications;
+        if (cursor) {
+          const cursorId = parseInt(cursor);
+          const cursorIndex = notifications.findIndex((n) => n.id === cursorId);
+          if (cursorIndex >= 0) {
+            paginatedNotifications = notifications.slice(cursorIndex + 1, cursorIndex + 1 + limit);
+          }
         } else {
-          // It's a team name, find the team ID
-          const team = await storage.getTeamByName(teamIdParam);
-          if (team) {
-            teamId = team.id;
+          paginatedNotifications = notifications.slice(0, limit);
+        }
+
+        const hasMore = cursor
+          ? notifications.length >
+            notifications.findIndex((n) => n.id === parseInt(cursor)) + 1 + limit
+          : notifications.length > limit;
+        const nextCursor =
+          hasMore && paginatedNotifications.length > 0
+            ? paginatedNotifications[paginatedNotifications.length - 1]?.id.toString()
+            : null;
+
+        res.json({
+          notifications: paginatedNotifications,
+          pagination: {
+            hasMore,
+            nextCursor,
+            count: paginatedNotifications.length,
+            total: notifications.length,
+          },
+        });
+      } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+      }
+    });
+
+    app.get('/api/notifications/unread-count', async (req, res) => {
+      try {
+        const recipientId = parseInt(req.query.recipientId as string);
+        if (!recipientId) {
+          return res.status(400).json({ message: 'recipientId is required' });
+        }
+
+        const count = await storage.getUnreadNotificationCount(recipientId);
+        res.json({ count });
+      } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+      }
+    });
+
+    app.get('/api/notifications/:id', async (req, res) => {
+      try {
+        const id = parseInt(req.params.id);
+        const notification = await storage.getNotification(id);
+
+        if (!notification) {
+          return res.status(404).json({ message: 'Notification not found' });
+        }
+
+        res.json(notification);
+      } catch (error) {
+        res.status(400).json({ message: 'Invalid notification ID' });
+      }
+    });
+
+    app.post('/api/notifications', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const notificationData = insertNotificationSchema.parse(req.body);
+        const notification = await storage.createNotification(notificationData);
+        // Realtime: emit to user room and update unread count
+        try {
+          const ns = io?.of('/collab');
+          if (ns) {
+            ns.to(`user:${notification.recipientId}`).emit('notification:new', notification);
+            const count = await storage.getUnreadNotificationCount(notification.recipientId);
+            ns.to(`user:${notification.recipientId}`).emit('notification:unread-count', {
+              recipientId: notification.recipientId,
+              count,
+            });
+          }
+        } catch (emitErr) {
+          console.warn('Socket emit failed for notification:new', emitErr);
+        }
+
+        res.status(201).json(notification);
+      } catch (error) {
+        res.status(400).json({ message: 'Invalid notification data', error });
+      }
+    });
+
+    app.put('/api/notifications/:id', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const id = parseInt(req.params.id);
+        const updateData = updateNotificationSchema.parse(req.body);
+        const notification = await storage.updateNotification(id, updateData);
+
+        if (!notification) {
+          return res.status(404).json({ message: 'Notification not found' });
+        }
+
+        // Realtime: emit updated notification and possibly unread count change
+        try {
+          const ns = io?.of('/collab');
+          if (ns) {
+            ns.to(`user:${notification.recipientId}`).emit('notification:updated', notification);
+            const count = await storage.getUnreadNotificationCount(notification.recipientId);
+            ns.to(`user:${notification.recipientId}`).emit('notification:unread-count', {
+              recipientId: notification.recipientId,
+              count,
+            });
+          }
+        } catch (emitErr) {
+          console.warn('Socket emit failed for notification:updated', emitErr);
+        }
+
+        res.json(notification);
+      } catch (error) {
+        res.status(400).json({ message: 'Invalid update data', error });
+      }
+    });
+
+    app.delete('/api/notifications/:id', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const id = parseInt(req.params.id);
+        const deleted = await storage.deleteNotification(id);
+
+        if (!deleted) {
+          return res.status(404).json({ message: 'Notification not found' });
+        }
+
+        // Realtime: emit deletion and refresh unread count (need recipientId; attempt best-effort)
+        try {
+          // If storage can fetch notification before deletion, consider enhancing storage API to return deleted entity
+          // For now, clients should refetch list on delete event
+          const ns = io?.of('/collab');
+          if (ns) {
+            ns.emit('notification:deleted', { id });
+          }
+        } catch (emitErr) {
+          console.warn('Socket emit failed for notification:deleted', emitErr);
+        }
+
+        res.json({ message: 'Notification deleted successfully' });
+      } catch (error) {
+        res.status(400).json({ message: 'Invalid notification ID' });
+      }
+    });
+
+    app.patch('/api/notifications/:id/read', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const id = parseInt(req.params.id);
+        const notification = await storage.markNotificationAsRead(id);
+
+        if (!notification) {
+          return res.status(404).json({ message: 'Notification not found' });
+        }
+
+        // Realtime: emit updated notification and new unread count
+        try {
+          const ns = io?.of('/collab');
+          if (ns) {
+            ns.to(`user:${notification.recipientId}`).emit('notification:updated', notification);
+            const count = await storage.getUnreadNotificationCount(notification.recipientId);
+            ns.to(`user:${notification.recipientId}`).emit('notification:unread-count', {
+              recipientId: notification.recipientId,
+              count,
+            });
+          }
+        } catch (emitErr) {
+          console.warn('Socket emit failed for notification:read', emitErr);
+        }
+
+        res.json(notification);
+      } catch (error) {
+        res.status(400).json({ message: 'Invalid notification ID' });
+      }
+    });
+
+    app.patch('/api/notifications/read-all', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const { recipientId } = req.body;
+        if (!recipientId) {
+          return res.status(400).json({ message: 'recipientId is required' });
+        }
+
+        await storage.markAllNotificationsAsRead(recipientId);
+
+        // Realtime: emit unread count reset for recipient
+        try {
+          const ns = io?.of('/collab');
+          if (ns) {
+            const count = await storage.getUnreadNotificationCount(recipientId);
+            ns.to(`user:${recipientId}`).emit('notification:unread-count', { recipientId, count });
+          }
+        } catch (emitErr) {
+          console.warn('Socket emit failed for notification:read-all', emitErr);
+        }
+
+        res.json({ message: 'All notifications marked as read' });
+      } catch (error) {
+        res.status(400).json({ message: 'Invalid request data' });
+      }
+    });
+  }
+
+  if (featureFlags.FEATURE_TEMPLATES) {
+    // Template Categories API
+    app.get('/api/template-categories', async (req, res) => {
+      try {
+        const categories = await storage.getTemplateCategories();
+        res.json(categories);
+      } catch (error) {
+        console.error('Error fetching template categories:', error);
+        res.status(500).json({ error: 'Failed to fetch template categories' });
+      }
+    });
+
+    app.get('/api/template-categories/:id', async (req, res) => {
+      try {
+        const id = parseInt(req.params.id);
+        if (isNaN(id)) {
+          return res.status(400).json({ error: 'Invalid category ID' });
+        }
+
+        const category = await storage.getTemplateCategory(id);
+        if (!category) {
+          return res.status(404).json({ error: 'Template category not found' });
+        }
+
+        res.json(category);
+      } catch (error) {
+        console.error('Error fetching template category:', error);
+        res.status(500).json({ error: 'Failed to fetch template category' });
+      }
+    });
+
+    app.post('/api/template-categories', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const validatedData = insertTemplateCategorySchema.parse(req.body);
+        const category = await storage.createTemplateCategory(validatedData);
+        res.status(201).json(category);
+      } catch (error) {
+        console.error('Error creating template category:', error);
+        res.status(400).json({ error: 'Failed to create template category' });
+      }
+    });
+
+    app.put('/api/template-categories/:id', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const id = parseInt(req.params.id);
+        if (isNaN(id)) {
+          return res.status(400).json({ error: 'Invalid category ID' });
+        }
+
+        const validatedData = updateTemplateCategorySchema.parse(req.body);
+        const category = await storage.updateTemplateCategory(id, validatedData);
+        if (!category) {
+          return res.status(404).json({ error: 'Template category not found' });
+        }
+
+        res.json(category);
+      } catch (error) {
+        console.error('Error updating template category:', error);
+        res.status(400).json({ error: 'Failed to update template category' });
+      }
+    });
+
+    app.delete('/api/template-categories/:id', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const id = parseInt(req.params.id);
+        if (isNaN(id)) {
+          return res.status(400).json({ error: 'Invalid category ID' });
+        }
+
+        const success = await storage.deleteTemplateCategory(id);
+        if (!success) {
+          return res.status(404).json({ error: 'Template category not found' });
+        }
+
+        res.status(204).send();
+      } catch (error) {
+        console.error('Error deleting template category:', error);
+        res.status(500).json({ error: 'Failed to delete template category' });
+      }
+    });
+
+    // Templates API
+    app.get('/api/templates', async (req, res) => {
+      try {
+        const categoryId = req.query.categoryId
+          ? parseInt(req.query.categoryId as string)
+          : undefined;
+        if (req.query.categoryId && isNaN(categoryId!)) {
+          return res.status(400).json({ error: 'Invalid category ID' });
+        }
+
+        const templates = await storage.getTemplates(categoryId);
+        res.json(templates);
+      } catch (error) {
+        console.error('Error fetching templates:', error);
+        res.status(500).json({ error: 'Failed to fetch templates' });
+      }
+    });
+
+    app.get('/api/templates/:id', async (req, res) => {
+      try {
+        const id = parseInt(req.params.id);
+        if (isNaN(id)) {
+          return res.status(400).json({ error: 'Invalid template ID' });
+        }
+
+        const template = await storage.getTemplate(id);
+        if (!template) {
+          return res.status(404).json({ error: 'Template not found' });
+        }
+
+        res.json(template);
+      } catch (error) {
+        console.error('Error fetching template:', error);
+        res.status(500).json({ error: 'Failed to fetch template' });
+      }
+    });
+
+    app.post('/api/templates', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const validatedData = insertTemplateSchema.parse(req.body);
+        const template = await storage.createTemplate(validatedData);
+        res.status(201).json(template);
+      } catch (error) {
+        console.error('Error creating template:', error);
+        res.status(400).json({ error: 'Failed to create template' });
+      }
+    });
+
+    app.put('/api/templates/:id', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const id = parseInt(req.params.id);
+        if (isNaN(id)) {
+          return res.status(400).json({ error: 'Invalid template ID' });
+        }
+
+        const validatedData = updateTemplateSchema.parse(req.body);
+        const template = await storage.updateTemplate(id, validatedData);
+        if (!template) {
+          return res.status(404).json({ error: 'Template not found' });
+        }
+
+        res.json(template);
+      } catch (error) {
+        console.error('Error updating template:', error);
+        res.status(400).json({ error: 'Failed to update template' });
+      }
+    });
+
+    app.delete('/api/templates/:id', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const id = parseInt(req.params.id);
+        if (isNaN(id)) {
+          return res.status(400).json({ error: 'Invalid template ID' });
+        }
+
+        const success = await storage.deleteTemplate(id);
+        if (!success) {
+          return res.status(404).json({ error: 'Template not found' });
+        }
+
+        res.status(204).send();
+      } catch (error) {
+        console.error('Error deleting template:', error);
+        res.status(500).json({ error: 'Failed to delete template' });
+      }
+    });
+
+    app.post('/api/templates/:id/use', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const id = parseInt(req.params.id);
+        if (isNaN(id)) {
+          return res.status(400).json({ error: 'Invalid template ID' });
+        }
+
+        const success = await storage.incrementTemplateUsage(id);
+        if (!success) {
+          return res.status(404).json({ error: 'Template not found' });
+        }
+
+        res.json({ success: true });
+      } catch (error) {
+        console.error('Error incrementing template usage:', error);
+        res.status(500).json({ error: 'Failed to increment template usage' });
+      }
+    });
+  }
+
+  if (featureFlags.FEATURE_TEAMS) {
+    // Teams API
+    app.get('/api/teams', async (req, res) => {
+      try {
+        const teams = await storage.getTeams();
+        res.json(teams);
+      } catch (error) {
+        console.error('Error fetching teams:', error);
+        res.status(500).json({ error: 'Failed to fetch teams' });
+      }
+    });
+
+    app.get('/api/teams/:id', async (req, res) => {
+      try {
+        const id = parseInt(req.params.id);
+        const team = await storage.getTeam(id);
+        if (!team) {
+          return res.status(404).json({ error: 'Team not found' });
+        }
+        res.json(team);
+      } catch (error) {
+        console.error('Error fetching team:', error);
+        res.status(500).json({ error: 'Failed to fetch team' });
+      }
+    });
+
+    app.post('/api/teams', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const validatedData = insertTeamSchema.parse(req.body);
+        const team = await storage.createTeam(validatedData);
+        res.status(201).json(team);
+      } catch (error) {
+        console.error('Error creating team:', error);
+        res.status(500).json({ error: 'Failed to create team' });
+      }
+    });
+
+    app.put('/api/teams/:id', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const id = parseInt(req.params.id);
+        const team = await storage.updateTeam(id, req.body);
+        if (!team) {
+          return res.status(404).json({ error: 'Team not found' });
+        }
+        res.json(team);
+      } catch (error) {
+        console.error('Error updating team:', error);
+        res.status(500).json({ error: 'Failed to update team' });
+      }
+    });
+
+    app.delete('/api/teams/:id', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const id = parseInt(req.params.id);
+        const success = await storage.deleteTeam(id);
+        if (!success) {
+          return res.status(404).json({ error: 'Team not found' });
+        }
+        res.status(204).send();
+      } catch (error) {
+        console.error('Error deleting team:', error);
+        res.status(500).json({ error: 'Failed to delete team' });
+      }
+    });
+
+    app.post('/api/teams/verify', async (req, res) => {
+      try {
+        const { teamName, password } = req.body;
+        const isValid = await storage.verifyTeamPassword(teamName, password);
+        res.json({ isValid });
+      } catch (error) {
+        console.error('Error verifying team password:', error);
+        res.status(500).json({ error: 'Failed to verify team password' });
+      }
+    });
+
+    // Members API with team support
+    app.get('/api/members', async (req, res) => {
+      try {
+        let teamId: number | undefined;
+
+        if (req.query.teamId) {
+          const teamIdParam = req.query.teamId as string;
+
+          // Check if it's a number (team ID) or string (team name)
+          if (!isNaN(parseInt(teamIdParam))) {
+            teamId = parseInt(teamIdParam);
           } else {
-            return res.status(404).json({ error: 'Team not found' });
+            // It's a team name, find the team ID
+            const team = await storage.getTeamByName(teamIdParam);
+            if (team) {
+              teamId = team.id;
+            } else {
+              return res.status(404).json({ error: 'Team not found' });
+            }
           }
         }
+
+        const members = await storage.getMembers(teamId);
+        res.json(members);
+      } catch (error) {
+        console.error('Error fetching members:', error);
+        res.status(500).json({ error: 'Failed to fetch members' });
       }
+    });
 
-      const members = await storage.getMembers(teamId);
-      res.json(members);
-    } catch (error) {
-      console.error('Error fetching members:', error);
-      res.status(500).json({ error: 'Failed to fetch members' });
-    }
-  });
+    app.post('/api/members', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const memberData = insertMemberSchema.parse(req.body);
 
-  app.post('/api/members', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const memberData = insertMemberSchema.parse(req.body);
-
-      // If teamId is provided as a string (team name), find the actual team ID
-      if (memberData.teamId && typeof memberData.teamId === 'string') {
-        const team = await storage.getTeamByName(memberData.teamId);
-        if (team) {
-          memberData.teamId = team.id;
-        } else {
-          return res.status(400).json({ error: 'Team not found' });
+        // If teamId is provided as a string (team name), find the actual team ID
+        if (memberData.teamId && typeof memberData.teamId === 'string') {
+          const team = await storage.getTeamByName(memberData.teamId);
+          if (team) {
+            memberData.teamId = team.id;
+          } else {
+            return res.status(400).json({ error: 'Team not found' });
+          }
         }
+
+        const member = await storage.createMember(memberData);
+        res.status(201).json(member);
+      } catch (error) {
+        console.error('Error creating member:', error);
+        res.status(400).json({ error: 'Failed to create member' });
       }
+    });
 
-      const member = await storage.createMember(memberData);
-      res.status(201).json(member);
-    } catch (error) {
-      console.error('Error creating member:', error);
-      res.status(400).json({ error: 'Failed to create member' });
-    }
-  });
-
-  app.put('/api/members/:id', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const memberData = updateMemberSchema.parse(req.body);
-      const member = await storage.updateMember(id, memberData);
-      if (!member) {
-        return res.status(404).json({ error: 'Member not found' });
+    app.put('/api/members/:id', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const id = parseInt(req.params.id);
+        const memberData = updateMemberSchema.parse(req.body);
+        const member = await storage.updateMember(id, memberData);
+        if (!member) {
+          return res.status(404).json({ error: 'Member not found' });
+        }
+        res.json(member);
+      } catch (error) {
+        console.error('Error updating member:', error);
+        res.status(400).json({ error: 'Failed to update member' });
       }
-      res.json(member);
-    } catch (error) {
-      console.error('Error updating member:', error);
-      res.status(400).json({ error: 'Failed to update member' });
-    }
-  });
+    });
 
-  app.delete('/api/members/:id', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const success = await storage.deleteMember(id);
-      if (!success) {
-        return res.status(404).json({ error: 'Member not found' });
+    app.delete('/api/members/:id', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const id = parseInt(req.params.id);
+        const success = await storage.deleteMember(id);
+        if (!success) {
+          return res.status(404).json({ error: 'Member not found' });
+        }
+        res.status(204).send();
+      } catch (error) {
+        console.error('Error deleting member:', error);
+        res.status(500).json({ error: 'Failed to delete member' });
       }
-      res.status(204).send();
-    } catch (error) {
-      console.error('Error deleting member:', error);
-      res.status(500).json({ error: 'Failed to delete member' });
-    }
-  });
+    });
+  }
 
-  // AI 서비스 API
-  app.post('/api/ai/generate', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const { prompt, type } = req.body;
-      const { generateContent } = await import('./services/ai.js');
-      const content = await generateContent(prompt, type);
-      res.json({ content });
-    } catch (error) {
-      res
-        .status(500)
-        .json({ message: 'Failed to generate content', error: (error as Error).message });
-    }
-  });
-
-  app.post('/api/ai/improve', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const { content, title } = req.body;
-      const { generateContentSuggestions } = await import('./services/ai.js');
-      const suggestions = await generateContentSuggestions(content, title);
-      res.json({ suggestions });
-    } catch (error) {
-      res
-        .status(500)
-        .json({ message: 'Failed to generate suggestions', error: (error as Error).message });
-    }
-  });
-
-  // AI 검색 API
-  app.post('/api/ai/search', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const { query, teamId } = req.body;
-
-      if (!query || query.trim().length === 0) {
-        return res.status(400).json({ message: 'Search query is required' });
+  if (featureFlags.FEATURE_AI_SEARCH) {
+    // AI 서비스 API
+    app.post('/api/ai/generate', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const { prompt, type } = req.body;
+        const { generateContent } = await import('./services/ai.js');
+        const content = await generateContent(prompt, type);
+        res.json({ content });
+      } catch (error) {
+        res
+          .status(500)
+          .json({ message: 'Failed to generate content', error: (error as Error).message });
       }
+    });
 
-      // 모든 관련 데이터 수집
-      const pagesResult = await storage.searchWikiPages({
-        query: '',
-        teamId,
-        limit: 100,
-        offset: 0,
-      });
-      const tasks = await storage.getTasks(teamId);
-      const filesResult = await listUploadedFiles();
-
-      // 문서 배열 생성
-      const documents = [
-        ...pagesResult.pages.map((page: any) => ({
-          id: page.id,
-          title: page.title,
-          content: page.content,
-          type: 'page' as const,
-          url: `/page/${page.slug}`,
-        })),
-        ...tasks.map((task: any) => ({
-          id: task.id,
-          title: task.title,
-          content: task.description || '',
-          type: 'task' as const,
-          url: `/tasks`,
-        })),
-        ...filesResult.files.map((file: any) => ({
-          id: file.id || 0,
-          title: file.filename,
-          content: file.description || '',
-          type: 'file' as const,
-          url: `/files`,
-        })),
-      ];
-
-      // AI 검색 수행
-      const results = await smartSearch(query, documents);
-
-      res.json({
-        results,
-        query,
-        totalResults: results.length,
-      });
-    } catch (error) {
-      console.error('AI search error:', error);
-      res
-        .status(500)
-        .json({ message: 'Failed to perform AI search', error: (error as Error).message });
-    }
-  });
-
-  app.post('/api/ai/search-suggestions', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const { query } = req.body;
-
-      if (!query || query.trim().length === 0) {
-        return res.json({ suggestions: [] });
+    app.post('/api/ai/improve', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const { content, title } = req.body;
+        const { generateContentSuggestions } = await import('./services/ai.js');
+        const suggestions = await generateContentSuggestions(content, title);
+        res.json({ suggestions });
+      } catch (error) {
+        res
+          .status(500)
+          .json({ message: 'Failed to generate suggestions', error: (error as Error).message });
       }
+    });
 
-      const suggestions = await generateSearchSuggestions(query);
-      res.json({ suggestions });
-    } catch (error) {
-      console.error('Search suggestions error:', error);
-      res.status(500).json({
-        message: 'Failed to generate search suggestions',
-        error: (error as Error).message,
-      });
-    }
-  });
+    // AI 검색 API
+    app.post('/api/ai/search', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const { query, teamId } = req.body;
 
-  // AI Copilot Chat
-  app.post('/api/ai/copilot/chat', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const { messages, context } = req.body;
+        if (!query || query.trim().length === 0) {
+          return res.status(400).json({ message: 'Search query is required' });
+        }
 
-      if (!messages || !Array.isArray(messages)) {
-        return res.status(400).json({ error: 'Messages array is required' });
+        // 모든 관련 데이터 수집
+        const pagesResult = await storage.searchWikiPages({
+          query: '',
+          teamId,
+          limit: 100,
+          offset: 0,
+        });
+        const tasks = await storage.getTasks(teamId);
+        const filesResult = await listUploadedFiles();
+
+        // 문서 배열 생성
+        const documents = [
+          ...pagesResult.pages.map((page: any) => ({
+            id: page.id,
+            title: page.title,
+            content: page.content,
+            type: 'page' as const,
+            url: `/page/${page.slug}`,
+          })),
+          ...tasks.map((task: any) => ({
+            id: task.id,
+            title: task.title,
+            content: task.description || '',
+            type: 'task' as const,
+            url: `/tasks`,
+          })),
+          ...filesResult.files.map((file: any) => ({
+            id: file.id || 0,
+            title: file.filename,
+            content: file.description || '',
+            type: 'file' as const,
+            url: `/files`,
+          })),
+        ];
+
+        // AI 검색 수행
+        const results = await smartSearch(query, documents);
+
+        res.json({
+          results,
+          query,
+          totalResults: results.length,
+        });
+      } catch (error) {
+        console.error('AI search error:', error);
+        res
+          .status(500)
+          .json({ message: 'Failed to perform AI search', error: (error as Error).message });
       }
+    });
 
-      const response = await aiService.chatWithCopilot(messages, context || {});
-      res.json({ response });
-    } catch (error) {
-      console.error('Copilot chat error:', error);
-      res.status(500).json({
-        message: 'Failed to chat with copilot',
-        error: (error as Error).message,
-      });
-    }
-  });
+    app.post('/api/ai/search-suggestions', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const { query } = req.body;
 
-  // Extract tasks from content
-  app.post('/api/ai/extract-tasks', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const { content } = req.body;
+        if (!query || query.trim().length === 0) {
+          return res.json({ suggestions: [] });
+        }
 
-      if (!content) {
-        return res.status(400).json({ error: 'Content is required' });
+        const suggestions = await generateSearchSuggestions(query);
+        res.json({ suggestions });
+      } catch (error) {
+        console.error('Search suggestions error:', error);
+        res.status(500).json({
+          message: 'Failed to generate search suggestions',
+          error: (error as Error).message,
+        });
       }
+    });
 
-      const tasks = await aiService.extractTasks(content);
-      res.json({ tasks });
-    } catch (error) {
-      console.error('Extract tasks error:', error);
-      res.status(500).json({
-        message: 'Failed to extract tasks',
-        error: (error as Error).message,
-      });
-    }
-  });
+    // AI Copilot Chat
+    app.post('/api/ai/copilot/chat', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const { messages, context } = req.body;
 
-  // Find related pages
-  app.post('/api/ai/related-pages', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const { content, title, pageId } = req.body;
+        if (!messages || !Array.isArray(messages)) {
+          return res.status(400).json({ error: 'Messages array is required' });
+        }
 
-      if (!content || !title) {
-        return res.status(400).json({ error: 'Content and title are required' });
+        const response = await aiService.chatWithCopilot(messages, context || {});
+        res.json({ response });
+      } catch (error) {
+        console.error('Copilot chat error:', error);
+        res.status(500).json({
+          message: 'Failed to chat with copilot',
+          error: (error as Error).message,
+        });
       }
+    });
 
-      // Get all pages except current one using search
-      const searchResults = await storage.searchWikiPages({ query: '', limit: 100, offset: 0 });
-      const availablePages = searchResults.pages
-        .filter((p: any) => p.id !== pageId)
-        .map((p: any) => ({
-          id: p.id,
-          title: p.title,
-          content: p.content,
-          tags: p.tags || [],
-        }));
+    // Extract tasks from content
+    app.post('/api/ai/extract-tasks', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const { content } = req.body;
 
-      const relatedPages = await aiService.findRelatedPages(content, title, availablePages);
-      res.json({ relatedPages });
-    } catch (error) {
-      console.error('Find related pages error:', error);
-      res.status(500).json({
-        message: 'Failed to find related pages',
-        error: (error as Error).message,
-      });
-    }
-  });
+        if (!content) {
+          return res.status(400).json({ error: 'Content is required' });
+        }
+
+        const tasks = await aiService.extractTasks(content);
+        res.json({ tasks });
+      } catch (error) {
+        console.error('Extract tasks error:', error);
+        res.status(500).json({
+          message: 'Failed to extract tasks',
+          error: (error as Error).message,
+        });
+      }
+    });
+
+    // Find related pages
+    app.post('/api/ai/related-pages', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const { content, title, pageId } = req.body;
+
+        if (!content || !title) {
+          return res.status(400).json({ error: 'Content and title are required' });
+        }
+
+        // Get all pages except current one using search
+        const searchResults = await storage.searchWikiPages({ query: '', limit: 100, offset: 0 });
+        const availablePages = searchResults.pages
+          .filter((p: any) => p.id !== pageId)
+          .map((p: any) => ({
+            id: p.id,
+            title: p.title,
+            content: p.content,
+            tags: p.tags || [],
+          }));
+
+        const relatedPages = await aiService.findRelatedPages(content, title, availablePages);
+        res.json({ relatedPages });
+      } catch (error) {
+        console.error('Find related pages error:', error);
+        res.status(500).json({
+          message: 'Failed to find related pages',
+          error: (error as Error).message,
+        });
+      }
+    });
+  }
 
   // Knowledge Graph API
   app.get('/api/knowledge-graph', requireAuthIfEnabled, async (req, res) => {
@@ -2391,99 +2429,101 @@ export async function registerRoutes(
     }
   });
 
-  // ==================== Workflows API ====================
+  if (featureFlags.FEATURE_AUTOMATION) {
+    // ==================== Workflows API ====================
 
-  app.get('/api/workflows', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const teamId = req.query.teamId ? parseInt(req.query.teamId as string) : undefined;
-      const workflows = await storage.getWorkflows(teamId);
-      res.json(workflows);
-    } catch (error) {
-      console.error('Error fetching workflows:', error);
-      res.status(500).json({ error: 'Failed to fetch workflows' });
-    }
-  });
-
-  app.get('/api/workflows/:id', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const workflow = await storage.getWorkflow(id);
-      if (!workflow) {
-        return res.status(404).json({ error: 'Workflow not found' });
+    app.get('/api/workflows', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const teamId = req.query.teamId ? parseInt(req.query.teamId as string) : undefined;
+        const workflows = await storage.getWorkflows(teamId);
+        res.json(workflows);
+      } catch (error) {
+        console.error('Error fetching workflows:', error);
+        res.status(500).json({ error: 'Failed to fetch workflows' });
       }
-      res.json(workflow);
-    } catch (error) {
-      console.error('Error fetching workflow:', error);
-      res.status(500).json({ error: 'Failed to fetch workflow' });
-    }
-  });
+    });
 
-  app.post('/api/workflows', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const workflowData = req.body;
-      const workflow = await storage.createWorkflow(workflowData);
-      res.status(201).json(workflow);
-    } catch (error) {
-      console.error('Error creating workflow:', error);
-      res.status(400).json({ error: 'Failed to create workflow' });
-    }
-  });
-
-  app.put('/api/workflows/:id', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const workflowData = req.body;
-      const workflow = await storage.updateWorkflow(id, workflowData);
-      if (!workflow) {
-        return res.status(404).json({ error: 'Workflow not found' });
+    app.get('/api/workflows/:id', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const id = parseInt(req.params.id);
+        const workflow = await storage.getWorkflow(id);
+        if (!workflow) {
+          return res.status(404).json({ error: 'Workflow not found' });
+        }
+        res.json(workflow);
+      } catch (error) {
+        console.error('Error fetching workflow:', error);
+        res.status(500).json({ error: 'Failed to fetch workflow' });
       }
-      res.json(workflow);
-    } catch (error) {
-      console.error('Error updating workflow:', error);
-      res.status(400).json({ error: 'Failed to update workflow' });
-    }
-  });
+    });
 
-  app.delete('/api/workflows/:id', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const success = await storage.deleteWorkflow(id);
-      if (!success) {
-        return res.status(404).json({ error: 'Workflow not found' });
+    app.post('/api/workflows', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const workflowData = req.body;
+        const workflow = await storage.createWorkflow(workflowData);
+        res.status(201).json(workflow);
+      } catch (error) {
+        console.error('Error creating workflow:', error);
+        res.status(400).json({ error: 'Failed to create workflow' });
       }
-      res.status(204).send();
-    } catch (error) {
-      console.error('Error deleting workflow:', error);
-      res.status(500).json({ error: 'Failed to delete workflow' });
-    }
-  });
+    });
 
-  app.post('/api/workflows/:id/toggle', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const { isActive } = req.body;
-      const workflow = await storage.toggleWorkflow(id, isActive);
-      if (!workflow) {
-        return res.status(404).json({ error: 'Workflow not found' });
+    app.put('/api/workflows/:id', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const id = parseInt(req.params.id);
+        const workflowData = req.body;
+        const workflow = await storage.updateWorkflow(id, workflowData);
+        if (!workflow) {
+          return res.status(404).json({ error: 'Workflow not found' });
+        }
+        res.json(workflow);
+      } catch (error) {
+        console.error('Error updating workflow:', error);
+        res.status(400).json({ error: 'Failed to update workflow' });
       }
-      res.json(workflow);
-    } catch (error) {
-      console.error('Error toggling workflow:', error);
-      res.status(500).json({ error: 'Failed to toggle workflow' });
-    }
-  });
+    });
 
-  app.get('/api/workflows/:id/runs', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
-      const runs = await storage.getWorkflowRuns(id, limit);
-      res.json(runs);
-    } catch (error) {
-      console.error('Error fetching workflow runs:', error);
-      res.status(500).json({ error: 'Failed to fetch workflow runs' });
-    }
-  });
+    app.delete('/api/workflows/:id', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const id = parseInt(req.params.id);
+        const success = await storage.deleteWorkflow(id);
+        if (!success) {
+          return res.status(404).json({ error: 'Workflow not found' });
+        }
+        res.status(204).send();
+      } catch (error) {
+        console.error('Error deleting workflow:', error);
+        res.status(500).json({ error: 'Failed to delete workflow' });
+      }
+    });
+
+    app.post('/api/workflows/:id/toggle', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const id = parseInt(req.params.id);
+        const { isActive } = req.body;
+        const workflow = await storage.toggleWorkflow(id, isActive);
+        if (!workflow) {
+          return res.status(404).json({ error: 'Workflow not found' });
+        }
+        res.json(workflow);
+      } catch (error) {
+        console.error('Error toggling workflow:', error);
+        res.status(500).json({ error: 'Failed to toggle workflow' });
+      }
+    });
+
+    app.get('/api/workflows/:id/runs', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const id = parseInt(req.params.id);
+        const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+        const runs = await storage.getWorkflowRuns(id, limit);
+        res.json(runs);
+      } catch (error) {
+        console.error('Error fetching workflow runs:', error);
+        res.status(500).json({ error: 'Failed to fetch workflow runs' });
+      }
+    });
+  }
 
   // ==================== Saved Views API ====================
 
@@ -2961,95 +3001,99 @@ export async function registerRoutes(
     }
   });
 
-  // ==================== AI Assistant Routes ====================
+  if (featureFlags.FEATURE_AI_SEARCH) {
+    // ==================== AI Assistant Routes ====================
 
-  // Check AI availability
-  app.get('/api/ai/status', (req, res) => {
-    res.json({
-      available: aiAssistant.isAvailable(),
-      message: aiAssistant.isAvailable()
-        ? 'AI assistant is ready'
-        : 'AI assistant requires OPENAI_API_KEY configuration',
-    });
-  });
-
-  // AI text assistance
-  app.post('/api/ai/assist', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const { command, text, language, targetCase } = req.body;
-
-      if (!command || !text) {
-        return res.status(400).json({ error: 'command and text are required' });
-      }
-
-      const result = await aiAssistant.assist({
-        command,
-        text,
-        language,
-        targetCase,
+    // Check AI availability
+    app.get('/api/ai/status', (req, res) => {
+      res.json({
+        available: aiAssistant.isAvailable(),
+        message: aiAssistant.isAvailable()
+          ? 'AI assistant is ready'
+          : 'AI assistant requires OPENAI_API_KEY configuration',
       });
+    });
 
-      res.json(result);
-    } catch (error) {
-      console.error('AI assist error:', error);
-      res.status(500).json({ error: 'Failed to process AI request' });
-    }
-  });
+    // AI text assistance
+    app.post('/api/ai/assist', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const { command, text, language, targetCase } = req.body;
 
-  // AI block generation
-  app.post('/api/ai/generate-block', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const { prompt, blockType } = req.body;
+        if (!command || !text) {
+          return res.status(400).json({ error: 'command and text are required' });
+        }
 
-      if (!prompt || !blockType) {
-        return res.status(400).json({ error: 'prompt and blockType are required' });
+        const result = await aiAssistant.assist({
+          command,
+          text,
+          language,
+          targetCase,
+        });
+
+        res.json(result);
+      } catch (error) {
+        console.error('AI assist error:', error);
+        res.status(500).json({ error: 'Failed to process AI request' });
       }
+    });
 
-      if (!['table', 'list', 'code'].includes(blockType)) {
-        return res.status(400).json({ error: 'Invalid blockType. Must be: table, list, or code' });
+    // AI block generation
+    app.post('/api/ai/generate-block', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const { prompt, blockType } = req.body;
+
+        if (!prompt || !blockType) {
+          return res.status(400).json({ error: 'prompt and blockType are required' });
+        }
+
+        if (!['table', 'list', 'code'].includes(blockType)) {
+          return res
+            .status(400)
+            .json({ error: 'Invalid blockType. Must be: table, list, or code' });
+        }
+
+        const result = await aiAssistant.generateBlock(prompt, blockType);
+        res.json(result);
+      } catch (error) {
+        console.error('AI block generation error:', error);
+        res.status(500).json({ error: 'Failed to generate block' });
       }
+    });
 
-      const result = await aiAssistant.generateBlock(prompt, blockType);
-      res.json(result);
-    } catch (error) {
-      console.error('AI block generation error:', error);
-      res.status(500).json({ error: 'Failed to generate block' });
-    }
-  });
+    // AI smart suggestions
+    app.post('/api/ai/suggestions', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const { text, cursorPosition } = req.body;
 
-  // AI smart suggestions
-  app.post('/api/ai/suggestions', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const { text, cursorPosition } = req.body;
+        if (text === undefined || cursorPosition === undefined) {
+          return res.status(400).json({ error: 'text and cursorPosition are required' });
+        }
 
-      if (text === undefined || cursorPosition === undefined) {
-        return res.status(400).json({ error: 'text and cursorPosition are required' });
+        const suggestions = await aiAssistant.getSuggestions(text, cursorPosition);
+        res.json({ suggestions });
+      } catch (error) {
+        console.error('AI suggestions error:', error);
+        res.status(500).json({ error: 'Failed to get suggestions' });
       }
+    });
 
-      const suggestions = await aiAssistant.getSuggestions(text, cursorPosition);
-      res.json({ suggestions });
-    } catch (error) {
-      console.error('AI suggestions error:', error);
-      res.status(500).json({ error: 'Failed to get suggestions' });
-    }
-  });
+    // AI auto-format
+    app.post('/api/ai/auto-format', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const { text } = req.body;
 
-  // AI auto-format
-  app.post('/api/ai/auto-format', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const { text } = req.body;
+        if (!text) {
+          return res.status(400).json({ error: 'text is required' });
+        }
 
-      if (!text) {
-        return res.status(400).json({ error: 'text is required' });
+        const result = await aiAssistant.autoFormat(text);
+        res.json(result);
+      } catch (error) {
+        console.error('AI auto-format error:', error);
+        res.status(500).json({ error: 'Failed to format text' });
       }
-
-      const result = await aiAssistant.autoFormat(text);
-      res.json(result);
-    } catch (error) {
-      console.error('AI auto-format error:', error);
-      res.status(500).json({ error: 'Failed to format text' });
-    }
-  });
+    });
+  }
 
   return { httpServer, io };
 }

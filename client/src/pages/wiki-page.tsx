@@ -10,6 +10,7 @@ import { Comments } from '@/components/wiki/comments';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useCollaboration } from '@/hooks/useCollaboration';
+import { useFeatureFlags } from '@/features/FeatureFlagsContext';
 import { CollaboratorCursors } from '@/components/collaboration/CollaboratorCursors';
 import { TypingIndicator } from '@/components/collaboration/TypingIndicator';
 import { CollaboratorPresence } from '@/components/collaboration/CollaboratorPresence';
@@ -39,6 +40,7 @@ export default function WikiPageView() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { flags } = useFeatureFlags();
   const contentRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
   const [showAICopilot, setShowAICopilot] = useState(false);
@@ -57,6 +59,8 @@ export default function WikiPageView() {
   const headings = page ? extractHeadings(page.content) : [];
   const readingTime = page ? estimateReadingTime(page.content) : 0;
 
+  const collaborationEnabled = flags.FEATURE_COLLABORATION && !!page && !!user;
+
   // Initialize collaboration
   const {
     isConnected,
@@ -70,13 +74,13 @@ export default function WikiPageView() {
     pageId: page?.id || 0,
     userId: user?.id?.toString() || 'anonymous',
     userName: user?.name || 'Anonymous',
-    enabled: !!page && !!user,
+    enabled: collaborationEnabled,
   });
 
   // Track mouse movement for cursor position
   const handleMouseMove = useCallback(
     (e: MouseEvent) => {
-      if (!page || !user) return;
+      if (!collaborationEnabled || !page || !user) return;
 
       // Throttle cursor updates
       if (Math.random() > 0.1) return; // Only send 10% of movements
@@ -86,12 +90,12 @@ export default function WikiPageView() {
         y: e.clientY,
       });
     },
-    [page, user, sendCursorPosition]
+    [collaborationEnabled, page, user, sendCursorPosition]
   );
 
   // Track typing
   const handleInput = useCallback(() => {
-    if (!page || !user) return;
+    if (!collaborationEnabled || !page || !user) return;
 
     sendTypingStart();
 
@@ -104,7 +108,7 @@ export default function WikiPageView() {
     typingTimeoutRef.current = setTimeout(() => {
       sendTypingStop();
     }, 1000);
-  }, [page, user, sendTypingStart, sendTypingStop]);
+  }, [collaborationEnabled, page, user, sendTypingStart, sendTypingStop]);
 
   // Track text selection
   const handleTextSelection = useCallback(() => {
@@ -117,7 +121,7 @@ export default function WikiPageView() {
 
   // Setup event listeners
   useEffect(() => {
-    if (!page || !user) return;
+    if (!collaborationEnabled || !page || !user) return;
 
     window.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('input', handleInput);
@@ -129,7 +133,15 @@ export default function WikiPageView() {
       document.removeEventListener('mouseup', handleTextSelection);
       sendTypingStop();
     };
-  }, [page, user, handleMouseMove, handleInput, handleTextSelection, sendTypingStop]);
+  }, [
+    collaborationEnabled,
+    page,
+    user,
+    handleMouseMove,
+    handleInput,
+    handleTextSelection,
+    sendTypingStop,
+  ]);
 
   const handleShare = async () => {
     try {

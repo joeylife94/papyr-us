@@ -30,6 +30,7 @@ import AutomationPage from '@/pages/automation';
 import NotFound from '@/pages/not-found';
 import LoginPage from '@/pages/login';
 import RegisterPage from '@/pages/register';
+import { FeatureGate } from '@/components/FeatureGate';
 
 // Components
 import ProtectedRoute from '@/components/ProtectedRoute';
@@ -123,32 +124,95 @@ function App() {
                     <Route element={<AppLayout />}>
                       <Route path="/" element={<HomeWrapper />} />
                       <Route path="/page/:slug" element={<WikiPageView />} />
-                      <Route path="/calendar/:teamId" element={<CalendarPageWrapper />} />
+                      <Route
+                        path="/calendar/:teamId"
+                        element={
+                          <FeatureGate flag="FEATURE_CALENDAR">
+                            <CalendarPageWrapper />
+                          </FeatureGate>
+                        }
+                      />
                       <Route path="/edit/:pageId" element={<PageEditorWrapper />} />
                       <Route path="/create" element={<PageEditorWrapper />} />
                       <Route path="/create/:folder" element={<PageEditorWrapper />} />
                       <Route path="/teams/:teamName/create" element={<PageEditorWrapper />} />
-                      <Route path="/admin" element={<AdminPage />} />
-                      <Route path="/members" element={<MembersWrapper />} />
+                      <Route
+                        path="/admin"
+                        element={
+                          <FeatureGate flag="FEATURE_ADMIN">
+                            <AdminPage />
+                          </FeatureGate>
+                        }
+                      />
+                      <Route
+                        path="/members"
+                        element={
+                          <FeatureGate flag="FEATURE_TEAMS">
+                            <MembersWrapper />
+                          </FeatureGate>
+                        }
+                      />
                       <Route path="/files" element={<FileManagerWrapper />} />
                       <Route path="/dashboard" element={<DashboardPage />} />
                       <Route path="/tasks" element={<TasksPageWrapper />} />
-                      <Route path="/templates" element={<Templates />} />
+                      <Route
+                        path="/templates"
+                        element={
+                          <FeatureGate flag="FEATURE_TEMPLATES">
+                            <Templates />
+                          </FeatureGate>
+                        }
+                      />
                       <Route path="/database" element={<DatabaseViewWrapper />} />
                       <Route path="/teams/:teamName/database" element={<DatabaseViewWrapper />} />
                       <Route path="/collaboration-test" element={<CollaborationTest />} />
-                      <Route path="/ai-search" element={<AISearchPage />} />
+                      <Route
+                        path="/ai-search"
+                        element={
+                          <FeatureGate flag="FEATURE_AI_SEARCH">
+                            <AISearchPage />
+                          </FeatureGate>
+                        }
+                      />
                       <Route path="/knowledge-graph" element={<KnowledgeGraphPage />} />
-                      <Route path="/automation" element={<AutomationPage />} />
+                      <Route
+                        path="/automation"
+                        element={
+                          <FeatureGate flag="FEATURE_AUTOMATION">
+                            <AutomationPage />
+                          </FeatureGate>
+                        }
+                      />
                       <Route
                         path="/teams/:teamName/knowledge-graph"
                         element={<KnowledgeGraphPage />}
                       />
-                      <Route path="/teams/:teamName/automation" element={<AutomationPage />} />
-                      <Route path="/teams/:teamName/members" element={<MembersWrapper />} />
+                      <Route
+                        path="/teams/:teamName/automation"
+                        element={
+                          <FeatureGate flag="FEATURE_AUTOMATION">
+                            <AutomationPage />
+                          </FeatureGate>
+                        }
+                      />
+                      <Route
+                        path="/teams/:teamName/members"
+                        element={
+                          <FeatureGate flag="FEATURE_TEAMS">
+                            <MembersWrapper />
+                          </FeatureGate>
+                        }
+                      />
                       <Route path="/teams/:teamName/tasks" element={<TasksPageWrapper />} />
                       <Route path="/teams/:teamName/files" element={<FileManagerWrapper />} />
-                      <Route path="/teams/:teamName/calendar" element={<CalendarPageWrapper />} />
+                      <Route
+                        path="/teams/:teamName/calendar"
+                        element={
+                          <FeatureGate flag="FEATURE_CALENDAR">
+                            <CalendarPageWrapper />
+                          </FeatureGate>
+                        }
+                      />
                       <Route path="/teams/:teamName/pages" element={<HomeWrapper />} />
                       <Route path="*" element={<NotFound />} />
                     </Route>

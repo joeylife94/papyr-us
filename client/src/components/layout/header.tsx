@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useMemberByEmail } from '@/hooks/useMember';
+import { useFeatureFlags } from '@/features/FeatureFlagsContext';
 
 interface HeaderProps {
   onToggleSidebar: () => void;
@@ -38,7 +39,9 @@ export function Header({ onToggleSidebar, searchQuery, onSearchChange }: HeaderP
   const { isAuthenticated, user, logout } = useAuth();
   const navigate = useNavigate();
   const [showMobileSearch, setShowMobileSearch] = useState(false);
-  const { data: member } = useMemberByEmail(user?.email);
+  const { flags } = useFeatureFlags();
+  const enableNotifications = flags.FEATURE_NOTIFICATIONS && flags.FEATURE_TEAMS;
+  const { data: member } = useMemberByEmail(user?.email, enableNotifications && !!user?.email);
 
   const handleLogout = () => {
     logout();
@@ -110,7 +113,7 @@ export function Header({ onToggleSidebar, searchQuery, onSearchChange }: HeaderP
           {isAuthenticated && user ? (
             <>
               {/* Use member.id for notifications (mapped from user.email) */}
-              <NotificationBell recipientId={member?.id} />
+              {enableNotifications ? <NotificationBell recipientId={member?.id} /> : null}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" className="relative h-8 w-8 rounded-full">
@@ -128,11 +131,15 @@ export function Header({ onToggleSidebar, searchQuery, onSearchChange }: HeaderP
                     </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => navigate('/admin')}>
-                    <Settings className="mr-2 h-4 w-4" />
-                    <span>Settings</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
+                  {flags.FEATURE_ADMIN ? (
+                    <>
+                      <DropdownMenuItem onClick={() => navigate('/admin')}>
+                        <Settings className="mr-2 h-4 w-4" />
+                        <span>Settings</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                    </>
+                  ) : null}
                   <DropdownMenuItem onClick={handleLogout}>
                     <LogOut className="mr-2 h-4 w-4" />
                     <span>Log out</span>

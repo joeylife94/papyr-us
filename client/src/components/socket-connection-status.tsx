@@ -1,6 +1,7 @@
 import { useSocket } from '@/lib/socket';
 import { AlertCircle, CheckCircle, Loader2, WifiOff } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { useFeatureFlags } from '@/features/FeatureFlagsContext';
 
 /**
  * SocketConnectionStatus - Real-time Socket.IO connection status indicator
@@ -11,7 +12,11 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
  * - ❌ Disconnected with error message (red)
  */
 export default function SocketConnectionStatus() {
-  const { isConnected, isReconnecting, reconnectAttempt, reconnectError } = useSocket();
+  const { flags } = useFeatureFlags();
+  const enabled = flags.FEATURE_COLLABORATION;
+  const { isConnected, isReconnecting, reconnectAttempt, reconnectError } = useSocket({ enabled });
+
+  if (!enabled) return null;
 
   // Don't show anything if connected and no errors
   if (isConnected && !reconnectError) {
@@ -61,7 +66,11 @@ export default function SocketConnectionStatus() {
  * Simple inline connection indicator (for editor toolbars, etc.)
  */
 export function ConnectionIndicator() {
-  const { isConnected, isReconnecting } = useSocket();
+  const { flags } = useFeatureFlags();
+  const enabled = flags.FEATURE_COLLABORATION;
+  const { isConnected, isReconnecting } = useSocket({ enabled });
+
+  if (!enabled) return null;
 
   if (isReconnecting) {
     return (

@@ -110,30 +110,35 @@ This project serves as a comprehensive portfolio piece demonstrating system desi
 ### Architecture Layers
 
 **1. Client Layer (React SPA)**
+
 - Single Page Application with React 18
 - Real-time updates via Socket.IO client
 - TanStack Query for server state management
 - shadcn/ui + Tailwind CSS for consistent UI
 
 **2. Server Layer (Express.js)**
+
 - RESTful API with 100+ endpoints
 - JWT-based authentication & RBAC
 - Rate limiting & security middleware (Helmet)
 - Service layer for business logic separation
 
 **3. Real-time Communication**
+
 - **Socket.IO**: WebSocket connections for live updates
 - **Yjs CRDT**: Conflict-free concurrent editing
 - Automatic reconnection with exponential backoff
 - Real-time notifications, presence, and cursors
 
 **4. Data Layer**
+
 - **PostgreSQL 16**: Primary database with ACID guarantees
 - **Drizzle ORM**: Type-safe SQL query builder
 - **Full-Text Search (FTS)**: Postgres native search with ranking
 - Migration system for schema versioning
 
 **5. AI Integration**
+
 - **OpenAI GPT-4o**: Natural language processing
 - Smart search with semantic understanding
 - Content generation and summarization
@@ -199,6 +204,7 @@ Papyr.us integrates **GPT-4o** throughout the platform to enhance productivity a
 ### What AI Does in Papyr.us
 
 #### 🔍 Smart Search with Semantic Understanding
+
 - **Natural Language Queries**: Search using plain language (e.g., "pages about deployment")
 - **Relevance Ranking**: AI ranks results based on semantic meaning, not just keywords
 - **Multi-source Search**: Searches across pages, files, tasks, and calendar events
@@ -206,34 +212,35 @@ Papyr.us integrates **GPT-4o** throughout the platform to enhance productivity a
 
 ```typescript
 // Example: Smart search with AI ranking
-const results = await smartSearch("how to deploy to production", documents);
+const results = await smartSearch('how to deploy to production', documents);
 // Returns: Deployment guides, Docker configs, CI/CD workflows
 ```
 
 #### 📝 Document Summarization & Analysis
+
 - **Automatic Summaries**: Generate concise summaries of long documents
 - **Key Points Extraction**: Extract main takeaways from meeting notes
 - **Reading Time Estimation**: Calculate reading time based on content length
 
 #### 💬 Wiki Context-based Q&A (RAG Pipeline)
+
 - **Context-aware Answers**: Ask questions about your workspace content
 - **Page-specific Assistance**: Get help based on current page context
 - **Related Content Discovery**: Find relevant pages and documents automatically
 
 ```typescript
 // RAG pipeline: Question answering with workspace context
-const answer = await chatWithCopilot(
-  messages,
-  { pageTitle, pageContent, recentPages }
-);
+const answer = await chatWithCopilot(messages, { pageTitle, pageContent, recentPages });
 ```
 
 #### ✍️ Content Generation
+
 - **Section Writing**: Generate well-structured markdown sections
 - **Template Expansion**: Expand outlines into full content
 - **Improvement Suggestions**: AI suggests ways to enhance documentation
 
 #### 🏷️ Tag & Task Recommendations
+
 - **Smart Tagging**: Auto-suggest relevant tags based on content
 - **Task Extraction**: Identify action items from meeting notes and discussions
 - **Priority Scoring**: Recommend task priorities based on content analysis
@@ -245,6 +252,7 @@ const tasks = await extractTasks(meetingContent);
 ```
 
 #### 🔗 Related Pages Discovery
+
 - **Semantic Linking**: Find related pages based on topic similarity
 - **Knowledge Graph**: Build connections between related content
 - **Navigation Suggestions**: Recommend next pages to read
@@ -281,6 +289,7 @@ const tasks = await extractTasks(meetingContent);
 ```
 
 **Key Benefits:**
+
 - 🚀 **Significantly Faster Search**: Find relevant content instantly
 - 💡 **Smarter Insights**: Discover connections between documents
 - ⏱️ **Time Savings**: Auto-generate summaries and content
@@ -315,6 +324,7 @@ Papyr.us is built with **team-based isolation** to support multiple teams secure
 ```
 
 **Isolation Features:**
+
 - ✅ **Team-level Data Segregation**: Each team's data is logically isolated
 - ✅ **Workspace Boundaries**: Teams cannot access each other's content
 - ✅ **Team-specific Resources**: Calendar events, tasks, and files are team-scoped
@@ -362,24 +372,23 @@ app.get('/api/admin/users', requireAdmin, async (req, res) => {
   // Only admins can access
 });
 
-app.post('/api/teams/:teamId/pages', 
+app.post(
+  '/api/teams/:teamId/pages',
   requireTeamRole(['owner', 'admin', 'member']),
   async (req, res) => {
     // Team members can create pages
   }
 );
 
-app.get('/api/pages/:id',
-  requirePagePermission('viewer'),
-  async (req, res) => {
-    // Check page-level permissions
-  }
-);
+app.get('/api/pages/:id', requirePagePermission('viewer'), async (req, res) => {
+  // Check page-level permissions
+});
 ```
 
 ### Security Features
 
 **Authentication & Authorization:**
+
 - ✅ JWT-based authentication with secure token storage
 - ✅ bcrypt password hashing (10 rounds)
 - ✅ Role-based middleware (`requireAdmin`, `requireTeamRole`)
@@ -387,6 +396,7 @@ app.get('/api/pages/:id',
 - ✅ OAuth 2.0 ready (Google, GitHub)
 
 **Application Security:**
+
 - ✅ Helmet.js security headers
 - ✅ CORS with configurable origin whitelist
 - ✅ Rate limiting on auth and admin endpoints
@@ -395,12 +405,14 @@ app.get('/api/pages/:id',
 - ✅ CSRF protection (SameSite cookies)
 
 **Data Protection:**
+
 - ✅ Input validation with Zod schemas
 - ✅ Secure file upload validation (type, size limits)
 - ✅ Environment variable-based secrets management
 - ✅ Production mode enforcement (`NODE_ENV`)
 
 **Database Security:**
+
 ```sql
 -- Row-level security examples
 SELECT * FROM wiki_pages WHERE teamId = :userTeamId;
@@ -420,6 +432,7 @@ RATE_LIMIT_MAX=100  # Max requests per window
 ```
 
 **Perfect for B2B SaaS:**
+
 - 🏢 Clear tenant boundaries
 - 🔒 Enterprise-grade security
 - 👥 Flexible permission system
@@ -488,6 +501,41 @@ Create a `.env` file in the root directory:
 # Core
 NODE_ENV=development
 PORT=5001
+
+# Modes (Notion-style)
+# - Team mode (default): collaboration ON by default
+# - Personal mode: collaboration OFF by default (but can be enabled)
+#
+# PAPYR_MODE=personal
+# FEATURE_COLLABORATION=true
+
+# Collaboration Engine tuning (Yjs + legacy Socket.IO)
+# See docs/collaboration-engine.md for full details.
+#
+# Core safety knobs
+# COLLAB_REQUIRE_AUTH=1
+# COLLAB_MAX_DOCS=50
+# COLLAB_MAX_CLIENTS_PER_DOC=20
+#
+# Persistence + lifecycle
+# COLLAB_SAVE_DEBOUNCE_MS=3000
+# COLLAB_SNAPSHOT_INTERVAL_MS=60000
+# COLLAB_DOC_TTL_MS=300000
+# COLLAB_RATE_LIMIT_SAVES_PER_MIN=6
+#
+# Event rate limits (defaults are reasonable; tune only if needed)
+# COLLAB_RATE_LIMIT_UPDATES_PER_SEC=200
+# COLLAB_RATE_LIMIT_AWARENESS_PER_SEC=100
+# COLLAB_RATE_LIMIT_DOC_CHANGES_PER_SEC=50
+# COLLAB_RATE_LIMIT_CURSOR_PER_SEC=30
+# COLLAB_RATE_LIMIT_TYPING_PER_SEC=20
+
+# Firebat self-host stability suggestion (if collaboration is enabled)
+# COLLAB_SAVE_DEBOUNCE_MS=5000
+# COLLAB_SNAPSHOT_INTERVAL_MS=120000
+# COLLAB_DOC_TTL_MS=120000
+# COLLAB_MAX_DOCS=20
+# COLLAB_MAX_CLIENTS_PER_DOC=5
 
 # Database
 DATABASE_URL=postgresql://papyrus_user:papyrus_password_2024@localhost:5433/papyrus_db

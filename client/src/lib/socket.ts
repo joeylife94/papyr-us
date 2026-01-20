@@ -221,7 +221,8 @@ class SocketManager {
 
 const socketManager = new SocketManager();
 
-export function useSocket() {
+export function useSocket(options?: { enabled?: boolean }) {
+  const enabled = options?.enabled ?? true;
   const [isConnected, setIsConnected] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
@@ -229,6 +230,15 @@ export function useSocket() {
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
+    if (!enabled) {
+      socketRef.current = null;
+      setIsConnected(false);
+      setIsReconnecting(false);
+      setReconnectAttempt(0);
+      setReconnectError(null);
+      return;
+    }
+
     const socket = socketManager.connect();
     socketRef.current = socket;
 
@@ -275,7 +285,7 @@ export function useSocket() {
       socketManager.off('reconnect_failed', handleReconnectFailed);
       socketManager.off('connect_error', handleConnectError);
     };
-  }, []);
+  }, [enabled]);
 
   return {
     socket: socketRef.current,
@@ -296,9 +306,11 @@ export function useCollaboration(
   pageId: number,
   userId: string,
   userName: string,
-  teamId?: string
+  teamId?: string,
+  options?: { enabled?: boolean }
 ) {
-  const { socket, isConnected, emit, on, off } = useSocket();
+  const enabled = options?.enabled ?? true;
+  const { socket, isConnected, emit, on, off } = useSocket({ enabled });
   const [collaborationState, setCollaborationState] = useState<CollaborationState>({
     users: [],
     isConnected: false,
@@ -308,13 +320,18 @@ export function useCollaboration(
 
   // Join document session
   useEffect(() => {
-    if (socket && pageId && userId && userName) {
+    if (enabled && socket && pageId && userId && userName) {
       emit('join-document', { pageId, userId, userName, teamId });
     }
-  }, [socket, pageId, userId, userName, teamId, emit]);
+  }, [enabled, socket, pageId, userId, userName, teamId, emit]);
 
   // Handle session users
   useEffect(() => {
+    if (!enabled) {
+      setCollaborationState((prev) => ({ ...prev, users: [], typingUsers: [] }));
+      return;
+    }
+
     const handleSessionUsers = (users: User[]) => {
       setCollaborationState((prev) => ({ ...prev, users }));
     };
@@ -360,7 +377,7 @@ export function useCollaboration(
       off('typing-start', handleTypingStart);
       off('typing-stop', handleTypingStop);
     };
-  }, [on, off]);
+  }, [enabled, on, off]);
 
   // Update connection state
   useEffect(() => {
@@ -370,11 +387,11 @@ export function useCollaboration(
   // Leave document on unmount
   useEffect(() => {
     return () => {
-      if (socket && pageId && userId) {
+      if (enabled && socket && pageId && userId) {
         emit('leave-document', { pageId, userId });
       }
     };
-  }, [socket, pageId, userId, emit]);
+  }, [enabled, socket, pageId, userId, emit]);
 
   const sendDocumentChange = (change: Omit<DocumentChange, 'timestamp' | 'userId'>) => {
     emit('document-change', {

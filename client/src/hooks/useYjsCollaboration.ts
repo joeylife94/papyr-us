@@ -15,6 +15,7 @@ interface YjsCollaborationOptions {
   pageId: number;
   userId?: string;
   userName?: string;
+  enabled?: boolean;
   onBlocksChange: (blocks: Block[]) => void;
   onUsersChange?: (users: User[]) => void;
   onUserCountChange?: (count: number) => void;
@@ -55,6 +56,7 @@ export function useYjsCollaboration({
   pageId,
   userId = 'anonymous',
   userName = 'Anonymous User',
+  enabled = true,
   onBlocksChange,
   onUsersChange,
   onUserCountChange,
@@ -77,7 +79,11 @@ export function useYjsCollaboration({
 
   // Initialize Yjs document
   useEffect(() => {
-    if (!pageId) return;
+    if (!enabled || !pageId) {
+      // If disabled, ensure we look disconnected.
+      setState({ isConnected: false, userCount: 0, isSynced: false, users: [] });
+      return;
+    }
 
     // Create Yjs document
     const ydoc = new Y.Doc();
@@ -134,11 +140,11 @@ export function useYjsCollaboration({
       awareness.destroy();
       ydoc.destroy();
     };
-  }, [pageId, userId, userName, onBlocksChange, onUsersChange]);
+  }, [enabled, pageId, userId, userName, onBlocksChange, onUsersChange]);
 
   // Connect to Yjs server
   useEffect(() => {
-    if (!pageId) return;
+    if (!enabled || !pageId) return;
 
     const token = localStorage.getItem('token');
     const socket = io('/yjs', {
@@ -249,7 +255,7 @@ export function useYjsCollaboration({
     return () => {
       socket.disconnect();
     };
-  }, [pageId, documentId, onError, onUserCountChange]);
+  }, [enabled, pageId, documentId, onError, onUserCountChange]);
 
   // Update blocks (called from BlockEditor)
   const updateBlocks = useCallback((blocks: Block[]) => {

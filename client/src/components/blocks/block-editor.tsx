@@ -40,6 +40,7 @@ import { Badge } from '@/components/ui/badge';
 import { collaborationSync } from '@/lib/collaboration';
 import { useYjsCollaboration } from '@/hooks/useYjsCollaboration';
 import { UserCursors } from '@/components/collaboration/user-cursor';
+import { useFeatureFlags } from '@/features/FeatureFlagsContext';
 
 interface BlockEditorProps {
   blocks: Block[];
@@ -60,14 +61,18 @@ export function BlockEditor({
   userName,
   useYjs = false, // Default to false for backward compatibility
 }: BlockEditorProps) {
+  const { flags } = useFeatureFlags();
   const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null);
   const editorContainerRef = useRef<HTMLDivElement>(null);
+
+  const collaborationEnabled = flags.FEATURE_COLLABORATION && !!pageId && !!userId && !!userName;
 
   // Yjs CRDT-based collaboration (new, conflict-free)
   const yjsCollaboration = useYjsCollaboration({
     pageId: pageId || 0,
     userId,
     userName,
+    enabled: collaborationEnabled && useYjs,
     onBlocksChange: onChange,
     onUsersChange: (users) => {
       console.log('[Yjs] Users changed:', users);
@@ -85,7 +90,8 @@ export function BlockEditor({
     pageId || 0,
     userId || 'anonymous',
     userName || 'Anonymous User',
-    teamName
+    teamName,
+    { enabled: collaborationEnabled && !useYjs }
   );
 
   // 원격 변경사항 처리
