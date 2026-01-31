@@ -18,6 +18,23 @@ services:
       timeout: 5s
       retries: 5
 
+  # Redis for session storage and Socket.IO scaling (optional)
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command: redis-server --appendonly yes
+    ports:
+      - '6379:6379'
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - redis
+
   app:
     build: .
     restart: always
@@ -25,9 +42,50 @@ services:
       - '5001:5001'
     env_file:
       - .env
+    environment:
+      - NODE_ENV=production
+      # Connect to Redis when redis profile is active
+      - REDIS_URL=redis://redis:6379
     depends_on:
       db:
         condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '--spider', 'http://localhost:5001/api/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # PostgreSQL backup service - runs daily at 2 AM
+  backup:
+    image: postgres:16-alpine
+    restart: 'no'
+    env_file:
+      - .env
+    environment:
+      PGHOST: db
+      PGPORT: 5432
+      PGUSER: ${DATABASE_USER}
+      PGPASSWORD: ${DATABASE_PASSWORD}
+      PGDATABASE: ${DATABASE_NAME}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backups:/backups
+    command: >
+      sh -c "
+        TIMESTAMP=$$(date +%Y%m%d_%H%M%S) &&
+        echo 'Starting backup...' &&
+        pg_dump --format=custom --compress=9 -f /backups/papyrus_backup_$$TIMESTAMP.dump &&
+        echo 'Backup completed: papyrus_backup_'$$TIMESTAMP'.dump' &&
+        find /backups -name 'papyrus_backup_*.dump' -mtime +7 -delete &&
+        echo 'Old backups cleaned up'
+      "
+    profiles:
+      - backup
 
 volumes:
   pgdata:
+  redisdata:

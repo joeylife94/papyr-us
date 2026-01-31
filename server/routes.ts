@@ -82,7 +82,7 @@ export async function registerRoutes(
   if (enableRealtimeSockets) {
     try {
       const { setupSocketIO } = await import('./services/socket.js');
-      io = setupSocketIO(httpServer, storage, {
+      io = await setupSocketIO(httpServer, storage, {
         enableCollaboration: featureFlags.FEATURE_COLLABORATION,
         enableNotifications: featureFlags.FEATURE_NOTIFICATIONS,
       });
@@ -2077,7 +2077,7 @@ export async function registerRoutes(
   }
 
   if (featureFlags.FEATURE_AI_SEARCH) {
-    // AI 서비스 API
+    // AI ?�비??API
     app.post('/api/ai/generate', requireAuthIfEnabled, async (req, res) => {
       try {
         const { prompt, type } = req.body;
@@ -2104,7 +2104,7 @@ export async function registerRoutes(
       }
     });
 
-    // AI 검색 API
+    // AI 검??API
     app.post('/api/ai/search', requireAuthIfEnabled, async (req, res) => {
       try {
         const { query, teamId } = req.body;
@@ -2113,7 +2113,7 @@ export async function registerRoutes(
           return res.status(400).json({ message: 'Search query is required' });
         }
 
-        // 모든 관련 데이터 수집
+        // 모든 관???�이???�집
         const pagesResult = await storage.searchWikiPages({
           query: '',
           teamId,
@@ -2123,7 +2123,7 @@ export async function registerRoutes(
         const tasks = await storage.getTasks(teamId);
         const filesResult = await listUploadedFiles();
 
-        // 문서 배열 생성
+        // 문서 배열 ?�성
         const documents = [
           ...pagesResult.pages.map((page: any) => ({
             id: page.id,
@@ -2148,7 +2148,7 @@ export async function registerRoutes(
           })),
         ];
 
-        // AI 검색 수행
+        // AI 검???�행
         const results = await smartSearch(query, documents);
 
         res.json({
@@ -3097,3 +3097,4 @@ export async function registerRoutes(
 
   return { httpServer, io };
 }
+

@@ -397,6 +397,28 @@ export class DBStorage {
     return bcrypt.compare(password, team.password);
   }
 
+  /**
+   * Get all team IDs that a user belongs to (based on user email matching member email)
+   */
+  async getUserTeamIds(userId: number): Promise<number[]> {
+    // Get user email first
+    const user = await this.db.select().from(users).where(eq(users.id, userId));
+    if (user.length === 0) return [];
+
+    const userEmail = user[0].email;
+
+    // Find member records with matching email
+    const memberRecords = await this.db
+      .select({ teamId: members.teamId })
+      .from(members)
+      .where(and(eq(members.email, userEmail), eq(members.isActive, true)));
+
+    // Return unique team IDs (filter out nulls)
+    return memberRecords
+      .map((m: { teamId: number | null }) => m.teamId)
+      .filter((id: number | null): id is number => id !== null);
+  }
+
   async getMembers(teamId?: number): Promise<Member[]> {
     const query = this.db.select().from(members);
     const conditions = [eq(members.isActive, true)];
@@ -861,11 +883,21 @@ export class DBStorage {
     }
 
     // Check team permissions (if user belongs to a team)
-    // TODO: Add team membership check when needed
-    // const userTeams = await this.getUserTeams(userId);
-    // const teamPermission = permissions.find(
-    //   (p) => p.entityType === 'team' && userTeams.includes(p.entityId)
-    // );
+    const userTeamIds = await this.getUserTeamIds(userId);
+    if (userTeamIds.length > 0) {
+      const teamPermission = permissions.find(
+        (p: PagePermission) =>
+          p.entityType === 'team' &&
+          p.entityId !== null &&
+          userTeamIds.includes(p.entityId)
+      );
+      if (
+        teamPermission &&
+        permissionLevels[teamPermission.permission as PermissionLevel] >= requiredLevel
+      ) {
+        return true;
+      }
+    }
 
     return false;
   }
@@ -1315,19 +1347,48 @@ export class DBStorage {
    * Get all synced blocks accessible to user
    */
   async getUserSyncedBlocks(userId: number) {
-    // Get all pages where user is author or has access
-    // TODO: Also check page permissions for more comprehensive access control
+    // Get user info first
     const user = await this.db.query.users.findFirst({
       where: eq(users.id, userId),
     });
 
     if (!user) return [];
 
-    const userPages = await this.db.query.wikiPages.findMany({
+    // Get pages where user is author
+    const authorPages = await this.db.query.wikiPages.findMany({
       where: eq(wikiPages.author, user.email),
     });
 
-    const pageIds = userPages.map((p: any) => p.id);
+    // Get pages where user has explicit permission
+    const permissionedPages = await this.db
+      .select({ pageId: pagePermissions.pageId })
+      .from(pagePermissions)
+      .where(
+        and(eq(pagePermissions.entityType, 'user'), eq(pagePermissions.entityId, userId))
+      );
+
+    // Get pages accessible through team membership
+    const userTeamIds = await this.getUserTeamIds(userId);
+    let teamPages: { pageId: number }[] = [];
+    if (userTeamIds.length > 0) {
+      teamPages = await this.db
+        .select({ pageId: pagePermissions.pageId })
+        .from(pagePermissions)
+        .where(
+          and(
+            eq(pagePermissions.entityType, 'team'),
+            sql`${pagePermissions.entityId} = ANY(${userTeamIds})`
+          )
+        );
+    }
+
+    // Combine all accessible page IDs
+    const allPageIds = [
+      ...authorPages.map((p: any) => p.id),
+      ...permissionedPages.map((p: { pageId: number }) => p.pageId),
+      ...teamPages.map((p: { pageId: number }) => p.pageId),
+    ];
+    const pageIds = Array.from(new Set(allPageIds));
 
     if (pageIds.length === 0) return [];
 

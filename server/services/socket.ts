@@ -4,6 +4,8 @@ import { DBStorage } from '../storage.js';
 import jwt from 'jsonwebtoken';
 import { config } from '../config.js';
 import logger from './logger.js';
+import { isRedisEnabled, getRedisClient, getSubscriberClient } from './redis.js';
+import { createAdapter } from '@socket.io/redis-adapter';
 
 type SaveReason = 'debounce' | 'interval' | 'ttl' | 'eviction';
 
@@ -375,11 +377,11 @@ export interface SocketIOFeatureOptions {
   enableNotifications?: boolean;
 }
 
-export function setupSocketIO(
+export async function setupSocketIO(
   server: HTTPServer,
   storage: DBStorage,
   options: SocketIOFeatureOptions = {}
-) {
+): Promise<SocketIOServer> {
   const enableCollaboration = options.enableCollaboration ?? true;
   const enableNotifications = options.enableNotifications ?? true;
 
@@ -392,6 +394,25 @@ export function setupSocketIO(
       methods: ['GET', 'POST'],
     },
   });
+
+  // Setup Redis adapter for horizontal scaling (if Redis is configured)
+  if (isRedisEnabled()) {
+    try {
+      const pubClient = await getRedisClient();
+      const subClient = await getSubscriberClient();
+      
+      if (pubClient && subClient) {
+        io.adapter(createAdapter(pubClient, subClient));
+        logger.info('Socket.IO Redis adapter enabled for horizontal scaling');
+      }
+    } catch (error) {
+      logger.warn('Failed to setup Socket.IO Redis adapter, falling back to in-memory', { 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      });
+    }
+  } else {
+    logger.info('Socket.IO using in-memory adapter (Redis not configured)');
+  }
 
   // Setup /collab namespace with optional JWT authentication
   const collabNamespace = io.of('/collab');

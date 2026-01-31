@@ -1,3 +1,31 @@
+// Security validation for production environment
+function validateProductionConfig() {
+  const isProduction = process.env.NODE_ENV === 'production';
+  const errors: string[] = [];
+
+  if (isProduction) {
+    if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'your-default-secret') {
+      errors.push('JWT_SECRET must be set to a secure random value in production');
+    }
+    if (!process.env.ADMIN_PASSWORD || process.env.ADMIN_PASSWORD.length < 12) {
+      errors.push('ADMIN_PASSWORD must be set to a strong password (min 12 chars) in production');
+    }
+    if (!process.env.DATABASE_URL) {
+      errors.push('DATABASE_URL must be set in production');
+    }
+  }
+
+  if (errors.length > 0) {
+    console.error('\n\ud83d\udea8 CRITICAL CONFIGURATION ERRORS:');
+    errors.forEach((err) => console.error(`   \u274c ${err}`));
+    console.error('\nServer cannot start with insecure configuration in production.\n');
+    process.exit(1);
+  }
+}
+
+// Run validation on module load
+validateProductionConfig();
+
 export const config = {
   // Server configuration
   port: parseInt(process.env.PORT || '5001'),
@@ -6,8 +34,14 @@ export const config = {
   // Database configuration
   databaseUrl: process.env.DATABASE_URL,
 
-  // JWT Secret
-  jwtSecret: process.env.JWT_SECRET || 'your-default-secret',
+  // JWT Secret - REQUIRED in production, fallback only for development
+  get jwtSecret(): string {
+    const secret = process.env.JWT_SECRET;
+    if (!secret && this.isProduction) {
+      throw new Error('JWT_SECRET is required in production');
+    }
+    return secret || 'dev-only-secret-do-not-use-in-production';
+  },
 
   // OAuth Configuration
   googleClientId: process.env.GOOGLE_CLIENT_ID || '',
@@ -15,8 +49,18 @@ export const config = {
   githubClientId: process.env.GITHUB_CLIENT_ID || '',
   githubClientSecret: process.env.GITHUB_CLIENT_SECRET || '',
 
-  // Admin configuration
-  adminPassword: process.env.ADMIN_PASSWORD || '404vibe!',
+  // Admin configuration - REQUIRED in production
+  get adminPassword(): string {
+    const password = process.env.ADMIN_PASSWORD;
+    if (!password && this.isProduction) {
+      throw new Error('ADMIN_PASSWORD is required in production');
+    }
+    // Only allow weak default in development for convenience
+    if (!password) {
+      console.warn('\u26a0\ufe0f  Using default admin password - DO NOT USE IN PRODUCTION');
+    }
+    return password || 'dev-admin-password';
+  },
   // Comma-separated list of admin emails for RBAC
   adminEmails: (process.env.ADMIN_EMAILS || '')
     .split(',')
@@ -108,5 +152,24 @@ export const config = {
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean);
+  },
+
+  // ===== Monitoring & Observability =====
+  // Sentry DSN for error tracking (optional - disabled if not set)
+  sentryDsn: process.env.SENTRY_DSN || '',
+  // Sentry environment (auto-detected from NODE_ENV if not set)
+  sentryEnvironment: process.env.SENTRY_ENVIRONMENT || process.env.NODE_ENV || 'development',
+  // Sentry sample rate for performance monitoring (0.0 to 1.0)
+  get sentryTracesSampleRate() {
+    const rate = parseFloat(process.env.SENTRY_TRACES_SAMPLE_RATE || '0.1');
+    return Number.isFinite(rate) && rate >= 0 && rate <= 1 ? rate : 0.1;
+  },
+  // Enable Prometheus metrics endpoint (/metrics)
+  get metricsEnabled() {
+    const v = (process.env.METRICS_ENABLED || '').toLowerCase();
+    if (v === '1' || v === 'true' || v === 'yes') return true;
+    if (v === '0' || v === 'false' || v === 'no') return false;
+    // default: enabled
+    return true;
   },
 };

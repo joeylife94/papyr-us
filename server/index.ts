@@ -5,6 +5,10 @@ import path from 'path';
 const envPath = process.env.NODE_ENV === 'test' ? '.env.test' : '.env';
 dotenv.config({ path: path.resolve(process.cwd(), envPath) });
 
+// Initialize Sentry BEFORE other imports (captures errors during initialization)
+import { initSentry, sentryRequestHandler, sentryTracingHandler, sentryErrorHandler } from './services/sentry.js';
+initSentry();
+
 import express from 'express';
 import { registerRoutes } from './routes.js';
 import { serveStaticAssets, serveIndex } from './static.js';
@@ -17,9 +21,24 @@ import {
   setupSecurity,
 } from './middleware.js';
 import { DBStorage } from './storage.js';
+import { metricsMiddleware, setupMetrics } from './services/metrics.js';
+import { requestContextMiddleware } from './services/logger.js';
 
 const app = express();
 const storage = new DBStorage(); // Create a single storage instance
+
+// Sentry request handlers MUST come first (before other middleware)
+app.use(sentryRequestHandler());
+app.use(sentryTracingHandler());
+
+// Request context (request ID) middleware - enables request tracing
+app.use(requestContextMiddleware);
+
+// Prometheus metrics middleware
+app.use(metricsMiddleware);
+
+// Setup metrics endpoint (/metrics)
+setupMetrics(app);
 
 // Setup basic middleware
 setupBasicMiddleware(app);
@@ -32,6 +51,9 @@ setupSecurity(app);
 
   // Setup error handler after routes
   setupErrorHandler(app);
+
+  // Sentry error handler MUST come after routes and before any other error handler
+  app.use(sentryErrorHandler());
 
   const { isProduction } = getServerConfig();
   if (isProduction) {

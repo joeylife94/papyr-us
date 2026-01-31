@@ -1,9 +1,25 @@
 import OpenAI from 'openai';
 
 // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR || 'default_key',
-});
+const apiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR;
+
+// OpenAI client - only initialized if API key is available
+const openai = apiKey ? new OpenAI({ apiKey }) : null;
+
+// Helper to check if AI features are available
+export function isAIAvailable(): boolean {
+  return openai !== null;
+}
+
+// Helper to get OpenAI client with availability check
+function getOpenAI(): OpenAI {
+  if (!openai) {
+    throw new Error(
+      'AI features are not available. Please configure OPENAI_API_KEY environment variable.'
+    );
+  }
+  return openai;
+}
 
 export interface ContentSuggestion {
   type: 'section' | 'improvement' | 'related';
@@ -38,7 +54,7 @@ Respond with JSON in this format: {
   ]
 }`;
 
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAI().chat.completions.create({
       model: 'gpt-4o',
       messages: [
         {
@@ -75,7 +91,7 @@ Respond with JSON in this format: {
   "readingTime": 5
 }`;
 
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAI().chat.completions.create({
       model: 'gpt-4o',
       messages: [
         {
@@ -120,7 +136,7 @@ export async function generateContent(
         ? 'You are an expert technical writer. Generate well-structured markdown content for wiki pages. Use proper headings, formatting, and include practical examples where appropriate.'
         : 'You are an expert technical writer. Generate a well-structured markdown section that can be added to existing documentation. Focus on clarity and usefulness.';
 
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAI().chat.completions.create({
       model: 'gpt-4o',
       messages: [
         {
@@ -189,7 +205,7 @@ Respond with JSON in this format: {
 
 Rank by relevance (0.0-1.0) and provide specific matched terms and reasoning.`;
 
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAI().chat.completions.create({
       model: 'gpt-4o',
       messages: [
         {
@@ -254,7 +270,7 @@ Respond with JSON in this format: {
   "suggestions": ["suggestion1", "suggestion2", "suggestion3", "suggestion4", "suggestion5"]
 }`;
 
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAI().chat.completions.create({
       model: 'gpt-4o',
       messages: [
         {
@@ -322,7 +338,7 @@ Current Context:`;
       systemPrompt += `\n- Recent Pages: ${context.recentPages.map((p) => p.title).join(', ')}`;
     }
 
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAI().chat.completions.create({
       model: 'gpt-4o',
       messages: [
         {
@@ -356,7 +372,7 @@ export interface ExtractedTask {
 export async function extractTasks(content: string): Promise<ExtractedTask[]> {
   try {
     const prompt = `Analyze the following content and extract any tasks, action items, or TODO items mentioned. Look for patterns like:
-- "해야 한다", "필요하다", "구현해야", "작성해야"
+- "?�야 ?�다", "?�요?�다", "구현?�야", "?�성?�야"
 - TODO, FIXME, etc.
 - Action items in meeting notes
 - Tasks mentioned in discussions
@@ -374,7 +390,7 @@ Respond with JSON in this format: {
   ]
 }`;
 
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAI().chat.completions.create({
       model: 'gpt-4o',
       messages: [
         {
@@ -438,7 +454,7 @@ Respond with JSON in this format: {
 
 Find up to 5 most related pages, ranked by relevance (0.0-1.0).`;
 
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAI().chat.completions.create({
       model: 'gpt-4o',
       messages: [
         {
