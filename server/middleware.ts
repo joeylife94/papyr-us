@@ -209,10 +209,30 @@ export function buildRateLimiter(opts?: { windowMs?: number; max?: number }) {
 }
 
 export function setupSecurity(app: Express) {
-  // Helmet-like secure headers via small set; if helmet is installed, use it directly
+  // Use enhanced security if available, otherwise fallback to basic helmet
+  try {
+    // Dynamic import to avoid circular dependencies
+    import('./services/security.js').then(({ setupSecurityHeaders, setupEnhancedCors, sanitizeRequest }) => {
+      // Request sanitization
+      app.use(sanitizeRequest);
+      // Enhanced security headers
+      setupSecurityHeaders(app);
+      // Enhanced CORS
+      setupEnhancedCors(app);
+    }).catch(() => {
+      // Fallback to basic security
+      setupBasicSecurity(app);
+    });
+  } catch {
+    setupBasicSecurity(app);
+  }
+}
+
+function setupBasicSecurity(app: Express) {
+  // Helmet-like secure headers via small set
   app.use(
     helmet({
-      contentSecurityPolicy: false, // keep simple for now; can be tightened later
+      contentSecurityPolicy: false, // keep simple for now
       crossOriginEmbedderPolicy: false,
     })
   );
