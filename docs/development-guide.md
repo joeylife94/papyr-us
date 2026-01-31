@@ -1,4 +1,34 @@
-## 변경 이력: 2025-10-20
+## 변경 이력
+
+### 2026-02-01 — 프로덕션 준비 완료
+
+- **새로운 서비스 파일들** 추가:
+  - `server/services/sso.ts` - SSO/OIDC 통합 (Google, GitHub, Azure AD, Okta, Auth0)
+  - `server/services/i18n.ts` - 다국어 지원 (7개 언어)
+  - `server/services/microservices.ts` - 마이크로서비스 아키텍처 준비
+  - `server/services/version-history.ts` - 페이지 버전 히스토리
+  - `server/services/comment-notifications.ts` - 댓글 알림 시스템
+  - `server/services/monitoring.ts` - Sentry/Prometheus 모니터링
+  - `server/services/logger.ts` - Winston 구조화 로깅
+  - `server/services/redis.ts` - Redis 캐싱/세션 관리
+  - `server/services/backup.ts` - PostgreSQL 백업 자동화
+
+- **새로운 클라이언트 컴포넌트들** 추가:
+  - `client/src/hooks/use-responsive.ts` - 모바일 반응형 훅
+  - `client/src/components/mobile/BottomSheet.tsx` - 모바일 바텀시트
+  - `client/src/components/mobile/MobileNav.tsx` - 모바일 네비게이션
+
+- **부하 테스트 스크립트** 추가:
+  - `scripts/load-test.js` - k6 부하 테스트
+  - `scripts/artillery-test.yml` - Artillery 시나리오 테스트
+
+- **새로운 환경 변수** (`.env.example` 참조):
+  - SSO: `AZURE_AD_*`, `OKTA_*`, `AUTH0_*`, `OIDC_*`
+  - 모니터링: `SENTRY_DSN`, `ENABLE_PROMETHEUS`
+  - Redis: `REDIS_URL`, `REDIS_PASSWORD`
+  - 백업: `BACKUP_*`, `AWS_*`
+
+### 2025-10-20
 
 - Windows PowerShell에서 `ALLOW_HOST_OVERRIDE`/`HOST`로 IPv4 루프백 바인딩 강제 가이드 추가
   - 기본값: 개발=localhost, 프로덕션/Replit=0.0.0.0
@@ -59,10 +89,17 @@ docker-compose up -d --build
 
 ## Next steps
 
-- CI를 푸시/PR로 트리거하여 Playwright 리포트가 정상적으로 업로드되는지 확인하세요.
-- Playwright 아티팩트(스크린샷/트레이스)를 검토해 반복적으로 실패하는 E2E 테스트를 식별합니다.
-- 불안정한 테스트를 리팩토링하거나 타임아웃/리트라이를 조정해 CI 안정성 향상 작업을 진행하세요.
-- 추후 비밀번호 필드 해싱 마이그레이션 설계를 우선적으로 계획해 보안 리스크를 줄이세요.
+### 2026-02-01 기준 완료된 항목
+- ✅ CI를 푸시/PR로 트리거하여 Playwright 리포트가 정상적으로 업로드되는지 확인
+- ✅ Playwright 아티팩트(스크린샷/트레이스)를 검토해 반복적으로 실패하는 E2E 테스트를 식별
+- ✅ 비밀번호 필드 해싱 마이그레이션 설계 및 구현 완료
+
+### 현재 권장 작업
+- 프로덕션 환경에서 SSO Provider 연동 테스트 (Azure AD, Okta 등)
+- k6/Artillery 부하 테스트 실행 및 성능 분석
+- Redis Sentinel/Cluster 구성으로 고가용성 확보
+- Sentry 알림 규칙 및 대시보드 커스터마이징
+- Prometheus + Grafana 대시보드 구성
 
 #### Docker 환경 접근
 

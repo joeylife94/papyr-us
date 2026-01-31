@@ -94,6 +94,50 @@ npm test       # 단위/통합 테스트
 
 ## History
 
+### 2026-02-01 — 프로덕션 준비 완료: 보안/인프라/기능 전면 업그레이드 🚀
+
+**보안 강화**
+- P0-P2 보안 취약점 전면 패치 (CRITICAL/HIGH 이슈 해결)
+- CSP(Content Security Policy) 및 CORS 헤더 강화
+- Redis 기반 분산 Rate Limiter 구현
+- 감사 로그(Audit Log) 시스템 추가
+
+**SSO/OIDC 통합**
+- Google, GitHub OAuth 2.0 지원
+- Azure AD, Okta, Auth0 엔터프라이즈 SSO 연동
+- Generic OIDC Provider 지원 (커스텀 IdP 연동 가능)
+
+**모니터링 인프라**
+- Sentry 에러 트래킹 및 성능 모니터링
+- Prometheus 메트릭 엔드포인트 (`/metrics`)
+- Winston 구조화 로깅 (일별 로테이션, JSON 포맷)
+- PostgreSQL 자동 백업 시스템 (S3/로컬 지원)
+
+**국제화 (i18n)**
+- 7개 언어 지원: 영어, 한국어, 일본어, 중국어, 스페인어, 독일어, 프랑스어
+- 자동 언어 감지 (Accept-Language, 쿠키, 쿼리 파라미터)
+
+**모바일 반응형 UI**
+- 모바일 전용 컴포넌트: BottomSheet, MobileNav, MobileHeader
+- 터치 제스처 지원 (스와이프, Safe Area)
+- 반응형 훅: `useBreakpoint`, `useSwipe`, `useVirtualKeyboard`
+
+**추가 기능**
+- 페이지 버전 히스토리 (diff 시각화, 복원 기능)
+- 댓글 알림 시스템 (@멘션, 답글, 리액션 알림)
+- 실시간 Socket.IO 알림 브로드캐스트
+
+**테스트 & 부하 테스트**
+- k6 부하 테스트 스크립트 (단계별 VU 증가)
+- Artillery 시나리오 기반 테스트 구성
+- E2E 테스트 안정화 및 CI/CD 파이프라인 강화
+
+**마이크로서비스 준비**
+- 서비스 레지스트리 및 헬스체크 패턴
+- API Gateway 프록시 구현
+- Circuit Breaker 패턴 (장애 격리)
+- Docker Compose / Kubernetes 배포 매니페스트 생성기
+
 ### 2025-09-22 — QA / CI 개선
 
 - Playwright E2E 리포트(HTML) 및 관련 아티팩트 업로드가 CI에 추가되었습니다. CI 실패 시 아티팩트를 다운로드해 문제를 재현하고 디버그할 수 있습니다.
@@ -116,9 +160,17 @@ npm test       # 단위/통합 테스트
 
 ## Next steps
 
-- CI에서 업로드된 아티팩트를 검토하여 flaky 테스트를 식별하고 우선순위를 매겨 고치세요.
-- 프로젝트의 보안 작업(예: 비밀번호 해싱 마이그레이션) 계획을 수립하고 스케줄에 반영하세요.
-- 주요 기능(블록 에디터 고도화, 데이터베이스 뷰 등) 로드맵을 다음 스프린트에 맞춰 세부 작업으로 분해하세요.
+- ✅ ~~CI에서 업로드된 아티팩트를 검토하여 flaky 테스트를 식별하고 우선순위를 매겨 고치세요.~~
+- ✅ ~~프로젝트의 보안 작업(예: 비밀번호 해싱 마이그레이션) 계획을 수립하고 스케줄에 반영하세요.~~
+- ✅ ~~주요 기능(블록 에디터 고도화, 데이터베이스 뷰 등) 로드맵을 다음 스프린트에 맞춰 세부 작업으로 분해하세요.~~
+
+### 현재 권장 작업 (2026-02-01 기준)
+
+- 프로덕션 배포 전 `.env.production` 환경 변수 최종 점검
+- SSO Provider 설정 (Azure AD, Okta 등) 완료 후 실제 인증 테스트
+- k6/Artillery 부하 테스트 실행 후 성능 병목 분석
+- Redis 클러스터 구성 (고가용성 환경)
+- CDN 설정 및 정적 자산 캐싱 최적화
 
 필요 시 `npm run lint:fix`와 `npm run format`로 자동 수정을 먼저 적용한 뒤 커밋해주세요.
 

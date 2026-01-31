@@ -29,10 +29,11 @@ This project serves as a comprehensive portfolio piece demonstrating system desi
 
 - **Block-based editor** with multiple content types (paragraphs, headings, code, quotes, checkboxes, images)
 - **Markdown support** with real-time preview and syntax highlighting
-- **Postgres Full-Text Search (FTS)** with relevance ranking and automatic indexing ⭐ **NEW**
+- **Postgres Full-Text Search (FTS)** with relevance ranking and automatic indexing
 - **Tag-based organization** with smart filtering
 - **Folder structure** with directory management
 - **Slug-based URLs** for SEO-friendly pages
+- **Page version history** with diff visualization and restore functionality ⭐ **NEW**
 
 ### 👥 Team Collaboration
 
@@ -41,6 +42,7 @@ This project serves as a comprehensive portfolio piece demonstrating system desi
 - **Task management** with status tracking and assignments
 - **File manager** with upload/download and team-based storage
 - **Real-time notifications** for comments, tasks, and mentions
+- **Comment notification system** with @mentions, replies, and reactions ⭐ **NEW**
 
 ### 🤖 AI Integration (GPT-4o)
 
@@ -60,20 +62,23 @@ This project serves as a comprehensive portfolio piece demonstrating system desi
 ### 🔐 Security & Authentication
 
 - **JWT-based authentication** with secure token management
-- **bcrypt password hashing** with salt rounds (10) ⭐ **IMPROVED**
+- **bcrypt password hashing** with salt rounds (10)
 - **Role-based access control (RBAC)** for admin and team permissions
-- **Password-protected** directories and teams with secure hashing ⭐ **IMPROVED**
-- **Rate limiting** on sensitive endpoints
-- **Security headers** (Helmet middleware)
-- **Migration tools** for upgrading security implementations ⭐ **NEW**
+- **Password-protected** directories and teams with secure hashing
+- **Rate limiting** with Redis-backed distributed limiter ⭐ **NEW**
+- **Security headers** (Helmet middleware + CSP/CORS hardening) ⭐ **IMPROVED**
+- **SSO/OIDC integration** (Google, GitHub, Azure AD, Okta, Auth0) ⭐ **NEW**
+- **Audit logging** system for compliance and monitoring ⭐ **NEW**
 
 ### 🎨 Modern UI/UX
 
 - **shadcn/ui components** for consistent design
 - **Dark/Light mode** with system preference detection
 - **Responsive design** for mobile, tablet, and desktop
+- **Mobile-first components** (BottomSheet, MobileNav, swipe gestures) ⭐ **NEW**
 - **Smooth animations** with Framer Motion
 - **Accessible** with ARIA labels and keyboard navigation
+- **i18n support** for 7 languages (EN, KO, JA, ZH, ES, DE, FR) ⭐ **NEW**
 
 ## 🏗️ System Architecture
 
@@ -196,6 +201,16 @@ Express.js 4.21.2
 - **Vitest** for unit/integration tests
 - **ESLint & Prettier** with Husky pre-commit hooks
 - **GitHub Actions** CI/CD pipeline
+- **k6 & Artillery** load testing scripts ⭐ **NEW**
+
+### 📊 Monitoring & Infrastructure ⭐ **NEW**
+
+- **Sentry** for error tracking and performance monitoring
+- **Prometheus** metrics endpoint (`/metrics`)
+- **Winston** structured logging with rotation
+- **Redis** for caching, sessions, and rate limiting
+- **PostgreSQL backup** automation with S3 support
+- **Microservices-ready** architecture (service registry, API gateway, circuit breaker)
 
 ## 🤖 AI-Powered Features
 

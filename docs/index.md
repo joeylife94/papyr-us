@@ -1,7 +1,7 @@
 # Papyr.us Documentation Index
 
-> **최종 업데이트**: 2025년 11월 8일  
-> **프로젝트 상태**: Production Ready
+> **최종 업데이트**: 2026년 2월 1일  
+> **프로젝트 상태**: Production Ready ✅
 
 이 문서는 Papyr.us 프로젝트의 모든 문서에 대한 인덱스입니다. 필요한 정보를 빠르게 찾을 수 있도록 문서를 카테고리별로 분류했습니다.
 
@@ -17,7 +17,7 @@
 
 ### 프로젝트 개요
 
-- **[최종 평가 문서](./PROJECT_FINAL_EVALUATION.md)** ⭐ — **[신규]** Gemini 평가용 종합 문서 (프로젝트 완성도, 기술 스택, 성과 등)
+- **[최종 평가 문서](./PROJECT_FINAL_EVALUATION.md)** ⭐ — Gemini 평가용 종합 문서 (프로젝트 완성도, 기술 스택, 성과 등)
 - **[프로젝트 개요](./project-overview.md)** — 프로젝트 소개, 주요 기능, 기술 스택, 테스트 전략
 - **[로드맵](./roadmap.md)** — 향후 개발 계획 및 단계별 실행 전략
 
@@ -29,6 +29,12 @@
 - **[RBAC 가이드](./rbac-guide.md)** — 권한 관리 및 보안 설정
 - **[Yjs 아키텍처](./yjs-architecture.md)** — 실시간 협업 시스템 구조
 - **[Collaboration Engine](./collaboration-engine.md)** — 협업 안정성(스냅샷/TTL/LRU/Rate Limit) 설정과 보장
+
+### 신규 문서 (2026-02-01) ⭐
+
+- **[모니터링 가이드](./monitoring-guide.md)** — Sentry, Prometheus, Winston 로깅, Redis, 백업 설정
+- **[SSO 가이드](./sso-guide.md)** — Google, GitHub, Azure AD, Okta, Auth0, OIDC 인증 통합
+- **[국제화 (i18n) 가이드](./i18n-guide.md)** — 다국어 지원 (EN, KO, JA, ZH, ES, DE, FR)
 
 ### 사용자 & 관리자 문서
 
@@ -48,6 +54,34 @@
 - **[Render 배포 가이드](./render-deployment-guide.md)** — Render 플랫폼 배포 방법
 - **[Ubuntu 배포 가이드](./ubuntu-deployment-guide.md)** — Ubuntu 서버 배포 방법
 - **[PostgreSQL 로컬 설정](./setup-local-postgres.md)** — 로컬 PostgreSQL 설정 가이드
+
+## 🆕 2026-02-01 업데이트 내역
+
+이번 업데이트에서 추가된 주요 기능들:
+
+### 인프라 & 모니터링
+- ✅ Sentry 에러 트래킹 및 성능 모니터링
+- ✅ Prometheus 메트릭 엔드포인트
+- ✅ Winston 구조화 로깅 (일별 로테이션)
+- ✅ Redis 캐싱 및 세션 관리
+- ✅ PostgreSQL 자동 백업 시스템
+
+### 인증 & 보안
+- ✅ SSO/OIDC 통합 (Google, GitHub, Azure AD, Okta, Auth0)
+- ✅ CSP/CORS 보안 헤더 강화
+- ✅ Redis 기반 분산 Rate Limiter
+- ✅ 감사 로그 시스템
+
+### 사용자 경험
+- ✅ 국제화 (i18n) - 7개 언어 지원
+- ✅ 모바일 반응형 UI (BottomSheet, MobileNav)
+- ✅ 페이지 버전 히스토리 (diff 시각화, 복원)
+- ✅ 댓글 알림 시스템 (@멘션, 답글, 리액션)
+
+### 테스트 & DevOps
+- ✅ k6/Artillery 부하 테스트 스크립트
+- ✅ CI/CD 파이프라인 강화
+- ✅ 마이크로서비스 아키텍처 준비
 
 ## 📂 히스토리 문서 (보존용)
 
