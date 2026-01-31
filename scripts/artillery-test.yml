@@ -1,0 +1,165 @@
+/**
+ * Artillery Load Testing Configuration
+ * 
+ * Alternative to k6 for Node.js based load testing
+ * 
+ * Install: npm install -g artillery
+ * Run: artillery run scripts/artillery-test.yml
+ * Report: artillery run scripts/artillery-test.yml --output report.json
+ *         artillery report report.json
+ */
+
+config:
+  target: "{{ $processEnvironment.BASE_URL || 'http://localhost:5001' }}"
+  phases:
+    # Warm up
+    - duration: 30
+      arrivalRate: 5
+      name: "Warm up"
+    
+    # Ramp up
+    - duration: 60
+      arrivalRate: 10
+      rampTo: 30
+      name: "Ramp up"
+    
+    # Sustained load
+    - duration: 120
+      arrivalRate: 30
+      name: "Sustained load"
+    
+    # Spike test
+    - duration: 30
+      arrivalRate: 100
+      name: "Spike test"
+    
+    # Cool down
+    - duration: 30
+      arrivalRate: 5
+      name: "Cool down"
+
+  defaults:
+    headers:
+      Content-Type: "application/json"
+
+  # Plugins
+  plugins:
+    expect: {}
+    metrics-by-endpoint: {}
+
+  # Thresholds
+  ensure:
+    p99: 1000      # 99th percentile under 1s
+    p95: 500       # 95th percentile under 500ms
+    maxErrorRate: 5 # Max 5% error rate
+
+  variables:
+    testEmail: "artillery_{{ $randomNumber(1000, 9999) }}@test.com"
+    testPassword: "TestPassword123!"
+
+scenarios:
+  # Health check scenario
+  - name: "Health Check"
+    weight: 30
+    flow:
+      - get:
+          url: "/health"
+          expect:
+            - statusCode: 200
+            - hasProperty: "status"
+
+  # Browse pages scenario
+  - name: "Browse Pages"
+    weight: 40
+    flow:
+      - get:
+          url: "/api/pages"
+          capture:
+            - json: "$[0].id"
+              as: "pageId"
+          expect:
+            - statusCode: 200
+      
+      - think: 1
+      
+      - get:
+          url: "/api/pages/{{ pageId }}"
+          ifTrue: "pageId"
+          expect:
+            - statusCode: 200
+
+  # Search scenario
+  - name: "Search"
+    weight: 20
+    flow:
+      - get:
+          url: "/api/search?q=test&limit=10"
+          expect:
+            - statusCode: 200
+
+  # Authenticated CRUD scenario
+  - name: "Authenticated CRUD"
+    weight: 10
+    flow:
+      # Register
+      - post:
+          url: "/api/auth/register"
+          json:
+            name: "Artillery Test"
+            email: "{{ testEmail }}"
+            password: "{{ testPassword }}"
+          capture:
+            - json: "$.accessToken"
+              as: "token"
+      
+      # Login if registration failed (user exists)
+      - post:
+          url: "/api/auth/login"
+          ifTrue: "!token"
+          json:
+            email: "{{ testEmail }}"
+            password: "{{ testPassword }}"
+          capture:
+            - json: "$.accessToken"
+              as: "token"
+      
+      - think: 1
+      
+      # Create page
+      - post:
+          url: "/api/pages"
+          headers:
+            Authorization: "Bearer {{ token }}"
+          json:
+            title: "Artillery Test Page {{ $timestamp }}"
+            content: "Load testing content"
+            tags: ["artillery", "test"]
+          capture:
+            - json: "$.id"
+              as: "newPageId"
+          expect:
+            - statusCode: 201
+      
+      - think: 2
+      
+      # Update page
+      - patch:
+          url: "/api/pages/{{ newPageId }}"
+          headers:
+            Authorization: "Bearer {{ token }}"
+          json:
+            content: "Updated at {{ $timestamp }}"
+          expect:
+            - statusCode: 200
+      
+      - think: 1
+      
+      # Delete page
+      - delete:
+          url: "/api/pages/{{ newPageId }}"
+          headers:
+            Authorization: "Bearer {{ token }}"
+          expect:
+            - statusCode:
+                - 200
+                - 204
