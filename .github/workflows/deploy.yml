@@ -1,0 +1,151 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+  release:
+    types: [published]
+
+env:
+  NODE_VERSION: '20'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ==================== Deploy to Render ====================
+  deploy-render:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Deploy to Render
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+        run: |
+          if [ -z "$RENDER_API_KEY" ]; then
+            echo "RENDER_API_KEY not configured, skipping Render deploy"
+            exit 0
+          fi
+          
+          curl -X POST \
+            "https://api.render.com/v1/services/$RENDER_SERVICE_ID/deploys" \
+            -H "Authorization: Bearer $RENDER_API_KEY" \
+            -H "Content-Type: application/json"
+          
+          echo "Deployment triggered on Render!"
+
+  # ==================== Deploy to Vercel ====================
+  deploy-vercel:
+    runs-on: ubuntu-latest
+    if: github.event.inputs.environment == 'staging' || github.event_name == 'release'
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Deploy to Vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "VERCEL_TOKEN not configured, skipping Vercel deploy"
+            exit 0
+          fi
+          
+          if [ "${{ github.event.inputs.environment }}" == "production" ] || [ "${{ github.event_name }}" == "release" ]; then
+            vercel --prod --token=$VERCEL_TOKEN
+          else
+            vercel --token=$VERCEL_TOKEN
+          fi
+
+  # ==================== Database Migration ====================
+  migrate:
+    runs-on: ubuntu-latest
+    needs: [deploy-render]
+    if: github.event.inputs.environment == 'production' || github.event_name == 'release'
+    environment: production
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run migrations
+        env:
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "DATABASE_URL not configured, skipping migrations"
+            exit 0
+          fi
+          npm run db:push
+
+  # ==================== Post-Deploy Verification ====================
+  verify:
+    runs-on: ubuntu-latest
+    needs: [deploy-render, migrate]
+    if: always() && needs.deploy-render.result == 'success'
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    steps:
+      - name: Health check
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+        run: |
+          if [ -z "$APP_URL" ]; then
+            echo "APP_URL not configured, skipping health check"
+            exit 0
+          fi
+          
+          echo "Waiting for deployment to be ready..."
+          sleep 30
+          
+          for i in {1..10}; do
+            if curl -sSf "$APP_URL/api/health" | grep -q "ok"; then
+              echo "✅ Health check passed!"
+              exit 0
+            fi
+            echo "Attempt $i failed, retrying..."
+            sleep 10
+          done
+          
+          echo "❌ Health check failed after 10 attempts"
+          exit 1
+
+      - name: Notify on success
+        if: success()
+        run: |
+          echo "🚀 Deployment to ${{ github.event.inputs.environment || 'production' }} completed successfully!"
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "❌ Deployment verification failed!"
