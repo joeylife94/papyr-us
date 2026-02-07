@@ -61,6 +61,7 @@ export const wikiPages = pgTable('wiki_pages', {
   folder: text('folder').notNull(), // docs, ideas, members, logs, archive, team1, team2, etc.
   tags: text('tags').array().notNull().default([]),
   author: text('author').notNull(),
+  parentId: integer('parent_id'), // Nested pages: reference to parent page
   teamId: integer('team_id').references(() => teams.id, { onDelete: 'set null' }), // 팀 소속
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
@@ -79,6 +80,29 @@ export const updateWikiPageSchema = insertWikiPageSchema.partial();
 export type InsertWikiPage = z.infer<typeof insertWikiPageSchema>;
 export type UpdateWikiPage = z.infer<typeof updateWikiPageSchema>;
 export type WikiPage = typeof wikiPages.$inferSelect;
+
+// Page version history
+export const pageVersions = pgTable('page_versions', {
+  id: serial('id').primaryKey(),
+  pageId: integer('page_id')
+    .notNull()
+    .references(() => wikiPages.id, { onDelete: 'cascade' }),
+  title: text('title').notNull(),
+  content: text('content').notNull(),
+  blocks: jsonb('blocks').default([]),
+  author: text('author').notNull(),
+  versionNumber: integer('version_number').notNull(),
+  changeDescription: text('change_description'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const insertPageVersionSchema = createInsertSchema(pageVersions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertPageVersion = z.infer<typeof insertPageVersionSchema>;
+export type PageVersion = typeof pageVersions.$inferSelect;
 
 // Tags schema for filtering
 export const tagSchema = z.object({

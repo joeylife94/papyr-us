@@ -9,6 +9,7 @@ import { AuthProvider } from '@/hooks/useAuth';
 import { Header } from '@/components/layout/header';
 import { Sidebar } from '@/components/layout/sidebar';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import { CommandPalette } from '@/components/command-palette';
 
 // Pages
 import Home from '@/pages/home';
@@ -87,6 +88,7 @@ function AppLayout() {
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
       />
+      <CommandPalette />
 
       <div className="flex pt-16">
         <Sidebar

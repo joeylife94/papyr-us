@@ -41,6 +41,8 @@ import { collaborationSync } from '@/lib/collaboration';
 import { useYjsCollaboration } from '@/hooks/useYjsCollaboration';
 import { UserCursors } from '@/components/collaboration/user-cursor';
 import { useFeatureFlags } from '@/features/FeatureFlagsContext';
+import { SlashCommandMenu } from './slash-command-menu';
+import { InlineFormattingToolbar } from './inline-formatting-toolbar';
 
 interface BlockEditorProps {
   blocks: Block[];
@@ -64,6 +66,60 @@ export function BlockEditor({
   const { flags } = useFeatureFlags();
   const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null);
   const editorContainerRef = useRef<HTMLDivElement>(null);
+
+  // Slash command state
+  const [slashMenu, setSlashMenu] = useState<{
+    isOpen: boolean;
+    position: { top: number; left: number };
+    filter: string;
+    blockId: string;
+  }>({ isOpen: false, position: { top: 0, left: 0 }, filter: '', blockId: '' });
+
+  const handleSlashCommand = useCallback((blockId: string, rect: DOMRect) => {
+    setSlashMenu({
+      isOpen: true,
+      position: { top: rect.top, left: rect.left },
+      filter: '',
+      blockId,
+    });
+  }, []);
+
+  const handleSlashFilter = useCallback((filter: string) => {
+    setSlashMenu((prev) => ({ ...prev, filter }));
+  }, []);
+
+  const handleSlashClose = useCallback(() => {
+    setSlashMenu((prev) => ({ ...prev, isOpen: false, filter: '' }));
+  }, []);
+
+  const handleSlashSelect = useCallback(
+    (type: BlockType) => {
+      const blockIndex = blocks.findIndex((b) => b.id === slashMenu.blockId);
+      if (blockIndex === -1) return;
+
+      // Remove the slash text from current block content
+      const currentBlock = blocks[blockIndex];
+      const cleanedContent = currentBlock.content.replace(/\/[^\s]*$/, '').trim();
+
+      if (type === 'paragraph' && cleanedContent === '') {
+        // If selecting paragraph on empty block, just keep it
+        handleSlashClose();
+        return;
+      }
+
+      if (cleanedContent === '') {
+        // Empty block — just change its type
+        updateBlock(slashMenu.blockId, { content: '', type });
+      } else {
+        // Block has content — update it, then add new block after
+        updateBlock(slashMenu.blockId, { content: cleanedContent });
+        addBlock(blockIndex + 1, type);
+      }
+
+      handleSlashClose();
+    },
+    [blocks, slashMenu.blockId, updateBlock, addBlock, handleSlashClose]
+  );
 
   const collaborationEnabled = flags.FEATURE_COLLABORATION && !!pageId && !!userId && !!userName;
 
@@ -289,7 +345,12 @@ export function BlockEditor({
               }
             }}
           >
-            <ParagraphBlock {...commonProps} />
+            <ParagraphBlock
+              {...commonProps}
+              onSlashCommand={(rect) => handleSlashCommand(block.id, rect)}
+              onSlashFilter={handleSlashFilter}
+              onSlashClose={handleSlashClose}
+            />
           </div>
         );
       case 'checkbox':
@@ -637,6 +698,18 @@ export function BlockEditor({
           </div>
         </div>
       )}
+
+      {/* Slash Command Menu (Notion-style /) */}
+      <SlashCommandMenu
+        isOpen={slashMenu.isOpen}
+        position={slashMenu.position}
+        filter={slashMenu.filter}
+        onSelect={handleSlashSelect}
+        onClose={handleSlashClose}
+      />
+
+      {/* Inline Formatting Toolbar (appears on text selection) */}
+      <InlineFormattingToolbar containerRef={editorContainerRef} />
     </div>
   );
 }

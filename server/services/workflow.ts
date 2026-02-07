@@ -6,11 +6,25 @@ import type {
   WorkflowCondition,
   TriggerType,
 } from '@shared/schema';
-import { getStorage } from '../storage.js';
+import type { DBStorage } from '../storage.js';
 import * as aiService from './ai.js';
 import logger from './logger.js';
 
-const storage = getStorage();
+let _storage: DBStorage | null = null;
+
+/** Initialize the workflow service with a shared storage instance */
+export function initWorkflowService(storageInstance: DBStorage) {
+  _storage = storageInstance;
+}
+
+function getWorkflowStorage(): DBStorage {
+  if (!_storage) {
+    // Lazy fallback ??import getStorage only when not yet initialized
+    const { getStorage } = require('../storage.js');
+    _storage = getStorage();
+  }
+  return _storage;
+}
 
 // Variable substitution helper
 function substituteVariables(template: string, variables: Record<string, any>): string {
@@ -82,7 +96,7 @@ async function executeAction(
         const notifications: any[] = [];
         for (const recipientId of recipients) {
           try {
-            const notification = await storage.createNotification({
+            const notification = await getWorkflowStorage().createNotification({
               recipientId,
               type: 'system',
               title,
@@ -104,7 +118,7 @@ async function executeAction(
         };
 
       case 'create_task':
-        const newTask = await storage.createTask({
+        const newTask = await getWorkflowStorage().createTask({
           title: processedConfig.title || 'New Task',
           description: processedConfig.description || '',
           status: processedConfig.status || 'todo',
@@ -119,7 +133,7 @@ async function executeAction(
         if (!context.trigger?.id) {
           return { success: false, error: 'No task ID in context' };
         }
-        const updatedTask = await storage.updateTask(context.trigger.id, {
+        const updatedTask = await getWorkflowStorage().updateTask(context.trigger.id, {
           status: processedConfig.status,
           priority: processedConfig.priority,
           assignedTo: processedConfig.assignedTo,
@@ -128,7 +142,7 @@ async function executeAction(
         return { success: true, result: updatedTask };
 
       case 'create_page':
-        const newPage = await storage.createWikiPage({
+        const newPage = await getWorkflowStorage().createWikiPage({
           title: processedConfig.title || 'New Page',
           slug: processedConfig.title?.toLowerCase().replace(/\s+/g, '-') || `page-${Date.now()}`,
           content: processedConfig.content || '',
@@ -143,7 +157,7 @@ async function executeAction(
         if (!context.trigger?.id) {
           return { success: false, error: 'No page ID in context' };
         }
-        const comment = await storage.createComment({
+        const comment = await getWorkflowStorage().createComment({
           pageId: context.trigger.id,
           author: 'Automation Bot',
           content: processedConfig.message || 'Automated comment',
@@ -156,14 +170,14 @@ async function executeAction(
           return { success: false, error: 'Missing page ID or tags' };
         }
         // Fetch current page using searchWikiPages
-        const searchResult = await storage.searchWikiPages({ query: '', limit: 1000, offset: 0 });
+        const searchResult = await getWorkflowStorage().searchWikiPages({ query: '', limit: 1000, offset: 0 });
         const page = searchResult.pages.find((p: any) => p.id === context.trigger.id);
         if (!page) {
           return { success: false, error: 'Page not found' };
         }
         // Add new tags
         const updatedTags = Array.from(new Set([...page.tags, ...processedConfig.tags]));
-        await storage.updateWikiPage(context.trigger.id, { tags: updatedTags });
+        await getWorkflowStorage().updateWikiPage(context.trigger.id, { tags: updatedTags });
         return { success: true, result: { tags: updatedTags } };
 
       case 'run_ai_summary':
@@ -197,7 +211,7 @@ async function executeAction(
         if (!context.trigger?.id) {
           return { success: false, error: 'No task ID in context' };
         }
-        await storage.updateTask(context.trigger.id, {
+        await getWorkflowStorage().updateTask(context.trigger.id, {
           assignedTo: processedConfig.assignedTo,
         });
         return { success: true, result: { assignedTo: processedConfig.assignedTo } };
@@ -206,7 +220,7 @@ async function executeAction(
         if (!context.trigger?.id) {
           return { success: false, error: 'No page ID in context' };
         }
-        await storage.updateWikiPage(context.trigger.id, {
+        await getWorkflowStorage().updateWikiPage(context.trigger.id, {
           folder: processedConfig.folder,
         });
         return { success: true, result: { folder: processedConfig.folder } };
@@ -232,7 +246,7 @@ export async function executeWorkflow(
   workflow: Workflow,
   triggerData: Record<string, any>
 ): Promise<WorkflowRun> {
-  const runId = await storage.createWorkflowRun({
+  const runId = await getWorkflowStorage().createWorkflowRun({
     workflowId: workflow.id,
     status: 'running',
     triggerData,
@@ -251,12 +265,12 @@ export async function executeWorkflow(
     // Evaluate conditions
     const conditions = workflow.conditions as WorkflowCondition[];
     if (!evaluateConditions(conditions, context)) {
-      await storage.updateWorkflowRun(runId, {
+      await getWorkflowStorage().updateWorkflowRun(runId, {
         status: 'success',
         results: [{ skipped: true, reason: 'Conditions not met' }],
         completedAt: new Date(),
       });
-      return await storage.getWorkflowRun(runId);
+      return await getWorkflowStorage().getWorkflowRun(runId);
     }
 
     // Execute actions sequentially
@@ -272,13 +286,13 @@ export async function executeWorkflow(
 
       if (!result.success) {
         // Stop on first failure
-        await storage.updateWorkflowRun(runId, {
+        await getWorkflowStorage().updateWorkflowRun(runId, {
           status: 'failed',
           results,
           error: result.error,
           completedAt: new Date(),
         });
-        return await storage.getWorkflowRun(runId);
+        return await getWorkflowStorage().getWorkflowRun(runId);
       }
 
       // Update context with action results
@@ -287,13 +301,13 @@ export async function executeWorkflow(
     }
 
     // Mark as success
-    await storage.updateWorkflowRun(runId, {
+    await getWorkflowStorage().updateWorkflowRun(runId, {
       status: 'success',
       results,
       completedAt: new Date(),
     });
 
-    return await storage.getWorkflowRun(runId);
+    return await getWorkflowStorage().getWorkflowRun(runId);
   } catch (error) {
     logger.error('Workflow execution error:', {
       workflowId: workflow.id,
@@ -301,12 +315,12 @@ export async function executeWorkflow(
       error: error instanceof Error ? error.message : 'Unknown error',
       stack: error instanceof Error ? error.stack : undefined,
     });
-    await storage.updateWorkflowRun(runId, {
+    await getWorkflowStorage().updateWorkflowRun(runId, {
       status: 'failed',
       error: error instanceof Error ? error.message : 'Unknown error',
       completedAt: new Date(),
     });
-    return await storage.getWorkflowRun(runId);
+    return await getWorkflowStorage().getWorkflowRun(runId);
   }
 }
 
@@ -360,7 +374,7 @@ export async function triggerWorkflows(
 ): Promise<void> {
   try {
     // Get all active workflows for this trigger type
-    const workflows = await storage.getActiveWorkflowsByTrigger(triggerType, data.teamId);
+    const workflows = await getWorkflowStorage().getActiveWorkflowsByTrigger(triggerType, data.teamId);
 
     // Execute each workflow
     for (const workflow of workflows) {

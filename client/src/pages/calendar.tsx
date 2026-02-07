@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useLocation } from 'wouter';
+import { useNavigate } from 'react-router-dom';
 import Calendar from 'react-calendar';
 import {
   format,
@@ -103,7 +103,7 @@ const generateEndTimeOptions = (startTime?: string) => {
 const timeOptions = generateTimeOptions();
 
 export default function CalendarPage({ teamId }: CalendarPageProps) {
-  const [, navigate] = useLocation();
+  const navigate = useNavigate();
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [viewMode, setViewMode] = useState<'month' | 'week' | 'day'>('month');
   const [isEventDialogOpen, setIsEventDialogOpen] = useState(false);

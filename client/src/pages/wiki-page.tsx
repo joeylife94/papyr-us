@@ -16,6 +16,7 @@ import { TypingIndicator } from '@/components/collaboration/TypingIndicator';
 import { CollaboratorPresence } from '@/components/collaboration/CollaboratorPresence';
 import { AICopilotSidebar } from '@/components/ai/AICopilotSidebar';
 import { RelatedPages } from '@/components/wiki/RelatedPages';
+import { PageHistory } from '@/components/page-history';
 import { apiRequest } from '@/lib/queryClient';
 import { extractHeadings, estimateReadingTime } from '@/lib/markdown';
 import { formatDistanceToNow } from 'date-fns';
@@ -269,6 +270,7 @@ export default function WikiPageView() {
                   <Sparkles className="h-4 w-4" />
                   AI 코파일럿
                 </Button>
+                <PageHistory pageId={page.id} currentTitle={page.title} />
                 <Button
                   variant="ghost"
                   size="icon"

@@ -45,7 +45,7 @@ import {
 import { smartSearch, generateSearchSuggestions } from './services/ai.js';
 import * as aiService from './services/ai.js';
 import { aiAssistant } from './services/ai-assistant.js';
-import { triggerWorkflows } from './services/workflow.js';
+import { triggerWorkflows, initWorkflowService } from './services/workflow.js';
 import logger from './services/logger.js';
 import path from 'path';
 import { existsSync, appendFileSync } from 'fs';
@@ -102,6 +102,9 @@ export async function registerRoutes(
       FEATURE_NOTIFICATIONS: featureFlags.FEATURE_NOTIFICATIONS,
     });
   }
+
+  // Initialize shared storage for workflow service
+  initWorkflowService(storage);
 
   // --- Authentication Routes ---
 
@@ -477,8 +480,38 @@ export async function registerRoutes(
       const id = parseInt(req.params.id);
       const updateData = updateWikiPageSchema.parse(req.body);
 
-      // Get old page data for comparison
+      // Get old page data for comparison and version snapshot
       const oldPage = await storage.getWikiPage(id);
+
+      // Save a version snapshot BEFORE updating (only if content/blocks changed)
+      if (oldPage && (updateData.content !== undefined || updateData.blocks !== undefined)) {
+        try {
+          // Get the current max version number
+          const db = (storage as any).db;
+          if (db) {
+            const { pageVersions } = await import('@shared/schema');
+            const { desc, eq, sql } = await import('drizzle-orm');
+            const [latestVersion] = await db
+              .select({ maxVersion: sql<number>`COALESCE(MAX(${pageVersions.versionNumber}), 0)` })
+              .from(pageVersions)
+              .where(eq(pageVersions.pageId, id));
+            const nextVersion = (latestVersion?.maxVersion || 0) + 1;
+
+            await db.insert(pageVersions).values({
+              pageId: id,
+              title: oldPage.title,
+              content: oldPage.content,
+              blocks: oldPage.blocks || [],
+              author: oldPage.author,
+              versionNumber: nextVersion,
+              changeDescription: `Version ${nextVersion}`,
+            });
+          }
+        } catch (versionError) {
+          // Don't block page update if version creation fails
+          console.error('Failed to create page version:', versionError);
+        }
+      }
 
       const page = await storage.updateWikiPage(id, updateData);
 
@@ -520,6 +553,100 @@ export async function registerRoutes(
       res.json(page);
     } catch (error) {
       res.status(400).json({ message: 'Invalid update data', error });
+    }
+  });
+
+  // Page Version History API
+  app.get('/api/pages/:id/versions', async (req, res) => {
+    try {
+      const pageId = parseInt(req.params.id);
+      const db = (storage as any).db;
+      if (!db) return res.status(500).json({ error: 'Database not available' });
+
+      const { pageVersions } = await import('@shared/schema');
+      const { desc, eq } = await import('drizzle-orm');
+
+      const versions = await db
+        .select({
+          id: pageVersions.id,
+          pageId: pageVersions.pageId,
+          title: pageVersions.title,
+          author: pageVersions.author,
+          versionNumber: pageVersions.versionNumber,
+          changeDescription: pageVersions.changeDescription,
+          createdAt: pageVersions.createdAt,
+        })
+        .from(pageVersions)
+        .where(eq(pageVersions.pageId, pageId))
+        .orderBy(desc(pageVersions.versionNumber));
+
+      res.json(versions);
+    } catch (error) {
+      console.error('Error fetching page versions:', error);
+      res.status(500).json({ error: 'Failed to fetch page versions' });
+    }
+  });
+
+  app.get('/api/pages/:id/versions/:versionId', async (req, res) => {
+    try {
+      const versionId = parseInt(req.params.versionId);
+      const db = (storage as any).db;
+      if (!db) return res.status(500).json({ error: 'Database not available' });
+
+      const { pageVersions } = await import('@shared/schema');
+      const { eq } = await import('drizzle-orm');
+
+      const [version] = await db
+        .select()
+        .from(pageVersions)
+        .where(eq(pageVersions.id, versionId));
+
+      if (!version) {
+        return res.status(404).json({ error: 'Version not found' });
+      }
+
+      res.json(version);
+    } catch (error) {
+      console.error('Error fetching page version:', error);
+      res.status(500).json({ error: 'Failed to fetch page version' });
+    }
+  });
+
+  // Restore a specific version
+  app.post('/api/pages/:id/versions/:versionId/restore', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const pageId = parseInt(req.params.id);
+      const versionId = parseInt(req.params.versionId);
+      const db = (storage as any).db;
+      if (!db) return res.status(500).json({ error: 'Database not available' });
+
+      const { pageVersions } = await import('@shared/schema');
+      const { eq } = await import('drizzle-orm');
+
+      const [version] = await db
+        .select()
+        .from(pageVersions)
+        .where(eq(pageVersions.id, versionId));
+
+      if (!version) {
+        return res.status(404).json({ error: 'Version not found' });
+      }
+
+      // Restore the page to this version
+      const restoredPage = await storage.updateWikiPage(pageId, {
+        title: version.title,
+        content: version.content,
+        blocks: version.blocks as any,
+      });
+
+      if (!restoredPage) {
+        return res.status(404).json({ error: 'Page not found' });
+      }
+
+      res.json(restoredPage);
+    } catch (error) {
+      console.error('Error restoring page version:', error);
+      res.status(500).json({ error: 'Failed to restore page version' });
     }
   });
 
@@ -1034,75 +1161,66 @@ export async function registerRoutes(
     }
   });
 
-  // Members API
+  // Members API (see unified team-aware routes below)
 
-  app.get('/api/members/:id', async (req, res) => {
+  // Sub-pages API (nested pages)
+  app.get('/api/pages/:id/children', async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
-      const member = await storage.getMember(id);
-
-      if (!member) {
-        return res.status(404).json({ message: 'Member not found' });
-      }
-
-      res.json(member);
+      const parentId = parseInt(req.params.id);
+      const allPages = await storage.searchWikiPages({ query: '', limit: 1000, offset: 0 });
+      const children = allPages.pages.filter((p: any) => p.parentId === parentId);
+      res.json(children);
     } catch (error) {
-      res.status(400).json({ message: 'Invalid member ID' });
+      console.error('Error fetching sub-pages:', error);
+      res.status(500).json({ error: 'Failed to fetch sub-pages' });
     }
   });
 
-  app.get('/api/members/email/:email', async (req, res) => {
+  // Get page tree (for sidebar)
+  app.get('/api/page-tree', async (req, res) => {
     try {
-      const email = req.params.email;
-      const member = await storage.getMemberByEmail(email);
+      const teamId = req.query.teamId as string | undefined;
+      const allPages = await storage.searchWikiPages({
+        query: '',
+        teamId,
+        limit: 1000,
+        offset: 0,
+      });
 
-      if (!member) {
-        return res.status(404).json({ message: 'Member not found' });
-      }
+      // Build tree structure
+      const pages = allPages.pages.map((p: any) => ({
+        id: p.id,
+        title: p.title,
+        slug: p.slug,
+        parentId: p.parentId || null,
+        folder: p.folder,
+        updatedAt: p.updatedAt,
+      }));
 
-      res.json(member);
+      // Separate root pages and children
+      const rootPages = pages.filter((p: any) => !p.parentId);
+      const childMap = new Map<number, any[]>();
+      pages.forEach((p: any) => {
+        if (p.parentId) {
+          if (!childMap.has(p.parentId)) childMap.set(p.parentId, []);
+          childMap.get(p.parentId)!.push(p);
+        }
+      });
+
+      // Attach children recursively (max 3 levels)
+      const attachChildren = (page: any, depth = 0): any => {
+        const children = childMap.get(page.id) || [];
+        return {
+          ...page,
+          children: depth < 3 ? children.map((c: any) => attachChildren(c, depth + 1)) : [],
+        };
+      };
+
+      const tree = rootPages.map((p: any) => attachChildren(p));
+      res.json(tree);
     } catch (error) {
-      res.status(400).json({ message: 'Invalid email' });
-    }
-  });
-
-  app.post('/api/members', async (req, res) => {
-    try {
-      const memberData = insertMemberSchema.parse(req.body);
-      const member = await storage.createMember(memberData);
-      res.status(201).json(member);
-    } catch (error) {
-      res.status(400).json({ message: 'Invalid member data', error });
-    }
-  });
-
-  app.put('/api/members/:id', async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const updateData = updateMemberSchema.parse(req.body);
-      const member = await storage.updateMember(id, updateData);
-
-      if (!member) {
-        return res.status(404).json({ message: 'Member not found' });
-      }
-
-      res.json(member);
-    } catch (error) {
-      res.status(400).json({ message: 'Invalid update data', error });
-    }
-  });
-
-  app.delete('/api/members/:id', async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const success = await storage.deleteMember(id);
-      if (!success) {
-        return res.status(404).json({ error: 'Member not found' });
-      }
-      res.status(204).send();
-    } catch (error) {
-      console.error('Error deleting member:', error);
-      res.status(500).json({ error: 'Failed to delete member' });
+      console.error('Error fetching page tree:', error);
+      res.status(500).json({ error: 'Failed to fetch page tree' });
     }
   });
 
@@ -1993,88 +2111,114 @@ export async function registerRoutes(
         res.status(500).json({ error: 'Failed to verify team password' });
       }
     });
-
-    // Members API with team support
-    app.get('/api/members', async (req, res) => {
-      try {
-        let teamId: number | undefined;
-
-        if (req.query.teamId) {
-          const teamIdParam = req.query.teamId as string;
-
-          // Check if it's a number (team ID) or string (team name)
-          if (!isNaN(parseInt(teamIdParam))) {
-            teamId = parseInt(teamIdParam);
-          } else {
-            // It's a team name, find the team ID
-            const team = await storage.getTeamByName(teamIdParam);
-            if (team) {
-              teamId = team.id;
-            } else {
-              return res.status(404).json({ error: 'Team not found' });
-            }
-          }
-        }
-
-        const members = await storage.getMembers(teamId);
-        res.json(members);
-      } catch (error) {
-        console.error('Error fetching members:', error);
-        res.status(500).json({ error: 'Failed to fetch members' });
-      }
-    });
-
-    app.post('/api/members', requireAuthIfEnabled, async (req, res) => {
-      try {
-        const memberData = insertMemberSchema.parse(req.body);
-
-        // If teamId is provided as a string (team name), find the actual team ID
-        if (memberData.teamId && typeof memberData.teamId === 'string') {
-          const team = await storage.getTeamByName(memberData.teamId);
-          if (team) {
-            memberData.teamId = team.id;
-          } else {
-            return res.status(400).json({ error: 'Team not found' });
-          }
-        }
-
-        const member = await storage.createMember(memberData);
-        res.status(201).json(member);
-      } catch (error) {
-        console.error('Error creating member:', error);
-        res.status(400).json({ error: 'Failed to create member' });
-      }
-    });
-
-    app.put('/api/members/:id', requireAuthIfEnabled, async (req, res) => {
-      try {
-        const id = parseInt(req.params.id);
-        const memberData = updateMemberSchema.parse(req.body);
-        const member = await storage.updateMember(id, memberData);
-        if (!member) {
-          return res.status(404).json({ error: 'Member not found' });
-        }
-        res.json(member);
-      } catch (error) {
-        console.error('Error updating member:', error);
-        res.status(400).json({ error: 'Failed to update member' });
-      }
-    });
-
-    app.delete('/api/members/:id', requireAuthIfEnabled, async (req, res) => {
-      try {
-        const id = parseInt(req.params.id);
-        const success = await storage.deleteMember(id);
-        if (!success) {
-          return res.status(404).json({ error: 'Member not found' });
-        }
-        res.status(204).send();
-      } catch (error) {
-        console.error('Error deleting member:', error);
-        res.status(500).json({ error: 'Failed to delete member' });
-      }
-    });
   }
+
+  // Members API (unified, team-aware)
+  app.get('/api/members', async (req, res) => {
+    try {
+      let teamId: number | undefined;
+
+      if (req.query.teamId) {
+        const teamIdParam = req.query.teamId as string;
+
+        // Check if it's a number (team ID) or string (team name)
+        if (!isNaN(parseInt(teamIdParam))) {
+          teamId = parseInt(teamIdParam);
+        } else {
+          // It's a team name, find the team ID
+          const team = await storage.getTeamByName(teamIdParam);
+          if (team) {
+            teamId = team.id;
+          } else {
+            return res.status(404).json({ error: 'Team not found' });
+          }
+        }
+      }
+
+      const members = await storage.getMembers(teamId);
+      res.json(members);
+    } catch (error) {
+      console.error('Error fetching members:', error);
+      res.status(500).json({ error: 'Failed to fetch members' });
+    }
+  });
+
+  app.get('/api/members/:id', async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const member = await storage.getMember(id);
+      if (!member) {
+        return res.status(404).json({ error: 'Member not found' });
+      }
+      res.json(member);
+    } catch (error) {
+      res.status(400).json({ error: 'Invalid member ID' });
+    }
+  });
+
+  app.get('/api/members/email/:email', async (req, res) => {
+    try {
+      const email = req.params.email;
+      const member = await storage.getMemberByEmail(email);
+      if (!member) {
+        return res.status(404).json({ error: 'Member not found' });
+      }
+      res.json(member);
+    } catch (error) {
+      res.status(400).json({ error: 'Invalid email' });
+    }
+  });
+
+  app.post('/api/members', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const memberData = insertMemberSchema.parse(req.body);
+
+      // If teamId is provided as a string (team name), find the actual team ID
+      if (memberData.teamId && typeof memberData.teamId === 'string') {
+        const team = await storage.getTeamByName(memberData.teamId);
+        if (team) {
+          memberData.teamId = team.id;
+        } else {
+          return res.status(400).json({ error: 'Team not found' });
+        }
+      }
+
+      const member = await storage.createMember(memberData);
+      res.status(201).json(member);
+    } catch (error) {
+      console.error('Error creating member:', error);
+      res.status(400).json({ error: 'Failed to create member' });
+    }
+  });
+
+  app.put('/api/members/:id', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const memberData = updateMemberSchema.parse(req.body);
+      const member = await storage.updateMember(id, memberData);
+      if (!member) {
+        return res.status(404).json({ error: 'Member not found' });
+      }
+      res.json(member);
+    } catch (error) {
+      console.error('Error updating member:', error);
+      res.status(400).json({ error: 'Failed to update member' });
+    }
+  });
+
+  app.delete('/api/members/:id', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const success = await storage.deleteMember(id);
+      if (!success) {
+        return res.status(404).json({ error: 'Member not found' });
+      }
+      res.status(204).send();
+    } catch (error) {
+      console.error('Error deleting member:', error);
+      res.status(500).json({ error: 'Failed to delete member' });
+    }
+  });
 
   if (featureFlags.FEATURE_AI_SEARCH) {
     // AI ?œë¹„??API

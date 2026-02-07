@@ -16,8 +16,8 @@ A comprehensive **team collaboration platform** built with React and Express.js,
 - **AI integration** using GPT-4o: RAG pipeline, semantic search, document summarization, task extraction, smart tagging, and related content discovery
 - **Multi-tenant B2B SaaS architecture** with team-based isolation and comprehensive RBAC (Role-Based Access Control)
 - **Production-grade security**: JWT authentication, bcrypt hashing, rate limiting, Helmet middleware, input validation, and SQL injection prevention
-- **Scalable full-stack TypeScript** codebase with comprehensive test coverage, Docker containerization, and CI/CD pipeline
-- **Enterprise-grade storage**: PostgreSQL 16 with Full-Text Search (FTS), Drizzle ORM for type-safe queries, and migration system
+- **Scalable full-stack TypeScript** codebase (~33,000 lines) with comprehensive test coverage, Docker containerization, and CI/CD pipeline
+- **Enterprise-grade storage**: PostgreSQL 16 with Full-Text Search (FTS), Drizzle ORM for type-safe queries, 19 tables, and migration system
 
 This project serves as a comprehensive portfolio piece demonstrating system design, AI integration, and security best practices for senior backend and AI engineering roles.
 
@@ -27,7 +27,7 @@ This project serves as a comprehensive portfolio piece demonstrating system desi
 
 ### 📝 Advanced Wiki System
 
-- **Block-based editor** with multiple content types (paragraphs, headings, code, quotes, checkboxes, images)
+- **Block-based editor** with 24 content types (paragraphs, headings, code, quotes, checkboxes, images, tables, callouts, embeds, math/LaTeX, toggle, mention, synced blocks, database inline, relations, rollup, formula)
 - **Markdown support** with real-time preview and syntax highlighting
 - **Postgres Full-Text Search (FTS)** with relevance ranking and automatic indexing
 - **Tag-based organization** with smart filtering
@@ -408,7 +408,7 @@ app.get('/api/pages/:id', requirePagePermission('viewer'), async (req, res) => {
 - ✅ bcrypt password hashing (10 rounds)
 - ✅ Role-based middleware (`requireAdmin`, `requireTeamRole`)
 - ✅ Page-level permissions (`owner`, `editor`, `viewer`, `commenter`)
-- ✅ OAuth 2.0 ready (Google, GitHub)
+- ✅ OAuth 2.0 code-ready (Google, GitHub) — currently disabled, JWT-only active
 
 **Application Security:**
 
@@ -602,39 +602,43 @@ npm run db:seed          # Seed database with initial data
 
 ```
 papyr-us/
-├── client/                    # Frontend React application (~5,000 lines)
+├── client/                    # Frontend React application (~21,600 lines)
 │   ├── src/
-│   │   ├── components/        # UI components (50+ files)
-│   │   │   ├── ui/           # shadcn/ui components
-│   │   │   ├── blocks/       # Block editor components
-│   │   │   └── ...
-│   │   ├── pages/            # Route pages (15+ files)
-│   │   ├── hooks/            # Custom React hooks
-│   │   └── lib/              # Utilities and helpers
+│   │   ├── components/        # UI components (94 files)
+│   │   │   ├── ui/           # shadcn/ui primitives
+│   │   │   ├── blocks/       # Block editor (12 block types)
+│   │   │   ├── collaboration/ # Real-time cursors & presence
+│   │   │   ├── database/     # Notion-style database views
+│   │   │   ├── permissions/  # Page sharing & access control
+│   │   │   ├── ai/           # AI Copilot & assistant UI
+│   │   │   ├── views/        # Table, Kanban, Gallery views
+│   │   │   └── ...           # layout, wiki, search, tasks, templates
+│   │   ├── pages/            # Route pages (19 pages, 28 routes)
+│   │   ├── hooks/            # Custom React hooks (7 hooks)
+│   │   ├── lib/              # Utilities (query, socket, markdown, etc.)
+│   │   └── features/         # Feature flag context
 │   └── index.html
 │
-├── server/                    # Backend Express server (~12,000 lines)
-│   ├── routes.ts             # API routes (2,600+ lines, 100+ endpoints)
-│   ├── storage.ts            # Database layer (3,000+ lines)
-│   ├── middleware.ts         # Auth, RBAC, rate limiting
+├── server/                    # Backend Express server (~9,200 lines)
+│   ├── routes.ts             # API routes (3,100 lines, 135 endpoints)
+│   ├── storage.ts            # Database layer (1,361 lines)
+│   ├── middleware.ts         # Auth, RBAC, rate limiting (344 lines)
 │   ├── services/             # Business logic
-│   │   ├── ai.ts            # OpenAI integration
-│   │   ├── socket.ts        # Real-time collaboration
-│   │   ├── upload.ts        # File upload handling
-│   │   └── yjs-collaboration.ts  # CRDT system
-│   └── tests/               # Unit/integration tests (50+ test cases)
+│   │   ├── ai.ts            # OpenAI GPT-4o integration (477 lines)
+│   │   ├── ai-assistant.ts  # AI writing assistant (351 lines)
+│   │   ├── socket.ts        # Legacy Socket.IO collaboration (670 lines)
+│   │   ├── yjs-collaboration.ts  # Yjs CRDT system (706 lines)
+│   │   ├── workflow.ts      # Automation engine (418 lines)
+│   │   └── upload.ts        # File upload with Sharp (266 lines)
+│   └── tests/               # Unit/integration tests (29 test files)
 │
-├── shared/                   # Shared types and schemas (~800 lines)
-│   └── schema.ts            # Drizzle ORM schemas, Zod validators
+├── shared/                   # Shared types and schemas (~930 lines)
+│   ├── schema.ts            # Drizzle ORM schemas, Zod validators (857 lines)
+│   └── featureFlags.ts      # Feature flag resolution (74 lines)
 │
-├── docs/                     # Documentation (15+ files)
-│   ├── PROJECT_FINAL_EVALUATION.md  # ⭐ Comprehensive project overview
-│   ├── development-guide.md
-│   ├── user-guide.md
-│   └── ...
-│
-├── migrations/              # Database migrations (12+ files)
-├── tests/                   # E2E tests (20+ Playwright tests)
+├── docs/                     # Documentation (21+ files)
+├── drizzle/                  # Database migrations (12 migration files)
+├── tests/                   # E2E tests (Playwright)
 └── docker-compose.yml       # Docker configuration
 ```
 
@@ -642,10 +646,10 @@ papyr-us/
 
 ### Test Coverage
 
-- **E2E Tests**: High test reliability with Playwright
-- **Integration Tests**: 50+ test cases with Vitest
-- **API Coverage**: Strong coverage across core modules
-- **Smoke Tests**: Quick sanity checks for core functionality
+- **E2E Tests**: Authentication, navigation, and collaboration flows with Playwright
+- **Integration Tests**: 92+ test cases with Vitest across 13 API categories
+- **API Coverage**: Template Categories, Templates, Auth, Wiki Pages, Comments, Teams, Members, File Upload, Calendar, Tasks, Notifications, AI Services, Admin/Directory
+- **Smoke Tests**: Quick sanity checks for core functionality (Personal + Team mode)
 
 ### Running Tests
 
@@ -694,23 +698,25 @@ server/tests/
 
 The application uses **PostgreSQL 16** with **Drizzle ORM** for type-safe database operations.
 
-### Main Tables (15+)
+### Main Tables (19+)
 
-- `wiki_pages` - Page content and metadata
-- `comments` - Page comments
-- `directories` - Folder structure
-- `teams` - Team workspaces
-- `members` - Team members
-- `calendar_events` - Team calendar events
-- `tasks` - Task management
-- `files` - File uploads
-- `templates` - Page templates
-- `notifications` - User notifications
-- `workflows` - Automation workflows
-- `saved_views` - Saved filters/views
-- `page_permissions` - Access control
-- `team_roles` - Role management
-- `sessions` - User sessions
+- `wiki_pages` - Page content, blocks, metadata, tags, FTS
+- `comments` - Threaded page comments
+- `directories` - Folder structure with password protection
+- `teams` - Team workspaces with icons/colors
+- `members` - Team members with skills/roles
+- `users` - Authentication users (JWT)
+- `calendar_events` - Calendar events with priority/time
+- `tasks` - Task management with progress tracking
+- `templates` / `template_categories` - Page templates
+- `notifications` - Real-time notifications
+- `workflows` / `workflow_runs` - Automation engine
+- `saved_views` - Saved filters/views (table, kanban, calendar)
+- `page_permissions` - Page-level access control (RBAC)
+- `public_links` - Shareable page links with expiry
+- `database_schemas` / `database_rows` / `database_relations` - Notion-style databases
+- `synced_blocks` / `synced_block_references` - Cross-page synced blocks
+- `progress_stats` - Team contribution stats
 
 ## 🚀 Deployment
 
@@ -766,12 +772,13 @@ Comprehensive documentation is available in the `docs/` directory:
 
 ## 🎯 Key Statistics
 
-- **Total Code**: ~25,000 lines of TypeScript
-- **Components**: 80+ React components
-- **API Endpoints**: 100+ REST endpoints
-- **Database Tables**: 15 tables
-- **Test Coverage**: High reliability across E2E and integration tests
-- **Development Time**: 4 weeks
+- **Total Code**: ~33,000 lines of TypeScript
+- **Components**: 94 React components
+- **API Endpoints**: 135 REST endpoints
+- **Database Tables**: 19 tables (wiki_pages, teams, members, tasks, comments, calendar_events, directories, templates, template_categories, notifications, workflows, workflow_runs, saved_views, page_permissions, public_links, database_schemas, database_rows, database_relations, synced_blocks + synced_block_references, users, progress_stats)
+- **Block Types**: 24 (paragraph, headings, code, table, image, callout, embed, math, synced_block, database, formula, etc.)
+- **Test Files**: 29 (Vitest + Playwright)
+- **Development Time**: ~4 months (2025-10 ~ 2026-02)
 - **Team Size**: 1 developer
 
 ## 🌟 Highlights

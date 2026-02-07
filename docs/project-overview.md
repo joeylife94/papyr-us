@@ -1,95 +1,141 @@
 # Papyr.us 프로젝트 개요
 
-> TL;DR: Papyr.us는 React + Express 기반의 팀 협업 위키로, 블록 에디터, AI 도우미, 팀 워크스페이스, 실시간 협업 기능을 제공하며 Docker 기반 개발 환경과 E2E 테스트 체인이 준비되어 있습니다.
+> **최종 업데이트**: 2026-02-07  
+> TL;DR: Papyr.us는 React 18 + Express.js 기반의 노션급 팀 협업 위키 플랫폼으로, 24종 블록 에디터, Yjs CRDT 실시간 협업, GPT-4o AI Copilot, Notion-style 데이터베이스, 워크플로우 자동화를 제공합니다. TypeScript ~33,000줄, 135개 API, 19개 DB 테이블, 94개 React 컴포넌트.
 
 ## 프로젝트 소개
 
-Papyr.us는 React와 Express.js를 기반으로 구축된 현대적인 팀 협업 위키 플랫폼입니다. 강력한 마크다운 편집기, 팀별 워크스페이스, AI 기반 기능들을 통해 팀의 지식 관리와 생산성 향상을 돕습니다.
+Papyr.us는 React와 Express.js를 기반으로 구축된 현대적인 팀 협업 위키 플랫폼입니다. 블록 기반 편집기, 팀별 워크스페이스, AI 기반 기능, 실시간 CRDT 협업을 통해 팀의 지식 관리와 생산성 향상을 돕습니다. Notion과 같은 강력한 워크스페이스 플랫폼을 목표로 합니다.
 
 ## 주요 기능
 
 ### 1. 위키 페이지 관리
 
 - 마크다운 기반 페이지 작성 및 편집 (실시간 미리보기 지원)
-- 블록 기반 편집기 (단락, 제목, 코드, 인용, 이미지, 체크박스 등)
+- **블록 기반 편집기** — 24종 블록 타입 지원:
+  - 기본: 단락, 제목(H1-H3), 코드, 인용, 이미지, 체크박스, 테이블
+  - 고급: 콜아웃, 임베드(YouTube/Figma), 수식(LaTeX), 동기화 블록
+  - 데이터: 인라인 DB, 관계형, 롤업, 수식 필드
 - 페이지 태그 시스템 및 폴더별 구조화
 - Slug를 통한 사용자 친화적 URL
+- **PostgreSQL Full-Text Search (FTS)** — 한국어 포함 relevance 랭킹
+- **페이지 권한 시스템** — owner/editor/viewer/commenter 4단계
+- **공유 링크** — 만료일/비밀번호 설정 가능
 
 ### 2. 팀 협업 기능
 
 - 팀별 전용 워크스페이스 제공 (페이지, 캘린더, 파일, 할 일, 멤버 관리)
-- 팀별 접근 제어 (비밀번호 보호)
-- 팀 캘린더를 통한 일정 공유 및 관리
-- 팀원별 할 일(Task) 관리 및 진행 상태 추적
+- 팀별 접근 제어 (비밀번호 보호, bcrypt 해싱)
+- 팀 캘린더 (월/주/일 뷰, 우선순위 1-5, 시간 선택)
+- 팀원별 태스크 관리 (칸반/테이블/차트 뷰)
+- **실시간 알림** — Socket.IO를 통한 즉시 전달
 
-### 3. AI Assistant
+### 3. AI 기능 (GPT-4o / GPT-4 / GPT-3.5)
 
-- GPT-4o 기반 AI 검색 및 콘텐츠 생성/개선
-- 자연어 질문을 통해 프로젝트 내 정보(페이지, 파일, 할 일) 검색
-- AI 기반 검색어 자동 제안
+- **AI Copilot** — 슬라이딩 사이드바 채팅, 음성 입력 지원
+- **스마트 검색** — RAG 파이프라인, 시맨틱 검색 with FTS 폴백
+- **콘텐츠 생성/개선/요약** — GPT-4o 기반
+- **AI Writing Assistant** — continue, improve, summarize, translate, fixGrammar, shorten, lengthen
+- **태스크 추출** — 회의록에서 자동 할 일 추출 (한국어 지원)
+- **관련 페이지 추천** — 시맨틱 유사도 분석
+- **지식 그래프** — force-directed graph로 페이지 관계 시각화
 
 ### 4. 사용자 및 인증
 
-- 로컬 계정 가입 및 JWT 기반 인증 시스템
-- `react-router-dom`을 이용한 보호된 라우트 처리
+- JWT 기반 인증 (access + refresh token rotation)
+- bcrypt 비밀번호 해싱 (salt rounds: 10)
+- `react-router-dom` 기반 보호된 라우트 (ProtectedRoute 컴포넌트)
+- OAuth 2.0 코드 준비 (Google, GitHub) — 현재 비활성화
+- **RBAC**: Admin → Team Owner → Team Member → Page Viewer
 
-### 5. 실시간 협업
+### 5. 실시간 협업 (듀얼 아키텍처)
 
-- Socket.IO 기반 실시간 통신 아키텍처
-- 동시 편집 및 협업 기능의 기반 마련
+- **Yjs CRDT** (`/yjs` 네임스페이스) — 충돌 없는 동시 편집 (주력)
+- **Legacy Socket.IO** (`/collab` 네임스페이스) — 타임스탬프 기반 (호환)
+- 실시간 커서 추적 + 사용자 프레전스 표시
+- 타이핑 인디케이터
+- 연결 상태 UI (reconnecting, connected, disconnected)
+- **안정성**: 디바운스 저장, 주기적 스냅샷, TTL 언로드, LRU 퇴거, Rate Limiting
 
-### 6. 기타 주요 기능
+### 6. Notion-style 데이터베이스
 
-- **파일 관리자**: 팀별 파일 업로드, 다운로드 및 관리
-- **템플릿 시스템**: 반복적인 문서를 위한 템플릿 생성 및 관리
-- **대시보드**: 팀 및 개인의 활동 통계 시각화
-- **알림 시스템**: 주요 활동에 대한 실시간 알림
-- **관리자 패널**: 디렉토리 및 접근 권한 관리
+- 데이터베이스 스키마 생성/수정/삭제
+- **뷰**: 테이블, 칸반, 갤러리, 캘린더
+- **저장된 뷰** (Saved Views) — 필터/정렬/그룹핑 저장
+- **관계형 필드** (Relation) — DB 간 연결
+- **롤업 필드** — count, sum, avg, min, max, unique
+- **수식 필드** — prop() 기반 계산식
+
+### 7. 워크플로우 자동화
+
+- 트리거 → 조건 → 액션 파이프라인
+- 트리거: page_created, task_status_changed, comment_added, scheduled 등 10종
+- 액션: send_notification, create_task, add_tag, webhook, run_ai_summary 등 11종
+- 변수 치환 (`{{trigger.title}}` 등), 재시도 (지수 백오프)
+
+### 8. 기타 주요 기능
+
+- **파일 관리자**: 업로드 (Sharp 이미지 리사이징), 다운로드, 검색
+- **템플릿 시스템**: 카테고리별 템플릿, 별점, 사용 횟수 추적
+- **대시보드**: 팀별 활동 통계, 기여도 시각화
+- **관리자 패널**: 디렉토리/팀 CRUD, 접근 권한 관리
 
 ## 기술 스택
 
 ### Frontend
 
-- **React 18** & **TypeScript**: 타입 안전성을 갖춘 UI 개발
-- **Vite**: 빠른 개발 서버 및 번들러
-- **Tailwind CSS**: 유틸리티 우선 CSS 프레임워크
-- **shadcn/ui**: 재사용 가능한 UI 컴포넌트 라이브러리
-- **TanStack Query**: 서버 상태 관리 및 캐싱
-- **React Hook Form**: 효율적인 폼 상태 관리
-- **React Router v6**: 클라이언트 사이드 라우팅
-- **Socket.IO Client**: 실시간 웹소켓 통신
+| 기술 | 버전 | 용도 |
+|------|------|------|
+| React | 18.3.1 | UI 프레임워크 |
+| TypeScript | 5.6.3 | 타입 안전성 |
+| Vite | 7.0.2 | 빌드 도구 + HMR |
+| Tailwind CSS | 3.4.17 | 유틸리티 CSS |
+| shadcn/ui (Radix) | latest | UI 컴포넌트 라이브러리 |
+| TanStack Query | 5.87.1 | 서버 상태 관리 |
+| React Router DOM | 7.8.2 | 클라이언트 라우팅 |
+| Socket.IO Client | 4.8.1 | 실시간 통신 |
+| Yjs | 13.6.27 | CRDT 동시 편집 |
+| Framer Motion | 11.13.1 | 애니메이션 |
+| Recharts | 2.15.4 | 차트/그래프 |
+| react-force-graph-2d | 1.29.0 | 지식 그래프 |
 
 ### Backend
 
-- **Express.js** & **TypeScript**: Node.js 기반의 타입 안전한 서버 구축
-- **Drizzle ORM**: 타입스크립트 기반의 타입 안전한 ORM
-- **PostgreSQL**: 기본 데이터베이스
-- **Zod**: 스키마 정의 및 유효성 검사
-- **Passport.js**: JWT를 이용한 인증 전략 구현
-- **Socket.IO**: 실시간 양방향 통신
-- **Multer**: 파일 업로드 처리
-
-### AI & 마크다운
-
-- **OpenAI SDK**: GPT-4o 모델 연동
-- **remark/rehype**: 마크다운 파싱 및 HTML 변환
+| 기술 | 버전 | 용도 |
+|------|------|------|
+| Express.js | 4.21.2 | HTTP 서버 |
+| TypeScript | 5.6.3 | 타입 안전성 |
+| Drizzle ORM | 0.39.3 | 타입 안전 ORM |
+| PostgreSQL | 16 | 주 데이터베이스 + FTS |
+| Zod | 3.24.2 | 스키마 유효성 검사 |
+| Socket.IO | 4.8.1 | 실시간 통신 |
+| Passport.js | 0.7.0 | OAuth 전략 (준비) |
+| OpenAI SDK | 5.6.0 | AI 연동 (GPT-4o) |
+| Winston | 3.18.3 | 구조화 로깅 |
+| Helmet + CORS | latest | 보안 헤더 |
+| Sharp | 0.33.5 | 이미지 처리 |
+| bcryptjs | 3.0.2 | 비밀번호 해싱 |
 
 ### 개발 및 배포
 
-- **Docker & Docker Compose**: 컨테이너 기반의 일관된 개발 환경
-- **Vitest**: 단위/통합 테스트 프레임워크
-- **Playwright**: End-to-End 테스트 자동화
-- **ESLint & Prettier**: 코드 스타일 및 품질 유지
-- **Vercel**: 프로덕션 배포 (권장)
+| 기술 | 버전 | 용도 |
+|------|------|------|
+| Docker + Compose | latest | 컨테이너화 |
+| Vitest | 3.2.4 | 유닛/통합 테스트 |
+| Playwright | 1.54.2 | E2E 테스트 |
+| ESLint (flat config) | 8.57.1 | 코드 린트 |
+| Prettier | 3.6.2 | 코드 포매팅 |
+| Husky + lint-staged | latest | Pre-commit 훅 |
 
 ### 린트와 CI
 
-프로젝트의 CI(`.github/workflows/ci.yml`)에는 타입체크, 린트, 테스트, 빌드 순으로 작업이 정의되어 있습니다. PR은 `npm run lint`에서 실패하면 병합이 차단되므로, 로컬에서 아래 명령을 실행해 검증하세요:
+프로젝트의 CI(`.github/workflows/ci.yml`)에는 타입체크, 린트, 테스트, 빌드 순으로 작업이 정의되어 있습니다. ESLint는 flat config(`eslint.config.cjs`)을 사용합니다.
 
 ```bash
 npm run check   # TypeScript 타입 체크
-npm run lint    # ESLint 검사
-npm test       # 단위/통합 테스트
+npm run lint    # ESLint 검사 (eslint.config.cjs)
+npm test        # 단위/통합 테스트 (Vitest)
+npm run e2e     # E2E 테스트 (Playwright)
 ```
 
 ## History
@@ -158,11 +204,13 @@ npm test       # 단위/통합 테스트
   - 실제 UI와 정합을 맞추기 위해 create 페이지 진입 방식을 사이드바 Quick Action 버튼 사용으로 조정, 폼 필드/블록 에디터 상호작용을 placeholder 기반 셀렉터로 안정화.
   - 추가적인 타이밍/시드 데이터 의존성 점검 중. 상세 진행 상황은 `docs/daily_summary/2025-10-10-work-summary.md` 참고.
 
-## Next steps
+## Next steps (from 2025-10)
 
-- ✅ ~~CI에서 업로드된 아티팩트를 검토하여 flaky 테스트를 식별하고 우선순위를 매겨 고치세요.~~
-- ✅ ~~프로젝트의 보안 작업(예: 비밀번호 해싱 마이그레이션) 계획을 수립하고 스케줄에 반영하세요.~~
-- ✅ ~~주요 기능(블록 에디터 고도화, 데이터베이스 뷰 등) 로드맵을 다음 스프린트에 맞춰 세부 작업으로 분해하세요.~~
+> ✅ 대부분 완료됨. 최신 로드맵은 [NOTION_COMPARISON_AND_IMPROVEMENTS.md](./NOTION_COMPARISON_AND_IMPROVEMENTS.md) 참조.
+
+- ~~CI에서 업로드된 아티팩트를 검토하여 flaky 테스트를 식별하고 우선순위를 매겨 고치세요.~~ ✅
+- ~~프로젝트의 보안 작업(예: 비밀번호 해싱 마이그레이션) 계획을 수립하고 스케줄에 반영하세요.~~ ✅ (bcrypt 마이그레이션 완료)
+- 주요 기능(블록 에디터 고도화, 슬래시 명령어, 인라인 서식) 로드맵을 다음 스프린트에 맞춰 세부 작업으로 분해하세요.
 
 ### 현재 권장 작업 (2026-02-01 기준)
 
@@ -171,8 +219,6 @@ npm test       # 단위/통합 테스트
 - k6/Artillery 부하 테스트 실행 후 성능 병목 분석
 - Redis 클러스터 구성 (고가용성 환경)
 - CDN 설정 및 정적 자산 캐싱 최적화
-
-필요 시 `npm run lint:fix`와 `npm run format`로 자동 수정을 먼저 적용한 뒤 커밋해주세요.
 
 ## 테스트 전략
 
@@ -206,39 +252,46 @@ npm test       # 단위/통합 테스트
 
 ```
 papyr-us/
-├── client/                 # React 프론트엔드 (Vite)
+├── client/                 # React 프론트엔드 (~21,600줄)
 │   ├── src/
-│   │   ├── components/     # UI 컴포넌트 (shadcn/ui 기반)
-│   │   ├── pages/          # 라우팅 페이지
-│   │   ├── hooks/          # 커스텀 훅 (e.g., useAuth, useTheme)
-│   │   └── lib/            # 유틸리티 및 API 클라이언트
-├── server/                 # Express.js 백엔드
-│   ├── services/           # 비즈니스 로직 (AI, Socket, Upload 등)
-│   ├── routes.ts           # API 엔드포인트 정의
-│   ├── storage.ts          # 데이터베이스 로직 (Drizzle ORM)
-│   └── index.ts            # 서버 진입점
-├── shared/                 # 클라이언트-서버 공유 스키마 (Drizzle & Zod)
-├── docs/                   # 프로젝트 관련 문서
-└── migrations/             # Drizzle ORM 마이그레이션 파일
+│   │   ├── components/     # UI 컴포넌트 (94개 — ui, blocks, collaboration, database, ai, views 등)
+│   │   ├── pages/          # 라우팅 페이지 (19개 페이지, 28개 라우트)
+│   │   ├── hooks/          # 커스텀 훅 (useAuth, useYjsCollaboration, useCollaboration 등 7개)
+│   │   ├── lib/            # 유틸리티 (queryClient, socket, markdown, conflictResolver 등)
+│   │   └── features/       # 피처 플래그 컨텍스트
+├── server/                 # Express.js 백엔드 (~9,200줄)
+│   ├── services/           # 비즈니스 로직 (ai, ai-assistant, socket, yjs-collaboration, workflow, upload)
+│   ├── routes.ts           # API 엔드포인트 (3,100줄, 135개 엔드포인트)
+│   ├── storage.ts          # 데이터베이스 로직 (1,361줄, Drizzle ORM)
+│   ├── middleware.ts       # Auth, RBAC, Rate Limiting, Page Permissions (344줄)
+│   ├── config.ts           # 환경 설정
+│   ├── features.ts         # 서버 피처 플래그
+│   └── tests/              # 테스트 (29개 파일)
+├── shared/                 # 클라이언트-서버 공유 (~930줄)
+│   ├── schema.ts           # Drizzle 스키마 + Zod (19개 테이블, 857줄)
+│   └── featureFlags.ts     # 피처 플래그 해석 (74줄)
+├── drizzle/                # DB 마이그레이션 (12개 파일)
+├── tests/                  # E2E 테스트 (Playwright)
+├── docs/                   # 문서 (21개+ 파일)
+└── docker-compose.yml      # Docker 설정
 ```
 
 ## 다음 단계
 
-### 🎯 Notion 수준 기능 개발 목표
+> 상세한 Notion 비교 분석과 개선 로드맵은 [NOTION_COMPARISON_AND_IMPROVEMENTS.md](./NOTION_COMPARISON_AND_IMPROVEMENTS.md) 참조
 
-Papyr.us는 현재의 팀 협업 위키 플랫폼에서 **Notion과 같은 강력한 워크스페이스 플랫폼**으로 발전시키는 것을 목표로 합니다.
+### 🔴 우선 수정 (기술적 문제)
 
-#### 핵심 차별화 기능
+1. **wouter → react-router-dom 통일** — home.tsx, page-editor.tsx에서 wouter 사용 중 (라우팅 충돌)
+2. **중복 커서 컴포넌트 통합** — 3개의 커서 컴포넌트를 1개로
+3. **Storage 싱글턴 수정** — workflow.ts가 별도 DB Pool 생성
+4. **대시보드 동적 팀** — 하드코딩된 team1/team2 제거
 
-1. **블록 기반 편집기 고도화** - 드래그 앤 드롭, 다양한 블록 타입 추가
-2. **데이터베이스 뷰** - 테이블, 칸반 보드, 갤러리 등 데이터 시각화
-3. **실시간 협업 완성** - 다중 사용자 동시 편집 및 커서 추적
-4. **고급 검색** - AI 기반 필터링 및 컨텍스트 검색 강화
-5. **API 및 통합** - 외부 서비스(Slack, GitHub 등) 연동 지원
+### 🎯 Notion 수준 도달을 위한 핵심 과제
 
-#### 단계별 구현 계획
-
-- **Phase 1**: 블록 기반 편집기 기능 완성 (진행 중)
-- **Phase 2**: 데이터베이스 뷰 구현 (2-3주)
-- **Phase 3**: 실시간 협업 기능 고도화 (2-3주)
-- **Phase 4**: 외부 API 통합 및 고급 기능 (3-4주)
+1. **슬래시 명령어 (/)** — 블록 타입 선택 메뉴
+2. **인라인 서식** — 볼드, 이탤릭, 링크, 코드 등 플로팅 툴바
+3. **키보드 단축키** — Cmd+B, Cmd+I, Enter로 새 블록 등
+4. **페이지 히스토리/버전 관리** — 수정 이력 및 복원
+5. **하위 페이지 (nested pages)** — 페이지 안에 페이지
+6. **Command Palette (Cmd+K)** — 전역 빠른 검색/명령

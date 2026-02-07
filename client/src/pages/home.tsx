@@ -1,6 +1,6 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Link } from 'wouter';
+import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -139,7 +139,7 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
               </select>
             </div>
             {teamName && (
-              <Link href={`/teams/${teamName}/create`}>
+              <Link to={`/teams/${teamName}/create`}>
                 <button className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors">
                   새 문서 작성
                 </button>
@@ -175,7 +175,7 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {flatPages.map((page: WikiPage) => (
-              <Link key={page.id} href={`/page/${page.slug}`}>
+              <Link key={page.id} to={`/page/${page.slug}`}>
                 <Card className="group hover:shadow-lg transition-all duration-200 border-l-4 border-l-primary/20 hover:border-l-primary cursor-pointer">
                   <CardHeader>
                     <CardTitle className="text-lg line-clamp-2">

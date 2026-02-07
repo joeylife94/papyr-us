@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useLocation } from 'wouter';
+import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -56,7 +56,7 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
     (currentLocation.pathname.includes('/teams/')
       ? currentLocation.pathname.split('/teams/')[1]?.split('/')[0]
       : undefined);
-  const [, navigate] = useLocation();
+  const navigate = useNavigate();
   const [isPreview, setIsPreview] = useState(false);
   const [blocks, setBlocks] = useState<Block[]>([]);
   const { toast } = useToast();
