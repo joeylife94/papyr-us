@@ -1,6 +1,6 @@
 /**
  * i18n (Internationalization) Service
- * 
+ *
  * Multi-language support for Papyr.us:
  * - Server-side translations for API responses
  * - Client-side translation loading
@@ -14,12 +14,15 @@ import logger from './logger.js';
 
 // Supported languages
 export const SUPPORTED_LANGUAGES = ['en', 'ko', 'ja', 'zh', 'es', 'de', 'fr'] as const;
-export type SupportedLanguage = typeof SUPPORTED_LANGUAGES[number];
+export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
 
 export const DEFAULT_LANGUAGE: SupportedLanguage = 'en';
 
 // Language metadata
-export const LANGUAGE_META: Record<SupportedLanguage, { name: string; nativeName: string; direction: 'ltr' | 'rtl' }> = {
+export const LANGUAGE_META: Record<
+  SupportedLanguage,
+  { name: string; nativeName: string; direction: 'ltr' | 'rtl' }
+> = {
   en: { name: 'English', nativeName: 'English', direction: 'ltr' },
   ko: { name: 'Korean', nativeName: '한국어', direction: 'ltr' },
   ja: { name: 'Japanese', nativeName: '日本語', direction: 'ltr' },
@@ -30,7 +33,13 @@ export const LANGUAGE_META: Record<SupportedLanguage, { name: string; nativeName
 };
 
 // Translation namespaces
-export type TranslationNamespace = 'common' | 'auth' | 'pages' | 'teams' | 'errors' | 'notifications';
+export type TranslationNamespace =
+  | 'common'
+  | 'auth'
+  | 'pages'
+  | 'teams'
+  | 'errors'
+  | 'notifications';
 
 // Translation store
 const translations = new Map<string, Record<string, any>>();
@@ -52,7 +61,7 @@ export function loadTranslations(localesDir: string = join(process.cwd(), 'local
       continue;
     }
 
-    const files = readdirSync(langDir).filter(f => f.endsWith('.json'));
+    const files = readdirSync(langDir).filter((f) => f.endsWith('.json'));
     const langTranslations: Record<string, any> = {};
 
     for (const file of files) {
@@ -171,7 +180,7 @@ function loadDefaultTranslations(): void {
   };
 
   translations.set('en', defaultTranslations);
-  
+
   // Korean translations
   const koTranslations: Record<string, any> = {
     common: {
@@ -339,7 +348,7 @@ export function detectLanguage(req: Request): SupportedLanguage {
   if (acceptLanguage) {
     const preferredLanguages = acceptLanguage
       .split(',')
-      .map(lang => {
+      .map((lang) => {
         const [code, q = 'q=1'] = lang.trim().split(';');
         return {
           code: code.split('-')[0].toLowerCase(),
@@ -363,10 +372,14 @@ export function detectLanguage(req: Request): SupportedLanguage {
  */
 export function i18nMiddleware(req: Request, res: Response, next: NextFunction): void {
   const lang = detectLanguage(req);
-  
+
   // Add language and translation function to request
   (req as any).language = lang;
-  (req as any).t = (namespace: TranslationNamespace, key: string, params?: Record<string, string | number>) => {
+  (req as any).t = (
+    namespace: TranslationNamespace,
+    key: string,
+    params?: Record<string, string | number>
+  ) => {
     return t(lang, namespace, key, params);
   };
 
@@ -384,7 +397,7 @@ export function createI18nRouter(): Router {
 
   // Get list of supported languages
   router.get('/languages', (req, res) => {
-    const languages = SUPPORTED_LANGUAGES.map(code => ({
+    const languages = SUPPORTED_LANGUAGES.map((code) => ({
       code,
       ...LANGUAGE_META[code],
     }));

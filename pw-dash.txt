@@ -1,0 +1,38 @@
+Found existing storage state at tests/storageState.json, validating...
+Existing storageState token is valid; reusing tests/storageState.json
+[2m[WebServer] [22mBrowserslist: browsers data (caniuse-lite) is 8 months old. Please run:
+[2m[WebServer] [22m  npx update-browserslist-db@latest
+[2m[WebServer] [22m  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+
+Running 1 test using 1 worker
+
+  ✘  1 [chromium] › tests\example.spec.ts:490:3 › Productivity & Collaboration › TC-PROD-001: 대시보드 위젯 확인 (30.0s)
+
+
+  1) [chromium] › tests\example.spec.ts:490:3 › Productivity & Collaboration › TC-PROD-001: 대시보드 위젯 확인 
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m()[22m
+
+    Locator: getByRole('heading', { name: '스터디 대시보드' })
+    Expected: visible
+    Received: <element(s) not found>
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 120000ms[22m
+    [2m  - waiting for getByRole('heading', { name: '스터디 대시보드' })[22m
+
+
+      496 |       })
+      497 |       .catch(() => {});
+    > 498 |     await expect(page.getByRole('heading', { name: '스터디 대시보드' })).toBeVisible();
+          |                                                                   ^
+      499 |     await expect(page.getByRole('heading', { name: '총 페이지' })).toBeVisible();
+      500 |     await expect(page.getByRole('heading', { name: '총 댓글' })).toBeVisible();
+      501 |     await expect(page.getByRole('heading', { name: '활성 팀원' })).toBeVisible();
+        at C:\Users\sho80\OneDrive\바탕 화면\workspace\papyr-us\tests\example.spec.ts:498:67
+
+    Error Context: test-results\example-Productivity-Collaboration-TC-PROD-001-대시보드-위젯-확인-chromium\error-context.md
+
+  1 failed
+    [chromium] › tests\example.spec.ts:490:3 › Productivity & Collaboration › TC-PROD-001: 대시보드 위젯 확인 

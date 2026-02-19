@@ -49,7 +49,6 @@ export default function AutomationPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
         },
         body: JSON.stringify({ isActive }),
       });
@@ -77,9 +76,6 @@ export default function AutomationPage() {
     mutationFn: async (id: number) => {
       const response = await fetch(`/api/workflows/${id}`, {
         method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
-        },
       });
       if (!response.ok) throw new Error('Failed to delete workflow');
     },

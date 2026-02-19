@@ -1,11 +1,11 @@
 /**
  * Sentry Error Tracking & Performance Monitoring Service
- * 
+ *
  * Integrates Sentry SDK v10+ for:
  * - Error tracking with context
  * - Performance monitoring
  * - Profiling
- * 
+ *
  * @see https://docs.sentry.io/platforms/javascript/guides/node/
  */
 
@@ -47,9 +47,7 @@ export function initSentry(): void {
       // Profiling
       profilesSampleRate: config.isProduction ? 0.1 : 1.0,
 
-      integrations: [
-        nodeProfilingIntegration(),
-      ],
+      integrations: [nodeProfilingIntegration()],
 
       // Filter out sensitive data
       beforeSend(event) {
@@ -268,12 +266,9 @@ export async function withSpan<T>(
     return fn();
   }
 
-  return Sentry.startSpan(
-    { name, op: operation },
-    async () => {
-      return fn();
-    }
-  );
+  return Sentry.startSpan({ name, op: operation }, async () => {
+    return fn();
+  });
 }
 
 export { Sentry };

@@ -22,9 +22,18 @@ interface BacklinkPage {
 
 export function RelatedPages({ pageId, pageTitle, pageContent }: RelatedPagesProps) {
   // Fetch backlinks (pages that link to this page)
-  const { data: allPages, isLoading: pagesLoading } = useQuery<WikiPage[]>({
-    queryKey: ['/api/pages'],
-  });
+  const { data: pagesData, isLoading: pagesLoading } = useQuery<WikiPage[] | { pages: WikiPage[] }>(
+    {
+      queryKey: ['/api/pages'],
+    }
+  );
+
+  // Normalize: API returns { pages: [...], pagination: {...} }, not a raw array
+  const allPages: WikiPage[] | undefined = pagesData
+    ? Array.isArray(pagesData)
+      ? pagesData
+      : (pagesData as any).pages
+    : undefined;
 
   // Fetch AI-recommended related pages
   const { data: aiRelated, isLoading: aiLoading } = useQuery<{

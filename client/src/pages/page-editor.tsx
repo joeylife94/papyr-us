@@ -182,7 +182,7 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
   const updatePageMutation = useMutation({
     mutationFn: async (data: Partial<WikiPage>) => {
       const response = await fetch(`/api/pages/${pageId}`, {
-        method: 'PATCH',
+        method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },

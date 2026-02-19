@@ -63,13 +63,10 @@ export function CommandPalette() {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const runCommand = useCallback(
-    (command: () => void) => {
-      setOpen(false);
-      command();
-    },
-    []
-  );
+  const runCommand = useCallback((command: () => void) => {
+    setOpen(false);
+    command();
+  }, []);
 
   return (
     <CommandDialog open={open} onOpenChange={setOpen}>
@@ -89,9 +86,7 @@ export function CommandPalette() {
             <span>AI 검색</span>
           </CommandItem>
           <CommandItem
-            onSelect={() =>
-              runCommand(() => setTheme(theme === 'dark' ? 'light' : 'dark'))
-            }
+            onSelect={() => runCommand(() => setTheme(theme === 'dark' ? 'light' : 'dark'))}
           >
             {theme === 'dark' ? (
               <Sun className="mr-2 h-4 w-4" />
@@ -161,9 +156,7 @@ export function CommandPalette() {
               >
                 <FileText className="mr-2 h-4 w-4" />
                 <span>{page.title}</span>
-                <CommandShortcut className="text-xs text-slate-400">
-                  {page.folder}
-                </CommandShortcut>
+                <CommandShortcut className="text-xs text-slate-400">{page.folder}</CommandShortcut>
               </CommandItem>
             ))}
           </CommandGroup>

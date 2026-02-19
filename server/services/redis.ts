@@ -1,11 +1,11 @@
 /**
  * Redis Client Service
- * 
+ *
  * Provides Redis connectivity for:
  * - Session storage (horizontal scaling)
  * - Socket.IO adapter (multi-server sync)
  * - Caching (optional)
- * 
+ *
  * @see https://redis.io/
  */
 
@@ -22,7 +22,7 @@ let subscriberClient: Redis | null = null;
  */
 function getRedisConfig() {
   const redisUrl = process.env.REDIS_URL;
-  
+
   if (redisUrl) {
     return { url: redisUrl };
   }
@@ -41,8 +41,8 @@ function getRedisConfig() {
  */
 function createRedisClient(name: string = 'main'): Redis {
   const redisConfig = getRedisConfig();
-  
-  const client = redisConfig.url 
+
+  const client = redisConfig.url
     ? new Redis(redisConfig.url)
     : new Redis({
         host: redisConfig.host,
@@ -91,7 +91,7 @@ function createRedisClient(name: string = 'main'): Redis {
 export function isRedisEnabled(): boolean {
   const enabled = process.env.REDIS_ENABLED?.toLowerCase();
   if (enabled === 'false' || enabled === '0') return false;
-  
+
   // Auto-enable if REDIS_URL is set
   return !!(process.env.REDIS_URL || process.env.REDIS_HOST);
 }
@@ -186,7 +186,7 @@ export const cache = {
     if (!client) return;
 
     const serialized = typeof value === 'string' ? value : JSON.stringify(value);
-    
+
     if (ttlSeconds) {
       await client.setex(key, ttlSeconds, serialized);
     } else {

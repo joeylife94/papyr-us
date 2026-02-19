@@ -9,9 +9,14 @@ interface User {
 const USER_STORAGE_KEY = 'papyr-user';
 
 export function getCurrentUser(): User {
-  const stored = localStorage.getItem(USER_STORAGE_KEY);
-  if (stored) {
-    return JSON.parse(stored);
+  try {
+    const stored = localStorage.getItem(USER_STORAGE_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (e) {
+    // localStorage unavailable or corrupted data — fall through to default
+    console.warn('Failed to read user from localStorage:', e);
   }
 
   // 기본 사용자 생성
@@ -20,7 +25,11 @@ export function getCurrentUser(): User {
     name: `User_${Math.random().toString(36).substr(2, 5)}`,
   };
 
-  localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(defaultUser));
+  try {
+    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(defaultUser));
+  } catch {
+    // Storage full or unavailable — continue with in-memory user
+  }
   return defaultUser;
 }
 

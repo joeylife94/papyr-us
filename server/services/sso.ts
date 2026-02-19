@@ -1,6 +1,6 @@
 /**
  * SSO (Single Sign-On) Service
- * 
+ *
  * Supports multiple authentication providers:
  * - OIDC (OpenID Connect) - Google, Azure AD, Okta, Auth0
  * - SAML 2.0 (Enterprise SSO)
@@ -18,7 +18,7 @@ export interface SSOProviderConfig {
   name: string;
   type: 'oidc' | 'saml' | 'oauth2';
   enabled: boolean;
-  
+
   // OIDC/OAuth2 settings
   clientId?: string;
   clientSecret?: string;
@@ -28,17 +28,17 @@ export interface SSOProviderConfig {
   userInfoUrl?: string;
   jwksUri?: string;
   scopes?: string[];
-  
+
   // SAML settings
   entryPoint?: string;
   cert?: string;
   issuerName?: string;
-  
+
   // Mapping settings
   emailClaim?: string;
   nameClaim?: string;
   roleClaim?: string;
-  
+
   // Optional settings
   allowedDomains?: string[];
   defaultRole?: string;
@@ -94,19 +94,23 @@ const defaultProviders: Record<string, Partial<SSOProviderConfig>> = {
 };
 
 // SSO State store (in production, use Redis)
-const stateStore = new Map<string, { 
-  provider: string; 
-  redirectUri: string; 
-  createdAt: number;
-  nonce?: string;
-}>();
+const stateStore = new Map<
+  string,
+  {
+    provider: string;
+    redirectUri: string;
+    createdAt: number;
+    nonce?: string;
+  }
+>();
 
 // Clean up expired states
 setInterval(() => {
   const now = Date.now();
   const entries = Array.from(stateStore.entries());
   for (const [state, data] of entries) {
-    if (now - data.createdAt > 10 * 60 * 1000) { // 10 minutes
+    if (now - data.createdAt > 10 * 60 * 1000) {
+      // 10 minutes
       stateStore.delete(state);
     }
   }
@@ -143,7 +147,11 @@ export function loadSSOProviders(): SSOProviderConfig[] {
   }
 
   // Azure AD
-  if (process.env.AZURE_AD_CLIENT_ID && process.env.AZURE_AD_CLIENT_SECRET && process.env.AZURE_AD_TENANT_ID) {
+  if (
+    process.env.AZURE_AD_CLIENT_ID &&
+    process.env.AZURE_AD_CLIENT_SECRET &&
+    process.env.AZURE_AD_TENANT_ID
+  ) {
     const tenantId = process.env.AZURE_AD_TENANT_ID;
     providers.push({
       ...defaultProviders.azure,
@@ -217,8 +225,8 @@ export function loadSSOProviders(): SSOProviderConfig[] {
     } as SSOProviderConfig);
   }
 
-  logger.info('SSO providers loaded', { 
-    providers: providers.map(p => ({ id: p.id, name: p.name, type: p.type })) 
+  logger.info('SSO providers loaded', {
+    providers: providers.map((p) => ({ id: p.id, name: p.name, type: p.type })),
   });
 
   return providers;
@@ -307,10 +315,10 @@ async function exchangeCodeForTokens(
 
   if (!response.ok) {
     const errorText = await response.text();
-    logger.error('Token exchange failed', { 
-      provider: provider.id, 
+    logger.error('Token exchange failed', {
+      provider: provider.id,
       status: response.status,
-      error: errorText 
+      error: errorText,
     });
     throw new Error(`Token exchange failed: ${response.status}`);
   }
@@ -332,7 +340,7 @@ async function getUserInfo(
   accessToken: string
 ): Promise<{ email: string; name: string; picture?: string; sub?: string }> {
   const headers: Record<string, string> = {
-    'Authorization': `Bearer ${accessToken}`,
+    Authorization: `Bearer ${accessToken}`,
   };
 
   // GitHub uses different auth header
@@ -386,7 +394,12 @@ export function createSSORouter(
   providers: SSOProviderConfig[],
   callbacks: {
     findUserByEmail: (email: string) => Promise<any>;
-    createUser: (user: { email: string; name: string; provider: string; providerId?: string }) => Promise<any>;
+    createUser: (user: {
+      email: string;
+      name: string;
+      provider: string;
+      providerId?: string;
+    }) => Promise<any>;
     updateUser?: (userId: number, updates: any) => Promise<any>;
   }
 ): Router {
@@ -395,8 +408,8 @@ export function createSSORouter(
   // List available SSO providers
   router.get('/providers', (req, res) => {
     const enabledProviders = providers
-      .filter(p => p.enabled)
-      .map(p => ({
+      .filter((p) => p.enabled)
+      .map((p) => ({
         id: p.id,
         name: p.name,
         type: p.type,
@@ -408,7 +421,7 @@ export function createSSORouter(
   // Initiate SSO login
   router.get('/login/:providerId', (req, res) => {
     const { providerId } = req.params;
-    const provider = providers.find(p => p.id === providerId && p.enabled);
+    const provider = providers.find((p) => p.id === providerId && p.enabled);
 
     if (!provider) {
       return res.status(404).json({ message: 'SSO provider not found' });
@@ -416,7 +429,7 @@ export function createSSORouter(
 
     const state = generateState();
     const nonce = provider.type === 'oidc' ? generateNonce() : undefined;
-    
+
     // Determine redirect URI
     const baseUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
     const redirectUri = `${baseUrl}/api/sso/callback/${providerId}`;
@@ -430,7 +443,7 @@ export function createSSORouter(
     });
 
     const authUrl = buildAuthorizationUrl(provider, redirectUri, state, nonce);
-    
+
     logger.info('SSO login initiated', { provider: providerId });
     res.redirect(authUrl);
   });
@@ -455,7 +468,7 @@ export function createSSORouter(
 
     stateStore.delete(String(state));
 
-    const provider = providers.find(p => p.id === providerId);
+    const provider = providers.find((p) => p.id === providerId);
     if (!provider) {
       return res.redirect('/login?error=provider_not_found');
     }
@@ -476,7 +489,10 @@ export function createSSORouter(
       if (provider.allowedDomains && provider.allowedDomains.length > 0) {
         const emailDomain = userInfo.email.split('@')[1];
         if (!provider.allowedDomains.includes(emailDomain)) {
-          logger.warn('SSO email domain not allowed', { provider: providerId, domain: emailDomain });
+          logger.warn('SSO email domain not allowed', {
+            provider: providerId,
+            domain: emailDomain,
+          });
           return res.redirect('/login?error=domain_not_allowed');
         }
       }
@@ -503,16 +519,12 @@ export function createSSORouter(
       const role = config.adminEmails.includes(userInfo.email.toLowerCase()) ? 'admin' : 'user';
 
       // Issue JWT tokens
-      const accessToken = jwt.sign(
-        { id: user.id, email: user.email, role },
-        config.jwtSecret,
-        { expiresIn: '7d' }
-      );
-      const refreshToken = jwt.sign(
-        { id: user.id, type: 'refresh' },
-        config.jwtSecret,
-        { expiresIn: '30d' }
-      );
+      const accessToken = jwt.sign({ id: user.id, email: user.email, role }, config.jwtSecret, {
+        expiresIn: '7d',
+      });
+      const refreshToken = jwt.sign({ id: user.id, type: 'refresh' }, config.jwtSecret, {
+        expiresIn: '30d',
+      });
 
       logger.info('SSO login successful', { provider: providerId, userId: user.id });
 

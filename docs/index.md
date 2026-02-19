@@ -23,23 +23,23 @@
 
 ### 프로젝트 개요
 
-| 문서 | 설명 |
-|------|------|
-| **[최종 평가 문서](./PROJECT_FINAL_EVALUATION.md)** ⭐ | 프로젝트 완성도, 기술 스택, 성과 종합 평가 |
-| **[프로젝트 개요](./project-overview.md)** | 프로젝트 소개, 주요 기능, 기술 스택, 아키텍처 |
-| **[로드맵](./roadmap.md)** | 향후 개발 계획 및 단계별 실행 전략 |
+| 문서                                                   | 설명                                          |
+| ------------------------------------------------------ | --------------------------------------------- |
+| **[최종 평가 문서](./PROJECT_FINAL_EVALUATION.md)** ⭐ | 프로젝트 완성도, 기술 스택, 성과 종합 평가    |
+| **[프로젝트 개요](./project-overview.md)**             | 프로젝트 소개, 주요 기능, 기술 스택, 아키텍처 |
+| **[로드맵](./roadmap.md)**                             | 향후 개발 계획 및 단계별 실행 전략            |
 
 ### 개발자 문서
 
-| 문서 | 설명 |
-|------|------|
-| **[개발 환경 설정](./development-setup.md)** | Docker/로컬 환경 설정, Windows/Ubuntu 배포 |
-| **[개발 가이드](./development-guide.md)** | 빌드, 테스트, 코드 품질, API 보안 토글 |
-| **[Personal vs Team Mode](./mode-model.md)** | Notion-style 모드 모델, 피처 플래그 시스템 |
-| **[RBAC 가이드](./rbac-guide.md)** | 권한 관리 (JWT, Admin, Team Role, Page Permission) |
-| **[Collaboration Engine](./collaboration-engine.md)** | 실시간 협업 안정성 (스냅샷/TTL/LRU/Rate Limit) |
-| **[Yjs 아키텍처](./yjs-architecture.md)** | Yjs CRDT 실시간 협업 시스템 상세 구조 |
-| **[디렉토리 비밀번호 마이그레이션](./directory-password-migration.md)** | bcrypt 해시 마이그레이션 가이드 |
+| 문서                                                                    | 설명                                               |
+| ----------------------------------------------------------------------- | -------------------------------------------------- |
+| **[개발 환경 설정](./development-setup.md)**                            | Docker/로컬 환경 설정, Windows/Ubuntu 배포         |
+| **[개발 가이드](./development-guide.md)**                               | 빌드, 테스트, 코드 품질, API 보안 토글             |
+| **[Personal vs Team Mode](./mode-model.md)**                            | Notion-style 모드 모델, 피처 플래그 시스템         |
+| **[RBAC 가이드](./rbac-guide.md)**                                      | 권한 관리 (JWT, Admin, Team Role, Page Permission) |
+| **[Collaboration Engine](./collaboration-engine.md)**                   | 실시간 협업 안정성 (스냅샷/TTL/LRU/Rate Limit)     |
+| **[Yjs 아키텍처](./yjs-architecture.md)**                               | Yjs CRDT 실시간 협업 시스템 상세 구조              |
+| **[디렉토리 비밀번호 마이그레이션](./directory-password-migration.md)** | bcrypt 해시 마이그레이션 가이드                    |
 
 ### 신규 문서 (2026-02-01) ⭐
 
@@ -49,28 +49,28 @@
 
 ### 사용자 & 관리자 문서
 
-| 문서 | 설명 |
-|------|------|
-| **[사용자 가이드](./user-guide.md)** | 페이지 작성, 팀 협업, 검색, 단축키 |
-| **[AI 기능 가이드](./ai-features-guide.md)** | AI Copilot, 콘텐츠 생성, 요약, 스마트 검색 |
-| **[관리자 패널 가이드](./admin-panel-guide.md)** | 관리자 UI, 디렉토리/팀 관리 |
+| 문서                                             | 설명                                       |
+| ------------------------------------------------ | ------------------------------------------ |
+| **[사용자 가이드](./user-guide.md)**             | 페이지 작성, 팀 협업, 검색, 단축키         |
+| **[AI 기능 가이드](./ai-features-guide.md)**     | AI Copilot, 콘텐츠 생성, 요약, 스마트 검색 |
+| **[관리자 패널 가이드](./admin-panel-guide.md)** | 관리자 UI, 디렉토리/팀 관리                |
 
 ### 테스트 & 품질
 
-| 문서 | 설명 |
-|------|------|
-| **[백엔드 테스트 케이스](./backend-test-cases.md)** | TC 매트릭스 (92+ 테스트), API 테스트 명세 |
-| **[테스트 결과](./test-results.md)** | E2E, 스모크, 유닛 테스트 결과 이력 |
-| **[Team Mode 스모크 테스트](./team-mode-smoke-test.md)** | 팀 모드 기능 확인 체크리스트 |
-| **[Personal Mode 스모크 테스트](./personal-mode-smoke-test.md)** | 개인 모드 기능 확인 체크리스트 |
+| 문서                                                             | 설명                                      |
+| ---------------------------------------------------------------- | ----------------------------------------- |
+| **[백엔드 테스트 케이스](./backend-test-cases.md)**              | TC 매트릭스 (92+ 테스트), API 테스트 명세 |
+| **[테스트 결과](./test-results.md)**                             | E2E, 스모크, 유닛 테스트 결과 이력        |
+| **[Team Mode 스모크 테스트](./team-mode-smoke-test.md)**         | 팀 모드 기능 확인 체크리스트              |
+| **[Personal Mode 스모크 테스트](./personal-mode-smoke-test.md)** | 개인 모드 기능 확인 체크리스트            |
 
 ### 배포 가이드
 
-| 문서 | 설명 |
-|------|------|
-| **[Render 배포 가이드](./render-deployment-guide.md)** | Render 플랫폼 배포 |
+| 문서                                                   | 설명                              |
+| ------------------------------------------------------ | --------------------------------- |
+| **[Render 배포 가이드](./render-deployment-guide.md)** | Render 플랫폼 배포                |
 | **[Ubuntu 배포 가이드](./ubuntu-deployment-guide.md)** | Ubuntu 서버 + Docker + Nginx 배포 |
-| **[PostgreSQL 로컬 설정](./setup-local-postgres.md)** | 로컬 PostgreSQL 설정 |
+| **[PostgreSQL 로컬 설정](./setup-local-postgres.md)**  | 로컬 PostgreSQL 설정              |
 
 ---
 
@@ -79,6 +79,7 @@
 이번 업데이트에서 추가된 주요 기능들:
 
 ### 인프라 & 모니터링
+
 - ✅ Sentry 에러 트래킹 및 성능 모니터링
 - ✅ Prometheus 메트릭 엔드포인트
 - ✅ Winston 구조화 로깅 (일별 로테이션)
@@ -86,18 +87,21 @@
 - ✅ PostgreSQL 자동 백업 시스템
 
 ### 인증 & 보안
+
 - ✅ SSO/OIDC 통합 (Google, GitHub, Azure AD, Okta, Auth0)
 - ✅ CSP/CORS 보안 헤더 강화
 - ✅ Redis 기반 분산 Rate Limiter
 - ✅ 감사 로그 시스템
 
 ### 사용자 경험
+
 - ✅ 국제화 (i18n) - 7개 언어 지원
 - ✅ 모바일 반응형 UI (BottomSheet, MobileNav)
 - ✅ 페이지 버전 히스토리 (diff 시각화, 복원)
 - ✅ 댓글 알림 시스템 (@멘션, 답글, 리액션)
 
 ### 테스트 & DevOps
+
 - ✅ k6/Artillery 부하 테스트 스크립트
 - ✅ CI/CD 파이프라인 강화
 - ✅ 마이크로서비스 아키텍처 준비
@@ -106,19 +110,19 @@
 
 ## 🏗️ 기술 스택 요약
 
-| 계층 | 기술 | 버전 |
-|------|------|------|
-| Frontend | React + TypeScript + Vite | 18.3.1 / 5.6.3 / 7.0.2 |
-| UI | shadcn/ui + Tailwind CSS + Framer Motion | - |
-| State | TanStack Query + React Context | 5.87.1 |
-| Routing | React Router DOM | 7.8.2 |
-| Backend | Express.js + TypeScript | 4.21.2 |
-| Database | PostgreSQL + Drizzle ORM + FTS | 16 / 0.39.3 |
-| Auth | JWT + bcrypt + Passport.js (준비) | - |
-| Real-time | Socket.IO + Yjs CRDT | 4.8.1 / 13.6.27 |
-| AI | OpenAI GPT-4o / GPT-4 / GPT-3.5 | SDK 5.6.0 |
-| Testing | Vitest + Playwright | 3.2.4 / 1.54.2 |
-| DevOps | Docker + ESLint + Prettier + Husky | - |
+| 계층      | 기술                                     | 버전                   |
+| --------- | ---------------------------------------- | ---------------------- |
+| Frontend  | React + TypeScript + Vite                | 18.3.1 / 5.6.3 / 7.0.2 |
+| UI        | shadcn/ui + Tailwind CSS + Framer Motion | -                      |
+| State     | TanStack Query + React Context           | 5.87.1                 |
+| Routing   | React Router DOM                         | 7.8.2                  |
+| Backend   | Express.js + TypeScript                  | 4.21.2                 |
+| Database  | PostgreSQL + Drizzle ORM + FTS           | 16 / 0.39.3            |
+| Auth      | JWT + bcrypt + Passport.js (준비)        | -                      |
+| Real-time | Socket.IO + Yjs CRDT                     | 4.8.1 / 13.6.27        |
+| AI        | OpenAI GPT-4o / GPT-4 / GPT-3.5          | SDK 5.6.0              |
+| Testing   | Vitest + Playwright                      | 3.2.4 / 1.54.2         |
+| DevOps    | Docker + ESLint + Prettier + Husky       | -                      |
 
 ---
 
@@ -150,7 +154,7 @@
 
 1. 모든 문서는 마크다운 형식으로 작성
 2. 제목은 명확하고 간결하게
-3. 코드 예시에 언어 명시 (```typescript, ```bash 등)
+3. 코드 예시에 언어 명시 (`typescript, `bash 등)
 4. 스크린샷은 `docs/assets/` 디렉토리에 저장
 5. 외부 링크는 절대 경로 사용
 

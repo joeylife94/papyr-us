@@ -1,13 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import {
-  Bold,
-  Italic,
-  Underline,
-  Strikethrough,
-  Code,
-  Link2,
-  Highlighter,
-} from 'lucide-react';
+import { Bold, Italic, Underline, Strikethrough, Code, Link2, Highlighter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface InlineFormatAction {
@@ -79,10 +71,7 @@ interface InlineFormattingToolbarProps {
   onFormat?: (textarea: HTMLTextAreaElement, prefix: string, suffix: string) => void;
 }
 
-export function InlineFormattingToolbar({
-  containerRef,
-  onFormat,
-}: InlineFormattingToolbarProps) {
+export function InlineFormattingToolbar({ containerRef, onFormat }: InlineFormattingToolbarProps) {
   const [visible, setVisible] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const [activeTextarea, setActiveTextarea] = useState<HTMLTextAreaElement | null>(null);
@@ -95,11 +84,7 @@ export function InlineFormattingToolbar({
 
     // Find active textarea within the container
     const activeEl = document.activeElement;
-    if (
-      !activeEl ||
-      activeEl.tagName !== 'TEXTAREA' ||
-      !container.contains(activeEl)
-    ) {
+    if (!activeEl || activeEl.tagName !== 'TEXTAREA' || !container.contains(activeEl)) {
       return;
     }
 
@@ -213,12 +198,7 @@ export function InlineFormattingToolbar({
       newEnd = end - prefix.length;
     } else {
       // Add formatting
-      newValue =
-        text.substring(0, start) +
-        prefix +
-        selectedText +
-        suffix +
-        text.substring(end);
+      newValue = text.substring(0, start) + prefix + selectedText + suffix + text.substring(end);
       newStart = start + prefix.length;
       newEnd = end + prefix.length;
     }

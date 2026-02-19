@@ -1,6 +1,6 @@
 /**
  * Comment Notification System
- * 
+ *
  * Real-time notifications for comment activities:
  * - New comments on pages you created/follow
  * - Replies to your comments
@@ -75,10 +75,16 @@ export async function initCommentNotificationsTable(pool: Pool): Promise<void> {
       )
     `);
 
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_comment_notif_recipient ON comment_notifications(recipient_id)`);
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_comment_notif_read ON comment_notifications(recipient_id, is_read)`);
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_comment_notif_created ON comment_notifications(created_at)`);
-    
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_comment_notif_recipient ON comment_notifications(recipient_id)`
+    );
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_comment_notif_read ON comment_notifications(recipient_id, is_read)`
+    );
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_comment_notif_created ON comment_notifications(created_at)`
+    );
+
     logger.info('Comment notifications table initialized');
   } catch (error) {
     logger.error('Failed to initialize comment notifications table', { error });
@@ -143,7 +149,10 @@ export async function sendCommentNotification(
   // Send real-time notification via Socket.IO
   if (io) {
     io.to(`user:${notification.recipientId}`).emit('comment:notification', createdNotification);
-    logger.debug('Real-time comment notification sent', { recipientId: notification.recipientId, type: notification.type });
+    logger.debug('Real-time comment notification sent', {
+      recipientId: notification.recipientId,
+      type: notification.type,
+    });
   }
 
   return createdNotification;
@@ -227,7 +236,7 @@ export async function notifyMentions(
   // Extract @mentions from content (format: @[username](userId))
   const mentionRegex = /@\[([^\]]+)\]\((\d+)\)/g;
   const mentions: Array<{ name: string; userId: number }> = [];
-  
+
   let match;
   while ((match = mentionRegex.exec(comment.content)) !== null) {
     mentions.push({
@@ -240,10 +249,7 @@ export async function notifyMentions(
   const emailMentionRegex = /@(\S+@\S+\.\S+)/g;
   while ((match = emailMentionRegex.exec(comment.content)) !== null) {
     // Look up user by email
-    const userResult = await pool.query(
-      'SELECT id FROM users WHERE email = $1',
-      [match[1]]
-    );
+    const userResult = await pool.query('SELECT id FROM users WHERE email = $1', [match[1]]);
     if (userResult.rows[0]) {
       mentions.push({
         name: match[1],
@@ -316,7 +322,7 @@ export async function getCommentNotifications(
   const offset = options?.offset || 0;
   const unreadOnly = options?.unreadOnly || false;
 
-  const whereClause = unreadOnly 
+  const whereClause = unreadOnly
     ? 'WHERE recipient_id = $1 AND is_read = false'
     : 'WHERE recipient_id = $1';
 
@@ -339,7 +345,7 @@ export async function getCommentNotifications(
     [userId, limit, offset]
   );
 
-  const notifications: CommentNotification[] = result.rows.map(row => ({
+  const notifications: CommentNotification[] = result.rows.map((row) => ({
     id: row.id,
     type: row.type,
     recipientId: row.recipient_id,
@@ -373,7 +379,7 @@ export async function markNotificationsRead(
   notificationIds?: number[]
 ): Promise<number> {
   let result;
-  
+
   if (notificationIds && notificationIds.length > 0) {
     // Mark specific notifications as read
     result = await pool.query(
@@ -395,7 +401,7 @@ export async function markNotificationsRead(
   }
 
   const count = result.rowCount || 0;
-  
+
   // Emit socket event for real-time UI update
   if (io && count > 0) {
     io.to(`user:${userId}`).emit('notifications:marked_read', { count });
@@ -407,10 +413,7 @@ export async function markNotificationsRead(
 /**
  * Delete old notifications
  */
-export async function pruneOldNotifications(
-  pool: Pool,
-  daysToKeep: number = 30
-): Promise<number> {
+export async function pruneOldNotifications(pool: Pool, daysToKeep: number = 30): Promise<number> {
   const result = await pool.query(
     `DELETE FROM comment_notifications 
      WHERE created_at < NOW() - INTERVAL '1 day' * $1
@@ -439,10 +442,7 @@ export async function getNotificationPreferences(
   mentions: boolean;
   reactions: boolean;
 }> {
-  const result = await pool.query(
-    `SELECT preferences FROM users WHERE id = $1`,
-    [userId]
-  );
+  const result = await pool.query(`SELECT preferences FROM users WHERE id = $1`, [userId]);
 
   const prefs = result.rows[0]?.preferences?.notifications || {};
 

@@ -125,7 +125,9 @@ export default function TasksPage({ teamName }: TasksPageProps) {
       if (!response.ok) {
         throw new Error('Failed to fetch tasks');
       }
-      return response.json();
+      const data = await response.json();
+      // API returns { tasks: [...], pagination: {...} }, extract the array
+      return Array.isArray(data) ? data : data.tasks || [];
     },
   });
 

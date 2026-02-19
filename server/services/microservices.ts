@@ -1,9 +1,9 @@
 /**
  * Microservices Architecture Preparation
- * 
+ *
  * This document outlines the strategy for transitioning
  * Papyr.us from a monolith to a microservices architecture.
- * 
+ *
  * Key services identified for extraction:
  * 1. Auth Service - Authentication, SSO, JWT management
  * 2. Page Service - Wiki page CRUD, collaboration
@@ -137,7 +137,7 @@ export function createApiGateway(): (req: Request, res: Response, next: NextFunc
     const method = req.method as RouteConfig['method'];
 
     // Find matching route
-    const route = routeConfigs.find(r => {
+    const route = routeConfigs.find((r) => {
       const pattern = r.path.replace('*', '.*');
       const regex = new RegExp(`^${pattern}$`);
       return regex.test(path) && (r.method === 'ALL' || r.method === method);
@@ -207,7 +207,7 @@ export function createApiGateway(): (req: Request, res: Response, next: NextFunc
       }
     } catch (error) {
       logger.error('Gateway proxy error', { service: route.service, path, error });
-      
+
       // Fallback to local handler on proxy error
       next();
     }

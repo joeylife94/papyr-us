@@ -85,7 +85,6 @@ export function AICopilotSidebar({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
         },
         body: JSON.stringify({
           messages: [...messages, userMessage].map((m) => ({

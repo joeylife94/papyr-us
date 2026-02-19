@@ -1,6 +1,6 @@
 /**
  * Page Version History Service
- * 
+ *
  * Tracks all changes to wiki pages:
  * - Automatic versioning on each save
  * - Diff generation between versions
@@ -19,7 +19,7 @@ export interface PageVersion {
   version: number;
   title: string;
   content: string;
-  contentDelta?: string;  // Compressed delta from previous version
+  contentDelta?: string; // Compressed delta from previous version
   blocks?: any;
   userId?: number;
   userEmail?: string;
@@ -67,9 +67,13 @@ export async function initVersionHistoryTable(pool: Pool): Promise<void> {
       )
     `);
 
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_page_versions_page_id ON page_versions(page_id)`);
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_page_versions_created_at ON page_versions(created_at)`);
-    
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_page_versions_page_id ON page_versions(page_id)`
+    );
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_page_versions_created_at ON page_versions(created_at)`
+    );
+
     logger.info('Page version history table initialized');
   } catch (error) {
     logger.error('Failed to initialize version history table', { error });
@@ -107,7 +111,7 @@ export async function createVersion(
       'SELECT content FROM page_versions WHERE page_id = $1 AND version = $2',
       [pageId, newVersion - 1]
     );
-    
+
     if (prevResult.rows[0]?.content && data.content) {
       // Create delta patch
       const patches = dmp.patch_make(prevResult.rows[0].content, data.content);
@@ -136,7 +140,7 @@ export async function createVersion(
   );
 
   const row = result.rows[0];
-  
+
   logger.debug('Page version created', { pageId, version: newVersion });
 
   return {
@@ -187,7 +191,7 @@ export async function getPageVersions(
     [pageId, limit, offset]
   );
 
-  const versions: PageVersion[] = result.rows.map(row => ({
+  const versions: PageVersion[] = result.rows.map((row) => ({
     id: row.id,
     pageId: row.page_id,
     version: row.version,
@@ -263,7 +267,7 @@ export async function compareVersions(
   dmp.diff_cleanupSemantic(diffs);
 
   const contentDiff = diffs.map(([type, text]: [number, string]) => ({
-    type: type === 0 ? 'equal' as const : type === 1 ? 'insert' as const : 'delete' as const,
+    type: type === 0 ? ('equal' as const) : type === 1 ? ('insert' as const) : ('delete' as const),
     text,
   }));
 
@@ -287,7 +291,7 @@ export async function restoreVersion(
   userEmail?: string
 ): Promise<PageVersion | null> {
   const targetVer = await getVersion(pool, pageId, targetVersion);
-  
+
   if (!targetVer) {
     return null;
   }
@@ -308,10 +312,19 @@ export async function restoreVersion(
     `UPDATE wiki_pages 
      SET title = $1, content = $2, blocks = $3, updated_at = NOW()
      WHERE id = $4`,
-    [targetVer.title, targetVer.content, targetVer.blocks ? JSON.stringify(targetVer.blocks) : null, pageId]
+    [
+      targetVer.title,
+      targetVer.content,
+      targetVer.blocks ? JSON.stringify(targetVer.blocks) : null,
+      pageId,
+    ]
   );
 
-  logger.info('Page restored to previous version', { pageId, targetVersion, newVersion: restoredVersion.version });
+  logger.info('Page restored to previous version', {
+    pageId,
+    targetVersion,
+    newVersion: restoredVersion.version,
+  });
 
   return restoredVersion;
 }
@@ -339,7 +352,7 @@ export async function pruneOldVersions(
   );
 
   const deletedCount = result.rowCount || 0;
-  
+
   if (deletedCount > 0) {
     logger.info('Pruned old page versions', { pageId, deletedCount });
   }
@@ -350,7 +363,10 @@ export async function pruneOldVersions(
 /**
  * Get version statistics for a page
  */
-export async function getVersionStats(pool: Pool, pageId: number): Promise<{
+export async function getVersionStats(
+  pool: Pool,
+  pageId: number
+): Promise<{
   totalVersions: number;
   firstVersion: Date | null;
   lastVersion: Date | null;
@@ -380,7 +396,7 @@ export async function getVersionStats(pool: Pool, pageId: number): Promise<{
     totalVersions: parseInt(statsResult.rows[0].total),
     firstVersion: statsResult.rows[0].first_version,
     lastVersion: statsResult.rows[0].last_version,
-    contributors: contributorsResult.rows.map(r => ({
+    contributors: contributorsResult.rows.map((r) => ({
       email: r.user_email,
       count: parseInt(r.count),
     })),

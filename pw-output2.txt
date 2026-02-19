@@ -1,0 +1,370 @@
+Found existing storage state at tests/storageState.json, validating...
+Existing storageState token is valid; reusing tests/storageState.json
+[2m[WebServer] [22mBrowserslist: browsers data (caniuse-lite) is 8 months old. Please run:
+[2m[WebServer] [22m  npx update-browserslist-db@latest
+[2m[WebServer] [22m  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+
+Running 45 tests using 2 workers
+
+  ✓  2 [chromium] › tests\api-integration.spec.ts:10:3 › Health Check API › should return healthy status (184ms)
+  ✓  3 [chromium] › tests\api-integration.spec.ts:18:3 › Health Check API › should include database status (243ms)
+  ✓  4 [chromium] › tests\api-integration.spec.ts:28:3 › Pages API › should list pages (283ms)
+  ✓  5 [chromium] › tests\api-integration.spec.ts:42:3 › Pages API › should handle page not found (59ms)
+  ✓  6 [chromium] › tests\api-integration.spec.ts:51:3 › Search API › should search pages (7ms)
+  ✓  7 [chromium] › tests\api-integration.spec.ts:64:3 › Search API › should handle empty search query (7ms)
+  ✓  8 [chromium] › tests\api-integration.spec.ts:73:3 › Auth API › should reject invalid login (10ms)
+  ✓  9 [chromium] › tests\api-integration.spec.ts:85:3 › Auth API › should validate registration input (4ms)
+  ✓  10 [chromium] › tests\api-integration.spec.ts:99:3 › Metrics API › should expose prometheus metrics (8ms)
+  ✓  11 [chromium] › tests\api-integration.spec.ts:113:3 › Rate Limiting › should not immediately rate limit (12ms)
+  ✓  1 [chromium] › tests\auth-redirect.spec.ts:57:1 › 401 -> redirects to /login with redirect param when accessing protected route (3.9s)
+  ✓  12 [chromium] › tests\example.spec.ts:174:3 › Authentication › 성공적인 회원가입 (3.2s)
+  ✓  13 [chromium] › tests\auth-redirect.spec.ts:79:1 › 401 write -> redirects to /login with redirect param when posting /api/pages while logged out (682ms)
+  ✓  14 [chromium] › tests\example.spec.ts:179:3 › Authentication › 성공적인 로그인 (986ms)
+  ✓  16 [chromium] › tests\example.spec.ts:190:3 › Authentication › 성공적인 로그아웃 (1.3s)
+  ✓  15 [chromium] › tests\pages-crud.spec.ts:21:3 › Wiki Pages CRUD › should create a new page (2.7s)
+  ✓  17 [chromium] › tests\example.spec.ts:213:3 › Authentication › TC-AUTH-004: 테마 변경 (1.1s)
+  ✓  18 [chromium] › tests\pages-crud.spec.ts:50:3 › Wiki Pages CRUD › should display existing pages in sidebar (1.1s)
+  ✓  20 [chromium] › tests\pages-crud.spec.ts:64:3 › Wiki Pages CRUD › should navigate to a page and view content (1.0s)
+  ✓  21 [chromium] › tests\pages-crud.spec.ts:78:3 › Wiki Pages CRUD › should handle page not found gracefully (2.1s)
+  ✓  22 [chromium] › tests\pages-crud.spec.ts:91:3 › Page Editor › should open editor for page (999ms)
+  ✓  23 [chromium] › tests\pages-crud.spec.ts:114:3 › Page Search › should search for pages (1.5s)
+  ✓  24 [chromium] › tests\team-collaboration.spec.ts:18:3 › Team Management › should display teams list if feature enabled (1.7s)
+  ✓  25 [chromium] › tests\team-collaboration.spec.ts:28:3 › Team Management › should show team creation option for authorized users (1.6s)
+  ✓  26 [chromium] › tests\team-collaboration.spec.ts:44:3 › Member Management › should display member list (983ms)
+  ✓  27 [chromium] › tests\team-collaboration.spec.ts:53:3 › Member Management › should show member roles (1.0s)
+  ✓  28 [chromium] › tests\team-collaboration.spec.ts:67:3 › Team Settings › should access team settings when authorized (1.0s)
+  -  29 [chromium] › tests\yjs-collaboration.spec.ts:32:8 › Yjs Real-time Collaboration › should sync blocks between two users in real-time
+  -  30 [chromium] › tests\yjs-collaboration.spec.ts:78:8 › Yjs Real-time Collaboration › should show user count and active users
+  -  31 [chromium] › tests\yjs-collaboration.spec.ts:90:8 › Yjs Real-time Collaboration › should handle concurrent edits without conflicts
+  -  32 [chromium] › tests\yjs-collaboration.spec.ts:114:8 › Yjs Real-time Collaboration › should auto-save to database
+  ✘  19 [chromium] › tests\example.spec.ts:317:3 › Wiki Page Management › 새 위키 페이지 생성 (2.0m)
+  ✘  33 [chromium] › tests\example.spec.ts:323:3 › Wiki Page Management › 위키 페이지 수정 (2.0m)
+  ✘  34 [chromium] › tests\example.spec.ts:354:3 › Wiki Page Management › 위키 페이지 목차 (2.0m)
+  ✘  35 [chromium] › tests\example.spec.ts:376:3 › Wiki Page Management › 위키 페이지 삭제 (UI) (2.0m)
+  ✘  36 [chromium] › tests\example.spec.ts:398:3 › Wiki Page Management › TC-WIKI-005: 페이지 내 댓글 작성 및 확인 (2.0m)
+  ✘  37 [chromium] › tests\example.spec.ts:425:3 › Wiki Page Management › TC-WIKI-006: 템플릿을 사용하여 새 페이지 생성 (2.0m)
+  ✘  38 [chromium] › tests\example.spec.ts:486:3 › Productivity & Collaboration › TC-PROD-001: 대시보드 위젯 확인 (2.0m)
+  ✘  39 [chromium] › tests\example.spec.ts:502:3 › Productivity & Collaboration › TC-PROD-002: 캘린더 조회 (1.1s)
+  ✘  40 [chromium] › tests\example.spec.ts:513:3 › Productivity & Collaboration › TC-PROD-003: 과제 트래커 조회 (2.0m)
+  ✘  41 [chromium] › tests\example.spec.ts:530:3 › Productivity & Collaboration › TC-PROS-004: AI 검색 페이지 접근 및 검색 실행 (1.5s)
+  ✓  42 [chromium] › tests\example.spec.ts:553:3 › Productivity & Collaboration › TC-PROD-005: 파일 관리 페이지 접근 (1.0s)
+  ✘  43 [chromium] › tests\example.spec.ts:559:3 › Productivity & Collaboration › TC-PROD-006: 데이터베이스 뷰 페이지 접근 (2.0m)
+  ✘  44 [chromium] › tests\example.spec.ts:601:3 › Admin Features › TC-ADMIN-002-004: 디렉토리 생성, 수정, 삭제 (2.0m)
+  ✘  45 [chromium] › tests\example.spec.ts:627:3 › Admin Features › TC-ADMIN-005-007: 팀 생성, 수정, 삭제 (2.0m)
+
+
+  1) [chromium] › tests\example.spec.ts:317:3 › Wiki Page Management › 새 위키 페이지 생성 ─────────────────
+
+    [31mTest timeout of 120000ms exceeded.[39m
+
+    Error: page.evaluate: Target page, context or browser has been closed
+
+      145 |       await page.keyboard.type(content, { delay: 20 });
+      146 |     } catch (err2) {
+    > 147 |       await page.evaluate((c: string) => {
+          |                  ^
+      148 |         const el = document.querySelector('textarea');
+      149 |         if (el) { el.value = c; el.dispatchEvent(new Event('input', { bubbles: true })); }
+      150 |       }, content);
+        at createPage (C:\Users\sho80\OneDrive\바탕 화면\workspace\papyr-us\tests\example.spec.ts:147:18)
+        at C:\Users\sho80\OneDrive\바탕 화면\workspace\papyr-us\tests\example.spec.ts:320:5
+
+    Error Context: test-results\example-Wiki-Page-Management-새-위키-페이지-생성-chromium\error-context.md
+
+  2) [chromium] › tests\example.spec.ts:323:3 › Wiki Page Management › 위키 페이지 수정 ───────────────────
+
+    [31mTest timeout of 120000ms exceeded.[39m
+
+    Error: page.evaluate: Target page, context or browser has been closed
+
+      145 |       await page.keyboard.type(content, { delay: 20 });
+      146 |     } catch (err2) {
+    > 147 |       await page.evaluate((c: string) => {
+          |                  ^
+      148 |         const el = document.querySelector('textarea');
+      149 |         if (el) { el.value = c; el.dispatchEvent(new Event('input', { bubbles: true })); }
+      150 |       }, content);
+        at createPage (C:\Users\sho80\OneDrive\바탕 화면\workspace\papyr-us\tests\example.spec.ts:147:18)
+        at C:\Users\sho80\OneDrive\바탕 화면\workspace\papyr-us\tests\example.spec.ts:327:18
+
+    Error Context: test-results\example-Wiki-Page-Management-위키-페이지-수정-chromium\error-context.md
+
+  3) [chromium] › tests\example.spec.ts:354:3 › Wiki Page Management › 위키 페이지 목차 ───────────────────
+
+    [31mTest timeout of 120000ms exceeded.[39m
+
+    Error: page.evaluate: Target page, context or browser has been closed
+
+      145 |       await page.keyboard.type(content, { delay: 20 });
+      146 |     } catch (err2) {
+    > 147 |       await page.evaluate((c: string) => {
+          |                  ^
+      148 |         const el = document.querySelector('textarea');
+      149 |         if (el) { el.value = c; el.dispatchEvent(new Event('input', { bubbles: true })); }
+      150 |       }, content);
+        at createPage (C:\Users\sho80\OneDrive\바탕 화면\workspace\papyr-us\tests\example.spec.ts:147:18)
+        at C:\Users\sho80\OneDrive\바탕 화면\workspace\papyr-us\tests\example.spec.ts:358:18
+
+    Error Context: test-results\example-Wiki-Page-Management-위키-페이지-목차-chromium\error-context.md
+
+  4) [chromium] › tests\example.spec.ts:376:3 › Wiki Page Management › 위키 페이지 삭제 (UI) ──────────────
+
+    [31mTest timeout of 120000ms exceeded.[39m
+
+    Error: page.evaluate: Target page, context or browser has been closed
+
+      145 |       await page.keyboard.type(content, { delay: 20 });
+      146 |     } catch (err2) {
+    > 147 |       await page.evaluate((c: string) => {
+          |                  ^
+      148 |         const el = document.querySelector('textarea');
+      149 |         if (el) { el.value = c; el.dispatchEvent(new Event('input', { bubbles: true })); }
+      150 |       }, content);
+        at createPage (C:\Users\sho80\OneDrive\바탕 화면\workspace\papyr-us\tests\example.spec.ts:147:18)
+        at C:\Users\sho80\OneDrive\바탕 화면\workspace\papyr-us\tests\example.spec.ts:379:18
+
+    Error Context: test-results\example-Wiki-Page-Management-위키-페이지-삭제-UI--chromium\error-context.md
+
+  5) [chromium] › tests\example.spec.ts:398:3 › Wiki Page Management › TC-WIKI-005: 페이지 내 댓글 작성 및 확인 
+
+    [31mTest timeout of 120000ms exceeded.[39m
+
+    Error: page.evaluate: Target page, context or browser has been closed
+
+      145 |       await page.keyboard.type(content, { delay: 20 });
+      146 |     } catch (err2) {
+    > 147 |       await page.evaluate((c: string) => {
+          |                  ^
+      148 |         const el = document.querySelector('textarea');
+      149 |         if (el) { el.value = c; el.dispatchEvent(new Event('input', { bubbles: true })); }
+      150 |       }, content);
+        at createPage (C:\Users\sho80\OneDrive\바탕 화면\workspace\papyr-us\tests\example.spec.ts:147:18)
+        at C:\Users\sho80\OneDrive\바탕 화면\workspace\papyr-us\tests\example.spec.ts:401:18
+
+    Error Context: test-results\example-Wiki-Page-Management-TC-WIKI-005-페이지-내-댓글-작성-및-확인-chromium\error-context.md
+
+  6) [chromium] › tests\example.spec.ts:425:3 › Wiki Page Management › TC-WIKI-006: 템플릿을 사용하여 새 페이지 생성 
+
+    [31mTest timeout of 120000ms exceeded.[39m
+
+    Error: locator.click: Test timeout of 120000ms exceeded.
+    Call log:
+    [2m  - waiting for locator('div.card').filter({ hasText: '일반 스터디 노트' }).getByRole('button', { name: '사용하기' })[22m
+
+
+      430 |     // 2. Find the "일반 스터디 노트" template and click "사용하기".
+      431 |     const templateCard = page.locator('div.card', { hasText: '일반 스터디 노트' });
+    > 432 |     await templateCard.getByRole('button', { name: '사용하기' }).click();
+          |                                                              ^
+      433 |
+      434 |     // 3. Verify redirection to the editor with template content.
+      435 |     await expect(page).toHaveURL(/create/); // Should go to create page with template
+        at C:\Users\sho80\OneDrive\바탕 화면\workspace\papyr-us\tests\example.spec.ts:432:62
+
+    Error Context: test-results\example-Wiki-Page-Management-TC-WIKI-006-템플릿을-사용하여-새-페이지-생성-chromium\error-context.md
+
+  7) [chromium] › tests\example.spec.ts:486:3 › Productivity & Collaboration › TC-PROD-001: 대시보드 위젯 확인 
+
+    [31mTest timeout of 120000ms exceeded.[39m
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m()[22m
+
+    Locator: getByRole('heading', { name: '스터디 대시보드' })
+    Expected: visible
+    Received: <element(s) not found>
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 120000ms[22m
+    [2m  - waiting for getByRole('heading', { name: '스터디 대시보드' })[22m
+
+
+      492 |       })
+      493 |       .catch(() => {});
+    > 494 |     await expect(page.getByRole('heading', { name: '스터디 대시보드' })).toBeVisible();
+          |                                                                   ^
+      495 |     await expect(page.getByRole('heading', { name: '총 페이지' })).toBeVisible();
+      496 |     await expect(page.getByRole('heading', { name: '총 댓글' })).toBeVisible();
+      497 |     await expect(page.getByRole('heading', { name: '활성 팀원' })).toBeVisible();
+        at C:\Users\sho80\OneDrive\바탕 화면\workspace\papyr-us\tests\example.spec.ts:494:67
+
+    Error Context: test-results\example-Productivity-Collaboration-TC-PROD-001-대시보드-위젯-확인-chromium\error-context.md
+
+  8) [chromium] › tests\example.spec.ts:502:3 › Productivity & Collaboration › TC-PROD-002: 캘린더 조회 ─
+
+    Error: expect.toBeVisible: Error: strict mode violation: getByRole('button', { name: 'Day' }) resolved to 2 elements:
+        1) <button class="inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 touch-manipulation border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 rounded-md px-3 md:h-9 md:px-3">Day</button> aka getByRole('button', { name: 'Day', exact: true })
+        2) <button class="inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 touch-manipulation border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 rounded-md px-3 md:h-9 md:px-3">Today</button> aka getByRole('button', { name: 'Today' })
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 120000ms[22m
+    [2m  - waiting for getByRole('button', { name: 'Day' })[22m
+
+
+      505 |     await expect(page.getByRole('button', { name: 'Month' })).toBeVisible();
+      506 |     await expect(page.getByRole('button', { name: 'Week' })).toBeVisible();
+    > 507 |     await expect(page.getByRole('button', { name: 'Day' })).toBeVisible();
+          |                                                             ^
+      508 |     await expect(page.getByRole('button', { name: 'Today' })).toBeVisible();
+      509 |     await expect(page.getByRole('button', { name: 'Add Event' })).toBeVisible();
+      510 |     await expect(page.locator('.react-calendar')).toBeVisible();
+        at C:\Users\sho80\OneDrive\바탕 화면\workspace\papyr-us\tests\example.spec.ts:507:61
+
+    Error Context: test-results\example-Productivity-Collaboration-TC-PROD-002-캘린더-조회-chromium\error-context.md
+
+  9) [chromium] › tests\example.spec.ts:513:3 › Productivity & Collaboration › TC-PROD-003: 과제 트래커 조회 
+
+    [31mTest timeout of 120000ms exceeded.[39m
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m()[22m
+
+    Locator: getByRole('heading', { name: '과제 트래커' })
+    Expected: visible
+    Received: <element(s) not found>
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 120000ms[22m
+    [2m  - waiting for getByRole('heading', { name: '과제 트래커' })[22m
+
+
+      519 |       })
+      520 |       .catch(() => {});
+    > 521 |     await expect(page.getByRole('heading', { name: '과제 트래커' })).toBeVisible();
+          |                                                                 ^
+      522 |     await expect(page.getByRole('button', { name: '새 과제 추가' })).toBeVisible();
+      523 |     await expect(page.getByPlaceholder('과제 검색...')).toBeVisible();
+      524 |     await expect(page.getByText('팀 선택')).toBeVisible();
+        at C:\Users\sho80\OneDrive\바탕 화면\workspace\papyr-us\tests\example.spec.ts:521:65
+
+    Error Context: test-results\example-Productivity-Collaboration-TC-PROD-003-과제-트래커-조회-chromium\error-context.md
+
+  10) [chromium] › tests\example.spec.ts:530:3 › Productivity & Collaboration › TC-PROS-004: AI 검색 페이지 접근 및 검색 실행 
+
+    Error: expect.toBeVisible: Error: strict mode violation: getByRole('button', { name: 'AI 검색' }) resolved to 2 elements:
+        1) <button class="inline-flex items-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 touch-manipulation border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2 md:h-10 md:px-4 md:py-2 w-full justify-start">…</button> aka getByRole('link', { name: 'AI 검색' }).getByRole('button')
+        2) <button disabled class="justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 touch-manipulation bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 md:h-10 md:px-4 md:py-2 flex items-center space-x-2">…</button> aka locator('#main-content').getByRole('button', { name: 'AI 검색' })
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 120000ms[22m
+    [2m  - waiting for getByRole('button', { name: 'AI 검색' })[22m
+
+
+      539 |     await expect(searchInput).toBeVisible();
+      540 |     const searchButton = page.getByRole('button', { name: 'AI 검색' });
+    > 541 |     await expect(searchButton).toBeVisible();
+          |                                ^
+      542 |
+      543 |     await searchInput.fill('test');
+      544 |     const responsePromise = page.waitForResponse(
+        at C:\Users\sho80\OneDrive\바탕 화면\workspace\papyr-us\tests\example.spec.ts:541:32
+
+    Error Context: test-results\example-Productivity-Colla-db645-OS-004-AI-검색-페이지-접근-및-검색-실행-chromium\error-context.md
+
+  11) [chromium] › tests\example.spec.ts:559:3 › Productivity & Collaboration › TC-PROD-006: 데이터베이스 뷰 페이지 접근 
+
+    [31mTest timeout of 120000ms exceeded.[39m
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m()[22m
+
+    Locator: getByRole('heading', { name: '데이터베이스 뷰' })
+    Expected: visible
+    Received: <element(s) not found>
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 120000ms[22m
+    [2m  - waiting for getByRole('heading', { name: '데이터베이스 뷰' })[22m
+
+
+      559 |   test('TC-PROD-006: 데이터베이스 뷰 페이지 접근', async ({ page }) => {
+      560 |     await page.goto('/database');
+    > 561 |     await expect(page.getByRole('heading', { name: '데이터베이스 뷰' })).toBeVisible();
+          |                                                                   ^
+      562 |     await expect(page.getByRole('button', { name: '테이블' })).toBeVisible();
+      563 |     await expect(page.getByRole('button', { name: '칸반' })).toBeVisible();
+      564 |     await expect(page.getByRole('button', { name: '갤러리' })).toBeVisible();
+        at C:\Users\sho80\OneDrive\바탕 화면\workspace\papyr-us\tests\example.spec.ts:561:67
+
+    Error Context: test-results\example-Productivity-Colla-f3b46-TC-PROD-006-데이터베이스-뷰-페이지-접근-chromium\error-context.md
+
+  12) [chromium] › tests\example.spec.ts:601:3 › Admin Features › TC-ADMIN-002-004: 디렉토리 생성, 수정, 삭제 
+
+    [31mTest timeout of 120000ms exceeded while running "beforeEach" hook.[39m
+
+      594 |   });
+      595 |
+    > 596 |   test.beforeEach(async ({ page }) => {
+          |        ^
+      597 |     // Login as admin via UI before each test
+      598 |     await adminLogin(page);
+      599 |   });
+        at C:\Users\sho80\OneDrive\바탕 화면\workspace\papyr-us\tests\example.spec.ts:596:8
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m()[22m
+
+    Locator: getByRole('heading', { name: 'Admin Access' })
+    Expected: visible
+    Received: <element(s) not found>
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 120000ms[22m
+    [2m  - waiting for getByRole('heading', { name: 'Admin Access' })[22m
+
+
+      580 |
+      581 |     // 3. Enter password and log in as admin
+    > 582 |     await expect(page.getByRole('heading', { name: 'Admin Access' })).toBeVisible();
+          |                                                                       ^
+      583 |     await page.getByPlaceholder('Admin password').fill(adminPassword);
+      584 |     await page.getByRole('button', { name: 'Login' }).click();
+      585 |     await expect(page.getByRole('heading', { name: 'Admin Panel' })).toBeVisible({
+        at adminLogin (C:\Users\sho80\OneDrive\바탕 화면\workspace\papyr-us\tests\example.spec.ts:582:71)
+        at C:\Users\sho80\OneDrive\바탕 화면\workspace\papyr-us\tests\example.spec.ts:598:5
+
+    Error Context: test-results\example-Admin-Features-TC-ADMIN-002-004-디렉토리-생성-수정-삭제-chromium\error-context.md
+
+  13) [chromium] › tests\example.spec.ts:627:3 › Admin Features › TC-ADMIN-005-007: 팀 생성, 수정, 삭제 ───
+
+    [31mTest timeout of 120000ms exceeded while running "beforeEach" hook.[39m
+
+      594 |   });
+      595 |
+    > 596 |   test.beforeEach(async ({ page }) => {
+          |        ^
+      597 |     // Login as admin via UI before each test
+      598 |     await adminLogin(page);
+      599 |   });
+        at C:\Users\sho80\OneDrive\바탕 화면\workspace\papyr-us\tests\example.spec.ts:596:8
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m()[22m
+
+    Locator: getByRole('heading', { name: 'Admin Access' })
+    Expected: visible
+    Received: <element(s) not found>
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 120000ms[22m
+    [2m  - waiting for getByRole('heading', { name: 'Admin Access' })[22m
+
+
+      580 |
+      581 |     // 3. Enter password and log in as admin
+    > 582 |     await expect(page.getByRole('heading', { name: 'Admin Access' })).toBeVisible();
+          |                                                                       ^
+      583 |     await page.getByPlaceholder('Admin password').fill(adminPassword);
+      584 |     await page.getByRole('button', { name: 'Login' }).click();
+      585 |     await expect(page.getByRole('heading', { name: 'Admin Panel' })).toBeVisible({
+        at adminLogin (C:\Users\sho80\OneDrive\바탕 화면\workspace\papyr-us\tests\example.spec.ts:582:71)
+        at C:\Users\sho80\OneDrive\바탕 화면\workspace\papyr-us\tests\example.spec.ts:598:5
+
+    Error Context: test-results\example-Admin-Features-TC-ADMIN-005-007-팀-생성-수정-삭제-chromium\error-context.md
+
+  13 failed
+    [chromium] › tests\example.spec.ts:317:3 › Wiki Page Management › 새 위키 페이지 생성 ──────────────────
+    [chromium] › tests\example.spec.ts:323:3 › Wiki Page Management › 위키 페이지 수정 ────────────────────
+    [chromium] › tests\example.spec.ts:354:3 › Wiki Page Management › 위키 페이지 목차 ────────────────────
+    [chromium] › tests\example.spec.ts:376:3 › Wiki Page Management › 위키 페이지 삭제 (UI) ───────────────
+    [chromium] › tests\example.spec.ts:398:3 › Wiki Page Management › TC-WIKI-005: 페이지 내 댓글 작성 및 확인 
+    [chromium] › tests\example.spec.ts:425:3 › Wiki Page Management › TC-WIKI-006: 템플릿을 사용하여 새 페이지 생성 
+    [chromium] › tests\example.spec.ts:486:3 › Productivity & Collaboration › TC-PROD-001: 대시보드 위젯 확인 
+    [chromium] › tests\example.spec.ts:502:3 › Productivity & Collaboration › TC-PROD-002: 캘린더 조회 ──
+    [chromium] › tests\example.spec.ts:513:3 › Productivity & Collaboration › TC-PROD-003: 과제 트래커 조회 
+    [chromium] › tests\example.spec.ts:530:3 › Productivity & Collaboration › TC-PROS-004: AI 검색 페이지 접근 및 검색 실행 
+    [chromium] › tests\example.spec.ts:559:3 › Productivity & Collaboration › TC-PROD-006: 데이터베이스 뷰 페이지 접근 
+    [chromium] › tests\example.spec.ts:601:3 › Admin Features › TC-ADMIN-002-004: 디렉토리 생성, 수정, 삭제 ──
+    [chromium] › tests\example.spec.ts:627:3 › Admin Features › TC-ADMIN-005-007: 팀 생성, 수정, 삭제 ─────
+  4 skipped
+  28 passed (22.6m)

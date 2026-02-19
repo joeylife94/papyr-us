@@ -1,0 +1,2315 @@
+{
+  "config": {
+    "configFile": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\playwright.config.ts",
+    "rootDir": "C:/Users/sho80/OneDrive/바탕 화면/workspace/papyr-us/tests",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\global-setup.ts",
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 2
+    },
+    "preserveOutput": "always",
+    "reporter": [["json"]],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "quiet": false,
+    "projects": [
+      {
+        "outputDir": "C:/Users/sho80/OneDrive/바탕 화면/workspace/papyr-us/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 2
+        },
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "C:/Users/sho80/OneDrive/바탕 화면/workspace/papyr-us/tests",
+        "testIgnore": [],
+        "testMatch": ["**/*.@(spec|test).?(c|m)[jt]s?(x)"],
+        "timeout": 120000
+      },
+      {
+        "outputDir": "C:/Users/sho80/OneDrive/바탕 화면/workspace/papyr-us/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 2
+        },
+        "id": "firefox",
+        "name": "firefox",
+        "testDir": "C:/Users/sho80/OneDrive/바탕 화면/workspace/papyr-us/tests",
+        "testIgnore": [],
+        "testMatch": ["**/*.@(spec|test).?(c|m)[jt]s?(x)"],
+        "timeout": 120000
+      },
+      {
+        "outputDir": "C:/Users/sho80/OneDrive/바탕 화면/workspace/papyr-us/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 2
+        },
+        "id": "webkit",
+        "name": "webkit",
+        "testDir": "C:/Users/sho80/OneDrive/바탕 화면/workspace/papyr-us/tests",
+        "testIgnore": [],
+        "testMatch": ["**/*.@(spec|test).?(c|m)[jt]s?(x)"],
+        "timeout": 120000
+      }
+    ],
+    "shard": null,
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.54.2",
+    "workers": 2,
+    "webServer": {
+      "command": "dotenv -e .env.test -- cross-env PORT=5003 ENFORCE_AUTH_WRITES=true tsx server/index.ts",
+      "url": "http://localhost:5003",
+      "reuseExistingServer": false,
+      "timeout": 240000
+    }
+  },
+  "suites": [
+    {
+      "title": "api-integration.spec.ts",
+      "file": "api-integration.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Health Check API",
+          "file": "api-integration.spec.ts",
+          "line": 9,
+          "column": 6,
+          "specs": [
+            {
+              "title": "should return healthy status",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 404,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:06:54.281Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "6814873ab357f121eca0-f6ab1a62985a02f22b9d",
+              "file": "api-integration.spec.ts",
+              "line": 10,
+              "column": 3
+            },
+            {
+              "title": "should include database status",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 330,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:06:54.693Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "6814873ab357f121eca0-11fff57258e10b2c0d41",
+              "file": "api-integration.spec.ts",
+              "line": 18,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "Pages API",
+          "file": "api-integration.spec.ts",
+          "line": 27,
+          "column": 6,
+          "specs": [
+            {
+              "title": "should list pages",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 132,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:06:55.025Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "6814873ab357f121eca0-2a984b1b7c733bbd568b",
+              "file": "api-integration.spec.ts",
+              "line": 28,
+              "column": 3
+            },
+            {
+              "title": "should handle page not found",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 125,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:06:55.160Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "6814873ab357f121eca0-1becb2eb620bd8c35f3b",
+              "file": "api-integration.spec.ts",
+              "line": 42,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "Search API",
+          "file": "api-integration.spec.ts",
+          "line": 50,
+          "column": 6,
+          "specs": [
+            {
+              "title": "should search pages",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "failed",
+                      "duration": 14,
+                      "error": {
+                        "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoContain\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // indexOf\u001b[22m\n\nExpected value: \u001b[32m400\u001b[39m\nReceived array: \u001b[31m[200, 401, 403]\u001b[39m",
+                        "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoContain\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // indexOf\u001b[22m\n\nExpected value: \u001b[32m400\u001b[39m\nReceived array: \u001b[31m[200, 401, 403]\u001b[39m\n    at C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\api-integration.spec.ts:55:29",
+                        "location": {
+                          "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\api-integration.spec.ts",
+                          "column": 29,
+                          "line": 55
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 53 |\u001b[39m     \u001b[36mconst\u001b[39m response \u001b[33m=\u001b[39m \u001b[36mawait\u001b[39m request\u001b[33m.\u001b[39m\u001b[36mget\u001b[39m(\u001b[32m'/api/pages?q=test'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 54 |\u001b[39m     \n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 55 |\u001b[39m     expect([\u001b[35m200\u001b[39m\u001b[33m,\u001b[39m \u001b[35m401\u001b[39m\u001b[33m,\u001b[39m \u001b[35m403\u001b[39m])\u001b[33m.\u001b[39mtoContain(response\u001b[33m.\u001b[39mstatus())\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                             \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 56 |\u001b[39m     \n \u001b[90m 57 |\u001b[39m     \u001b[36mif\u001b[39m (response\u001b[33m.\u001b[39mok()) {\n \u001b[90m 58 |\u001b[39m       \u001b[36mconst\u001b[39m body \u001b[33m=\u001b[39m \u001b[36mawait\u001b[39m response\u001b[33m.\u001b[39mjson()\u001b[33m;\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\api-integration.spec.ts",
+                            "column": 29,
+                            "line": 55
+                          },
+                          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoContain\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // indexOf\u001b[22m\n\nExpected value: \u001b[32m400\u001b[39m\nReceived array: \u001b[31m[200, 401, 403]\u001b[39m\n\n  53 |     const response = await request.get('/api/pages?q=test');\n  54 |     \n> 55 |     expect([200, 401, 403]).toContain(response.status());\n     |                             ^\n  56 |     \n  57 |     if (response.ok()) {\n  58 |       const body = await response.json();\n    at C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\api-integration.spec.ts:55:29"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:06:55.286Z",
+                      "annotations": [],
+                      "attachments": [],
+                      "errorLocation": {
+                        "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\api-integration.spec.ts",
+                        "column": 29,
+                        "line": 55
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "6814873ab357f121eca0-d0d426217002ba4db160",
+              "file": "api-integration.spec.ts",
+              "line": 51,
+              "column": 3
+            },
+            {
+              "title": "should handle empty search query",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 28,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:06:56.101Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "6814873ab357f121eca0-541a3686ba8b46415036",
+              "file": "api-integration.spec.ts",
+              "line": 63,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "Auth API",
+          "file": "api-integration.spec.ts",
+          "line": 71,
+          "column": 6,
+          "specs": [
+            {
+              "title": "should reject invalid login",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 8,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:06:56.137Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "6814873ab357f121eca0-f70f48c9290f1a31ef28",
+              "file": "api-integration.spec.ts",
+              "line": 72,
+              "column": 3
+            },
+            {
+              "title": "should validate registration input",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:06:56.147Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "6814873ab357f121eca0-f19ffb720bc37cc4364c",
+              "file": "api-integration.spec.ts",
+              "line": 84,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "Metrics API",
+          "file": "api-integration.spec.ts",
+          "line": 97,
+          "column": 6,
+          "specs": [
+            {
+              "title": "should expose prometheus metrics",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 10,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:06:56.156Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "6814873ab357f121eca0-199c7f7a44636a37eddf",
+              "file": "api-integration.spec.ts",
+              "line": 98,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "Rate Limiting",
+          "file": "api-integration.spec.ts",
+          "line": 111,
+          "column": 6,
+          "specs": [
+            {
+              "title": "should not immediately rate limit",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 12,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:06:56.168Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "6814873ab357f121eca0-faf9a5c637442584e847",
+              "file": "api-integration.spec.ts",
+              "line": 112,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "auth-redirect.spec.ts",
+      "file": "auth-redirect.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "401 -> redirects to /login with redirect param when accessing protected route",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 1,
+                  "status": "timedOut",
+                  "duration": 120047,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\auth-redirect.spec.ts",
+                        "column": 22,
+                        "line": 69
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mpage\u001b[39m\u001b[2m).\u001b[22mtoHaveURL\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected pattern: \u001b[32m/\\/login\\?redirect=%2Fcreate/\u001b[39m\nReceived string:  \u001b[31m\"http://localhost:5003/create\"\u001b[39m\nCall log:\n\u001b[2m  - Expect \"toHaveURL\" with timeout 120000ms\u001b[22m\n\u001b[2m    121 × unexpected value \"http://localhost:5003/create\"\u001b[22m\n\n\n  67 |   await page.goto('/create');\n  68 |   // Expect immediate redirect to login with correct redirect param\n> 69 |   await expect(page).toHaveURL(/\\/login\\?redirect=%2Fcreate/);\n     |                      ^\n  70 |   await expect(page.getByRole('heading', { name: 'Login' })).toBeVisible();\n  71 | });\n  72 |\n    at C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\auth-redirect.spec.ts:69:22"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-02-18T23:06:54.281Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\test-results\\auth-redirect-401---redire-fe322-n-accessing-protected-route-chromium\\error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "5859597f8864e296073f-f85dd2185b3bf2a847fb",
+          "file": "auth-redirect.spec.ts",
+          "line": 57,
+          "column": 1
+        },
+        {
+          "title": "401 write -> redirects to /login with redirect param when posting /api/pages while logged out",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 681,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-02-18T23:08:55.101Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "5859597f8864e296073f-87cd0bc93dc2d91f0f64",
+          "file": "auth-redirect.spec.ts",
+          "line": 73,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "example.spec.ts",
+      "file": "example.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Authentication",
+          "file": "example.spec.ts",
+          "line": 172,
+          "column": 6,
+          "specs": [
+            {
+              "title": "성공적인 회원가입",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 632,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:06:56.196Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "a30a6eba6312f6b87ea5-1bbb22fd995941484456",
+              "file": "example.spec.ts",
+              "line": 173,
+              "column": 3
+            },
+            {
+              "title": "성공적인 로그인",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 879,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:06:56.915Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "a30a6eba6312f6b87ea5-9bc6f99eb50bed51503b",
+              "file": "example.spec.ts",
+              "line": 178,
+              "column": 3
+            },
+            {
+              "title": "성공적인 로그아웃",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 0,
+                      "status": "timedOut",
+                      "duration": 120018,
+                      "error": {
+                        "message": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m",
+                        "stack": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m"
+                      },
+                      "errors": [
+                        {
+                          "message": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m"
+                        },
+                        {
+                          "location": {
+                            "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts",
+                            "column": 24,
+                            "line": 210
+                          },
+                          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mpage\u001b[39m\u001b[2m).\u001b[22mtoHaveURL\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected string: \u001b[32m\"http://localhost:5003/\u001b[7mlogin\u001b[27m\"\u001b[39m\nReceived string: \u001b[31m\"http://localhost:5003/\"\u001b[39m\nCall log:\n\u001b[2m  - Expect \"toHaveURL\" with timeout 120000ms\u001b[22m\n\u001b[2m    121 × unexpected value \"http://localhost:5003/\"\u001b[22m\n\n\n  208 |     await page.goto('/');\n  209 |     // Should be redirected back to the login page.\n> 210 |     await expect(page).toHaveURL('/login');\n      |                        ^\n  211 |   });\n  212 |\n  213 |   test('TC-AUTH-004: 테마 변경', async ({ page }) => {\n    at C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts:210:24"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:06:57.797Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\test-results\\example-Authentication-성공적인-로그아웃-chromium\\error-context.md"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "a30a6eba6312f6b87ea5-2015c1a4c466c5acd79e",
+              "file": "example.spec.ts",
+              "line": 189,
+              "column": 3
+            },
+            {
+              "title": "TC-AUTH-004: 테마 변경",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 4,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1351,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:08:58.554Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "a30a6eba6312f6b87ea5-43851eb6aa9252897370",
+              "file": "example.spec.ts",
+              "line": 213,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "Wiki Page Management",
+          "file": "example.spec.ts",
+          "line": 240,
+          "column": 6,
+          "specs": [
+            {
+              "title": "새 위키 페이지 생성",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 4,
+                      "parallelIndex": 0,
+                      "status": "timedOut",
+                      "duration": 120045,
+                      "error": {
+                        "message": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m",
+                        "stack": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m"
+                      },
+                      "errors": [
+                        {
+                          "message": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m"
+                        },
+                        {
+                          "location": {
+                            "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts",
+                            "column": 18,
+                            "line": 146
+                          },
+                          "message": "Error: page.evaluate: Target page, context or browser has been closed\n\n  144 |       await page.keyboard.type(content, { delay: 20 });\n  145 |     } catch (err2) {\n> 146 |       await page.evaluate((c: string) => {\n      |                  ^\n  147 |         const el = document.querySelector('.ProseMirror[contenteditable=\"true\"]');\n  148 |         if (el) (el as HTMLElement).innerText = c;\n  149 |       }, content);\n    at createPage (C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts:146:18)\n    at C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts:320:5"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:09:00.011Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\test-results\\example-Wiki-Page-Management-새-위키-페이지-생성-chromium\\error-context.md"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "a30a6eba6312f6b87ea5-ed00abf5c99d5096b936",
+              "file": "example.spec.ts",
+              "line": 317,
+              "column": 3
+            },
+            {
+              "title": "위키 페이지 수정",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 7,
+                      "parallelIndex": 0,
+                      "status": "timedOut",
+                      "duration": 120041,
+                      "error": {
+                        "message": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m",
+                        "stack": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m"
+                      },
+                      "errors": [
+                        {
+                          "message": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m"
+                        },
+                        {
+                          "location": {
+                            "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts",
+                            "column": 18,
+                            "line": 146
+                          },
+                          "message": "Error: page.evaluate: Target page, context or browser has been closed\n\n  144 |       await page.keyboard.type(content, { delay: 20 });\n  145 |     } catch (err2) {\n> 146 |       await page.evaluate((c: string) => {\n      |                  ^\n  147 |         const el = document.querySelector('.ProseMirror[contenteditable=\"true\"]');\n  148 |         if (el) (el as HTMLElement).innerText = c;\n  149 |       }, content);\n    at createPage (C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts:146:18)\n    at C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts:327:18"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:11:01.384Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\test-results\\example-Wiki-Page-Management-위키-페이지-수정-chromium\\error-context.md"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "a30a6eba6312f6b87ea5-451ec17c36c78ee3f2f8",
+              "file": "example.spec.ts",
+              "line": 323,
+              "column": 3
+            },
+            {
+              "title": "위키 페이지 목차",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 9,
+                      "parallelIndex": 0,
+                      "status": "timedOut",
+                      "duration": 120037,
+                      "error": {
+                        "message": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m",
+                        "stack": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m"
+                      },
+                      "errors": [
+                        {
+                          "message": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m"
+                        },
+                        {
+                          "location": {
+                            "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts",
+                            "column": 18,
+                            "line": 146
+                          },
+                          "message": "Error: page.evaluate: Target page, context or browser has been closed\n\n  144 |       await page.keyboard.type(content, { delay: 20 });\n  145 |     } catch (err2) {\n> 146 |       await page.evaluate((c: string) => {\n      |                  ^\n  147 |         const el = document.querySelector('.ProseMirror[contenteditable=\"true\"]');\n  148 |         if (el) (el as HTMLElement).innerText = c;\n  149 |       }, content);\n    at createPage (C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts:146:18)\n    at C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts:357:18"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:13:02.940Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\test-results\\example-Wiki-Page-Management-위키-페이지-목차-chromium\\error-context.md"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "a30a6eba6312f6b87ea5-87de16f6f093487c23cf",
+              "file": "example.spec.ts",
+              "line": 353,
+              "column": 3
+            },
+            {
+              "title": "위키 페이지 삭제 (UI)",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 10,
+                      "parallelIndex": 0,
+                      "status": "timedOut",
+                      "duration": 120039,
+                      "error": {
+                        "message": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m",
+                        "stack": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m"
+                      },
+                      "errors": [
+                        {
+                          "message": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m"
+                        },
+                        {
+                          "location": {
+                            "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts",
+                            "column": 18,
+                            "line": 146
+                          },
+                          "message": "Error: page.evaluate: Target page, context or browser has been closed\n\n  144 |       await page.keyboard.type(content, { delay: 20 });\n  145 |     } catch (err2) {\n> 146 |       await page.evaluate((c: string) => {\n      |                  ^\n  147 |         const el = document.querySelector('.ProseMirror[contenteditable=\"true\"]');\n  148 |         if (el) (el as HTMLElement).innerText = c;\n  149 |       }, content);\n    at createPage (C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts:146:18)\n    at C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts:378:18"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:15:04.534Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\test-results\\example-Wiki-Page-Management-위키-페이지-삭제-UI--chromium\\error-context.md"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "a30a6eba6312f6b87ea5-ba2826c6de0a69714cea",
+              "file": "example.spec.ts",
+              "line": 375,
+              "column": 3
+            },
+            {
+              "title": "TC-WIKI-005: 페이지 내 댓글 작성 및 확인",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 11,
+                      "parallelIndex": 0,
+                      "status": "timedOut",
+                      "duration": 120041,
+                      "error": {
+                        "message": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m",
+                        "stack": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m"
+                      },
+                      "errors": [
+                        {
+                          "message": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m"
+                        },
+                        {
+                          "location": {
+                            "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts",
+                            "column": 18,
+                            "line": 146
+                          },
+                          "message": "Error: page.evaluate: Target page, context or browser has been closed\n\n  144 |       await page.keyboard.type(content, { delay: 20 });\n  145 |     } catch (err2) {\n> 146 |       await page.evaluate((c: string) => {\n      |                  ^\n  147 |         const el = document.querySelector('.ProseMirror[contenteditable=\"true\"]');\n  148 |         if (el) (el as HTMLElement).innerText = c;\n  149 |       }, content);\n    at createPage (C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts:146:18)\n    at C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts:400:18"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:17:06.079Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\test-results\\example-Wiki-Page-Management-TC-WIKI-005-페이지-내-댓글-작성-및-확인-chromium\\error-context.md"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "a30a6eba6312f6b87ea5-1db99a492a3eb6fa2f53",
+              "file": "example.spec.ts",
+              "line": 397,
+              "column": 3
+            },
+            {
+              "title": "TC-WIKI-006: 템플릿을 사용하여 새 페이지 생성",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 12,
+                      "parallelIndex": 0,
+                      "status": "timedOut",
+                      "duration": 120019,
+                      "error": {
+                        "message": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m",
+                        "stack": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m"
+                      },
+                      "errors": [
+                        {
+                          "message": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m"
+                        },
+                        {
+                          "location": {
+                            "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts",
+                            "column": 62,
+                            "line": 431
+                          },
+                          "message": "Error: locator.click: Test timeout of 120000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('div.card').filter({ hasText: '일반 스터디 노트' }).getByRole('button', { name: '사용하기' })\u001b[22m\n\n\n  429 |     // 2. Find the \"일반 스터디 노트\" template and click \"사용하기\".\n  430 |     const templateCard = page.locator('div.card', { hasText: '일반 스터디 노트' });\n> 431 |     await templateCard.getByRole('button', { name: '사용하기' }).click();\n      |                                                              ^\n  432 |\n  433 |     // 3. Verify redirection to the editor with template content.\n  434 |     await expect(page).toHaveURL(/create/); // Should go to create page with template\n    at C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts:431:62"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:19:07.562Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\test-results\\example-Wiki-Page-Management-TC-WIKI-006-템플릿을-사용하여-새-페이지-생성-chromium\\error-context.md"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "a30a6eba6312f6b87ea5-7811022371ce2fda8db4",
+              "file": "example.spec.ts",
+              "line": 424,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "Productivity & Collaboration",
+          "file": "example.spec.ts",
+          "line": 459,
+          "column": 6,
+          "specs": [
+            {
+              "title": "TC-PROD-001: 대시보드 위젯 확인",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 13,
+                      "parallelIndex": 0,
+                      "status": "timedOut",
+                      "duration": 120017,
+                      "error": {
+                        "message": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m",
+                        "stack": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m"
+                      },
+                      "errors": [
+                        {
+                          "message": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m"
+                        },
+                        {
+                          "location": {
+                            "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts",
+                            "column": 67,
+                            "line": 493
+                          },
+                          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m()\u001b[22m\n\nLocator: getByRole('heading', { name: '스터디 대시보드' })\nExpected: visible\nReceived: <element(s) not found>\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 120000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('heading', { name: '스터디 대시보드' })\u001b[22m\n\n\n  491 |       })\n  492 |       .catch(() => {});\n> 493 |     await expect(page.getByRole('heading', { name: '스터디 대시보드' })).toBeVisible();\n      |                                                                   ^\n  494 |     await expect(page.getByRole('heading', { name: '총 페이지' })).toBeVisible();\n  495 |     await expect(page.getByRole('heading', { name: '총 댓글' })).toBeVisible();\n  496 |     await expect(page.getByRole('heading', { name: '활성 팀원' })).toBeVisible();\n    at C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts:493:67"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:21:09.066Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\test-results\\example-Productivity-Collaboration-TC-PROD-001-대시보드-위젯-확인-chromium\\error-context.md"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "a30a6eba6312f6b87ea5-8707b769fccda5e5f971",
+              "file": "example.spec.ts",
+              "line": 485,
+              "column": 3
+            },
+            {
+              "title": "TC-PROD-002: 캘린더 조회",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 14,
+                      "parallelIndex": 0,
+                      "status": "failed",
+                      "duration": 971,
+                      "error": {
+                        "message": "Error: expect.toBeVisible: Error: strict mode violation: getByRole('button', { name: 'Day' }) resolved to 2 elements:\n    1) <button class=\"inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 touch-manipulation border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 rounded-md px-3 md:h-9 md:px-3\">Day</button> aka getByRole('button', { name: 'Day', exact: true })\n    2) <button class=\"inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 touch-manipulation border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 rounded-md px-3 md:h-9 md:px-3\">Today</button> aka getByRole('button', { name: 'Today' })\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 120000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('button', { name: 'Day' })\u001b[22m\n",
+                        "stack": "Error: expect.toBeVisible: Error: strict mode violation: getByRole('button', { name: 'Day' }) resolved to 2 elements:\n    1) <button class=\"inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 touch-manipulation border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 rounded-md px-3 md:h-9 md:px-3\">Day</button> aka getByRole('button', { name: 'Day', exact: true })\n    2) <button class=\"inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 touch-manipulation border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 rounded-md px-3 md:h-9 md:px-3\">Today</button> aka getByRole('button', { name: 'Today' })\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 120000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('button', { name: 'Day' })\u001b[22m\n\n    at C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts:506:61",
+                        "location": {
+                          "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts",
+                          "column": 61,
+                          "line": 506
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 504 |\u001b[39m     \u001b[36mawait\u001b[39m expect(page\u001b[33m.\u001b[39mgetByRole(\u001b[32m'button'\u001b[39m\u001b[33m,\u001b[39m { name\u001b[33m:\u001b[39m \u001b[32m'Month'\u001b[39m }))\u001b[33m.\u001b[39mtoBeVisible()\u001b[33m;\u001b[39m\n \u001b[90m 505 |\u001b[39m     \u001b[36mawait\u001b[39m expect(page\u001b[33m.\u001b[39mgetByRole(\u001b[32m'button'\u001b[39m\u001b[33m,\u001b[39m { name\u001b[33m:\u001b[39m \u001b[32m'Week'\u001b[39m }))\u001b[33m.\u001b[39mtoBeVisible()\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 506 |\u001b[39m     \u001b[36mawait\u001b[39m expect(page\u001b[33m.\u001b[39mgetByRole(\u001b[32m'button'\u001b[39m\u001b[33m,\u001b[39m { name\u001b[33m:\u001b[39m \u001b[32m'Day'\u001b[39m }))\u001b[33m.\u001b[39mtoBeVisible()\u001b[33m;\u001b[39m\n \u001b[90m     |\u001b[39m                                                             \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 507 |\u001b[39m     \u001b[36mawait\u001b[39m expect(page\u001b[33m.\u001b[39mgetByRole(\u001b[32m'button'\u001b[39m\u001b[33m,\u001b[39m { name\u001b[33m:\u001b[39m \u001b[32m'Today'\u001b[39m }))\u001b[33m.\u001b[39mtoBeVisible()\u001b[33m;\u001b[39m\n \u001b[90m 508 |\u001b[39m     \u001b[36mawait\u001b[39m expect(page\u001b[33m.\u001b[39mgetByRole(\u001b[32m'button'\u001b[39m\u001b[33m,\u001b[39m { name\u001b[33m:\u001b[39m \u001b[32m'Add Event'\u001b[39m }))\u001b[33m.\u001b[39mtoBeVisible()\u001b[33m;\u001b[39m\n \u001b[90m 509 |\u001b[39m     \u001b[36mawait\u001b[39m expect(page\u001b[33m.\u001b[39mlocator(\u001b[32m'.react-calendar'\u001b[39m))\u001b[33m.\u001b[39mtoBeVisible()\u001b[33m;\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts",
+                            "column": 61,
+                            "line": 506
+                          },
+                          "message": "Error: expect.toBeVisible: Error: strict mode violation: getByRole('button', { name: 'Day' }) resolved to 2 elements:\n    1) <button class=\"inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 touch-manipulation border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 rounded-md px-3 md:h-9 md:px-3\">Day</button> aka getByRole('button', { name: 'Day', exact: true })\n    2) <button class=\"inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 touch-manipulation border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 rounded-md px-3 md:h-9 md:px-3\">Today</button> aka getByRole('button', { name: 'Today' })\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 120000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('button', { name: 'Day' })\u001b[22m\n\n\n  504 |     await expect(page.getByRole('button', { name: 'Month' })).toBeVisible();\n  505 |     await expect(page.getByRole('button', { name: 'Week' })).toBeVisible();\n> 506 |     await expect(page.getByRole('button', { name: 'Day' })).toBeVisible();\n      |                                                             ^\n  507 |     await expect(page.getByRole('button', { name: 'Today' })).toBeVisible();\n  508 |     await expect(page.getByRole('button', { name: 'Add Event' })).toBeVisible();\n  509 |     await expect(page.locator('.react-calendar')).toBeVisible();\n    at C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts:506:61"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:23:10.010Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\test-results\\example-Productivity-Collaboration-TC-PROD-002-캘린더-조회-chromium\\error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts",
+                        "column": 61,
+                        "line": 506
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "a30a6eba6312f6b87ea5-e2bab57c737e9bd46aac",
+              "file": "example.spec.ts",
+              "line": 501,
+              "column": 3
+            },
+            {
+              "title": "TC-PROD-003: 과제 트래커 조회",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 15,
+                      "parallelIndex": 0,
+                      "status": "timedOut",
+                      "duration": 120025,
+                      "error": {
+                        "message": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m",
+                        "stack": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m"
+                      },
+                      "errors": [
+                        {
+                          "message": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m"
+                        },
+                        {
+                          "location": {
+                            "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts",
+                            "column": 65,
+                            "line": 520
+                          },
+                          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m()\u001b[22m\n\nLocator: getByRole('heading', { name: '과제 트래커' })\nExpected: visible\nReceived: <element(s) not found>\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 120000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('heading', { name: '과제 트래커' })\u001b[22m\n\n\n  518 |       })\n  519 |       .catch(() => {});\n> 520 |     await expect(page.getByRole('heading', { name: '과제 트래커' })).toBeVisible();\n      |                                                                 ^\n  521 |     await expect(page.getByRole('button', { name: '새 과제 추가' })).toBeVisible();\n  522 |     await expect(page.getByPlaceholder('과제 검색...')).toBeVisible();\n  523 |     await expect(page.getByText('팀 선택')).toBeVisible();\n    at C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts:520:65"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:23:11.884Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\test-results\\example-Productivity-Collaboration-TC-PROD-003-과제-트래커-조회-chromium\\error-context.md"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "a30a6eba6312f6b87ea5-054cc5e4bf0384e4fc04",
+              "file": "example.spec.ts",
+              "line": 512,
+              "column": 3
+            },
+            {
+              "title": "TC-PROS-004: AI 검색 페이지 접근 및 검색 실행",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 16,
+                      "parallelIndex": 0,
+                      "status": "failed",
+                      "duration": 1527,
+                      "error": {
+                        "message": "Error: expect.toBeVisible: Error: strict mode violation: getByRole('button', { name: 'AI 검색' }) resolved to 2 elements:\n    1) <button class=\"inline-flex items-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 touch-manipulation border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2 md:h-10 md:px-4 md:py-2 w-full justify-start\">…</button> aka getByRole('link', { name: 'AI 검색' }).getByRole('button')\n    2) <button disabled class=\"justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 touch-manipulation bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 md:h-10 md:px-4 md:py-2 flex items-center space-x-2\">…</button> aka locator('#main-content').getByRole('button', { name: 'AI 검색' })\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 120000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('button', { name: 'AI 검색' })\u001b[22m\n",
+                        "stack": "Error: expect.toBeVisible: Error: strict mode violation: getByRole('button', { name: 'AI 검색' }) resolved to 2 elements:\n    1) <button class=\"inline-flex items-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 touch-manipulation border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2 md:h-10 md:px-4 md:py-2 w-full justify-start\">…</button> aka getByRole('link', { name: 'AI 검색' }).getByRole('button')\n    2) <button disabled class=\"justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 touch-manipulation bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 md:h-10 md:px-4 md:py-2 flex items-center space-x-2\">…</button> aka locator('#main-content').getByRole('button', { name: 'AI 검색' })\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 120000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('button', { name: 'AI 검색' })\u001b[22m\n\n    at C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts:540:32",
+                        "location": {
+                          "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts",
+                          "column": 32,
+                          "line": 540
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 538 |\u001b[39m     \u001b[36mawait\u001b[39m expect(searchInput)\u001b[33m.\u001b[39mtoBeVisible()\u001b[33m;\u001b[39m\n \u001b[90m 539 |\u001b[39m     \u001b[36mconst\u001b[39m searchButton \u001b[33m=\u001b[39m page\u001b[33m.\u001b[39mgetByRole(\u001b[32m'button'\u001b[39m\u001b[33m,\u001b[39m { name\u001b[33m:\u001b[39m \u001b[32m'AI 검색'\u001b[39m })\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 540 |\u001b[39m     \u001b[36mawait\u001b[39m expect(searchButton)\u001b[33m.\u001b[39mtoBeVisible()\u001b[33m;\u001b[39m\n \u001b[90m     |\u001b[39m                                \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 541 |\u001b[39m\n \u001b[90m 542 |\u001b[39m     \u001b[36mawait\u001b[39m searchInput\u001b[33m.\u001b[39mfill(\u001b[32m'test'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 543 |\u001b[39m     \u001b[36mconst\u001b[39m responsePromise \u001b[33m=\u001b[39m page\u001b[33m.\u001b[39mwaitForResponse(\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts",
+                            "column": 32,
+                            "line": 540
+                          },
+                          "message": "Error: expect.toBeVisible: Error: strict mode violation: getByRole('button', { name: 'AI 검색' }) resolved to 2 elements:\n    1) <button class=\"inline-flex items-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 touch-manipulation border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2 md:h-10 md:px-4 md:py-2 w-full justify-start\">…</button> aka getByRole('link', { name: 'AI 검색' }).getByRole('button')\n    2) <button disabled class=\"justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 touch-manipulation bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 md:h-10 md:px-4 md:py-2 flex items-center space-x-2\">…</button> aka locator('#main-content').getByRole('button', { name: 'AI 검색' })\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 120000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('button', { name: 'AI 검색' })\u001b[22m\n\n\n  538 |     await expect(searchInput).toBeVisible();\n  539 |     const searchButton = page.getByRole('button', { name: 'AI 검색' });\n> 540 |     await expect(searchButton).toBeVisible();\n      |                                ^\n  541 |\n  542 |     await searchInput.fill('test');\n  543 |     const responsePromise = page.waitForResponse(\n    at C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts:540:32"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:25:12.805Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\test-results\\example-Productivity-Colla-db645-OS-004-AI-검색-페이지-접근-및-검색-실행-chromium\\error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts",
+                        "column": 32,
+                        "line": 540
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "a30a6eba6312f6b87ea5-f0c5d1b92c11b3148b8d",
+              "file": "example.spec.ts",
+              "line": 529,
+              "column": 3
+            },
+            {
+              "title": "TC-PROD-005: 파일 관리 페이지 접근",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 17,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 998,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:25:15.243Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "a30a6eba6312f6b87ea5-e54f88326df03dc57b3a",
+              "file": "example.spec.ts",
+              "line": 552,
+              "column": 3
+            },
+            {
+              "title": "TC-PROD-006: 데이터베이스 뷰 페이지 접근",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 17,
+                      "parallelIndex": 0,
+                      "status": "timedOut",
+                      "duration": 120011,
+                      "error": {
+                        "message": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m",
+                        "stack": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m"
+                      },
+                      "errors": [
+                        {
+                          "message": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m"
+                        },
+                        {
+                          "location": {
+                            "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts",
+                            "column": 67,
+                            "line": 560
+                          },
+                          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m()\u001b[22m\n\nLocator: getByRole('heading', { name: '데이터베이스 뷰' })\nExpected: visible\nReceived: <element(s) not found>\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 120000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('heading', { name: '데이터베이스 뷰' })\u001b[22m\n\n\n  558 |   test('TC-PROD-006: 데이터베이스 뷰 페이지 접근', async ({ page }) => {\n  559 |     await page.goto('/database');\n> 560 |     await expect(page.getByRole('heading', { name: '데이터베이스 뷰' })).toBeVisible();\n      |                                                                   ^\n  561 |     await expect(page.getByRole('button', { name: '테이블' })).toBeVisible();\n  562 |     await expect(page.getByRole('button', { name: '칸반' })).toBeVisible();\n  563 |     await expect(page.getByRole('button', { name: '갤러리' })).toBeVisible();\n    at C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts:560:67"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:25:16.400Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\test-results\\example-Productivity-Colla-f3b46-TC-PROD-006-데이터베이스-뷰-페이지-접근-chromium\\error-context.md"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "a30a6eba6312f6b87ea5-a41f78108e70757c99cc",
+              "file": "example.spec.ts",
+              "line": 558,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "Admin Features",
+          "file": "example.spec.ts",
+          "line": 568,
+          "column": 6,
+          "specs": [
+            {
+              "title": "TC-ADMIN-002-004: 디렉토리 생성, 수정, 삭제",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 18,
+                      "parallelIndex": 0,
+                      "status": "timedOut",
+                      "duration": 120018,
+                      "error": {
+                        "message": "\u001b[31mTest timeout of 120000ms exceeded while running \"beforeEach\" hook.\u001b[39m",
+                        "stack": "\u001b[31mTest timeout of 120000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n    at C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts:595:8",
+                        "location": {
+                          "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts",
+                          "column": 8,
+                          "line": 595
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 593 |\u001b[39m   })\u001b[33m;\u001b[39m\n \u001b[90m 594 |\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 595 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m     |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 596 |\u001b[39m     \u001b[90m// Login as admin via UI before each test\u001b[39m\n \u001b[90m 597 |\u001b[39m     \u001b[36mawait\u001b[39m adminLogin(page)\u001b[33m;\u001b[39m\n \u001b[90m 598 |\u001b[39m   })\u001b[33m;\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts",
+                            "column": 8,
+                            "line": 595
+                          },
+                          "message": "\u001b[31mTest timeout of 120000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n\n  593 |   });\n  594 |\n> 595 |   test.beforeEach(async ({ page }) => {\n      |        ^\n  596 |     // Login as admin via UI before each test\n  597 |     await adminLogin(page);\n  598 |   });\n    at C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts:595:8"
+                        },
+                        {
+                          "location": {
+                            "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts",
+                            "column": 71,
+                            "line": 581
+                          },
+                          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m()\u001b[22m\n\nLocator: getByRole('heading', { name: 'Admin Access' })\nExpected: visible\nReceived: <element(s) not found>\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 120000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('heading', { name: 'Admin Access' })\u001b[22m\n\n\n  579 |\n  580 |     // 3. Enter password and log in as admin\n> 581 |     await expect(page.getByRole('heading', { name: 'Admin Access' })).toBeVisible();\n      |                                                                       ^\n  582 |     await page.getByPlaceholder('Admin password').fill(adminPassword);\n  583 |     await page.getByRole('button', { name: 'Login' }).click();\n  584 |     await expect(page.getByRole('heading', { name: 'Admin Panel' })).toBeVisible({\n    at adminLogin (C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts:581:71)\n    at C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts:597:5"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:27:17.142Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\test-results\\example-Admin-Features-TC-ADMIN-002-004-디렉토리-생성-수정-삭제-chromium\\error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts",
+                        "column": 8,
+                        "line": 595
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "a30a6eba6312f6b87ea5-b09cfd4205f15dce8da3",
+              "file": "example.spec.ts",
+              "line": 600,
+              "column": 3
+            },
+            {
+              "title": "TC-ADMIN-005-007: 팀 생성, 수정, 삭제",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 19,
+                      "parallelIndex": 0,
+                      "status": "timedOut",
+                      "duration": 120017,
+                      "error": {
+                        "message": "\u001b[31mTest timeout of 120000ms exceeded while running \"beforeEach\" hook.\u001b[39m",
+                        "stack": "\u001b[31mTest timeout of 120000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n    at C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts:595:8",
+                        "location": {
+                          "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts",
+                          "column": 8,
+                          "line": 595
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 593 |\u001b[39m   })\u001b[33m;\u001b[39m\n \u001b[90m 594 |\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 595 |\u001b[39m   test\u001b[33m.\u001b[39mbeforeEach(\u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m     |\u001b[39m        \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 596 |\u001b[39m     \u001b[90m// Login as admin via UI before each test\u001b[39m\n \u001b[90m 597 |\u001b[39m     \u001b[36mawait\u001b[39m adminLogin(page)\u001b[33m;\u001b[39m\n \u001b[90m 598 |\u001b[39m   })\u001b[33m;\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts",
+                            "column": 8,
+                            "line": 595
+                          },
+                          "message": "\u001b[31mTest timeout of 120000ms exceeded while running \"beforeEach\" hook.\u001b[39m\n\n  593 |   });\n  594 |\n> 595 |   test.beforeEach(async ({ page }) => {\n      |        ^\n  596 |     // Login as admin via UI before each test\n  597 |     await adminLogin(page);\n  598 |   });\n    at C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts:595:8"
+                        },
+                        {
+                          "location": {
+                            "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts",
+                            "column": 71,
+                            "line": 581
+                          },
+                          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m()\u001b[22m\n\nLocator: getByRole('heading', { name: 'Admin Access' })\nExpected: visible\nReceived: <element(s) not found>\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 120000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('heading', { name: 'Admin Access' })\u001b[22m\n\n\n  579 |\n  580 |     // 3. Enter password and log in as admin\n> 581 |     await expect(page.getByRole('heading', { name: 'Admin Access' })).toBeVisible();\n      |                                                                       ^\n  582 |     await page.getByPlaceholder('Admin password').fill(adminPassword);\n  583 |     await page.getByRole('button', { name: 'Login' }).click();\n  584 |     await expect(page.getByRole('heading', { name: 'Admin Panel' })).toBeVisible({\n    at adminLogin (C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts:581:71)\n    at C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts:597:5"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:29:18.632Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\test-results\\example-Admin-Features-TC-ADMIN-005-007-팀-생성-수정-삭제-chromium\\error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\example.spec.ts",
+                        "column": 8,
+                        "line": 595
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "a30a6eba6312f6b87ea5-6afdb97a87a1a811c820",
+              "file": "example.spec.ts",
+              "line": 626,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "pages-crud.spec.ts",
+      "file": "pages-crud.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Wiki Pages CRUD",
+          "file": "pages-crud.spec.ts",
+          "line": 14,
+          "column": 6,
+          "specs": [
+            {
+              "title": "should create a new page",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 1,
+                      "status": "passed",
+                      "duration": 2629,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:08:55.899Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "1848f0622b71b32e0fb8-ed4d52b681cdcbfcd715",
+              "file": "pages-crud.spec.ts",
+              "line": 21,
+              "column": 3
+            },
+            {
+              "title": "should display existing pages in sidebar",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 1,
+                      "status": "passed",
+                      "duration": 1001,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:08:58.531Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "1848f0622b71b32e0fb8-35def494ecb5084fee1a",
+              "file": "pages-crud.spec.ts",
+              "line": 50,
+              "column": 3
+            },
+            {
+              "title": "should navigate to a page and view content",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 1,
+                      "status": "passed",
+                      "duration": 1002,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:08:59.534Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "1848f0622b71b32e0fb8-7ba1cf0db8297d9e5824",
+              "file": "pages-crud.spec.ts",
+              "line": 64,
+              "column": 3
+            },
+            {
+              "title": "should handle page not found gracefully",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 1,
+                      "status": "passed",
+                      "duration": 2135,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:09:00.540Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "1848f0622b71b32e0fb8-d80f5151376efd495817",
+              "file": "pages-crud.spec.ts",
+              "line": 78,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "Page Editor",
+          "file": "pages-crud.spec.ts",
+          "line": 90,
+          "column": 6,
+          "specs": [
+            {
+              "title": "should open editor for page",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 1,
+                      "status": "passed",
+                      "duration": 973,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:09:02.677Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "1848f0622b71b32e0fb8-c7d6fa07b57db488dee6",
+              "file": "pages-crud.spec.ts",
+              "line": 91,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "Page Search",
+          "file": "pages-crud.spec.ts",
+          "line": 113,
+          "column": 6,
+          "specs": [
+            {
+              "title": "should search for pages",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 1,
+                      "status": "passed",
+                      "duration": 1539,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:09:03.652Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "1848f0622b71b32e0fb8-6dae2810319cd42c3e0a",
+              "file": "pages-crud.spec.ts",
+              "line": 114,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "team-collaboration.spec.ts",
+      "file": "team-collaboration.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Team Management",
+          "file": "team-collaboration.spec.ts",
+          "line": 12,
+          "column": 6,
+          "specs": [
+            {
+              "title": "should display teams list if feature enabled",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 1,
+                      "status": "passed",
+                      "duration": 1649,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:09:05.205Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "b0ac01aada894a169b10-79ec1121616749a3e0d8",
+              "file": "team-collaboration.spec.ts",
+              "line": 18,
+              "column": 3
+            },
+            {
+              "title": "should show team creation option for authorized users",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 1,
+                      "status": "passed",
+                      "duration": 1636,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:09:06.856Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "b0ac01aada894a169b10-07ad19bd5f05b89c53bb",
+              "file": "team-collaboration.spec.ts",
+              "line": 28,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "Member Management",
+          "file": "team-collaboration.spec.ts",
+          "line": 43,
+          "column": 6,
+          "specs": [
+            {
+              "title": "should display member list",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 1,
+                      "status": "passed",
+                      "duration": 962,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:09:08.495Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "b0ac01aada894a169b10-4ca9adb2a70008c3cecb",
+              "file": "team-collaboration.spec.ts",
+              "line": 44,
+              "column": 3
+            },
+            {
+              "title": "should show member roles",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 1,
+                      "status": "passed",
+                      "duration": 962,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:09:09.459Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "b0ac01aada894a169b10-8976b2eaba7ad940b5e7",
+              "file": "team-collaboration.spec.ts",
+              "line": 53,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "Team Settings",
+          "file": "team-collaboration.spec.ts",
+          "line": 66,
+          "column": 6,
+          "specs": [
+            {
+              "title": "should access team settings when authorized",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 1,
+                      "status": "passed",
+                      "duration": 958,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:09:10.424Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "b0ac01aada894a169b10-92b012825fc1dae4f5d9",
+              "file": "team-collaboration.spec.ts",
+              "line": 67,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "yjs-collaboration.spec.ts",
+      "file": "yjs-collaboration.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Yjs Real-time Collaboration",
+          "file": "yjs-collaboration.spec.ts",
+          "line": 6,
+          "column": 6,
+          "specs": [
+            {
+              "title": "should sync blocks between two users in real-time",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 1,
+                      "status": "failed",
+                      "duration": 1417,
+                      "error": {
+                        "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoContain\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // indexOf\u001b[22m\n\nExpected substring: \u001b[32m\"Yjs\"\u001b[39m\nReceived string:    \u001b[31m\"Did you forget to add the page to the router?\"\u001b[39m",
+                        "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoContain\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // indexOf\u001b[22m\n\nExpected substring: \u001b[32m\"Yjs\"\u001b[39m\nReceived string:    \u001b[31m\"Did you forget to add the page to the router?\"\u001b[39m\n    at C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\yjs-collaboration.spec.ts:39:31",
+                        "location": {
+                          "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\yjs-collaboration.spec.ts",
+                          "column": 31,
+                          "line": 39
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 37 |\u001b[39m     \u001b[90m// Check for Yjs connection status\u001b[39m\n \u001b[90m 38 |\u001b[39m     \u001b[36mconst\u001b[39m connectionStatus1 \u001b[33m=\u001b[39m \u001b[36mawait\u001b[39m page1\u001b[33m.\u001b[39mtextContent(\u001b[32m'.text-sm.text-gray-600'\u001b[39m)\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 39 |\u001b[39m     expect(connectionStatus1)\u001b[33m.\u001b[39mtoContain(\u001b[32m'Yjs'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                               \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 40 |\u001b[39m\n \u001b[90m 41 |\u001b[39m     \u001b[90m// User 2: Join the same page\u001b[39m\n \u001b[90m 42 |\u001b[39m     \u001b[36mawait\u001b[39m page2\u001b[33m.\u001b[39mgoto(\u001b[32m`${BASE_URL}/editor`\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\yjs-collaboration.spec.ts",
+                            "column": 31,
+                            "line": 39
+                          },
+                          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoContain\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // indexOf\u001b[22m\n\nExpected substring: \u001b[32m\"Yjs\"\u001b[39m\nReceived string:    \u001b[31m\"Did you forget to add the page to the router?\"\u001b[39m\n\n  37 |     // Check for Yjs connection status\n  38 |     const connectionStatus1 = await page1.textContent('.text-sm.text-gray-600');\n> 39 |     expect(connectionStatus1).toContain('Yjs');\n     |                               ^\n  40 |\n  41 |     // User 2: Join the same page\n  42 |     await page2.goto(`${BASE_URL}/editor`);\n    at C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\yjs-collaboration.spec.ts:39:31"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:09:11.400Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\test-results\\yjs-collaboration-Yjs-Real-d2354-ween-two-users-in-real-time-chromium\\error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\yjs-collaboration.spec.ts",
+                        "column": 31,
+                        "line": 39
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "41865ed4e2865082495e-083662be5b6dd0e6ab13",
+              "file": "yjs-collaboration.spec.ts",
+              "line": 24,
+              "column": 3
+            },
+            {
+              "title": "should show user count and active users",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 5,
+                      "parallelIndex": 1,
+                      "status": "failed",
+                      "duration": 1699,
+                      "error": {
+                        "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoMatch\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected pattern: \u001b[32m/\\d+명 참여 중/\u001b[39m\nReceived string:  \u001b[31m\"Did you forget to add the page to the router?\"\u001b[39m",
+                        "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoMatch\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected pattern: \u001b[32m/\\d+명 참여 중/\u001b[39m\nReceived string:  \u001b[31m\"Did you forget to add the page to the router?\"\u001b[39m\n    at C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\yjs-collaboration.spec.ts:77:23",
+                        "location": {
+                          "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\yjs-collaboration.spec.ts",
+                          "column": 23,
+                          "line": 77
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 75 |\u001b[39m     \u001b[90m// Check user count on page1\u001b[39m\n \u001b[90m 76 |\u001b[39m     \u001b[36mconst\u001b[39m userCount \u001b[33m=\u001b[39m \u001b[36mawait\u001b[39m page1\u001b[33m.\u001b[39mtextContent(\u001b[32m'.text-sm.text-gray-600'\u001b[39m)\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 77 |\u001b[39m     expect(userCount)\u001b[33m.\u001b[39mtoMatch(\u001b[35m/\\d+명 참여 중/\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                       \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 78 |\u001b[39m\n \u001b[90m 79 |\u001b[39m     console\u001b[33m.\u001b[39mlog(\u001b[32m'✅ User count displayed!'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 80 |\u001b[39m   })\u001b[33m;\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\yjs-collaboration.spec.ts",
+                            "column": 23,
+                            "line": 77
+                          },
+                          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoMatch\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected pattern: \u001b[32m/\\d+명 참여 중/\u001b[39m\nReceived string:  \u001b[31m\"Did you forget to add the page to the router?\"\u001b[39m\n\n  75 |     // Check user count on page1\n  76 |     const userCount = await page1.textContent('.text-sm.text-gray-600');\n> 77 |     expect(userCount).toMatch(/\\d+명 참여 중/);\n     |                       ^\n  78 |\n  79 |     console.log('✅ User count displayed!');\n  80 |   });\n    at C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\yjs-collaboration.spec.ts:77:23"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:09:13.650Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\test-results\\yjs-collaboration-Yjs-Real-2919a-user-count-and-active-users-chromium\\error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\yjs-collaboration.spec.ts",
+                        "column": 23,
+                        "line": 77
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "41865ed4e2865082495e-9ba1d1f0d9966bc6ccb7",
+              "file": "yjs-collaboration.spec.ts",
+              "line": 70,
+              "column": 3
+            },
+            {
+              "title": "should handle concurrent edits without conflicts",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 6,
+                      "parallelIndex": 1,
+                      "status": "timedOut",
+                      "duration": 120010,
+                      "error": {
+                        "message": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m",
+                        "stack": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m"
+                      },
+                      "errors": [
+                        {
+                          "message": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m"
+                        },
+                        {
+                          "location": {
+                            "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\yjs-collaboration.spec.ts",
+                            "column": 34,
+                            "line": 91
+                          },
+                          "message": "Error: locator.fill: Target page, context or browser has been closed\nCall log:\n\u001b[2m  - waiting for locator('textarea, [contenteditable=\"true\"]').first()\u001b[22m\n\n\n  89 |     const textarea2 = page2.locator('textarea, [contenteditable=\"true\"]').first();\n  90 |\n> 91 |     await Promise.all([textarea1.fill('AAAA BBBB CCCC'), textarea2.fill('1111 2222 3333')]);\n     |                                  ^\n  92 |\n  93 |     await page1.waitForTimeout(2000);\n  94 |     await page2.waitForTimeout(2000);\n    at C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\yjs-collaboration.spec.ts:91:34"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:09:16.342Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\test-results\\yjs-collaboration-Yjs-Real-e5c47-ent-edits-without-conflicts-chromium\\error-context.md"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "41865ed4e2865082495e-7d77364464fb82c621d0",
+              "file": "yjs-collaboration.spec.ts",
+              "line": 82,
+              "column": 3
+            },
+            {
+              "title": "should auto-save to database",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 8,
+                      "parallelIndex": 1,
+                      "status": "timedOut",
+                      "duration": 120007,
+                      "error": {
+                        "message": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m",
+                        "stack": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m"
+                      },
+                      "errors": [
+                        {
+                          "message": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m"
+                        },
+                        {
+                          "location": {
+                            "file": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\yjs-collaboration.spec.ts",
+                            "column": 20,
+                            "line": 112
+                          },
+                          "message": "Error: locator.fill: Target page, context or browser has been closed\nCall log:\n\u001b[2m  - waiting for locator('textarea, [contenteditable=\"true\"]').first()\u001b[22m\n\n\n  110 |     // Type content\n  111 |     const textarea = page1.locator('textarea, [contenteditable=\"true\"]').first();\n> 112 |     await textarea.fill('Auto-save test content');\n      |                    ^\n  113 |\n  114 |     // Wait for auto-save (5 seconds throttle)\n  115 |     await page1.waitForTimeout(6000);\n    at C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\tests\\yjs-collaboration.spec.ts:112:20"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-18T23:11:17.470Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "C:\\Users\\sho80\\OneDrive\\바탕 화면\\workspace\\papyr-us\\test-results\\yjs-collaboration-Yjs-Real-f3844-hould-auto-save-to-database-chromium\\error-context.md"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "41865ed4e2865082495e-b849467f80231af52b27",
+              "file": "yjs-collaboration.spec.ts",
+              "line": 106,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-02-18T23:06:48.320Z",
+    "duration": 1471241.35,
+    "expected": 25,
+    "skipped": 0,
+    "unexpected": 20,
+    "flaky": 0
+  }
+}

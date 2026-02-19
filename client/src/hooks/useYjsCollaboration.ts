@@ -323,14 +323,23 @@ export function useYjsCollaboration({
     if (!socket) return Promise.reject(new Error('Not connected'));
 
     return new Promise<void>((resolve, reject) => {
-      socket.emit('yjs:save', { documentId, pageId });
-      socket.once('yjs:saved', (data: { success: boolean; error?: string }) => {
+      const SAVE_TIMEOUT_MS = 15_000;
+      const timeout = setTimeout(() => {
+        socket.off('yjs:saved', handler);
+        reject(new Error('Save timed out after 15s'));
+      }, SAVE_TIMEOUT_MS);
+
+      const handler = (data: { success: boolean; error?: string }) => {
+        clearTimeout(timeout);
         if (data.success) {
           resolve();
         } else {
           reject(new Error(data.error || 'Save failed'));
         }
-      });
+      };
+
+      socket.emit('yjs:save', { documentId, pageId });
+      socket.once('yjs:saved', handler);
     });
   }, [documentId, pageId]);
 

@@ -16,15 +16,15 @@ Papyr.us의 다국어 지원 구현 가이드입니다.
 
 ## 지원 언어
 
-| 코드 | 언어 | 지역 |
-|------|------|------|
-| `en` | English | 미국/영국 |
-| `ko` | 한국어 | 대한민국 |
-| `ja` | 日本語 | 일본 |
-| `zh` | 中文 | 중국 |
-| `es` | Español | 스페인/중남미 |
-| `de` | Deutsch | 독일 |
-| `fr` | Français | 프랑스 |
+| 코드 | 언어     | 지역          |
+| ---- | -------- | ------------- |
+| `en` | English  | 미국/영국     |
+| `ko` | 한국어   | 대한민국      |
+| `ja` | 日本語   | 일본          |
+| `zh` | 中文     | 중국          |
+| `es` | Español  | 스페인/중남미 |
+| `de` | Deutsch  | 독일          |
+| `fr` | Français | 프랑스        |
 
 ---
 
@@ -81,12 +81,12 @@ const translations = getTranslations('ko');
 ```typescript
 app.get('/api/pages/:id', (req, res) => {
   const lang = req.language || 'en'; // 미들웨어가 설정
-  
+
   const page = await getPage(id);
   if (!page) {
     return res.status(404).json({
       error: t('errors.notFound', lang),
-      code: 'PAGE_NOT_FOUND'
+      code: 'PAGE_NOT_FOUND',
     });
   }
 });
@@ -123,11 +123,8 @@ function MyComponent() {
     <div>
       <h1>{t('pages.title')}</h1>
       <p>{t('common.welcome', { name: 'User' })}</p>
-      
-      <select 
-        value={language} 
-        onChange={(e) => setLanguage(e.target.value)}
-      >
+
+      <select value={language} onChange={(e) => setLanguage(e.target.value)}>
         <option value="en">English</option>
         <option value="ko">한국어</option>
         <option value="ja">日本語</option>
@@ -145,7 +142,7 @@ function LanguageSelector() {
 
   return (
     <select value={language} onChange={(e) => setLanguage(e.target.value)}>
-      {availableLanguages.map(lang => (
+      {availableLanguages.map((lang) => (
         <option key={lang.code} value={lang.code}>
           {lang.nativeName}
         </option>
@@ -323,12 +320,12 @@ formatNumber(1234567, 'de');
 
 ```typescript
 // 영어
-t('items.count', 'en', { count: 1 });  // → "1 item"
-t('items.count', 'en', { count: 5 });  // → "5 items"
+t('items.count', 'en', { count: 1 }); // → "1 item"
+t('items.count', 'en', { count: 5 }); // → "5 items"
 
 // 한국어 (복수형 없음)
-t('items.count', 'ko', { count: 1 });  // → "1개 항목"
-t('items.count', 'ko', { count: 5 });  // → "5개 항목"
+t('items.count', 'ko', { count: 1 }); // → "1개 항목"
+t('items.count', 'ko', { count: 5 }); // → "5개 항목"
 ```
 
 ### 복수형 키 정의
@@ -343,7 +340,7 @@ const translations = {
   },
   ko: {
     items: {
-      count: '{{count}}개 항목',  // 복수형 불필요
+      count: '{{count}}개 항목', // 복수형 불필요
     },
   },
 };
@@ -375,7 +372,7 @@ t('user.greeting', { name: userName });
 // "Hello, {{name}}!"
 
 // 피해야 할 예
-`Hello, ${userName}!`  // 번역 불가
+`Hello, ${userName}!`; // 번역 불가
 ```
 
 ### 3. 문장 분리 금지

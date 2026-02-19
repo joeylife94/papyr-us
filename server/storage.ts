@@ -94,6 +94,12 @@ export class DBStorage {
     this.pool = new Pool({
       connectionString: process.env.DATABASE_URL,
     });
+
+    // Prevent idle-client errors from crashing the process
+    this.pool.on('error', (err) => {
+      console.error('[DB Pool] Unexpected error on idle client:', err.message);
+    });
+
     this.db = drizzle(this.pool);
   }
 
@@ -887,9 +893,7 @@ export class DBStorage {
     if (userTeamIds.length > 0) {
       const teamPermission = permissions.find(
         (p: PagePermission) =>
-          p.entityType === 'team' &&
-          p.entityId !== null &&
-          userTeamIds.includes(p.entityId)
+          p.entityType === 'team' && p.entityId !== null && userTeamIds.includes(p.entityId)
       );
       if (
         teamPermission &&
@@ -1363,9 +1367,7 @@ export class DBStorage {
     const permissionedPages = await this.db
       .select({ pageId: pagePermissions.pageId })
       .from(pagePermissions)
-      .where(
-        and(eq(pagePermissions.entityType, 'user'), eq(pagePermissions.entityId, userId))
-      );
+      .where(and(eq(pagePermissions.entityType, 'user'), eq(pagePermissions.entityId, userId)));
 
     // Get pages accessible through team membership
     const userTeamIds = await this.getUserTeamIds(userId);

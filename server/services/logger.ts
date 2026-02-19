@@ -29,7 +29,7 @@ export function getRequestContext(): RequestContext | undefined {
 export function requestContextMiddleware(req: Request, res: Response, next: NextFunction): void {
   // Use existing request ID from header or generate new one
   const requestId = (req.headers['x-request-id'] as string) || randomUUID();
-  
+
   // Set response header so client can correlate
   res.setHeader('X-Request-ID', requestId);
 
@@ -114,17 +114,15 @@ const consoleFormat = winston.format.combine(
   injectContext(),
   winston.format.printf((info) => {
     const { timestamp, level, message, requestId, userId, ...meta } = info;
-    
+
     // Build prefix with request/user context
     let prefix = '';
     if (requestId) prefix += `[${(requestId as string).slice(0, 8)}]`;
     if (userId) prefix += `[u:${userId}]`;
-    
+
     // Format meta data
-    const metaStr = Object.keys(meta).length 
-      ? ` ${JSON.stringify(meta)}` 
-      : '';
-    
+    const metaStr = Object.keys(meta).length ? ` ${JSON.stringify(meta)}` : '';
+
     return `${timestamp} ${prefix} ${level}: ${message}${metaStr}`;
   })
 );

@@ -68,18 +68,13 @@ export function KnowledgeGraph({ teamId }: KnowledgeGraphProps) {
       setIsGeneratingAILinks(true);
     }
     try {
-      const token = localStorage.getItem('token');
       let url = '/api/knowledge-graph';
       const params = new URLSearchParams();
       if (teamId) params.append('teamId', teamId);
       if (includeAILinks) params.append('includeAI', 'true');
       if (params.toString()) url += `?${params.toString()}`;
 
-      const response = await fetch(url, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const response = await fetch(url);
 
       if (!response.ok) {
         throw new Error('Failed to fetch graph data');

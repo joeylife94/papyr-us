@@ -59,14 +59,14 @@ GET /metrics
 
 ### 수집 메트릭
 
-| 메트릭 | 타입 | 설명 |
-|--------|------|------|
-| `http_requests_total` | Counter | 총 HTTP 요청 수 |
-| `http_request_duration_seconds` | Histogram | 요청 처리 시간 |
-| `http_request_size_bytes` | Histogram | 요청 크기 |
-| `http_response_size_bytes` | Histogram | 응답 크기 |
-| `active_connections` | Gauge | 활성 연결 수 |
-| `nodejs_*` | 다양함 | Node.js 런타임 메트릭 |
+| 메트릭                          | 타입      | 설명                  |
+| ------------------------------- | --------- | --------------------- |
+| `http_requests_total`           | Counter   | 총 HTTP 요청 수       |
+| `http_request_duration_seconds` | Histogram | 요청 처리 시간        |
+| `http_request_size_bytes`       | Histogram | 요청 크기             |
+| `http_response_size_bytes`      | Histogram | 응답 크기             |
+| `active_connections`            | Gauge     | 활성 연결 수          |
+| `nodejs_*`                      | 다양함    | Node.js 런타임 메트릭 |
 
 ### 환경 변수
 
@@ -94,13 +94,13 @@ sum(rate(papyrus_http_requests_total{status=~"5.."}[5m])) / sum(rate(papyrus_htt
 
 ### 로그 레벨
 
-| 레벨 | 용도 |
-|------|------|
-| `error` | 에러 및 예외 |
-| `warn` | 경고 (비정상 상황) |
-| `info` | 일반 정보 (기본값) |
-| `http` | HTTP 요청/응답 |
-| `debug` | 디버깅 정보 |
+| 레벨    | 용도               |
+| ------- | ------------------ |
+| `error` | 에러 및 예외       |
+| `warn`  | 경고 (비정상 상황) |
+| `info`  | 일반 정보 (기본값) |
+| `http`  | HTTP 요청/응답     |
+| `debug` | 디버깅 정보        |
 
 ### 환경 변수
 
@@ -255,14 +255,14 @@ k6 run -e BASE_URL=https://papyrus.example.com scripts/load-test.js
 
 ### k6 테스트 단계
 
-| 단계 | VU | 기간 | 설명 |
-|------|-----|------|------|
-| 1 | 50 | 1m | 워밍업 |
-| 2 | 200 | 3m | 중간 부하 |
-| 3 | 500 | 5m | 높은 부하 |
-| 4 | 1000 | 5m | 스트레스 테스트 |
-| 5 | 500 | 3m | 쿨다운 |
-| 6 | 0 | 1m | 종료 |
+| 단계 | VU   | 기간 | 설명            |
+| ---- | ---- | ---- | --------------- |
+| 1    | 50   | 1m   | 워밍업          |
+| 2    | 200  | 3m   | 중간 부하       |
+| 3    | 500  | 5m   | 높은 부하       |
+| 4    | 1000 | 5m   | 스트레스 테스트 |
+| 5    | 500  | 3m   | 쿨다운          |
+| 6    | 0    | 1m   | 종료            |
 
 ### 성공 임계값
 

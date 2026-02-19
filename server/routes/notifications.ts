@@ -1,6 +1,6 @@
 /**
  * Notification Router
- * 
+ *
  * API endpoints for comment notifications
  */
 
@@ -24,7 +24,7 @@ export function createNotificationRouter(pool: Pool): Router {
       }
 
       const { unreadOnly, limit, offset } = req.query;
-      
+
       const result = await commentNotifications.getCommentNotifications(pool, userId, {
         unreadOnly: unreadOnly === 'true',
         limit: limit ? parseInt(limit as string) : undefined,
@@ -73,11 +73,7 @@ export function createNotificationRouter(pool: Pool): Router {
       }
 
       const { notificationIds } = req.body;
-      const count = await commentNotifications.markNotificationsRead(
-        pool, 
-        userId, 
-        notificationIds
-      );
+      const count = await commentNotifications.markNotificationsRead(pool, userId, notificationIds);
 
       res.json({ success: true, markedCount: count });
     } catch (error) {

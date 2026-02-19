@@ -37,12 +37,12 @@ jobs:
             echo "RENDER_API_KEY not configured, skipping Render deploy"
             exit 0
           fi
-          
+
           curl -X POST \
             "https://api.render.com/v1/services/$RENDER_SERVICE_ID/deploys" \
             -H "Authorization: Bearer $RENDER_API_KEY" \
             -H "Content-Type: application/json"
-          
+
           echo "Deployment triggered on Render!"
 
   # ==================== Deploy to Vercel ====================
@@ -73,7 +73,7 @@ jobs:
             echo "VERCEL_TOKEN not configured, skipping Vercel deploy"
             exit 0
           fi
-          
+
           if [ "${{ github.event.inputs.environment }}" == "production" ] || [ "${{ github.event_name }}" == "release" ]; then
             vercel --prod --token=$VERCEL_TOKEN
           else
@@ -124,10 +124,10 @@ jobs:
             echo "APP_URL not configured, skipping health check"
             exit 0
           fi
-          
+
           echo "Waiting for deployment to be ready..."
           sleep 30
-          
+
           for i in {1..10}; do
             if curl -sSf "$APP_URL/api/health" | grep -q "ok"; then
               echo "✅ Health check passed!"
@@ -136,7 +136,7 @@ jobs:
             echo "Attempt $i failed, retrying..."
             sleep 10
           done
-          
+
           echo "❌ Health check failed after 10 attempts"
           exit 1
 

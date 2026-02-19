@@ -209,23 +209,19 @@ export function buildRateLimiter(opts?: { windowMs?: number; max?: number }) {
 }
 
 export function setupSecurity(app: Express) {
-  // Use enhanced security if available, otherwise fallback to basic helmet
-  try {
-    // Dynamic import to avoid circular dependencies
-    import('./services/security.js').then(({ setupSecurityHeaders, setupEnhancedCors, sanitizeRequest }) => {
-      // Request sanitization
+  // Apply basic security synchronously first, so requests are always protected
+  setupBasicSecurity(app);
+
+  // Then try to upgrade to enhanced security (non-blocking)
+  import('./services/security.js')
+    .then(({ setupSecurityHeaders, setupEnhancedCors, sanitizeRequest }) => {
       app.use(sanitizeRequest);
-      // Enhanced security headers
       setupSecurityHeaders(app);
-      // Enhanced CORS
       setupEnhancedCors(app);
-    }).catch(() => {
-      // Fallback to basic security
-      setupBasicSecurity(app);
+    })
+    .catch(() => {
+      // Enhanced security not available — basic already applied above
     });
-  } catch {
-    setupBasicSecurity(app);
-  }
 }
 
 function setupBasicSecurity(app: Express) {

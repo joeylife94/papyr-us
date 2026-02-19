@@ -12,11 +12,19 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
   useEffect(() => {
     let isCancelled = false;
 
-    markdownToHtml(content).then((htmlContent) => {
-      if (!isCancelled) {
-        setHtml(htmlContent);
-      }
-    });
+    markdownToHtml(content)
+      .then((htmlContent) => {
+        if (!isCancelled) {
+          setHtml(htmlContent);
+        }
+      })
+      .catch((err) => {
+        console.warn('Failed to render markdown:', err);
+        if (!isCancelled) {
+          // Fall back to plain text display
+          setHtml(`<pre>${content}</pre>`);
+        }
+      });
 
     return () => {
       isCancelled = true;

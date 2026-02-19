@@ -59,7 +59,12 @@ export function ParagraphBlock({
 
     // Slash command detection
     const cursorPos = e.target.selectionStart;
-    if (newContent[cursorPos - 1] === '/' && (cursorPos === 1 || newContent[cursorPos - 2] === '\n' || newContent.substring(0, cursorPos - 1).trim() === '')) {
+    if (
+      newContent[cursorPos - 1] === '/' &&
+      (cursorPos === 1 ||
+        newContent[cursorPos - 2] === '\n' ||
+        newContent.substring(0, cursorPos - 1).trim() === '')
+    ) {
       // Just typed "/" at start of line or empty block
       slashStartRef.current = cursorPos;
       if (textareaRef.current && onSlashCommand) {

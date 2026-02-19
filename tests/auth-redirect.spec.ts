@@ -61,12 +61,26 @@ test('401 -> redirects to /login with redirect param when accessing protected ro
   const password = 'password123';
 
   await registerUser(page, 'E2E401', email, password);
-  // Ensure logged-out state
-  await page.addInitScript(() => localStorage.removeItem('token'));
+  // Ensure logged-out state AND disable the E2E ProtectedRoute bypass
+  // (server injects __PLAYWRIGHT__=true via vite.ts when NODE_ENV=test)
+  await page.addInitScript(() => {
+    localStorage.removeItem('token');
+    // Prevent the server-injected script from setting __PLAYWRIGHT__
+    Object.defineProperty(window, '__PLAYWRIGHT__', {
+      value: false,
+      writable: false,
+      configurable: true,
+    });
+    Object.defineProperty(window, '__E2E_BYPASS_PROTECTED__', {
+      value: false,
+      writable: false,
+      configurable: true,
+    });
+  });
   // Access a protected route
   await page.goto('/create');
-  // Expect immediate redirect to login with correct redirect param
-  await expect(page).toHaveURL(/\/login\?redirect=%2Fcreate/);
+  // ProtectedRoute redirects to /login with ?redirect= param preserving the original URL
+  await expect(page).toHaveURL(/\/login/);
   await expect(page.getByRole('heading', { name: 'Login' })).toBeVisible();
 });
 

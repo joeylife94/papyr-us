@@ -41,7 +41,9 @@ export default function DatabaseView({ teamName }: DatabaseViewProps) {
       const url = teamName ? `/api/tasks?teamId=${teamName}` : '/api/tasks';
       const response = await fetch(url);
       if (!response.ok) return [];
-      return response.json();
+      const data = await response.json();
+      // API returns { tasks: [...], pagination: {...} }, extract the array
+      return Array.isArray(data) ? data : data.tasks || [];
     },
   });
 

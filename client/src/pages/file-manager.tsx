@@ -128,24 +128,40 @@ export default function FileManager({ teamName }: FileManagerProps) {
     },
   });
 
-  const copyUrl = (file: UploadedFile) => {
-    navigator.clipboard.writeText(window.location.origin + file.url);
-    toast({
-      title: 'URL 복사됨',
-      description: '파일 URL이 클립보드에 복사되었습니다.',
-    });
+  const copyUrl = async (file: UploadedFile) => {
+    try {
+      await navigator.clipboard.writeText(window.location.origin + file.url);
+      toast({
+        title: 'URL 복사됨',
+        description: '파일 URL이 클립보드에 복사되었습니다.',
+      });
+    } catch {
+      toast({
+        title: '복사 실패',
+        description: '클립보드에 접근할 수 없습니다.',
+        variant: 'destructive',
+      });
+    }
   };
 
-  const copyMarkdown = (file: UploadedFile) => {
+  const copyMarkdown = async (file: UploadedFile) => {
     const markdown = file.mimetype.startsWith('image/')
       ? `![파일](${file.url})`
       : `[${file.filename}](${file.url})`;
 
-    navigator.clipboard.writeText(markdown);
-    toast({
-      title: '마크다운 복사됨',
-      description: '마크다운 코드가 클립보드에 복사되었습니다.',
-    });
+    try {
+      await navigator.clipboard.writeText(markdown);
+      toast({
+        title: '마크다운 복사됨',
+        description: '마크다운 코드가 클립보드에 복사되었습니다.',
+      });
+    } catch {
+      toast({
+        title: '복사 실패',
+        description: '클립보드에 접근할 수 없습니다.',
+        variant: 'destructive',
+      });
+    }
   };
 
   const downloadFile = (file: UploadedFile) => {

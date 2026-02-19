@@ -1,6 +1,6 @@
 /**
  * Security Headers Service
- * 
+ *
  * Enhanced security headers configuration:
  * - Content Security Policy (CSP)
  * - CORS configuration
@@ -15,51 +15,47 @@ import logger from './logger.js';
 // CSP Directives configuration
 const cspDirectives = {
   defaultSrc: ["'self'"],
-  
+
   scriptSrc: [
     "'self'",
     "'unsafe-inline'", // Required for some React features - consider removing in strict mode
-    "'unsafe-eval'",   // Required for dev tools - remove in production
+    "'unsafe-eval'", // Required for dev tools - remove in production
     'https://cdn.jsdelivr.net', // For external libraries if needed
   ],
-  
+
   styleSrc: [
     "'self'",
     "'unsafe-inline'", // Required for styled-components/emotion/inline styles
     'https://fonts.googleapis.com',
   ],
-  
-  fontSrc: [
-    "'self'",
-    'https://fonts.gstatic.com',
-    'data:',
-  ],
-  
+
+  fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
+
   imgSrc: [
     "'self'",
     'data:',
     'blob:',
     'https:', // Allow images from HTTPS sources
   ],
-  
+
   connectSrc: [
     "'self'",
     'wss:', // WebSocket connections
-    'ws:',  // WebSocket connections (dev)
+    'ws:', // WebSocket connections (dev)
     // Add Sentry DSN domain if configured
     ...(process.env.SENTRY_DSN ? [new URL(process.env.SENTRY_DSN).origin] : []),
   ],
-  
+
   frameSrc: ["'none'"], // Disallow embedding in iframes by default
-  
+
   objectSrc: ["'none'"], // Disallow plugins
-  
+
   baseUri: ["'self'"],
-  
+
   formAction: ["'self'"],
-  
+
   frameAncestors: ["'none'"], // Prevent clickjacking
-  
+
   upgradeInsecureRequests: config.isProduction ? [] : null, // Only in production
 };
 
@@ -103,24 +99,24 @@ export function setupSecurityHeaders(app: Express): void {
         directives: getCspDirectives(),
         reportOnly: !config.isProduction, // Report-only in development
       },
-      
+
       // Cross-Origin policies
       crossOriginEmbedderPolicy: false, // Can break external resources
       crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
       crossOriginResourcePolicy: { policy: 'cross-origin' },
-      
+
       // DNS Prefetch Control
       dnsPrefetchControl: { allow: true },
-      
+
       // Expect-CT (Certificate Transparency)
       // expectCt removed in newer Helmet versions
-      
+
       // Frameguard (X-Frame-Options)
       frameguard: { action: 'deny' },
-      
+
       // Hide X-Powered-By
       hidePoweredBy: true,
-      
+
       // HSTS (HTTP Strict Transport Security)
       hsts: config.isProduction
         ? {
@@ -129,22 +125,22 @@ export function setupSecurityHeaders(app: Express): void {
             preload: true,
           }
         : false,
-      
+
       // IE No Open
       ieNoOpen: true,
-      
+
       // No Sniff (X-Content-Type-Options)
       noSniff: true,
-      
+
       // Origin Agent Cluster
       originAgentCluster: true,
-      
+
       // Permitted Cross-Domain Policies
       permittedCrossDomainPolicies: { permittedPolicies: 'none' },
-      
+
       // Referrer Policy
       referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
-      
+
       // X-XSS-Protection (legacy, but still useful)
       xssFilter: true,
     })
@@ -186,7 +182,7 @@ export function setupSecurityHeaders(app: Express): void {
  */
 export function setupEnhancedCors(app: Express): void {
   const allowedOrigins = config.corsAllowedOrigins;
-  
+
   // Dynamic CORS based on environment
   app.use((req: Request, res: Response, next: NextFunction) => {
     const origin = req.headers.origin;
@@ -196,9 +192,12 @@ export function setupEnhancedCors(app: Express): void {
       res.setHeader('Access-Control-Allow-Origin', origin || '*');
       res.setHeader('Access-Control-Allow-Credentials', 'true');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Request-ID, X-Admin-Password');
+      res.setHeader(
+        'Access-Control-Allow-Headers',
+        'Content-Type, Authorization, X-Request-ID, X-Admin-Password'
+      );
       res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours
-      
+
       if (req.method === 'OPTIONS') {
         return res.status(204).end();
       }
@@ -233,15 +232,18 @@ export function setupEnhancedCors(app: Express): void {
 export function sanitizeRequest(req: Request, res: Response, next: NextFunction): void {
   // Remove potentially dangerous headers
   delete req.headers['x-forwarded-host'];
-  
+
   // Limit request body size is already handled by express.json()
-  
+
   // Validate content type for POST/PUT/PATCH
   if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
     const contentType = req.headers['content-type'];
-    if (contentType && !contentType.includes('application/json') && 
-        !contentType.includes('multipart/form-data') &&
-        !contentType.includes('application/x-www-form-urlencoded')) {
+    if (
+      contentType &&
+      !contentType.includes('application/json') &&
+      !contentType.includes('multipart/form-data') &&
+      !contentType.includes('application/x-www-form-urlencoded')
+    ) {
       // Allow but log unusual content types
       logger.warn('Unusual content type', {
         contentType,

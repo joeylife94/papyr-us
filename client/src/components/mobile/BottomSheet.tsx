@@ -1,6 +1,6 @@
 /**
  * Mobile-optimized Bottom Sheet Component
- * 
+ *
  * A touch-friendly bottom sheet for mobile interfaces
  */
 
@@ -83,7 +83,7 @@ export function BottomSheet({
     if (dragStartY.current === null) return;
 
     const threshold = 50; // pixels
-    
+
     if (dragOffset > threshold && currentSnap < snapPoints.length - 1) {
       // Dragged up - expand
       setCurrentSnap(currentSnap + 1);
@@ -117,24 +117,27 @@ export function BottomSheet({
   // Mouse handlers for desktop testing
   const handleMouseDown = (e: React.MouseEvent) => {
     handleDragStart(e.clientY);
-    
+
     const handleMouseMove = (e: MouseEvent) => {
       handleDragMove(e.clientY);
     };
-    
+
     const handleMouseUp = () => {
       handleDragEnd();
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-    
+
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
   };
 
   if (!isOpen) return null;
 
-  const heightWithDrag = Math.min(100, Math.max(20, currentHeight + (dragOffset / window.innerHeight) * 100));
+  const heightWithDrag = Math.min(
+    100,
+    Math.max(20, currentHeight + (dragOffset / window.innerHeight) * 100)
+  );
 
   const sheet = (
     <>
@@ -168,23 +171,17 @@ export function BottomSheet({
           onMouseDown={handleMouseDown}
         >
           <div className="w-12 h-1.5 bg-muted-foreground/30 rounded-full mx-auto" />
-          {title && (
-            <h2 className="text-lg font-semibold text-center mt-2">{title}</h2>
-          )}
+          {title && <h2 className="text-lg font-semibold text-center mt-2">{title}</h2>}
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto overscroll-contain px-4 pb-4">
-          {children}
-        </div>
+        <div className="flex-1 overflow-y-auto overscroll-contain px-4 pb-4">{children}</div>
       </div>
     </>
   );
 
   // Portal to body
-  return typeof document !== 'undefined' 
-    ? createPortal(sheet, document.body) 
-    : null;
+  return typeof document !== 'undefined' ? createPortal(sheet, document.body) : null;
 }
 
 /**
@@ -282,9 +279,7 @@ export function ActionSheet({
     </>
   );
 
-  return typeof document !== 'undefined'
-    ? createPortal(sheet, document.body)
-    : null;
+  return typeof document !== 'undefined' ? createPortal(sheet, document.body) : null;
 }
 
 export default BottomSheet;

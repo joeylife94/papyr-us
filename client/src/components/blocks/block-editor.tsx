@@ -66,6 +66,8 @@ export function BlockEditor({
   const { flags } = useFeatureFlags();
   const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null);
   const editorContainerRef = useRef<HTMLDivElement>(null);
+  const addBlockRef = useRef<(index: number, type?: BlockType) => void>(() => {});
+  const updateBlockRef = useRef<(blockId: string, updates: Partial<Block>) => void>(() => {});
 
   // Slash command state
   const [slashMenu, setSlashMenu] = useState<{
@@ -109,16 +111,16 @@ export function BlockEditor({
 
       if (cleanedContent === '') {
         // Empty block — just change its type
-        updateBlock(slashMenu.blockId, { content: '', type });
+        updateBlockRef.current(slashMenu.blockId, { content: '', type });
       } else {
         // Block has content — update it, then add new block after
-        updateBlock(slashMenu.blockId, { content: cleanedContent });
-        addBlock(blockIndex + 1, type);
+        updateBlockRef.current(slashMenu.blockId, { content: cleanedContent });
+        addBlockRef.current(blockIndex + 1, type);
       }
 
       handleSlashClose();
     },
-    [blocks, slashMenu.blockId, updateBlock, addBlock, handleSlashClose]
+    [blocks, slashMenu.blockId, handleSlashClose]
   );
 
   const collaborationEnabled = flags.FEATURE_COLLABORATION && !!pageId && !!userId && !!userName;
@@ -313,6 +315,10 @@ export function BlockEditor({
     },
     [blocks, onChange, pageId, collaboration, useYjs, yjsCollaboration]
   );
+
+  // Keep refs in sync so handleSlashSelect can call these without circular dependency
+  addBlockRef.current = addBlock;
+  updateBlockRef.current = updateBlock;
 
   // 블록 렌더링 함수
   const renderBlock = (block: Block, index: number) => {

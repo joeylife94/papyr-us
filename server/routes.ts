@@ -68,8 +68,10 @@ export async function registerRoutes(
   const httpServer = createServer(app);
   let io: SocketIoServer | undefined;
 
-  // app.use(passport.initialize());
-  // await import('./services/passport');
+  // Initialize Passport for OAuth strategies
+  app.use(passport.initialize());
+  const { initPassportStrategies } = await import('./services/passport.js');
+  initPassportStrategies(storage.db);
 
   // Setup Socket.IO / Yjs collaboration (feature-gated)
   // In personal mode, collaboration is disabled by default and should not:
@@ -153,6 +155,19 @@ export async function registerRoutes(
         return res.status(400).json({ message: 'Name, email, and password are required' });
       }
 
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        console.log('[REGISTER] Validation failed: Invalid email format');
+        return res.status(400).json({ message: 'Invalid email format' });
+      }
+
+      // Validate password length (minimum 6 characters)
+      if (password.length < 6) {
+        console.log('[REGISTER] Validation failed: Password too short');
+        return res.status(400).json({ message: 'Password must be at least 6 characters long' });
+      }
+
       console.log('[REGISTER] Checking for existing user...');
       const existingUser = await storage.db.select().from(users).where(eq(users.email, email));
       if (existingUser.length > 0) {
@@ -208,7 +223,7 @@ export async function registerRoutes(
       if (error.code === '23505') {
         return res.status(409).json({ message: 'User with this email already exists' });
       }
-      res.status(500).json({ message: 'Server error during registration', error });
+      res.status(500).json({ message: 'Server error during registration' });
     }
   });
 
@@ -269,7 +284,7 @@ export async function registerRoutes(
         user: { id: user.id, name: user.name, email: user.email, role },
       });
     } catch (error) {
-      res.status(500).json({ message: 'Server error during login', error });
+      res.status(500).json({ message: 'Server error during login' });
     }
   });
 
@@ -346,27 +361,39 @@ export async function registerRoutes(
 
   // --- Social Auth Routes ---
 
-  /*
   // Google Auth
-  app.get('/api/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
-  app.get('/api/auth/google/callback',
-    passport.authenticate('google', { failureRedirect: '/login', session: false }),
-    (req: any, res) => {
-      const token = jwt.sign({ id: req.user.id, email: req.user.email }, config.jwtSecret, { expiresIn: '1d' });
-      res.send(`<script>window.localStorage.setItem('token', '${token}');window.location.href='/';</script>`);
-    }
-  );
+  if (config.googleClientId && config.googleClientSecret) {
+    app.get('/api/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+    app.get(
+      '/api/auth/google/callback',
+      passport.authenticate('google', { failureRedirect: '/login', session: false }),
+      (req: any, res) => {
+        const role = config.adminEmails.includes(req.user.email.toLowerCase()) ? 'admin' : 'user';
+        const token = jwt.sign({ id: req.user.id, email: req.user.email, role }, config.jwtSecret, {
+          expiresIn: '7d',
+        });
+        // Redirect to login page with token as query parameter (avoids XSS via inline script)
+        res.redirect(`/login?token=${encodeURIComponent(token)}`);
+      }
+    );
+  }
 
   // GitHub Auth
-  app.get('/api/auth/github', passport.authenticate('github', { scope: ['user:email'] }));
-  app.get('/api/auth/github/callback',
-    passport.authenticate('github', { failureRedirect: '/login', session: false }),
-    (req: any, res) => {
-      const token = jwt.sign({ id: req.user.id, email: req.user.email }, config.jwtSecret, { expiresIn: '1d' });
-      res.send(`<script>window.localStorage.setItem('token', '${token}');window.location.href='/';</script>`);
-    }
-  );
-  */
+  if (config.githubClientId && config.githubClientSecret) {
+    app.get('/api/auth/github', passport.authenticate('github', { scope: ['user:email'] }));
+    app.get(
+      '/api/auth/github/callback',
+      passport.authenticate('github', { failureRedirect: '/login', session: false }),
+      (req: any, res) => {
+        const role = config.adminEmails.includes(req.user.email.toLowerCase()) ? 'admin' : 'user';
+        const token = jwt.sign({ id: req.user.id, email: req.user.email, role }, config.jwtSecret, {
+          expiresIn: '7d',
+        });
+        // Redirect to login page with token as query parameter (avoids XSS via inline script)
+        res.redirect(`/login?token=${encodeURIComponent(token)}`);
+      }
+    );
+  }
 
   // Wiki Pages API
   app.get('/api/pages', async (req, res) => {
@@ -596,10 +623,7 @@ export async function registerRoutes(
       const { pageVersions } = await import('@shared/schema');
       const { eq } = await import('drizzle-orm');
 
-      const [version] = await db
-        .select()
-        .from(pageVersions)
-        .where(eq(pageVersions.id, versionId));
+      const [version] = await db.select().from(pageVersions).where(eq(pageVersions.id, versionId));
 
       if (!version) {
         return res.status(404).json({ error: 'Version not found' });
@@ -623,10 +647,7 @@ export async function registerRoutes(
       const { pageVersions } = await import('@shared/schema');
       const { eq } = await import('drizzle-orm');
 
-      const [version] = await db
-        .select()
-        .from(pageVersions)
-        .where(eq(pageVersions.id, versionId));
+      const [version] = await db.select().from(pageVersions).where(eq(pageVersions.id, versionId));
 
       if (!version) {
         return res.status(404).json({ error: 'Version not found' });
@@ -2221,7 +2242,7 @@ export async function registerRoutes(
   });
 
   if (featureFlags.FEATURE_AI_SEARCH) {
-    // AI ?�비??API
+    // AI ?�비??API
     app.post('/api/ai/generate', requireAuthIfEnabled, async (req, res) => {
       try {
         const { prompt, type } = req.body;
@@ -2257,7 +2278,7 @@ export async function registerRoutes(
           return res.status(400).json({ message: 'Search query is required' });
         }
 
-        // 모든 관???�이???�집
+        // 모든 관???�이???�집
         const pagesResult = await storage.searchWikiPages({
           query: '',
           teamId,
@@ -2267,7 +2288,7 @@ export async function registerRoutes(
         const tasks = await storage.getTasks(teamId);
         const filesResult = await listUploadedFiles();
 
-        // 문서 배열 ?�성
+        // 문서 배열 ?�성
         const documents = [
           ...pagesResult.pages.map((page: any) => ({
             id: page.id,
@@ -2292,7 +2313,7 @@ export async function registerRoutes(
           })),
         ];
 
-        // AI 검???�행
+        // AI 검???�행
         const results = await smartSearch(query, documents);
 
         res.json({
@@ -3241,4 +3262,3 @@ export async function registerRoutes(
 
   return { httpServer, io };
 }
-

@@ -90,11 +90,13 @@ docker-compose up -d --build
 ## Next steps
 
 ### 2026-02-01 기준 완료된 항목
+
 - ✅ CI를 푸시/PR로 트리거하여 Playwright 리포트가 정상적으로 업로드되는지 확인
 - ✅ Playwright 아티팩트(스크린샷/트레이스)를 검토해 반복적으로 실패하는 E2E 테스트를 식별
 - ✅ 비밀번호 필드 해싱 마이그레이션 설계 및 구현 완료
 
 ### 현재 권장 작업
+
 - 프로덕션 환경에서 SSO Provider 연동 테스트 (Azure AD, Okta 등)
 - k6/Artillery 부하 테스트 실행 및 성능 분석
 - Redis Sentinel/Cluster 구성으로 고가용성 확보

@@ -207,7 +207,9 @@ export function SlashCommandMenu({
         case 'ArrowUp':
           e.preventDefault();
           e.stopPropagation();
-          setSelectedIndex((prev) => (prev - 1 + filteredCommands.length) % filteredCommands.length);
+          setSelectedIndex(
+            (prev) => (prev - 1 + filteredCommands.length) % filteredCommands.length
+          );
           break;
         case 'Enter':
           e.preventDefault();
@@ -266,7 +268,9 @@ export function SlashCommandMenu({
         {filteredCommands.map((cmd, index) => (
           <button
             key={cmd.type}
-            ref={(el) => { itemRefs.current[index] = el; }}
+            ref={(el) => {
+              itemRefs.current[index] = el;
+            }}
             className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${
               index === selectedIndex
                 ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300'

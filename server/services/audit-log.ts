@@ -1,6 +1,6 @@
 /**
  * Audit Log Service
- * 
+ *
  * Tracks user activities for security and compliance:
  * - Authentication events (login, logout, failed attempts)
  * - Data access and modifications
@@ -70,7 +70,7 @@ interface AuditLogEntry {
   eventType: AuditEventType;
   userId?: number | null;
   userEmail?: string | null;
-  targetType?: string | null;      // e.g., 'page', 'user', 'team'
+  targetType?: string | null; // e.g., 'page', 'user', 'team'
   targetId?: number | string | null;
   action: string;
   details?: Record<string, any> | null;
@@ -123,12 +123,18 @@ export async function initAuditLogTable(pool: Pool): Promise<void> {
 
     // Create indexes if they don't exist
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id)`);
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_logs_event_type ON audit_logs(event_type)`);
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at)`);
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_logs_target ON audit_logs(target_type, target_id)`);
-    
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_audit_logs_event_type ON audit_logs(event_type)`
+    );
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at)`
+    );
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_audit_logs_target ON audit_logs(target_type, target_id)`
+    );
+
     logger.info('Audit log table initialized');
-    
+
     // Start flush timer
     if (!flushTimer) {
       flushTimer = setInterval(flushAuditBuffer, BUFFER_FLUSH_INTERVAL);
@@ -162,7 +168,9 @@ async function flushAuditBuffer(): Promise<void> {
       let paramIndex = 1;
 
       for (const entry of groupEntries) {
-        values.push(`($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, $${paramIndex + 4}, $${paramIndex + 5}, $${paramIndex + 6}, $${paramIndex + 7}, $${paramIndex + 8}, $${paramIndex + 9}, $${paramIndex + 10}, $${paramIndex + 11})`);
+        values.push(
+          `($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, $${paramIndex + 4}, $${paramIndex + 5}, $${paramIndex + 6}, $${paramIndex + 7}, $${paramIndex + 8}, $${paramIndex + 9}, $${paramIndex + 10}, $${paramIndex + 11})`
+        );
         params.push(
           entry.eventType,
           entry.userId ?? null,
@@ -201,7 +209,7 @@ async function flushAuditBuffer(): Promise<void> {
 
 // Flush on process exit
 process.on('beforeExit', () => {
-  flushAuditBuffer().catch(err => {
+  flushAuditBuffer().catch((err) => {
     console.error('Error flushing audit buffer on exit:', err);
   });
 });
@@ -246,7 +254,7 @@ export function logAuditEvent(entry: {
 
   // Flush if buffer is full
   if (auditBuffer.length >= BUFFER_MAX_SIZE) {
-    flushAuditBuffer().catch(err => {
+    flushAuditBuffer().catch((err) => {
       logger.error('Error flushing audit buffer', { error: err });
     });
   }
@@ -273,7 +281,7 @@ export function getAuditContext(req: Request): {
   requestId: string | null;
 } {
   const user = (req as any).user;
-  
+
   return {
     userId: user?.id ?? null,
     userEmail: user?.email ?? null,
@@ -299,16 +307,16 @@ export function auditMiddleware(pool: Pool) {
 
     const context = getAuditContext(req);
     const startTime = Date.now();
-    
+
     // Log after response
     res.on('finish', () => {
       const duration = Date.now() - startTime;
       const success = res.statusCode < 400;
-      
+
       // Only log write operations and auth endpoints in detail
       const isWriteOp = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method);
       const isAuthEndpoint = req.path.startsWith('/api/auth');
-      
+
       if (isWriteOp || isAuthEndpoint) {
         logAuditEvent({
           pool,
@@ -326,7 +334,7 @@ export function auditMiddleware(pool: Pool) {
         });
       }
     });
-    
+
     next();
   };
 }
@@ -334,20 +342,23 @@ export function auditMiddleware(pool: Pool) {
 /**
  * Query audit logs
  */
-export async function queryAuditLogs(pool: Pool, options: {
-  userId?: number;
-  eventType?: AuditEventType;
-  targetType?: string;
-  targetId?: string;
-  startDate?: Date;
-  endDate?: Date;
-  limit?: number;
-  offset?: number;
-}): Promise<any[]> {
+export async function queryAuditLogs(
+  pool: Pool,
+  options: {
+    userId?: number;
+    eventType?: AuditEventType;
+    targetType?: string;
+    targetId?: string;
+    startDate?: Date;
+    endDate?: Date;
+    limit?: number;
+    offset?: number;
+  }
+): Promise<any[]> {
   const conditions: string[] = ['1=1'];
   const params: any[] = [];
   let paramIndex = 1;
-  
+
   if (options.userId) {
     conditions.push(`user_id = $${paramIndex++}`);
     params.push(options.userId);
@@ -372,27 +383,35 @@ export async function queryAuditLogs(pool: Pool, options: {
     conditions.push(`created_at <= $${paramIndex++}`);
     params.push(options.endDate);
   }
-  
+
   const limit = options.limit || 100;
   const offset = options.offset || 0;
-  
+
   params.push(limit, offset);
-  
-  const result = await pool.query(`
+
+  const result = await pool.query(
+    `
     SELECT * FROM audit_logs
     WHERE ${conditions.join(' AND ')}
     ORDER BY created_at DESC
     LIMIT $${paramIndex++} OFFSET $${paramIndex}
-  `, params);
-  
+  `,
+    params
+  );
+
   return result.rows;
 }
 
 /**
  * Get audit summary for a user
  */
-export async function getUserAuditSummary(pool: Pool, userId: number, days: number = 30): Promise<any[]> {
-  const result = await pool.query(`
+export async function getUserAuditSummary(
+  pool: Pool,
+  userId: number,
+  days: number = 30
+): Promise<any[]> {
+  const result = await pool.query(
+    `
     SELECT 
       event_type,
       COUNT(*) as count,
@@ -402,8 +421,10 @@ export async function getUserAuditSummary(pool: Pool, userId: number, days: numb
       AND created_at >= NOW() - INTERVAL '1 day' * $2
     GROUP BY event_type
     ORDER BY count DESC
-  `, [userId, days]);
-  
+  `,
+    [userId, days]
+  );
+
   return result.rows;
 }
 

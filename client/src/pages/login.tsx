@@ -13,14 +13,17 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Get redirect URL from query params (set by ProtectedRoute or http.ts 401 handler)
+  const query = new URLSearchParams(location.search);
+  const redirectTo = query.get('redirect') || '/';
+
   useEffect(() => {
-    const query = new URLSearchParams(location.search);
     const token = query.get('token');
     if (token) {
       socialLogin(token);
-      navigate('/');
+      navigate(redirectTo);
     }
-  }, [location, socialLogin, navigate]);
+  }, [location, socialLogin, navigate, redirectTo]);
 
   const handleSocialLogin = (provider: 'google' | 'github') => {
     window.location.href = `/api/auth/${provider}`;
@@ -30,7 +33,7 @@ export default function LoginPage() {
     e.preventDefault();
     try {
       await login(email, password);
-      navigate('/');
+      navigate(redirectTo);
       toast({
         title: 'Login Successful',
         description: 'Welcome back!',

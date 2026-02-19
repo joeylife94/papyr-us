@@ -1,6 +1,6 @@
 /**
  * Distributed Rate Limiter Service
- * 
+ *
  * Redis-backed rate limiting for horizontal scaling:
  * - Sliding window algorithm
  * - Multiple rate limit tiers (API, Auth, Admin)
@@ -15,9 +15,9 @@ import logger from './logger.js';
 
 // Rate limit configuration
 interface RateLimitConfig {
-  windowMs: number;      // Time window in milliseconds
-  maxRequests: number;   // Max requests per window
-  keyPrefix: string;     // Redis key prefix
+  windowMs: number; // Time window in milliseconds
+  maxRequests: number; // Max requests per window
+  keyPrefix: string; // Redis key prefix
   skipFailedRequests?: boolean;
   skipSuccessfulRequests?: boolean;
 }
@@ -26,49 +26,49 @@ interface RateLimitConfig {
 export const rateLimitTiers = {
   // Standard API rate limit
   api: {
-    windowMs: 60 * 1000,      // 1 minute
+    windowMs: 60 * 1000, // 1 minute
     maxRequests: 100,
     keyPrefix: 'rl:api:',
   },
-  
+
   // Strict limit for auth endpoints (prevent brute force)
   auth: {
     windowMs: 15 * 60 * 1000, // 15 minutes
     maxRequests: 10,
     keyPrefix: 'rl:auth:',
   },
-  
+
   // Very strict for password reset
   passwordReset: {
     windowMs: 60 * 60 * 1000, // 1 hour
     maxRequests: 3,
     keyPrefix: 'rl:pwreset:',
   },
-  
+
   // Admin endpoints
   admin: {
-    windowMs: 60 * 1000,      // 1 minute
+    windowMs: 60 * 1000, // 1 minute
     maxRequests: 30,
     keyPrefix: 'rl:admin:',
   },
-  
+
   // AI/expensive operations
   ai: {
-    windowMs: 60 * 1000,      // 1 minute
+    windowMs: 60 * 1000, // 1 minute
     maxRequests: 10,
     keyPrefix: 'rl:ai:',
   },
-  
+
   // Upload endpoints
   upload: {
-    windowMs: 60 * 1000,      // 1 minute
+    windowMs: 60 * 1000, // 1 minute
     maxRequests: 20,
     keyPrefix: 'rl:upload:',
   },
-  
+
   // Search (can be expensive)
   search: {
-    windowMs: 60 * 1000,      // 1 minute
+    windowMs: 60 * 1000, // 1 minute
     maxRequests: 30,
     keyPrefix: 'rl:search:',
   },
@@ -102,7 +102,7 @@ function getRateLimitKey(req: Request, prefix: string): string {
   if (userId) {
     return `${prefix}user:${userId}`;
   }
-  
+
   // Fall back to IP
   const ip = req.ip || req.socket.remoteAddress || 'unknown';
   return `${prefix}ip:${ip}`;
@@ -125,24 +125,24 @@ async function checkRedisRateLimit(
 
   // Use Redis sorted set for sliding window
   const multi = client.multi();
-  
+
   // Remove old entries outside window
   multi.zremrangebyscore(key, 0, windowStart);
-  
+
   // Count current entries
   multi.zcard(key);
-  
+
   // Add current request
   multi.zadd(key, now, `${now}-${Math.random()}`);
-  
+
   // Set expiry
   multi.pexpire(key, config.windowMs);
-  
+
   const results = await multi.exec();
-  
+
   // Get count from results (second command)
   const currentCount = (results?.[1]?.[1] as number) || 0;
-  
+
   const allowed = currentCount < config.maxRequests;
   const remaining = Math.max(0, config.maxRequests - currentCount - 1);
   const resetAt = now + config.windowMs;
@@ -182,9 +182,8 @@ function checkMemoryRateLimit(
  * Create rate limiter middleware for specific tier
  */
 export function createRateLimiter(tierOrConfig: keyof typeof rateLimitTiers | RateLimitConfig) {
-  const limitConfig = typeof tierOrConfig === 'string' 
-    ? rateLimitTiers[tierOrConfig] 
-    : tierOrConfig;
+  const limitConfig =
+    typeof tierOrConfig === 'string' ? rateLimitTiers[tierOrConfig] : tierOrConfig;
 
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     // Skip if rate limiting is disabled
@@ -194,7 +193,7 @@ export function createRateLimiter(tierOrConfig: keyof typeof rateLimitTiers | Ra
 
     // Skip for whitelisted IPs
     const ip = req.ip || '';
-    if (config.adminIpWhitelist.some(w => ip.includes(w))) {
+    if (config.adminIpWhitelist.some((w) => ip.includes(w))) {
       return next();
     }
 
@@ -216,7 +215,7 @@ export function createRateLimiter(tierOrConfig: keyof typeof rateLimitTiers | Ra
 
       if (!result.allowed) {
         res.setHeader('Retry-After', Math.ceil((result.resetAt - Date.now()) / 1000));
-        
+
         logger.warn('Rate limit exceeded', {
           key,
           ip: req.ip,
@@ -236,9 +235,9 @@ export function createRateLimiter(tierOrConfig: keyof typeof rateLimitTiers | Ra
     } catch (error) {
       // On error, fall back to memory store
       logger.error('Rate limiter error, falling back to memory', { error });
-      
+
       const result = checkMemoryRateLimit(key, limitConfig);
-      
+
       if (!result.allowed) {
         res.status(429).json({
           error: 'Too Many Requests',
@@ -246,7 +245,7 @@ export function createRateLimiter(tierOrConfig: keyof typeof rateLimitTiers | Ra
         });
         return;
       }
-      
+
       next();
     }
   };
@@ -260,22 +259,22 @@ export function applyRateLimiters(app: any): void {
   app.use('/api/auth/login', createRateLimiter('auth'));
   app.use('/api/auth/register', createRateLimiter('auth'));
   app.use('/api/auth/reset-password', createRateLimiter('passwordReset'));
-  
+
   // Admin endpoints
   app.use('/api/admin', createRateLimiter('admin'));
-  
+
   // AI endpoints - expensive operations
   app.use('/api/ai', createRateLimiter('ai'));
-  
+
   // Search - can be expensive
   app.use('/api/search', createRateLimiter('search'));
-  
+
   // Upload - resource intensive
   app.use('/api/upload', createRateLimiter('upload'));
-  
+
   // General API - default rate limit
   app.use('/api', createRateLimiter('api'));
-  
+
   logger.info('Distributed rate limiters applied');
 }
 

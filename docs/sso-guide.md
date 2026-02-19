@@ -19,14 +19,14 @@ Papyr.us의 SSO(Single Sign-On) 및 OIDC(OpenID Connect) 인증 통합 가이드
 
 ## 지원 Provider
 
-| Provider | 타입 | 용도 |
-|----------|------|------|
-| Google | OAuth 2.0 | 일반 사용자 |
-| GitHub | OAuth 2.0 | 개발자 |
-| Azure AD | OIDC | 엔터프라이즈 |
-| Okta | OIDC | 엔터프라이즈 |
-| Auth0 | OIDC | 범용 |
-| Generic OIDC | OIDC | 커스텀 IdP |
+| Provider     | 타입      | 용도         |
+| ------------ | --------- | ------------ |
+| Google       | OAuth 2.0 | 일반 사용자  |
+| GitHub       | OAuth 2.0 | 개발자       |
+| Azure AD     | OIDC      | 엔터프라이즈 |
+| Okta         | OIDC      | 엔터프라이즈 |
+| Auth0        | OIDC      | 범용         |
+| Generic OIDC | OIDC      | 커스텀 IdP   |
 
 ---
 
@@ -337,18 +337,14 @@ function SSOButtons() {
 
   useEffect(() => {
     fetch('/api/auth/sso/providers')
-      .then(res => res.json())
-      .then(data => setProviders(data.providers.filter(p => p.enabled)));
+      .then((res) => res.json())
+      .then((data) => setProviders(data.providers.filter((p) => p.enabled)));
   }, []);
 
   return (
     <div>
-      {providers.map(provider => (
-        <a
-          key={provider.id}
-          href={`/api/auth/sso/${provider.id}`}
-          className="btn btn-sso"
-        >
+      {providers.map((provider) => (
+        <a key={provider.id} href={`/api/auth/sso/${provider.id}`} className="btn btn-sso">
           {provider.name}으로 로그인
         </a>
       ))}
@@ -365,7 +361,7 @@ function AuthCallback() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const token = params.get('token');
-    
+
     if (token) {
       localStorage.setItem('token', token);
       window.location.href = '/dashboard';
@@ -395,10 +391,7 @@ Public 클라이언트의 보안 강화:
 
 ```typescript
 const codeVerifier = crypto.randomBytes(32).toString('base64url');
-const codeChallenge = crypto
-  .createHash('sha256')
-  .update(codeVerifier)
-  .digest('base64url');
+const codeChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url');
 ```
 
 ### 토큰 저장

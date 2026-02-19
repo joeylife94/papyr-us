@@ -1,6 +1,6 @@
 /**
  * Mobile-first responsive hook for React
- * 
+ *
  * Provides responsive utilities and breakpoint detection
  */
 
@@ -53,12 +53,18 @@ export function useBreakpoint(): {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const breakpoint: Breakpoint | 'xs' = 
-    width >= breakpoints['2xl'] ? '2xl' :
-    width >= breakpoints.xl ? 'xl' :
-    width >= breakpoints.lg ? 'lg' :
-    width >= breakpoints.md ? 'md' :
-    width >= breakpoints.sm ? 'sm' : 'xs';
+  const breakpoint: Breakpoint | 'xs' =
+    width >= breakpoints['2xl']
+      ? '2xl'
+      : width >= breakpoints.xl
+        ? 'xl'
+        : width >= breakpoints.lg
+          ? 'lg'
+          : width >= breakpoints.md
+            ? 'md'
+            : width >= breakpoints.sm
+              ? 'sm'
+              : 'xs';
 
   return {
     breakpoint,
@@ -135,7 +141,7 @@ export function useMobileNav() {
     };
   }, [isOpen, isMobile]);
 
-  const toggle = useCallback(() => setIsOpen(prev => !prev), []);
+  const toggle = useCallback(() => setIsOpen((prev) => !prev), []);
   const open = useCallback(() => setIsOpen(true), []);
   const close = useCallback(() => setIsOpen(false), []);
 
@@ -160,8 +166,8 @@ export function useTouchDevice(): boolean {
     const checkTouch = () => {
       setIsTouch(
         'ontouchstart' in window ||
-        navigator.maxTouchPoints > 0 ||
-        (navigator as any).msMaxTouchPoints > 0
+          navigator.maxTouchPoints > 0 ||
+          (navigator as any).msMaxTouchPoints > 0
       );
     };
 
@@ -175,11 +181,7 @@ export function useTouchDevice(): boolean {
 /**
  * Hook for swipe gestures
  */
-export function useSwipe(
-  onSwipeLeft?: () => void,
-  onSwipeRight?: () => void,
-  threshold = 50
-) {
+export function useSwipe(onSwipeLeft?: () => void, onSwipeRight?: () => void, threshold = 50) {
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
 
@@ -315,7 +317,7 @@ export function useVirtualKeyboard() {
 
     // Fallback for older browsers
     const initialHeight = window.innerHeight;
-    
+
     const handleResize = () => {
       const heightDiff = initialHeight - window.innerHeight;
       setIsKeyboardOpen(heightDiff > 150);

@@ -32,6 +32,7 @@ import {
   FileEdit,
   Sparkles,
   X,
+  Trash2,
 } from 'lucide-react';
 import type { WikiPage } from '@shared/schema';
 
@@ -168,6 +169,24 @@ export default function WikiPageView() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!page) return;
+    const confirmed = window.confirm(`Are you sure you want to delete "${page.title}"?`);
+    if (!confirmed) return;
+    try {
+      await apiRequest('DELETE', `/api/pages/${page.id}`);
+      queryClient.invalidateQueries({ queryKey: ['/api/pages'] });
+      toast({ title: 'Page Deleted', description: 'The page has been deleted successfully.' });
+      navigate('/');
+    } catch (error) {
+      toast({
+        title: 'Delete Failed',
+        description: 'Unable to delete the page.',
+        variant: 'destructive',
+      });
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex">
@@ -281,6 +300,9 @@ export default function WikiPageView() {
                 </Button>
                 <Button variant="ghost" size="icon" onClick={handleShare} title="Share Page">
                   <Share className="h-4 w-4" />
+                </Button>
+                <Button variant="ghost" size="icon" onClick={handleDelete} title="Delete">
+                  <Trash2 className="h-4 w-4" />
                 </Button>
               </div>
             </div>

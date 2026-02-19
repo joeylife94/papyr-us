@@ -43,8 +43,7 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
           return { ...payload, offset: pageParam, limit };
         } catch (error) {
           console.error('Fetch error:', error);
-          // Return empty page
-          return { pages: [], total: 0, offset: pageParam || 0, limit };
+          throw error; // Let React Query handle the error state & retries
         }
       },
       initialPageParam: 0,

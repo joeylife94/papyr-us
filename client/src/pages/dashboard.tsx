@@ -298,7 +298,7 @@ export default function DashboardPage() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {overview.recentActivity.map((activity, index) => (
+            {(overview.recentActivity || []).map((activity, index) => (
               <div key={index} className="flex items-start space-x-3 p-3 rounded-lg border">
                 <div className="flex-shrink-0">
                   {activity.type === 'page' ? (

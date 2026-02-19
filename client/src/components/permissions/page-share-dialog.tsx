@@ -58,12 +58,7 @@ export function PageShareDialog({ pageId, pageTitle, trigger }: PageShareDialogP
   const loadLinks = async () => {
     setIsLoading(true);
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`/api/pages/${pageId}/share`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const response = await fetch(`/api/pages/${pageId}/share`);
 
       if (response.ok) {
         const data = await response.json();
@@ -85,12 +80,10 @@ export function PageShareDialog({ pageId, pageTitle, trigger }: PageShareDialogP
   const createLink = async () => {
     setIsLoading(true);
     try {
-      const token = localStorage.getItem('token');
       const response = await fetch(`/api/pages/${pageId}/share`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           permission: newLinkPermission,
@@ -135,12 +128,8 @@ export function PageShareDialog({ pageId, pageTitle, trigger }: PageShareDialogP
   const deleteLink = async (token: string) => {
     setIsLoading(true);
     try {
-      const authToken = localStorage.getItem('token');
       const response = await fetch(`/api/pages/${pageId}/share/${token}`, {
         method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-        },
       });
 
       if (response.ok) {
@@ -163,9 +152,13 @@ export function PageShareDialog({ pageId, pageTitle, trigger }: PageShareDialogP
     }
   };
 
-  const copyLink = (token: string) => {
+  const copyLink = async (token: string) => {
     const url = `${window.location.origin}/share/${token}`;
-    navigator.clipboard.writeText(url);
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      console.warn('Clipboard write failed');
+    }
     setCopiedToken(token);
     setTimeout(() => setCopiedToken(null), 2000);
     toast({

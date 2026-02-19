@@ -1,6 +1,6 @@
 /**
  * Mobile Navigation Component
- * 
+ *
  * Responsive navigation with hamburger menu for mobile
  * and full navigation for desktop
  */
@@ -9,18 +9,18 @@ import React, { useState } from 'react';
 import { Link, useLocation } from 'wouter';
 import { cn } from '@/lib/utils';
 import { useBreakpoint, useMobileNav, useSwipe } from '@/hooks/use-responsive';
-import { 
-  Menu, 
-  X, 
-  Home, 
-  FileText, 
-  Users, 
-  Calendar, 
-  Settings, 
+import {
+  Menu,
+  X,
+  Home,
+  FileText,
+  Users,
+  Calendar,
+  Settings,
   Search,
   Bell,
   Plus,
-  ChevronLeft
+  ChevronLeft,
 } from 'lucide-react';
 
 interface NavItem {
@@ -107,10 +107,7 @@ export function MobileHeader({ className }: MobileNavProps) {
         )}
       >
         {/* Backdrop */}
-        <div
-          className="absolute inset-0 bg-black/50"
-          onClick={close}
-        />
+        <div className="absolute inset-0 bg-black/50" onClick={close} />
 
         {/* Drawer */}
         <nav
@@ -125,10 +122,7 @@ export function MobileHeader({ className }: MobileNavProps) {
           {/* Drawer Header */}
           <div className="h-14 flex items-center px-4 border-b">
             <span className="text-lg font-bold flex-1">Menu</span>
-            <button
-              onClick={close}
-              className="p-2 -mr-2 rounded-lg active:bg-muted"
-            >
+            <button onClick={close} className="p-2 -mr-2 rounded-lg active:bg-muted">
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -136,11 +130,7 @@ export function MobileHeader({ className }: MobileNavProps) {
           {/* Nav Items */}
           <div className="flex-1 overflow-y-auto py-2">
             {navItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={close}
-              >
+              <Link key={item.href} href={item.href} onClick={close}>
                 <a
                   className={cn(
                     'flex items-center gap-3 px-4 py-3 mx-2 rounded-lg transition-colors',
@@ -152,9 +142,7 @@ export function MobileHeader({ className }: MobileNavProps) {
                   {item.icon}
                   <span className="flex-1">{item.label}</span>
                   {item.badge !== undefined && item.badge > 0 && (
-                    <span className="px-2 py-0.5 text-xs bg-muted rounded-full">
-                      {item.badge}
-                    </span>
+                    <span className="px-2 py-0.5 text-xs bg-muted rounded-full">{item.badge}</span>
                   )}
                 </a>
               </Link>
@@ -283,15 +271,9 @@ export function PageHeader({ title, onBack, actions, className }: PageHeaderProp
           <ChevronLeft className="w-6 h-6" />
         </button>
 
-        <h1 className="flex-1 text-lg font-semibold truncate px-2">
-          {title}
-        </h1>
+        <h1 className="flex-1 text-lg font-semibold truncate px-2">{title}</h1>
 
-        {actions && (
-          <div className="flex items-center gap-1">
-            {actions}
-          </div>
-        )}
+        {actions && <div className="flex items-center gap-1">{actions}</div>}
       </header>
 
       {/* Spacer */}

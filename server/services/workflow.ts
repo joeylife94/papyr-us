@@ -19,9 +19,12 @@ export function initWorkflowService(storageInstance: DBStorage) {
 
 function getWorkflowStorage(): DBStorage {
   if (!_storage) {
-    // Lazy fallback ??import getStorage only when not yet initialized
+    // Lazy fallback — import getStorage only when not yet initialized
     const { getStorage } = require('../storage.js');
     _storage = getStorage();
+  }
+  if (!_storage) {
+    throw new Error('Workflow storage not initialized. Call initWorkflowService first.');
   }
   return _storage;
 }
@@ -170,7 +173,11 @@ async function executeAction(
           return { success: false, error: 'Missing page ID or tags' };
         }
         // Fetch current page using searchWikiPages
-        const searchResult = await getWorkflowStorage().searchWikiPages({ query: '', limit: 1000, offset: 0 });
+        const searchResult = await getWorkflowStorage().searchWikiPages({
+          query: '',
+          limit: 1000,
+          offset: 0,
+        });
         const page = searchResult.pages.find((p: any) => p.id === context.trigger.id);
         if (!page) {
           return { success: false, error: 'Page not found' };
@@ -374,7 +381,10 @@ export async function triggerWorkflows(
 ): Promise<void> {
   try {
     // Get all active workflows for this trigger type
-    const workflows = await getWorkflowStorage().getActiveWorkflowsByTrigger(triggerType, data.teamId);
+    const workflows = await getWorkflowStorage().getActiveWorkflowsByTrigger(
+      triggerType,
+      data.teamId
+    );
 
     // Execute each workflow
     for (const workflow of workflows) {

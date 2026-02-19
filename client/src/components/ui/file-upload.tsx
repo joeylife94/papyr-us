@@ -222,13 +222,21 @@ export function FileUpload({
     setFilesWithProgress((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const copyMarkdown = (file: UploadedFile) => {
+  const copyMarkdown = async (file: UploadedFile) => {
     const markdown = generateMarkdown(file);
-    navigator.clipboard.writeText(markdown);
-    toast({
-      title: '클립보드에 복사됨',
-      description: '마크다운 코드가 클립보드에 복사되었습니다.',
-    });
+    try {
+      await navigator.clipboard.writeText(markdown);
+      toast({
+        title: '클립보드에 복사됨',
+        description: '마크다운 코드가 클립보드에 복사되었습니다.',
+      });
+    } catch {
+      toast({
+        title: '복사 실패',
+        description: '클립보드에 접근할 수 없습니다.',
+        variant: 'destructive',
+      });
+    }
   };
 
   return (

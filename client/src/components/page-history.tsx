@@ -1,32 +1,13 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow, format } from 'date-fns';
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
-import {
-  History,
-  RotateCcw,
-  Clock,
-  User,
-  ChevronRight,
-  FileText,
-  Eye,
-} from 'lucide-react';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { History, RotateCcw, Clock, User, ChevronRight, FileText, Eye } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 interface PageVersion {
   id: number;
@@ -243,24 +224,24 @@ export function PageHistory({ pageId, currentTitle }: PageHistoryProps) {
                 </div>
               </div>
               <div className="prose prose-sm dark:prose-invert max-w-none border rounded-lg p-4 bg-slate-50 dark:bg-slate-900">
-                <pre className="whitespace-pre-wrap text-sm">
-                  {viewVersionQuery.data.content}
-                </pre>
+                <pre className="whitespace-pre-wrap text-sm">{viewVersionQuery.data.content}</pre>
               </div>
               <div className="flex justify-end">
                 <Button
                   variant="default"
                   size="sm"
                   onClick={() => {
-                    if (selectedVersion && confirm(`v${selectedVersion.versionNumber}으로 복원하시겠습니까?`)) {
+                    if (
+                      selectedVersion &&
+                      confirm(`v${selectedVersion.versionNumber}으로 복원하시겠습니까?`)
+                    ) {
                       restoreMutation.mutate(selectedVersion.id);
                       setPreviewOpen(false);
                     }
                   }}
                   disabled={restoreMutation.isPending}
                 >
-                  <RotateCcw className="h-4 w-4 mr-2" />
-                  이 버전으로 복원
+                  <RotateCcw className="h-4 w-4 mr-2" />이 버전으로 복원
                 </Button>
               </div>
             </div>

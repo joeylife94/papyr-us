@@ -400,14 +400,14 @@ export async function setupSocketIO(
     try {
       const pubClient = await getRedisClient();
       const subClient = await getSubscriberClient();
-      
+
       if (pubClient && subClient) {
         io.adapter(createAdapter(pubClient, subClient));
         logger.info('Socket.IO Redis adapter enabled for horizontal scaling');
       }
     } catch (error) {
-      logger.warn('Failed to setup Socket.IO Redis adapter, falling back to in-memory', { 
-        error: error instanceof Error ? error.message : 'Unknown error' 
+      logger.warn('Failed to setup Socket.IO Redis adapter, falling back to in-memory', {
+        error: error instanceof Error ? error.message : 'Unknown error',
       });
     }
   } else {

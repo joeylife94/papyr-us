@@ -109,13 +109,18 @@ export default function AdminPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password: stored }),
-      }).then((response) => {
-        if (response.ok) {
-          setIsAuthenticated(true);
-        } else {
-          sessionStorage.removeItem('adminAuth');
-        }
-      });
+      })
+        .then((response) => {
+          if (response.ok) {
+            setIsAuthenticated(true);
+          } else {
+            sessionStorage.removeItem('adminAuth');
+          }
+        })
+        .catch(() => {
+          // Network error — keep stored auth for retry on next load
+          console.warn('Admin auth check failed — server may be unreachable');
+        });
     }
   }, []);
 
@@ -624,12 +629,18 @@ export default function AdminPage() {
                         {directory.displayName}
                       </CardTitle>
                       <div className="flex space-x-1">
-                        <Button variant="ghost" size="sm" onClick={() => handleEdit(directory)}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          aria-label="Edit"
+                          onClick={() => handleEdit(directory)}
+                        >
                           <Edit className="h-3 w-3" />
                         </Button>
                         <Button
                           variant="ghost"
                           size="sm"
+                          aria-label="Delete"
                           onClick={() => handleDelete(directory.id)}
                           className="text-red-500 hover:text-red-700"
                         >
@@ -864,12 +875,18 @@ export default function AdminPage() {
                         {team.displayName}
                       </CardTitle>
                       <div className="flex space-x-1">
-                        <Button variant="ghost" size="sm" onClick={() => handleEditTeam(team)}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          aria-label="Edit"
+                          onClick={() => handleEditTeam(team)}
+                        >
                           <Edit className="h-3 w-3" />
                         </Button>
                         <Button
                           variant="ghost"
                           size="sm"
+                          aria-label="Delete"
                           onClick={() => handleDeleteTeam(team.id)}
                           className="text-red-500 hover:text-red-700"
                         >
