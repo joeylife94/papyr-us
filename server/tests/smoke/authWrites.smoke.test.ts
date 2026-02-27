@@ -28,9 +28,12 @@ let server: http.Server;
 const storage: any = (storageModule as any).storage;
 
 const OLD_ENV = { ...process.env };
+const TEST_JWT_SECRET = 'authwrites-smoke-test-secret-fixed';
 
 beforeAll(async () => {
   process.env.ENFORCE_AUTH_WRITES = 'true';
+  // Pin JWT_SECRET so signing and verification always use the same value
+  process.env.JWT_SECRET = TEST_JWT_SECRET;
   app = express();
   app.use(express.json());
   ({ httpServer: server } = await registerRoutes(app, storage));
@@ -62,7 +65,8 @@ describe('Smoke: ENFORCE_AUTH_WRITES', () => {
 
   it('allows write with valid JWT', async () => {
     (storage.createWikiPage as any).mockResolvedValue({ id: 1, title: 'T' });
-    const token = jwt.sign({ id: 1, email: 'u@test.com' }, 'your-default-secret', {
+    // Must match the TEST_JWT_SECRET pinned in beforeAll
+    const token = jwt.sign({ id: 1, email: 'u@test.com' }, TEST_JWT_SECRET, {
       expiresIn: '1h',
     });
 

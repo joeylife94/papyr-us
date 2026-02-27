@@ -40,7 +40,14 @@ describe('smoke: config defaults', () => {
   });
 
   it('host is 0.0.0.0 in production', async () => {
-    const config = await loadConfigWithEnv({ NODE_ENV: 'production', REPL_ID: undefined });
+    const config = await loadConfigWithEnv({
+      NODE_ENV: 'production',
+      REPL_ID: undefined,
+      // Provide required production vars so validateProductionConfig() doesn't call process.exit(1)
+      JWT_SECRET: 'a-secure-test-secret-for-unit-tests-only-not-real',
+      ADMIN_PASSWORD: 'TestPassword123!',
+      DATABASE_URL: 'postgresql://test:test@localhost/testdb',
+    });
     expect(config.isProduction).toBe(true);
     expect(config.host).toBe('0.0.0.0');
   });
