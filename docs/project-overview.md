@@ -1,6 +1,6 @@
 # Papyr.us 프로젝트 개요
 
-> **최종 업데이트**: 2026-02-07  
+> **최종 업데이트**: 2026-02-27  
 > TL;DR: Papyr.us는 React 18 + Express.js 기반의 노션급 팀 협업 위키 플랫폼으로, 24종 블록 에디터, Yjs CRDT 실시간 협업, GPT-4o AI Copilot, Notion-style 데이터베이스, 워크플로우 자동화를 제공합니다. TypeScript ~33,000줄, 135개 API, 19개 DB 테이블, 94개 React 컴포넌트.
 
 ## 프로젝트 소개
@@ -264,6 +264,7 @@ papyr-us/
 │   ├── src/
 │   │   ├── components/     # UI 컴포넌트 (94개 — ui, blocks, collaboration, database, ai, views 등)
 │   │   ├── pages/          # 라우팅 페이지 (19개 페이지, 28개 라우트)
+│   │   │   └── database-view/  # DB 뷰 (index.tsx, types.ts, constants.ts, PagesTab.tsx, TasksTab.tsx, FilesTab.tsx)
 │   │   ├── hooks/          # 커스텀 훅 (useAuth, useYjsCollaboration, useCollaboration 등 7개)
 │   │   ├── lib/            # 유틸리티 (queryClient, socket, markdown, conflictResolver 등)
 │   │   └── features/       # 피처 플래그 컨텍스트
@@ -290,7 +291,7 @@ papyr-us/
 
 ### 🔴 우선 수정 (기술적 문제)
 
-1. **wouter → react-router-dom 통일** — home.tsx, page-editor.tsx에서 wouter 사용 중 (라우팅 충돌)
+1. ~~**wouter → react-router-dom 통일**~~ ✅ 완료 (react-router-dom 7.x로 통일)
 2. **중복 커서 컴포넌트 통합** — 3개의 커서 컴포넌트를 1개로
 3. **Storage 싱글턴 수정** — workflow.ts가 별도 DB Pool 생성
 4. **대시보드 동적 팀** — 하드코딩된 team1/team2 제거
@@ -300,6 +301,6 @@ papyr-us/
 1. **슬래시 명령어 (/)** — 블록 타입 선택 메뉴
 2. **인라인 서식** — 볼드, 이탤릭, 링크, 코드 등 플로팅 툴바
 3. **키보드 단축키** — Cmd+B, Cmd+I, Enter로 새 블록 등
-4. **페이지 히스토리/버전 관리** — 수정 이력 및 복원
-5. **하위 페이지 (nested pages)** — 페이지 안에 페이지
-6. **Command Palette (Cmd+K)** — 전역 빠른 검색/명령
+4. ~~**페이지 히스토리/버전 관리**~~ ✅ 완료 (diff 시각화, 복원 기능 구현)
+5. ~~**하위 페이지 (nested pages)**~~ ✅ 완료 (nested pages 지원)
+6. ~~**Command Palette (Cmd+K)**~~ ✅ 완료 (전역 빠른 검색/명령)

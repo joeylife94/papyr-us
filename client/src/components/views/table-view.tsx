@@ -179,6 +179,17 @@ export function TableView({
         return option?.label || value;
 
       case 'badge':
+        if (Array.isArray(value)) {
+          return (
+            <div className="flex flex-wrap gap-1">
+              {(value as string[]).map((v, i) => (
+                <Badge key={i} variant="secondary" className="text-xs">
+                  {v}
+                </Badge>
+              ))}
+            </div>
+          );
+        }
         return (
           <Badge variant="secondary" className="text-xs">
             {value}
