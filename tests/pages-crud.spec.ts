@@ -1,165 +1,115 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type APIRequestContext } from '@playwright/test';
 
 /**
  * Wiki Pages CRUD E2E Tests
  *
- * Tests the complete lifecycle of wiki pages:
- * - Create new pages
- * - Read/view pages
- * - Update page content
- * - Delete pages
- * - Page hierarchy (parent-child relationships)
+ * Tests the complete lifecycle of wiki pages via the API:
+ * - Create → Read → Update → List → Delete → Verify deleted
  */
 
+// Helper: create a page via API and return the full response body
+async function apiCreatePage(request: APIRequestContext, title: string, content: string) {
+  const slug =
+    title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '') +
+    '-' +
+    Date.now();
+  const resp = await request.post('/api/pages', {
+    data: { title, content, slug, folder: 'docs', author: 'E2E CRUD Test', tags: [] },
+  });
+  expect(resp.status()).toBe(201);
+  const body = await resp.json();
+  expect(body).toHaveProperty('id');
+  expect(body).toHaveProperty('slug');
+  return body;
+}
+
 test.describe('Wiki Pages CRUD', () => {
-  test.beforeEach(async ({ page }) => {
-    // Navigate to home page
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
+  test('create a page and read it back by slug', async ({ request }) => {
+    const title = `CRUD Read Test ${Date.now()}`;
+    const content = 'Content for read test.';
+    const created = await apiCreatePage(request, title, content);
+
+    // Read by slug
+    const getResp = await request.get(`/api/pages/slug/${created.slug}`);
+    expect(getResp.status()).toBe(200);
+    const page = await getResp.json();
+    expect(page.title).toBe(title);
+    expect(page.content).toBe(content);
+    expect(page.id).toBe(created.id);
   });
 
-  test('should create a new page', async ({ page }) => {
-    // Look for create/new page button
-    const createButton = page
-      .locator('button:has-text("New"), button:has-text("Create"), [data-testid="create-page"]')
-      .first();
+  test('create a page and verify it appears in the list', async ({ request }) => {
+    const title = `CRUD List Test ${Date.now()}`;
+    const created = await apiCreatePage(request, title, 'List test content.');
 
-    if (await createButton.isVisible()) {
-      await createButton.click();
+    const listResp = await request.get('/api/pages');
+    expect(listResp.status()).toBe(200);
+    const body = await listResp.json();
+    expect(body).toHaveProperty('pages');
+    expect(Array.isArray(body.pages)).toBe(true);
 
-      // Wait for page creation modal or navigation
-      await page.waitForTimeout(1000);
-
-      // Check if we're on a new page or in a modal
-      const pageTitle = page
-        .locator('input[placeholder*="title"], input[name="title"], [data-testid="page-title"]')
-        .first();
-
-      if (await pageTitle.isVisible()) {
-        const uniqueTitle = 'Test Page ' + Date.now();
-        await pageTitle.fill(uniqueTitle);
-
-        // Save the page
-        const saveButton = page
-          .locator('button:has-text("Save"), button:has-text("Create"), [type="submit"]')
-          .first();
-        if (await saveButton.isVisible()) {
-          await saveButton.click();
-          await page.waitForTimeout(1000);
-        }
-      }
-    }
-
-    // Verify the page rendered without errors (check for React error boundary or blank page)
-    const html = await page.content();
-    expect(html).not.toContain('Something went wrong');
-    // Must render the React app root
-    await expect(page.locator('#root')).toBeVisible();
+    const found = body.pages.find((p: any) => p.id === created.id);
+    expect(found).toBeDefined();
+    expect(found.title).toBe(title);
   });
 
-  test('should display existing pages in sidebar', async ({ page }) => {
-    // Look for sidebar with pages
-    const sidebar = page.locator('[data-testid="sidebar"], aside, nav').first();
+  test('update a page title and content', async ({ request }) => {
+    const created = await apiCreatePage(request, `CRUD Update Test ${Date.now()}`, 'Original.');
 
-    if (await sidebar.isVisible()) {
-      // Check for page items
-      const pageItems = sidebar.locator('a, button, [role="treeitem"]');
-      const count = await pageItems.count();
+    const updatedTitle = `${created.title} (Updated)`;
+    const updatedContent = 'Updated content.';
+    const putResp = await request.put(`/api/pages/${created.id}`, {
+      data: { title: updatedTitle, content: updatedContent },
+    });
+    expect(putResp.status()).toBe(200);
 
-      // Should have at least some navigation items
-      expect(count).toBeGreaterThanOrEqual(0);
-    }
+    // Re-read and verify
+    const getResp = await request.get(`/api/pages/slug/${created.slug}`);
+    expect(getResp.status()).toBe(200);
+    const page = await getResp.json();
+    expect(page.title).toBe(updatedTitle);
+    expect(page.content).toBe(updatedContent);
   });
 
-  test('should navigate to a page and view content', async ({ page }) => {
-    // Click on first available page link
-    const pageLink = page
-      .locator('a[href*="/page"], a[href*="/wiki"], [data-testid="page-link"]')
-      .first();
+  test('delete a page and verify 404', async ({ request }) => {
+    const created = await apiCreatePage(request, `CRUD Delete Test ${Date.now()}`, 'To delete.');
 
-    if (await pageLink.isVisible()) {
-      await pageLink.click();
-      await page.waitForLoadState('networkidle');
+    const delResp = await request.delete(`/api/pages/${created.id}`);
+    expect(delResp.status()).toBe(200);
 
-      // Should see page content area
-      const contentArea = page
-        .locator('[data-testid="page-content"], .page-content, article, main')
-        .first();
-      await expect(contentArea).toBeVisible();
-    }
+    // Verify it's gone
+    const getResp = await request.get(`/api/pages/slug/${created.slug}`);
+    expect(getResp.status()).toBe(404);
   });
 
-  test('should handle page not found gracefully', async ({ page }) => {
-    // Navigate to non-existent page
-    await page.goto('/page/99999999');
-
-    // Should show error or redirect — page should not crash
-    await page.waitForTimeout(1000);
-
-    // Verify the page didn't crash (no blank page, no unhandled error)
-    const html = await page.content();
-    expect(html.length).toBeGreaterThan(100);
-    // Should either show an error message or redirect to a valid page
-    const url = page.url();
-    const hasErrorIndicator =
-      html.includes('not found') ||
-      html.includes('Not Found') ||
-      html.includes('404') ||
-      url.includes('/login') ||
-      url.includes('/');
-    expect(hasErrorIndicator).toBe(true);
+  test('page not found returns 404', async ({ request }) => {
+    const resp = await request.get('/api/pages/999999999');
+    expect(resp.status()).toBe(404);
   });
 });
 
-test.describe('Page Editor', () => {
-  test('should open editor for page', async ({ page }) => {
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
+test.describe('Pages Search API', () => {
+  test('search returns matching page', async ({ request }) => {
+    const uniqueWord = `searchable${Date.now()}`;
+    const created = await apiCreatePage(request, `Search ${uniqueWord}`, 'Findable content.');
 
-    // Look for edit button or editable area
-    const editButton = page.locator('button:has-text("Edit"), [data-testid="edit-page"]').first();
-    const editableArea = page.locator('[contenteditable="true"], textarea, .editor').first();
-
-    if (await editButton.isVisible()) {
-      await editButton.click();
-      await page.waitForTimeout(500);
-    }
-
-    // Check for editor interface
-    const hasEditor =
-      (await editableArea.isVisible()) ||
-      (await page.locator('.ProseMirror, .tiptap, .editor').first().isVisible());
-
-    // Verify the page rendered properly (editor or read-only view)
-    const html = await page.content();
-    expect(html.length).toBeGreaterThan(100);
-    expect(html).not.toContain('Something went wrong');
+    const searchResp = await request.get(`/api/pages?q=${uniqueWord}`);
+    expect(searchResp.status()).toBe(200);
+    const body = await searchResp.json();
+    expect(body).toHaveProperty('pages');
+    expect(body).toHaveProperty('pagination');
+    const found = body.pages.find((p: any) => p.id === created.id);
+    expect(found).toBeDefined();
   });
-});
 
-test.describe('Page Search', () => {
-  test('should search for pages', async ({ page }) => {
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
-
-    // Look for search input
-    const searchInput = page
-      .locator('input[type="search"], input[placeholder*="Search"], [data-testid="search"]')
-      .first();
-
-    if (await searchInput.isVisible()) {
-      await searchInput.fill('test');
-      await page.waitForTimeout(500);
-
-      // Check for search results
-      const results = page
-        .locator('[data-testid="search-results"], .search-results, [role="listbox"]')
-        .first();
-
-      // Results container should appear (even if empty)
-      if (await results.isVisible()) {
-        expect(await results.isVisible()).toBe(true);
-      }
-    }
+  test('empty search returns pages with pagination', async ({ request }) => {
+    const resp = await request.get('/api/pages?q=');
+    expect(resp.status()).toBe(200);
+    const body = await resp.json();
+    expect(body).toHaveProperty('pages');
+    expect(body).toHaveProperty('pagination');
   });
 });

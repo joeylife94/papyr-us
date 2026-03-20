@@ -2648,7 +2648,20 @@ export async function registerRoutes(
 
     app.post('/api/workflows', requireAuthIfEnabled, async (req, res) => {
       try {
-        const workflowData = req.body;
+        const workflowData = { ...req.body };
+        // Resolve string teamId (teamName) to numeric ID
+        if (
+          workflowData.teamId &&
+          typeof workflowData.teamId === 'string' &&
+          isNaN(parseInt(workflowData.teamId))
+        ) {
+          const team = await storage.getTeamByName(workflowData.teamId);
+          if (team) {
+            workflowData.teamId = team.id;
+          } else {
+            return res.status(400).json({ error: 'Team not found' });
+          }
+        }
         const workflow = await storage.createWorkflow(workflowData);
         res.status(201).json(workflow);
       } catch (error) {
@@ -2660,7 +2673,20 @@ export async function registerRoutes(
     app.put('/api/workflows/:id', requireAuthIfEnabled, async (req, res) => {
       try {
         const id = parseInt(req.params.id);
-        const workflowData = req.body;
+        const workflowData = { ...req.body };
+        // Resolve string teamId (teamName) to numeric ID
+        if (
+          workflowData.teamId &&
+          typeof workflowData.teamId === 'string' &&
+          isNaN(parseInt(workflowData.teamId))
+        ) {
+          const team = await storage.getTeamByName(workflowData.teamId);
+          if (team) {
+            workflowData.teamId = team.id;
+          } else {
+            return res.status(400).json({ error: 'Team not found' });
+          }
+        }
         const workflow = await storage.updateWorkflow(id, workflowData);
         if (!workflow) {
           return res.status(404).json({ error: 'Workflow not found' });

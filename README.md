@@ -508,10 +508,10 @@ docker-compose up --build
 ### 💻 Option 2: Local Development
 
 ```bash
-# Clone and install
+# Clone and install (use npm ci for reproducible builds)
 git clone https://github.com/joeylife94/papyr-us.git
 cd papyr-us
-npm install
+npm ci
 
 # Set up environment
 cp .env.example .env
@@ -526,6 +526,19 @@ npm run dev
 ```
 
 **Note:** Local development requires PostgreSQL 16 running on your machine.
+
+### 🧪 Running E2E Tests Locally
+
+```bash
+# Create E2E test environment file
+cp .env.test.example .env.test
+# Adjust DATABASE_URL if needed
+
+# Run E2E tests (starts server on port 5003 automatically)
+npm run e2e
+```
+
+> The E2E server uses port **5003** (configured in `playwright.config.ts`). The `.env.test.example` file documents the required variables.
 
 ### 📝 Environment Variables
 
