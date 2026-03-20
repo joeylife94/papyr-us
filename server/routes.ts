@@ -398,8 +398,21 @@ export async function registerRoutes(
   // Wiki Pages API
   app.get('/api/pages', async (req, res) => {
     try {
-      const teamId = req.query.teamId as string;
+      const teamIdParam = req.query.teamId as string;
       const cursor = req.query.cursor as string | undefined;
+
+      // Resolve teamName string to numeric team ID
+      let resolvedTeamId: number | undefined;
+      if (teamIdParam) {
+        if (!isNaN(parseInt(teamIdParam))) {
+          resolvedTeamId = parseInt(teamIdParam);
+        } else {
+          const team = await storage.getTeamByName(teamIdParam);
+          if (team) {
+            resolvedTeamId = team.id;
+          }
+        }
+      }
 
       const searchParams = searchSchema.parse({
         query: req.query.q as string,
@@ -408,7 +421,7 @@ export async function registerRoutes(
         tags: req.query.tags ? (req.query.tags as string).split(',') : undefined,
         limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
         offset: req.query.offset ? parseInt(req.query.offset as string) : undefined,
-        teamId: teamId,
+        teamId: resolvedTeamId,
       });
 
       const result = await storage.searchWikiPages(searchParams);
@@ -3116,6 +3129,21 @@ export async function registerRoutes(
     } catch (error) {
       console.error('Error fetching synced block:', error);
       res.status(500).json({ error: 'Failed to fetch synced block' });
+    }
+  });
+
+  // List all synced blocks (for picker)
+  app.get('/api/synced-blocks', requireAuthIfEnabled, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.json([]);
+      }
+      const blocks = await storage.getUserSyncedBlocks(userId);
+      res.json(blocks);
+    } catch (error) {
+      console.error('Error listing synced blocks:', error);
+      res.json([]);
     }
   });
 

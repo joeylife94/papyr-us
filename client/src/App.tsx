@@ -176,7 +176,14 @@ function App() {
                           </FeatureGate>
                         }
                       />
-                      <Route path="/knowledge-graph" element={<KnowledgeGraphPage />} />
+                      <Route
+                        path="/knowledge-graph"
+                        element={
+                          <FeatureGate flag="FEATURE_AI_SEARCH">
+                            <KnowledgeGraphPage />
+                          </FeatureGate>
+                        }
+                      />
                       <Route
                         path="/automation"
                         element={
@@ -187,7 +194,11 @@ function App() {
                       />
                       <Route
                         path="/teams/:teamName/knowledge-graph"
-                        element={<KnowledgeGraphPage />}
+                        element={
+                          <FeatureGate flag="FEATURE_AI_SEARCH">
+                            <KnowledgeGraphPage />
+                          </FeatureGate>
+                        }
                       />
                       <Route
                         path="/teams/:teamName/automation"

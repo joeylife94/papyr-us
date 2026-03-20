@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -63,8 +63,8 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
   const queryClient = useQueryClient();
 
   // Check if we have template data from navigation state
-  const location = window.location;
-  const templateData = (location as any).state?.template;
+  const routerLocation = useLocation();
+  const templateData = (routerLocation.state as any)?.template;
 
   const { data: existingPage } = useQuery<WikiPage>({
     queryKey: [`/api/pages/${pageId}`],

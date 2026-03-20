@@ -207,12 +207,35 @@ async function executeAction(
         return { success: response.ok, result: data };
 
       case 'send_email':
-        // TODO: Implement email service
-        logger.info('Email action triggered', {
+        // Email service not yet configured — fall back to in-app notification
+        logger.warn('Email action: email service not configured, falling back to notification', {
           message: processedConfig.message,
           recipients: processedConfig.recipients,
         });
-        return { success: true, result: { sent: true } };
+        // Deliver as in-app notifications instead
+        const emailRecipients = processedConfig.recipients || [];
+        const emailNotifications: any[] = [];
+        for (const recipientId of emailRecipients) {
+          try {
+            const notification = await getWorkflowStorage().createNotification({
+              recipientId,
+              type: 'system',
+              title: processedConfig.subject || 'Email Notification',
+              content: processedConfig.message || '',
+              isRead: false,
+            });
+            emailNotifications.push(notification);
+          } catch (err) {
+            logger.error('Failed to create fallback notification', {
+              recipientId,
+              error: err instanceof Error ? err.message : 'Unknown error',
+            });
+          }
+        }
+        return {
+          success: emailNotifications.length > 0,
+          result: { sent: emailNotifications.length, fallback: 'notification', emailNotifications },
+        };
 
       case 'assign_task':
         if (!context.trigger?.id) {

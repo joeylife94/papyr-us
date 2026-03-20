@@ -45,7 +45,7 @@ export default defineConfig({
           'utils-vendor': ['clsx', 'class-variance-authority', 'tailwind-merge', 'date-fns', 'zod'],
 
           // Query and routing
-          'app-vendor': ['@tanstack/react-query', 'wouter'],
+          'app-vendor': ['@tanstack/react-query', 'react-router-dom'],
 
           // Markdown and content
           'content-vendor': [

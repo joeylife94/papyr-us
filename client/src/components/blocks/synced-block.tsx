@@ -27,12 +27,22 @@ export function SyncedBlock({
 }: SyncedBlockProps) {
   const [isHovered, setIsHovered] = useState(false);
 
-  // If this is a reference (not original), fetch synced content
+  // If this is a reference (not original), fetch synced content from server
   useEffect(() => {
     if (originalBlockId && !isOriginal) {
-      // TODO: Fetch synced content from server
-      // const content = await fetchSyncedContent(originalBlockId);
-      // onContentChange?.(content);
+      fetch(`/api/synced-blocks/${originalBlockId}`)
+        .then((res) => {
+          if (!res.ok) throw new Error('Failed to fetch synced block');
+          return res.json();
+        })
+        .then((data) => {
+          if (data.content && Array.isArray(data.content)) {
+            onContentChange?.(data.content);
+          }
+        })
+        .catch((err) => {
+          console.error('Error fetching synced block:', err);
+        });
     }
   }, [originalBlockId, isOriginal]);
 
@@ -157,10 +167,20 @@ export function SyncedBlockPicker({
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // TODO: Fetch available synced blocks from server
-    // const blocks = await fetchSyncedBlocks();
-    // setSyncedBlocks(blocks);
-    setIsLoading(false);
+    fetch('/api/synced-blocks')
+      .then((res) => {
+        if (!res.ok) return [];
+        return res.json();
+      })
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setSyncedBlocks(data);
+        }
+      })
+      .catch(() => {
+        // Silently fail - no synced blocks available
+      })
+      .finally(() => setIsLoading(false));
   }, []);
 
   return (

@@ -96,7 +96,7 @@ const TemplatesPage: React.FC = () => {
       });
 
       // Navigate to page editor with template content
-      navigate('/page-editor', {
+      navigate('/create', {
         state: {
           template: {
             title: template.title,

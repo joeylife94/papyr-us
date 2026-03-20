@@ -6,7 +6,7 @@
  */
 
 import React, { useState } from 'react';
-import { Link, useLocation } from 'wouter';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useBreakpoint, useMobileNav, useSwipe } from '@/hooks/use-responsive';
 import {
@@ -45,7 +45,7 @@ interface MobileNavProps {
  * Mobile Header with hamburger menu
  */
 export function MobileHeader({ className }: MobileNavProps) {
-  const [location] = useLocation();
+  const location = useLocation();
   const { isOpen, toggle, close } = useMobileNav();
   const { isMobile } = useBreakpoint();
   const [notificationCount] = useState(3); // Example
@@ -79,7 +79,7 @@ export function MobileHeader({ className }: MobileNavProps) {
         </button>
 
         {/* Title / Logo */}
-        <Link href="/" className="flex-1">
+        <Link to="/" className="flex-1">
           <span className="text-lg font-bold">Papyr.us</span>
         </Link>
 
@@ -130,32 +130,35 @@ export function MobileHeader({ className }: MobileNavProps) {
           {/* Nav Items */}
           <div className="flex-1 overflow-y-auto py-2">
             {navItems.map((item) => (
-              <Link key={item.href} href={item.href} onClick={close}>
-                <a
-                  className={cn(
-                    'flex items-center gap-3 px-4 py-3 mx-2 rounded-lg transition-colors',
-                    location === item.href
-                      ? 'bg-primary text-primary-foreground'
-                      : 'active:bg-muted'
-                  )}
-                >
-                  {item.icon}
-                  <span className="flex-1">{item.label}</span>
-                  {item.badge !== undefined && item.badge > 0 && (
-                    <span className="px-2 py-0.5 text-xs bg-muted rounded-full">{item.badge}</span>
-                  )}
-                </a>
+              <Link
+                key={item.href}
+                to={item.href}
+                onClick={close}
+                className={cn(
+                  'flex items-center gap-3 px-4 py-3 mx-2 rounded-lg transition-colors',
+                  location.pathname === item.href
+                    ? 'bg-primary text-primary-foreground'
+                    : 'active:bg-muted'
+                )}
+              >
+                {item.icon}
+                <span className="flex-1">{item.label}</span>
+                {item.badge !== undefined && item.badge > 0 && (
+                  <span className="px-2 py-0.5 text-xs bg-muted rounded-full">{item.badge}</span>
+                )}
               </Link>
             ))}
           </div>
 
           {/* Drawer Footer */}
           <div className="border-t p-4">
-            <Link href="/settings" onClick={close}>
-              <a className="flex items-center gap-3 px-4 py-3 rounded-lg active:bg-muted">
-                <Settings className="w-5 h-5" />
-                <span>Settings</span>
-              </a>
+            <Link
+              to="/admin"
+              onClick={close}
+              className="flex items-center gap-3 px-4 py-3 rounded-lg active:bg-muted"
+            >
+              <Settings className="w-5 h-5" />
+              <span>Settings</span>
             </Link>
           </div>
         </nav>
@@ -171,7 +174,7 @@ export function MobileHeader({ className }: MobileNavProps) {
  * Mobile Bottom Tab Bar
  */
 export function MobileTabBar({ className }: MobileNavProps) {
-  const [location] = useLocation();
+  const location = useLocation();
   const { isMobile } = useBreakpoint();
 
   if (!isMobile) return null;
@@ -200,28 +203,28 @@ export function MobileTabBar({ className }: MobileNavProps) {
         )}
       >
         {tabs.map((tab) => (
-          <Link key={tab.href} href={tab.href}>
-            <a
-              className={cn(
-                'flex flex-col items-center justify-center gap-1 px-3 py-2',
-                'transition-colors',
-                tab.isAction && 'relative -mt-4',
-                location === tab.href
-                  ? 'text-primary'
-                  : 'text-muted-foreground active:text-foreground'
-              )}
-            >
-              {tab.isAction ? (
-                <div className="w-12 h-12 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-lg">
-                  {tab.icon}
-                </div>
-              ) : (
-                <>
-                  {tab.icon}
-                  <span className="text-xs">{tab.label}</span>
-                </>
-              )}
-            </a>
+          <Link
+            key={tab.href}
+            to={tab.href}
+            className={cn(
+              'flex flex-col items-center justify-center gap-1 px-3 py-2',
+              'transition-colors',
+              tab.isAction && 'relative -mt-4',
+              location.pathname === tab.href
+                ? 'text-primary'
+                : 'text-muted-foreground active:text-foreground'
+            )}
+          >
+            {tab.isAction ? (
+              <div className="w-12 h-12 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-lg">
+                {tab.icon}
+              </div>
+            ) : (
+              <>
+                {tab.icon}
+                <span className="text-xs">{tab.label}</span>
+              </>
+            )}
           </Link>
         ))}
       </nav>
@@ -241,13 +244,13 @@ interface PageHeaderProps {
 
 export function PageHeader({ title, onBack, actions, className }: PageHeaderProps) {
   const { isMobile } = useBreakpoint();
-  const [, setLocation] = useLocation();
+  const navigate = useNavigate();
 
   const handleBack = () => {
     if (onBack) {
       onBack();
     } else {
-      setLocation('/');
+      navigate('/');
     }
   };
 

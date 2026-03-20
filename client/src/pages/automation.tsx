@@ -5,6 +5,24 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import {
   Workflow,
@@ -36,6 +54,13 @@ export default function AutomationPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [selectedWorkflow, setSelectedWorkflow] = useState<WorkflowData | null>(null);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [newWorkflow, setNewWorkflow] = useState({
+    name: '',
+    description: '',
+    triggerType: 'page_created',
+    actionType: 'send_notification',
+  });
 
   // Fetch workflows
   const { data: workflows, isLoading } = useQuery<WorkflowData[]>({
@@ -85,6 +110,52 @@ export default function AutomationPage() {
       toast({
         title: '워크플로우 삭제됨',
         description: '워크플로우가 성공적으로 삭제되었습니다.',
+      });
+    },
+  });
+
+  // Create workflow
+  const createMutation = useMutation({
+    mutationFn: async (data: {
+      name: string;
+      description: string;
+      triggerType: string;
+      actionType: string;
+    }) => {
+      const response = await fetch('/api/workflows', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: data.name,
+          description: data.description,
+          trigger: { type: data.triggerType },
+          actions: [{ type: data.actionType, config: {} }],
+          conditions: [],
+          isActive: false,
+        }),
+      });
+      if (!response.ok) throw new Error('Failed to create workflow');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/workflows'] });
+      setShowCreateDialog(false);
+      setNewWorkflow({
+        name: '',
+        description: '',
+        triggerType: 'page_created',
+        actionType: 'send_notification',
+      });
+      toast({
+        title: '워크플로우 생성됨',
+        description: '새 워크플로우가 생성되었습니다.',
+      });
+    },
+    onError: () => {
+      toast({
+        title: '오류',
+        description: '워크플로우 생성에 실패했습니다.',
+        variant: 'destructive',
       });
     },
   });
@@ -147,12 +218,7 @@ export default function AutomationPage() {
           </h1>
           <p className="text-muted-foreground mt-2">반복 작업을 자동화하고 팀 생산성을 높이세요</p>
         </div>
-        <Button
-          className="gap-2"
-          onClick={() =>
-            toast({ title: '준비 중', description: '워크플로우 빌더는 곧 공개됩니다!' })
-          }
-        >
+        <Button className="gap-2" onClick={() => setShowCreateDialog(true)}>
           <Plus className="h-4 w-4" />
           워크플로우 만들기
         </Button>
@@ -167,7 +233,7 @@ export default function AutomationPage() {
             <p className="text-sm text-muted-foreground text-center max-w-md mb-4">
               첫 번째 자동화 워크플로우를 만들어 반복 작업을 자동화하세요.
             </p>
-            <Button>워크플로우 만들기</Button>
+            <Button onClick={() => setShowCreateDialog(true)}>워크플로우 만들기</Button>
           </CardContent>
         </Card>
       ) : (
@@ -321,6 +387,92 @@ export default function AutomationPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Create Workflow Dialog */}
+      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>새 워크플로우 만들기</DialogTitle>
+            <DialogDescription>
+              자동화 워크플로우를 설정하세요. 트리거 조건과 실행할 액션을 선택합니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="wf-name">워크플로우 이름</Label>
+              <Input
+                id="wf-name"
+                placeholder="예: 새 페이지 알림"
+                value={newWorkflow.name}
+                onChange={(e) => setNewWorkflow({ ...newWorkflow, name: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="wf-desc">설명 (선택)</Label>
+              <Textarea
+                id="wf-desc"
+                placeholder="이 워크플로우가 하는 일을 설명하세요"
+                value={newWorkflow.description}
+                onChange={(e) => setNewWorkflow({ ...newWorkflow, description: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>트리거</Label>
+              <Select
+                value={newWorkflow.triggerType}
+                onValueChange={(v) => setNewWorkflow({ ...newWorkflow, triggerType: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="page_created">페이지 생성 시</SelectItem>
+                  <SelectItem value="page_updated">페이지 업데이트 시</SelectItem>
+                  <SelectItem value="page_deleted">페이지 삭제 시</SelectItem>
+                  <SelectItem value="task_created">태스크 생성 시</SelectItem>
+                  <SelectItem value="task_status_changed">태스크 상태 변경 시</SelectItem>
+                  <SelectItem value="task_assigned">태스크 할당 시</SelectItem>
+                  <SelectItem value="task_due_soon">태스크 기한 임박 시</SelectItem>
+                  <SelectItem value="comment_added">댓글 추가 시</SelectItem>
+                  <SelectItem value="tag_added">태그 추가 시</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>액션</Label>
+              <Select
+                value={newWorkflow.actionType}
+                onValueChange={(v) => setNewWorkflow({ ...newWorkflow, actionType: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="send_notification">알림 전송</SelectItem>
+                  <SelectItem value="create_task">태스크 생성</SelectItem>
+                  <SelectItem value="create_page">페이지 생성</SelectItem>
+                  <SelectItem value="add_comment">댓글 추가</SelectItem>
+                  <SelectItem value="add_tag">태그 추가</SelectItem>
+                  <SelectItem value="move_page">페이지 이동</SelectItem>
+                  <SelectItem value="run_ai_summary">AI 요약 실행</SelectItem>
+                  <SelectItem value="webhook">웹훅 호출</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
+              취소
+            </Button>
+            <Button
+              onClick={() => createMutation.mutate(newWorkflow)}
+              disabled={!newWorkflow.name.trim() || createMutation.isPending}
+            >
+              {createMutation.isPending ? '생성 중...' : '워크플로우 생성'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

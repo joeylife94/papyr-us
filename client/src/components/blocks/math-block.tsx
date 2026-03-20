@@ -2,10 +2,8 @@ import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Calculator, Eye, EyeOff } from 'lucide-react';
-
-// Note: To use this component, install katex:
-// npm install katex @types/katex
-// import 'katex/dist/katex.min.css';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
 
 export interface MathBlockProps {
   expression: string;
@@ -16,13 +14,16 @@ export interface MathBlockProps {
   className?: string;
 }
 
-// Simple LaTeX renderer (placeholder - will use KaTeX when available)
 function renderLaTeX(expression: string, displayMode: 'inline' | 'block'): string {
-  // This is a placeholder. In production, use KaTeX:
-  // import katex from 'katex';
-  // return katex.renderToString(expression, { displayMode: displayMode === 'block' });
-
-  return expression; // Fallback: show raw LaTeX
+  try {
+    return katex.renderToString(expression, {
+      displayMode: displayMode === 'block',
+      throwOnError: false,
+      trust: false,
+    });
+  } catch {
+    return `<span class="text-destructive">${expression}</span>`;
+  }
 }
 
 export function MathBlock({
@@ -108,20 +109,11 @@ export function MathBlock({
               displayMode === 'inline' ? 'inline' : 'block'
             )}
           >
-            {/* Render LaTeX - Replace with KaTeX when available */}
-            <code className="text-base">
-              {displayMode === 'block' && '$$'}
-              {expression}
-              {displayMode === 'block' && '$$'}
-            </code>
-
-            {/* TODO: Replace with KaTeX rendering:
             <div
               dangerouslySetInnerHTML={{
                 __html: renderLaTeX(expression, displayMode),
               }}
             />
-            */}
           </div>
         )}
       </div>
