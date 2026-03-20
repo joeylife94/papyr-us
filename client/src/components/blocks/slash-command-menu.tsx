@@ -136,13 +136,6 @@ const SLASH_COMMANDS: SlashCommandItem[] = [
     keywords: ['embed', 'youtube', 'figma', 'iframe', '임베드'],
   },
   {
-    type: 'synced_block',
-    label: '동기화 블록',
-    description: '다른 페이지와 동기화되는 블록',
-    icon: <Link2 className="h-4 w-4" />,
-    keywords: ['synced', 'sync', 'mirror', '동기화'],
-  },
-  {
     type: 'mention',
     label: '멘션',
     description: '사용자 또는 페이지 멘션',

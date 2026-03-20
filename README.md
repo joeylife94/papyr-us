@@ -1,8 +1,10 @@
 # Papyr.us - Modern Team Collaboration Wiki
 
-> **🚀 Production-Ready | Full-Stack TypeScript | AI-Powered**
+> **Full-Stack TypeScript | Team Wiki Platform**
 
-A comprehensive **team collaboration platform** built with React and Express.js, featuring real-time collaboration, AI integration, and an intuitive user experience. Designed to be the next generation of wiki platforms with Notion-like capabilities.
+A **team collaboration wiki** built with React and Express.js, featuring real-time editing, block-based content, and team workspace management. Includes optional AI integration (GPT-4o) and extensible automation workflows.
+
+> **Note:** This project is under active development. Some advanced features (synced blocks, email automation) are experimental or partially implemented. See the feature status table below.
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6.3-blue.svg)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-18.3.1-61dafb.svg)](https://reactjs.org/)
@@ -16,10 +18,27 @@ A comprehensive **team collaboration platform** built with React and Express.js,
 - **AI integration** using GPT-4o: RAG pipeline, semantic search, document summarization, task extraction, smart tagging, and related content discovery
 - **Multi-tenant B2B SaaS architecture** with team-based isolation and comprehensive RBAC (Role-Based Access Control)
 - **Production-grade security**: JWT authentication, bcrypt hashing, rate limiting, Helmet middleware, input validation, and SQL injection prevention
-- **Scalable full-stack TypeScript** codebase (~33,000 lines) with comprehensive test coverage, Docker containerization, and CI/CD pipeline
-- **Enterprise-grade storage**: PostgreSQL 16 with Full-Text Search (FTS), Drizzle ORM for type-safe queries, 19 tables, and migration system
+- **Full-stack TypeScript** codebase (~33,000 lines) with unit/smoke/E2E test suites, Docker containerization, and CI/CD pipeline
+- **PostgreSQL 16** with Full-Text Search (FTS), Drizzle ORM for type-safe queries, 19 tables, and migration system
 
 This project serves as a comprehensive portfolio piece demonstrating system design, AI integration, and security best practices for senior backend and AI engineering roles.
+
+### Feature Status
+
+| Feature                       | Status          | Notes                                                 |
+| ----------------------------- | --------------- | ----------------------------------------------------- |
+| Wiki Pages CRUD               | ✅ Stable       | Create, edit, delete, search, tags                    |
+| Block Editor (core)           | ✅ Stable       | Paragraph, heading, code, image, table, callout, etc. |
+| Team Workspaces               | ✅ Stable       | Team isolation, member management                     |
+| Authentication (JWT)          | ✅ Stable       | Login, register, RBAC                                 |
+| Templates                     | ✅ Stable       | Template categories, template-based page creation     |
+| Calendar & Tasks              | ✅ Stable       | Team-scoped events and task management                |
+| Real-time Collaboration (Yjs) | ⚠️ Beta         | Core editing works; cursor/presence in progress       |
+| AI Search & Copilot           | ⚠️ Beta         | Requires OpenAI API key; search/summarize/RAG         |
+| Automation Workflows          | ⚠️ Beta         | Core triggers/actions work; team scoping in progress  |
+| Synced Blocks                 | 🧪 Experimental | Basic rendering; limited block type support           |
+| Email Automation              | 🧪 Experimental | Falls back to in-app notification (no SMTP)           |
+| Database Views (Notion-style) | 🧪 Experimental | Schema/rows exist; UI partially implemented           |
 
 ---
 
@@ -27,7 +46,7 @@ This project serves as a comprehensive portfolio piece demonstrating system desi
 
 ### 📝 Advanced Wiki System
 
-- **Block-based editor** with 24 content types (paragraphs, headings, code, quotes, checkboxes, images, tables, callouts, embeds, math/LaTeX, toggle, mention, synced blocks, database inline, relations, rollup, formula)
+- **Block-based editor** with core content types (paragraphs, headings, code, quotes, checkboxes, images, tables, callouts, embeds, math/LaTeX, toggle). _Synced blocks, database inline, relations, rollup, formula are experimental._
 - **Markdown support** with real-time preview and syntax highlighting
 - **Postgres Full-Text Search (FTS)** with relevance ranking and automatic indexing
 - **Tag-based organization** with smart filtering
@@ -197,7 +216,7 @@ Express.js 4.21.2
 ### DevOps & Testing
 
 - **Docker & Docker Compose** for containerization
-- **Playwright** for E2E testing with high test reliability
+- **Playwright** for E2E testing
 - **Vitest** for unit/integration tests
 - **ESLint & Prettier** with Husky pre-commit hooks
 - **GitHub Actions** CI/CD pipeline
@@ -785,14 +804,14 @@ Comprehensive documentation is available in the `docs/` directory:
 
 ### What Makes Papyr.us Special
 
-1. **🎨 Modern UX** - Beautiful, responsive design with dark mode
+1. **🎨 Modern UX** - Responsive design with dark mode
 2. **⚡ Real-time** - Socket.IO + Yjs CRDT for live collaboration
-3. **🤖 AI-Powered** - GPT-4o integration for smart features
-4. **🔒 Secure** - Production-ready security implementation
-5. **🧪 Well-Tested** - Comprehensive test coverage
+3. **🤖 AI Integration** - Optional GPT-4o for search & content features
+4. **🔒 Security** - JWT auth, RBAC, rate limiting, Helmet
+5. **🧪 Tested** - Smoke, unit, and E2E test suites
 6. **📦 Type-Safe** - Full TypeScript with Zod validation
 7. **🐳 Container-Ready** - Docker deployment out of the box
-8. **📖 Well-Documented** - Extensive documentation
+8. **📖 Documented** - Setup guides, API docs, architecture docs
 
 ## 🤝 Contributing
 

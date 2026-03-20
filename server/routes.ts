@@ -3178,22 +3178,6 @@ export async function registerRoutes(
     }
   });
 
-  // Get user's synced blocks
-  app.get('/api/synced-blocks', requireAuthIfEnabled, async (req: AuthRequest, res) => {
-    try {
-      const userId = req.user?.id;
-      if (!userId) {
-        return res.status(401).json({ error: 'User not authenticated' });
-      }
-
-      const syncedBlocks = await storage.getUserSyncedBlocks(userId);
-      res.json(syncedBlocks);
-    } catch (error) {
-      console.error('Error fetching synced blocks:', error);
-      res.status(500).json({ error: 'Failed to fetch synced blocks' });
-    }
-  });
-
   if (featureFlags.FEATURE_AI_SEARCH) {
     // ==================== AI Assistant Routes ====================
 

@@ -35,7 +35,13 @@ let storage: DBStorage;
 try {
   storage = new DBStorage();
 } catch (err) {
-  console.error('[FATAL] Failed to initialise DBStorage:', (err as Error).message);
+  const msg = (err as Error).message;
+  console.error('[FATAL] Failed to initialise DBStorage:', msg);
+  if (msg.includes('DATABASE_URL')) {
+    console.error('');
+    console.error('  Hint: Copy .env.example to .env and configure DATABASE_URL.');
+    console.error('  See docs/development-setup.md or README.md for setup instructions.');
+  }
   process.exit(1);
 }
 

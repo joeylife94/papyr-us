@@ -88,7 +88,19 @@ export class DBStorage {
 
   constructor() {
     if (!process.env.DATABASE_URL) {
-      throw new Error('DATABASE_URL is required for database storage');
+      console.error('\n========================================');
+      console.error('  DATABASE_URL is not set.');
+      console.error('  Papyr.us requires a PostgreSQL database.');
+      console.error('');
+      console.error('  Quick start:');
+      console.error('    1. cp .env.example .env');
+      console.error('    2. Set DATABASE_URL in .env');
+      console.error('       Example: postgresql://user:pass@localhost:5432/papyrus');
+      console.error('    3. Run: npm run db:push');
+      console.error('');
+      console.error('  Or use Docker: docker-compose up -d');
+      console.error('========================================\n');
+      throw new Error('DATABASE_URL is required. See .env.example for setup instructions.');
     }
 
     this.pool = new Pool({

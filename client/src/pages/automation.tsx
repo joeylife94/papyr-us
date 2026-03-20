@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -53,6 +54,7 @@ interface WorkflowData {
 export default function AutomationPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { teamName } = useParams<{ teamName?: string }>();
   const [selectedWorkflow, setSelectedWorkflow] = useState<WorkflowData | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newWorkflow, setNewWorkflow] = useState({
@@ -62,9 +64,13 @@ export default function AutomationPage() {
     actionType: 'send_notification',
   });
 
+  const workflowsUrl = teamName
+    ? `/api/workflows?teamId=${encodeURIComponent(teamName)}`
+    : '/api/workflows';
+
   // Fetch workflows
   const { data: workflows, isLoading } = useQuery<WorkflowData[]>({
-    queryKey: ['/api/workflows'],
+    queryKey: [workflowsUrl],
   });
 
   // Toggle workflow
@@ -81,7 +87,7 @@ export default function AutomationPage() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/workflows'] });
+      queryClient.invalidateQueries({ queryKey: [workflowsUrl] });
       toast({
         title: '워크플로우 업데이트됨',
         description: '워크플로우 상태가 변경되었습니다.',
@@ -105,7 +111,7 @@ export default function AutomationPage() {
       if (!response.ok) throw new Error('Failed to delete workflow');
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/workflows'] });
+      queryClient.invalidateQueries({ queryKey: [workflowsUrl] });
       setSelectedWorkflow(null);
       toast({
         title: '워크플로우 삭제됨',
@@ -132,13 +138,14 @@ export default function AutomationPage() {
           actions: [{ type: data.actionType, config: {} }],
           conditions: [],
           isActive: false,
+          ...(teamName ? { teamId: teamName } : {}),
         }),
       });
       if (!response.ok) throw new Error('Failed to create workflow');
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/workflows'] });
+      queryClient.invalidateQueries({ queryKey: [workflowsUrl] });
       setShowCreateDialog(false);
       setNewWorkflow({
         name: '',
@@ -182,7 +189,7 @@ export default function AutomationPage() {
       send_notification: '알림 전송',
       create_task: '태스크 생성',
       update_task: '태스크 업데이트',
-      send_email: '이메일 전송',
+      send_email: '알림 전송 (이메일 미연동)',
       create_page: '페이지 생성',
       add_comment: '댓글 추가',
       add_tag: '태그 추가',

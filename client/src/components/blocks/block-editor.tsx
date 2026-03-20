@@ -600,7 +600,6 @@ export function BlockEditor({
                   'code',
                   'math',
                   'quote',
-                  'synced_block',
                 ] as BlockType[]
               ).map((type) => (
                 <Button
@@ -622,7 +621,6 @@ export function BlockEditor({
                     {type === 'code' && '코드'}
                     {type === 'math' && '수식'}
                     {type === 'quote' && '인용'}
-                    {type === 'synced_block' && '동기화'}
                   </span>
                 </Button>
               ))}
@@ -694,10 +692,6 @@ export function BlockEditor({
                 <DropdownMenuItem onClick={() => addBlock(blocks.length, 'math')}>
                   <Sigma className="h-4 w-4 mr-2" />
                   수식
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => addBlock(blocks.length, 'synced_block')}>
-                  <Link2 className="h-4 w-4 mr-2" />
-                  동기화 블록
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
