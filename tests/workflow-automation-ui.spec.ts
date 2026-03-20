@@ -1,4 +1,5 @@
 import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
+import { registerTestUser, authHeader } from './e2e-helpers';
 
 /**
  * Workflow Automation UI E2E Tests
@@ -9,20 +10,14 @@ import { test, expect, type Page, type APIRequestContext } from '@playwright/tes
  * - Verify it does NOT appear in a different team's automation page
  */
 
-/** Register a fresh user and return the auth token */
-async function registerAndLogin(request: APIRequestContext): Promise<string> {
-  const email = `wf-ui-${Date.now()}@example.com`;
-  const resp = await request.post('/api/auth/register', {
-    data: { name: 'WF UI Tester', email, password: 'password123' },
-  });
-  expect(resp.status()).toBe(201);
-  const body = await resp.json();
-  return body.token;
-}
-
 /** Create a team via API and return the team object */
-async function createTeamApi(request: APIRequestContext, name: string) {
+async function createTeamApi(
+  request: APIRequestContext,
+  name: string,
+  headers: Record<string, string>
+) {
   const resp = await request.post('/api/teams', {
+    headers,
     data: { name, displayName: `Team ${name}`, description: `E2E UI workflow team ${name}` },
   });
   expect(resp.status()).toBe(201);
@@ -43,11 +38,13 @@ test.describe('Workflow Automation UI', () => {
   let teamBName: string;
 
   test.beforeAll(async ({ request }) => {
-    token = await registerAndLogin(request);
+    const result = await registerTestUser(request, 'wf-ui');
+    token = result.token;
     teamAName = `wf-ui-a-${Date.now()}`;
     teamBName = `wf-ui-b-${Date.now()}`;
-    await createTeamApi(request, teamAName);
-    await createTeamApi(request, teamBName);
+    const headers = authHeader(token);
+    await createTeamApi(request, teamAName, headers);
+    await createTeamApi(request, teamBName, headers);
   });
 
   test('create workflow on team A, visible in A, invisible in B', async ({ page, baseURL }) => {

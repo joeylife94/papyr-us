@@ -1,4 +1,5 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
+import { registerTestUser, authHeader } from './e2e-helpers';
 
 /**
  * Team Collaboration E2E Tests
@@ -6,23 +7,33 @@ import { test, expect, type APIRequestContext } from '@playwright/test';
  * Tests team-based features via API:
  * - Team CRUD (create, read, update, delete)
  * - Team A/B member separation with distinct roles
- * - Role/permission enforcement on members
+ * - Member role field persistence and update
  * - Team settings update and verification
  * - Team-scoped page isolation (pages created under team A don't leak to team B)
+ *
+ * NOTE: These tests verify data isolation and field persistence only.
+ * Server-side role-based authorization (requireTeamRole) is a stub that
+ * always calls next(). These tests do NOT validate permission enforcement.
+ *
+ * TODO: Implement real role checking in requireTeamRole middleware, then
+ * add 403 tests for unauthorized team operations.
  */
 
-/** Register a user and return the auth token */
-async function getAuthToken(request: APIRequestContext): Promise<string> {
-  const email = `team-collab-${Date.now()}@example.com`;
-  const resp = await request.post('/api/auth/register', {
-    data: { name: 'Team Collab Tester', email, password: 'password123' },
-  });
-  expect(resp.status()).toBe(201);
-  return (await resp.json()).token;
-}
+let token: string;
 
-async function createTeam(request: APIRequestContext, name: string, displayName: string) {
+test.beforeAll(async ({ request }) => {
+  const result = await registerTestUser(request, 'team-collab');
+  token = result.token;
+});
+
+async function createTeam(
+  request: APIRequestContext,
+  name: string,
+  displayName: string,
+  headers: Record<string, string>
+) {
   const resp = await request.post('/api/teams', {
+    headers,
     data: { name, displayName, description: `E2E team ${name}` },
   });
   expect(resp.status()).toBe(201);
@@ -37,9 +48,11 @@ async function createMember(
   name: string,
   email: string,
   role: string,
-  teamId: number
+  teamId: number,
+  headers: Record<string, string>
 ) {
   const resp = await request.post('/api/members', {
+    headers,
     data: { name, email, role, teamId, skills: [] },
   });
   expect(resp.status()).toBe(201);
@@ -52,7 +65,7 @@ async function createMember(
 test.describe('Team CRUD', () => {
   test('create a team and read it back', async ({ request }) => {
     const name = `e2e-team-${Date.now()}`;
-    const team = await createTeam(request, name, 'E2E Test Team');
+    const team = await createTeam(request, name, 'E2E Test Team', authHeader(token));
 
     const getResp = await request.get(`/api/teams/${team.id}`);
     expect(getResp.status()).toBe(200);
@@ -63,7 +76,7 @@ test.describe('Team CRUD', () => {
 
   test('list teams includes the created team', async ({ request }) => {
     const name = `e2e-list-${Date.now()}`;
-    const team = await createTeam(request, name, 'List Team');
+    const team = await createTeam(request, name, 'List Team', authHeader(token));
 
     const listResp = await request.get('/api/teams');
     expect(listResp.status()).toBe(200);
@@ -74,9 +87,11 @@ test.describe('Team CRUD', () => {
   });
 
   test('update a team', async ({ request }) => {
-    const team = await createTeam(request, `e2e-upd-${Date.now()}`, 'Old Name');
+    const headers = authHeader(token);
+    const team = await createTeam(request, `e2e-upd-${Date.now()}`, 'Old Name', headers);
 
     const putResp = await request.put(`/api/teams/${team.id}`, {
+      headers,
       data: { displayName: 'Updated Name' },
     });
     expect(putResp.status()).toBe(200);
@@ -85,9 +100,10 @@ test.describe('Team CRUD', () => {
   });
 
   test('delete a team and verify 404', async ({ request }) => {
-    const team = await createTeam(request, `e2e-del-${Date.now()}`, 'Delete Me');
+    const headers = authHeader(token);
+    const team = await createTeam(request, `e2e-del-${Date.now()}`, 'Delete Me', headers);
 
-    const delResp = await request.delete(`/api/teams/${team.id}`);
+    const delResp = await request.delete(`/api/teams/${team.id}`, { headers });
     expect(delResp.status()).toBe(204);
 
     const getResp = await request.get(`/api/teams/${team.id}`);
@@ -95,11 +111,12 @@ test.describe('Team CRUD', () => {
   });
 });
 
-test.describe('Team Member Separation & Roles', () => {
+test.describe('Team Member Separation & Role Field Persistence', () => {
   test('members assigned to team A do not appear in team B listing', async ({ request }) => {
     const ts = Date.now();
-    const teamA = await createTeam(request, `mem-a-${ts}`, 'Member Team A');
-    const teamB = await createTeam(request, `mem-b-${ts}`, 'Member Team B');
+    const headers = authHeader(token);
+    const teamA = await createTeam(request, `mem-a-${ts}`, 'Member Team A', headers);
+    const teamB = await createTeam(request, `mem-b-${ts}`, 'Member Team B', headers);
 
     // Create members with distinct roles for each team
     const leaderA = await createMember(
@@ -107,16 +124,25 @@ test.describe('Team Member Separation & Roles', () => {
       'Leader A',
       `leader-a-${ts}@example.com`,
       '팀장',
-      teamA.id
+      teamA.id,
+      headers
     );
     const devA = await createMember(
       request,
       'Dev A',
       `dev-a-${ts}@example.com`,
       '개발자',
-      teamA.id
+      teamA.id,
+      headers
     );
-    const pmB = await createMember(request, 'PM B', `pm-b-${ts}@example.com`, 'PM', teamB.id);
+    const pmB = await createMember(
+      request,
+      'PM B',
+      `pm-b-${ts}@example.com`,
+      'PM',
+      teamB.id,
+      headers
+    );
 
     // Verify team A members
     const respA = await request.get(`/api/members?teamId=${teamA.id}`);
@@ -135,20 +161,23 @@ test.describe('Team Member Separation & Roles', () => {
     expect(membersB.some((m: any) => m.id === devA.id)).toBe(false);
   });
 
-  test('member role is preserved and updatable', async ({ request }) => {
+  test('member role field is preserved and updatable', async ({ request }) => {
     const ts = Date.now();
-    const team = await createTeam(request, `role-${ts}`, 'Role Team');
+    const headers = authHeader(token);
+    const team = await createTeam(request, `role-${ts}`, 'Role Team', headers);
     const member = await createMember(
       request,
       'Role Test',
       `role-test-${ts}@example.com`,
       '개발자',
-      team.id
+      team.id,
+      headers
     );
     expect(member.role).toBe('개발자');
 
     // Update role
     const putResp = await request.put(`/api/members/${member.id}`, {
+      headers,
       data: { role: '팀장' },
     });
     expect(putResp.status()).toBe(200);
@@ -164,16 +193,18 @@ test.describe('Team Member Separation & Roles', () => {
 
   test('deleting a member returns 204 and subsequent GET returns 404', async ({ request }) => {
     const ts = Date.now();
-    const team = await createTeam(request, `mem-del-${ts}`, 'Del Member Team');
+    const headers = authHeader(token);
+    const team = await createTeam(request, `mem-del-${ts}`, 'Del Member Team', headers);
     const member = await createMember(
       request,
       'Del Me',
       `del-me-${ts}@example.com`,
       '디자이너',
-      team.id
+      team.id,
+      headers
     );
 
-    const delResp = await request.delete(`/api/members/${member.id}`);
+    const delResp = await request.delete(`/api/members/${member.id}`, { headers });
     expect(delResp.status()).toBe(204);
 
     const getResp = await request.get(`/api/members/${member.id}`);
@@ -184,10 +215,12 @@ test.describe('Team Member Separation & Roles', () => {
 test.describe('Team Settings Verification', () => {
   test('update team displayName and description and verify', async ({ request }) => {
     const ts = Date.now();
-    const team = await createTeam(request, `settings-${ts}`, 'Original Display');
+    const headers = authHeader(token);
+    const team = await createTeam(request, `settings-${ts}`, 'Original Display', headers);
 
     // Update displayName
     const put1 = await request.put(`/api/teams/${team.id}`, {
+      headers,
       data: { displayName: 'New Display Name' },
     });
     expect(put1.status()).toBe(200);
@@ -195,6 +228,7 @@ test.describe('Team Settings Verification', () => {
 
     // Update description
     const put2 = await request.put(`/api/teams/${team.id}`, {
+      headers,
       data: { description: 'Updated description for testing' },
     });
     expect(put2.status()).toBe(200);
@@ -211,14 +245,16 @@ test.describe('Team Settings Verification', () => {
 
 test.describe('Team Page Isolation', () => {
   test('pages created under team A do not appear in team B listing', async ({ request }) => {
+    const headers = authHeader(token);
     // Create two teams
-    const teamA = await createTeam(request, `iso-a-${Date.now()}`, 'Team A');
-    const teamB = await createTeam(request, `iso-b-${Date.now()}`, 'Team B');
+    const teamA = await createTeam(request, `iso-a-${Date.now()}`, 'Team A', headers);
+    const teamB = await createTeam(request, `iso-b-${Date.now()}`, 'Team B', headers);
 
     // Create a page scoped to team A
     const pageTitle = `Team A Page ${Date.now()}`;
     const slug = `team-a-page-${Date.now()}`;
     const createResp = await request.post('/api/pages', {
+      headers,
       data: {
         title: pageTitle,
         content: 'Team A exclusive content',

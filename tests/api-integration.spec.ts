@@ -7,9 +7,14 @@ import { test, expect, type APIRequestContext } from '@playwright/test';
  * - Health check
  * - Auth register → login → authenticated resource access
  * - Protected route 401/200 separation (with and without token)
+ * - 403 on admin-only endpoints for non-admin users (requireAdmin)
  * - Token-based resource CRUD (pages, teams, members)
  * - Metrics endpoint
  * - Rate limiting baseline
+ *
+ * NOTE: 403 coverage is limited to the requireAdmin middleware path
+ * (e.g. /api/admin/directories). Team-level role authorization
+ * (requireTeamRole) is not yet implemented and is not tested here.
  */
 
 /** Register a new user and return { token, email } */
@@ -124,6 +129,34 @@ test.describe('Protected Routes – 401 without token vs 200 with token', () => 
       headers: {},
     });
     expect(teamResp.status()).toBe(401);
+  });
+});
+
+test.describe('Admin Authorization – 403/200', () => {
+  test('admin endpoint returns 403 without any token', async ({ request }) => {
+    const resp = await request.get('/api/admin/directories');
+    expect(resp.status()).toBe(403);
+    // requireAdmin returns 403 (not 401) because it is an authorization gate,
+    // not an authentication gate. It falls through all credential checks and denies.
+  });
+
+  test('admin endpoint returns 403 for authenticated non-admin user', async ({ request }) => {
+    // Register a regular user (not in ADMIN_EMAILS, role is not admin)
+    const { token } = await registerUser(request, 'non-admin');
+    const resp = await request.get('/api/admin/directories', {
+      headers: authHeader(token),
+    });
+    expect(resp.status()).toBe(403);
+  });
+
+  test('admin endpoint returns 200 with admin password header', async ({ request }) => {
+    // In test/dev mode ALLOW_ADMIN_PASSWORD=true (default for non-production)
+    // and ADMIN_PASSWORD is set in .env.test
+    const adminPassword = process.env.ADMIN_PASSWORD || 'test-admin-password';
+    const resp = await request.get('/api/admin/directories', {
+      headers: { 'x-admin-password': adminPassword },
+    });
+    expect(resp.status()).toBe(200);
   });
 });
 
