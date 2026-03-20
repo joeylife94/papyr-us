@@ -29,18 +29,10 @@ test.describe('Team Management', () => {
     await page.goto('/teams');
     await page.waitForLoadState('networkidle');
 
-    // Look for create team button
-    const createTeamBtn = page
-      .locator(
-        'button:has-text("Create Team"), button:has-text("New Team"), [data-testid="create-team"]'
-      )
-      .first();
-
-    // Button visibility depends on auth state
-    const isVisible = await createTeamBtn.isVisible().catch(() => false);
-
-    // Test passes regardless - just checking UI doesn't crash
-    expect(typeof isVisible).toBe('boolean');
+    // Page should render the React app without crashes
+    await expect(page.locator('#root')).toBeVisible();
+    const html = await page.content();
+    expect(html).not.toContain('Something went wrong');
   });
 });
 
@@ -60,12 +52,10 @@ test.describe('Member Management', () => {
     await page.goto('/members');
     await page.waitForLoadState('networkidle');
 
-    // Check for role indicators
-    const roleIndicators = page.locator('[data-testid="member-role"], .role-badge, .member-role');
-    const count = await roleIndicators.count().catch(() => 0);
-
-    // Roles may or may not be visible depending on data
-    expect(count).toBeGreaterThanOrEqual(0);
+    // Page should render the React app without crashes
+    await expect(page.locator('#root')).toBeVisible();
+    const html = await page.content();
+    expect(html).not.toContain('Something went wrong');
   });
 });
 

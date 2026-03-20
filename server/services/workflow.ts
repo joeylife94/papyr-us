@@ -409,6 +409,10 @@ export async function triggerWorkflows(
       data.teamId
     );
 
+    if (!Array.isArray(workflows)) {
+      return;
+    }
+
     // Execute each workflow
     for (const workflow of workflows) {
       const trigger = workflow.trigger as WorkflowTrigger;

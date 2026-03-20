@@ -80,7 +80,8 @@ describe('Notification Management API', () => {
     const response = await request(app).get(`/api/notifications?recipientId=${recipientId}`);
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual(notifications);
+    expect(response.body.notifications).toEqual(notifications);
+    expect(response.body.pagination).toBeDefined();
   });
 
   it('TC-NOTIF-003: should get the count of unread notifications', async () => {

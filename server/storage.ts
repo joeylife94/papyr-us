@@ -764,13 +764,15 @@ export class DBStorage {
     triggerType: TriggerType,
     teamId?: number
   ): Promise<Workflow[]> {
-    let query = this.db.select().from(workflows).where(eq(workflows.isActive, true));
-
+    const conditions = [eq(workflows.isActive, true)];
     if (teamId) {
-      query = query.where(eq(workflows.teamId, teamId));
+      conditions.push(eq(workflows.teamId, teamId));
     }
 
-    const allWorkflows = await query;
+    const allWorkflows = await this.db
+      .select()
+      .from(workflows)
+      .where(and(...conditions));
 
     // Filter by trigger type (since JSONB query is complex, filter in memory)
     return allWorkflows.filter((w: Workflow) => {

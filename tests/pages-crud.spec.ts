@@ -47,17 +47,14 @@ test.describe('Wiki Pages CRUD', () => {
           await saveButton.click();
           await page.waitForTimeout(1000);
         }
-
-        // Verify we can see the created page title somewhere on the page
-        const pageContent = await page.content();
-        expect(pageContent.length).toBeGreaterThan(0);
       }
     }
 
     // Verify the page rendered without errors (check for React error boundary or blank page)
     const html = await page.content();
     expect(html).not.toContain('Something went wrong');
-    expect(html.length).toBeGreaterThan(100);
+    // Must render the React app root
+    await expect(page.locator('#root')).toBeVisible();
   });
 
   test('should display existing pages in sidebar', async ({ page }) => {

@@ -2612,7 +2612,18 @@ export async function registerRoutes(
 
     app.get('/api/workflows', requireAuthIfEnabled, async (req, res) => {
       try {
-        const teamId = req.query.teamId ? parseInt(req.query.teamId as string) : undefined;
+        const teamIdParam = req.query.teamId as string | undefined;
+        let teamId: number | undefined;
+        if (teamIdParam) {
+          if (!isNaN(parseInt(teamIdParam))) {
+            teamId = parseInt(teamIdParam);
+          } else {
+            const team = await storage.getTeamByName(teamIdParam);
+            if (team) {
+              teamId = team.id;
+            }
+          }
+        }
         const workflows = await storage.getWorkflows(teamId);
         res.json(workflows);
       } catch (error) {
@@ -2707,7 +2718,18 @@ export async function registerRoutes(
 
   app.get('/api/saved-views', async (req, res) => {
     try {
-      const teamId = req.query.teamId ? parseInt(req.query.teamId as string) : undefined;
+      let teamId: number | undefined;
+      if (req.query.teamId) {
+        const teamIdParam = req.query.teamId as string;
+        if (!isNaN(parseInt(teamIdParam))) {
+          teamId = parseInt(teamIdParam);
+        } else {
+          const team = await storage.getTeamByName(teamIdParam);
+          if (team) {
+            teamId = team.id;
+          }
+        }
+      }
       const createdBy = req.query.createdBy ? parseInt(req.query.createdBy as string) : undefined;
       const entityType = req.query.entityType as string | undefined;
       const isPublic =

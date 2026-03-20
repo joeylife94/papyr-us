@@ -5,6 +5,22 @@ import express from 'express';
 import http from 'http';
 import { registerRoutes } from '../routes';
 
+// Enable AI feature flag for testing
+vi.mock('../features', () => ({
+  featureFlags: {
+    PAPYR_MODE: 'team',
+    FEATURE_COLLABORATION: true,
+    FEATURE_NOTIFICATIONS: true,
+    FEATURE_ADMIN: true,
+    FEATURE_CALENDAR: true,
+    FEATURE_AI_SEARCH: true,
+    FEATURE_AUTOMATION: true,
+    FEATURE_SSO: false,
+    FEATURE_DATABASE_VIEWS: false,
+  },
+  isFeatureEnabled: (key: string) => true,
+}));
+
 // Mock the AI and dependent storage services
 vi.mock('../services/ai', () => ({
   generateContent: vi.fn(),

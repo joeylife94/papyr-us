@@ -74,7 +74,8 @@ describe('Task Management API', () => {
     const response = await request(app).get('/api/tasks?teamId=dev-team');
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual(tasks);
+    expect(response.body.tasks).toEqual(tasks);
+    expect(response.body.pagination).toBeDefined();
   });
 
   it('TC-TASK-003: should retrieve a single task by ID', async () => {

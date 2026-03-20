@@ -16,8 +16,8 @@ A **team collaboration wiki** built with React and Express.js, featuring real-ti
 
 - **Real-time collaboration** via Socket.IO + Yjs CRDT for conflict-free concurrent editing
 - **AI integration** using GPT-4o: RAG pipeline, semantic search, document summarization, task extraction, smart tagging, and related content discovery
-- **Multi-tenant B2B SaaS architecture** with team-based isolation and comprehensive RBAC (Role-Based Access Control)
-- **Production-grade security**: JWT authentication, bcrypt hashing, rate limiting, Helmet middleware, input validation, and SQL injection prevention
+- **Team-isolated workspace architecture** with team-based data separation and RBAC (Role-Based Access Control)
+- **Security-focused design**: JWT authentication, bcrypt hashing, rate limiting, Helmet middleware, input validation, and SQL injection prevention
 - **Full-stack TypeScript** codebase (~33,000 lines) with unit/smoke/E2E test suites, Docker containerization, and CI/CD pipeline
 - **PostgreSQL 16** with Full-Text Search (FTS), Drizzle ORM for type-safe queries, 19 tables, and migration system
 
@@ -331,9 +331,9 @@ const tasks = await extractTasks(meetingContent);
 
 ---
 
-## 🔐 Security & Multi-Tenancy
+## 🔐 Security & Team Isolation
 
-### Multi-Tenant Architecture
+### Team-Based Architecture
 
 Papyr.us is built with **team-based isolation** to support multiple teams securely:
 
@@ -465,10 +465,10 @@ RATE_LIMIT_ENABLED=true
 RATE_LIMIT_MAX=100  # Max requests per window
 ```
 
-**Perfect for B2B SaaS:**
+**Designed for team collaboration:**
 
-- 🏢 Clear tenant boundaries
-- 🔒 Enterprise-grade security
+- 🏢 Clear team boundaries
+- 🔒 Security-focused design
 - 👥 Flexible permission system
 - 📊 Audit-ready architecture (logs + trails)
 

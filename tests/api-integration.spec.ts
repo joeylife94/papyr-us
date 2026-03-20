@@ -27,45 +27,36 @@ test.describe('Health Check API', () => {
 test.describe('Pages API', () => {
   test('should list pages', async ({ request }) => {
     const response = await request.get('/api/pages');
+    expect(response.ok()).toBeTruthy();
 
-    // May require auth, so check for 200 or 401
-    expect([200, 401, 403]).toContain(response.status());
-
-    if (response.ok()) {
-      const body = await response.json();
-      // Response is { pages: [...], pagination: {...} }
-      expect(body).toHaveProperty('pages');
-      expect(Array.isArray(body.pages)).toBeTruthy();
-    }
+    const body = await response.json();
+    expect(body).toHaveProperty('pages');
+    expect(Array.isArray(body.pages)).toBeTruthy();
+    expect(body).toHaveProperty('pagination');
   });
 
   test('should handle page not found', async ({ request }) => {
     const response = await request.get('/api/pages/999999999');
-
-    // Should return 404 or 401 (if auth required)
-    expect([401, 403, 404]).toContain(response.status());
+    expect(response.status()).toBe(404);
   });
 });
 
 test.describe('Search API', () => {
   test('should search pages', async ({ request }) => {
-    // Search is done via /api/pages?q=...
     const response = await request.get('/api/pages?q=test');
+    expect(response.ok()).toBeTruthy();
 
-    // 400 may occur if search schema validation fails (e.g., FTS not configured)
-    expect([200, 400, 401, 403]).toContain(response.status());
-
-    if (response.ok()) {
-      const body = await response.json();
-      expect(body).toHaveProperty('pages');
-    }
+    const body = await response.json();
+    expect(body).toHaveProperty('pages');
+    expect(body).toHaveProperty('pagination');
   });
 
   test('should handle empty search query', async ({ request }) => {
     const response = await request.get('/api/pages?q=');
+    expect(response.ok()).toBeTruthy();
 
-    // Should either return empty results or error
-    expect([200, 400, 401]).toContain(response.status());
+    const body = await response.json();
+    expect(body).toHaveProperty('pages');
   });
 });
 

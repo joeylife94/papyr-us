@@ -159,7 +159,8 @@ describe('Wiki Page Management API', () => {
       const response = await request(app).get('/api/pages?q=test');
 
       expect(response.status).toBe(200);
-      expect(response.body).toEqual(searchResult);
+      expect(response.body).toMatchObject(searchResult);
+      expect(response.body.pagination).toBeDefined();
       expect(storage.searchWikiPages).toHaveBeenCalledWith(
         expect.objectContaining({ query: 'test' })
       );
@@ -175,7 +176,8 @@ describe('Wiki Page Management API', () => {
       const response = await request(app).get('/api/pages');
 
       expect(response.status).toBe(200);
-      expect(response.body).toEqual(allPagesResult);
+      expect(response.body).toMatchObject(allPagesResult);
+      expect(response.body.pagination).toBeDefined();
     });
   });
 });
