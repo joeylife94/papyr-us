@@ -1,0 +1,16 @@
+# 모든 텍스트 파일을 LF로 정규화 (Windows CRLF 노이즈 방지)
+* text=auto eol=lf
+
+# 명시적으로 바이너리 파일 지정 (변환 제외)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.pdf binary
+*.zip binary
+*.gz binary
