@@ -1158,76 +1158,84 @@ export async function registerRoutes(
     }
   );
 
-  app.put('/api/comments/:id', requireAuthIfEnabled, async (req: AuthRequest, res) => {
-    try {
-      const id = parseInt(req.params.id);
+  app.put(
+    '/api/comments/:id',
+    optionalAuth,
+    requireAuthIfEnabled,
+    async (req: AuthRequest, res) => {
+      try {
+        const id = parseInt(req.params.id);
 
-      // Look up the comment to find its pageId for permission check
-      const existing = await storage.getComment(id);
-      if (!existing) {
-        return res.status(404).json({ message: 'Comment not found' });
-      }
+        // Look up the comment to find its pageId for permission check
+        const existing = await storage.getComment(id);
+        if (!existing) {
+          return res.status(404).json({ message: 'Comment not found' });
+        }
 
-      // Verify user has at least commenter permission on the page
-      if (req.user?.id) {
+        // Always verify page permission for comment editing
         const hasPermission = await storage.checkPagePermission(
-          req.user.id,
+          req.user?.id,
           existing.pageId,
           'commenter'
         );
         if (!hasPermission) {
-          return res.status(403).json({ message: 'Insufficient permissions to edit this comment' });
+          return !req.user?.id
+            ? res.status(401).json({ message: 'Authentication required to edit this comment' })
+            : res.status(403).json({ message: 'Insufficient permissions to edit this comment' });
         }
+
+        const updateData = updateCommentSchema.parse(req.body);
+        const comment = await storage.updateComment(id, updateData);
+
+        if (!comment) {
+          return res.status(404).json({ message: 'Comment not found' });
+        }
+
+        res.json(comment);
+      } catch (error) {
+        res.status(400).json({ message: 'Invalid update data', error });
       }
-
-      const updateData = updateCommentSchema.parse(req.body);
-      const comment = await storage.updateComment(id, updateData);
-
-      if (!comment) {
-        return res.status(404).json({ message: 'Comment not found' });
-      }
-
-      res.json(comment);
-    } catch (error) {
-      res.status(400).json({ message: 'Invalid update data', error });
     }
-  });
+  );
 
-  app.delete('/api/comments/:id', requireAuthIfEnabled, async (req: AuthRequest, res) => {
-    try {
-      const id = parseInt(req.params.id);
+  app.delete(
+    '/api/comments/:id',
+    optionalAuth,
+    requireAuthIfEnabled,
+    async (req: AuthRequest, res) => {
+      try {
+        const id = parseInt(req.params.id);
 
-      // Look up the comment to find its pageId for permission check
-      const existing = await storage.getComment(id);
-      if (!existing) {
-        return res.status(404).json({ message: 'Comment not found' });
-      }
+        // Look up the comment to find its pageId for permission check
+        const existing = await storage.getComment(id);
+        if (!existing) {
+          return res.status(404).json({ message: 'Comment not found' });
+        }
 
-      // Verify user has at least editor permission on the page to delete comments
-      if (req.user?.id) {
+        // Always verify page permission for comment deletion
         const hasPermission = await storage.checkPagePermission(
-          req.user.id,
+          req.user?.id,
           existing.pageId,
           'editor'
         );
         if (!hasPermission) {
-          return res
-            .status(403)
-            .json({ message: 'Insufficient permissions to delete this comment' });
+          return !req.user?.id
+            ? res.status(401).json({ message: 'Authentication required to delete this comment' })
+            : res.status(403).json({ message: 'Insufficient permissions to delete this comment' });
         }
+
+        const deleted = await storage.deleteComment(id);
+
+        if (!deleted) {
+          return res.status(404).json({ message: 'Comment not found' });
+        }
+
+        res.json({ message: 'Comment deleted successfully' });
+      } catch (error) {
+        res.status(400).json({ message: 'Invalid comment ID' });
       }
-
-      const deleted = await storage.deleteComment(id);
-
-      if (!deleted) {
-        return res.status(404).json({ message: 'Comment not found' });
-      }
-
-      res.json({ message: 'Comment deleted successfully' });
-    } catch (error) {
-      res.status(400).json({ message: 'Invalid comment ID' });
     }
-  });
+  );
 
   // ==================== Page Permissions API ====================
 
@@ -2485,19 +2493,22 @@ export async function registerRoutes(
       }
     });
 
-    app.put('/api/teams/:id', requireAuthIfEnabled, async (req: AuthRequest, res) => {
+    app.put('/api/teams/:id', optionalAuth, requireAuthIfEnabled, async (req: AuthRequest, res) => {
       try {
         const id = parseInt(req.params.id);
 
-        // Verify user has admin+ role in this team
-        if (req.user?.id) {
-          const userRole = await storage.getUserTeamRole(req.user.id, id);
+        // Always verify user's team membership and role for team updates
+        const userId = req.user?.id;
+        if (userId) {
+          const userRole = await storage.getUserTeamRole(userId, id);
           if (!userRole) {
             return res.status(403).json({ error: 'You are not a member of this team' });
           }
           if (userRole === 'member') {
             return res.status(403).json({ error: 'Admin or owner role required to update team' });
           }
+        } else if (config.enforceAuthForWrites) {
+          return res.status(401).json({ error: 'Authentication required' });
         }
 
         const team = await storage.updateTeam(id, req.body);
@@ -2511,31 +2522,39 @@ export async function registerRoutes(
       }
     });
 
-    app.delete('/api/teams/:id', requireAuthIfEnabled, async (req: AuthRequest, res) => {
-      try {
-        const id = parseInt(req.params.id);
+    app.delete(
+      '/api/teams/:id',
+      optionalAuth,
+      requireAuthIfEnabled,
+      async (req: AuthRequest, res) => {
+        try {
+          const id = parseInt(req.params.id);
 
-        // Verify user has owner role in this team
-        if (req.user?.id) {
-          const userRole = await storage.getUserTeamRole(req.user.id, id);
-          if (!userRole) {
-            return res.status(403).json({ error: 'You are not a member of this team' });
+          // Always verify user's team ownership for team deletion
+          const userId = req.user?.id;
+          if (userId) {
+            const userRole = await storage.getUserTeamRole(userId, id);
+            if (!userRole) {
+              return res.status(403).json({ error: 'You are not a member of this team' });
+            }
+            if (userRole !== 'owner') {
+              return res.status(403).json({ error: 'Owner role required to delete team' });
+            }
+          } else if (config.enforceAuthForWrites) {
+            return res.status(401).json({ error: 'Authentication required' });
           }
-          if (userRole !== 'owner') {
-            return res.status(403).json({ error: 'Owner role required to delete team' });
-          }
-        }
 
-        const success = await storage.deleteTeam(id);
-        if (!success) {
-          return res.status(404).json({ error: 'Team not found' });
+          const success = await storage.deleteTeam(id);
+          if (!success) {
+            return res.status(404).json({ error: 'Team not found' });
+          }
+          res.status(204).send();
+        } catch (error) {
+          console.error('Error deleting team:', error);
+          res.status(500).json({ error: 'Failed to delete team' });
         }
-        res.status(204).send();
-      } catch (error) {
-        console.error('Error deleting team:', error);
-        res.status(500).json({ error: 'Failed to delete team' });
       }
-    });
+    );
 
     app.post('/api/teams/verify', async (req, res) => {
       try {
