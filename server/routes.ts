@@ -433,62 +433,82 @@ export async function registerRoutes(
         return res.status(401).json({ message: 'Authentication required' });
       }
 
-      // If no teamId specified and user is authenticated, scope to user's teams
+      // If no teamId specified, scope to user's teams + global pages
       if (!resolvedTeamId && req.user?.id) {
         const userTeamIds = await storage.getUserTeamIds(req.user.id);
-        if (userTeamIds.length > 0) {
-          // Search pages across all user's teams and unassigned pages
-          const allResults = await Promise.all([
-            ...userTeamIds.map((tid) => {
-              const params = searchSchema.parse({
-                query: req.query.q as string,
-                folder: req.query.folder as string,
-                sort: req.query.sort as string as any,
-                tags: req.query.tags ? (req.query.tags as string).split(',') : undefined,
-                limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
-                offset: req.query.offset ? parseInt(req.query.offset as string) : undefined,
-                teamId: tid,
-              });
-              return storage.searchWikiPages(params);
-            }),
-            // Also include pages with no team (personal/shared pages)
-            storage.searchWikiPages(
-              searchSchema.parse({
-                query: req.query.q as string,
-                folder: req.query.folder as string,
-                sort: req.query.sort as string as any,
-                tags: req.query.tags ? (req.query.tags as string).split(',') : undefined,
-                limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
-                offset: req.query.offset ? parseInt(req.query.offset as string) : undefined,
-              })
-            ),
-          ]);
-
-          // Merge and deduplicate by page id
-          const seenIds = new Set<number>();
-          const mergedPages = allResults
-            .flatMap((r) => r.pages)
-            .filter((p) => {
-              if (seenIds.has(p.id)) return false;
-              seenIds.add(p.id);
-              return true;
+        // Search pages across all user's teams and unassigned (global) pages
+        const allResults = await Promise.all([
+          ...userTeamIds.map((tid) => {
+            const params = searchSchema.parse({
+              query: req.query.q as string,
+              folder: req.query.folder as string,
+              sort: req.query.sort as string as any,
+              tags: req.query.tags ? (req.query.tags as string).split(',') : undefined,
+              limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
+              offset: req.query.offset ? parseInt(req.query.offset as string) : undefined,
+              teamId: tid,
             });
+            return storage.searchWikiPages(params);
+          }),
+          // Also include pages with no team (personal/shared pages)
+          storage.searchWikiPages(
+            searchSchema.parse({
+              query: req.query.q as string,
+              folder: req.query.folder as string,
+              sort: req.query.sort as string as any,
+              tags: req.query.tags ? (req.query.tags as string).split(',') : undefined,
+              limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
+              offset: req.query.offset ? parseInt(req.query.offset as string) : undefined,
+              teamId: 'null',
+            })
+          ),
+        ]);
 
-          const limit = req.query.limit ? parseInt(req.query.limit as string) : 20;
-          const paginatedPages = mergedPages.slice(0, limit);
-          const hasMore = mergedPages.length > limit;
-          const nextCursor = hasMore ? paginatedPages[paginatedPages.length - 1]?.id : null;
-
-          return res.json({
-            pages: paginatedPages,
-            total: mergedPages.length,
-            pagination: { hasMore, nextCursor, count: paginatedPages.length },
+        // Merge and deduplicate by page id
+        const seenIds = new Set<number>();
+        const mergedPages = allResults
+          .flatMap((r) => r.pages)
+          .filter((p) => {
+            if (seenIds.has(p.id)) return false;
+            seenIds.add(p.id);
+            return true;
           });
+
+        const limit = req.query.limit ? parseInt(req.query.limit as string) : 20;
+        const paginatedPages = mergedPages.slice(0, limit);
+        const hasMore = mergedPages.length > limit;
+        const nextCursor = hasMore ? paginatedPages[paginatedPages.length - 1]?.id : null;
+
+        return res.json({
+          pages: paginatedPages,
+          total: mergedPages.length,
+          pagination: { hasMore, nextCursor, count: paginatedPages.length },
+        });
+      } else if (!resolvedTeamId && !req.user?.id) {
+        // Unauthenticated: in prod reject, in dev return only global pages
+        if (config.enforceAuthForWrites) {
+          return res.status(401).json({ message: 'Authentication required' });
         }
-      } else if (!resolvedTeamId && config.enforceAuthForWrites && !req.user?.id) {
-        return res.status(401).json({ message: 'Authentication required' });
+        // Dev mode unauthenticated — only global (teamId IS NULL) pages
+        const searchParams = searchSchema.parse({
+          query: req.query.q as string,
+          folder: req.query.folder as string,
+          sort: req.query.sort as string as any,
+          tags: req.query.tags ? (req.query.tags as string).split(',') : undefined,
+          limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
+          offset: req.query.offset ? parseInt(req.query.offset as string) : undefined,
+          teamId: 'null',
+        });
+        const result = await storage.searchWikiPages(searchParams);
+        const hasMore = result.pages.length === (searchParams.limit || 20);
+        const nextCursor = hasMore ? result.pages[result.pages.length - 1]?.id : null;
+        return res.json({
+          ...result,
+          pagination: { hasMore, nextCursor, count: result.pages.length },
+        });
       }
 
+      // resolvedTeamId is specified — already membership-checked above
       const searchParams = searchSchema.parse({
         query: req.query.q as string,
         folder: req.query.folder as string,
@@ -884,10 +904,8 @@ export async function registerRoutes(
               userTeamIds.map((id) => storage.getCalendarEvents(id))
             );
             events = allEvents.flat();
-          } else if (config.enforceAuthForWrites) {
-            events = [];
           } else {
-            events = await storage.getCalendarEvents(undefined);
+            events = [];
           }
         } else {
           events = await storage.getCalendarEvents(Number(teamId));
@@ -1454,59 +1472,60 @@ export async function registerRoutes(
         return res.status(401).json({ message: 'Authentication required' });
       }
 
-      // If no teamId and user is authenticated, scope to user's teams + unassigned pages
-      let effectiveTeamId = teamId;
+      // If no teamId, scope to user's teams + unassigned pages
       if (!teamId && req.user?.id) {
         const userTeamIds = await storage.getUserTeamIds(req.user.id);
-        if (userTeamIds.length > 0) {
-          // Fetch pages for each team plus unassigned
-          const allResults = await Promise.all([
-            ...userTeamIds.map((tid) =>
-              storage.searchWikiPages({ query: '', teamId: String(tid), limit: 1000, offset: 0 })
-            ),
-            storage.searchWikiPages({ query: '', limit: 1000, offset: 0 }),
-          ]);
-          const seenIds = new Set<number>();
-          const allPagesRaw = allResults
-            .flatMap((r) => r.pages)
-            .filter((p: any) => {
-              if (seenIds.has(p.id)) return false;
-              seenIds.add(p.id);
-              return true;
-            });
-          // Build tree with the merged set
-          const pages = allPagesRaw.map((p: any) => ({
-            id: p.id,
-            title: p.title,
-            slug: p.slug,
-            parentId: p.parentId || null,
-            folder: p.folder,
-            updatedAt: p.updatedAt,
-          }));
-          const rootPages = pages.filter((p: any) => !p.parentId);
-          const childMap = new Map<number, any[]>();
-          pages.forEach((p: any) => {
-            if (p.parentId) {
-              if (!childMap.has(p.parentId)) childMap.set(p.parentId, []);
-              childMap.get(p.parentId)!.push(p);
-            }
+        // Fetch pages for each team plus unassigned (global) pages
+        const allResults = await Promise.all([
+          ...userTeamIds.map((tid) =>
+            storage.searchWikiPages({ query: '', teamId: String(tid), limit: 1000, offset: 0 })
+          ),
+          storage.searchWikiPages({ query: '', teamId: 'null', limit: 1000, offset: 0 }),
+        ]);
+        const seenIds = new Set<number>();
+        const allPagesRaw = allResults
+          .flatMap((r) => r.pages)
+          .filter((p: any) => {
+            if (seenIds.has(p.id)) return false;
+            seenIds.add(p.id);
+            return true;
           });
-          const attachChildren = (page: any, depth = 0): any => {
-            const children = childMap.get(page.id) || [];
-            return {
-              ...page,
-              children: depth < 3 ? children.map((c: any) => attachChildren(c, depth + 1)) : [],
-            };
+        // Build tree with the merged set
+        const pages = allPagesRaw.map((p: any) => ({
+          id: p.id,
+          title: p.title,
+          slug: p.slug,
+          parentId: p.parentId || null,
+          folder: p.folder,
+          updatedAt: p.updatedAt,
+        }));
+        const rootPages = pages.filter((p: any) => !p.parentId);
+        const childMap = new Map<number, any[]>();
+        pages.forEach((p: any) => {
+          if (p.parentId) {
+            if (!childMap.has(p.parentId)) childMap.set(p.parentId, []);
+            childMap.get(p.parentId)!.push(p);
+          }
+        });
+        const attachChildren = (page: any, depth = 0): any => {
+          const children = childMap.get(page.id) || [];
+          return {
+            ...page,
+            children: depth < 3 ? children.map((c: any) => attachChildren(c, depth + 1)) : [],
           };
-          return res.json(rootPages.map((p: any) => attachChildren(p)));
+        };
+        return res.json(rootPages.map((p: any) => attachChildren(p)));
+      } else if (!teamId && !req.user?.id) {
+        // Unauthenticated: in prod reject, in dev return only global pages
+        if (config.enforceAuthForWrites) {
+          return res.status(401).json({ message: 'Authentication required' });
         }
-      } else if (!teamId && config.enforceAuthForWrites && !req.user?.id) {
-        return res.status(401).json({ message: 'Authentication required' });
       }
 
+      // teamId is specified (already membership-checked) OR dev unauthenticated (global only)
       const allPages = await storage.searchWikiPages({
         query: '',
-        teamId: effectiveTeamId,
+        teamId: teamId || 'null',
         limit: 1000,
         offset: 0,
       });
@@ -1788,10 +1807,8 @@ export async function registerRoutes(
             userTeamIds.map((id) => storage.getTasks(String(id), status))
           );
           tasks = allTasks.flat();
-        } else if (config.enforceAuthForWrites) {
-          tasks = [];
         } else {
-          tasks = await storage.getTasks(teamId, status);
+          tasks = [];
         }
       } else {
         tasks = await storage.getTasks(teamId, status);
@@ -2561,7 +2578,7 @@ export async function registerRoutes(
           // Fetch members for each of user's teams and combine
           const allMembers = await Promise.all(userTeamIds.map((id) => storage.getMembers(id)));
           return res.json(allMembers.flat());
-        } else if (config.enforceAuthForWrites) {
+        } else {
           return res.json([]); // No teams = no members
         }
       }

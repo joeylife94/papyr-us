@@ -75,7 +75,7 @@ import {
   teamMembers,
 } from '../shared/schema.js';
 import { drizzle } from 'drizzle-orm/node-postgres';
-import { eq, like, and, sql, desc, asc } from 'drizzle-orm';
+import { eq, like, and, sql, desc, asc, isNull } from 'drizzle-orm';
 import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 
@@ -198,7 +198,10 @@ export class DBStorage {
     if (params.folder) {
       conditions.push(eq(wikiPages.folder, params.folder));
     }
-    if (params.teamId) {
+    if (params.teamId === 'null') {
+      // Special sentinel: only return pages with no team (global/personal pages)
+      conditions.push(isNull(wikiPages.teamId));
+    } else if (params.teamId) {
       conditions.push(eq(wikiPages.teamId, Number(params.teamId)));
     }
     if (params.tags && params.tags.length > 0) {

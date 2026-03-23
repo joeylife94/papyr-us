@@ -145,8 +145,9 @@ export function optionalAuth(req: AuthRequest, _res: Response, next: NextFunctio
  * attached so that downstream handlers can scope queries to the user's teams.
  */
 export function requireTeamMembership(req: AuthRequest, res: Response, next: NextFunction) {
-  // Dev mode without user — skip (backward compat)
+  // Dev mode without user — attach empty teamIds and continue
   if (!config.enforceAuthForWrites && (!req.user || !req.user.id)) {
+    (req as any).userTeamIds = [];
     return next();
   }
 
