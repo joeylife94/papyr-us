@@ -103,6 +103,19 @@ export async function processUploadedFile(
 }> {
   const uniqueFilename = generateUniqueFilename(file.originalname);
 
+  // Helper to persist sidecar metadata
+  async function saveMeta(dir: string) {
+    const metaPath = path.join(dir, `_meta_${uniqueFilename}.json`);
+    await fs.writeFile(
+      metaPath,
+      JSON.stringify({
+        teamId,
+        originalName: file.originalname,
+        uploadedAt: new Date().toISOString(),
+      })
+    );
+  }
+
   if (isImage(file.mimetype)) {
     // Process image with sharp
     const processedImagePath = path.join(IMAGES_DIR, uniqueFilename);
@@ -119,6 +132,7 @@ export async function processUploadedFile(
 
     // Get file stats
     const stats = await fs.stat(processedImagePath);
+    await saveMeta(IMAGES_DIR);
 
     return {
       filename: uniqueFilename,
@@ -133,6 +147,7 @@ export async function processUploadedFile(
     // Save regular file
     const filePath = path.join(FILES_DIR, uniqueFilename);
     await fs.writeFile(filePath, file.buffer);
+    await saveMeta(FILES_DIR);
 
     return {
       filename: uniqueFilename,
@@ -152,10 +167,16 @@ export async function deleteUploadedFile(
   isImage: boolean = false
 ): Promise<boolean> {
   try {
-    const filePath = isImage ? path.join(IMAGES_DIR, filename) : path.join(FILES_DIR, filename);
+    const dir = isImage ? IMAGES_DIR : FILES_DIR;
+    const filePath = path.join(dir, filename);
 
     if (existsSync(filePath)) {
       await fs.unlink(filePath);
+      // Also remove sidecar metadata if present
+      const metaPath = path.join(dir, `_meta_${filename}.json`);
+      if (existsSync(metaPath)) {
+        await fs.unlink(metaPath);
+      }
       return true;
     }
     return false;
@@ -191,6 +212,23 @@ export async function getFileInfo(filename: string, isImage: boolean = false) {
   }
 }
 
+// Read sidecar metadata for a file (returns teamId if present)
+export async function getFileTeamId(
+  filename: string,
+  isImageFile: boolean
+): Promise<string | undefined> {
+  try {
+    const dir = isImageFile ? IMAGES_DIR : FILES_DIR;
+    const metaPath = path.join(dir, `_meta_${filename}.json`);
+    if (!existsSync(metaPath)) return undefined;
+    const raw = await fs.readFile(metaPath, 'utf-8');
+    const meta = JSON.parse(raw);
+    return meta.teamId;
+  } catch {
+    return undefined;
+  }
+}
+
 // List uploaded files
 export async function listUploadedFiles(teamId?: string): Promise<{
   images: any[];
@@ -204,8 +242,12 @@ export async function listUploadedFiles(teamId?: string): Promise<{
 
     const images = await Promise.all(
       imageFiles
-        .filter((file) => file !== '.gitkeep')
+        .filter((file) => file !== '.gitkeep' && !file.startsWith('_meta_'))
         .map(async (filename) => {
+          if (teamId) {
+            const fileMeta = await getFileTeamId(filename, true);
+            if (fileMeta !== teamId) return null;
+          }
           const info = await getFileInfo(filename, true);
           return info ? { ...info, url: `/api/uploads/images/${filename}` } : null;
         })
@@ -213,8 +255,12 @@ export async function listUploadedFiles(teamId?: string): Promise<{
 
     const files = await Promise.all(
       regularFiles
-        .filter((file) => file !== '.gitkeep')
+        .filter((file) => file !== '.gitkeep' && !file.startsWith('_meta_'))
         .map(async (filename) => {
+          if (teamId) {
+            const fileMeta = await getFileTeamId(filename, false);
+            if (fileMeta !== teamId) return null;
+          }
           const info = await getFileInfo(filename, false);
           return info ? { ...info, url: `/api/uploads/files/${filename}` } : null;
         })
