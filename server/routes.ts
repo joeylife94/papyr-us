@@ -1580,6 +1580,7 @@ export async function registerRoutes(
     '/api/upload',
     rlUpload,
     requireAuthIfEnabled,
+    requireTeamMembership,
     upload.array('files', 5),
     async (req: any, res) => {
       try {
@@ -1649,7 +1650,7 @@ export async function registerRoutes(
   });
 
   // List uploaded files
-  app.get('/api/uploads', async (req, res) => {
+  app.get('/api/uploads', optionalAuth, requireTeamMembership, async (req, res) => {
     try {
       const teamId = req.query.teamId as string;
       const fileList = await listUploadedFiles(teamId);
@@ -3105,27 +3106,33 @@ export async function registerRoutes(
   if (featureFlags.FEATURE_AUTOMATION) {
     // ==================== Workflows API ====================
 
-    app.get('/api/workflows', requireAuthIfEnabled, async (req, res) => {
-      try {
-        const teamIdParam = req.query.teamId as string | undefined;
-        let teamId: number | undefined;
-        if (teamIdParam) {
-          if (!isNaN(parseInt(teamIdParam))) {
-            teamId = parseInt(teamIdParam);
-          } else {
-            const team = await storage.getTeamByName(teamIdParam);
-            if (team) {
-              teamId = team.id;
+    app.get(
+      '/api/workflows',
+      optionalAuth,
+      requireTeamMembership,
+      requireAuthIfEnabled,
+      async (req, res) => {
+        try {
+          const teamIdParam = req.query.teamId as string | undefined;
+          let teamId: number | undefined;
+          if (teamIdParam) {
+            if (!isNaN(parseInt(teamIdParam))) {
+              teamId = parseInt(teamIdParam);
+            } else {
+              const team = await storage.getTeamByName(teamIdParam);
+              if (team) {
+                teamId = team.id;
+              }
             }
           }
+          const workflows = await storage.getWorkflows(teamId);
+          res.json(workflows);
+        } catch (error) {
+          console.error('Error fetching workflows:', error);
+          res.status(500).json({ error: 'Failed to fetch workflows' });
         }
-        const workflows = await storage.getWorkflows(teamId);
-        res.json(workflows);
-      } catch (error) {
-        console.error('Error fetching workflows:', error);
-        res.status(500).json({ error: 'Failed to fetch workflows' });
       }
-    });
+    );
 
     app.get('/api/workflows/:id', requireAuthIfEnabled, async (req, res) => {
       try {
@@ -3141,7 +3148,7 @@ export async function registerRoutes(
       }
     });
 
-    app.post('/api/workflows', requireAuthIfEnabled, async (req, res) => {
+    app.post('/api/workflows', requireAuthIfEnabled, requireTeamMembership, async (req, res) => {
       try {
         const workflowData = { ...req.body };
         // Resolve string teamId (teamName) to numeric ID
@@ -3165,7 +3172,7 @@ export async function registerRoutes(
       }
     });
 
-    app.put('/api/workflows/:id', requireAuthIfEnabled, async (req, res) => {
+    app.put('/api/workflows/:id', requireAuthIfEnabled, requireTeamMembership, async (req, res) => {
       try {
         const id = parseInt(req.params.id);
         const workflowData = { ...req.body };
@@ -3237,7 +3244,7 @@ export async function registerRoutes(
 
   // ==================== Saved Views API ====================
 
-  app.get('/api/saved-views', async (req, res) => {
+  app.get('/api/saved-views', optionalAuth, requireTeamMembership, async (req, res) => {
     try {
       let teamId: number | undefined;
       if (req.query.teamId) {
@@ -3289,7 +3296,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post('/api/saved-views', requireAuthIfEnabled, async (req, res) => {
+  app.post('/api/saved-views', requireAuthIfEnabled, requireTeamMembership, async (req, res) => {
     try {
       const validatedData = insertSavedViewSchema.parse(req.body);
       const view = await storage.createSavedView(validatedData);
@@ -3300,7 +3307,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put('/api/saved-views/:id', requireAuthIfEnabled, async (req, res) => {
+  app.put('/api/saved-views/:id', requireAuthIfEnabled, requireTeamMembership, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -3339,25 +3346,30 @@ export async function registerRoutes(
     }
   });
 
-  app.post('/api/saved-views/:id/set-default', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid view ID' });
-      }
+  app.post(
+    '/api/saved-views/:id/set-default',
+    requireAuthIfEnabled,
+    requireTeamMembership,
+    async (req, res) => {
+      try {
+        const id = parseInt(req.params.id);
+        if (isNaN(id)) {
+          return res.status(400).json({ error: 'Invalid view ID' });
+        }
 
-      const { teamId, entityType } = req.body;
-      if (!teamId || !entityType) {
-        return res.status(400).json({ error: 'teamId and entityType are required' });
-      }
+        const { teamId, entityType } = req.body;
+        if (!teamId || !entityType) {
+          return res.status(400).json({ error: 'teamId and entityType are required' });
+        }
 
-      await storage.setDefaultView(id, teamId, entityType);
-      res.json({ success: true });
-    } catch (error) {
-      console.error('Error setting default view:', error);
-      res.status(500).json({ error: 'Failed to set default view' });
+        await storage.setDefaultView(id, teamId, entityType);
+        res.json({ success: true });
+      } catch (error) {
+        console.error('Error setting default view:', error);
+        res.status(500).json({ error: 'Failed to set default view' });
+      }
     }
-  });
+  );
 
   // ==================== Database Schema Routes ====================
 
