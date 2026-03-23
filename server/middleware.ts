@@ -110,6 +110,88 @@ export function authMiddleware(req: AuthRequest, res: Response, next: NextFuncti
   }
 }
 
+// Optional auth: extracts user from JWT if present, but doesn't require it
+export function optionalAuth(req: AuthRequest, _res: Response, next: NextFunction) {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.split(' ')[1];
+    try {
+      const payload = jwt.verify(token, config.jwtSecret);
+      req.user = payload;
+    } catch {
+      // Invalid token — proceed without user
+    }
+  }
+  next();
+}
+
+/**
+ * Verify user belongs to the team referenced in the request.
+ * Extracts teamId from params.teamId, query.teamId, or body.teamId.
+ *
+ * Behaviour matrix:
+ * ┌──────────────┬──────────┬──────────────────────────────────────────────┐
+ * │ enforceAuth  │ user     │ teamId in request                           │
+ * ├──────────────┼──────────┼──────────────────────────────────────────────┤
+ * │ true         │ absent   │ any        → 401                            │
+ * │ true         │ present  │ present    → verify membership              │
+ * │ true         │ present  │ absent     → attach userTeamIds, next()     │
+ * │ false (dev)  │ absent   │ any        → next()                         │
+ * │ false (dev)  │ present  │ present    → verify membership              │
+ * │ false (dev)  │ present  │ absent     → attach userTeamIds, next()     │
+ * └──────────────┴──────────┴──────────────────────────────────────────────┘
+ *
+ * When teamId is absent and user is authenticated, `req.userTeamIds` is
+ * attached so that downstream handlers can scope queries to the user's teams.
+ */
+export function requireTeamMembership(req: AuthRequest, res: Response, next: NextFunction) {
+  // Dev mode without user — skip (backward compat)
+  if (!config.enforceAuthForWrites && (!req.user || !req.user.id)) {
+    return next();
+  }
+
+  // Auth enforced but no user — reject
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ message: 'Authentication required' });
+  }
+
+  const teamIdRaw = req.params.teamId || (req.query.teamId as string) || req.body?.teamId;
+
+  (async () => {
+    try {
+      const storage = req.app.locals.storage || (await import('./storage.js')).getStorage();
+      const userTeamIds = await storage.getUserTeamIds(req.user!.id);
+
+      // Attach for downstream handlers to use for scoping
+      (req as any).userTeamIds = userTeamIds;
+
+      if (!teamIdRaw) {
+        // No specific team requested — handler must scope using req.userTeamIds
+        return next();
+      }
+
+      let teamId: number;
+      if (!isNaN(parseInt(String(teamIdRaw)))) {
+        teamId = parseInt(String(teamIdRaw));
+      } else {
+        const team = await storage.getTeamByName(String(teamIdRaw));
+        if (!team) {
+          return res.status(404).json({ message: 'Team not found' });
+        }
+        teamId = team.id;
+      }
+
+      if (!userTeamIds.includes(teamId)) {
+        return res.status(403).json({ message: 'You are not a member of this team' });
+      }
+
+      next();
+    } catch (error) {
+      return res.status(500).json({ message: 'Team membership check failed' });
+    }
+  })();
+}
+
 // RBAC: Require admin access middleware
 export function requireAdmin(req: AuthRequest, res: Response, next: NextFunction) {
   // Try to decode JWT directly if provided (so this middleware can be used standalone)
@@ -258,22 +340,61 @@ export function requireAuthIfEnabled(req: AuthRequest, res: Response, next: Next
 }
 
 // Team role-based authorization middleware
+// Verifies user has one of the required roles (owner/admin/member) in the team.
+// Role hierarchy: owner > admin > member
 export function requireTeamRole(requiredRoles: Array<'owner' | 'admin' | 'member'>) {
+  const roleHierarchy: Record<string, number> = { member: 1, admin: 2, owner: 3 };
+
   return async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+      // In dev mode without auth enforcement, skip
+      if (!config.enforceAuthForWrites && (!req.user || !req.user.id)) {
+        return next();
+      }
+
       // Ensure user is authenticated
       if (!req.user || !req.user.id) {
         return res.status(401).json({ message: 'Authentication required' });
       }
 
-      // Get teamId from params or body
-      const teamId = req.params.teamId || req.body.teamId;
-      if (!teamId) {
-        return res.status(400).json({ message: 'Team ID required' });
+      // Get teamId from params, query, or body
+      const teamIdRaw = req.params.teamId || req.query.teamId || req.body?.teamId;
+      if (!teamIdRaw) {
+        // No teamId in request — skip team check (non-team resource)
+        return next();
       }
 
-      // Check user's role in the team (to be implemented in storage)
-      // For now, skip this check - will be implemented after storage methods are added
+      const storage = req.app.locals.storage || (await import('./storage.js')).getStorage();
+
+      // Resolve teamId (could be a name or numeric ID)
+      let teamId: number;
+      if (!isNaN(parseInt(String(teamIdRaw)))) {
+        teamId = parseInt(String(teamIdRaw));
+      } else {
+        const team = await storage.getTeamByName(String(teamIdRaw));
+        if (!team) {
+          return res.status(404).json({ message: 'Team not found' });
+        }
+        teamId = team.id;
+      }
+
+      // Get user's actual role in this team
+      const userRole = await storage.getUserTeamRole(req.user.id, teamId);
+      if (!userRole) {
+        return res.status(403).json({ message: 'You are not a member of this team' });
+      }
+
+      // Check if user's role satisfies any of the required roles
+      const userLevel = roleHierarchy[userRole] || 0;
+      const minRequired = Math.min(...requiredRoles.map((r) => roleHierarchy[r] || 0));
+      if (userLevel < minRequired) {
+        return res
+          .status(403)
+          .json({ message: `Insufficient role: requires ${requiredRoles.join(' or ')}` });
+      }
+
+      // Attach team role to request for downstream handlers
+      req.user.teamRole = userRole;
       next();
     } catch (error) {
       return res.status(500).json({ message: 'Authorization check failed' });
@@ -282,19 +403,30 @@ export function requireTeamRole(requiredRoles: Array<'owner' | 'admin' | 'member
 }
 
 // Page permission middleware - requires specific permission level for a page
+// Supports both ID-based (:id, :pageId) and slug-based (:slug) routes
 export function requirePagePermission(
   requiredPermission: 'owner' | 'editor' | 'viewer' | 'commenter'
 ) {
   return async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      // Import storage dynamically to avoid circular dependencies
-      const { getStorage } = await import('./storage.js');
-      const storage = getStorage();
+      const storage = req.app.locals.storage || (await import('./storage.js')).getStorage();
 
-      // Get page ID from params
-      const pageId = parseInt(req.params.id || req.params.pageId);
+      // Resolve page ID — from params (:id/:pageId) or by looking up :slug
+      let pageId = parseInt(req.params.id || req.params.pageId);
       if (!pageId || isNaN(pageId)) {
-        return res.status(400).json({ message: 'Invalid page ID' });
+        // Try slug-based lookup
+        const slug = req.params.slug;
+        if (slug) {
+          const page = await storage.getWikiPageBySlug(slug);
+          if (!page) {
+            return res.status(404).json({ message: 'Page not found' });
+          }
+          pageId = page.id;
+          // Store resolved page on request so handler can reuse it
+          (req as any)._resolvedPage = page;
+        } else {
+          return res.status(400).json({ message: 'Invalid page ID' });
+        }
       }
 
       // Get user ID from JWT (if authenticated)
@@ -331,8 +463,7 @@ export function requirePagePermission(
 export function checkPagePermission() {
   return async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const { getStorage } = await import('./storage.js');
-      const storage = getStorage();
+      const storage = req.app.locals.storage || (await import('./storage.js')).getStorage();
 
       const pageId = parseInt(req.params.id || req.params.pageId);
       if (!pageId || isNaN(pageId)) {

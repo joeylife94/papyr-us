@@ -37,6 +37,17 @@ beforeAll(async () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Allow all permission checks by default (middleware was added to comment routes)
+  (storage.checkPagePermission as vi.Mock).mockResolvedValue(true);
+  // Return a mock comment for getComment (needed by PUT/DELETE permission checks)
+  (storage.getComment as vi.Mock).mockResolvedValue({
+    id: 101,
+    content: 'This is a test comment.',
+    author: 'vitest-user',
+    pageId: 1,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
 });
 
 afterAll((done) => {

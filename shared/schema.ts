@@ -259,6 +259,26 @@ export type InsertMember = z.infer<typeof insertMemberSchema>;
 export type UpdateMember = z.infer<typeof updateMemberSchema>;
 export type Member = typeof members.$inferSelect;
 
+// Team members (RBAC) — maps to the team_members table from migration 0009
+export const teamRoles = ['owner', 'admin', 'member'] as const;
+export type TeamRole = (typeof teamRoles)[number];
+
+export const teamMembers = pgTable('team_members', {
+  id: serial('id').primaryKey(),
+  teamId: integer('team_id')
+    .notNull()
+    .references(() => teams.id, { onDelete: 'cascade' }),
+  userId: integer('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  role: text('role').notNull().default('member'), // 'owner', 'admin', 'member'
+  invitedBy: integer('invited_by').references(() => users.id),
+  joinedAt: timestamp('joined_at').notNull().defaultNow(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export type TeamMember = typeof teamMembers.$inferSelect;
+
 // Study progress & contribution stats schema
 export const progressStats = pgTable('progress_stats', {
   id: serial('id').primaryKey(),

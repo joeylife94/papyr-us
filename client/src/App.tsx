@@ -29,6 +29,7 @@ import AISearchPage from '@/pages/ai-search';
 import KnowledgeGraphPage from '@/pages/knowledge-graph';
 import AutomationPage from '@/pages/automation';
 import NotFound from '@/pages/not-found';
+import SharedPage from '@/pages/shared-page';
 import LoginPage from '@/pages/login';
 import RegisterPage from '@/pages/register';
 import { FeatureGate } from '@/components/FeatureGate';
@@ -122,6 +123,7 @@ function App() {
                 <Routes>
                   <Route path="/login" element={<LoginPage />} />
                   <Route path="/register" element={<RegisterPage />} />
+                  <Route path="/share/:token" element={<SharedPage />} />
                   <Route element={<ProtectedRoute />}>
                     <Route element={<AppLayout />}>
                       <Route path="/" element={<HomeWrapper />} />

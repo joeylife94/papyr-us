@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 dotenv.config();
+import crypto from 'crypto';
 import {
   wikiPages,
   type WikiPage,
@@ -49,6 +50,8 @@ import {
   type InsertPublicLink,
   type UpdatePublicLink,
   type PermissionLevel,
+  type TeamMember,
+  type TeamRole,
   databaseSchemas,
   databaseRows,
   databaseRelations,
@@ -69,6 +72,7 @@ import {
   workflowRuns,
   pagePermissions,
   publicLinks,
+  teamMembers,
 } from '../shared/schema.js';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { eq, like, and, sql, desc, asc } from 'drizzle-orm';
@@ -126,9 +130,20 @@ export class DBStorage {
     return result[0];
   }
 
-  async createWikiPage(page: InsertWikiPage): Promise<WikiPage> {
+  async createWikiPage(page: InsertWikiPage, creatorUserId?: number): Promise<WikiPage> {
     const result = await this.db.insert(wikiPages).values(page).returning();
-    return result[0];
+    const createdPage = result[0];
+
+    // Auto-assign owner permission for the creator
+    if (creatorUserId) {
+      try {
+        await this.setPageOwner(createdPage.id, creatorUserId, creatorUserId);
+      } catch (error) {
+        console.error('Failed to set page owner permission:', error);
+      }
+    }
+
+    return createdPage;
   }
 
   async updateWikiPage(id: number, page: UpdateWikiPage): Promise<WikiPage | undefined> {
@@ -416,25 +431,86 @@ export class DBStorage {
   }
 
   /**
-   * Get all team IDs that a user belongs to (based on user email matching member email)
+   * Get all team IDs that a user belongs to.
+   * First checks the team_members RBAC table; falls back to legacy members table.
    */
   async getUserTeamIds(userId: number): Promise<number[]> {
-    // Get user email first
+    // Primary: team_members table (RBAC)
+    const tmRecords = await this.db
+      .select({ teamId: teamMembers.teamId })
+      .from(teamMembers)
+      .where(eq(teamMembers.userId, userId));
+
+    if (tmRecords.length > 0) {
+      return tmRecords.map((r: { teamId: number }) => r.teamId);
+    }
+
+    // Fallback: legacy members table (email-based matching)
     const user = await this.db.select().from(users).where(eq(users.id, userId));
     if (user.length === 0) return [];
 
     const userEmail = user[0].email;
 
-    // Find member records with matching email
     const memberRecords = await this.db
       .select({ teamId: members.teamId })
       .from(members)
       .where(and(eq(members.email, userEmail), eq(members.isActive, true)));
 
-    // Return unique team IDs (filter out nulls)
     return memberRecords
       .map((m: { teamId: number | null }) => m.teamId)
       .filter((id: number | null): id is number => id !== null);
+  }
+
+  /**
+   * Get user's role in a specific team from team_members table.
+   * Returns the role ('owner' | 'admin' | 'member') or null if not a member.
+   */
+  async getUserTeamRole(userId: number, teamId: number): Promise<TeamRole | null> {
+    const record = await this.db
+      .select({ role: teamMembers.role })
+      .from(teamMembers)
+      .where(and(eq(teamMembers.userId, userId), eq(teamMembers.teamId, teamId)));
+
+    if (record.length > 0) {
+      return record[0].role as TeamRole;
+    }
+
+    // Fallback: if user is in legacy members table, treat as 'member' role
+    const user = await this.db.select().from(users).where(eq(users.id, userId));
+    if (user.length === 0) return null;
+
+    const memberRecord = await this.db
+      .select({ id: members.id })
+      .from(members)
+      .where(
+        and(
+          eq(members.email, user[0].email),
+          eq(members.teamId, teamId),
+          eq(members.isActive, true)
+        )
+      );
+
+    return memberRecord.length > 0 ? 'member' : null;
+  }
+
+  /**
+   * Add a user to a team with a specific role.
+   */
+  async addTeamMember(
+    teamId: number,
+    userId: number,
+    role: TeamRole = 'member',
+    invitedBy?: number
+  ): Promise<TeamMember> {
+    const result = await this.db
+      .insert(teamMembers)
+      .values({ teamId, userId, role, invitedBy: invitedBy ?? null })
+      .onConflictDoUpdate({
+        target: [teamMembers.teamId, teamMembers.userId],
+        set: { role },
+      })
+      .returning();
+    return result[0];
   }
 
   async getMembers(teamId?: number): Promise<Member[]> {
@@ -871,11 +947,19 @@ export class DBStorage {
 
     const requiredLevel = permissionLevels[requiredPermission];
 
+    // Get the page to check author (implicit owner)
+    const page = await this.db.select().from(wikiPages).where(eq(wikiPages.id, pageId));
+
     // Get all permissions for this page
     const permissions = await this.db
       .select()
       .from(pagePermissions)
       .where(eq(pagePermissions.pageId, pageId));
+
+    // If no explicit permissions exist, allow all access (legacy open-access pages)
+    if (permissions.length === 0) {
+      return true;
+    }
 
     // Check public permissions first
     const publicPermission = permissions.find((p: PagePermission) => p.entityType === 'public');
@@ -889,6 +973,14 @@ export class DBStorage {
     // If no user ID, only public access is allowed
     if (!userId) {
       return false;
+    }
+
+    // Check if user is the page author (implicit owner)
+    if (page.length > 0) {
+      const user = await this.db.select().from(users).where(eq(users.id, userId));
+      if (user.length > 0 && page[0].author === user[0].email) {
+        return true;
+      }
     }
 
     // Check user-specific permissions
@@ -1112,15 +1204,10 @@ export class DBStorage {
   }
 
   /**
-   * Generate a random token for public links
+   * Generate a cryptographically secure random token for public links
    */
   generatePublicLinkToken(): string {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    let token = '';
-    for (let i = 0; i < 16; i++) {
-      token += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return token;
+    return crypto.randomBytes(24).toString('base64url');
   }
 
   // ==================== Database Schema Operations ====================

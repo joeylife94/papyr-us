@@ -7,6 +7,10 @@ import {
   writeAuthGate,
   buildRateLimiter,
   requireAuthIfEnabled,
+  requirePagePermission,
+  requireTeamMembership,
+  requireTeamRole,
+  optionalAuth,
   type AuthRequest,
 } from './middleware.js';
 import { config } from './config.js';
@@ -67,6 +71,9 @@ export async function registerRoutes(
 ): Promise<{ httpServer: HttpServer; io?: SocketIoServer }> {
   const httpServer = createServer(app);
   let io: SocketIoServer | undefined;
+
+  // Expose storage to middleware via app.locals
+  app.locals.storage = storage;
 
   // Initialize Passport for OAuth strategies
   app.use(passport.initialize());
@@ -396,7 +403,7 @@ export async function registerRoutes(
   }
 
   // Wiki Pages API
-  app.get('/api/pages', async (req, res) => {
+  app.get('/api/pages', optionalAuth, async (req: AuthRequest, res) => {
     try {
       const teamIdParam = req.query.teamId as string;
       const cursor = req.query.cursor as string | undefined;
@@ -412,6 +419,72 @@ export async function registerRoutes(
             resolvedTeamId = team.id;
           }
         }
+      }
+
+      // If teamId is specified and user is authenticated, verify team membership
+      if (resolvedTeamId && req.user?.id) {
+        const userTeamIds = await storage.getUserTeamIds(req.user.id);
+        if (!userTeamIds.includes(resolvedTeamId)) {
+          return res.status(403).json({ message: 'You are not a member of this team' });
+        }
+      } else if (resolvedTeamId && config.enforceAuthForWrites) {
+        return res.status(401).json({ message: 'Authentication required' });
+      }
+
+      // If no teamId specified and user is authenticated, scope to user's teams
+      if (!resolvedTeamId && req.user?.id) {
+        const userTeamIds = await storage.getUserTeamIds(req.user.id);
+        if (userTeamIds.length > 0) {
+          // Search pages across all user's teams and unassigned pages
+          const allResults = await Promise.all([
+            ...userTeamIds.map((tid) => {
+              const params = searchSchema.parse({
+                query: req.query.q as string,
+                folder: req.query.folder as string,
+                sort: req.query.sort as string as any,
+                tags: req.query.tags ? (req.query.tags as string).split(',') : undefined,
+                limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
+                offset: req.query.offset ? parseInt(req.query.offset as string) : undefined,
+                teamId: tid,
+              });
+              return storage.searchWikiPages(params);
+            }),
+            // Also include pages with no team (personal/shared pages)
+            storage.searchWikiPages(
+              searchSchema.parse({
+                query: req.query.q as string,
+                folder: req.query.folder as string,
+                sort: req.query.sort as string as any,
+                tags: req.query.tags ? (req.query.tags as string).split(',') : undefined,
+                limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
+                offset: req.query.offset ? parseInt(req.query.offset as string) : undefined,
+              })
+            ),
+          ]);
+
+          // Merge and deduplicate by page id
+          const seenIds = new Set<number>();
+          const mergedPages = allResults
+            .flatMap((r) => r.pages)
+            .filter((p) => {
+              if (seenIds.has(p.id)) return false;
+              seenIds.add(p.id);
+              return true;
+            });
+
+          const limit = req.query.limit ? parseInt(req.query.limit as string) : 20;
+          const paginatedPages = mergedPages.slice(0, limit);
+          const hasMore = mergedPages.length > limit;
+          const nextCursor = hasMore ? paginatedPages[paginatedPages.length - 1]?.id : null;
+
+          return res.json({
+            pages: paginatedPages,
+            total: mergedPages.length,
+            pagination: { hasMore, nextCursor, count: paginatedPages.length },
+          });
+        }
+      } else if (!resolvedTeamId && config.enforceAuthForWrites && !req.user?.id) {
+        return res.status(401).json({ message: 'Authentication required' });
       }
 
       const searchParams = searchSchema.parse({
@@ -443,7 +516,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get('/api/pages/:id', async (req, res) => {
+  app.get('/api/pages/:id', optionalAuth, requirePagePermission('viewer'), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const page = await storage.getWikiPage(id);
@@ -458,264 +531,312 @@ export async function registerRoutes(
     }
   });
 
-  app.get('/api/pages/slug/:slug', async (req, res) => {
-    try {
-      const slug = req.params.slug;
-      const page = await storage.getWikiPageBySlug(slug);
+  app.get(
+    '/api/pages/slug/:slug',
+    optionalAuth,
+    requirePagePermission('viewer'),
+    async (req, res) => {
+      try {
+        // Use page resolved by requirePagePermission middleware if available
+        const page =
+          (req as any)._resolvedPage || (await storage.getWikiPageBySlug(req.params.slug));
 
-      if (!page) {
-        return res.status(404).json({ message: 'Page not found' });
-      }
-
-      res.json(page);
-    } catch (error) {
-      res.status(500).json({ message: 'Server error' });
-    }
-  });
-
-  app.post('/api/pages', requireAuthIfEnabled, async (req, res) => {
-    try {
-      // Removed temporary E2E triage logging. The instrumentation used to write
-      // `test-server-received-posts.log` during debugging has been cleaned up.
-
-      const pageData = insertWikiPageSchema.parse(req.body);
-
-      // If teamId is provided, find the actual team ID
-      if (pageData.teamId && typeof pageData.teamId === 'string') {
-        const team = await storage.getTeamByName(pageData.teamId);
-        if (team) {
-          pageData.teamId = team.id;
-        } else {
-          return res.status(400).json({ message: 'Team not found' });
+        if (!page) {
+          return res.status(404).json({ message: 'Page not found' });
         }
+
+        res.json(page);
+      } catch (error) {
+        res.status(500).json({ message: 'Server error' });
       }
-
-      const page = await storage.createWikiPage(pageData);
-
-      // Trigger workflows for page_created event
-      triggerWorkflows('page_created', {
-        id: page.id,
-        title: page.title,
-        slug: page.slug,
-        content: page.content,
-        folder: page.folder,
-        tags: page.tags,
-        author: page.author,
-        teamId: page.teamId,
-      }).catch((error) => {
-        logger.error('Failed to trigger workflows for page_created:', {
-          pageId: page.id,
-          error: error instanceof Error ? error.message : 'Unknown error',
-        });
-      });
-
-      res.status(201).json(page);
-    } catch (error) {
-      res.status(400).json({ message: 'Invalid page data', error });
     }
-  });
+  );
 
-  app.put('/api/pages/:id', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const updateData = updateWikiPageSchema.parse(req.body);
+  app.post(
+    '/api/pages',
+    requireAuthIfEnabled,
+    requireTeamMembership,
+    async (req: AuthRequest, res) => {
+      try {
+        // Removed temporary E2E triage logging. The instrumentation used to write
+        // `test-server-received-posts.log` during debugging has been cleaned up.
 
-      // Get old page data for comparison and version snapshot
-      const oldPage = await storage.getWikiPage(id);
+        const pageData = insertWikiPageSchema.parse(req.body);
 
-      // Save a version snapshot BEFORE updating (only if content/blocks changed)
-      if (oldPage && (updateData.content !== undefined || updateData.blocks !== undefined)) {
-        try {
-          // Get the current max version number
-          const db = (storage as any).db;
-          if (db) {
-            const { pageVersions } = await import('@shared/schema');
-            const { desc, eq, sql } = await import('drizzle-orm');
-            const [latestVersion] = await db
-              .select({ maxVersion: sql<number>`COALESCE(MAX(${pageVersions.versionNumber}), 0)` })
-              .from(pageVersions)
-              .where(eq(pageVersions.pageId, id));
-            const nextVersion = (latestVersion?.maxVersion || 0) + 1;
-
-            await db.insert(pageVersions).values({
-              pageId: id,
-              title: oldPage.title,
-              content: oldPage.content,
-              blocks: oldPage.blocks || [],
-              author: oldPage.author,
-              versionNumber: nextVersion,
-              changeDescription: `Version ${nextVersion}`,
-            });
+        // If teamId is provided, find the actual team ID
+        if (pageData.teamId && typeof pageData.teamId === 'string') {
+          const team = await storage.getTeamByName(pageData.teamId);
+          if (team) {
+            pageData.teamId = team.id;
+          } else {
+            return res.status(400).json({ message: 'Team not found' });
           }
-        } catch (versionError) {
-          // Don't block page update if version creation fails
-          console.error('Failed to create page version:', versionError);
         }
-      }
 
-      const page = await storage.updateWikiPage(id, updateData);
+        // Pass creator user ID for automatic owner permission assignment
+        const creatorUserId = req.user?.id;
+        const page = creatorUserId
+          ? await storage.createWikiPage(pageData, creatorUserId)
+          : await storage.createWikiPage(pageData);
 
-      if (!page) {
-        return res.status(404).json({ message: 'Page not found' });
-      }
-
-      // Trigger workflows for page_updated event
-      triggerWorkflows('page_updated', {
-        id: page.id,
-        title: page.title,
-        slug: page.slug,
-        content: page.content,
-        folder: page.folder,
-        tags: page.tags,
-        author: page.author,
-        teamId: page.teamId,
-        oldTags: oldPage?.tags || [],
-        newTags: page.tags,
-      }).catch((error) => {
-        console.error('Failed to trigger workflows for page_updated:', error);
-      });
-
-      // Check if tags were added
-      if (oldPage && updateData.tags) {
-        const addedTags = updateData.tags.filter((tag) => !oldPage.tags.includes(tag));
-        if (addedTags.length > 0) {
-          triggerWorkflows('tag_added', {
-            id: page.id,
-            title: page.title,
-            tags: addedTags,
-            teamId: page.teamId,
-          }).catch((error) => {
-            console.error('Failed to trigger workflows for tag_added:', error);
-          });
-        }
-      }
-
-      res.json(page);
-    } catch (error) {
-      res.status(400).json({ message: 'Invalid update data', error });
-    }
-  });
-
-  // Page Version History API
-  app.get('/api/pages/:id/versions', async (req, res) => {
-    try {
-      const pageId = parseInt(req.params.id);
-      const db = (storage as any).db;
-      if (!db) return res.status(500).json({ error: 'Database not available' });
-
-      const { pageVersions } = await import('@shared/schema');
-      const { desc, eq } = await import('drizzle-orm');
-
-      const versions = await db
-        .select({
-          id: pageVersions.id,
-          pageId: pageVersions.pageId,
-          title: pageVersions.title,
-          author: pageVersions.author,
-          versionNumber: pageVersions.versionNumber,
-          changeDescription: pageVersions.changeDescription,
-          createdAt: pageVersions.createdAt,
-        })
-        .from(pageVersions)
-        .where(eq(pageVersions.pageId, pageId))
-        .orderBy(desc(pageVersions.versionNumber));
-
-      res.json(versions);
-    } catch (error) {
-      console.error('Error fetching page versions:', error);
-      res.status(500).json({ error: 'Failed to fetch page versions' });
-    }
-  });
-
-  app.get('/api/pages/:id/versions/:versionId', async (req, res) => {
-    try {
-      const versionId = parseInt(req.params.versionId);
-      const db = (storage as any).db;
-      if (!db) return res.status(500).json({ error: 'Database not available' });
-
-      const { pageVersions } = await import('@shared/schema');
-      const { eq } = await import('drizzle-orm');
-
-      const [version] = await db.select().from(pageVersions).where(eq(pageVersions.id, versionId));
-
-      if (!version) {
-        return res.status(404).json({ error: 'Version not found' });
-      }
-
-      res.json(version);
-    } catch (error) {
-      console.error('Error fetching page version:', error);
-      res.status(500).json({ error: 'Failed to fetch page version' });
-    }
-  });
-
-  // Restore a specific version
-  app.post('/api/pages/:id/versions/:versionId/restore', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const pageId = parseInt(req.params.id);
-      const versionId = parseInt(req.params.versionId);
-      const db = (storage as any).db;
-      if (!db) return res.status(500).json({ error: 'Database not available' });
-
-      const { pageVersions } = await import('@shared/schema');
-      const { eq } = await import('drizzle-orm');
-
-      const [version] = await db.select().from(pageVersions).where(eq(pageVersions.id, versionId));
-
-      if (!version) {
-        return res.status(404).json({ error: 'Version not found' });
-      }
-
-      // Restore the page to this version
-      const restoredPage = await storage.updateWikiPage(pageId, {
-        title: version.title,
-        content: version.content,
-        blocks: version.blocks as any,
-      });
-
-      if (!restoredPage) {
-        return res.status(404).json({ error: 'Page not found' });
-      }
-
-      res.json(restoredPage);
-    } catch (error) {
-      console.error('Error restoring page version:', error);
-      res.status(500).json({ error: 'Failed to restore page version' });
-    }
-  });
-
-  app.delete('/api/pages/:id', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-
-      // Get page data before deletion
-      const page = await storage.getWikiPage(id);
-
-      const deleted = await storage.deleteWikiPage(id);
-
-      if (!deleted) {
-        return res.status(404).json({ message: 'Page not found' });
-      }
-
-      // Trigger workflows for page_deleted event
-      if (page) {
-        triggerWorkflows('page_deleted', {
+        // Trigger workflows for page_created event
+        triggerWorkflows('page_created', {
           id: page.id,
           title: page.title,
           slug: page.slug,
+          content: page.content,
           folder: page.folder,
           tags: page.tags,
+          author: page.author,
           teamId: page.teamId,
         }).catch((error) => {
-          console.error('Failed to trigger workflows for page_deleted:', error);
+          logger.error('Failed to trigger workflows for page_created:', {
+            pageId: page.id,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
         });
-      }
 
-      res.json({ message: 'Page deleted successfully' });
-    } catch (error) {
-      res.status(400).json({ message: 'Invalid page ID' });
+        res.status(201).json(page);
+      } catch (error) {
+        res.status(400).json({ message: 'Invalid page data', error });
+      }
     }
-  });
+  );
+
+  app.put(
+    '/api/pages/:id',
+    requireAuthIfEnabled,
+    requirePagePermission('editor'),
+    async (req: AuthRequest, res) => {
+      try {
+        const id = parseInt(req.params.id);
+        const updateData = updateWikiPageSchema.parse(req.body);
+
+        // Get old page data for comparison and version snapshot
+        const oldPage = await storage.getWikiPage(id);
+
+        // Save a version snapshot BEFORE updating (only if content/blocks changed)
+        if (oldPage && (updateData.content !== undefined || updateData.blocks !== undefined)) {
+          try {
+            // Get the current max version number
+            const db = (storage as any).db;
+            if (db) {
+              const { pageVersions } = await import('@shared/schema');
+              const { desc, eq, sql } = await import('drizzle-orm');
+              const [latestVersion] = await db
+                .select({
+                  maxVersion: sql<number>`COALESCE(MAX(${pageVersions.versionNumber}), 0)`,
+                })
+                .from(pageVersions)
+                .where(eq(pageVersions.pageId, id));
+              const nextVersion = (latestVersion?.maxVersion || 0) + 1;
+
+              await db.insert(pageVersions).values({
+                pageId: id,
+                title: oldPage.title,
+                content: oldPage.content,
+                blocks: oldPage.blocks || [],
+                author: oldPage.author,
+                versionNumber: nextVersion,
+                changeDescription: `Version ${nextVersion}`,
+              });
+            }
+          } catch (versionError) {
+            // Don't block page update if version creation fails
+            console.error('Failed to create page version:', versionError);
+          }
+        }
+
+        const page = await storage.updateWikiPage(id, updateData);
+
+        if (!page) {
+          return res.status(404).json({ message: 'Page not found' });
+        }
+
+        // Trigger workflows for page_updated event
+        triggerWorkflows('page_updated', {
+          id: page.id,
+          title: page.title,
+          slug: page.slug,
+          content: page.content,
+          folder: page.folder,
+          tags: page.tags,
+          author: page.author,
+          teamId: page.teamId,
+          oldTags: oldPage?.tags || [],
+          newTags: page.tags,
+        }).catch((error) => {
+          console.error('Failed to trigger workflows for page_updated:', error);
+        });
+
+        // Check if tags were added
+        if (oldPage && updateData.tags) {
+          const addedTags = updateData.tags.filter((tag) => !oldPage.tags.includes(tag));
+          if (addedTags.length > 0) {
+            triggerWorkflows('tag_added', {
+              id: page.id,
+              title: page.title,
+              tags: addedTags,
+              teamId: page.teamId,
+            }).catch((error) => {
+              console.error('Failed to trigger workflows for tag_added:', error);
+            });
+          }
+        }
+
+        res.json(page);
+      } catch (error) {
+        res.status(400).json({ message: 'Invalid update data', error });
+      }
+    }
+  );
+
+  // Page Version History API
+  app.get(
+    '/api/pages/:id/versions',
+    optionalAuth,
+    requirePagePermission('viewer'),
+    async (req, res) => {
+      try {
+        const pageId = parseInt(req.params.id);
+        const db = (storage as any).db;
+        if (!db) return res.status(500).json({ error: 'Database not available' });
+
+        const { pageVersions } = await import('@shared/schema');
+        const { desc, eq } = await import('drizzle-orm');
+
+        const versions = await db
+          .select({
+            id: pageVersions.id,
+            pageId: pageVersions.pageId,
+            title: pageVersions.title,
+            author: pageVersions.author,
+            versionNumber: pageVersions.versionNumber,
+            changeDescription: pageVersions.changeDescription,
+            createdAt: pageVersions.createdAt,
+          })
+          .from(pageVersions)
+          .where(eq(pageVersions.pageId, pageId))
+          .orderBy(desc(pageVersions.versionNumber));
+
+        res.json(versions);
+      } catch (error) {
+        console.error('Error fetching page versions:', error);
+        res.status(500).json({ error: 'Failed to fetch page versions' });
+      }
+    }
+  );
+
+  app.get(
+    '/api/pages/:id/versions/:versionId',
+    optionalAuth,
+    requirePagePermission('viewer'),
+    async (req, res) => {
+      try {
+        const versionId = parseInt(req.params.versionId);
+        const db = (storage as any).db;
+        if (!db) return res.status(500).json({ error: 'Database not available' });
+
+        const { pageVersions } = await import('@shared/schema');
+        const { eq } = await import('drizzle-orm');
+
+        const [version] = await db
+          .select()
+          .from(pageVersions)
+          .where(eq(pageVersions.id, versionId));
+
+        if (!version) {
+          return res.status(404).json({ error: 'Version not found' });
+        }
+
+        res.json(version);
+      } catch (error) {
+        console.error('Error fetching page version:', error);
+        res.status(500).json({ error: 'Failed to fetch page version' });
+      }
+    }
+  );
+
+  // Restore a specific version
+  app.post(
+    '/api/pages/:id/versions/:versionId/restore',
+    requireAuthIfEnabled,
+    requirePagePermission('editor'),
+    async (req: AuthRequest, res) => {
+      try {
+        const pageId = parseInt(req.params.id);
+        const versionId = parseInt(req.params.versionId);
+        const db = (storage as any).db;
+        if (!db) return res.status(500).json({ error: 'Database not available' });
+
+        const { pageVersions } = await import('@shared/schema');
+        const { eq } = await import('drizzle-orm');
+
+        const [version] = await db
+          .select()
+          .from(pageVersions)
+          .where(eq(pageVersions.id, versionId));
+
+        if (!version) {
+          return res.status(404).json({ error: 'Version not found' });
+        }
+
+        // Restore the page to this version
+        const restoredPage = await storage.updateWikiPage(pageId, {
+          title: version.title,
+          content: version.content,
+          blocks: version.blocks as any,
+        });
+
+        if (!restoredPage) {
+          return res.status(404).json({ error: 'Page not found' });
+        }
+
+        res.json(restoredPage);
+      } catch (error) {
+        console.error('Error restoring page version:', error);
+        res.status(500).json({ error: 'Failed to restore page version' });
+      }
+    }
+  );
+
+  app.delete(
+    '/api/pages/:id',
+    requireAuthIfEnabled,
+    requirePagePermission('owner'),
+    async (req: AuthRequest, res) => {
+      try {
+        const id = parseInt(req.params.id);
+
+        // Get page data before deletion
+        const page = await storage.getWikiPage(id);
+
+        const deleted = await storage.deleteWikiPage(id);
+
+        if (!deleted) {
+          return res.status(404).json({ message: 'Page not found' });
+        }
+
+        // Trigger workflows for page_deleted event
+        if (page) {
+          triggerWorkflows('page_deleted', {
+            id: page.id,
+            title: page.title,
+            slug: page.slug,
+            folder: page.folder,
+            tags: page.tags,
+            teamId: page.teamId,
+          }).catch((error) => {
+            console.error('Failed to trigger workflows for page_deleted:', error);
+          });
+        }
+
+        res.json({ message: 'Page deleted successfully' });
+      } catch (error) {
+        res.status(400).json({ message: 'Invalid page ID' });
+      }
+    }
+  );
 
   // Folder and Tag APIs
   app.get('/api/folders', async (req, res) => {
@@ -748,10 +869,27 @@ export async function registerRoutes(
 
   if (featureFlags.FEATURE_CALENDAR) {
     // Calendar Events API
-    app.get('/api/calendar', async (req, res) => {
+    app.get('/api/calendar', optionalAuth, requireTeamMembership, async (req: AuthRequest, res) => {
       try {
         const teamId = req.query.teamId as string | undefined;
-        const events = await storage.getCalendarEvents(teamId ? Number(teamId) : undefined);
+
+        // If no teamId specified, scope to user's teams to prevent full data leak
+        let events;
+        if (!teamId) {
+          const userTeamIds = (req as any).userTeamIds as number[] | undefined;
+          if (userTeamIds && userTeamIds.length > 0) {
+            const allEvents = await Promise.all(
+              userTeamIds.map((id) => storage.getCalendarEvents(id))
+            );
+            events = allEvents.flat();
+          } else if (config.enforceAuthForWrites) {
+            events = [];
+          } else {
+            events = await storage.getCalendarEvents(undefined);
+          }
+        } else {
+          events = await storage.getCalendarEvents(Number(teamId));
+        }
 
         // Ensure compatibility with new fields - add defaults if missing
         const safeEvents = events.map((event) => ({
@@ -768,84 +906,105 @@ export async function registerRoutes(
       }
     });
 
-    app.get('/api/calendar/:teamId', async (req, res) => {
-      try {
-        const teamId = req.params.teamId;
-        const events = await storage.getCalendarEvents(Number(teamId));
+    app.get(
+      '/api/calendar/:teamId',
+      optionalAuth,
+      requireTeamMembership,
+      async (req: AuthRequest, res) => {
+        try {
+          const teamId = req.params.teamId;
+          const events = await storage.getCalendarEvents(Number(teamId));
 
-        // Ensure compatibility with new fields - add defaults if missing
-        const safeEvents = events.map((event) => ({
-          ...event,
-          startTime: event.startTime || null,
-          endTime: event.endTime || null,
-          priority: event.priority || 1,
-        }));
+          // Ensure compatibility with new fields - add defaults if missing
+          const safeEvents = events.map((event) => ({
+            ...event,
+            startTime: event.startTime || null,
+            endTime: event.endTime || null,
+            priority: event.priority || 1,
+          }));
 
-        res.json(safeEvents);
-      } catch (error) {
-        console.error('Error fetching calendar events:', error);
-        res.status(500).json({ message: 'Server error' });
+          res.json(safeEvents);
+        } catch (error) {
+          console.error('Error fetching calendar events:', error);
+          res.status(500).json({ message: 'Server error' });
+        }
       }
-    });
+    );
 
-    app.get('/api/calendar/event/:id', async (req, res) => {
+    app.get('/api/calendar/event/:id', optionalAuth, async (req: AuthRequest, res) => {
       try {
         const id = parseInt(req.params.id);
         const event = await storage.getCalendarEvent(id);
         if (!event) {
           return res.status(404).json({ message: 'Event not found' });
         }
+
+        // Verify the requester belongs to the event's team
+        if (event.teamId && req.user?.id) {
+          const userTeamIds = await storage.getUserTeamIds(req.user.id);
+          if (!userTeamIds.includes(event.teamId)) {
+            return res.status(403).json({ message: 'You are not a member of this team' });
+          }
+        } else if (event.teamId && config.enforceAuthForWrites) {
+          return res.status(401).json({ message: 'Authentication required' });
+        }
+
         res.json(event);
       } catch (error) {
         res.status(500).json({ message: 'Server error' });
       }
     });
 
-    app.post('/api/calendar', requireAuthIfEnabled, async (req, res) => {
-      try {
-        // Convert ISO string dates to Date objects
-        const requestData = { ...req.body };
-        if (requestData.startDate && typeof requestData.startDate === 'string') {
-          requestData.startDate = new Date(requestData.startDate);
-        }
-        if (requestData.endDate && typeof requestData.endDate === 'string') {
-          requestData.endDate = new Date(requestData.endDate);
-        }
+    app.post(
+      '/api/calendar',
+      requireAuthIfEnabled,
+      requireTeamMembership,
+      async (req: AuthRequest, res) => {
+        try {
+          // Convert ISO string dates to Date objects
+          const requestData = { ...req.body };
+          if (requestData.startDate && typeof requestData.startDate === 'string') {
+            requestData.startDate = new Date(requestData.startDate);
+          }
+          if (requestData.endDate && typeof requestData.endDate === 'string') {
+            requestData.endDate = new Date(requestData.endDate);
+          }
 
-        // If endDate is not provided or is null, set it to startDate
-        if (!requestData.endDate && requestData.startDate) {
-          requestData.endDate = new Date(requestData.startDate);
-        }
+          // If endDate is not provided or is null, set it to startDate
+          if (!requestData.endDate && requestData.startDate) {
+            requestData.endDate = new Date(requestData.startDate);
+          }
 
-        // Handle time fields - convert empty strings to null
-        if (requestData.startTime === '' || requestData.startTime === undefined) {
-          requestData.startTime = null;
-        }
-        if (requestData.endTime === '' || requestData.endTime === undefined) {
-          requestData.endTime = null;
-        }
+          // Handle time fields - convert empty strings to null
+          if (requestData.startTime === '' || requestData.startTime === undefined) {
+            requestData.startTime = null;
+          }
+          if (requestData.endTime === '' || requestData.endTime === undefined) {
+            requestData.endTime = null;
+          }
 
-        // Handle priority field - convert to integer and set default
-        if (!requestData.priority || requestData.priority === undefined) {
-          requestData.priority = 1;
-        } else {
-          requestData.priority = parseInt(requestData.priority);
-        }
+          // Handle priority field - convert to integer and set default
+          if (!requestData.priority || requestData.priority === undefined) {
+            requestData.priority = 1;
+          } else {
+            requestData.priority = parseInt(requestData.priority);
+          }
 
-        const eventData = insertCalendarEventSchema.parse(requestData);
-        const event = await storage.createCalendarEvent(eventData);
-        res.status(201).json(event);
-      } catch (error: any) {
-        console.error('Calendar event creation error:', error);
-        if (error.name === 'ZodError') {
-          return res.status(400).json({
-            message: 'Invalid event data',
-            errors: error.errors,
-          });
+          const eventData = insertCalendarEventSchema.parse(requestData);
+          const event = await storage.createCalendarEvent(eventData);
+          res.status(201).json(event);
+        } catch (error: any) {
+          console.error('Calendar event creation error:', error);
+          if (error.name === 'ZodError') {
+            return res.status(400).json({
+              message: 'Invalid event data',
+              errors: error.errors,
+            });
+          }
+          res.status(400).json({ message: 'Invalid event data' });
         }
-        res.status(400).json({ message: 'Invalid event data' });
       }
-    });
+    );
 
     app.patch('/api/calendar/event/:id', requireAuthIfEnabled, async (req, res) => {
       try {
@@ -898,9 +1057,19 @@ export async function registerRoutes(
       }
     });
 
-    app.delete('/api/calendar/event/:id', requireAuthIfEnabled, async (req, res) => {
+    app.delete('/api/calendar/event/:id', requireAuthIfEnabled, async (req: AuthRequest, res) => {
       try {
         const id = parseInt(req.params.id);
+
+        // Verify requester belongs to the event's team
+        const event = await storage.getCalendarEvent(id);
+        if (event?.teamId && req.user?.id) {
+          const userTeamIds = await storage.getUserTeamIds(req.user.id);
+          if (!userTeamIds.includes(event.teamId)) {
+            return res.status(403).json({ message: 'You are not a member of this team' });
+          }
+        }
+
         const deleted = await storage.deleteCalendarEvent(id);
         if (!deleted) {
           return res.status(404).json({ message: 'Event not found' });
@@ -913,55 +1082,84 @@ export async function registerRoutes(
   }
 
   // Comments API
-  app.get('/api/pages/:pageId/comments', async (req, res) => {
-    try {
-      const pageId = parseInt(req.params.pageId);
-      const comments = await storage.getCommentsByPageId(pageId);
-      res.json(comments);
-    } catch (error) {
-      res.status(400).json({ message: 'Invalid page ID' });
-    }
-  });
-
-  app.post('/api/pages/:pageId/comments', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const pageId = parseInt(req.params.pageId);
-      const commentData = insertCommentSchema.parse({
-        ...req.body,
-        pageId,
-      });
-      const comment = await storage.createComment(commentData);
-
-      // Get page information for trigger context
-      const page = await storage.getWikiPage(pageId);
-
-      // Trigger workflows for comment_added event
-      if (page) {
-        triggerWorkflows('comment_added', {
-          id: comment.id,
-          content: comment.content,
-          author: comment.author,
-          pageId: page.id,
-          pageTitle: page.title,
-          teamId: page.teamId,
-        }).catch((error) => {
-          logger.error('Failed to trigger workflows for comment_added:', {
-            commentId: comment.id,
-            pageId: page.id,
-            error: error instanceof Error ? error.message : 'Unknown error',
-          });
-        });
+  app.get(
+    '/api/pages/:pageId/comments',
+    optionalAuth,
+    requirePagePermission('viewer'),
+    async (req, res) => {
+      try {
+        const pageId = parseInt(req.params.pageId);
+        const comments = await storage.getCommentsByPageId(pageId);
+        res.json(comments);
+      } catch (error) {
+        res.status(400).json({ message: 'Invalid page ID' });
       }
-
-      res.status(201).json(comment);
-    } catch (error) {
-      res.status(400).json({ message: 'Invalid comment data', error });
     }
-  });
+  );
 
-  app.put('/api/comments/:id', requireAuthIfEnabled, async (req, res) => {
+  app.post(
+    '/api/pages/:pageId/comments',
+    requireAuthIfEnabled,
+    requirePagePermission('commenter'),
+    async (req: AuthRequest, res) => {
+      try {
+        const pageId = parseInt(req.params.pageId);
+        const commentData = insertCommentSchema.parse({
+          ...req.body,
+          pageId,
+        });
+        const comment = await storage.createComment(commentData);
+
+        // Get page information for trigger context
+        const page = await storage.getWikiPage(pageId);
+
+        // Trigger workflows for comment_added event
+        if (page) {
+          triggerWorkflows('comment_added', {
+            id: comment.id,
+            content: comment.content,
+            author: comment.author,
+            pageId: page.id,
+            pageTitle: page.title,
+            teamId: page.teamId,
+          }).catch((error) => {
+            logger.error('Failed to trigger workflows for comment_added:', {
+              commentId: comment.id,
+              pageId: page.id,
+              error: error instanceof Error ? error.message : 'Unknown error',
+            });
+          });
+        }
+
+        res.status(201).json(comment);
+      } catch (error) {
+        res.status(400).json({ message: 'Invalid comment data', error });
+      }
+    }
+  );
+
+  app.put('/api/comments/:id', requireAuthIfEnabled, async (req: AuthRequest, res) => {
     try {
       const id = parseInt(req.params.id);
+
+      // Look up the comment to find its pageId for permission check
+      const existing = await storage.getComment(id);
+      if (!existing) {
+        return res.status(404).json({ message: 'Comment not found' });
+      }
+
+      // Verify user has at least commenter permission on the page
+      if (req.user?.id) {
+        const hasPermission = await storage.checkPagePermission(
+          req.user.id,
+          existing.pageId,
+          'commenter'
+        );
+        if (!hasPermission) {
+          return res.status(403).json({ message: 'Insufficient permissions to edit this comment' });
+        }
+      }
+
       const updateData = updateCommentSchema.parse(req.body);
       const comment = await storage.updateComment(id, updateData);
 
@@ -975,9 +1173,30 @@ export async function registerRoutes(
     }
   });
 
-  app.delete('/api/comments/:id', requireAuthIfEnabled, async (req, res) => {
+  app.delete('/api/comments/:id', requireAuthIfEnabled, async (req: AuthRequest, res) => {
     try {
       const id = parseInt(req.params.id);
+
+      // Look up the comment to find its pageId for permission check
+      const existing = await storage.getComment(id);
+      if (!existing) {
+        return res.status(404).json({ message: 'Comment not found' });
+      }
+
+      // Verify user has at least editor permission on the page to delete comments
+      if (req.user?.id) {
+        const hasPermission = await storage.checkPagePermission(
+          req.user.id,
+          existing.pageId,
+          'editor'
+        );
+        if (!hasPermission) {
+          return res
+            .status(403)
+            .json({ message: 'Insufficient permissions to delete this comment' });
+        }
+      }
+
       const deleted = await storage.deleteComment(id);
 
       if (!deleted) {
@@ -1198,25 +1417,94 @@ export async function registerRoutes(
   // Members API (see unified team-aware routes below)
 
   // Sub-pages API (nested pages)
-  app.get('/api/pages/:id/children', async (req, res) => {
-    try {
-      const parentId = parseInt(req.params.id);
-      const allPages = await storage.searchWikiPages({ query: '', limit: 1000, offset: 0 });
-      const children = allPages.pages.filter((p: any) => p.parentId === parentId);
-      res.json(children);
-    } catch (error) {
-      console.error('Error fetching sub-pages:', error);
-      res.status(500).json({ error: 'Failed to fetch sub-pages' });
+  app.get(
+    '/api/pages/:id/children',
+    optionalAuth,
+    requirePagePermission('viewer'),
+    async (req, res) => {
+      try {
+        const parentId = parseInt(req.params.id);
+        const allPages = await storage.searchWikiPages({ query: '', limit: 1000, offset: 0 });
+        const children = allPages.pages.filter((p: any) => p.parentId === parentId);
+        res.json(children);
+      } catch (error) {
+        console.error('Error fetching sub-pages:', error);
+        res.status(500).json({ error: 'Failed to fetch sub-pages' });
+      }
     }
-  });
+  );
 
   // Get page tree (for sidebar)
-  app.get('/api/page-tree', async (req, res) => {
+  app.get('/api/page-tree', optionalAuth, async (req: AuthRequest, res) => {
     try {
       const teamId = req.query.teamId as string | undefined;
+
+      // If teamId is specified and user is authenticated, verify team membership
+      if (teamId && req.user?.id) {
+        const resolvedTeamId = !isNaN(parseInt(teamId)) ? parseInt(teamId) : undefined;
+        if (resolvedTeamId) {
+          const userTeamIds = await storage.getUserTeamIds(req.user.id);
+          if (!userTeamIds.includes(resolvedTeamId)) {
+            return res.status(403).json({ message: 'You are not a member of this team' });
+          }
+        }
+      } else if (teamId && config.enforceAuthForWrites && !req.user?.id) {
+        return res.status(401).json({ message: 'Authentication required' });
+      }
+
+      // If no teamId and user is authenticated, scope to user's teams + unassigned pages
+      let effectiveTeamId = teamId;
+      if (!teamId && req.user?.id) {
+        const userTeamIds = await storage.getUserTeamIds(req.user.id);
+        if (userTeamIds.length > 0) {
+          // Fetch pages for each team plus unassigned
+          const allResults = await Promise.all([
+            ...userTeamIds.map((tid) =>
+              storage.searchWikiPages({ query: '', teamId: String(tid), limit: 1000, offset: 0 })
+            ),
+            storage.searchWikiPages({ query: '', limit: 1000, offset: 0 }),
+          ]);
+          const seenIds = new Set<number>();
+          const allPagesRaw = allResults
+            .flatMap((r) => r.pages)
+            .filter((p: any) => {
+              if (seenIds.has(p.id)) return false;
+              seenIds.add(p.id);
+              return true;
+            });
+          // Build tree with the merged set
+          const pages = allPagesRaw.map((p: any) => ({
+            id: p.id,
+            title: p.title,
+            slug: p.slug,
+            parentId: p.parentId || null,
+            folder: p.folder,
+            updatedAt: p.updatedAt,
+          }));
+          const rootPages = pages.filter((p: any) => !p.parentId);
+          const childMap = new Map<number, any[]>();
+          pages.forEach((p: any) => {
+            if (p.parentId) {
+              if (!childMap.has(p.parentId)) childMap.set(p.parentId, []);
+              childMap.get(p.parentId)!.push(p);
+            }
+          });
+          const attachChildren = (page: any, depth = 0): any => {
+            const children = childMap.get(page.id) || [];
+            return {
+              ...page,
+              children: depth < 3 ? children.map((c: any) => attachChildren(c, depth + 1)) : [],
+            };
+          };
+          return res.json(rootPages.map((p: any) => attachChildren(p)));
+        }
+      } else if (!teamId && config.enforceAuthForWrites && !req.user?.id) {
+        return res.status(401).json({ message: 'Authentication required' });
+      }
+
       const allPages = await storage.searchWikiPages({
         query: '',
-        teamId,
+        teamId: effectiveTeamId,
         limit: 1000,
         offset: 0,
       });
@@ -1482,14 +1770,30 @@ export async function registerRoutes(
   });
 
   // Tasks API
-  app.get('/api/tasks', async (req, res) => {
+  app.get('/api/tasks', optionalAuth, requireTeamMembership, async (req: AuthRequest, res) => {
     try {
       const teamId = req.query.teamId as string;
       const status = req.query.status as string;
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
       const cursor = req.query.cursor as string | undefined;
 
-      const tasks = await storage.getTasks(teamId, status);
+      // If no teamId specified, scope to user's teams to prevent full data leak
+      let tasks;
+      if (!teamId) {
+        const userTeamIds = (req as any).userTeamIds as number[] | undefined;
+        if (userTeamIds && userTeamIds.length > 0) {
+          const allTasks = await Promise.all(
+            userTeamIds.map((id) => storage.getTasks(String(id), status))
+          );
+          tasks = allTasks.flat();
+        } else if (config.enforceAuthForWrites) {
+          tasks = [];
+        } else {
+          tasks = await storage.getTasks(teamId, status);
+        }
+      } else {
+        tasks = await storage.getTasks(teamId, status);
+      }
 
       // Apply cursor-based pagination if cursor provided
       let paginatedTasks = tasks;
@@ -1525,7 +1829,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get('/api/tasks/:id', async (req, res) => {
+  app.get('/api/tasks/:id', optionalAuth, async (req: AuthRequest, res) => {
     try {
       const id = parseInt(req.params.id);
       const task = await storage.getTask(id);
@@ -1534,47 +1838,70 @@ export async function registerRoutes(
         return res.status(404).json({ message: 'Task not found' });
       }
 
+      // Verify the requester belongs to the task's team
+      if (task.teamId && req.user?.id) {
+        const userTeamIds = await storage.getUserTeamIds(req.user.id);
+        if (!userTeamIds.includes(Number(task.teamId))) {
+          return res.status(403).json({ message: 'You are not a member of this team' });
+        }
+      } else if (task.teamId && config.enforceAuthForWrites) {
+        return res.status(401).json({ message: 'Authentication required' });
+      }
+
       res.json(task);
     } catch (error) {
       res.status(400).json({ message: 'Invalid task ID' });
     }
   });
 
-  app.post('/api/tasks', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const taskData = insertTaskSchema.parse(req.body);
-      const task = await storage.createTask(taskData);
+  app.post(
+    '/api/tasks',
+    requireAuthIfEnabled,
+    requireTeamMembership,
+    async (req: AuthRequest, res) => {
+      try {
+        const taskData = insertTaskSchema.parse(req.body);
+        const task = await storage.createTask(taskData);
 
-      // Trigger workflows for task_created event
-      triggerWorkflows('task_created', {
-        id: task.id,
-        title: task.title,
-        description: task.description,
-        status: task.status,
-        priority: task.priority,
-        assignedTo: task.assignedTo,
-        dueDate: task.dueDate,
-        teamId: task.teamId,
-      }).catch((error) => {
-        logger.error('Failed to trigger workflows for task_created:', {
-          taskId: task.id,
-          error: error instanceof Error ? error.message : 'Unknown error',
+        // Trigger workflows for task_created event
+        triggerWorkflows('task_created', {
+          id: task.id,
+          title: task.title,
+          description: task.description,
+          status: task.status,
+          priority: task.priority,
+          assignedTo: task.assignedTo,
+          dueDate: task.dueDate,
+          teamId: task.teamId,
+        }).catch((error) => {
+          logger.error('Failed to trigger workflows for task_created:', {
+            taskId: task.id,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
         });
-      });
 
-      res.status(201).json(task);
-    } catch (error) {
-      res.status(400).json({ message: 'Invalid task data', error });
+        res.status(201).json(task);
+      } catch (error) {
+        res.status(400).json({ message: 'Invalid task data', error });
+      }
     }
-  });
+  );
 
-  app.put('/api/tasks/:id', requireAuthIfEnabled, async (req, res) => {
+  app.put('/api/tasks/:id', requireAuthIfEnabled, async (req: AuthRequest, res) => {
     try {
       const id = parseInt(req.params.id);
       const updateData = updateTaskSchema.parse(req.body);
 
       // Get old task data for comparison
       const oldTask = await storage.getTask(id);
+
+      // Verify team membership before allowing update
+      if (oldTask?.teamId && req.user?.id) {
+        const userTeamIds = await storage.getUserTeamIds(req.user.id);
+        if (!userTeamIds.includes(Number(oldTask.teamId))) {
+          return res.status(403).json({ message: 'You are not a member of this team' });
+        }
+      }
 
       const task = await storage.updateTask(id, updateData);
 
@@ -1628,9 +1955,19 @@ export async function registerRoutes(
     }
   });
 
-  app.delete('/api/tasks/:id', requireAuthIfEnabled, async (req, res) => {
+  app.delete('/api/tasks/:id', requireAuthIfEnabled, async (req: AuthRequest, res) => {
     try {
       const id = parseInt(req.params.id);
+
+      // Verify team membership before allowing delete
+      const task = await storage.getTask(id);
+      if (task?.teamId && req.user?.id) {
+        const userTeamIds = await storage.getUserTeamIds(req.user.id);
+        if (!userTeamIds.includes(Number(task.teamId))) {
+          return res.status(403).json({ message: 'You are not a member of this team' });
+        }
+      }
+
       const deleted = await storage.deleteTask(id);
 
       if (!deleted) {
@@ -2072,19 +2409,41 @@ export async function registerRoutes(
 
   if (featureFlags.FEATURE_TEAMS) {
     // Teams API
-    app.get('/api/teams', async (req, res) => {
+    app.get('/api/teams', optionalAuth, async (req: AuthRequest, res) => {
       try {
-        const teams = await storage.getTeams();
-        res.json(teams);
+        // If user is authenticated, only return teams they belong to
+        if (req.user?.id) {
+          const userTeamIds = await storage.getUserTeamIds(req.user.id);
+          const allTeams = await storage.getTeams();
+          const userTeams = allTeams.filter((t) => userTeamIds.includes(t.id));
+          return res.json(userTeams);
+        }
+        // If auth not enforced (dev mode), return all
+        if (!config.enforceAuthForWrites) {
+          const teams = await storage.getTeams();
+          return res.json(teams);
+        }
+        return res.status(401).json({ error: 'Authentication required' });
       } catch (error) {
         console.error('Error fetching teams:', error);
         res.status(500).json({ error: 'Failed to fetch teams' });
       }
     });
 
-    app.get('/api/teams/:id', async (req, res) => {
+    app.get('/api/teams/:id', optionalAuth, async (req: AuthRequest, res) => {
       try {
         const id = parseInt(req.params.id);
+
+        // Verify membership for the specific team
+        if (req.user?.id) {
+          const userTeamIds = await storage.getUserTeamIds(req.user.id);
+          if (!userTeamIds.includes(id)) {
+            return res.status(403).json({ error: 'You are not a member of this team' });
+          }
+        } else if (config.enforceAuthForWrites) {
+          return res.status(401).json({ error: 'Authentication required' });
+        }
+
         const team = await storage.getTeam(id);
         if (!team) {
           return res.status(404).json({ error: 'Team not found' });
@@ -2107,9 +2466,21 @@ export async function registerRoutes(
       }
     });
 
-    app.put('/api/teams/:id', requireAuthIfEnabled, async (req, res) => {
+    app.put('/api/teams/:id', requireAuthIfEnabled, async (req: AuthRequest, res) => {
       try {
         const id = parseInt(req.params.id);
+
+        // Verify user has admin+ role in this team
+        if (req.user?.id) {
+          const userRole = await storage.getUserTeamRole(req.user.id, id);
+          if (!userRole) {
+            return res.status(403).json({ error: 'You are not a member of this team' });
+          }
+          if (userRole === 'member') {
+            return res.status(403).json({ error: 'Admin or owner role required to update team' });
+          }
+        }
+
         const team = await storage.updateTeam(id, req.body);
         if (!team) {
           return res.status(404).json({ error: 'Team not found' });
@@ -2121,9 +2492,21 @@ export async function registerRoutes(
       }
     });
 
-    app.delete('/api/teams/:id', requireAuthIfEnabled, async (req, res) => {
+    app.delete('/api/teams/:id', requireAuthIfEnabled, async (req: AuthRequest, res) => {
       try {
         const id = parseInt(req.params.id);
+
+        // Verify user has owner role in this team
+        if (req.user?.id) {
+          const userRole = await storage.getUserTeamRole(req.user.id, id);
+          if (!userRole) {
+            return res.status(403).json({ error: 'You are not a member of this team' });
+          }
+          if (userRole !== 'owner') {
+            return res.status(403).json({ error: 'Owner role required to delete team' });
+          }
+        }
+
         const success = await storage.deleteTeam(id);
         if (!success) {
           return res.status(404).json({ error: 'Team not found' });
@@ -2148,7 +2531,7 @@ export async function registerRoutes(
   }
 
   // Members API (unified, team-aware)
-  app.get('/api/members', async (req, res) => {
+  app.get('/api/members', optionalAuth, requireTeamMembership, async (req: AuthRequest, res) => {
     try {
       let teamId: number | undefined;
 
@@ -2169,6 +2552,18 @@ export async function registerRoutes(
         }
       }
 
+      // If no teamId specified, scope to user's teams to prevent full data leak
+      if (!teamId) {
+        const userTeamIds = (req as any).userTeamIds as number[] | undefined;
+        if (userTeamIds && userTeamIds.length > 0) {
+          // Fetch members for each of user's teams and combine
+          const allMembers = await Promise.all(userTeamIds.map((id) => storage.getMembers(id)));
+          return res.json(allMembers.flat());
+        } else if (config.enforceAuthForWrites) {
+          return res.json([]); // No teams = no members
+        }
+      }
+
       const members = await storage.getMembers(teamId);
       res.json(members);
     } catch (error) {
@@ -2177,33 +2572,55 @@ export async function registerRoutes(
     }
   });
 
-  app.get('/api/members/:id', async (req, res) => {
+  app.get('/api/members/:id', optionalAuth, async (req: AuthRequest, res) => {
     try {
       const id = parseInt(req.params.id);
       const member = await storage.getMember(id);
       if (!member) {
         return res.status(404).json({ error: 'Member not found' });
       }
+
+      // Verify the requester belongs to the same team as the member
+      if (member.teamId && req.user?.id) {
+        const userTeamIds = await storage.getUserTeamIds(req.user.id);
+        if (!userTeamIds.includes(member.teamId)) {
+          return res.status(403).json({ error: 'You are not a member of this team' });
+        }
+      } else if (member.teamId && config.enforceAuthForWrites) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
       res.json(member);
     } catch (error) {
       res.status(400).json({ error: 'Invalid member ID' });
     }
   });
 
-  app.get('/api/members/email/:email', async (req, res) => {
+  app.get('/api/members/email/:email', optionalAuth, async (req: AuthRequest, res) => {
     try {
       const email = req.params.email;
       const member = await storage.getMemberByEmail(email);
       if (!member) {
         return res.status(404).json({ error: 'Member not found' });
       }
+
+      // Verify the requester belongs to the same team as the member
+      if (member.teamId && req.user?.id) {
+        const userTeamIds = await storage.getUserTeamIds(req.user.id);
+        if (!userTeamIds.includes(member.teamId)) {
+          return res.status(403).json({ error: 'You are not a member of this team' });
+        }
+      } else if (member.teamId && config.enforceAuthForWrites) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
       res.json(member);
     } catch (error) {
       res.status(400).json({ error: 'Invalid email' });
     }
   });
 
-  app.post('/api/members', requireAuthIfEnabled, async (req, res) => {
+  app.post('/api/members', requireAuthIfEnabled, async (req: AuthRequest, res) => {
     try {
       const memberData = insertMemberSchema.parse(req.body);
 
@@ -2217,6 +2634,20 @@ export async function registerRoutes(
         }
       }
 
+      // Verify team membership with admin+ role (or allow bootstrapping empty teams)
+      if (memberData.teamId && req.user?.id) {
+        const userRole = await storage.getUserTeamRole(req.user.id, memberData.teamId as number);
+        if (!userRole) {
+          // Allow bootstrapping: first member can join an empty team
+          const existingMembers = await storage.getMembers(memberData.teamId as number);
+          if (existingMembers.length > 0) {
+            return res.status(403).json({ error: 'You are not a member of this team' });
+          }
+        } else if (userRole === 'member') {
+          return res.status(403).json({ error: 'Admin or owner role required to add members' });
+        }
+      }
+
       const member = await storage.createMember(memberData);
       res.status(201).json(member);
     } catch (error) {
@@ -2225,9 +2656,22 @@ export async function registerRoutes(
     }
   });
 
-  app.put('/api/members/:id', requireAuthIfEnabled, async (req, res) => {
+  app.put('/api/members/:id', requireAuthIfEnabled, async (req: AuthRequest, res) => {
     try {
       const id = parseInt(req.params.id);
+
+      // Verify requester belongs to the same team
+      const existing = await storage.getMember(id);
+      if (existing?.teamId && req.user?.id) {
+        const userRole = await storage.getUserTeamRole(req.user.id, existing.teamId);
+        if (!userRole) {
+          return res.status(403).json({ error: 'You are not a member of this team' });
+        }
+        if (userRole === 'member') {
+          return res.status(403).json({ error: 'Admin or owner role required to update members' });
+        }
+      }
+
       const memberData = updateMemberSchema.parse(req.body);
       const member = await storage.updateMember(id, memberData);
       if (!member) {
@@ -2240,9 +2684,22 @@ export async function registerRoutes(
     }
   });
 
-  app.delete('/api/members/:id', requireAuthIfEnabled, async (req, res) => {
+  app.delete('/api/members/:id', requireAuthIfEnabled, async (req: AuthRequest, res) => {
     try {
       const id = parseInt(req.params.id);
+
+      // Verify requester belongs to the same team with admin+ role
+      const existing = await storage.getMember(id);
+      if (existing?.teamId && req.user?.id) {
+        const userRole = await storage.getUserTeamRole(req.user.id, existing.teamId);
+        if (!userRole) {
+          return res.status(403).json({ error: 'You are not a member of this team' });
+        }
+        if (userRole === 'member') {
+          return res.status(403).json({ error: 'Admin or owner role required to remove members' });
+        }
+      }
+
       const success = await storage.deleteMember(id);
       if (!success) {
         return res.status(404).json({ error: 'Member not found' });

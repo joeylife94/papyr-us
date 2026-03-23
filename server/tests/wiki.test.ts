@@ -38,6 +38,8 @@ beforeAll(async () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Allow all permission checks by default (middleware was added to page routes)
+  (storage.checkPagePermission as vi.Mock).mockResolvedValue(true);
 });
 
 afterAll((done) => {
