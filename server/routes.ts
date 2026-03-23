@@ -38,6 +38,8 @@ import {
   insertSavedViewSchema,
   updateSavedViewSchema,
   users,
+  type CalendarEvent,
+  type Task,
 } from '../shared/schema.js';
 import {
   upload,
@@ -874,7 +876,7 @@ export async function registerRoutes(
         const teamId = req.query.teamId as string | undefined;
 
         // If no teamId specified, scope to user's teams to prevent full data leak
-        let events;
+        let events: CalendarEvent[];
         if (!teamId) {
           const userTeamIds = (req as any).userTeamIds as number[] | undefined;
           if (userTeamIds && userTeamIds.length > 0) {
@@ -942,7 +944,7 @@ export async function registerRoutes(
         // Verify the requester belongs to the event's team
         if (event.teamId && req.user?.id) {
           const userTeamIds = await storage.getUserTeamIds(req.user.id);
-          if (!userTeamIds.includes(event.teamId)) {
+          if (!userTeamIds.includes(Number(event.teamId))) {
             return res.status(403).json({ message: 'You are not a member of this team' });
           }
         } else if (event.teamId && config.enforceAuthForWrites) {
@@ -1065,7 +1067,7 @@ export async function registerRoutes(
         const event = await storage.getCalendarEvent(id);
         if (event?.teamId && req.user?.id) {
           const userTeamIds = await storage.getUserTeamIds(req.user.id);
-          if (!userTeamIds.includes(event.teamId)) {
+          if (!userTeamIds.includes(Number(event.teamId))) {
             return res.status(403).json({ message: 'You are not a member of this team' });
           }
         }
@@ -1778,7 +1780,7 @@ export async function registerRoutes(
       const cursor = req.query.cursor as string | undefined;
 
       // If no teamId specified, scope to user's teams to prevent full data leak
-      let tasks;
+      let tasks: Task[];
       if (!teamId) {
         const userTeamIds = (req as any).userTeamIds as number[] | undefined;
         if (userTeamIds && userTeamIds.length > 0) {
