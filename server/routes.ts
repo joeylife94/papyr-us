@@ -447,7 +447,7 @@ export async function registerRoutes(
               tags: req.query.tags ? (req.query.tags as string).split(',') : undefined,
               limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
               offset: req.query.offset ? parseInt(req.query.offset as string) : undefined,
-              teamId: tid,
+              teamId: String(tid),
             });
             return storage.searchWikiPages(params);
           }),
@@ -517,7 +517,7 @@ export async function registerRoutes(
         tags: req.query.tags ? (req.query.tags as string).split(',') : undefined,
         limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
         offset: req.query.offset ? parseInt(req.query.offset as string) : undefined,
-        teamId: resolvedTeamId,
+        teamId: String(resolvedTeamId),
       });
 
       const result = await storage.searchWikiPages(searchParams);
@@ -1027,9 +1027,23 @@ export async function registerRoutes(
       }
     );
 
-    app.patch('/api/calendar/event/:id', requireAuthIfEnabled, async (req, res) => {
+    app.patch('/api/calendar/event/:id', requireAuthIfEnabled, async (req: AuthRequest, res) => {
       try {
         const id = parseInt(req.params.id);
+
+        // Verify team membership from the resource itself — never trust request-supplied teamId
+        const existingEvent = await storage.getCalendarEvent(id);
+        if (!existingEvent) {
+          return res.status(404).json({ message: 'Event not found' });
+        }
+        if (existingEvent.teamId && req.user?.id) {
+          const userTeamIds = await storage.getUserTeamIds(req.user.id);
+          if (!userTeamIds.includes(Number(existingEvent.teamId))) {
+            return res.status(403).json({ message: 'You are not a member of this team' });
+          }
+        } else if (existingEvent.teamId && config.enforceAuthForWrites) {
+          return res.status(401).json({ message: 'Authentication required' });
+        }
 
         // Convert ISO string dates to Date objects (same logic as POST)
         const requestData = { ...req.body };
@@ -2040,13 +2054,27 @@ export async function registerRoutes(
     }
   });
 
-  app.patch('/api/tasks/:id/progress', requireAuthIfEnabled, async (req, res) => {
+  app.patch('/api/tasks/:id/progress', requireAuthIfEnabled, async (req: AuthRequest, res) => {
     try {
       const id = parseInt(req.params.id);
       const { progress } = req.body;
 
       if (typeof progress !== 'number' || progress < 0 || progress > 100) {
         return res.status(400).json({ message: 'Progress must be a number between 0 and 100' });
+      }
+
+      // Verify team membership from the resource itself — never trust request-supplied teamId
+      const existingTask = await storage.getTask(id);
+      if (!existingTask) {
+        return res.status(404).json({ message: 'Task not found' });
+      }
+      if (existingTask.teamId && req.user?.id) {
+        const userTeamIds = await storage.getUserTeamIds(req.user.id);
+        if (!userTeamIds.includes(Number(existingTask.teamId))) {
+          return res.status(403).json({ message: 'You are not a member of this team' });
+        }
+      } else if (existingTask.teamId && config.enforceAuthForWrites) {
+        return res.status(401).json({ message: 'Authentication required' });
       }
 
       const task = await storage.updateTaskProgress(id, progress);

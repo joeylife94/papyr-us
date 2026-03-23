@@ -12,11 +12,8 @@ import { registerTestUser, authHeader } from './e2e-helpers';
  * - Team-scoped page isolation (pages created under team A don't leak to team B)
  *
  * NOTE: These tests verify data isolation and field persistence only.
- * Server-side role-based authorization (requireTeamRole) is a stub that
- * always calls next(). These tests do NOT validate permission enforcement.
- *
- * TODO: Implement real role checking in requireTeamRole middleware, then
- * add 403 tests for unauthorized team operations.
+ * For server-side cross-team authorization enforcement tests (401/403
+ * rejection of unauthorized access), see server/tests/team-auth.test.ts.
  */
 
 let token: string;
