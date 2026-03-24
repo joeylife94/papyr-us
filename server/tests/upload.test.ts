@@ -35,6 +35,8 @@ vi.mock('../services/upload', async () => {
     listUploadedFiles: vi.fn(),
     getFileInfo: vi.fn(),
     deleteUploadedFile: vi.fn(),
+    // Default to null (explicitly public file) so download routes don't deny access
+    getFileTeamId: vi.fn().mockResolvedValue(null),
   };
 });
 

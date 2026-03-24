@@ -1036,10 +1036,23 @@ export async function registerRoutes(
         if (!existingEvent) {
           return res.status(404).json({ message: 'Event not found' });
         }
-        if (existingEvent.teamId && req.user?.id) {
+        if (req.user?.id) {
           const userTeamIds = await storage.getUserTeamIds(req.user.id);
-          if (!userTeamIds.includes(Number(existingEvent.teamId))) {
+          // Check membership on the current team (if event has one)
+          if (existingEvent.teamId && !userTeamIds.includes(Number(existingEvent.teamId))) {
             return res.status(403).json({ message: 'You are not a member of this team' });
+          }
+          // Prevent cross-team reassignment — validate new teamId regardless of whether
+          // the original event was team-scoped (blocks moving global events to unauthorized teams)
+          const incomingTeamId = req.body.teamId;
+          if (
+            incomingTeamId !== undefined &&
+            incomingTeamId !== null &&
+            Number(incomingTeamId) !== Number(existingEvent.teamId)
+          ) {
+            if (!userTeamIds.includes(Number(incomingTeamId))) {
+              return res.status(403).json({ message: 'You are not a member of the target team' });
+            }
           }
         } else if (existingEvent.teamId && config.enforceAuthForWrites) {
           return res.status(401).json({ message: 'Authentication required' });
@@ -1623,9 +1636,29 @@ export async function registerRoutes(
   );
 
   // Serve uploaded images
-  app.get('/api/uploads/images/:filename', async (req, res) => {
+  app.get('/api/uploads/images/:filename', requireAuthIfEnabled, async (req: AuthRequest, res) => {
     try {
       const { filename } = req.params;
+
+      const fileTeamId = await getFileTeamId(filename, true);
+
+      // Fail-secure: sidecar missing or unreadable — deny rather than silently allow
+      if (fileTeamId === undefined) {
+        return res.status(403).json({ message: 'File metadata unavailable' });
+      }
+
+      // File belongs to a specific team — verify membership
+      if (fileTeamId !== null) {
+        if (!req.user?.id) {
+          return res.status(401).json({ message: 'Authentication required' });
+        }
+        const userTeamIds = await storage.getUserTeamIds(req.user.id);
+        if (!userTeamIds.map(String).includes(fileTeamId)) {
+          return res.status(403).json({ message: 'You are not a member of this team' });
+        }
+      }
+      // fileTeamId === null → explicitly public file — proceed
+
       const fileInfo = await getFileInfo(filename, true);
 
       if (!fileInfo || !existsSync(fileInfo.path)) {
@@ -1635,7 +1668,7 @@ export async function registerRoutes(
       // Set appropriate headers
       res.setHeader('Content-Type', fileInfo.mimetype);
       res.setHeader('Content-Length', fileInfo.size);
-      res.setHeader('Cache-Control', 'public, max-age=31536000'); // Cache for 1 year
+      res.setHeader('Cache-Control', 'private, max-age=3600');
 
       res.sendFile(path.resolve(fileInfo.path));
     } catch (error) {
@@ -1644,9 +1677,29 @@ export async function registerRoutes(
   });
 
   // Serve uploaded files
-  app.get('/api/uploads/files/:filename', async (req, res) => {
+  app.get('/api/uploads/files/:filename', requireAuthIfEnabled, async (req: AuthRequest, res) => {
     try {
       const { filename } = req.params;
+
+      const fileTeamId = await getFileTeamId(filename, false);
+
+      // Fail-secure: sidecar missing or unreadable — deny rather than silently allow
+      if (fileTeamId === undefined) {
+        return res.status(403).json({ message: 'File metadata unavailable' });
+      }
+
+      // File belongs to a specific team — verify membership
+      if (fileTeamId !== null) {
+        if (!req.user?.id) {
+          return res.status(401).json({ message: 'Authentication required' });
+        }
+        const userTeamIds = await storage.getUserTeamIds(req.user.id);
+        if (!userTeamIds.map(String).includes(fileTeamId)) {
+          return res.status(403).json({ message: 'You are not a member of this team' });
+        }
+      }
+      // fileTeamId === null → explicitly public file — proceed
+
       const fileInfo = await getFileInfo(filename, false);
 
       if (!fileInfo || !existsSync(fileInfo.path)) {
@@ -1656,6 +1709,7 @@ export async function registerRoutes(
       // Set appropriate headers
       res.setHeader('Content-Type', fileInfo.mimetype);
       res.setHeader('Content-Length', fileInfo.size);
+      res.setHeader('Cache-Control', 'private, max-age=3600');
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
       res.sendFile(path.resolve(fileInfo.path));
@@ -1813,37 +1867,57 @@ export async function registerRoutes(
   }
 
   // Dashboard API
-  app.get('/api/dashboard/overview', async (req, res) => {
-    try {
-      const overview = await storage.getDashboardOverview();
-      res.json(overview);
-    } catch (error) {
-      res.status(500).json({ message: 'Server error' });
-    }
-  });
-
-  app.get('/api/dashboard/team/:teamId', async (req, res) => {
-    try {
-      const teamId = req.params.teamId;
-      const stats = await storage.getTeamProgressStats(teamId);
-      res.json(stats);
-    } catch (error) {
-      res.status(500).json({ message: 'Server error' });
-    }
-  });
-
-  app.get('/api/dashboard/member/:memberId', async (req, res) => {
-    try {
-      const memberId = parseInt(req.params.memberId);
-      const stats = await storage.getMemberProgressStats(memberId);
-      if (!stats) {
-        return res.status(404).json({ message: 'Member stats not found' });
+  app.get(
+    '/api/dashboard/overview',
+    requireAuthIfEnabled,
+    requireTeamMembership,
+    async (req: AuthRequest, res) => {
+      try {
+        const userTeamIds: number[] = (req as any).userTeamIds ?? [];
+        const overview = await storage.getDashboardOverview(userTeamIds);
+        res.json(overview);
+      } catch (error) {
+        res.status(500).json({ message: 'Server error' });
       }
-      res.json(stats);
-    } catch (error) {
-      res.status(500).json({ message: 'Server error' });
     }
-  });
+  );
+
+  app.get(
+    '/api/dashboard/team/:teamId',
+    requireAuthIfEnabled,
+    requireTeamMembership,
+    async (req: AuthRequest, res) => {
+      try {
+        const teamId = req.params.teamId;
+        // Verify requester belongs to the team being queried
+        const userTeamIds = (req as any).userTeamIds as number[] | undefined;
+        if (userTeamIds && !userTeamIds.map(String).includes(teamId)) {
+          return res.status(403).json({ message: 'You are not a member of this team' });
+        }
+        const stats = await storage.getTeamProgressStats(teamId);
+        res.json(stats);
+      } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+      }
+    }
+  );
+
+  app.get(
+    '/api/dashboard/member/:memberId',
+    requireAuthIfEnabled,
+    async (req: AuthRequest, res) => {
+      try {
+        const memberId = parseInt(req.params.memberId);
+        const stats = await storage.getMemberProgressStats(memberId);
+        if (!stats) {
+          return res.status(404).json({ message: 'Member stats not found' });
+        }
+        res.json(stats);
+      } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+      }
+    }
+  );
 
   // Tasks API
   app.get('/api/tasks', optionalAuth, requireTeamMembership, async (req: AuthRequest, res) => {
@@ -1964,18 +2038,32 @@ export async function registerRoutes(
   app.put('/api/tasks/:id', requireAuthIfEnabled, async (req: AuthRequest, res) => {
     try {
       const id = parseInt(req.params.id);
-      const updateData = updateTaskSchema.parse(req.body);
 
-      // Get old task data for comparison
+      // Get old task data first so auth checks happen before Zod schema parsing
       const oldTask = await storage.getTask(id);
 
       // Verify team membership before allowing update
-      if (oldTask?.teamId && req.user?.id) {
+      if (req.user?.id) {
         const userTeamIds = await storage.getUserTeamIds(req.user.id);
-        if (!userTeamIds.includes(Number(oldTask.teamId))) {
+        // Check membership on the current team (if task has one)
+        if (oldTask?.teamId && !userTeamIds.includes(Number(oldTask.teamId))) {
           return res.status(403).json({ message: 'You are not a member of this team' });
         }
+        // Prevent cross-team reassignment — validate new teamId regardless of whether
+        // the original task was team-scoped (blocks moving global tasks to unauthorized teams)
+        const rawNewTeamId = req.body.teamId;
+        if (
+          rawNewTeamId !== undefined &&
+          rawNewTeamId !== null &&
+          String(rawNewTeamId) !== String(oldTask?.teamId)
+        ) {
+          if (!userTeamIds.map(String).includes(String(rawNewTeamId))) {
+            return res.status(403).json({ message: 'You are not a member of the target team' });
+          }
+        }
       }
+
+      const updateData = updateTaskSchema.parse(req.body);
 
       const task = await storage.updateTask(id, updateData);
 
@@ -2091,11 +2179,11 @@ export async function registerRoutes(
 
   if (featureFlags.FEATURE_NOTIFICATIONS) {
     // Notifications API
-    app.get('/api/notifications', async (req, res) => {
+    app.get('/api/notifications', requireAuthIfEnabled, async (req: AuthRequest, res) => {
       try {
-        const recipientId = parseInt(req.query.recipientId as string);
+        const recipientId = req.user?.id;
         if (!recipientId) {
-          return res.status(400).json({ message: 'recipientId is required' });
+          return res.status(401).json({ message: 'Authentication required' });
         }
 
         const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
@@ -2138,27 +2226,36 @@ export async function registerRoutes(
       }
     });
 
-    app.get('/api/notifications/unread-count', async (req, res) => {
-      try {
-        const recipientId = parseInt(req.query.recipientId as string);
-        if (!recipientId) {
-          return res.status(400).json({ message: 'recipientId is required' });
+    app.get(
+      '/api/notifications/unread-count',
+      requireAuthIfEnabled,
+      async (req: AuthRequest, res) => {
+        try {
+          const recipientId = req.user?.id;
+          if (!recipientId) {
+            return res.status(401).json({ message: 'Authentication required' });
+          }
+
+          const count = await storage.getUnreadNotificationCount(recipientId);
+          res.json({ count });
+        } catch (error) {
+          res.status(500).json({ message: 'Server error' });
         }
-
-        const count = await storage.getUnreadNotificationCount(recipientId);
-        res.json({ count });
-      } catch (error) {
-        res.status(500).json({ message: 'Server error' });
       }
-    });
+    );
 
-    app.get('/api/notifications/:id', async (req, res) => {
+    app.get('/api/notifications/:id', requireAuthIfEnabled, async (req: AuthRequest, res) => {
       try {
         const id = parseInt(req.params.id);
         const notification = await storage.getNotification(id);
 
         if (!notification) {
           return res.status(404).json({ message: 'Notification not found' });
+        }
+
+        // Ownership check: only the recipient may view their notification
+        if (req.user?.id && notification.recipientId !== req.user.id) {
+          return res.status(403).json({ message: 'Access denied' });
         }
 
         res.json(notification);
@@ -2192,9 +2289,17 @@ export async function registerRoutes(
       }
     });
 
-    app.put('/api/notifications/:id', requireAuthIfEnabled, async (req, res) => {
+    app.put('/api/notifications/:id', requireAuthIfEnabled, async (req: AuthRequest, res) => {
       try {
         const id = parseInt(req.params.id);
+        // Ownership check: fetch before updating
+        const existing = await storage.getNotification(id);
+        if (!existing) {
+          return res.status(404).json({ message: 'Notification not found' });
+        }
+        if (req.user?.id && existing.recipientId !== req.user.id) {
+          return res.status(403).json({ message: 'Access denied' });
+        }
         const updateData = updateNotificationSchema.parse(req.body);
         const notification = await storage.updateNotification(id, updateData);
 
@@ -2223,9 +2328,17 @@ export async function registerRoutes(
       }
     });
 
-    app.delete('/api/notifications/:id', requireAuthIfEnabled, async (req, res) => {
+    app.delete('/api/notifications/:id', requireAuthIfEnabled, async (req: AuthRequest, res) => {
       try {
         const id = parseInt(req.params.id);
+        // Ownership check: fetch before deleting
+        const existing = await storage.getNotification(id);
+        if (!existing) {
+          return res.status(404).json({ message: 'Notification not found' });
+        }
+        if (req.user?.id && existing.recipientId !== req.user.id) {
+          return res.status(403).json({ message: 'Access denied' });
+        }
         const deleted = await storage.deleteNotification(id);
 
         if (!deleted) {
@@ -2250,61 +2363,81 @@ export async function registerRoutes(
       }
     });
 
-    app.patch('/api/notifications/:id/read', requireAuthIfEnabled, async (req, res) => {
-      try {
-        const id = parseInt(req.params.id);
-        const notification = await storage.markNotificationAsRead(id);
-
-        if (!notification) {
-          return res.status(404).json({ message: 'Notification not found' });
-        }
-
-        // Realtime: emit updated notification and new unread count
+    app.patch(
+      '/api/notifications/:id/read',
+      requireAuthIfEnabled,
+      async (req: AuthRequest, res) => {
         try {
-          const ns = io?.of('/collab');
-          if (ns) {
-            ns.to(`user:${notification.recipientId}`).emit('notification:updated', notification);
-            const count = await storage.getUnreadNotificationCount(notification.recipientId);
-            ns.to(`user:${notification.recipientId}`).emit('notification:unread-count', {
-              recipientId: notification.recipientId,
-              count,
-            });
+          const id = parseInt(req.params.id);
+          // Ownership check: fetch before marking as read
+          const existing = await storage.getNotification(id);
+          if (!existing) {
+            return res.status(404).json({ message: 'Notification not found' });
           }
-        } catch (emitErr) {
-          console.warn('Socket emit failed for notification:read', emitErr);
-        }
+          if (req.user?.id && existing.recipientId !== req.user.id) {
+            return res.status(403).json({ message: 'Access denied' });
+          }
+          const notification = await storage.markNotificationAsRead(id);
 
-        res.json(notification);
-      } catch (error) {
-        res.status(400).json({ message: 'Invalid notification ID' });
+          if (!notification) {
+            return res.status(404).json({ message: 'Notification not found' });
+          }
+
+          // Realtime: emit updated notification and new unread count
+          try {
+            const ns = io?.of('/collab');
+            if (ns) {
+              ns.to(`user:${notification.recipientId}`).emit('notification:updated', notification);
+              const count = await storage.getUnreadNotificationCount(notification.recipientId);
+              ns.to(`user:${notification.recipientId}`).emit('notification:unread-count', {
+                recipientId: notification.recipientId,
+                count,
+              });
+            }
+          } catch (emitErr) {
+            console.warn('Socket emit failed for notification:read', emitErr);
+          }
+
+          res.json(notification);
+        } catch (error) {
+          res.status(400).json({ message: 'Invalid notification ID' });
+        }
       }
-    });
+    );
 
-    app.patch('/api/notifications/read-all', requireAuthIfEnabled, async (req, res) => {
-      try {
-        const { recipientId } = req.body;
-        if (!recipientId) {
-          return res.status(400).json({ message: 'recipientId is required' });
-        }
-
-        await storage.markAllNotificationsAsRead(recipientId);
-
-        // Realtime: emit unread count reset for recipient
+    app.patch(
+      '/api/notifications/read-all',
+      requireAuthIfEnabled,
+      async (req: AuthRequest, res) => {
         try {
-          const ns = io?.of('/collab');
-          if (ns) {
-            const count = await storage.getUnreadNotificationCount(recipientId);
-            ns.to(`user:${recipientId}`).emit('notification:unread-count', { recipientId, count });
+          // Use authenticated user's ID — do not trust client-supplied recipientId
+          const recipientId = req.user?.id;
+          if (!recipientId) {
+            return res.status(401).json({ message: 'Authentication required' });
           }
-        } catch (emitErr) {
-          console.warn('Socket emit failed for notification:read-all', emitErr);
-        }
 
-        res.json({ message: 'All notifications marked as read' });
-      } catch (error) {
-        res.status(400).json({ message: 'Invalid request data' });
+          await storage.markAllNotificationsAsRead(recipientId);
+
+          // Realtime: emit unread count reset for recipient
+          try {
+            const ns = io?.of('/collab');
+            if (ns) {
+              const count = await storage.getUnreadNotificationCount(recipientId);
+              ns.to(`user:${recipientId}`).emit('notification:unread-count', {
+                recipientId,
+                count,
+              });
+            }
+          } catch (emitErr) {
+            console.warn('Socket emit failed for notification:read-all', emitErr);
+          }
+
+          res.json({ message: 'All notifications marked as read' });
+        } catch (error) {
+          res.status(400).json({ message: 'Invalid request data' });
+        }
       }
-    });
+    );
   }
 
   if (featureFlags.FEATURE_TEMPLATES) {
@@ -2772,6 +2905,21 @@ export async function registerRoutes(
       }
 
       const memberData = updateMemberSchema.parse(req.body);
+      // Prevent cross-team reassignment
+      if (
+        memberData.teamId !== undefined &&
+        memberData.teamId !== null &&
+        Number(memberData.teamId) !== Number(existing?.teamId)
+      ) {
+        if (req.user?.id) {
+          const userTeamIds = await storage.getUserTeamIds(req.user.id);
+          if (!userTeamIds.includes(Number(memberData.teamId))) {
+            return res.status(403).json({ error: 'You are not a member of the target team' });
+          }
+        } else if (config.enforceAuthForWrites) {
+          return res.status(401).json({ error: 'Authentication required' });
+        }
+      }
       const member = await storage.updateMember(id, memberData);
       if (!member) {
         return res.status(404).json({ error: 'Member not found' });
@@ -2839,7 +2987,7 @@ export async function registerRoutes(
     });
 
     // AI 검??API
-    app.post('/api/ai/search', requireAuthIfEnabled, async (req, res) => {
+    app.post('/api/ai/search', requireAuthIfEnabled, async (req: AuthRequest, res) => {
       try {
         const { query, teamId } = req.body;
 
@@ -2847,33 +2995,57 @@ export async function registerRoutes(
           return res.status(400).json({ message: 'Search query is required' });
         }
 
-        // 모든 관???�이???�집
-        const pagesResult = await storage.searchWikiPages({
-          query: '',
-          teamId,
-          limit: 100,
-          offset: 0,
-        });
-        const tasks = await storage.getTasks(teamId);
-        const filesResult = await listUploadedFiles();
+        // Gather the user's authorized team IDs once to avoid duplicate DB calls
+        const userTeamIds = req.user?.id ? await storage.getUserTeamIds(req.user.id) : [];
 
-        // 문서 배열 ?�성
+        // If a specific teamId is requested, verify membership
+        if (teamId) {
+          if (!userTeamIds.map(String).includes(String(teamId))) {
+            return res.status(403).json({ message: 'You are not a member of this team' });
+          }
+        }
+
+        // Determine the scoped set of team IDs — never falls through to undefined / full-DB scan
+        const effectiveTeamIds: string[] = teamId ? [String(teamId)] : userTeamIds.map(String);
+
+        // If the user belongs to no teams, return empty results immediately
+        if (effectiveTeamIds.length === 0) {
+          return res.json({ results: [], query, totalResults: 0 });
+        }
+
+        // Aggregate results across all authorized teams, always passing an explicit teamId
+        const [pagesAgg, tasksAgg] = await Promise.all([
+          Promise.all(
+            effectiveTeamIds.map((tid) =>
+              storage.searchWikiPages({ query: '', teamId: tid, limit: 100, offset: 0 })
+            )
+          ),
+          Promise.all(effectiveTeamIds.map((tid) => storage.getTasks(tid))),
+        ]);
+        const allPages = pagesAgg.flatMap((r: any) => r.pages);
+        const allTasks = tasksAgg.flat();
+        // Aggregate files across ALL authorized teams — never scope to a single team
+        const filesPerTeam = await Promise.all(
+          effectiveTeamIds.map((tid) => listUploadedFiles(tid))
+        );
+        const allFiles = filesPerTeam.flatMap((r) => r.files);
+
         const documents = [
-          ...pagesResult.pages.map((page: any) => ({
+          ...allPages.map((page: any) => ({
             id: page.id,
             title: page.title,
             content: page.content,
             type: 'page' as const,
             url: `/page/${page.slug}`,
           })),
-          ...tasks.map((task: any) => ({
+          ...allTasks.map((task: any) => ({
             id: task.id,
             title: task.title,
             content: task.description || '',
             type: 'task' as const,
             url: `/tasks`,
           })),
-          ...filesResult.files.map((file: any) => ({
+          ...allFiles.map((file: any) => ({
             id: file.id || 0,
             title: file.filename,
             content: file.description || '',
@@ -2882,7 +3054,6 @@ export async function registerRoutes(
           })),
         ];
 
-        // AI 검???�행
         const results = await smartSearch(query, documents);
 
         res.json({
@@ -2958,7 +3129,7 @@ export async function registerRoutes(
     });
 
     // Find related pages
-    app.post('/api/ai/related-pages', requireAuthIfEnabled, async (req, res) => {
+    app.post('/api/ai/related-pages', requireAuthIfEnabled, async (req: AuthRequest, res) => {
       try {
         const { content, title, pageId } = req.body;
 
@@ -2966,8 +3137,18 @@ export async function registerRoutes(
           return res.status(400).json({ error: 'Content and title are required' });
         }
 
-        // Get all pages except current one using search
-        const searchResults = await storage.searchWikiPages({ query: '', limit: 100, offset: 0 });
+        // Scope pages to the authenticated user's accessible teams — never pass undefined
+        const userTeamIdsForRelated = req.user?.id ? await storage.getUserTeamIds(req.user.id) : [];
+        if (userTeamIdsForRelated.length === 0) {
+          return res.json({ relatedPages: [] });
+        }
+        // Aggregate pages across ALL of the user's teams — not just the first one
+        const relatedPageResults = await Promise.all(
+          userTeamIdsForRelated.map((tid) =>
+            storage.searchWikiPages({ query: '', teamId: String(tid), limit: 100, offset: 0 })
+          )
+        );
+        const searchResults = { pages: relatedPageResults.flatMap((r: any) => r.pages) };
         const availablePages = searchResults.pages
           .filter((p: any) => p.id !== pageId)
           .map((p: any) => ({
@@ -2990,178 +3171,197 @@ export async function registerRoutes(
   }
 
   // Knowledge Graph API
-  app.get('/api/knowledge-graph', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const teamId = req.query.teamId as string | undefined;
-      const includeAILinks = req.query.includeAI === 'true';
+  app.get(
+    '/api/knowledge-graph',
+    requireAuthIfEnabled,
+    requireTeamMembership,
+    async (req: AuthRequest, res) => {
+      try {
+        const teamId = req.query.teamId as string | undefined;
+        const includeAILinks = req.query.includeAI === 'true';
 
-      // Get all pages
-      const searchResults = await storage.searchWikiPages({
-        query: '',
-        limit: 1000,
-        offset: 0,
-        teamId: teamId,
-      });
+        // Use team IDs already resolved by requireTeamMembership middleware
+        const userTeamIds: number[] = (req as any).userTeamIds ?? [];
 
-      const pages = searchResults.pages;
-
-      // Build nodes and links
-      const nodes: any[] = [];
-      const links: any[] = [];
-      const tagMap = new Map<string, Set<number>>();
-
-      // Create nodes for pages
-      pages.forEach((page: any) => {
-        const connections = 0; // Will be calculated later
-        const isOrphan = connections === 0;
-
-        nodes.push({
-          id: `page-${page.id}`,
-          name: page.title,
-          type: isOrphan ? 'orphan' : 'page',
-          val: 10, // Base size
-          color: isOrphan ? '#EF4444' : '#3B82F6',
-          pageId: page.id,
-          slug: page.slug,
-          connections: 0,
-          tags: page.tags,
-          content: page.content,
-        });
-
-        // Track tags
-        page.tags?.forEach((tag: string) => {
-          if (!tagMap.has(tag)) {
-            tagMap.set(tag, new Set());
-          }
-          tagMap.get(tag)!.add(page.id);
-        });
-
-        // Find content links (simple [[link]] detection)
-        const linkRegex = /\[\[([^\]]+)\]\]/g;
-        const matches = page.content.matchAll(linkRegex);
-        for (const match of matches) {
-          const linkedTitle = match[1];
-          const linkedPage = pages.find(
-            (p: any) => p.title.toLowerCase() === linkedTitle.toLowerCase()
-          );
-          if (linkedPage && linkedPage.id !== page.id) {
-            links.push({
-              source: `page-${page.id}`,
-              target: `page-${linkedPage.id}`,
-              type: 'content',
-              strength: 2,
-            });
-          }
+        // If a specific teamId is requested, verify the user is a member
+        if (teamId && !userTeamIds.map(String).includes(teamId)) {
+          return res.status(403).json({ message: 'You are not a member of this team' });
         }
-      });
 
-      // Create tag nodes and links
-      tagMap.forEach((pageIds, tag) => {
-        if (pageIds.size > 1) {
+        // Build the set of team IDs to query — never falls through to undefined / full-DB scan
+        const effectiveTeamIds: string[] = teamId ? [teamId] : userTeamIds.map(String);
+
+        // If user belongs to no teams, return an empty graph immediately
+        if (effectiveTeamIds.length === 0) {
+          return res.json({ nodes: [], links: [] });
+        }
+
+        // Aggregate pages across all authorized teams, always passing an explicit teamId
+        const pageResults = await Promise.all(
+          effectiveTeamIds.map((tid) =>
+            storage.searchWikiPages({ query: '', limit: 1000, offset: 0, teamId: tid })
+          )
+        );
+        const pages = pageResults.flatMap((r: any) => r.pages);
+
+        // Build nodes and links
+        const nodes: any[] = [];
+        const links: any[] = [];
+        const tagMap = new Map<string, Set<number>>();
+
+        // Create nodes for pages
+        pages.forEach((page: any) => {
+          const connections = 0; // Will be calculated later
+          const isOrphan = connections === 0;
+
           nodes.push({
-            id: `tag-${tag}`,
-            name: `#${tag}`,
-            type: 'tag',
-            val: pageIds.size * 5,
-            color: '#F59E0B',
-            connections: pageIds.size,
+            id: `page-${page.id}`,
+            name: page.title,
+            type: isOrphan ? 'orphan' : 'page',
+            val: 10, // Base size
+            color: isOrphan ? '#EF4444' : '#3B82F6',
+            pageId: page.id,
+            slug: page.slug,
+            connections: 0,
+            tags: page.tags,
+            content: page.content,
           });
 
-          // Link pages with same tag
-          const pageIdArray = Array.from(pageIds);
-          pageIdArray.forEach((pageId) => {
-            links.push({
-              source: `page-${pageId}`,
-              target: `tag-${tag}`,
-              type: 'tag',
-              strength: 1,
-            });
+          // Track tags
+          page.tags?.forEach((tag: string) => {
+            if (!tagMap.has(tag)) {
+              tagMap.set(tag, new Set());
+            }
+            tagMap.get(tag)!.add(page.id);
           });
-        }
-      });
 
-      // Add AI-recommended links if requested
-      if (includeAILinks && pages.length > 0) {
-        try {
-          // Get AI service
-          const aiModule = await import('./services/ai.js');
-
-          // Analyze a sample of pages (max 20 to avoid rate limits)
-          const samplePages = pages
-            .filter((p: any) => p.content && p.content.length > 100)
-            .sort(() => Math.random() - 0.5)
-            .slice(0, 20);
-
-          for (const page of samplePages) {
-            try {
-              const relatedPages = await aiModule.findRelatedPages(
-                page.content,
-                page.title,
-                pages.filter((p: any) => p.id !== page.id) // Exclude current page
-              );
-
-              if (relatedPages && relatedPages.length > 0) {
-                relatedPages.slice(0, 3).forEach((related: any) => {
-                  // Only add if not already connected
-                  const existingLink = links.find(
-                    (l) =>
-                      (l.source === `page-${page.id}` && l.target === `page-${related.pageId}`) ||
-                      (l.target === `page-${page.id}` && l.source === `page-${related.pageId}`)
-                  );
-
-                  if (!existingLink && related.relevance > 0.5) {
-                    links.push({
-                      source: `page-${page.id}`,
-                      target: `page-${related.pageId}`,
-                      type: 'ai-recommended',
-                      strength: 1,
-                      relevance: related.relevance,
-                      reason: related.reason,
-                    });
-                  }
-                });
-              }
-            } catch (aiError) {
-              console.error(`AI link generation failed for page ${page.id}:`, aiError);
+          // Find content links (simple [[link]] detection)
+          const linkRegex = /\[\[([^\]]+)\]\]/g;
+          const matches = page.content.matchAll(linkRegex);
+          for (const match of matches) {
+            const linkedTitle = match[1];
+            const linkedPage = pages.find(
+              (p: any) => p.title.toLowerCase() === linkedTitle.toLowerCase()
+            );
+            if (linkedPage && linkedPage.id !== page.id) {
+              links.push({
+                source: `page-${page.id}`,
+                target: `page-${linkedPage.id}`,
+                type: 'content',
+                strength: 2,
+              });
             }
           }
-        } catch (aiError) {
-          console.error('AI link generation failed:', aiError);
+        });
+
+        // Create tag nodes and links
+        tagMap.forEach((pageIds, tag) => {
+          if (pageIds.size > 1) {
+            nodes.push({
+              id: `tag-${tag}`,
+              name: `#${tag}`,
+              type: 'tag',
+              val: pageIds.size * 5,
+              color: '#F59E0B',
+              connections: pageIds.size,
+            });
+
+            // Link pages with same tag
+            const pageIdArray = Array.from(pageIds);
+            pageIdArray.forEach((pageId) => {
+              links.push({
+                source: `page-${pageId}`,
+                target: `tag-${tag}`,
+                type: 'tag',
+                strength: 1,
+              });
+            });
+          }
+        });
+
+        // Add AI-recommended links if requested
+        if (includeAILinks && pages.length > 0) {
+          try {
+            // Get AI service
+            const aiModule = await import('./services/ai.js');
+
+            // Analyze a sample of pages (max 20 to avoid rate limits)
+            const samplePages = pages
+              .filter((p: any) => p.content && p.content.length > 100)
+              .sort(() => Math.random() - 0.5)
+              .slice(0, 20);
+
+            for (const page of samplePages) {
+              try {
+                const relatedPages = await aiModule.findRelatedPages(
+                  page.content,
+                  page.title,
+                  pages.filter((p: any) => p.id !== page.id) // Exclude current page
+                );
+
+                if (relatedPages && relatedPages.length > 0) {
+                  relatedPages.slice(0, 3).forEach((related: any) => {
+                    // Only add if not already connected
+                    const existingLink = links.find(
+                      (l) =>
+                        (l.source === `page-${page.id}` && l.target === `page-${related.pageId}`) ||
+                        (l.target === `page-${page.id}` && l.source === `page-${related.pageId}`)
+                    );
+
+                    if (!existingLink && related.relevance > 0.5) {
+                      links.push({
+                        source: `page-${page.id}`,
+                        target: `page-${related.pageId}`,
+                        type: 'ai-recommended',
+                        strength: 1,
+                        relevance: related.relevance,
+                        reason: related.reason,
+                      });
+                    }
+                  });
+                }
+              } catch (aiError) {
+                console.error(`AI link generation failed for page ${page.id}:`, aiError);
+              }
+            }
+          } catch (aiError) {
+            console.error('AI link generation failed:', aiError);
+          }
         }
+
+        // Calculate connections for each node
+        nodes.forEach((node) => {
+          const nodeLinks = links.filter(
+            (link) => link.source === node.id || link.target === node.id
+          );
+          node.connections = nodeLinks.length;
+          node.val = 10 + node.connections * 3;
+
+          // Update orphan status
+          if (node.type === 'page' && node.connections === 0) {
+            node.type = 'orphan';
+            node.color = '#EF4444';
+          } else if (node.type === 'orphan' && node.connections > 0) {
+            node.type = 'page';
+            node.color = '#3B82F6';
+          }
+        });
+
+        // Remove content field from nodes to reduce response size
+        nodes.forEach((node) => {
+          delete node.content;
+        });
+
+        res.json({ nodes, links });
+      } catch (error) {
+        console.error('Knowledge graph error:', error);
+        res.status(500).json({
+          message: 'Failed to generate knowledge graph',
+          error: (error as Error).message,
+        });
       }
-
-      // Calculate connections for each node
-      nodes.forEach((node) => {
-        const nodeLinks = links.filter(
-          (link) => link.source === node.id || link.target === node.id
-        );
-        node.connections = nodeLinks.length;
-        node.val = 10 + node.connections * 3;
-
-        // Update orphan status
-        if (node.type === 'page' && node.connections === 0) {
-          node.type = 'orphan';
-          node.color = '#EF4444';
-        } else if (node.type === 'orphan' && node.connections > 0) {
-          node.type = 'page';
-          node.color = '#3B82F6';
-        }
-      });
-
-      // Remove content field from nodes to reduce response size
-      nodes.forEach((node) => {
-        delete node.content;
-      });
-
-      res.json({ nodes, links });
-    } catch (error) {
-      console.error('Knowledge graph error:', error);
-      res.status(500).json({
-        message: 'Failed to generate knowledge graph',
-        error: (error as Error).message,
-      });
     }
-  });
+  );
 
   if (featureFlags.FEATURE_AUTOMATION) {
     // ==================== Workflows API ====================
@@ -3285,6 +3485,21 @@ export async function registerRoutes(
               workflowData.teamId = team.id;
             } else {
               return res.status(400).json({ error: 'Team not found' });
+            }
+          }
+          // Prevent cross-team reassignment: if new teamId differs, verify membership
+          if (
+            workflowData.teamId !== undefined &&
+            workflowData.teamId !== null &&
+            Number(workflowData.teamId) !== Number(existingWorkflow.teamId)
+          ) {
+            if (req.user?.id) {
+              const userTeamIds = await storage.getUserTeamIds(req.user.id);
+              if (!userTeamIds.includes(Number(workflowData.teamId))) {
+                return res.status(403).json({ message: 'You are not a member of the target team' });
+              }
+            } else if (config.enforceAuthForWrites) {
+              return res.status(401).json({ message: 'Authentication required' });
             }
           }
           const workflow = await storage.updateWorkflow(id, workflowData);
@@ -3496,6 +3711,21 @@ export async function registerRoutes(
         }
 
         const validatedData = updateSavedViewSchema.parse(req.body);
+        // Prevent cross-team reassignment
+        if (
+          validatedData.teamId !== undefined &&
+          validatedData.teamId !== null &&
+          Number(validatedData.teamId) !== Number(existingView.teamId)
+        ) {
+          if (req.user?.id) {
+            const userTeamIds = await storage.getUserTeamIds(req.user.id);
+            if (!userTeamIds.includes(Number(validatedData.teamId))) {
+              return res.status(403).json({ message: 'You are not a member of the target team' });
+            }
+          } else if (config.enforceAuthForWrites) {
+            return res.status(401).json({ message: 'Authentication required' });
+          }
+        }
         const view = await storage.updateSavedView(id, validatedData);
         if (!view) {
           return res.status(404).json({ error: 'View not found' });

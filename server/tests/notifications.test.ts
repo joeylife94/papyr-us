@@ -3,7 +3,37 @@ import request from 'supertest';
 import type { Express } from 'express';
 import express from 'express';
 import http from 'http';
+import jwt from 'jsonwebtoken';
 import { registerRoutes } from '../routes';
+
+const TEST_SECRET = 'notif-test-secret';
+
+vi.mock('../config', () => ({
+  config: {
+    jwtSecret: 'notif-test-secret',
+    adminPassword: 'test-admin',
+    adminEmails: [],
+    enforceAuthForWrites: true,
+    allowAdminPassword: false,
+    rateLimitEnabled: false,
+    rateLimitWindowMs: 60_000,
+    rateLimitMax: 1000,
+    adminIpWhitelist: [],
+    port: 5001,
+    host: '0.0.0.0',
+    isProduction: false,
+    isReplit: false,
+  },
+}));
+
+vi.mock('../features', () => ({
+  featureFlags: {
+    PAPYR_MODE: 'team',
+    FEATURE_TEAMS: true,
+    FEATURE_NOTIFICATIONS: true,
+  },
+  isFeatureEnabled: (key: string) => true,
+}));
 
 // Mock the storage module
 vi.mock('../storage', async (importOriginal) => {
@@ -45,6 +75,8 @@ afterAll((done) => {
 
 describe('Notification Management API', () => {
   const recipientId = 1;
+  const token = jwt.sign({ id: recipientId, email: 'user@test.com', role: 'user' }, TEST_SECRET);
+  const auth = { Authorization: `Bearer ${token}` };
   const mockNotification = {
     id: 1,
     type: 'mention',
@@ -67,7 +99,10 @@ describe('Notification Management API', () => {
       isRead: false,
     });
 
-    const response = await request(app).post('/api/notifications').send(newNotificationData);
+    const response = await request(app)
+      .post('/api/notifications')
+      .set(auth)
+      .send(newNotificationData);
 
     expect(response.status).toBe(201);
     expect(response.body).toHaveProperty('id', 2);
@@ -77,7 +112,7 @@ describe('Notification Management API', () => {
     const notifications = [mockNotification, { ...mockNotification, id: 2, type: 'comment' }];
     (storage.getNotifications as vi.Mock).mockResolvedValue(notifications);
 
-    const response = await request(app).get(`/api/notifications?recipientId=${recipientId}`);
+    const response = await request(app).get('/api/notifications').set(auth);
 
     expect(response.status).toBe(200);
     expect(response.body.notifications).toEqual(notifications);
@@ -87,9 +122,7 @@ describe('Notification Management API', () => {
   it('TC-NOTIF-003: should get the count of unread notifications', async () => {
     (storage.getUnreadNotificationCount as vi.Mock).mockResolvedValue(5);
 
-    const response = await request(app).get(
-      `/api/notifications/unread-count?recipientId=${recipientId}`
-    );
+    const response = await request(app).get('/api/notifications/unread-count').set(auth);
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ count: 5 });
@@ -97,9 +130,12 @@ describe('Notification Management API', () => {
 
   it('TC-NOTIF-004: should mark a single notification as read', async () => {
     const readNotification = { ...mockNotification, isRead: true };
+    (storage.getNotification as vi.Mock).mockResolvedValue(mockNotification);
     (storage.markNotificationAsRead as vi.Mock).mockResolvedValue(readNotification);
 
-    const response = await request(app).patch(`/api/notifications/${mockNotification.id}/read`);
+    const response = await request(app)
+      .patch(`/api/notifications/${mockNotification.id}/read`)
+      .set(auth);
 
     expect(response.status).toBe(200);
     expect(response.body.isRead).toBe(true);
@@ -108,16 +144,19 @@ describe('Notification Management API', () => {
   it('TC-NOTIF-005: should mark all notifications for a recipient as read', async () => {
     (storage.markAllNotificationsAsRead as vi.Mock).mockResolvedValue({ success: true });
 
-    const response = await request(app).patch('/api/notifications/read-all').send({ recipientId });
+    const response = await request(app).patch('/api/notifications/read-all').set(auth);
 
     expect(response.status).toBe(200);
     expect(response.body.message).toBe('All notifications marked as read');
   });
 
   it('TC-NOTIF-006: should delete a notification', async () => {
+    (storage.getNotification as vi.Mock).mockResolvedValue(mockNotification);
     (storage.deleteNotification as vi.Mock).mockResolvedValue({ success: true });
 
-    const response = await request(app).delete(`/api/notifications/${mockNotification.id}`);
+    const response = await request(app)
+      .delete(`/api/notifications/${mockNotification.id}`)
+      .set(auth);
 
     expect(response.status).toBe(200);
     expect(response.body.message).toBe('Notification deleted successfully');

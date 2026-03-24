@@ -212,20 +212,24 @@ export async function getFileInfo(filename: string, isImage: boolean = false) {
   }
 }
 
-// Read sidecar metadata for a file (returns teamId if present)
+// Read sidecar metadata for a file.
+// Returns:
+//   string   — file is team-scoped (sidecar exists and contains a teamId)
+//   null     — file is explicitly public (sidecar exists but has no teamId field)
+//   undefined — sidecar is missing or unreadable; callers MUST deny access (fail-secure)
 export async function getFileTeamId(
   filename: string,
   isImageFile: boolean
-): Promise<string | undefined> {
+): Promise<string | null | undefined> {
   try {
     const dir = isImageFile ? IMAGES_DIR : FILES_DIR;
     const metaPath = path.join(dir, `_meta_${filename}.json`);
-    if (!existsSync(metaPath)) return undefined;
+    if (!existsSync(metaPath)) return undefined; // sidecar missing — fail-secure
     const raw = await fs.readFile(metaPath, 'utf-8');
     const meta = JSON.parse(raw);
-    return meta.teamId;
+    return meta.teamId ?? null; // null = explicitly public
   } catch {
-    return undefined;
+    return undefined; // unreadable — fail-secure
   }
 }
 

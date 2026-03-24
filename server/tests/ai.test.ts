@@ -3,7 +3,28 @@ import request from 'supertest';
 import type { Express } from 'express';
 import express from 'express';
 import http from 'http';
+import jwt from 'jsonwebtoken';
 import { registerRoutes } from '../routes';
+
+const AI_TEST_SECRET = 'ai-test-secret';
+
+vi.mock('../config', () => ({
+  config: {
+    jwtSecret: 'ai-test-secret',
+    adminPassword: 'test-admin',
+    adminEmails: [],
+    enforceAuthForWrites: true,
+    allowAdminPassword: false,
+    rateLimitEnabled: false,
+    rateLimitWindowMs: 60_000,
+    rateLimitMax: 1000,
+    adminIpWhitelist: [],
+    port: 5001,
+    host: '0.0.0.0',
+    isProduction: false,
+    isReplit: false,
+  },
+}));
 
 // Enable AI feature flag for testing
 vi.mock('../features', () => ({
@@ -83,6 +104,10 @@ afterAll((done) => {
 });
 
 describe('AI Services API', () => {
+  // Shared auth token — all routes require authentication (enforceAuthForWrites: true)
+  const token = jwt.sign({ id: 1, email: 'user@ai-test.com', role: 'user' }, AI_TEST_SECRET);
+  const authHeader = { Authorization: `Bearer ${token}` };
+
   it('TC-AI-001: should generate content with AI successfully', async () => {
     const prompt = 'Write a poem about coding.';
     const generated = {
@@ -90,7 +115,10 @@ describe('AI Services API', () => {
     };
     (generateContent as vi.Mock).mockResolvedValue(generated.content);
 
-    const response = await request(app).post('/api/ai/generate').send({ prompt, type: 'poem' });
+    const response = await request(app)
+      .post('/api/ai/generate')
+      .set(authHeader)
+      .send({ prompt, type: 'poem' });
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual(generated);
@@ -102,7 +130,7 @@ describe('AI Services API', () => {
     const suggestions = { suggestions: ['Make it longer.', 'Add a joke.'] };
     (generateContentSuggestions as vi.Mock).mockResolvedValue(suggestions.suggestions);
 
-    const response = await request(app).post('/api/ai/improve').send(content);
+    const response = await request(app).post('/api/ai/improve').set(authHeader).send(content);
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual(suggestions);
@@ -110,7 +138,7 @@ describe('AI Services API', () => {
 
   it('TC-AI-003: should perform an AI-powered search across documents', async () => {
     const query = 'What is the project status?';
-    const teamId = 'test-team';
+    const teamId = 1; // numeric ID must match getUserTeamIds mock
     const searchResults = [
       { id: 1, title: 'Project Status Page', content: 'Everything is on track.', type: 'page' },
     ];
@@ -122,11 +150,15 @@ describe('AI Services API', () => {
       ],
     });
     (storage.getTasks as vi.Mock).mockResolvedValue([]);
+    (storage.getUserTeamIds as vi.Mock).mockResolvedValue([teamId]);
     (listUploadedFiles as vi.Mock).mockResolvedValue({ files: [] });
-
     (smartSearch as vi.Mock).mockResolvedValue(searchResults);
 
-    const response = await request(app).post('/api/ai/search').send({ query, teamId });
+    const token = jwt.sign({ id: 1, email: 'user@test.com', role: 'user' }, AI_TEST_SECRET);
+    const response = await request(app)
+      .post('/api/ai/search')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ query, teamId });
 
     expect(response.status).toBe(200);
     expect(response.body.results).toEqual(searchResults);
@@ -138,7 +170,10 @@ describe('AI Services API', () => {
     const suggestions = { suggestions: ['how to setup the project', 'how to run tests'] };
     (generateSearchSuggestions as vi.Mock).mockResolvedValue(suggestions.suggestions);
 
-    const response = await request(app).post('/api/ai/search-suggestions').send({ query });
+    const response = await request(app)
+      .post('/api/ai/search-suggestions')
+      .set(authHeader)
+      .send({ query });
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual(suggestions);

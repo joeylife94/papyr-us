@@ -75,7 +75,7 @@ import {
   teamMembers,
 } from '../shared/schema.js';
 import { drizzle } from 'drizzle-orm/node-postgres';
-import { eq, like, and, sql, desc, asc, isNull } from 'drizzle-orm';
+import { eq, like, and, sql, desc, asc, isNull, inArray } from 'drizzle-orm';
 import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 
@@ -564,11 +564,31 @@ export class DBStorage {
     type: 'page' | 'comment' | 'task'
   ): Promise<void> {}
 
-  async getDashboardOverview(): Promise<any> {
-    const pageCountResult = await this.db.select({ count: sql`count(*)` }).from(wikiPages);
-    const commentCountResult = await this.db.select({ count: sql`count(*)` }).from(comments);
-    const memberCountResult = await this.db.select({ count: sql`count(*)` }).from(members);
-    const taskCountResult = await this.db.select({ count: sql`count(*)` }).from(tasks);
+  async getDashboardOverview(teamIds: number[]): Promise<any> {
+    if (teamIds.length === 0) {
+      return { totalPages: 0, totalComments: 0, totalMembers: 0, totalTasks: 0 };
+    }
+    const teamIdStrings = teamIds.map(String);
+    const [pageCountResult, commentCountResult, memberCountResult, taskCountResult] =
+      await Promise.all([
+        this.db
+          .select({ count: sql`count(*)` })
+          .from(wikiPages)
+          .where(inArray(wikiPages.teamId, teamIds)),
+        this.db
+          .select({ count: sql`count(*)` })
+          .from(comments)
+          .innerJoin(wikiPages, eq(comments.pageId, wikiPages.id))
+          .where(inArray(wikiPages.teamId, teamIds)),
+        this.db
+          .select({ count: sql`count(*)` })
+          .from(members)
+          .where(inArray(members.teamId, teamIds)),
+        this.db
+          .select({ count: sql`count(*)` })
+          .from(tasks)
+          .where(inArray(tasks.teamId, teamIdStrings)),
+      ]);
     return {
       totalPages: Number(pageCountResult[0].count),
       totalComments: Number(commentCountResult[0].count),
@@ -959,8 +979,15 @@ export class DBStorage {
       .from(pagePermissions)
       .where(eq(pagePermissions.pageId, pageId));
 
-    // If no explicit permissions exist, allow all access (legacy open-access pages)
+    // If no explicit permissions exist:
+    // - Pages that belong to a team require team membership (prevents isolation bypass)
+    // - Pages without a teamId are legacy open-access pages
     if (permissions.length === 0) {
+      if (page.length > 0 && page[0].teamId) {
+        if (!userId) return false;
+        const userTeamIds = await this.getUserTeamIds(userId);
+        return userTeamIds.includes(Number(page[0].teamId));
+      }
       return true;
     }
 
