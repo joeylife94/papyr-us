@@ -1636,7 +1636,7 @@ export async function registerRoutes(
   );
 
   // Serve uploaded images
-  app.get('/api/uploads/images/:filename', requireAuthIfEnabled, async (req: AuthRequest, res) => {
+  app.get('/api/uploads/images/:filename', authMiddleware, async (req: AuthRequest, res) => {
     try {
       const { filename } = req.params;
 
@@ -1677,7 +1677,7 @@ export async function registerRoutes(
   });
 
   // Serve uploaded files
-  app.get('/api/uploads/files/:filename', requireAuthIfEnabled, async (req: AuthRequest, res) => {
+  app.get('/api/uploads/files/:filename', authMiddleware, async (req: AuthRequest, res) => {
     try {
       const { filename } = req.params;
 
@@ -1904,10 +1904,20 @@ export async function registerRoutes(
 
   app.get(
     '/api/dashboard/member/:memberId',
-    requireAuthIfEnabled,
+    authMiddleware,
     async (req: AuthRequest, res) => {
       try {
         const memberId = parseInt(req.params.memberId);
+        const member = await storage.getMember(memberId);
+        if (!member) {
+          return res.status(404).json({ message: 'Member not found' });
+        }
+
+        const userTeamIds = req.user?.id ? await storage.getUserTeamIds(req.user.id) : [];
+        if (!userTeamIds.includes(Number(member.teamId))) {
+          return res.status(403).json({ message: 'You are not a member of this team' });
+        }
+
         const stats = await storage.getMemberProgressStats(memberId);
         if (!stats) {
           return res.status(404).json({ message: 'Member stats not found' });
@@ -2244,7 +2254,7 @@ export async function registerRoutes(
       }
     );
 
-    app.get('/api/notifications/:id', requireAuthIfEnabled, async (req: AuthRequest, res) => {
+    app.get('/api/notifications/:id', authMiddleware, async (req: AuthRequest, res) => {
       try {
         const id = parseInt(req.params.id);
         const notification = await storage.getNotification(id);
@@ -2289,7 +2299,7 @@ export async function registerRoutes(
       }
     });
 
-    app.put('/api/notifications/:id', requireAuthIfEnabled, async (req: AuthRequest, res) => {
+    app.put('/api/notifications/:id', authMiddleware, async (req: AuthRequest, res) => {
       try {
         const id = parseInt(req.params.id);
         // Ownership check: fetch before updating
@@ -2328,7 +2338,7 @@ export async function registerRoutes(
       }
     });
 
-    app.delete('/api/notifications/:id', requireAuthIfEnabled, async (req: AuthRequest, res) => {
+    app.delete('/api/notifications/:id', authMiddleware, async (req: AuthRequest, res) => {
       try {
         const id = parseInt(req.params.id);
         // Ownership check: fetch before deleting
@@ -2365,7 +2375,7 @@ export async function registerRoutes(
 
     app.patch(
       '/api/notifications/:id/read',
-      requireAuthIfEnabled,
+      authMiddleware,
       async (req: AuthRequest, res) => {
         try {
           const id = parseInt(req.params.id);

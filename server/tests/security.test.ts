@@ -16,6 +16,7 @@ import express from 'express';
 import http from 'http';
 import jwt from 'jsonwebtoken';
 import { registerRoutes } from '../routes';
+import { config } from '../config.js';
 
 const TEST_SECRET = 'security-test-secret';
 
@@ -490,6 +491,17 @@ describe('4-3  Notification IDOR', () => {
     expect(res.status).toBe(200);
     expect(storage.markAllNotificationsAsRead).toHaveBeenCalledWith(USER_A_ID);
   });
+
+  it('GET /api/notifications/:id — still requires JWT when ENFORCE_AUTH_WRITES is false', async () => {
+    const prev = config.enforceAuthForWrites;
+    config.enforceAuthForWrites = false;
+    try {
+      const res = await request(app).get('/api/notifications/42');
+      expect(res.status).toBe(401);
+    } finally {
+      config.enforceAuthForWrites = prev;
+    }
+  });
 });
 
 // =============================================================================
@@ -524,6 +536,12 @@ describe('4-4  AI and aggregate routes scope', () => {
     it('GET /api/dashboard/member/:memberId — requires authentication', async () => {
       const res = await request(app).get('/api/dashboard/member/1');
       expect(res.status).toBe(401);
+    });
+
+    it('GET /api/dashboard/member/:memberId — returns 403 when requester is outside member team', async () => {
+      storage.getMember.mockResolvedValue({ id: 77, teamId: TEAM_A_ID });
+      const res = await request(app).get('/api/dashboard/member/77').set(auth(tokenB));
+      expect(res.status).toBe(403);
     });
   });
 
@@ -676,10 +694,22 @@ describe('4-5  File download access control', () => {
   });
 
   it('GET /api/uploads/images/:filename — returns 401 for unauthenticated requests regardless of metadata state', async () => {
-    // requireAuthIfEnabled runs before the metadata check, so anonymous requests
+    // authMiddleware runs before the metadata check, so anonymous requests
     // always get 401 first. The fail-secure 403 applies to authenticated users.
     (getFileTeamId as any).mockResolvedValue(undefined);
     const res = await request(app).get('/api/uploads/images/orphaned-image.png');
     expect(res.status).toBe(401);
+  });
+
+  it('GET /api/uploads/files/:filename — still requires JWT when ENFORCE_AUTH_WRITES is false', async () => {
+    const prev = config.enforceAuthForWrites;
+    config.enforceAuthForWrites = false;
+    try {
+      (getFileTeamId as any).mockResolvedValue(null);
+      const res = await request(app).get('/api/uploads/files/public.pdf');
+      expect(res.status).toBe(401);
+    } finally {
+      config.enforceAuthForWrites = prev;
+    }
   });
 });
