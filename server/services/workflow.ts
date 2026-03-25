@@ -206,6 +206,27 @@ async function executeAction(
         const data = await response.json();
         return { success: response.ok, result: data };
 
+      case 'slack_webhook':
+        if (!processedConfig.url) {
+          return { success: false, error: 'slack_webhook requires a url in config' };
+        }
+        const slackPayload = {
+          text: processedConfig.text || processedConfig.message || JSON.stringify(context),
+          ...(processedConfig.channel && { channel: processedConfig.channel }),
+          ...(processedConfig.username && { username: processedConfig.username }),
+          ...(processedConfig.icon_emoji && { icon_emoji: processedConfig.icon_emoji }),
+          ...(processedConfig.blocks && { blocks: processedConfig.blocks }),
+        };
+        const slackResponse = await fetch(processedConfig.url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(slackPayload),
+        });
+        return {
+          success: slackResponse.ok,
+          result: { status: slackResponse.status },
+        };
+
       case 'send_email':
         // Email service not yet configured — fall back to in-app notification
         logger.warn('Email action: email service not configured, falling back to notification', {

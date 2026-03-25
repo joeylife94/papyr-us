@@ -8,13 +8,11 @@ import { vi } from 'vitest';
 // Mock storage minimally for route registration
 vi.mock('../storage', async (importOriginal) => {
   const actual = (await importOriginal()) as any;
-  const dbStorageInstance = new actual.DBStorage();
-  return { ...actual, DBStorage: vi.fn(() => dbStorageInstance), storage: dbStorageInstance };
+  const { mockStorageModuleFrom } = await import('./test-storage-helper');
+  return mockStorageModuleFrom(actual);
 });
 
-// Create a storage instance via the mocked constructor
-import { DBStorage } from '../storage.js';
-const storage = new DBStorage() as any;
+import { storage } from '../storage.js';
 
 let app: Express;
 let server: http.Server;

@@ -35,7 +35,7 @@ function clampInt(value: unknown, fallback: number, min: number, max: number): n
 }
 
 function getCollabConfig(): CollabConfig {
-  const requireAuth = process.env.COLLAB_REQUIRE_AUTH !== '0';
+  const requireAuth = config.isProduction ? true : process.env.COLLAB_REQUIRE_AUTH !== '0';
   const saveDebounceMs = clampInt(process.env.COLLAB_SAVE_DEBOUNCE_MS, 3000, 500, 60000);
   const snapshotIntervalMs = clampInt(
     process.env.COLLAB_SNAPSHOT_INTERVAL_MS,
@@ -98,11 +98,21 @@ type SocketIdentity = {
   userEmail?: string;
 };
 
+/**
+ * Extract the accessToken from a raw Cookie header string.
+ */
+function extractCookieToken(cookieHeader: string | undefined): string | undefined {
+  if (!cookieHeader) return undefined;
+  const match = cookieHeader.match(/(?:^|;\s*)accessToken=([^;]+)/);
+  return match ? match[1] : undefined;
+}
+
 function getSocketIdentity(socket: Socket, cfg: CollabConfig): SocketIdentity {
   if (!cfg.requireAuth) return {};
   const token =
     (socket.handshake.auth as any)?.token ||
-    (socket.handshake.headers?.authorization as string | undefined)?.replace('Bearer ', '');
+    (socket.handshake.headers?.authorization as string | undefined)?.replace('Bearer ', '') ||
+    extractCookieToken(socket.handshake.headers?.cookie as string | undefined);
   if (!token || typeof token !== 'string') return {};
   try {
     const decoded = jwt.verify(token, config.jwtSecret) as { id: number; email?: string };

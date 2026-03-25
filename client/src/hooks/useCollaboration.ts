@@ -71,15 +71,10 @@ export function useCollaboration({
   useEffect(() => {
     if (!enabled) return;
 
-    const token = localStorage.getItem('token');
-    if (!token) {
-      console.warn('[Collab] No authentication token found');
-      return;
-    }
-
+    // Auth is handled via httpOnly cookies — no localStorage token needed
     const socketUrl = import.meta.env.VITE_WS_URL || window.location.origin;
     const newSocket = io(`${socketUrl}/collab`, {
-      auth: { token },
+      withCredentials: true,
       transports: ['websocket', 'polling'],
     });
 

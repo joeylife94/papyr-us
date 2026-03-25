@@ -90,18 +90,8 @@ vi.mock('../services/workflow', async () => ({
 // ─── Storage mock ─────────────────────────────────────────────────────────────
 vi.mock('../storage', async (importOriginal) => {
   const actual = (await importOriginal()) as any;
-  const dbStorageInstance = new actual.DBStorage();
-  for (const key of Object.getOwnPropertyNames(actual.DBStorage.prototype)) {
-    if (key !== 'constructor' && typeof dbStorageInstance[key] === 'function') {
-      dbStorageInstance[key] = vi.fn();
-    }
-  }
-  return {
-    ...actual,
-    DBStorage: vi.fn(() => dbStorageInstance),
-    storage: dbStorageInstance,
-    getStorage: vi.fn(() => dbStorageInstance),
-  };
+  const { mockStorageModuleFrom } = await import('./test-storage-helper');
+  return mockStorageModuleFrom(actual);
 });
 
 import * as storageModule from '../storage.js';

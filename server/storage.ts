@@ -1543,8 +1543,16 @@ export class DBStorage {
   }
 }
 
-// Export singleton instance
+// Export singleton instance with DI support for testing
 let storageInstance: DBStorage | null = null;
+
+/**
+ * Set the storage instance (for dependency injection / testing).
+ * Pass `null` to reset back to lazy real-DB initialization.
+ */
+export function setStorage(instance: DBStorage | null): void {
+  storageInstance = instance;
+}
 
 export function getStorage(): DBStorage {
   if (!storageInstance) {
@@ -1552,3 +1560,6 @@ export function getStorage(): DBStorage {
   }
   return storageInstance;
 }
+
+/** Storage accessor exported for convenience. Tests should mock this module. */
+export const storage = undefined as unknown as DBStorage;

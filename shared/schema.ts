@@ -181,7 +181,8 @@ export type Directory = typeof directories.$inferSelect;
 export const comments = pgTable('comments', {
   id: serial('id').primaryKey(),
   content: text('content').notNull(),
-  author: text('author').notNull(), // Author name (will be enhanced with user system later)
+  author: text('author').notNull(),
+  authorUserId: integer('author_user_id').references(() => users.id, { onDelete: 'set null' }),
   pageId: integer('page_id')
     .notNull()
     .references(() => wikiPages.id, { onDelete: 'cascade' }),
@@ -196,7 +197,11 @@ export const insertCommentSchema = createInsertSchema(comments).omit({
   updatedAt: true,
 });
 
-export const updateCommentSchema = insertCommentSchema.partial();
+// Update schema strips identity fields — author / authorUserId are server-derived
+// and must not be client-editable on normal update paths.
+export const updateCommentSchema = insertCommentSchema
+  .partial()
+  .omit({ author: true, authorUserId: true });
 
 export type InsertComment = z.infer<typeof insertCommentSchema>;
 export type UpdateComment = z.infer<typeof updateCommentSchema>;
@@ -562,6 +567,7 @@ export const actionTypes = [
   'move_page',
   'run_ai_summary',
   'webhook',
+  'slack_webhook',
 ] as const;
 
 export type ActionType = (typeof actionTypes)[number];

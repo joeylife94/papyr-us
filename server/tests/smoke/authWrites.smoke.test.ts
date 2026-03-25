@@ -8,16 +8,20 @@ import { registerRoutes } from '../../routes';
 // Mock storage similar to other tests
 vi.mock('../../storage', async (importOriginal) => {
   const actual = (await importOriginal()) as any;
-  const dbStorageInstance = new actual.DBStorage();
-  for (const key of Object.getOwnPropertyNames(actual.DBStorage.prototype)) {
-    if (key !== 'constructor' && typeof dbStorageInstance[key] === 'function') {
-      dbStorageInstance[key] = vi.fn();
-    }
+  // Build mock instance from prototype WITHOUT calling constructor (no DATABASE_URL needed)
+  const methodNames = Object.getOwnPropertyNames(actual.DBStorage.prototype).filter(
+    (key: string) => key !== 'constructor'
+  );
+  const dbStorageInstance: any = { db: {} };
+  for (const key of methodNames) {
+    dbStorageInstance[key] = vi.fn();
   }
   return {
     ...actual,
     DBStorage: vi.fn(() => dbStorageInstance),
     storage: dbStorageInstance,
+    getStorage: vi.fn(() => dbStorageInstance),
+    setStorage: vi.fn(),
   };
 });
 

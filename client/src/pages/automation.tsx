@@ -63,6 +63,7 @@ export default function AutomationPage() {
     triggerType: 'page_created',
     actionType: 'send_notification',
   });
+  const [actionConfig, setActionConfig] = useState<Record<string, string>>({});
 
   const workflowsUrl = teamName
     ? `/api/workflows?teamId=${encodeURIComponent(teamName)}`
@@ -120,6 +121,20 @@ export default function AutomationPage() {
     },
   });
 
+  // Required config fields per action type
+  const ACTION_REQUIRED_CONFIG: Record<string, string[]> = {
+    webhook: ['url'],
+    slack_webhook: ['url'],
+    send_notification: ['message'],
+    send_email: ['recipients', 'subject', 'message'],
+  };
+
+  const isActionConfigValid = (): boolean => {
+    const required = ACTION_REQUIRED_CONFIG[newWorkflow.actionType];
+    if (!required) return true;
+    return required.every((key) => (actionConfig[key] || '').trim().length > 0);
+  };
+
   // Create workflow
   const createMutation = useMutation({
     mutationFn: async (data: {
@@ -135,7 +150,7 @@ export default function AutomationPage() {
           name: data.name,
           description: data.description,
           trigger: { type: data.triggerType },
-          actions: [{ type: data.actionType, config: {} }],
+          actions: [{ type: data.actionType, config: { ...actionConfig } }],
           conditions: [],
           isActive: false,
           ...(teamName ? { teamId: teamName } : {}),
@@ -153,6 +168,7 @@ export default function AutomationPage() {
         triggerType: 'page_created',
         actionType: 'send_notification',
       });
+      setActionConfig({});
       toast({
         title: '워크플로우 생성됨',
         description: '새 워크플로우가 생성되었습니다.',
@@ -449,7 +465,10 @@ export default function AutomationPage() {
               <Label>액션</Label>
               <Select
                 value={newWorkflow.actionType}
-                onValueChange={(v) => setNewWorkflow({ ...newWorkflow, actionType: v })}
+                onValueChange={(v) => {
+                  setNewWorkflow({ ...newWorkflow, actionType: v });
+                  setActionConfig({});
+                }}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -466,14 +485,81 @@ export default function AutomationPage() {
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Action-specific config fields */}
+            {(newWorkflow.actionType === 'webhook' ||
+              newWorkflow.actionType === 'slack_webhook') && (
+              <div className="space-y-2">
+                <Label>웹훅 URL *</Label>
+                <Input
+                  placeholder="https://example.com/webhook"
+                  value={actionConfig.url || ''}
+                  onChange={(e) => setActionConfig({ ...actionConfig, url: e.target.value })}
+                />
+                <Label>HTTP 메서드</Label>
+                <Select
+                  value={actionConfig.method || 'POST'}
+                  onValueChange={(v) => setActionConfig({ ...actionConfig, method: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="POST">POST</SelectItem>
+                    <SelectItem value="GET">GET</SelectItem>
+                    <SelectItem value="PUT">PUT</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {newWorkflow.actionType === 'send_notification' && (
+              <div className="space-y-2">
+                <Label>알림 메시지 *</Label>
+                <Input
+                  placeholder="알림 내용을 입력하세요"
+                  value={actionConfig.message || ''}
+                  onChange={(e) => setActionConfig({ ...actionConfig, message: e.target.value })}
+                />
+              </div>
+            )}
+            {newWorkflow.actionType === 'send_email' && (
+              <div className="space-y-2">
+                <Label>수신자 *</Label>
+                <Input
+                  placeholder="user@example.com"
+                  value={actionConfig.recipients || ''}
+                  onChange={(e) => setActionConfig({ ...actionConfig, recipients: e.target.value })}
+                />
+                <Label>제목 *</Label>
+                <Input
+                  placeholder="이메일 제목"
+                  value={actionConfig.subject || ''}
+                  onChange={(e) => setActionConfig({ ...actionConfig, subject: e.target.value })}
+                />
+                <Label>본문 *</Label>
+                <Input
+                  placeholder="이메일 본문"
+                  value={actionConfig.message || ''}
+                  onChange={(e) => setActionConfig({ ...actionConfig, message: e.target.value })}
+                />
+              </div>
+            )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowCreateDialog(false);
+                setActionConfig({});
+              }}
+            >
               취소
             </Button>
             <Button
               onClick={() => createMutation.mutate(newWorkflow)}
-              disabled={!newWorkflow.name.trim() || createMutation.isPending}
+              disabled={
+                !newWorkflow.name.trim() || !isActionConfigValid() || createMutation.isPending
+              }
             >
               {createMutation.isPending ? '생성 중...' : '워크플로우 생성'}
             </Button>

@@ -45,20 +45,13 @@ class SocketManager {
       return this.socket;
     }
 
-    // Use the /collab namespace and pass JWT if present
     const base = url.replace(/\/$/, '');
     const nsUrl = `${base}/collab`;
-    let token: string | undefined;
-    if (typeof window !== 'undefined') {
-      try {
-        token = window.localStorage.getItem('token') || undefined;
-      } catch (_) {}
-    }
 
     this.socket = io(nsUrl, {
       transports: ['websocket', 'polling'],
       autoConnect: true,
-      auth: token ? { token } : undefined,
+      withCredentials: true,
       // Disable built-in reconnection, we'll handle it ourselves
       reconnection: false,
     });

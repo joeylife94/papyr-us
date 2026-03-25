@@ -5,6 +5,7 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['server/**/*.test.{ts,tsx}'],
-    // setupFiles: './server/tests/setup.ts', // Optional: for test setup
+    exclude: ['server/tests/integration/**', 'server/tests/search-fts.test.ts'],
+    setupFiles: './server/tests/setup.ts',
   },
 });

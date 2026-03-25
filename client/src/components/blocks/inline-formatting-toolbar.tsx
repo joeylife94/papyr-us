@@ -1,6 +1,20 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Bold, Italic, Underline, Strikethrough, Code, Link2, Highlighter } from 'lucide-react';
+import {
+  Bold,
+  Italic,
+  Underline,
+  Strikethrough,
+  Code,
+  Link2,
+  Highlighter,
+  Sparkles,
+  RefreshCw,
+  ListTodo,
+  Loader2,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useFeatureFlags } from '@/features/FeatureFlagsContext';
+import { http } from '@/lib/http';
 
 interface InlineFormatAction {
   icon: React.ReactNode;
@@ -58,6 +72,20 @@ const FORMAT_ACTIONS: InlineFormatAction[] = [
   },
 ];
 
+type InlineAIActionType = 'summarize' | 'rewrite' | 'taskify';
+
+interface AIAction {
+  icon: React.ReactNode;
+  label: string;
+  action: InlineAIActionType;
+}
+
+const AI_ACTIONS: AIAction[] = [
+  { icon: <Sparkles className="h-3.5 w-3.5" />, label: 'Summarize', action: 'summarize' },
+  { icon: <RefreshCw className="h-3.5 w-3.5" />, label: 'Rewrite', action: 'rewrite' },
+  { icon: <ListTodo className="h-3.5 w-3.5" />, label: 'Taskify', action: 'taskify' },
+];
+
 interface InlineFormattingToolbarProps {
   /**
    * The container element to monitor for text selection.
@@ -75,8 +103,11 @@ export function InlineFormattingToolbar({ containerRef, onFormat }: InlineFormat
   const [visible, setVisible] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const [activeTextarea, setActiveTextarea] = useState<HTMLTextAreaElement | null>(null);
+  const [aiLoading, setAiLoading] = useState<InlineAIActionType | null>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { flags } = useFeatureFlags();
+  const showAI = flags.FEATURE_AI_SEARCH;
 
   const checkSelection = useCallback(() => {
     const container = containerRef.current;
@@ -226,6 +257,41 @@ export function InlineFormattingToolbar({ containerRef, onFormat }: InlineFormat
 
   if (!visible || !activeTextarea) return null;
 
+  const handleAIAction = async (action: InlineAIActionType) => {
+    if (!activeTextarea || aiLoading) return;
+
+    const start = activeTextarea.selectionStart;
+    const end = activeTextarea.selectionEnd;
+    const selectedText = activeTextarea.value.substring(start, end);
+    if (!selectedText) return;
+
+    setAiLoading(action);
+    try {
+      const res = await http('/api/ai/inline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, text: selectedText }),
+      });
+      if (!res.ok) throw new Error('AI request failed');
+      const data = await res.json();
+      const replacement = data.result ?? data.text ?? selectedText;
+
+      // Replace selection with AI result
+      const text = activeTextarea.value;
+      activeTextarea.value = text.substring(0, start) + replacement + text.substring(end);
+      activeTextarea.selectionStart = start;
+      activeTextarea.selectionEnd = start + replacement.length;
+
+      const nativeInputEvent = new Event('input', { bubbles: true });
+      activeTextarea.dispatchEvent(nativeInputEvent);
+      activeTextarea.focus();
+    } catch {
+      // Silently fail — the user still has their original selection
+    } finally {
+      setAiLoading(null);
+    }
+  };
+
   return (
     <div
       ref={toolbarRef}
@@ -256,6 +322,24 @@ export function InlineFormattingToolbar({ containerRef, onFormat }: InlineFormat
           {action.icon}
         </Button>
       ))}
+      {showAI && (
+        <>
+          <div className="w-px h-4 bg-slate-600 dark:bg-slate-400 mx-0.5" />
+          {AI_ACTIONS.map((ai) => (
+            <Button
+              key={ai.label}
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0 text-purple-300 dark:text-purple-700 hover:bg-slate-700 dark:hover:bg-slate-300 rounded-md"
+              title={ai.label}
+              disabled={aiLoading !== null}
+              onClick={() => handleAIAction(ai.action)}
+            >
+              {aiLoading === ai.action ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : ai.icon}
+            </Button>
+          ))}
+        </>
+      )}
     </div>
   );
 }

@@ -6,9 +6,12 @@ import http from 'http';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 
-// Use vi.doMock to ensure the mock is hoisted
-vi.doMock('../storage', async (importOriginal) => {
+// Mock storage with standard pattern — builds mock from prototype, never calls real constructor
+vi.mock('../storage', async (importOriginal) => {
   const actual = (await importOriginal()) as any;
+  const { mockStorageModuleFrom } = await import('./test-storage-helper');
+  const mod = mockStorageModuleFrom(actual);
+  // Auth routes access storage.db directly for user queries, so add chainable db mock
   const dbMock = {
     select: vi.fn().mockReturnThis(),
     from: vi.fn().mockReturnThis(),
@@ -17,20 +20,16 @@ vi.doMock('../storage', async (importOriginal) => {
     values: vi.fn().mockReturnThis(),
     returning: vi.fn().mockResolvedValue([]),
   };
-  return {
-    ...actual,
-    MemStorage: vi.fn(),
-    storage: { db: dbMock },
-  };
+  mod.storage.db = dbMock;
+  return mod;
 });
 
 // Mock external libraries
 vi.mock('bcryptjs');
 vi.mock('jsonwebtoken');
 
-// Dynamically import after mocks are set up
-const { registerRoutes } = await import('../routes');
-const { storage } = await import('../storage');
+import { registerRoutes } from '../routes';
+import { storage } from '../storage';
 
 let app: Express;
 let server: http.Server;
@@ -128,7 +127,8 @@ describe('Authentication API', () => {
         .send({ email: 'user@test.com', password: 'password123' });
 
       expect(response.status).toBe(200);
-      expect(response.body).toHaveProperty('token', 'fake_jwt_token');
+      // Token is now sent via httpOnly cookie, not in the response body
+      expect(response.headers['set-cookie']).toBeDefined();
       expect(response.body.user.email).toBe('user@test.com');
     });
 

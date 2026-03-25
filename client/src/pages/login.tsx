@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { Button } from '@/components/ui/button';
@@ -9,21 +9,13 @@ import { toast } from '@/hooks/use-toast';
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const { login, socialLogin } = useAuth();
+  const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
   // Get redirect URL from query params (set by ProtectedRoute or http.ts 401 handler)
   const query = new URLSearchParams(location.search);
   const redirectTo = query.get('redirect') || '/';
-
-  useEffect(() => {
-    const token = query.get('token');
-    if (token) {
-      socialLogin(token);
-      navigate(redirectTo);
-    }
-  }, [location, socialLogin, navigate, redirectTo]);
 
   const handleSocialLogin = (provider: 'google' | 'github') => {
     window.location.href = `/api/auth/${provider}`;

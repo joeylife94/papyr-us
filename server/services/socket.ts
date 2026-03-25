@@ -9,6 +9,16 @@ import { createAdapter } from '@socket.io/redis-adapter';
 
 type SaveReason = 'debounce' | 'interval' | 'ttl' | 'eviction';
 
+/**
+ * Extract the accessToken from a raw Cookie header string.
+ * Avoids pulling in a full cookie-parsing library for a single value.
+ */
+function extractCookieToken(cookieHeader: string | undefined): string | undefined {
+  if (!cookieHeader) return undefined;
+  const match = cookieHeader.match(/(?:^|;\s*)accessToken=([^;]+)/);
+  return match ? match[1] : undefined;
+}
+
 function clampInt(value: unknown, fallback: number, min: number, max: number): number {
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
@@ -35,7 +45,7 @@ type LegacyCollabConfig = {
 };
 
 function getLegacyCollabConfig(): LegacyCollabConfig {
-  const requireAuth = process.env.COLLAB_REQUIRE_AUTH !== '0';
+  const requireAuth = config.isProduction ? true : process.env.COLLAB_REQUIRE_AUTH !== '0';
   const saveDebounceMs = clampInt(process.env.COLLAB_SAVE_DEBOUNCE_MS, 3000, 500, 60000);
   const snapshotIntervalMs = clampInt(
     process.env.COLLAB_SNAPSHOT_INTERVAL_MS,
@@ -388,10 +398,19 @@ export async function setupSocketIO(
   const legacyCfg = getLegacyCollabConfig();
   const collaborationManager = new CollaborationManager(storage, legacyCfg);
 
+  const corsOrigin = config.isProduction
+    ? config.corsAllowedOrigins.length > 0
+      ? config.corsAllowedOrigins
+      : false
+    : config.corsAllowedOrigins.length > 0
+      ? config.corsAllowedOrigins
+      : '*';
+
   const io = new SocketIOServer(server, {
     cors: {
-      origin: '*',
+      origin: corsOrigin,
       methods: ['GET', 'POST'],
+      credentials: true,
     },
   });
 
@@ -417,15 +436,16 @@ export async function setupSocketIO(
   // Setup /collab namespace with optional JWT authentication
   const collabNamespace = io.of('/collab');
 
-  // Check if authentication is required (can be disabled for testing)
-  const requireAuth = legacyCfg.requireAuth;
+  // Check if authentication is required (can be disabled for testing, always on in production)
+  const requireAuth = config.isProduction ? true : legacyCfg.requireAuth;
 
   // JWT authentication middleware for /collab namespace
   if (requireAuth) {
     collabNamespace.use((socket: AuthenticatedSocket, next) => {
       const token =
         socket.handshake.auth?.token ||
-        socket.handshake.headers?.authorization?.replace('Bearer ', '');
+        socket.handshake.headers?.authorization?.replace('Bearer ', '') ||
+        extractCookieToken(socket.handshake.headers?.cookie);
 
       if (!token) {
         console.warn('[Socket.IO] Connection rejected: No token provided');

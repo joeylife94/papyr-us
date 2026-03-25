@@ -2,8 +2,34 @@ import express, { type Express, type Request, Response, NextFunction } from 'exp
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
+import cookieParser from 'cookie-parser';
 import { config } from './config.js';
 import helmet from 'helmet';
+
+const SENSITIVE_KEYS = new Set([
+  'token',
+  'accessToken',
+  'refreshToken',
+  'password',
+  'hashedPassword',
+  'secret',
+  'authorization',
+]);
+
+function maskSensitiveData(obj: Record<string, any>): Record<string, any> {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return obj;
+  const masked: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (SENSITIVE_KEYS.has(key)) {
+      masked[key] = '[REDACTED]';
+    } else if (value && typeof value === 'object' && !Array.isArray(value)) {
+      masked[key] = maskSensitiveData(value);
+    } else {
+      masked[key] = value;
+    }
+  }
+  return masked;
+}
 
 export function log(message: string, source = 'express') {
   const formattedTime = new Date().toLocaleTimeString('en-US', {
@@ -18,6 +44,7 @@ export function log(message: string, source = 'express') {
 export function setupBasicMiddleware(app: Express) {
   app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
+  app.use(cookieParser());
 }
 
 export function setupLoggingMiddleware(app: Express) {
@@ -37,7 +64,7 @@ export function setupLoggingMiddleware(app: Express) {
       if (path.startsWith('/api')) {
         let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
         if (capturedJsonResponse) {
-          logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+          logLine += ` :: ${JSON.stringify(maskSensitiveData(capturedJsonResponse))}`;
         }
 
         if (logLine.length > 80) {
@@ -94,12 +121,17 @@ interface AuthRequest extends Request {
 
 export function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
+  let token: string | undefined;
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ message: 'No token provided' });
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  } else if ((req as any).cookies?.accessToken) {
+    token = (req as any).cookies.accessToken;
   }
 
-  const token = authHeader.split(' ')[1];
+  if (!token) {
+    return res.status(401).json({ message: 'No token provided' });
+  }
 
   try {
     const payload = jwt.verify(token, config.jwtSecret);
@@ -113,8 +145,13 @@ export function authMiddleware(req: AuthRequest, res: Response, next: NextFuncti
 // Optional auth: extracts user from JWT if present, but doesn't require it
 export function optionalAuth(req: AuthRequest, _res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
+  let token: string | undefined;
   if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.split(' ')[1];
+    token = authHeader.split(' ')[1];
+  } else if ((req as any).cookies?.accessToken) {
+    token = (req as any).cookies.accessToken;
+  }
+  if (token) {
     try {
       const payload = jwt.verify(token, config.jwtSecret);
       req.user = payload;

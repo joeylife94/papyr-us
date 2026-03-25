@@ -49,10 +49,10 @@ import {
   getFileInfo,
   getFileTeamId,
 } from './services/upload.js';
-import { smartSearch, generateSearchSuggestions } from './services/ai.js';
+import { smartSearch, generateSearchSuggestions, inlineAIAction } from './services/ai.js';
 import * as aiService from './services/ai.js';
 import { aiAssistant } from './services/ai-assistant.js';
-import { triggerWorkflows, initWorkflowService } from './services/workflow.js';
+import { triggerWorkflows, initWorkflowService, executeWorkflow } from './services/workflow.js';
 import logger from './services/logger.js';
 import path from 'path';
 import { existsSync, appendFileSync } from 'fs';
@@ -215,13 +215,24 @@ export async function registerRoutes(
         expiresIn: '30d',
       });
 
-      res.status(201).json({
-        message: 'User registered successfully',
-        token: accessToken,
-        accessToken,
-        refreshToken,
-        user: { id: newUser.id, name: newUser.name, email: newUser.email, role },
-      });
+      res
+        .cookie('accessToken', accessToken, {
+          httpOnly: true,
+          secure: config.isProduction,
+          sameSite: 'strict',
+          maxAge: 7 * 24 * 60 * 60 * 1000,
+        })
+        .cookie('refreshToken', refreshToken, {
+          httpOnly: true,
+          secure: config.isProduction,
+          sameSite: 'strict',
+          maxAge: 30 * 24 * 60 * 60 * 1000,
+        })
+        .status(201)
+        .json({
+          message: 'User registered successfully',
+          user: { id: newUser.id, name: newUser.name, email: newUser.email, role },
+        });
       console.log('--- [REGISTER] Response sent ---');
     } catch (error: any) {
       logger.error('Registration critical error:', {
@@ -287,21 +298,32 @@ export async function registerRoutes(
         });
       }
 
-      res.json({
-        token: accessToken,
-        accessToken,
-        refreshToken,
-        user: { id: user.id, name: user.name, email: user.email, role },
-      });
+      res
+        .cookie('accessToken', accessToken, {
+          httpOnly: true,
+          secure: config.isProduction,
+          sameSite: 'strict',
+          maxAge: 7 * 24 * 60 * 60 * 1000,
+        })
+        .cookie('refreshToken', refreshToken, {
+          httpOnly: true,
+          secure: config.isProduction,
+          sameSite: 'strict',
+          maxAge: 30 * 24 * 60 * 60 * 1000,
+        })
+        .json({
+          user: { id: user.id, name: user.name, email: user.email, role },
+        });
     } catch (error) {
       res.status(500).json({ message: 'Server error during login' });
     }
   });
 
-  // Refresh access token using refresh token
+  // Refresh access token using refresh token (reads from httpOnly cookie)
   app.post('/api/auth/refresh', async (req, res) => {
     try {
-      const { refreshToken } = req.body;
+      // Cookie-based refresh token only — no body fallback
+      const refreshToken = (req as any).cookies?.refreshToken;
 
       if (!refreshToken) {
         return res.status(401).json({ message: 'Refresh token required' });
@@ -332,12 +354,22 @@ export async function registerRoutes(
         expiresIn: '30d',
       });
 
-      res.json({
-        token: newAccessToken,
-        accessToken: newAccessToken,
-        refreshToken: newRefreshToken,
-        user: { id: user.id, name: user.name, email: user.email, role },
-      });
+      res
+        .cookie('accessToken', newAccessToken, {
+          httpOnly: true,
+          secure: config.isProduction,
+          sameSite: 'strict',
+          maxAge: 7 * 24 * 60 * 60 * 1000,
+        })
+        .cookie('refreshToken', newRefreshToken, {
+          httpOnly: true,
+          secure: config.isProduction,
+          sameSite: 'strict',
+          maxAge: 30 * 24 * 60 * 60 * 1000,
+        })
+        .json({
+          user: { id: user.id, name: user.name, email: user.email, role },
+        });
     } catch (error) {
       logger.error('Token refresh failed:', {
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -369,6 +401,22 @@ export async function registerRoutes(
     }
   });
 
+  // Logout — clear auth cookies
+  app.post('/api/auth/logout', (req, res) => {
+    res
+      .clearCookie('accessToken', {
+        httpOnly: true,
+        secure: config.isProduction,
+        sameSite: 'strict',
+      })
+      .clearCookie('refreshToken', {
+        httpOnly: true,
+        secure: config.isProduction,
+        sameSite: 'strict',
+      })
+      .json({ message: 'Logged out successfully' });
+  });
+
   // --- Social Auth Routes ---
 
   // Google Auth
@@ -379,11 +427,30 @@ export async function registerRoutes(
       passport.authenticate('google', { failureRedirect: '/login', session: false }),
       (req: any, res) => {
         const role = config.adminEmails.includes(req.user.email.toLowerCase()) ? 'admin' : 'user';
-        const token = jwt.sign({ id: req.user.id, email: req.user.email, role }, config.jwtSecret, {
-          expiresIn: '7d',
+        const accessToken = jwt.sign(
+          { id: req.user.id, email: req.user.email, role },
+          config.jwtSecret,
+          {
+            expiresIn: '7d',
+          }
+        );
+        const refreshToken = jwt.sign({ id: req.user.id, type: 'refresh' }, config.jwtSecret, {
+          expiresIn: '30d',
         });
-        // Redirect to login page with token as query parameter (avoids XSS via inline script)
-        res.redirect(`/login?token=${encodeURIComponent(token)}`);
+        res
+          .cookie('accessToken', accessToken, {
+            httpOnly: true,
+            secure: config.isProduction,
+            sameSite: 'strict',
+            maxAge: 7 * 24 * 60 * 60 * 1000,
+          })
+          .cookie('refreshToken', refreshToken, {
+            httpOnly: true,
+            secure: config.isProduction,
+            sameSite: 'strict',
+            maxAge: 30 * 24 * 60 * 60 * 1000,
+          })
+          .redirect('/');
       }
     );
   }
@@ -396,11 +463,30 @@ export async function registerRoutes(
       passport.authenticate('github', { failureRedirect: '/login', session: false }),
       (req: any, res) => {
         const role = config.adminEmails.includes(req.user.email.toLowerCase()) ? 'admin' : 'user';
-        const token = jwt.sign({ id: req.user.id, email: req.user.email, role }, config.jwtSecret, {
-          expiresIn: '7d',
+        const accessToken = jwt.sign(
+          { id: req.user.id, email: req.user.email, role },
+          config.jwtSecret,
+          {
+            expiresIn: '7d',
+          }
+        );
+        const refreshToken = jwt.sign({ id: req.user.id, type: 'refresh' }, config.jwtSecret, {
+          expiresIn: '30d',
         });
-        // Redirect to login page with token as query parameter (avoids XSS via inline script)
-        res.redirect(`/login?token=${encodeURIComponent(token)}`);
+        res
+          .cookie('accessToken', accessToken, {
+            httpOnly: true,
+            secure: config.isProduction,
+            sameSite: 'strict',
+            maxAge: 7 * 24 * 60 * 60 * 1000,
+          })
+          .cookie('refreshToken', refreshToken, {
+            httpOnly: true,
+            secure: config.isProduction,
+            sameSite: 'strict',
+            maxAge: 30 * 24 * 60 * 60 * 1000,
+          })
+          .redirect('/');
       }
     );
   }
@@ -1152,9 +1238,21 @@ export async function registerRoutes(
     async (req: AuthRequest, res) => {
       try {
         const pageId = parseInt(req.params.pageId);
+        const authenticatedUser = req.user as any;
+
+        // Server-derive identity from authenticated user; reject anonymous for protected paths
+        if (!authenticatedUser?.id) {
+          return res.status(401).json({ message: 'Authentication required to create comments' });
+        }
+        const authorName = authenticatedUser.email || authenticatedUser.name || 'User';
+        const authorUserId: number = authenticatedUser.id;
+
         const commentData = insertCommentSchema.parse({
-          ...req.body,
+          content: req.body.content,
+          author: authorName,
+          authorUserId,
           pageId,
+          ...(req.body.parentId !== undefined && { parentId: req.body.parentId }),
         });
         const comment = await storage.createComment(commentData);
 
@@ -1186,84 +1284,78 @@ export async function registerRoutes(
     }
   );
 
-  app.put(
-    '/api/comments/:id',
-    optionalAuth,
-    requireAuthIfEnabled,
-    async (req: AuthRequest, res) => {
-      try {
-        const id = parseInt(req.params.id);
+  app.put('/api/comments/:id', authMiddleware, async (req: AuthRequest, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const userId = (req.user as any)?.id;
 
-        // Look up the comment to find its pageId for permission check
-        const existing = await storage.getComment(id);
-        if (!existing) {
-          return res.status(404).json({ message: 'Comment not found' });
-        }
-
-        // Always verify page permission for comment editing
-        const hasPermission = await storage.checkPagePermission(
-          req.user?.id,
-          existing.pageId,
-          'commenter'
-        );
-        if (!hasPermission) {
-          return !req.user?.id
-            ? res.status(401).json({ message: 'Authentication required to edit this comment' })
-            : res.status(403).json({ message: 'Insufficient permissions to edit this comment' });
-        }
-
-        const updateData = updateCommentSchema.parse(req.body);
-        const comment = await storage.updateComment(id, updateData);
-
-        if (!comment) {
-          return res.status(404).json({ message: 'Comment not found' });
-        }
-
-        res.json(comment);
-      } catch (error) {
-        res.status(400).json({ message: 'Invalid update data', error });
+      // Look up the comment to verify ownership
+      const existing = await storage.getComment(id);
+      if (!existing) {
+        return res.status(404).json({ message: 'Comment not found' });
       }
-    }
-  );
 
-  app.delete(
-    '/api/comments/:id',
-    optionalAuth,
-    requireAuthIfEnabled,
-    async (req: AuthRequest, res) => {
-      try {
-        const id = parseInt(req.params.id);
-
-        // Look up the comment to find its pageId for permission check
-        const existing = await storage.getComment(id);
-        if (!existing) {
-          return res.status(404).json({ message: 'Comment not found' });
-        }
-
-        // Always verify page permission for comment deletion
-        const hasPermission = await storage.checkPagePermission(
-          req.user?.id,
-          existing.pageId,
-          'editor'
-        );
-        if (!hasPermission) {
-          return !req.user?.id
-            ? res.status(401).json({ message: 'Authentication required to delete this comment' })
-            : res.status(403).json({ message: 'Insufficient permissions to delete this comment' });
-        }
-
-        const deleted = await storage.deleteComment(id);
-
-        if (!deleted) {
-          return res.status(404).json({ message: 'Comment not found' });
-        }
-
-        res.json({ message: 'Comment deleted successfully' });
-      } catch (error) {
-        res.status(400).json({ message: 'Invalid comment ID' });
+      // Owner-based authorization: only the comment author or an admin may edit
+      const isOwner = existing.authorUserId != null && existing.authorUserId === userId;
+      const isAdmin = (req.user as any)?.role === 'admin';
+      if (!isOwner && !isAdmin) {
+        return res
+          .status(403)
+          .json({ message: 'Only the comment author or an admin can edit this comment' });
       }
+
+      // updateCommentSchema already strips author/authorUserId to prevent identity tampering
+      const updateData = updateCommentSchema.parse(req.body);
+      const comment = await storage.updateComment(id, updateData);
+
+      if (!comment) {
+        return res.status(404).json({ message: 'Comment not found' });
+      }
+
+      res.json(comment);
+    } catch (error) {
+      res.status(400).json({ message: 'Invalid update data', error });
     }
-  );
+  });
+
+  app.delete('/api/comments/:id', authMiddleware, async (req: AuthRequest, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const userId = (req.user as any)?.id;
+
+      // Look up the comment to verify ownership
+      const existing = await storage.getComment(id);
+      if (!existing) {
+        return res.status(404).json({ message: 'Comment not found' });
+      }
+
+      // Owner-based authorization: comment author, page editor, or admin may delete
+      const isOwner = existing.authorUserId != null && existing.authorUserId === userId;
+      const isAdmin = (req.user as any)?.role === 'admin';
+      let isPageEditor = false;
+      if (!isOwner && !isAdmin) {
+        isPageEditor = await storage.checkPagePermission(userId, existing.pageId, 'editor');
+      }
+
+      if (!isOwner && !isAdmin && !isPageEditor) {
+        return res
+          .status(403)
+          .json({
+            message: 'Only the comment author, page editor, or admin can delete this comment',
+          });
+      }
+
+      const deleted = await storage.deleteComment(id);
+
+      if (!deleted) {
+        return res.status(404).json({ message: 'Comment not found' });
+      }
+
+      res.json({ message: 'Comment deleted successfully' });
+    } catch (error) {
+      res.status(400).json({ message: 'Invalid comment ID' });
+    }
+  });
 
   // ==================== Page Permissions API ====================
 
@@ -1788,7 +1880,7 @@ export async function registerRoutes(
       try {
         const { password } = req.body;
         if (password === config.adminPassword) {
-          // Optional: issue a short-lived admin token for convenience
+          // Issue a short-lived admin token via httpOnly cookie only
           const token = jwt.sign(
             { role: 'admin', via: 'password' },
             (config as any).jwtSecret || 'your-default-secret',
@@ -1796,7 +1888,14 @@ export async function registerRoutes(
               expiresIn: '2h',
             }
           );
-          res.json({ success: true, token });
+          res
+            .cookie('accessToken', token, {
+              httpOnly: true,
+              secure: config.isProduction,
+              sameSite: 'strict',
+              maxAge: 2 * 60 * 60 * 1000,
+            })
+            .json({ success: true });
         } else {
           res.status(401).json({ message: 'Invalid password' });
         }
@@ -3445,6 +3544,26 @@ export async function registerRoutes(
             return res.status(400).json({ error: 'Team not found' });
           }
         }
+        // Validate action configs
+        const actions = workflowData.actions;
+        if (Array.isArray(actions)) {
+          for (const action of actions) {
+            if (
+              (action.type === 'webhook' || action.type === 'slack_webhook') &&
+              (!action.config?.url || !String(action.config.url).trim())
+            ) {
+              return res.status(400).json({ error: 'Webhook actions require a URL in config' });
+            }
+            if (
+              action.type === 'send_notification' &&
+              (!action.config?.message || !String(action.config.message).trim())
+            ) {
+              return res
+                .status(400)
+                .json({ error: 'Notification actions require a message in config' });
+            }
+          }
+        }
         const workflow = await storage.createWorkflow(workflowData);
         res.status(201).json(workflow);
       } catch (error) {
@@ -3564,6 +3683,31 @@ export async function registerRoutes(
       } catch (error) {
         console.error('Error toggling workflow:', error);
         res.status(500).json({ error: 'Failed to toggle workflow' });
+      }
+    });
+
+    // Dry-run / test a workflow without persisting side-effects
+    app.post('/api/workflows/:id/test', requireAuthIfEnabled, async (req: AuthRequest, res) => {
+      try {
+        const id = parseInt(req.params.id);
+        const workflow = await storage.getWorkflow(id);
+        if (!workflow) {
+          return res.status(404).json({ error: 'Workflow not found' });
+        }
+        if (workflow.teamId && req.user?.id) {
+          const userTeamIds = await storage.getUserTeamIds(req.user.id);
+          if (!userTeamIds.includes(Number(workflow.teamId))) {
+            return res.status(403).json({ message: 'You are not a member of this team' });
+          }
+        } else if (workflow.teamId && config.enforceAuthForWrites) {
+          return res.status(401).json({ message: 'Authentication required' });
+        }
+        const triggerData = req.body.triggerData || {};
+        const run = await executeWorkflow(workflow, triggerData);
+        res.json({ dryRun: true, run });
+      } catch (error) {
+        console.error('Error testing workflow:', error);
+        res.status(500).json({ error: 'Failed to test workflow' });
       }
     });
 
@@ -4260,6 +4404,29 @@ export async function registerRoutes(
       } catch (error) {
         console.error('AI auto-format error:', error);
         res.status(500).json({ error: 'Failed to format text' });
+      }
+    });
+
+    // Inline AI action on selected text (summarize | rewrite | taskify)
+    app.post('/api/ai/inline', requireAuthIfEnabled, async (req, res) => {
+      try {
+        const { action, text } = req.body;
+
+        if (!action || !text) {
+          return res.status(400).json({ error: 'action and text are required' });
+        }
+
+        if (!['summarize', 'rewrite', 'taskify'].includes(action)) {
+          return res
+            .status(400)
+            .json({ error: 'Invalid action. Must be: summarize, rewrite, or taskify' });
+        }
+
+        const result = await inlineAIAction(action, text);
+        res.json(result);
+      } catch (error) {
+        console.error('Inline AI error:', error);
+        res.status(500).json({ error: 'Failed to process inline AI request' });
       }
     });
   }

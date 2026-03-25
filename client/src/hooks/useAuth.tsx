@@ -5,7 +5,6 @@ interface AuthContextType {
   isLoading: boolean;
   user: any;
   login: (email: string, password: string) => Promise<void>;
-  socialLogin: (token: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -16,76 +15,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true); // true until initial auth check completes
   const [user, setUser] = useState(null);
 
-  const logout = useCallback(() => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('refreshToken');
+  const logout = useCallback(async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+    } catch {
+      // best-effort
+    }
     setIsAuthenticated(false);
     setUser(null);
   }, []);
 
-  const fetchUser = useCallback(
-    async (token: string) => {
-      try {
-        // Use the original fetch to bypass the http() monkey-patch, which would
-        // hard-redirect on 401 before we get a chance to handle it gracefully.
-        const realFetch: typeof fetch = (window as any).__ORIGINAL_FETCH__ || fetch;
-        const response = await realFetch('/api/auth/me', {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
-        if (response.ok || response.status === 304) {
-          const userData = await response.json();
-          setUser(userData);
-          setIsAuthenticated(true);
-        } else if (response.status === 401) {
-          // Token genuinely invalid/expired — try to refresh
-          const refreshed = await tryRefreshToken();
-          if (!refreshed) {
-            logout();
-          }
-        } else {
-          // 5xx or other transient server errors — keep the token, don't logout.
-          // The user can retry when the server recovers.
-          console.warn(`[auth] /api/auth/me returned ${response.status} — keeping session`);
-        }
-      } catch (error) {
-        // Network error (server down, DNS failure, etc.) — do NOT destroy the token.
-        // The user still has a valid JWT; once the server is reachable again requests
-        // will succeed without forcing a re-login.
-        console.warn('[auth] Network error during auth check — keeping session', error);
-      }
-    },
-    [logout]
-  );
-
-  /** Attempt to obtain a new access token using the stored refresh token. */
-  const tryRefreshToken = useCallback(async (): Promise<boolean> => {
-    const refreshToken = localStorage.getItem('refreshToken');
-    if (!refreshToken) return false;
-
+  const fetchUser = useCallback(async () => {
     try {
-      const realFetch: typeof fetch = (window as any).__ORIGINAL_FETCH__ || fetch;
-      const res = await realFetch('/api/auth/refresh', {
+      const response = await fetch('/api/auth/me', { credentials: 'include' });
+
+      if (response.ok || response.status === 304) {
+        const userData = await response.json();
+        setUser(userData);
+        setIsAuthenticated(true);
+      } else if (response.status === 401) {
+        // Token genuinely invalid/expired — try to refresh via cookie
+        const refreshed = await tryRefreshToken();
+        if (!refreshed) {
+          setIsAuthenticated(false);
+          setUser(null);
+        }
+      } else {
+        // 5xx or other transient server errors — keep session state, don't logout.
+        console.warn(`[auth] /api/auth/me returned ${response.status} — keeping session`);
+      }
+    } catch (error) {
+      // Network error — do NOT destroy session.
+      console.warn('[auth] Network error during auth check — keeping session', error);
+    }
+  }, []);
+
+  /** Attempt to obtain a new access token using the httpOnly refresh token cookie. */
+  const tryRefreshToken = useCallback(async (): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/auth/refresh', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken }),
+        credentials: 'include',
       });
       if (res.ok) {
-        const data = await res.json();
-        const newToken = data.token || data.accessToken;
-        if (newToken) {
-          localStorage.setItem('token', newToken);
-          if (data.refreshToken) localStorage.setItem('refreshToken', data.refreshToken);
-          // Re-fetch user with the new token
-          const meRes = await realFetch('/api/auth/me', {
-            headers: { Authorization: `Bearer ${newToken}` },
-          });
-          if (meRes.ok) {
-            const userData = await meRes.json();
-            setUser(userData);
-            setIsAuthenticated(true);
-            return true;
-          }
+        // Server issued new cookies; re-fetch user
+        const meRes = await fetch('/api/auth/me', { credentials: 'include' });
+        if (meRes.ok) {
+          const userData = await meRes.json();
+          setUser(userData);
+          setIsAuthenticated(true);
+          return true;
         }
       }
     } catch {
@@ -95,41 +74,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      fetchUser(token).finally(() => setIsLoading(false));
-    } else {
-      setIsLoading(false);
-    }
+    fetchUser().finally(() => setIsLoading(false));
   }, [fetchUser]);
 
   const login = async (email: string, password: string) => {
     const response = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({ email, password }),
     });
 
     if (response.ok) {
-      const data = await response.json();
-      const token = data.token || data.accessToken;
-      localStorage.setItem('token', token);
-      if (data.refreshToken) {
-        localStorage.setItem('refreshToken', data.refreshToken);
-      }
-      return fetchUser(token);
+      await fetchUser();
     } else {
       throw new Error('Login failed');
     }
   };
 
-  const socialLogin = async (token: string) => {
-    localStorage.setItem('token', token);
-    await fetchUser(token);
-  };
-
   return (
-    <AuthContext.Provider value={{ isAuthenticated, isLoading, user, login, socialLogin, logout }}>
+    <AuthContext.Provider value={{ isAuthenticated, isLoading, user, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

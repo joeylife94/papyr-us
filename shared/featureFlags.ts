@@ -48,9 +48,9 @@ export function resolveFeatureFlags(env: Record<string, string | undefined>): Fe
           FEATURE_ADMIN: true,
           FEATURE_CALENDAR: true,
           FEATURE_TEMPLATES: true,
-          FEATURE_AUTOMATION: false,
+          FEATURE_AUTOMATION: true,
           FEATURE_NOTIFICATIONS: true,
-          FEATURE_AI_SEARCH: false,
+          FEATURE_AI_SEARCH: true,
           FEATURE_COLLABORATION: false,
         };
 

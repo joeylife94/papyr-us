@@ -8,20 +8,8 @@ import http from 'http';
 // Mock storage module if it hits a real database
 vi.mock('../storage', async (importOriginal) => {
   const actual = (await importOriginal()) as any;
-  const dbStorageInstance = new actual.DBStorage();
-
-  // Replace all methods with vi.fn() to allow for mocking in tests
-  for (const key of Object.getOwnPropertyNames(actual.DBStorage.prototype)) {
-    if (key !== 'constructor' && typeof dbStorageInstance[key] === 'function') {
-      dbStorageInstance[key] = vi.fn();
-    }
-  }
-
-  return {
-    ...actual,
-    DBStorage: vi.fn(() => dbStorageInstance),
-    storage: dbStorageInstance,
-  };
+  const { mockStorageModuleFrom } = await import('./test-storage-helper');
+  return mockStorageModuleFrom(actual);
 });
 
 import { storage } from '../storage.js';

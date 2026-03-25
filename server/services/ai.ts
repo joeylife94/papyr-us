@@ -490,3 +490,36 @@ Find up to 5 most related pages, ranked by relevance (0.0-1.0).`;
     return [];
   }
 }
+
+export type InlineAIAction = 'summarize' | 'rewrite' | 'taskify';
+
+export interface InlineAIResult {
+  action: InlineAIAction;
+  result: string;
+}
+
+export async function inlineAIAction(
+  action: InlineAIAction,
+  text: string
+): Promise<InlineAIResult> {
+  const prompts: Record<InlineAIAction, string> = {
+    summarize: `Summarize the following text concisely in 1-3 sentences:\n\n${text}`,
+    rewrite: `Rewrite the following text to be clearer and more professional, preserving meaning:\n\n${text}`,
+    taskify: `Convert the following text into a concise, actionable task list. Return only the task lines, each starting with "- ":\n\n${text}`,
+  };
+
+  const response = await getOpenAI().chat.completions.create({
+    model: 'gpt-4o',
+    messages: [
+      {
+        role: 'system',
+        content: 'You are a precise writing assistant. Follow the instruction exactly.',
+      },
+      { role: 'user', content: prompts[action] },
+    ],
+    max_tokens: 512,
+  });
+
+  const result = response.choices[0].message.content?.trim() || '';
+  return { action, result };
+}

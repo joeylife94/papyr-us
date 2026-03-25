@@ -5,12 +5,14 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/useAuth';
 import { MessageCircle, Reply, Edit, Trash2, Send } from 'lucide-react';
 
 interface Comment {
   id: number;
   content: string;
   author: string;
+  authorUserId: number | null;
   pageId: number;
   parentId: number | null;
   createdAt: string;
@@ -27,16 +29,16 @@ export function Comments({ pageId }: CommentsProps) {
   const [editContent, setEditContent] = useState('');
   const [replyingTo, setReplyingTo] = useState<number | null>(null);
   const [replyContent, setReplyContent] = useState('');
-  const [authorName, setAuthorName] = useState('Anonymous User');
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user, isAuthenticated } = useAuth();
 
   // Fetch comments for this page
   const { data: comments = [], refetch } = useQuery<Comment[]>({
     queryKey: [`/api/pages/${pageId}/comments`],
     queryFn: async () => {
-      const response = await fetch(`/api/pages/${pageId}/comments`);
+      const response = await fetch(`/api/pages/${pageId}/comments`, { credentials: 'include' });
       if (!response.ok) throw new Error('Failed to fetch comments');
       return response.json();
     },
@@ -44,10 +46,11 @@ export function Comments({ pageId }: CommentsProps) {
 
   // Create comment mutation
   const createCommentMutation = useMutation({
-    mutationFn: async (data: { content: string; author: string; parentId?: number }) => {
+    mutationFn: async (data: { content: string; parentId?: number }) => {
       const response = await fetch(`/api/pages/${pageId}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(data),
       });
       if (!response.ok) throw new Error('Failed to create comment');
@@ -78,6 +81,7 @@ export function Comments({ pageId }: CommentsProps) {
       const response = await fetch(`/api/comments/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ content }),
       });
       if (!response.ok) throw new Error('Failed to update comment');
@@ -106,6 +110,7 @@ export function Comments({ pageId }: CommentsProps) {
     mutationFn: async (id: number) => {
       const response = await fetch(`/api/comments/${id}`, {
         method: 'DELETE',
+        credentials: 'include',
       });
       if (!response.ok) throw new Error('Failed to delete comment');
     },
@@ -127,19 +132,12 @@ export function Comments({ pageId }: CommentsProps) {
 
   const handleSubmitComment = () => {
     if (!newComment.trim()) return;
-    createCommentMutation.mutate({
-      content: newComment,
-      author: authorName,
-    });
+    createCommentMutation.mutate({ content: newComment });
   };
 
   const handleSubmitReply = (parentId: number) => {
     if (!replyContent.trim()) return;
-    createCommentMutation.mutate({
-      content: replyContent,
-      author: authorName,
-      parentId,
-    });
+    createCommentMutation.mutate({ content: replyContent, parentId });
   };
 
   const handleEditComment = (comment: Comment) => {
@@ -161,6 +159,13 @@ export function Comments({ pageId }: CommentsProps) {
     }
   };
 
+  // Determine if current user can edit/delete a comment
+  const canModify = (comment: Comment): boolean => {
+    if (!user) return false;
+    if (user.role === 'admin') return true;
+    return comment.authorUserId != null && comment.authorUserId === user.id;
+  };
+
   const getInitials = (name: string) => {
     return name
       .split(' ')
@@ -168,6 +173,11 @@ export function Comments({ pageId }: CommentsProps) {
       .join('')
       .toUpperCase()
       .slice(0, 2);
+  };
+
+  const getDisplayAuthor = (comment: Comment): string => {
+    // Server-derived author; fall back for legacy comments without authorUserId
+    return comment.author || 'Unknown User';
   };
 
   const formatDate = (dateString: string) => {
@@ -192,38 +202,43 @@ export function Comments({ pageId }: CommentsProps) {
         <h3 className="text-lg font-semibold">Comments ({comments.length})</h3>
       </div>
 
-      {/* New Comment Form */}
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center space-x-2">
-            <input
-              type="text"
-              placeholder="Your name"
-              value={authorName}
-              onChange={(e) => setAuthorName(e.target.value)}
-              className="px-3 py-1 border rounded text-sm max-w-xs"
+      {/* New Comment Form — only show when authenticated */}
+      {isAuthenticated ? (
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center space-x-2">
+              <Avatar>
+                <AvatarFallback>{getInitials(user?.email || user?.name || 'U')}</AvatarFallback>
+              </Avatar>
+              <span className="text-sm font-medium">{user?.email || user?.name || 'You'}</span>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Textarea
+              placeholder="Write a comment..."
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              className="min-h-[80px]"
             />
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <Textarea
-            placeholder="Write a comment..."
-            value={newComment}
-            onChange={(e) => setNewComment(e.target.value)}
-            className="min-h-[80px]"
-          />
-          <div className="flex justify-end">
-            <Button
-              onClick={handleSubmitComment}
-              disabled={!newComment.trim() || createCommentMutation.isPending}
-              size="sm"
-            >
-              <Send className="h-4 w-4 mr-2" />
-              Post Comment
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+            <div className="flex justify-end">
+              <Button
+                onClick={handleSubmitComment}
+                disabled={!newComment.trim() || createCommentMutation.isPending}
+                size="sm"
+              >
+                <Send className="h-4 w-4 mr-2" />
+                Post Comment
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardContent className="py-6 text-center text-muted-foreground">
+            Sign in to leave a comment.
+          </CardContent>
+        </Card>
+      )}
 
       {/* Comments List */}
       <div className="space-y-4">
@@ -234,11 +249,14 @@ export function Comments({ pageId }: CommentsProps) {
               <CardContent className="pt-6">
                 <div className="flex items-start space-x-3">
                   <Avatar>
-                    <AvatarFallback>{getInitials(comment.author)}</AvatarFallback>
+                    <AvatarFallback>{getInitials(getDisplayAuthor(comment))}</AvatarFallback>
                   </Avatar>
                   <div className="flex-1 space-y-2">
                     <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-                      <span className="font-medium text-foreground">{comment.author}</span>
+                      <span className="font-medium text-foreground">
+                        {getDisplayAuthor(comment)}
+                      </span>
+                      {!comment.authorUserId && <span className="text-xs italic">(legacy)</span>}
                       <span>•</span>
                       <span>{formatDate(comment.createdAt)}</span>
                     </div>
@@ -265,30 +283,36 @@ export function Comments({ pageId }: CommentsProps) {
                           {comment.content}
                         </p>
                         <div className="flex space-x-2">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setReplyingTo(comment.id)}
-                          >
-                            <Reply className="h-3 w-3 mr-1" />
-                            Reply
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleEditComment(comment)}
-                          >
-                            <Edit className="h-3 w-3 mr-1" />
-                            Edit
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleDeleteComment(comment.id)}
-                          >
-                            <Trash2 className="h-3 w-3 mr-1" />
-                            Delete
-                          </Button>
+                          {isAuthenticated && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setReplyingTo(comment.id)}
+                            >
+                              <Reply className="h-3 w-3 mr-1" />
+                              Reply
+                            </Button>
+                          )}
+                          {canModify(comment) && (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleEditComment(comment)}
+                              >
+                                <Edit className="h-3 w-3 mr-1" />
+                                Edit
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleDeleteComment(comment.id)}
+                              >
+                                <Trash2 className="h-3 w-3 mr-1" />
+                                Delete
+                              </Button>
+                            </>
+                          )}
                         </div>
                       </div>
                     )}
@@ -335,35 +359,40 @@ export function Comments({ pageId }: CommentsProps) {
                   <CardContent className="pt-6">
                     <div className="flex items-start space-x-3">
                       <Avatar>
-                        <AvatarFallback>{getInitials(reply.author)}</AvatarFallback>
+                        <AvatarFallback>{getInitials(getDisplayAuthor(reply))}</AvatarFallback>
                       </Avatar>
                       <div className="flex-1 space-y-2">
                         <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-                          <span className="font-medium text-foreground">{reply.author}</span>
+                          <span className="font-medium text-foreground">
+                            {getDisplayAuthor(reply)}
+                          </span>
+                          {!reply.authorUserId && <span className="text-xs italic">(legacy)</span>}
                           <span>•</span>
                           <span>{formatDate(reply.createdAt)}</span>
                         </div>
                         <p className="text-sm leading-relaxed whitespace-pre-wrap">
                           {reply.content}
                         </p>
-                        <div className="flex space-x-2">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleEditComment(reply)}
-                          >
-                            <Edit className="h-3 w-3 mr-1" />
-                            Edit
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleDeleteComment(reply.id)}
-                          >
-                            <Trash2 className="h-3 w-3 mr-1" />
-                            Delete
-                          </Button>
-                        </div>
+                        {canModify(reply) && (
+                          <div className="flex space-x-2">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleEditComment(reply)}
+                            >
+                              <Edit className="h-3 w-3 mr-1" />
+                              Edit
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleDeleteComment(reply.id)}
+                            >
+                              <Trash2 className="h-3 w-3 mr-1" />
+                              Delete
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </CardContent>

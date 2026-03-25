@@ -146,9 +146,9 @@ export function useYjsCollaboration({
   useEffect(() => {
     if (!enabled || !pageId) return;
 
-    const token = localStorage.getItem('token');
+    // Auth is handled via httpOnly cookies — no localStorage token needed
     const socket = io('/yjs', {
-      auth: { token },
+      withCredentials: true,
       transports: ['websocket', 'polling'],
     });
 
