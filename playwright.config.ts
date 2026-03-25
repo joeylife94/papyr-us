@@ -11,9 +11,11 @@ import { defineConfig, devices } from '@playwright/test';
 /**
  * See https://playwright.dev/docs/test-configuration.
  */
-export default defineConfig({
+
   const e2ePort = process.env.PW_TEST_PORT || '5003';
   const e2eBaseUrl = process.env.BASE_URL || `http://localhost:${e2ePort}`;
+
+export default defineConfig({
 
   // globalSetup should be a path string in ESM environments
   globalSetup: './tests/global-setup',
