@@ -158,6 +158,7 @@ interface CollaborationSession {
 interface AuthenticatedSocket extends Socket {
   userId?: string;
   userEmail?: string;
+  userRole?: string;
 }
 
 class CollaborationManager {
@@ -443,7 +444,6 @@ export async function setupSocketIO(
   if (requireAuth) {
     collabNamespace.use((socket: AuthenticatedSocket, next) => {
       const token =
-        socket.handshake.auth?.token ||
         socket.handshake.headers?.authorization?.replace('Bearer ', '') ||
         extractCookieToken(socket.handshake.headers?.cookie);
 
@@ -453,9 +453,14 @@ export async function setupSocketIO(
       }
 
       try {
-        const decoded = jwt.verify(token, config.jwtSecret) as { id: string; email: string };
-        socket.userId = decoded.id;
+        const decoded = jwt.verify(token, config.jwtSecret) as {
+          id: string | number;
+          email?: string;
+          role?: string;
+        };
+        socket.userId = String(decoded.id);
         socket.userEmail = decoded.email;
+        socket.userRole = decoded.role;
         console.log(`[Socket.IO] User authenticated: ${socket.userEmail} (${socket.userId})`);
         next();
       } catch (error) {
@@ -472,6 +477,13 @@ export async function setupSocketIO(
 
   collabNamespace.on('connection', (socket: AuthenticatedSocket) => {
     console.log(`[Collab] User connected: ${socket.userEmail} (${socket.id})`);
+
+    if (enableNotifications) {
+      const authenticatedUserId = parsePositiveInt(socket.userId);
+      if (authenticatedUserId) {
+        socket.join(`user:${authenticatedUserId}`);
+      }
+    }
 
     const rate = createRateLimiter();
 
@@ -685,8 +697,35 @@ export async function setupSocketIO(
       // Handle user presence for member notifications
       socket.on(
         'join-member',
-        (data: { memberId: number | string }, ack?: (resp: { ok: boolean }) => void) => {
-          const memberRoom = `user:${data.memberId}`;
+        (
+          data: { memberId: number | string },
+          ack?: (resp: { ok: boolean; error?: string }) => void
+        ) => {
+          const requestedMemberId = parsePositiveInt(data.memberId);
+          const authenticatedUserId = parsePositiveInt(socket.userId);
+          const isAdmin = socket.userRole === 'admin';
+
+          if (!requestedMemberId) {
+            if (typeof ack === 'function') ack({ ok: false, error: 'Invalid memberId' });
+            return;
+          }
+
+          if (!authenticatedUserId) {
+            if (typeof ack === 'function') ack({ ok: false, error: 'Authentication required' });
+            return;
+          }
+
+          if (requestedMemberId !== authenticatedUserId && !isAdmin) {
+            logger.warn('Denied unauthorized notification room join', {
+              socketId: socket.id,
+              authenticatedUserId,
+              requestedMemberId,
+            });
+            if (typeof ack === 'function') ack({ ok: false, error: 'Forbidden' });
+            return;
+          }
+
+          const memberRoom = `user:${requestedMemberId}`;
           socket.join(memberRoom);
           console.log(`[Collab] User ${socket.userEmail} joined member room: ${memberRoom}`);
           if (typeof ack === 'function') ack({ ok: true });

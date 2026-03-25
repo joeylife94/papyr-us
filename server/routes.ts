@@ -3465,6 +3465,37 @@ export async function registerRoutes(
   if (featureFlags.FEATURE_AUTOMATION) {
     // ==================== Workflows API ====================
 
+    const validateWorkflowActions = (actions: unknown) => {
+      if (!Array.isArray(actions)) return null;
+
+      for (const action of actions) {
+        if (
+          (action.type === 'webhook' || action.type === 'slack_webhook') &&
+          (!action.config?.url || !String(action.config.url).trim())
+        ) {
+          return 'Webhook actions require a URL in config';
+        }
+
+        if (
+          action.type === 'send_notification' &&
+          (!action.config?.message || !String(action.config.message).trim())
+        ) {
+          return 'Notification actions require a message in config';
+        }
+
+        if (
+          action.type === 'send_email' &&
+          [action.config?.recipients, action.config?.subject, action.config?.message].some(
+            (value) => !String(value || '').trim()
+          )
+        ) {
+          return 'Email actions require recipients, subject, and message in config';
+        }
+      }
+
+      return null;
+    };
+
     app.get(
       '/api/workflows',
       optionalAuth,
@@ -3545,24 +3576,9 @@ export async function registerRoutes(
           }
         }
         // Validate action configs
-        const actions = workflowData.actions;
-        if (Array.isArray(actions)) {
-          for (const action of actions) {
-            if (
-              (action.type === 'webhook' || action.type === 'slack_webhook') &&
-              (!action.config?.url || !String(action.config.url).trim())
-            ) {
-              return res.status(400).json({ error: 'Webhook actions require a URL in config' });
-            }
-            if (
-              action.type === 'send_notification' &&
-              (!action.config?.message || !String(action.config.message).trim())
-            ) {
-              return res
-                .status(400)
-                .json({ error: 'Notification actions require a message in config' });
-            }
-          }
+        const actionValidationError = validateWorkflowActions(workflowData.actions);
+        if (actionValidationError) {
+          return res.status(400).json({ error: actionValidationError });
         }
         const workflow = await storage.createWorkflow(workflowData);
         res.status(201).json(workflow);
@@ -3620,6 +3636,10 @@ export async function registerRoutes(
             } else if (config.enforceAuthForWrites) {
               return res.status(401).json({ message: 'Authentication required' });
             }
+          }
+          const actionValidationError = validateWorkflowActions(workflowData.actions);
+          if (actionValidationError) {
+            return res.status(400).json({ error: actionValidationError });
           }
           const workflow = await storage.updateWorkflow(id, workflowData);
           if (!workflow) {

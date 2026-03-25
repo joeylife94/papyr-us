@@ -1,5 +1,5 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
-import { registerTestUser, authHeader } from './e2e-helpers';
+import { registerTestUser, createAuthenticatedApiContext } from './e2e-helpers';
 
 /**
  * Team Collaboration E2E Tests
@@ -16,21 +16,23 @@ import { registerTestUser, authHeader } from './e2e-helpers';
  * rejection of unauthorized access), see server/tests/team-auth.test.ts.
  */
 
-let token: string;
+let authRequest: APIRequestContext;
 
 test.beforeAll(async ({ request }) => {
   const result = await registerTestUser(request, 'team-collab');
-  token = result.token;
+  authRequest = await createAuthenticatedApiContext(result.email, result.password);
+});
+
+test.afterAll(async () => {
+  await authRequest?.dispose();
 });
 
 async function createTeam(
   request: APIRequestContext,
   name: string,
-  displayName: string,
-  headers: Record<string, string>
+  displayName: string
 ) {
   const resp = await request.post('/api/teams', {
-    headers,
     data: { name, displayName, description: `E2E team ${name}` },
   });
   expect(resp.status()).toBe(201);
@@ -45,11 +47,9 @@ async function createMember(
   name: string,
   email: string,
   role: string,
-  teamId: number,
-  headers: Record<string, string>
+  teamId: number
 ) {
   const resp = await request.post('/api/members', {
-    headers,
     data: { name, email, role, teamId, skills: [] },
   });
   expect(resp.status()).toBe(201);
@@ -60,22 +60,22 @@ async function createMember(
 }
 
 test.describe('Team CRUD', () => {
-  test('create a team and read it back', async ({ request }) => {
+  test('create a team and read it back', async () => {
     const name = `e2e-team-${Date.now()}`;
-    const team = await createTeam(request, name, 'E2E Test Team', authHeader(token));
+    const team = await createTeam(authRequest, name, 'E2E Test Team');
 
-    const getResp = await request.get(`/api/teams/${team.id}`);
+    const getResp = await authRequest.get(`/api/teams/${team.id}`);
     expect(getResp.status()).toBe(200);
     const fetched = await getResp.json();
     expect(fetched.name).toBe(name);
     expect(fetched.displayName).toBe('E2E Test Team');
   });
 
-  test('list teams includes the created team', async ({ request }) => {
+  test('list teams includes the created team', async () => {
     const name = `e2e-list-${Date.now()}`;
-    const team = await createTeam(request, name, 'List Team', authHeader(token));
+    const team = await createTeam(authRequest, name, 'List Team');
 
-    const listResp = await request.get('/api/teams');
+    const listResp = await authRequest.get('/api/teams');
     expect(listResp.status()).toBe(200);
     const teams = await listResp.json();
     expect(Array.isArray(teams)).toBe(true);
@@ -83,12 +83,10 @@ test.describe('Team CRUD', () => {
     expect(found).toBeDefined();
   });
 
-  test('update a team', async ({ request }) => {
-    const headers = authHeader(token);
-    const team = await createTeam(request, `e2e-upd-${Date.now()}`, 'Old Name', headers);
+  test('update a team', async () => {
+    const team = await createTeam(authRequest, `e2e-upd-${Date.now()}`, 'Old Name');
 
-    const putResp = await request.put(`/api/teams/${team.id}`, {
-      headers,
+    const putResp = await authRequest.put(`/api/teams/${team.id}`, {
       data: { displayName: 'Updated Name' },
     });
     expect(putResp.status()).toBe(200);
@@ -96,53 +94,48 @@ test.describe('Team CRUD', () => {
     expect(updated.displayName).toBe('Updated Name');
   });
 
-  test('delete a team and verify 404', async ({ request }) => {
-    const headers = authHeader(token);
-    const team = await createTeam(request, `e2e-del-${Date.now()}`, 'Delete Me', headers);
+  test('delete a team and verify 404', async () => {
+    const team = await createTeam(authRequest, `e2e-del-${Date.now()}`, 'Delete Me');
 
-    const delResp = await request.delete(`/api/teams/${team.id}`, { headers });
+    const delResp = await authRequest.delete(`/api/teams/${team.id}`);
     expect(delResp.status()).toBe(204);
 
-    const getResp = await request.get(`/api/teams/${team.id}`);
+    const getResp = await authRequest.get(`/api/teams/${team.id}`);
     expect(getResp.status()).toBe(404);
   });
 });
 
 test.describe('Team Member Separation & Role Field Persistence', () => {
-  test('members assigned to team A do not appear in team B listing', async ({ request }) => {
+  test('members assigned to team A do not appear in team B listing', async () => {
     const ts = Date.now();
-    const headers = authHeader(token);
-    const teamA = await createTeam(request, `mem-a-${ts}`, 'Member Team A', headers);
-    const teamB = await createTeam(request, `mem-b-${ts}`, 'Member Team B', headers);
+    const teamA = await createTeam(authRequest, `mem-a-${ts}`, 'Member Team A');
+    const teamB = await createTeam(authRequest, `mem-b-${ts}`, 'Member Team B');
 
     // Create members with distinct roles for each team
     const leaderA = await createMember(
-      request,
+      authRequest,
       'Leader A',
       `leader-a-${ts}@example.com`,
       '팀장',
-      teamA.id,
-      headers
+      teamA.id
     );
     const devA = await createMember(
-      request,
+      authRequest,
       'Dev A',
       `dev-a-${ts}@example.com`,
       '개발자',
-      teamA.id,
-      headers
+      teamA.id
     );
     const pmB = await createMember(
-      request,
+      authRequest,
       'PM B',
       `pm-b-${ts}@example.com`,
       'PM',
-      teamB.id,
-      headers
+      teamB.id
     );
 
     // Verify team A members
-    const respA = await request.get(`/api/members?teamId=${teamA.id}`);
+    const respA = await authRequest.get(`/api/members?teamId=${teamA.id}`);
     expect(respA.status()).toBe(200);
     const membersA = await respA.json();
     expect(membersA.some((m: any) => m.id === leaderA.id)).toBe(true);
@@ -150,7 +143,7 @@ test.describe('Team Member Separation & Role Field Persistence', () => {
     expect(membersA.some((m: any) => m.id === pmB.id)).toBe(false);
 
     // Verify team B members
-    const respB = await request.get(`/api/members?teamId=${teamB.id}`);
+    const respB = await authRequest.get(`/api/members?teamId=${teamB.id}`);
     expect(respB.status()).toBe(200);
     const membersB = await respB.json();
     expect(membersB.some((m: any) => m.id === pmB.id)).toBe(true);
@@ -158,23 +151,20 @@ test.describe('Team Member Separation & Role Field Persistence', () => {
     expect(membersB.some((m: any) => m.id === devA.id)).toBe(false);
   });
 
-  test('member role field is preserved and updatable', async ({ request }) => {
+  test('member role field is preserved and updatable', async () => {
     const ts = Date.now();
-    const headers = authHeader(token);
-    const team = await createTeam(request, `role-${ts}`, 'Role Team', headers);
+    const team = await createTeam(authRequest, `role-${ts}`, 'Role Team');
     const member = await createMember(
-      request,
+      authRequest,
       'Role Test',
       `role-test-${ts}@example.com`,
       '개발자',
-      team.id,
-      headers
+      team.id
     );
     expect(member.role).toBe('개발자');
 
     // Update role
-    const putResp = await request.put(`/api/members/${member.id}`, {
-      headers,
+    const putResp = await authRequest.put(`/api/members/${member.id}`, {
       data: { role: '팀장' },
     });
     expect(putResp.status()).toBe(200);
@@ -182,57 +172,52 @@ test.describe('Team Member Separation & Role Field Persistence', () => {
     expect(updated.role).toBe('팀장');
 
     // Read back to confirm
-    const getResp = await request.get(`/api/members/${member.id}`);
+    const getResp = await authRequest.get(`/api/members/${member.id}`);
     expect(getResp.status()).toBe(200);
     const fetched = await getResp.json();
     expect(fetched.role).toBe('팀장');
   });
 
-  test('deleting a member returns 204 and subsequent GET returns 404', async ({ request }) => {
+  test('deleting a member returns 204 and subsequent GET returns 404', async () => {
     const ts = Date.now();
-    const headers = authHeader(token);
-    const team = await createTeam(request, `mem-del-${ts}`, 'Del Member Team', headers);
+    const team = await createTeam(authRequest, `mem-del-${ts}`, 'Del Member Team');
     const member = await createMember(
-      request,
+      authRequest,
       'Del Me',
       `del-me-${ts}@example.com`,
       '디자이너',
-      team.id,
-      headers
+      team.id
     );
 
-    const delResp = await request.delete(`/api/members/${member.id}`, { headers });
+    const delResp = await authRequest.delete(`/api/members/${member.id}`);
     expect(delResp.status()).toBe(204);
 
-    const getResp = await request.get(`/api/members/${member.id}`);
+    const getResp = await authRequest.get(`/api/members/${member.id}`);
     expect(getResp.status()).toBe(404);
   });
 });
 
 test.describe('Team Settings Verification', () => {
-  test('update team displayName and description and verify', async ({ request }) => {
+  test('update team displayName and description and verify', async () => {
     const ts = Date.now();
-    const headers = authHeader(token);
-    const team = await createTeam(request, `settings-${ts}`, 'Original Display', headers);
+    const team = await createTeam(authRequest, `settings-${ts}`, 'Original Display');
 
     // Update displayName
-    const put1 = await request.put(`/api/teams/${team.id}`, {
-      headers,
+    const put1 = await authRequest.put(`/api/teams/${team.id}`, {
       data: { displayName: 'New Display Name' },
     });
     expect(put1.status()).toBe(200);
     expect((await put1.json()).displayName).toBe('New Display Name');
 
     // Update description
-    const put2 = await request.put(`/api/teams/${team.id}`, {
-      headers,
+    const put2 = await authRequest.put(`/api/teams/${team.id}`, {
       data: { description: 'Updated description for testing' },
     });
     expect(put2.status()).toBe(200);
     expect((await put2.json()).description).toBe('Updated description for testing');
 
     // Read back to verify both
-    const getResp = await request.get(`/api/teams/${team.id}`);
+    const getResp = await authRequest.get(`/api/teams/${team.id}`);
     expect(getResp.status()).toBe(200);
     const fetched = await getResp.json();
     expect(fetched.displayName).toBe('New Display Name');
@@ -241,17 +226,15 @@ test.describe('Team Settings Verification', () => {
 });
 
 test.describe('Team Page Isolation', () => {
-  test('pages created under team A do not appear in team B listing', async ({ request }) => {
-    const headers = authHeader(token);
+  test('pages created under team A do not appear in team B listing', async () => {
     // Create two teams
-    const teamA = await createTeam(request, `iso-a-${Date.now()}`, 'Team A', headers);
-    const teamB = await createTeam(request, `iso-b-${Date.now()}`, 'Team B', headers);
+    const teamA = await createTeam(authRequest, `iso-a-${Date.now()}`, 'Team A');
+    const teamB = await createTeam(authRequest, `iso-b-${Date.now()}`, 'Team B');
 
     // Create a page scoped to team A
     const pageTitle = `Team A Page ${Date.now()}`;
     const slug = `team-a-page-${Date.now()}`;
-    const createResp = await request.post('/api/pages', {
-      headers,
+    const createResp = await authRequest.post('/api/pages', {
       data: {
         title: pageTitle,
         content: 'Team A exclusive content',
@@ -266,14 +249,14 @@ test.describe('Team Page Isolation', () => {
     const createdPage = await createResp.json();
 
     // Query pages for team A — should include the page
-    const teamAPages = await request.get(`/api/pages?teamId=${teamA.id}`);
+    const teamAPages = await authRequest.get(`/api/pages?teamId=${teamA.id}`);
     expect(teamAPages.status()).toBe(200);
     const teamABody = await teamAPages.json();
     const foundInA = teamABody.pages.find((p: any) => p.id === createdPage.id);
     expect(foundInA).toBeDefined();
 
     // Query pages for team B — should NOT include the page
-    const teamBPages = await request.get(`/api/pages?teamId=${teamB.id}`);
+    const teamBPages = await authRequest.get(`/api/pages?teamId=${teamB.id}`);
     expect(teamBPages.status()).toBe(200);
     const teamBBody = await teamBPages.json();
     const foundInB = teamBBody.pages.find((p: any) => p.id === createdPage.id);

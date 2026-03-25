@@ -4,6 +4,7 @@ import type { Express } from 'express';
 import express from 'express';
 import http from 'http';
 import jwt from 'jsonwebtoken';
+import cookieParser from 'cookie-parser';
 import { registerRoutes } from '../routes';
 
 const AI_TEST_SECRET = 'ai-test-secret';
@@ -74,12 +75,17 @@ import {
 import { storage } from '../storage';
 import { listUploadedFiles } from '../services/upload.js';
 
+function authCookie(token: string) {
+  return [`accessToken=${token}`];
+}
+
 let app: Express;
 let server: http.Server;
 
 beforeAll(async () => {
   app = express();
   app.use(express.json());
+  app.use(cookieParser());
   ({ httpServer: server } = await registerRoutes(app, storage));
 });
 
@@ -94,7 +100,6 @@ afterAll((done) => {
 describe('AI Services API', () => {
   // Shared auth token — all routes require authentication (enforceAuthForWrites: true)
   const token = jwt.sign({ id: 1, email: 'user@ai-test.com', role: 'user' }, AI_TEST_SECRET);
-  const authHeader = { Authorization: `Bearer ${token}` };
 
   it('TC-AI-001: should generate content with AI successfully', async () => {
     const prompt = 'Write a poem about coding.';
@@ -105,7 +110,7 @@ describe('AI Services API', () => {
 
     const response = await request(app)
       .post('/api/ai/generate')
-      .set(authHeader)
+      .set('Cookie', authCookie(token))
       .send({ prompt, type: 'poem' });
 
     expect(response.status).toBe(200);
@@ -118,7 +123,10 @@ describe('AI Services API', () => {
     const suggestions = { suggestions: ['Make it longer.', 'Add a joke.'] };
     (generateContentSuggestions as vi.Mock).mockResolvedValue(suggestions.suggestions);
 
-    const response = await request(app).post('/api/ai/improve').set(authHeader).send(content);
+    const response = await request(app)
+      .post('/api/ai/improve')
+      .set('Cookie', authCookie(token))
+      .send(content);
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual(suggestions);
@@ -145,7 +153,7 @@ describe('AI Services API', () => {
     const token = jwt.sign({ id: 1, email: 'user@test.com', role: 'user' }, AI_TEST_SECRET);
     const response = await request(app)
       .post('/api/ai/search')
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', authCookie(token))
       .send({ query, teamId });
 
     expect(response.status).toBe(200);
@@ -160,7 +168,7 @@ describe('AI Services API', () => {
 
     const response = await request(app)
       .post('/api/ai/search-suggestions')
-      .set(authHeader)
+      .set('Cookie', authCookie(token))
       .send({ query });
 
     expect(response.status).toBe(200);

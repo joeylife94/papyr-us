@@ -1,4 +1,5 @@
 import { test, expect, type Page, type Response, request } from '@playwright/test';
+import { loginPageWithCookies } from './e2e-helpers';
 
 async function registerUser(page: Page, name: string, email: string, pass: string) {
   // Prefer fast API-based registration; fall back to UI if needed
@@ -27,14 +28,13 @@ async function registerUser(page: Page, name: string, email: string, pass: strin
 }
 
 async function login(page: Page, email: string, password: string) {
-  // Try API login to set token directly for speed and stability
-  const ctx = await request.newContext({ baseURL: test.info().project.use?.baseURL as string });
-  const resp = await ctx.post('/api/auth/login', { data: { email, password } });
-  if (resp.ok()) {
-    const body = await resp.json();
-    await page.addInitScript((t) => localStorage.setItem('token', t), body.token);
+  // Prefer cookie-backed API login for speed and parity with production auth transport
+  try {
+    await loginPageWithCookies(page, email, password);
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     return;
+  } catch {
+    // Fall through to UI login
   }
 
   // Fallback to UI login
@@ -64,7 +64,6 @@ test('401 -> redirects to /login with redirect param when accessing protected ro
   // Ensure logged-out state AND disable the E2E ProtectedRoute bypass
   // (server injects __PLAYWRIGHT__=true via vite.ts when NODE_ENV=test)
   await page.addInitScript(() => {
-    localStorage.removeItem('token');
     // Prevent the server-injected script from setting __PLAYWRIGHT__
     Object.defineProperty(window, '__PLAYWRIGHT__', {
       value: false,
@@ -87,9 +86,8 @@ test('401 -> redirects to /login with redirect param when accessing protected ro
 test('401 write -> redirects to /login with redirect param when posting /api/pages while logged out', async ({
   page,
 }) => {
-  // Ensure fully logged-out: clear cookies and localStorage before navigating
+  // Ensure fully logged-out before navigating
   await page.context().clearCookies();
-  await page.addInitScript(() => localStorage.removeItem('token'));
 
   // Navigate to a known page and capture the pathname to assert redirect param
   await page.goto('/', { waitUntil: 'domcontentloaded' });

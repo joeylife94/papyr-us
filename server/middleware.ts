@@ -119,22 +119,30 @@ interface AuthRequest extends Request {
   user?: any;
 }
 
-export function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
-  const authHeader = req.headers.authorization;
-  let token: string | undefined;
+function extractBearerToken(authorizationHeader: string | undefined): string | undefined {
+  if (!authorizationHeader?.startsWith('Bearer ')) return undefined;
+  return authorizationHeader.slice('Bearer '.length).trim() || undefined;
+}
 
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    token = authHeader.split(' ')[1];
-  } else if ((req as any).cookies?.accessToken) {
-    token = (req as any).cookies.accessToken;
-  }
+function getRequestToken(req: AuthRequest): string | undefined {
+  return extractBearerToken(req.headers.authorization) || (req as any).cookies?.accessToken;
+}
+
+function verifyRequestToken(req: AuthRequest): any {
+  const token = getRequestToken(req);
+  if (!token) return null;
+  return jwt.verify(token, config.jwtSecret);
+}
+
+export function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
+  const token = getRequestToken(req);
 
   if (!token) {
     return res.status(401).json({ message: 'No token provided' });
   }
 
   try {
-    const payload = jwt.verify(token, config.jwtSecret);
+    const payload = verifyRequestToken(req);
     req.user = payload;
     next();
   } catch (error) {
@@ -144,16 +152,10 @@ export function authMiddleware(req: AuthRequest, res: Response, next: NextFuncti
 
 // Optional auth: extracts user from JWT if present, but doesn't require it
 export function optionalAuth(req: AuthRequest, _res: Response, next: NextFunction) {
-  const authHeader = req.headers.authorization;
-  let token: string | undefined;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    token = authHeader.split(' ')[1];
-  } else if ((req as any).cookies?.accessToken) {
-    token = (req as any).cookies.accessToken;
-  }
+  const token = getRequestToken(req);
   if (token) {
     try {
-      const payload = jwt.verify(token, config.jwtSecret);
+      const payload = verifyRequestToken(req);
       req.user = payload;
     } catch {
       // Invalid token — proceed without user
@@ -234,14 +236,14 @@ export function requireTeamMembership(req: AuthRequest, res: Response, next: Nex
 export function requireAdmin(req: AuthRequest, res: Response, next: NextFunction) {
   // Try to decode JWT directly if provided (so this middleware can be used standalone)
   try {
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.split(' ')[1];
-      const payload = jwt.verify(token, config.jwtSecret) as {
+    const payload = verifyRequestToken(req) as
+      | {
         id?: number;
         email?: string;
         role?: string;
-      };
+      }
+      | null;
+    if (payload) {
       req.user = payload;
     }
   } catch (_) {
@@ -284,18 +286,7 @@ export function writeAuthGate(req: AuthRequest, res: Response, next: NextFunctio
   // Allow auth endpoints and leave admin endpoints to requireAdmin
   if (path.startsWith('/api/auth') || path.startsWith('/api/admin')) return next();
 
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ message: 'Unauthorized' });
-  }
-  const token = authHeader.split(' ')[1];
-  try {
-    const payload = jwt.verify(token, config.jwtSecret);
-    req.user = payload;
-    next();
-  } catch {
-    return res.status(401).json({ message: 'Invalid token' });
-  }
+  return authMiddleware(req, res, next);
 }
 
 export function buildRateLimiter(opts?: { windowMs?: number; max?: number }) {
@@ -314,9 +305,8 @@ export function buildRateLimiter(opts?: { windowMs?: number; max?: number }) {
     keyGenerator: (req) => {
       // Prefer user id/email from JWT, fallback to IP
       try {
-        const auth = req.headers['authorization'];
-        if (typeof auth === 'string' && auth.startsWith('Bearer ')) {
-          const token = auth.split(' ')[1];
+        const token = getRequestToken(req as AuthRequest);
+        if (token) {
           const payload: any = jwt.decode(token);
           if (payload?.id || payload?.email) {
             return `${payload.id || ''}|${payload.email || ''}`;

@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
+import { http } from '@/lib/http';
 import {
   Workflow,
   Plus,
@@ -72,12 +73,17 @@ export default function AutomationPage() {
   // Fetch workflows
   const { data: workflows, isLoading } = useQuery<WorkflowData[]>({
     queryKey: [workflowsUrl],
+    queryFn: async () => {
+      const response = await http(workflowsUrl);
+      if (!response.ok) throw new Error('Failed to fetch workflows');
+      return response.json();
+    },
   });
 
   // Toggle workflow
   const toggleMutation = useMutation({
     mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) => {
-      const response = await fetch(`/api/workflows/${id}/toggle`, {
+      const response = await http(`/api/workflows/${id}/toggle`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -106,7 +112,7 @@ export default function AutomationPage() {
   // Delete workflow
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      const response = await fetch(`/api/workflows/${id}`, {
+      const response = await http(`/api/workflows/${id}`, {
         method: 'DELETE',
       });
       if (!response.ok) throw new Error('Failed to delete workflow');
@@ -143,7 +149,7 @@ export default function AutomationPage() {
       triggerType: string;
       actionType: string;
     }) => {
-      const response = await fetch('/api/workflows', {
+      const response = await http('/api/workflows', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

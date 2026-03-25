@@ -4,6 +4,7 @@ import type { Express } from 'express';
 import express from 'express';
 import http from 'http';
 import jwt from 'jsonwebtoken';
+import cookieParser from 'cookie-parser';
 import { registerRoutes } from '../routes';
 
 const TEST_SECRET = 'comment-test-secret';
@@ -40,6 +41,10 @@ function signToken(payload: { id: number; email: string; role: string }) {
   return jwt.sign(payload, TEST_SECRET, { expiresIn: '1h' });
 }
 
+function authCookie(token: string) {
+  return [`accessToken=${token}`];
+}
+
 const ownerUser = { id: 42, email: 'owner@test.com', role: 'user' };
 const otherUser = { id: 99, email: 'other@test.com', role: 'user' };
 const adminUser = { id: 1, email: 'admin@test.com', role: 'admin' };
@@ -50,6 +55,7 @@ let server: http.Server;
 beforeAll(async () => {
   app = express();
   app.use(express.json());
+  app.use(cookieParser());
   ({ httpServer: server } = await registerRoutes(app, storage));
 });
 
@@ -100,7 +106,7 @@ describe('Comments Management API', () => {
 
       const response = await request(app)
         .post(`/api/pages/${pageId}/comments`)
-        .set('Authorization', `Bearer ${token}`)
+        .set('Cookie', authCookie(token))
         .send({ content: 'A new comment' });
 
       expect(response.status).toBe(201);
@@ -136,7 +142,7 @@ describe('Comments Management API', () => {
 
       await request(app)
         .post(`/api/pages/${pageId}/comments`)
-        .set('Authorization', `Bearer ${token}`)
+        .set('Cookie', authCookie(token))
         .send({ content: 'hello', author: 'hacker', authorUserId: 999 });
 
       // The stored author should be from the JWT, not the body
@@ -171,7 +177,7 @@ describe('Comments Management API', () => {
 
       const response = await request(app)
         .put(`/api/comments/${mockComment.id}`)
-        .set('Authorization', `Bearer ${token}`)
+        .set('Cookie', authCookie(token))
         .send(updateData);
 
       expect(response.status).toBe(200);
@@ -186,7 +192,7 @@ describe('Comments Management API', () => {
 
       const response = await request(app)
         .put(`/api/comments/${mockComment.id}`)
-        .set('Authorization', `Bearer ${token}`)
+        .set('Cookie', authCookie(token))
         .send({ content: 'Hijack!' });
 
       expect(response.status).toBe(403);
@@ -199,7 +205,7 @@ describe('Comments Management API', () => {
 
       const response = await request(app)
         .put(`/api/comments/${mockComment.id}`)
-        .set('Authorization', `Bearer ${token}`)
+        .set('Cookie', authCookie(token))
         .send(updateData);
 
       expect(response.status).toBe(200);
@@ -219,7 +225,7 @@ describe('Comments Management API', () => {
 
       await request(app)
         .put(`/api/comments/${mockComment.id}`)
-        .set('Authorization', `Bearer ${token}`)
+        .set('Cookie', authCookie(token))
         .send({ content: 'ok', author: 'evil', authorUserId: 999 });
 
       // updateCommentSchema strips author/authorUserId
@@ -236,7 +242,7 @@ describe('Comments Management API', () => {
 
       const response = await request(app)
         .delete(`/api/comments/${mockComment.id}`)
-        .set('Authorization', `Bearer ${token}`);
+        .set('Cookie', authCookie(token));
 
       expect(response.status).toBe(200);
       expect(response.body.message).toBe('Comment deleted successfully');
@@ -249,7 +255,7 @@ describe('Comments Management API', () => {
 
       const response = await request(app)
         .delete(`/api/comments/${mockComment.id}`)
-        .set('Authorization', `Bearer ${token}`);
+        .set('Cookie', authCookie(token));
 
       expect(response.status).toBe(403);
     });
@@ -260,7 +266,7 @@ describe('Comments Management API', () => {
 
       const response = await request(app)
         .delete(`/api/comments/${mockComment.id}`)
-        .set('Authorization', `Bearer ${token}`);
+        .set('Cookie', authCookie(token));
 
       expect(response.status).toBe(200);
     });

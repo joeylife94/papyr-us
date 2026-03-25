@@ -110,7 +110,6 @@ function extractCookieToken(cookieHeader: string | undefined): string | undefine
 function getSocketIdentity(socket: Socket, cfg: CollabConfig): SocketIdentity {
   if (!cfg.requireAuth) return {};
   const token =
-    (socket.handshake.auth as any)?.token ||
     (socket.handshake.headers?.authorization as string | undefined)?.replace('Bearer ', '') ||
     extractCookieToken(socket.handshake.headers?.cookie as string | undefined);
   if (!token || typeof token !== 'string') return {};

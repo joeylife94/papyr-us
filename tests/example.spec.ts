@@ -1,4 +1,5 @@
 import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
+import { loginPageWithCookies } from './e2e-helpers';
 
 /**
  * Logs in a user through the UI.
@@ -75,9 +76,8 @@ async function createPage(
     const suiteCreds = (page as any).__e2eSuiteCreds;
     const envEmail = process.env.E2E_EMAIL || process.env.E2E_EMAIL_ADDRESS || '';
     const envPass = process.env.E2E_PASSWORD || '';
-    let token = (page as any).__e2eToken;
 
-    const attemptCreate = async (t?: string) =>
+    const attemptCreate = async () =>
       request.post('/api/pages', {
         data: {
           title,
@@ -93,23 +93,20 @@ async function createPage(
           author: 'E2E Test',
           tags: [],
         },
-        headers: t ? { Authorization: `Bearer ${t}` } : undefined,
       });
 
-    // Try create with existing token first
-    if (token) {
-      try {
-        const resp = await attemptCreate(token);
-        if (resp && resp.status() === 201) {
-          const body = await resp.json();
-          return body.slug;
-        }
-      } catch (e) {
-        // ignore and try login-based fallback
+    // Try create with the current request context first
+    try {
+      const resp = await attemptCreate();
+      if (resp && resp.status() === 201) {
+        const body = await resp.json();
+        return body.slug;
       }
+    } catch (e) {
+      // ignore and try login-based fallback
     }
 
-    // Try API login using suite creds or env vars, then create
+    // Re-authenticate the request context with cookies, then retry
     const loginEmail = suiteCreds?.email || envEmail;
     const loginPass = suiteCreds?.password || envPass;
     if (loginEmail && loginPass) {
@@ -118,12 +115,7 @@ async function createPage(
           data: { email: loginEmail, password: loginPass },
         });
         if (loginResp.status() === 200) {
-          const loginBody = await loginResp.json().catch(() => ({}));
-          token = loginBody.token || token;
-          try {
-            (page as any).__e2eToken = token;
-          } catch {}
-          const resp2 = await attemptCreate(token);
+          const resp2 = await attemptCreate();
           if (resp2 && resp2.status() === 201) {
             const body = await resp2.json();
             return body.slug;
@@ -264,7 +256,7 @@ test.describe('Wiki Page Management', () => {
   });
 
   test.beforeEach(async ({ page, request }) => {
-    // Authenticate via API and set token in localStorage to avoid flaky UI login flows.
+    // Authenticate both the API request context and browser context with cookie-backed sessions.
     let resp = await request.post('/api/auth/login', {
       data: { email: testUserEmail, password: testUserPassword },
     });
@@ -290,22 +282,8 @@ test.describe('Wiki Page Management', () => {
       console.warn(`Warning: API login returned ${resp.status()}; tests may fallback to UI login`);
     }
 
-    const body = await resp.json().catch(() => ({}));
-    const token = body.token;
-
-    if (token) {
-      // Ensure token is present in localStorage before any page scripts run
-      await page.addInitScript((t) => {
-        // eslint-disable-next-line no-undef
-        localStorage.setItem('token', t);
-      }, token);
-      // Also attach token to the page object so helpers can reuse it for API fallbacks
-      try {
-        // store on page for consumption by helpers; cast to any to avoid TS errors
-        (page as any).__e2eToken = token;
-      } catch (e) {
-        // ignore
-      }
+    if (resp.status() === 200) {
+      await loginPageWithCookies(page, testUserEmail, testUserPassword).catch(() => {});
       // attach suite credentials so helpers can attempt API login when needed
       try {
         (page as any).__e2eSuiteCreds = { email: testUserEmail, password: testUserPassword };
@@ -317,11 +295,8 @@ test.describe('Wiki Page Management', () => {
     // Quick check: navigate to root and ensure we are not redirected to login.
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     if (page.url().includes('/login')) {
-      // If token exists, try setting it directly; otherwise, fallback to UI login using suite creds
-      if (token) {
-        await page.evaluate((t) => localStorage.setItem('token', t), token).catch(() => {});
-        await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
-      }
+      await loginPageWithCookies(page, testUserEmail, testUserPassword).catch(() => {});
+      await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
       if (page.url().includes('/login')) {
         // As a last resort, do UI login using the test suite credentials
         await login(page, testUserEmail, testUserPassword).catch(() => {});

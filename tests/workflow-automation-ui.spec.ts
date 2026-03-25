@@ -1,5 +1,9 @@
-import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
-import { registerTestUser, authHeader } from './e2e-helpers';
+import { test, expect, type APIRequestContext } from '@playwright/test';
+import {
+  registerTestUser,
+  createAuthenticatedApiContext,
+  loginPageWithCookies,
+} from './e2e-helpers';
 
 /**
  * Workflow Automation UI E2E Tests
@@ -13,43 +17,40 @@ import { registerTestUser, authHeader } from './e2e-helpers';
 /** Create a team via API and return the team object */
 async function createTeamApi(
   request: APIRequestContext,
-  name: string,
-  headers: Record<string, string>
+  name: string
 ) {
   const resp = await request.post('/api/teams', {
-    headers,
     data: { name, displayName: `Team ${name}`, description: `E2E UI workflow team ${name}` },
   });
   expect(resp.status()).toBe(201);
   return resp.json();
 }
 
-/** Inject auth token into the browser's localStorage so API calls from the SPA succeed */
-async function injectToken(page: Page, token: string, baseURL: string) {
-  await page.goto(baseURL);
-  await page.evaluate((t) => {
-    localStorage.setItem('token', t);
-  }, token);
-}
-
 test.describe('Workflow Automation UI', () => {
-  let token: string;
+  let email: string;
+  let password: string;
   let teamAName: string;
   let teamBName: string;
+  let authRequest: APIRequestContext;
 
   test.beforeAll(async ({ request }) => {
     const result = await registerTestUser(request, 'wf-ui');
-    token = result.token;
+    email = result.email;
+    password = result.password;
     teamAName = `wf-ui-a-${Date.now()}`;
     teamBName = `wf-ui-b-${Date.now()}`;
-    const headers = authHeader(token);
-    await createTeamApi(request, teamAName, headers);
-    await createTeamApi(request, teamBName, headers);
+    authRequest = await createAuthenticatedApiContext(email, password);
+    await createTeamApi(authRequest, teamAName);
+    await createTeamApi(authRequest, teamBName);
+  });
+
+  test.afterAll(async () => {
+    await authRequest?.dispose();
   });
 
   test('create workflow on team A, visible in A, invisible in B', async ({ page, baseURL }) => {
-    // Inject the auth token into localStorage
-    await injectToken(page, token, baseURL!);
+    await loginPageWithCookies(page, email, password);
+    await page.goto(baseURL!);
 
     // Navigate to team A's automation page
     await page.goto(`/teams/${teamAName}/automation`);

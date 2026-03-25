@@ -5,6 +5,7 @@ import express from 'express';
 import http from 'http';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import cookieParser from 'cookie-parser';
 
 // Mock storage with standard pattern — builds mock from prototype, never calls real constructor
 vi.mock('../storage', async (importOriginal) => {
@@ -31,12 +32,17 @@ vi.mock('jsonwebtoken');
 import { registerRoutes } from '../routes';
 import { storage } from '../storage';
 
+function authCookie(token: string) {
+  return [`accessToken=${token}`];
+}
+
 let app: Express;
 let server: http.Server;
 
 beforeAll(async () => {
   app = express();
   app.use(express.json());
+  app.use(cookieParser());
   const result = await registerRoutes(app, storage);
   server = result.httpServer;
 });
@@ -172,7 +178,7 @@ describe('Authentication API', () => {
 
       const response = await request(app)
         .get('/api/auth/me')
-        .set('Authorization', `Bearer ${token}`);
+        .set('Cookie', authCookie(token));
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual(mockUser);
@@ -191,7 +197,7 @@ describe('Authentication API', () => {
 
       const response = await request(app)
         .get('/api/auth/me')
-        .set('Authorization', 'Bearer invalid_token');
+        .set('Cookie', authCookie('invalid_token'));
 
       expect(response.status).toBe(401);
       expect(response.body.message).toBe('Invalid token');

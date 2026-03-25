@@ -17,7 +17,7 @@ import { test, expect, type APIRequestContext } from '@playwright/test';
  * (requireTeamRole) is not yet implemented and is not tested here.
  */
 
-/** Register a new user and return { token, email } */
+/** Register a new user and return credentials. */
 async function registerUser(request: APIRequestContext, prefix = 'api') {
   const email = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@example.com`;
   const password = 'password123';
@@ -25,14 +25,7 @@ async function registerUser(request: APIRequestContext, prefix = 'api') {
     data: { name: `${prefix} User`, email, password },
   });
   expect(resp.status()).toBe(201);
-  const body = await resp.json();
-  expect(body).toHaveProperty('token');
-  return { token: body.token as string, email, password };
-}
-
-/** Build Authorization header from token */
-function authHeader(token: string) {
-  return { Authorization: `Bearer ${token}` };
+  return { email, password };
 }
 
 test.describe('Health Check API', () => {
@@ -55,13 +48,10 @@ test.describe('Auth API', () => {
     });
     expect(loginResp.status()).toBe(200);
     const loginBody = await loginResp.json();
-    expect(loginBody).toHaveProperty('token');
     expect(loginBody.user.email).toBe(email);
 
-    // Use the token to access /api/auth/me
-    const meResp = await request.get('/api/auth/me', {
-      headers: authHeader(loginBody.token),
-    });
+    // Use the cookie-backed session to access /api/auth/me
+    const meResp = await request.get('/api/auth/me');
     expect(meResp.status()).toBe(200);
     const meBody = await meResp.json();
     expect(meBody.email).toBe(email);
@@ -99,10 +89,12 @@ test.describe('Protected Routes – 401 without token vs 200 with token', () => 
   });
 
   test('/api/auth/me returns 200 with valid token', async ({ request }) => {
-    const { token, email } = await registerUser(request, 'me-check');
-    const resp = await request.get('/api/auth/me', {
-      headers: authHeader(token),
+    const { email, password } = await registerUser(request, 'me-check');
+    const loginResp = await request.post('/api/auth/login', {
+      data: { email, password },
     });
+    expect(loginResp.status()).toBe(200);
+    const resp = await request.get('/api/auth/me');
     expect(resp.status()).toBe(200);
     const body = await resp.json();
     expect(body.email).toBe(email);
@@ -142,10 +134,12 @@ test.describe('Admin Authorization – 403/200', () => {
 
   test('admin endpoint returns 403 for authenticated non-admin user', async ({ request }) => {
     // Register a regular user (not in ADMIN_EMAILS, role is not admin)
-    const { token } = await registerUser(request, 'non-admin');
-    const resp = await request.get('/api/admin/directories', {
-      headers: authHeader(token),
+    const { email, password } = await registerUser(request, 'non-admin');
+    const loginResp = await request.post('/api/auth/login', {
+      data: { email, password },
     });
+    expect(loginResp.status()).toBe(200);
+    const resp = await request.get('/api/admin/directories');
     expect(resp.status()).toBe(403);
   });
 
@@ -161,13 +155,16 @@ test.describe('Admin Authorization – 403/200', () => {
 });
 
 test.describe('Token-based Resource CRUD', () => {
-  test('create and retrieve a page with auth token', async ({ request }) => {
-    const { token } = await registerUser(request, 'page-crud');
+  test('create and retrieve a page with cookie auth', async ({ request }) => {
+    const { email, password } = await registerUser(request, 'page-crud');
+    const loginResp = await request.post('/api/auth/login', {
+      data: { email, password },
+    });
+    expect(loginResp.status()).toBe(200);
     const title = `Auth Page ${Date.now()}`;
     const slug = `auth-page-${Date.now()}`;
 
     const createResp = await request.post('/api/pages', {
-      headers: authHeader(token),
       data: {
         title,
         content: 'Created with auth token.',
@@ -189,13 +186,16 @@ test.describe('Token-based Resource CRUD', () => {
   });
 
   test('create team and member with auth token', async ({ request }) => {
-    const { token } = await registerUser(request, 'team-crud');
+    const { email, password } = await registerUser(request, 'team-crud');
+    const loginResp = await request.post('/api/auth/login', {
+      data: { email, password },
+    });
+    expect(loginResp.status()).toBe(200);
     const ts = Date.now();
     const teamName = `auth-team-${ts}`;
 
     // Create team
     const teamResp = await request.post('/api/teams', {
-      headers: authHeader(token),
       data: { name: teamName, displayName: 'Auth Team', description: 'Token test' },
     });
     expect(teamResp.status()).toBe(201);
@@ -203,7 +203,6 @@ test.describe('Token-based Resource CRUD', () => {
 
     // Create member under that team
     const memberResp = await request.post('/api/members', {
-      headers: authHeader(token),
       data: {
         name: 'Auth Member',
         email: `auth-member-${ts}@example.com`,

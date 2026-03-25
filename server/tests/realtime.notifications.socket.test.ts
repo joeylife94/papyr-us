@@ -3,6 +3,15 @@ import express, { type Express } from 'express';
 import http from 'http';
 import { AddressInfo } from 'net';
 import { io as Client } from 'socket.io-client';
+import jwt from 'jsonwebtoken';
+import cookieParser from 'cookie-parser';
+
+const TEST_JWT_SECRET = 'socket-test-secret';
+
+function authCookieFor(userId: number) {
+  const token = jwt.sign({ id: userId, email: `user-${userId}@test.com`, role: 'user' }, TEST_JWT_SECRET);
+  return `accessToken=${token}`;
+}
 
 // UI 없이 소켓 알림이 정상 브로드캐스트 되는지 검증하는 통합 테스트
 describe('Realtime notifications over Socket.IO', () => {
@@ -24,14 +33,16 @@ describe('Realtime notifications over Socket.IO', () => {
     process.env.PAPYR_MODE = 'team';
     process.env.FEATURE_NOTIFICATIONS = '1';
     process.env.FEATURE_COLLABORATION = '0';
-    process.env.COLLAB_REQUIRE_AUTH = '0'; // 소켓 네임스페이스 인증 비활성화
-    process.env.ENFORCE_AUTH_WRITES = 'false';
+    process.env.COLLAB_REQUIRE_AUTH = '1';
+    process.env.ENFORCE_AUTH_WRITES = 'true';
+    process.env.JWT_SECRET = TEST_JWT_SECRET;
 
     vi.resetModules();
     ({ registerRoutes } = await import('../routes.js'));
 
     app = express();
     app.use(express.json());
+    app.use(cookieParser());
     const reg = await registerRoutes(app, fakeStorage);
     server = reg.httpServer;
     if (!reg.io) {
@@ -57,12 +68,15 @@ describe('Realtime notifications over Socket.IO', () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }, 15000);
 
-  it('emits notification:new to user room when a notification is created', async () => {
+  it('emits notification:new to the authenticated user room when a notification is created', async () => {
     const nsUrl = `${baseUrl}/collab`;
     const client = Client(nsUrl, {
       transports: ['polling'],
       timeout: 4000,
       reconnection: false,
+      extraHeaders: {
+        Cookie: authCookieFor(recipientId),
+      },
     });
 
     try {
@@ -107,12 +121,54 @@ describe('Realtime notifications over Socket.IO', () => {
 
       const res = await fetch(`${baseUrl}/api/notifications`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: authCookieFor(recipientId),
+        },
         body: JSON.stringify({ type: 'test', title: 't', content: 'c', recipientId }),
       });
       if (!res.ok) throw new Error(`create notif failed: ${res.status}`);
 
       await expect(received).resolves.toBeUndefined();
+    } finally {
+      client.close();
+    }
+  }, 15000);
+
+  it('rejects joining another user\'s notification room', async () => {
+    const nsUrl = `${baseUrl}/collab`;
+    const intruderId = recipientId + 1;
+    const client = Client(nsUrl, {
+      transports: ['polling'],
+      timeout: 4000,
+      reconnection: false,
+      extraHeaders: {
+        Cookie: authCookieFor(intruderId),
+      },
+    });
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const t = setTimeout(() => reject(new Error('timeout waiting for socket connect')), 6000);
+        client.on('connect', () => {
+          clearTimeout(t);
+          resolve();
+        });
+        client.on('connect_error', (err) => {
+          clearTimeout(t);
+          reject(err);
+        });
+      });
+
+      const joinResult = await new Promise<{ ok: boolean; error?: string }>((resolve, reject) => {
+        const t = setTimeout(() => reject(new Error('timeout waiting for join-member ack')), 3000);
+        client.emit('join-member', { memberId: recipientId }, (ack: { ok: boolean; error?: string }) => {
+          clearTimeout(t);
+          resolve(ack);
+        });
+      });
+
+      expect(joinResult).toEqual({ ok: false, error: 'Forbidden' });
     } finally {
       client.close();
     }
