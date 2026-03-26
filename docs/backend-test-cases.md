@@ -20,7 +20,8 @@ This document defines the test cases for the Papyr-us backend API to ensure its 
 
 - **Framework:** Vitest
 - **HTTP Client:** supertest
-- **Test Execution:** `npm test`
+- **Test Execution (unit/smoke):** `npm test` — no database required
+- **Test Execution (integration):** `DATABASE_URL=postgresql://... npm run test:integration` — requires live Postgres
 
 ---
 

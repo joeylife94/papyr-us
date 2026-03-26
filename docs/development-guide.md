@@ -166,11 +166,18 @@ npm run dev
 
 ## 🧪 테스팅
 
-### Backend 단위/통합 테스트
+### Backend 단위/스모크 테스트 (Unit / Smoke)
 
 - **프레임워크**: `vitest`, `supertest`
-- **실행**: `npm test`
+- **실행**: `npm test` (데이터베이스 불필요 — `DBStorage`를 mock 처리)
 - **핵심**: `DBStorage`를 모의(mock) 처리하여 데이터베이스 의존성 없이 API 로직을 테스트합니다.
+
+### Backend 통합 테스트 (Integration)
+
+- **프레임워크**: `vitest` (vitest.integration.config.ts)
+- **실행**: `DATABASE_URL=postgresql://user:pass@host/db npm run test:integration`
+- **요구사항**: 실제 PostgreSQL 데이터베이스 필요. `DATABASE_URL` 미설정 시 명확한 오류로 실패합니다 (무음 스킵 없음).
+- **포함 범위**: `server/tests/integration/` (예: FTS 통합 테스트)
 
 ### E2E (End-to-End) 테스트
 

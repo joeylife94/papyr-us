@@ -8,7 +8,7 @@ import { defineConfig } from 'vitest/config';
  *
  * Requirements:
  *   - A live PostgreSQL database must be accessible via DATABASE_URL.
- *   - Tests will skip automatically when DATABASE_URL is absent.
+ *   - Tests FAIL with a clear error when DATABASE_URL is absent (not a silent skip).
  *
  * What runs here:
  *   - server/tests/integration/ (all .test.ts files) — requires live Postgres.
@@ -26,7 +26,8 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['server/tests/integration/**/*.test.{ts,tsx}'],
-    // No setupFiles — integration tests need a real DATABASE_URL, not placeholder injection.
-    // Tests will skip automatically when DATABASE_URL is absent.
+    // No setupFiles — integration tests need a real DATABASE_URL.
+    // Tests produce a FAILING sentinel test when DATABASE_URL is absent,
+    // so `npm run test:integration` never silently succeeds without a database.
   },
 });

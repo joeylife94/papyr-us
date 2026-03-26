@@ -231,9 +231,27 @@ async function executeAction(
       case 'send_email': {
         // Real outbound email integration via SMTP (nodemailer).
         // Requires: EMAIL_HOST, EMAIL_USER, EMAIL_PASS in environment.
-        // When SMTP is not configured, falls back to in-app notifications so the
-        // workflow still delivers value, but logs a clear warning.
-        const emailTo: string[] = processedConfig.to || processedConfig.recipients || [];
+        //
+        // Recipient contract:
+        //   - config.to / config.recipients may be a string (single email or
+        //     comma-separated list) or an array of strings.
+        //   - SMTP path: accepts any valid email address string.
+        //   - In-app fallback path: only works for recipients whose value is a
+        //     valid numeric user ID (integer > 0).  Email address strings are
+        //     silently skipped by the fallback — the fallback does NOT look up
+        //     users by email address.  When the UI sends an email address the
+        //     fallback will produce zero notifications and success=false.
+        //     This is intentional: the fallback is for programmatic/internal
+        //     workflows that supply numeric IDs, not for arbitrary email strings.
+        const rawRecipients = processedConfig.to ?? processedConfig.recipients;
+        const emailTo: string[] = Array.isArray(rawRecipients)
+          ? rawRecipients.map(String)
+          : typeof rawRecipients === 'string'
+            ? rawRecipients
+                .split(',')
+                .map((s: string) => s.trim())
+                .filter(Boolean)
+            : [];
         const emailSubject: string = processedConfig.subject || 'Workflow Notification';
         const emailBody: string = processedConfig.message || processedConfig.body || '';
 
@@ -269,13 +287,17 @@ async function executeAction(
         } else {
           logger.warn(
             '[Workflow] send_email: SMTP not configured (EMAIL_HOST / EMAIL_USER / EMAIL_PASS). ' +
-              'Falling back to in-app notification. Set these env vars to enable real email.',
+              'Will attempt in-app notification fallback for any numeric-ID recipients. ' +
+              'Email address recipients (e.g. from the UI) are NOT supported by the fallback — ' +
+              'set EMAIL_HOST/EMAIL_USER/EMAIL_PASS to enable real email delivery.',
             { to: emailTo, subject: emailSubject }
           );
         }
 
-        // Fallback: deliver as in-app notifications for users whose ID is numeric.
-        // This ensures the workflow still produces observable output even without SMTP.
+        // Fallback: deliver as in-app notifications for users whose recipient value is a numeric ID.
+        // LIMITATION: email address strings (e.g. "user@example.com") are NOT resolved to user IDs.
+        // The fallback only works when the workflow action was configured with numeric user IDs
+        // (e.g. programmatic workflows).  UI-submitted email addresses will produce 0 notifications.
         const fallbackNotifications: any[] = [];
         for (const recipient of emailTo) {
           const recipientId =
@@ -303,6 +325,10 @@ async function executeAction(
             sent: fallbackNotifications.length,
             fallback: 'in-app-notification',
             smtpConfigured: isEmailConfigured(),
+            note:
+              fallbackNotifications.length === 0
+                ? 'No in-app notifications created. Fallback requires numeric user IDs; email address strings are not resolved.'
+                : undefined,
           },
         };
       }

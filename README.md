@@ -25,20 +25,20 @@ This project serves as a comprehensive portfolio piece demonstrating system desi
 
 ### Feature Status
 
-| Feature                       | Status          | Notes                                                                                                                                          |
-| ----------------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| Wiki Pages CRUD               | ✅ Stable       | Create, edit, delete, search, tags                                                                                                             |
-| Block Editor (core)           | ✅ Stable       | Paragraph, heading, code, image, table, callout, etc.                                                                                          |
-| Team Workspaces               | ✅ Stable       | Team isolation, member management                                                                                                              |
-| Authentication (JWT)          | ✅ Stable       | Login, register, RBAC                                                                                                                          |
-| Templates                     | ✅ Stable       | Template categories, template-based page creation                                                                                              |
-| Calendar & Tasks              | ✅ Stable       | Team-scoped events and task management                                                                                                         |
-| Real-time Collaboration (Yjs) | ⚠️ Beta         | Core editing works; cursor/presence in progress                                                                                                |
-| AI Search & Copilot           | ⚠️ Beta         | Requires OpenAI API key; search/summarize/RAG                                                                                                  |
-| Automation Workflows          | ⚠️ Beta         | Full UI: webhook, Slack webhook, send_email, run_ai_summary selectable; team scoping in progress                                               |
-| Synced Blocks                 | 🧪 Experimental | Basic rendering; limited block type support                                                                                                    |
-| Email Automation              | ⚠️ Beta         | Selectable in workflow UI; SMTP outbound via nodemailer; falls back to in-app notification when `EMAIL_HOST`/`EMAIL_USER`/`EMAIL_PASS` not set |
-| Database Views (Notion-style) | 🧪 Experimental | Schema/rows exist; UI partially implemented                                                                                                    |
+| Feature                       | Status          | Notes                                                                                                                                                                                                                                                                                  |
+| ----------------------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Wiki Pages CRUD               | ✅ Stable       | Create, edit, delete, search, tags                                                                                                                                                                                                                                                     |
+| Block Editor (core)           | ✅ Stable       | Paragraph, heading, code, image, table, callout, etc.                                                                                                                                                                                                                                  |
+| Team Workspaces               | ✅ Stable       | Team isolation, member management                                                                                                                                                                                                                                                      |
+| Authentication (JWT)          | ✅ Stable       | Login, register, RBAC                                                                                                                                                                                                                                                                  |
+| Templates                     | ✅ Stable       | Template categories, template-based page creation                                                                                                                                                                                                                                      |
+| Calendar & Tasks              | ✅ Stable       | Team-scoped events and task management                                                                                                                                                                                                                                                 |
+| Real-time Collaboration (Yjs) | ⚠️ Beta         | Core editing works; cursor/presence in progress                                                                                                                                                                                                                                        |
+| AI Search & Copilot           | ⚠️ Beta         | Requires OpenAI API key; search/summarize/RAG                                                                                                                                                                                                                                          |
+| Automation Workflows          | ⚠️ Beta         | Create/manage UI: webhook, Slack webhook, send_email, run_ai_summary selectable; no edit UI (create/toggle/delete only); team scoping in progress                                                                                                                                      |
+| Synced Blocks                 | 🧪 Experimental | Basic rendering; limited block type support                                                                                                                                                                                                                                            |
+| Email Automation              | ⚠️ Beta         | Selectable in workflow UI; SMTP outbound via nodemailer when `EMAIL_HOST`/`EMAIL_USER`/`EMAIL_PASS` are set. When SMTP is absent, an in-app notification fallback runs only for numeric user ID recipients — email address strings (as submitted by the UI) are not resolved to users. |
+| Database Views (Notion-style) | 🧪 Experimental | Schema/rows exist; UI partially implemented                                                                                                                                                                                                                                            |
 
 ---
 
@@ -612,7 +612,9 @@ npm run build            # Build for production (TypeScript + Vite)
 npm start                # Start production server
 
 # Testing
-npm test                 # Run unit/integration tests (Vitest)
+npm test                 # Run unit/smoke tests only — no DB required (Vitest)
+npm run test:unit        # Alias for npm test (unit/smoke only)
+npm run test:integration # Run DB-backed integration tests — requires DATABASE_URL
 npm run test:watch       # Run tests in watch mode
 npm run e2e              # Run E2E tests (Playwright)
 npm run test:smoke       # Run quick smoke tests
@@ -679,15 +681,19 @@ papyr-us/
 ### Test Coverage
 
 - **E2E Tests**: Authentication, navigation, and collaboration flows with Playwright
-- **Integration Tests**: 92+ test cases with Vitest across 13 API categories
+- **Unit / Smoke Tests**: 92+ test cases with Vitest across 13 API categories — no database required (`npm test`)
+- **Integration Tests**: DB-backed tests (e.g. FTS) via `npm run test:integration` — requires `DATABASE_URL`
 - **API Coverage**: Template Categories, Templates, Auth, Wiki Pages, Comments, Teams, Members, File Upload, Calendar, Tasks, Notifications, AI Services, Admin/Directory
 - **Smoke Tests**: Quick sanity checks for core functionality (Personal + Team mode)
 
 ### Running Tests
 
 ```bash
-# Run all tests
+# Run unit/smoke tests (no database required)
 npm test
+
+# Run DB-backed integration tests (requires DATABASE_URL)
+DATABASE_URL=postgresql://user:pass@host/db npm run test:integration
 
 # Run E2E tests
 npm run e2e

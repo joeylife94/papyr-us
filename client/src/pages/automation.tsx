@@ -32,7 +32,6 @@ import {
   Play,
   Pause,
   Trash2,
-  Edit,
   Clock,
   Zap,
   CheckCircle,
@@ -56,7 +55,6 @@ export default function AutomationPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { teamName } = useParams<{ teamName?: string }>();
-  const [selectedWorkflow, setSelectedWorkflow] = useState<WorkflowData | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newWorkflow, setNewWorkflow] = useState({
     name: '',
@@ -119,7 +117,6 @@ export default function AutomationPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [workflowsUrl] });
-      setSelectedWorkflow(null);
       toast({
         title: '워크플로우 삭제됨',
         description: '워크플로우가 성공적으로 삭제되었습니다.',
@@ -300,13 +297,6 @@ export default function AutomationPage() {
                         toggleMutation.mutate({ id: workflow.id, isActive: checked })
                       }
                     />
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setSelectedWorkflow(workflow)}
-                    >
-                      <Edit className="h-4 w-4" />
-                    </Button>
                     <Button
                       variant="ghost"
                       size="icon"

@@ -451,6 +451,44 @@ export function validateRealtimeConfig(legacyCfg: LegacyCollabConfig): void {
   }
 }
 
+/**
+ * Build the Socket.IO CORS options object based on current runtime config.
+ *
+ * Rules:
+ *   - Explicit allowlist (CORS_ALLOWED_ORIGINS): use the list, credentials=true.
+ *   - Production / no origins listed: origin=false (deny all cross-origin), credentials=false.
+ *   - Local dev + LOCAL_DEV_UNSAFE_CORS=true: origin='*', credentials=false.
+ *     (Browsers CANNOT send cookies/credentials with a wildcard origin; combining
+ *      them is invalid per the CORS spec and rejected by all browsers.
+ *      We explicitly set credentials=false here to match the actual browser behavior
+ *      and to avoid a contradictory config that is silently broken.)
+ *   - All other (non-prod, non-unsafe-local): origin=false, credentials=false.
+ *
+ * Exported for direct unit-testing independent of the HTTP server lifecycle.
+ */
+export function buildSocketCorsOptions(): {
+  origin: string | string[] | boolean;
+  methods: string[];
+  credentials: boolean;
+} {
+  const localDevUnsafeCors = config.isLocalDev && process.env.LOCAL_DEV_UNSAFE_CORS === 'true';
+  const corsOrigin: string | string[] | boolean =
+    config.corsAllowedOrigins.length > 0
+      ? config.corsAllowedOrigins
+      : config.isProduction
+        ? false // Production: no origins listed → deny all cross-origin
+        : localDevUnsafeCors
+          ? '*' // Local dev: explicit opt-in only
+          : false; // Non-prod default: deny cross-origin (safe)
+
+  // Wildcard origin ('*') MUST NOT be combined with credentials=true.
+  // Browsers reject this combination (CORS spec §3.2.2).
+  // When the origin is an explicit allowlist or false, credentials=true is safe.
+  const credentials = corsOrigin !== '*' && corsOrigin !== false;
+
+  return { origin: corsOrigin, methods: ['GET', 'POST'], credentials };
+}
+
 export async function setupSocketIO(
   server: HTTPServer,
   storage: DBStorage,
@@ -473,22 +511,10 @@ export async function setupSocketIO(
   //
   // NOTE: config.isLocalDev is false for staging, preview, and CI environments even when
   // NODE_ENV is 'development'. Wildcard CORS is only active when both conditions hold.
-  const localDevUnsafeCors = config.isLocalDev && process.env.LOCAL_DEV_UNSAFE_CORS === 'true';
-  const corsOrigin =
-    config.corsAllowedOrigins.length > 0
-      ? config.corsAllowedOrigins
-      : config.isProduction
-        ? false // Production: no origins listed → deny all cross-origin
-        : localDevUnsafeCors
-          ? '*' // Local dev: explicit opt-in only
-          : false; // Non-prod default: deny cross-origin (safe)
+  const socketCorsOpts = buildSocketCorsOptions();
 
   const io = new SocketIOServer(server, {
-    cors: {
-      origin: corsOrigin,
-      methods: ['GET', 'POST'],
-      credentials: true,
-    },
+    cors: socketCorsOpts,
   });
 
   // Setup Redis adapter for horizontal scaling (if Redis is configured)
