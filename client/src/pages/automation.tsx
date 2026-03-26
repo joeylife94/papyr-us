@@ -211,7 +211,7 @@ export default function AutomationPage() {
       send_notification: '알림 전송',
       create_task: '태스크 생성',
       update_task: '태스크 업데이트',
-      send_email: '알림 전송 (이메일 미연동)',
+      send_email: '이메일 전송',
       create_page: '페이지 생성',
       add_comment: '댓글 추가',
       add_tag: '태그 추가',
@@ -219,6 +219,7 @@ export default function AutomationPage() {
       move_page: '페이지 이동',
       run_ai_summary: 'AI 요약 실행',
       webhook: '웹훅 호출',
+      slack_webhook: 'Slack 웹훅',
     };
     return actions.map((a) => labels[a.type] || a.type);
   };
@@ -481,6 +482,7 @@ export default function AutomationPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="send_notification">알림 전송</SelectItem>
+                  <SelectItem value="send_email">이메일 전송</SelectItem>
                   <SelectItem value="create_task">태스크 생성</SelectItem>
                   <SelectItem value="create_page">페이지 생성</SelectItem>
                   <SelectItem value="add_comment">댓글 추가</SelectItem>
@@ -488,6 +490,7 @@ export default function AutomationPage() {
                   <SelectItem value="move_page">페이지 이동</SelectItem>
                   <SelectItem value="run_ai_summary">AI 요약 실행</SelectItem>
                   <SelectItem value="webhook">웹훅 호출</SelectItem>
+                  <SelectItem value="slack_webhook">Slack 웹훅</SelectItem>
                 </SelectContent>
               </Select>
             </div>

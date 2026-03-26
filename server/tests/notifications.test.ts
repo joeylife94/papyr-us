@@ -4,6 +4,7 @@ import type { Express } from 'express';
 import express from 'express';
 import http from 'http';
 import jwt from 'jsonwebtoken';
+import cookieParser from 'cookie-parser';
 import { registerRoutes } from '../routes';
 
 const TEST_SECRET = 'notif-test-secret';
@@ -50,6 +51,7 @@ let server: http.Server;
 beforeAll(async () => {
   app = express();
   app.use(express.json());
+  app.use(cookieParser());
   ({ httpServer: server } = await registerRoutes(app, storage));
 });
 
@@ -64,7 +66,8 @@ afterAll((done) => {
 describe('Notification Management API', () => {
   const recipientId = 1;
   const token = jwt.sign({ id: recipientId, email: 'user@test.com', role: 'user' }, TEST_SECRET);
-  const auth = { Authorization: `Bearer ${token}` };
+  // Use cookie-based auth to match the production auth model
+  const authCookie = [`accessToken=${token}`];
   const mockNotification = {
     id: 1,
     type: 'mention',
@@ -89,7 +92,7 @@ describe('Notification Management API', () => {
 
     const response = await request(app)
       .post('/api/notifications')
-      .set(auth)
+      .set('Cookie', authCookie)
       .send(newNotificationData);
 
     expect(response.status).toBe(201);
@@ -100,7 +103,7 @@ describe('Notification Management API', () => {
     const notifications = [mockNotification, { ...mockNotification, id: 2, type: 'comment' }];
     (storage.getNotifications as vi.Mock).mockResolvedValue(notifications);
 
-    const response = await request(app).get('/api/notifications').set(auth);
+    const response = await request(app).get('/api/notifications').set('Cookie', authCookie);
 
     expect(response.status).toBe(200);
     expect(response.body.notifications).toEqual(notifications);
@@ -110,7 +113,9 @@ describe('Notification Management API', () => {
   it('TC-NOTIF-003: should get the count of unread notifications', async () => {
     (storage.getUnreadNotificationCount as vi.Mock).mockResolvedValue(5);
 
-    const response = await request(app).get('/api/notifications/unread-count').set(auth);
+    const response = await request(app)
+      .get('/api/notifications/unread-count')
+      .set('Cookie', authCookie);
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ count: 5 });
@@ -123,7 +128,7 @@ describe('Notification Management API', () => {
 
     const response = await request(app)
       .patch(`/api/notifications/${mockNotification.id}/read`)
-      .set(auth);
+      .set('Cookie', authCookie);
 
     expect(response.status).toBe(200);
     expect(response.body.isRead).toBe(true);
@@ -132,7 +137,9 @@ describe('Notification Management API', () => {
   it('TC-NOTIF-005: should mark all notifications for a recipient as read', async () => {
     (storage.markAllNotificationsAsRead as vi.Mock).mockResolvedValue({ success: true });
 
-    const response = await request(app).patch('/api/notifications/read-all').set(auth);
+    const response = await request(app)
+      .patch('/api/notifications/read-all')
+      .set('Cookie', authCookie);
 
     expect(response.status).toBe(200);
     expect(response.body.message).toBe('All notifications marked as read');
@@ -144,7 +151,7 @@ describe('Notification Management API', () => {
 
     const response = await request(app)
       .delete(`/api/notifications/${mockNotification.id}`)
-      .set(auth);
+      .set('Cookie', authCookie);
 
     expect(response.status).toBe(200);
     expect(response.body.message).toBe('Notification deleted successfully');

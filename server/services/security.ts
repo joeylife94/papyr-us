@@ -179,24 +179,55 @@ export function setupSecurityHeaders(app: Express): void {
 
 /**
  * Enhanced CORS configuration
+ *
+ * Security policy:
+ *   Production:     only explicitly listed origins (CORS_ALLOWED_ORIGINS) are allowed.
+ *                   When the list is empty ALL cross-origin requests are blocked (fail-closed).
+ *   Non-production: only explicitly listed origins unless LOCAL_DEV_UNSAFE_CORS=true is set.
+ *                   LOCAL_DEV_UNSAFE_CORS=true is an explicit, narrow escape hatch for local
+ *                   development tooling (e.g. Vite HMR on a different port). It MUST NOT be
+ *                   set in staging or CI environments.
  */
 export function setupEnhancedCors(app: Express): void {
   const allowedOrigins = config.corsAllowedOrigins;
+  // Dangerous relaxation flag — only meaningful (and only logged as a warning) outside production.
+  const localDevUnsafeCors = !config.isProduction && process.env.LOCAL_DEV_UNSAFE_CORS === 'true';
 
-  // Dynamic CORS based on environment
+  if (localDevUnsafeCors) {
+    logger.warn(
+      '[Security] LOCAL_DEV_UNSAFE_CORS=true: permissive CORS active. ' +
+        'Do NOT set this in staging or CI.'
+    );
+  }
+
   app.use((req: Request, res: Response, next: NextFunction) => {
     const origin = req.headers.origin;
 
-    // In development, allow all origins
     if (!config.isProduction) {
-      res.setHeader('Access-Control-Allow-Origin', origin || '*');
-      res.setHeader('Access-Control-Allow-Credentials', 'true');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-      res.setHeader(
-        'Access-Control-Allow-Headers',
-        'Content-Type, Authorization, X-Request-ID, X-Admin-Password'
-      );
-      res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours
+      if (localDevUnsafeCors) {
+        // Explicit local-dev opt-in: echo request origin (or fall back to no ACAO header)
+        if (origin) {
+          res.setHeader('Access-Control-Allow-Origin', origin);
+          res.setHeader('Access-Control-Allow-Credentials', 'true');
+          res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+          res.setHeader(
+            'Access-Control-Allow-Headers',
+            'Content-Type, Authorization, X-Request-ID, X-Admin-Password'
+          );
+          res.setHeader('Access-Control-Max-Age', '86400');
+        }
+      } else if (origin && allowedOrigins.length > 0 && allowedOrigins.includes(origin)) {
+        // Non-prod with explicit allowlist
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Credentials', String(config.corsAllowCredentials));
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+        res.setHeader(
+          'Access-Control-Allow-Headers',
+          'Content-Type, Authorization, X-Request-ID, X-Admin-Password'
+        );
+        res.setHeader('Access-Control-Max-Age', '86400');
+      }
+      // Otherwise: no CORS headers → browser blocks cross-origin requests (safe default)
 
       if (req.method === 'OPTIONS') {
         return res.status(204).end();
@@ -204,14 +235,15 @@ export function setupEnhancedCors(app: Express): void {
       return next();
     }
 
-    // In production, check against whitelist
-    if (origin && (allowedOrigins.length === 0 || allowedOrigins.includes(origin))) {
+    // Production: ONLY explicitly listed origins. Empty list = deny all cross-origin.
+    if (origin && allowedOrigins.length > 0 && allowedOrigins.includes(origin)) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Access-Control-Allow-Credentials', String(config.corsAllowCredentials));
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Request-ID');
       res.setHeader('Access-Control-Max-Age', '86400');
     }
+    // No else: unrecognised origins get no CORS headers → browser blocks the request.
 
     if (req.method === 'OPTIONS') {
       return res.status(204).end();
@@ -221,7 +253,8 @@ export function setupEnhancedCors(app: Express): void {
   });
 
   logger.info('Enhanced CORS configured', {
-    allowedOrigins: allowedOrigins.length > 0 ? allowedOrigins : ['*'],
+    mode: config.isProduction ? 'production' : localDevUnsafeCors ? 'local-dev-unsafe' : 'strict',
+    allowedOrigins: allowedOrigins.length > 0 ? allowedOrigins : '(none — same-origin only)',
     credentials: config.corsAllowCredentials,
   });
 }

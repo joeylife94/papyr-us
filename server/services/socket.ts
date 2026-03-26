@@ -45,7 +45,8 @@ type LegacyCollabConfig = {
 };
 
 function getLegacyCollabConfig(): LegacyCollabConfig {
-  const requireAuth = config.isProduction ? true : process.env.COLLAB_REQUIRE_AUTH !== '0';
+  // requireAuth: ONLY local dev may disable it; every other environment requires it.
+  const requireAuth = config.isLocalDev ? process.env.COLLAB_REQUIRE_AUTH !== '0' : true;
   const saveDebounceMs = clampInt(process.env.COLLAB_SAVE_DEBOUNCE_MS, 3000, 500, 60000);
   const snapshotIntervalMs = clampInt(
     process.env.COLLAB_SNAPSHOT_INTERVAL_MS,
@@ -388,6 +389,68 @@ export interface SocketIOFeatureOptions {
   enableNotifications?: boolean;
 }
 
+/**
+ * Validate realtime configuration at startup.
+ *
+ * Rules:
+ *  - Production AND deployed non-production: auth MUST be on, unsafe CORS MUST be off.
+ *  - Only explicit local dev (config.isLocalDev) may use narrowly scoped unsafe escapes.
+ *  - Wildcard CORS combined with credentials is always rejected (every environment).
+ *
+ * Throws an Error for any violation so that setupSocketIO fails fast before binding sockets.
+ * Exported for direct unit-testing of config validation logic.
+ */
+export function validateRealtimeConfig(legacyCfg: LegacyCollabConfig): void {
+  const errors: string[] = [];
+
+  if (config.isProduction || !config.isLocalDev) {
+    // Production + any deployed non-local environment: unsafe relaxations are fatal.
+    if (!legacyCfg.requireAuth) {
+      errors.push(
+        'COLLAB_REQUIRE_AUTH cannot be disabled in production or deployed environments. ' +
+          'Remove COLLAB_REQUIRE_AUTH=0 — it is exclusively for local developer machines.'
+      );
+    }
+    if (process.env.LOCAL_DEV_UNSAFE_CORS === 'true') {
+      errors.push(
+        'LOCAL_DEV_UNSAFE_CORS=true is not allowed in production or deployed environments. ' +
+          'This flag is exclusively for local developer machines. ' +
+          'Remove LOCAL_DEV_UNSAFE_CORS from your environment.'
+      );
+    }
+  } else {
+    // Genuine local dev: escapes are permitted, but must be loudly logged.
+    if (process.env.COLLAB_REQUIRE_AUTH === '0') {
+      logger.warn(
+        '[Security] COLLAB_REQUIRE_AUTH=0: Socket.IO auth bypass active. ' +
+          'LOCAL DEV ONLY — never commit or deploy this setting.'
+      );
+    }
+    if (process.env.LOCAL_DEV_UNSAFE_CORS === 'true') {
+      logger.warn(
+        '[Security] LOCAL_DEV_UNSAFE_CORS=true: Socket.IO CORS wildcard active. ' +
+          'LOCAL DEV ONLY — never commit or deploy this setting.'
+      );
+    }
+  }
+
+  // Wildcard CORS combined with credentials is always invalid in ALL environments.
+  // Browsers reject this combination; we fail fast rather than silently misconfigure.
+  const allowedOrigins = config.corsAllowedOrigins;
+  if (allowedOrigins.includes('*') && config.corsAllowCredentials) {
+    errors.push(
+      'Wildcard CORS origin ("*") cannot be combined with credentials=true. ' +
+        'Remove "*" from CORS_ALLOWED_ORIGINS or set CORS_ALLOW_CREDENTIALS=false.'
+    );
+  }
+
+  if (errors.length > 0) {
+    const msg = `[FATAL] Unsafe realtime configuration:\n  ${errors.join('\n  ')}`;
+    logger.error(msg);
+    throw new Error(msg);
+  }
+}
+
 export async function setupSocketIO(
   server: HTTPServer,
   storage: DBStorage,
@@ -397,15 +460,28 @@ export async function setupSocketIO(
   const enableNotifications = options.enableNotifications ?? true;
 
   const legacyCfg = getLegacyCollabConfig();
+
+  // Fail-fast: reject dangerous production config combinations before binding sockets.
+  validateRealtimeConfig(legacyCfg);
+
   const collaborationManager = new CollaborationManager(storage, legacyCfg);
 
-  const corsOrigin = config.isProduction
-    ? config.corsAllowedOrigins.length > 0
+  // CORS policy for Socket.IO:
+  //   Production/deployed:              use explicit allowlist or deny all cross-origin (fail-closed).
+  //   Local dev + LOCAL_DEV_UNSAFE_CORS: wildcard (explicit local-dev opt-in only).
+  //   Default (all other contexts):     deny all cross-origin (safe default).
+  //
+  // NOTE: config.isLocalDev is false for staging, preview, and CI environments even when
+  // NODE_ENV is 'development'. Wildcard CORS is only active when both conditions hold.
+  const localDevUnsafeCors = config.isLocalDev && process.env.LOCAL_DEV_UNSAFE_CORS === 'true';
+  const corsOrigin =
+    config.corsAllowedOrigins.length > 0
       ? config.corsAllowedOrigins
-      : false
-    : config.corsAllowedOrigins.length > 0
-      ? config.corsAllowedOrigins
-      : '*';
+      : config.isProduction
+        ? false // Production: no origins listed → deny all cross-origin
+        : localDevUnsafeCors
+          ? '*' // Local dev: explicit opt-in only
+          : false; // Non-prod default: deny cross-origin (safe)
 
   const io = new SocketIOServer(server, {
     cors: {
@@ -498,10 +574,13 @@ export async function setupSocketIO(
             return;
           }
 
-          // Determine identity: prefer JWT-derived userId when auth is required.
+          // Identity: use only the JWT-authenticated userId from the socket.
+          // Client-supplied data.userId is intentionally NOT used as a fallback —
+          // accepting it would allow any client to claim an arbitrary identity.
+          // When auth is bypassed in explicit local-dev mode, userIdNum is null and
+          // socket.id (server-assigned) is used as the anonymous user identifier.
           const authedUserId = parsePositiveInt(socket.userId);
-          const fallbackUserId = legacyCfg.requireAuth ? null : parsePositiveInt(data.userId);
-          const userIdNum = authedUserId ?? fallbackUserId;
+          const userIdNum = authedUserId ?? null;
 
           // Permission checks reuse storage page permissions.
           const hasPermission = await storage.checkPagePermission(
@@ -607,9 +686,9 @@ export async function setupSocketIO(
             ...data,
             pageId,
             timestamp: Date.now(),
-            userId: String(
-              (socket.data as any).userIdNum ?? socket.userId ?? data.userId ?? socket.id
-            ),
+            // Use only server-side identity: JWT-resolved userId or socket.id.
+            // Client-supplied data.userId is intentionally excluded.
+            userId: String((socket.data as any).userIdNum ?? socket.userId ?? socket.id),
           };
 
           // Store the change
@@ -677,9 +756,8 @@ export async function setupSocketIO(
       // Handle leaving a document
       socket.on('leave-document', (data: { pageId: number; userId: string }) => {
         const pageId = parsePositiveInt(data.pageId);
-        const userIdKey = String(
-          (socket.data as any).userIdNum ?? socket.userId ?? data.userId ?? socket.id
-        );
+        // Use only server-side identity; do not accept client-supplied data.userId.
+        const userIdKey = String((socket.data as any).userIdNum ?? socket.userId ?? socket.id);
         collaborationManager.leaveSession(userIdKey);
         if (pageId) {
           const roomName = `page:${pageId}`;

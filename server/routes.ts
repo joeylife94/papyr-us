@@ -1338,11 +1338,9 @@ export async function registerRoutes(
       }
 
       if (!isOwner && !isAdmin && !isPageEditor) {
-        return res
-          .status(403)
-          .json({
-            message: 'Only the comment author, page editor, or admin can delete this comment',
-          });
+        return res.status(403).json({
+          message: 'Only the comment author, page editor, or admin can delete this comment',
+        });
       }
 
       const deleted = await storage.deleteComment(id);
@@ -3483,13 +3481,13 @@ export async function registerRoutes(
           return 'Notification actions require a message in config';
         }
 
-        if (
-          action.type === 'send_email' &&
-          [action.config?.recipients, action.config?.subject, action.config?.message].some(
-            (value) => !String(value || '').trim()
-          )
-        ) {
-          return 'Email actions require recipients, subject, and message in config';
+        if (action.type === 'send_email') {
+          const hasRecipients = !!(action.config?.to || action.config?.recipients);
+          const hasSubject = !!String(action.config?.subject || '').trim();
+          const hasBody = !!(action.config?.message || action.config?.body);
+          if (!hasRecipients || !hasSubject || !hasBody) {
+            return 'Email actions require recipients (to or recipients), subject, and message (or body) in config';
+          }
         }
       }
 

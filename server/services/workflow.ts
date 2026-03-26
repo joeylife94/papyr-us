@@ -8,6 +8,7 @@ import type {
 } from '@shared/schema';
 import type { DBStorage } from '../storage.js';
 import * as aiService from './ai.js';
+import { sendEmail, isEmailConfigured } from './email.js';
 import logger from './logger.js';
 
 let _storage: DBStorage | null = null;
@@ -227,36 +228,84 @@ async function executeAction(
           result: { status: slackResponse.status },
         };
 
-      case 'send_email':
-        // Email service not yet configured — fall back to in-app notification
-        logger.warn('Email action: email service not configured, falling back to notification', {
-          message: processedConfig.message,
-          recipients: processedConfig.recipients,
-        });
-        // Deliver as in-app notifications instead
-        const emailRecipients = processedConfig.recipients || [];
-        const emailNotifications: any[] = [];
-        for (const recipientId of emailRecipients) {
+      case 'send_email': {
+        // Real outbound email integration via SMTP (nodemailer).
+        // Requires: EMAIL_HOST, EMAIL_USER, EMAIL_PASS in environment.
+        // When SMTP is not configured, falls back to in-app notifications so the
+        // workflow still delivers value, but logs a clear warning.
+        const emailTo: string[] = processedConfig.to || processedConfig.recipients || [];
+        const emailSubject: string = processedConfig.subject || 'Workflow Notification';
+        const emailBody: string = processedConfig.message || processedConfig.body || '';
+
+        if (emailTo.length === 0) {
+          return {
+            success: false,
+            error: 'send_email requires at least one recipient in config.to or config.recipients',
+          };
+        }
+
+        // Attempt real outbound email first.
+        if (isEmailConfigured()) {
+          const emailResult = await sendEmail({
+            to: emailTo,
+            subject: emailSubject,
+            text: emailBody,
+            html: processedConfig.html || undefined,
+          });
+
+          if (emailResult.sent) {
+            return {
+              success: true,
+              result: { sent: emailTo.length, messageId: emailResult.messageId, via: 'smtp' },
+            };
+          }
+
+          // SMTP attempt failed — fall through to in-app notification fallback below.
+          logger.warn('[Workflow] SMTP send failed, falling back to in-app notification', {
+            error: emailResult.error,
+            to: emailTo,
+            subject: emailSubject,
+          });
+        } else {
+          logger.warn(
+            '[Workflow] send_email: SMTP not configured (EMAIL_HOST / EMAIL_USER / EMAIL_PASS). ' +
+              'Falling back to in-app notification. Set these env vars to enable real email.',
+            { to: emailTo, subject: emailSubject }
+          );
+        }
+
+        // Fallback: deliver as in-app notifications for users whose ID is numeric.
+        // This ensures the workflow still produces observable output even without SMTP.
+        const fallbackNotifications: any[] = [];
+        for (const recipient of emailTo) {
+          const recipientId =
+            typeof recipient === 'number' ? recipient : parseInt(String(recipient), 10);
+          if (!Number.isInteger(recipientId) || recipientId <= 0) continue;
           try {
             const notification = await getWorkflowStorage().createNotification({
               recipientId,
               type: 'system',
-              title: processedConfig.subject || 'Email Notification',
-              content: processedConfig.message || '',
+              title: emailSubject,
+              content: emailBody,
               isRead: false,
             });
-            emailNotifications.push(notification);
+            fallbackNotifications.push(notification);
           } catch (err) {
-            logger.error('Failed to create fallback notification', {
+            logger.error('[Workflow] Failed to create fallback notification', {
               recipientId,
               error: err instanceof Error ? err.message : 'Unknown error',
             });
           }
         }
         return {
-          success: emailNotifications.length > 0,
-          result: { sent: emailNotifications.length, fallback: 'notification', emailNotifications },
+          success: fallbackNotifications.length > 0,
+          result: {
+            sent: fallbackNotifications.length,
+            fallback: 'in-app-notification',
+            smtpConfigured: isEmailConfigured(),
+          },
         };
+      }
 
       case 'assign_task':
         if (!context.trigger?.id) {

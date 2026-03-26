@@ -150,15 +150,15 @@
 
 ### 7. 🔔 알림 & 자동화
 
-| 기능                   | Notion   | Papyr.us              | 상태          | 우선순위 |
-| ---------------------- | -------- | --------------------- | ------------- | -------- |
-| 실시간 알림            | ✅       | ✅ (Socket.IO)        | 완료          | -        |
-| 워크플로우 자동화      | ❌       | ✅ (trigger → action) | Papyr.us 우위 | -        |
-| Webhook 지원           | ❌       | ✅                    | Papyr.us 우위 | -        |
-| **워크플로우 UI 생성** | -        | ⚠️ "Coming soon"      | 미완성        | 🔴 높음  |
-| **이메일 알림**        | ✅       | ❌ (stub)             | 미구현        | 🟡 중간  |
-| **Slack/Discord 연동** | ✅ (API) | ❌                    | 미구현        | 🟡 중간  |
-| **알림 설정 (구독)**   | ✅       | ❌                    | 미구현        | 🟢 낮음  |
+| 기능                   | Notion   | Papyr.us              | 상태                      | 우선순위 |
+| ---------------------- | -------- | --------------------- | ------------------------- | -------- |
+| 실시간 알림            | ✅       | ✅ (Socket.IO)        | 완료                      | -        |
+| 워크플로우 자동화      | ❌       | ✅ (trigger → action) | Papyr.us 우위             | -        |
+| Webhook 지원           | ❌       | ✅                    | Papyr.us 우위             | -        |
+| **워크플로우 UI 생성** | -        | ✅                    | 완료                      | -        |
+| **이메일 알림**        | ✅       | ✅ (SMTP nodemailer)  | 완료 (SMTP 환경변수 필요) | -        |
+| **Slack 웹훅 연동**    | ✅ (API) | ✅ (incoming webhook) | 완료                      | -        |
+| **알림 설정 (구독)**   | ✅       | ❌                    | 미구현                    | 🟢 낮음  |
 
 ### 8. 🎨 UI/UX
 
@@ -210,9 +210,8 @@
    - 댓글 작성 시 "Anonymous User" 하드코딩
    - JWT 인증 사용자와 연결되지 않음
 
-7. **Automation 페이지 미완성**
-   - "Create Workflow" 버튼이 "coming soon" toast만 표시
-   - 워크플로우 생성 UI가 없음
+7. ~~**Automation 페이지 미완성**~~ (해결됨)
+   - 워크플로우 생성 UI 구현 완료 (webhook, slack_webhook, send_email, run_ai_summary 포함)
 
 8. **OAuth (Google/GitHub) 코드는 있지만 비활성화**
    - `passport.ts` 전체가 주석 처리됨

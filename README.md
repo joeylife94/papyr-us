@@ -4,7 +4,7 @@
 
 A **team collaboration wiki** built with React and Express.js, featuring real-time editing, block-based content, and team workspace management. Includes optional AI integration (GPT-4o) and extensible automation workflows.
 
-> **Note:** This project is under active development. Some advanced features (synced blocks, email automation) are experimental or partially implemented. See the feature status table below.
+> **Note:** This project is under active development. Some advanced features (synced blocks, database views) are experimental or partially implemented. See the feature status table below. Automation workflows including webhook, Slack webhook, and email actions are fully available in the UI. Email delivery requires SMTP env vars (`EMAIL_HOST`, `EMAIL_USER`, `EMAIL_PASS`) and falls back to in-app notifications when they are not set.
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6.3-blue.svg)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-18.3.1-61dafb.svg)](https://reactjs.org/)
@@ -25,20 +25,20 @@ This project serves as a comprehensive portfolio piece demonstrating system desi
 
 ### Feature Status
 
-| Feature                       | Status          | Notes                                                 |
-| ----------------------------- | --------------- | ----------------------------------------------------- |
-| Wiki Pages CRUD               | ✅ Stable       | Create, edit, delete, search, tags                    |
-| Block Editor (core)           | ✅ Stable       | Paragraph, heading, code, image, table, callout, etc. |
-| Team Workspaces               | ✅ Stable       | Team isolation, member management                     |
-| Authentication (JWT)          | ✅ Stable       | Login, register, RBAC                                 |
-| Templates                     | ✅ Stable       | Template categories, template-based page creation     |
-| Calendar & Tasks              | ✅ Stable       | Team-scoped events and task management                |
-| Real-time Collaboration (Yjs) | ⚠️ Beta         | Core editing works; cursor/presence in progress       |
-| AI Search & Copilot           | ⚠️ Beta         | Requires OpenAI API key; search/summarize/RAG         |
-| Automation Workflows          | ⚠️ Beta         | Core triggers/actions work; team scoping in progress  |
-| Synced Blocks                 | 🧪 Experimental | Basic rendering; limited block type support           |
-| Email Automation              | 🧪 Experimental | Falls back to in-app notification (no SMTP)           |
-| Database Views (Notion-style) | 🧪 Experimental | Schema/rows exist; UI partially implemented           |
+| Feature                       | Status          | Notes                                                                                                                                          |
+| ----------------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Wiki Pages CRUD               | ✅ Stable       | Create, edit, delete, search, tags                                                                                                             |
+| Block Editor (core)           | ✅ Stable       | Paragraph, heading, code, image, table, callout, etc.                                                                                          |
+| Team Workspaces               | ✅ Stable       | Team isolation, member management                                                                                                              |
+| Authentication (JWT)          | ✅ Stable       | Login, register, RBAC                                                                                                                          |
+| Templates                     | ✅ Stable       | Template categories, template-based page creation                                                                                              |
+| Calendar & Tasks              | ✅ Stable       | Team-scoped events and task management                                                                                                         |
+| Real-time Collaboration (Yjs) | ⚠️ Beta         | Core editing works; cursor/presence in progress                                                                                                |
+| AI Search & Copilot           | ⚠️ Beta         | Requires OpenAI API key; search/summarize/RAG                                                                                                  |
+| Automation Workflows          | ⚠️ Beta         | Full UI: webhook, Slack webhook, send_email, run_ai_summary selectable; team scoping in progress                                               |
+| Synced Blocks                 | 🧪 Experimental | Basic rendering; limited block type support                                                                                                    |
+| Email Automation              | ⚠️ Beta         | Selectable in workflow UI; SMTP outbound via nodemailer; falls back to in-app notification when `EMAIL_HOST`/`EMAIL_USER`/`EMAIL_PASS` not set |
+| Database Views (Notion-style) | 🧪 Experimental | Schema/rows exist; UI partially implemented                                                                                                    |
 
 ---
 

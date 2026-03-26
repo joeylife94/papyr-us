@@ -1,3 +1,21 @@
+/**
+ * Returns true when the process is running inside a known deployed or CI environment.
+ * Checked against well-known platform and CI environment variables.
+ * Any non-empty value for these signals "deployed / shared context".
+ */
+export function isDeployedEnvironment(): boolean {
+  return !!(
+    process.env.RENDER ||
+    process.env.RAILWAY_ENVIRONMENT ||
+    process.env.VERCEL ||
+    process.env.FLY_APP_NAME ||
+    process.env.HEROKU_APP_NAME ||
+    process.env.K_SERVICE || // Google Cloud Run
+    process.env.KUBERNETES_SERVICE_HOST || // Kubernetes
+    process.env.CI // Generic CI (GitHub Actions, GitLab CI, CircleCI, etc.)
+  );
+}
+
 // Security validation for production environment
 function validateProductionConfig() {
   const isProduction = process.env.NODE_ENV === 'production';
@@ -13,12 +31,42 @@ function validateProductionConfig() {
     if (!process.env.DATABASE_URL) {
       errors.push('DATABASE_URL must be set in production');
     }
+    // LOCAL_DEV_UNSAFE_CORS must never reach production
+    if (process.env.LOCAL_DEV_UNSAFE_CORS === 'true') {
+      errors.push(
+        'LOCAL_DEV_UNSAFE_CORS=true is forbidden in production. ' +
+          'Remove it from your production environment immediately.'
+      );
+    }
+    // COLLAB_REQUIRE_AUTH must never be disabled in production
+    if (process.env.COLLAB_REQUIRE_AUTH === '0') {
+      errors.push(
+        'COLLAB_REQUIRE_AUTH=0 is forbidden in production. ' +
+          'Remove it from your production environment immediately.'
+      );
+    }
+  } else if (isDeployedEnvironment()) {
+    // Deployed non-production (staging, preview, CI): reject unsafe local-dev escapes
+    if (process.env.LOCAL_DEV_UNSAFE_CORS === 'true') {
+      errors.push(
+        'LOCAL_DEV_UNSAFE_CORS=true is not allowed in deployed environments. ' +
+          'This flag is exclusively for local developer machines. ' +
+          'Remove LOCAL_DEV_UNSAFE_CORS from your staging/preview/CI environment.'
+      );
+    }
+    if (process.env.COLLAB_REQUIRE_AUTH === '0') {
+      errors.push(
+        'COLLAB_REQUIRE_AUTH=0 is not allowed in deployed environments. ' +
+          'Collaboration auth bypass is exclusively for local developer machines. ' +
+          'Remove COLLAB_REQUIRE_AUTH=0 from your staging/preview/CI environment.'
+      );
+    }
   }
 
   if (errors.length > 0) {
     console.error('\n\ud83d\udea8 CRITICAL CONFIGURATION ERRORS:');
     errors.forEach((err) => console.error(`   \u274c ${err}`));
-    console.error('\nServer cannot start with insecure configuration in production.\n');
+    console.error('\nServer cannot start with insecure configuration.\n');
     process.exit(1);
   }
 }
@@ -110,6 +158,20 @@ export const config = {
 
   get isDevelopment() {
     return this.nodeEnv === 'development';
+  },
+
+  /**
+   * True ONLY when running on a genuine local developer machine:
+   *   - not production (NODE_ENV !== 'production')
+   *   - no deployed / CI environment signals detected
+   *
+   * ONLY this mode may use narrowly scoped unsafe escapes
+   * (LOCAL_DEV_UNSAFE_CORS, COLLAB_REQUIRE_AUTH=0).
+   * Staging, preview, and CI environments are NOT local dev even when
+   * NODE_ENV is set to 'development'.
+   */
+  get isLocalDev() {
+    return !this.isProduction && !isDeployedEnvironment();
   },
 
   get isReplit() {
