@@ -27,11 +27,7 @@ test.afterAll(async () => {
   await authRequest?.dispose();
 });
 
-async function createTeam(
-  request: APIRequestContext,
-  name: string,
-  displayName: string
-) {
+async function createTeam(request: APIRequestContext, name: string, displayName: string) {
   const resp = await request.post('/api/teams', {
     data: { name, displayName, description: `E2E team ${name}` },
   });
@@ -126,13 +122,7 @@ test.describe('Team Member Separation & Role Field Persistence', () => {
       '개발자',
       teamA.id
     );
-    const pmB = await createMember(
-      authRequest,
-      'PM B',
-      `pm-b-${ts}@example.com`,
-      'PM',
-      teamB.id
-    );
+    const pmB = await createMember(authRequest, 'PM B', `pm-b-${ts}@example.com`, 'PM', teamB.id);
 
     // Verify team A members
     const respA = await authRequest.get(`/api/members?teamId=${teamA.id}`);

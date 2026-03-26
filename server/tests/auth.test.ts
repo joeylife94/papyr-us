@@ -176,9 +176,7 @@ describe('Authentication API', () => {
       (storage.db.from as vi.Mock).mockReturnThis();
       (storage.db.where as vi.Mock).mockResolvedValue([mockUser]);
 
-      const response = await request(app)
-        .get('/api/auth/me')
-        .set('Cookie', authCookie(token));
+      const response = await request(app).get('/api/auth/me').set('Cookie', authCookie(token));
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual(mockUser);

@@ -21,10 +21,7 @@ test.afterAll(async () => {
   await authRequest?.dispose();
 });
 
-async function createTeam(
-  request: APIRequestContext,
-  name: string
-) {
+async function createTeam(request: APIRequestContext, name: string) {
   const resp = await request.post('/api/teams', {
     data: { name, displayName: `Team ${name}`, description: `E2E workflow team ${name}` },
   });
@@ -32,11 +29,7 @@ async function createTeam(
   return resp.json();
 }
 
-async function createWorkflow(
-  request: APIRequestContext,
-  name: string,
-  teamId: number | string
-) {
+async function createWorkflow(request: APIRequestContext, name: string, teamId: number | string) {
   const resp = await request.post('/api/workflows', {
     data: {
       name,

@@ -236,13 +236,11 @@ export function requireTeamMembership(req: AuthRequest, res: Response, next: Nex
 export function requireAdmin(req: AuthRequest, res: Response, next: NextFunction) {
   // Try to decode JWT directly if provided (so this middleware can be used standalone)
   try {
-    const payload = verifyRequestToken(req) as
-      | {
-        id?: number;
-        email?: string;
-        role?: string;
-      }
-      | null;
+    const payload = verifyRequestToken(req) as {
+      id?: number;
+      email?: string;
+      role?: string;
+    } | null;
     if (payload) {
       req.user = payload;
     }

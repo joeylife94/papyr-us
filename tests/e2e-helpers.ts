@@ -54,7 +54,11 @@ export async function createAuthenticatedApiContext(
 }
 
 /** Apply an authenticated cookie session to the browser context. */
-export async function loginPageWithCookies(page: Page, email: string, password: string): Promise<void> {
+export async function loginPageWithCookies(
+  page: Page,
+  email: string,
+  password: string
+): Promise<void> {
   const authContext = await createAuthenticatedApiContext(email, password, getBaseURL());
   const storageState = await authContext.storageState();
   if (storageState.cookies.length > 0) {

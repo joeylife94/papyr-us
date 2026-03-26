@@ -9,7 +9,10 @@ import cookieParser from 'cookie-parser';
 const TEST_JWT_SECRET = 'socket-test-secret';
 
 function authCookieFor(userId: number) {
-  const token = jwt.sign({ id: userId, email: `user-${userId}@test.com`, role: 'user' }, TEST_JWT_SECRET);
+  const token = jwt.sign(
+    { id: userId, email: `user-${userId}@test.com`, role: 'user' },
+    TEST_JWT_SECRET
+  );
   return `accessToken=${token}`;
 }
 
@@ -135,7 +138,7 @@ describe('Realtime notifications over Socket.IO', () => {
     }
   }, 15000);
 
-  it('rejects joining another user\'s notification room', async () => {
+  it("rejects joining another user's notification room", async () => {
     const nsUrl = `${baseUrl}/collab`;
     const intruderId = recipientId + 1;
     const client = Client(nsUrl, {
@@ -162,10 +165,14 @@ describe('Realtime notifications over Socket.IO', () => {
 
       const joinResult = await new Promise<{ ok: boolean; error?: string }>((resolve, reject) => {
         const t = setTimeout(() => reject(new Error('timeout waiting for join-member ack')), 3000);
-        client.emit('join-member', { memberId: recipientId }, (ack: { ok: boolean; error?: string }) => {
-          clearTimeout(t);
-          resolve(ack);
-        });
+        client.emit(
+          'join-member',
+          { memberId: recipientId },
+          (ack: { ok: boolean; error?: string }) => {
+            clearTimeout(t);
+            resolve(ack);
+          }
+        );
       });
 
       expect(joinResult).toEqual({ ok: false, error: 'Forbidden' });

@@ -15,10 +15,7 @@ import {
  */
 
 /** Create a team via API and return the team object */
-async function createTeamApi(
-  request: APIRequestContext,
-  name: string
-) {
+async function createTeamApi(request: APIRequestContext, name: string) {
   const resp = await request.post('/api/teams', {
     data: { name, displayName: `Team ${name}`, description: `E2E UI workflow team ${name}` },
   });
