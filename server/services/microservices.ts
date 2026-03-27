@@ -215,69 +215,6 @@ export function createApiGateway(): (req: Request, res: Response, next: NextFunc
 }
 
 /**
- * Circuit Breaker Pattern
- * Prevents cascade failures by failing fast when a service is unhealthy
- */
-interface CircuitBreakerState {
-  failures: number;
-  lastFailure: Date | null;
-  state: 'closed' | 'open' | 'half-open';
-  nextRetry: Date | null;
-}
-
-const circuitBreakers = new Map<string, CircuitBreakerState>();
-
-const FAILURE_THRESHOLD = 5;
-const RECOVERY_TIMEOUT = 30000; // 30 seconds
-
-export function getCircuitState(service: string): CircuitBreakerState {
-  if (!circuitBreakers.has(service)) {
-    circuitBreakers.set(service, {
-      failures: 0,
-      lastFailure: null,
-      state: 'closed',
-      nextRetry: null,
-    });
-  }
-  return circuitBreakers.get(service)!;
-}
-
-export function recordSuccess(service: string): void {
-  const state = getCircuitState(service);
-  state.failures = 0;
-  state.state = 'closed';
-  state.nextRetry = null;
-}
-
-export function recordFailure(service: string): void {
-  const state = getCircuitState(service);
-  state.failures++;
-  state.lastFailure = new Date();
-
-  if (state.failures >= FAILURE_THRESHOLD) {
-    state.state = 'open';
-    state.nextRetry = new Date(Date.now() + RECOVERY_TIMEOUT);
-    logger.warn('Circuit breaker opened', { service, failures: state.failures });
-  }
-}
-
-export function canMakeRequest(service: string): boolean {
-  const state = getCircuitState(service);
-
-  if (state.state === 'closed') {
-    return true;
-  }
-
-  if (state.state === 'open' && state.nextRetry && new Date() > state.nextRetry) {
-    state.state = 'half-open';
-    logger.info('Circuit breaker half-open', { service });
-    return true;
-  }
-
-  return state.state !== 'open';
-}
-
-/**
  * Service mesh configuration (for Kubernetes/Istio)
  */
 export const serviceMeshConfig = {

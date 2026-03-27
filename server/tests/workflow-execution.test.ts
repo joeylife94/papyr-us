@@ -5,11 +5,11 @@
  * action types whose implementation truth was under scrutiny:
  *   - webhook       (generic HTTP outbound)
  *   - slack_webhook (Slack incoming-webhook format)
- *   - send_email    (SMTP path + in-app fallback path)
+ *   - send_email    (SMTP path + fail-fast on absent SMTP)
  *
  * These tests verify structural correctness of the execution path:
  * - The correct transport is invoked with the expected payload
- * - Fallback behaviour is precisely what the code and docs claim
+ * - Transient external errors propagate as explicit exceptions (no silent fallbacks)
  *
  * Runtime delivery to real endpoints or real SMTP servers is not performed
  * here — that requires a live integration environment with credentials.
@@ -143,7 +143,7 @@ describe('TC-WFE-WEBHOOK: webhook action execution', () => {
     expect(options.headers['Content-Type']).toBe('application/json');
   });
 
-  it('TC-WFE-002: records the run when the endpoint returns a non-OK status', async () => {
+  it('TC-WFE-002: throws ExternalIntegrationError and records the run when the endpoint fails', async () => {
     mockFetch.mockResolvedValue({
       ok: false,
       status: 500,
@@ -155,9 +155,13 @@ describe('TC-WFE-WEBHOOK: webhook action execution', () => {
       method: 'POST',
     });
 
-    // executeWorkflow resolves even on action failure — it records the failure
-    await expect(executeWorkflow(workflow, TRIGGER_CONTEXT)).resolves.not.toThrow();
-    expect(storage.updateWorkflowRun).toHaveBeenCalled();
+    // executeWorkflow now throws ExternalIntegrationError for transient external failures
+    await expect(executeWorkflow(workflow, TRIGGER_CONTEXT)).rejects.toThrow();
+    // The run lifecycle must still be recorded as failed before throwing
+    expect(storage.updateWorkflowRun).toHaveBeenCalledWith(
+      expect.any(Number),
+      expect.objectContaining({ status: 'failed' })
+    );
   });
 });
 
@@ -232,41 +236,37 @@ describe('TC-WFE-EMAIL: send_email action execution', () => {
     expect(mailOpts.text).toBe('A page was created.');
   });
 
-  it('TC-WFE-006: falls back to in-app notification for numeric user ID when SMTP is absent', async () => {
+  it('TC-WFE-006: throws ExternalIntegrationError when SMTP is absent', async () => {
     // No SMTP credentials set (afterEach clears them)
-    const mockNotification = { id: 99, recipientId: 5, title: 'Alert', content: 'msg' };
-    (storage.createNotification as ReturnType<typeof vi.fn>).mockResolvedValue(mockNotification);
-
     const workflow = makeWorkflow('send_email', {
-      to: '5', // numeric user ID as string — valid fallback target
+      to: 'recipient@example.com',
       subject: 'Alert',
       message: 'A page was created.',
     });
 
-    await executeWorkflow(workflow, TRIGGER_CONTEXT);
-
-    // In-app notification must have been created for user ID 5
-    expect(storage.createNotification).toHaveBeenCalledWith(
-      expect.objectContaining({ recipientId: 5 })
+    // executeWorkflow must reject — no silent in-app fallback
+    await expect(executeWorkflow(workflow, TRIGGER_CONTEXT)).rejects.toThrow(
+      /send_email: SMTP is not configured/
+    );
+    // The run must still have been recorded as failed before throwing
+    expect(storage.updateWorkflowRun).toHaveBeenCalledWith(
+      expect.any(Number),
+      expect.objectContaining({ status: 'failed' })
     );
   });
 
-  it('TC-WFE-007: does not create in-app notification when recipient is an email address string and SMTP is absent', async () => {
+  it('TC-WFE-007: never creates an in-app notification — fails fast for any absent-SMTP case', async () => {
     // No SMTP credentials (afterEach clears; beforeEach does not set them)
-    // email strings are NOT resolved to user IDs by the fallback
-
     const workflow = makeWorkflow('send_email', {
-      to: 'user@example.com', // email string — fallback cannot handle this
+      to: 'user@example.com',
       subject: 'Alert',
       message: 'A page was created.',
     });
 
-    await executeWorkflow(workflow, TRIGGER_CONTEXT);
+    // executeWorkflow must reject — no silent fallback of any kind
+    await expect(executeWorkflow(workflow, TRIGGER_CONTEXT)).rejects.toThrow();
 
-    // createNotification should NOT have been called — email string is skipped
+    // createNotification must NOT have been called
     expect(storage.createNotification).not.toHaveBeenCalled();
-
-    // The run lifecycle must still be recorded (success=false with note)
-    expect(storage.updateWorkflowRun).toHaveBeenCalled();
   });
 });

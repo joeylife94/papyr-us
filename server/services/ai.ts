@@ -1,10 +1,21 @@
 import OpenAI from 'openai';
+import logger from './logger.js';
+import { ExternalIntegrationError } from './resilience.js';
 
 // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
 const apiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR;
 
-// OpenAI client - only initialized if API key is available
-const openai = apiKey ? new OpenAI({ apiKey }) : null;
+// OpenAI client — only initialized if API key is available.
+// timeout: hard abort after 15 s (production SLA).
+// maxRetries: SDK will retry up to 3 times with exponential backoff on 429 / 5xx before
+//   propagating the error, which we then convert to ExternalIntegrationError.
+const openai = apiKey
+  ? new OpenAI({
+      apiKey,
+      timeout: 15_000,
+      maxRetries: 3,
+    })
+  : null;
 
 // Helper to check if AI features are available
 export function isAIAvailable(): boolean {
@@ -74,8 +85,13 @@ Respond with JSON in this format: {
     const result = JSON.parse(response.choices[0].message.content || '{"suggestions": []}');
     return result.suggestions || [];
   } catch (error) {
-    console.error('Failed to generate content suggestions:', error);
-    return [];
+    logger.error('[AI] generateContentSuggestions failed', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    throw new ExternalIntegrationError('openai', {
+      message: 'Failed to generate content suggestions',
+      cause: error instanceof Error ? error : new Error(String(error)),
+    });
   }
 }
 
@@ -117,12 +133,13 @@ Respond with JSON in this format: {
       readingTime: result.readingTime || Math.ceil(content.split(' ').length / 200), // fallback: ~200 words per minute
     };
   } catch (error) {
-    console.error('Failed to summarize content:', error);
-    return {
-      summary: 'Summary unavailable',
-      keyPoints: [],
-      readingTime: Math.ceil(content.split(' ').length / 200),
-    };
+    logger.error('[AI] summarizeContent failed', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    throw new ExternalIntegrationError('openai', {
+      message: 'Failed to summarize content',
+      cause: error instanceof Error ? error : new Error(String(error)),
+    });
   }
 }
 
@@ -153,8 +170,13 @@ export async function generateContent(
 
     return response.choices[0].message.content || '';
   } catch (error) {
-    console.error('Failed to generate content:', error);
-    throw new Error('Failed to generate content: ' + (error as Error).message);
+    logger.error('[AI] generateContent failed', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    throw new ExternalIntegrationError('openai', {
+      message: 'Failed to generate content',
+      cause: error instanceof Error ? error : new Error(String(error)),
+    });
   }
 }
 
@@ -240,25 +262,13 @@ Rank by relevance (0.0-1.0) and provide specific matched terms and reasoning.`;
       })
       .sort((a: SearchResult, b: SearchResult) => b.relevance - a.relevance);
   } catch (error) {
-    console.error('Failed to perform smart search:', error);
-    // Fallback to simple text search
-    return documents
-      .map((doc) => ({
-        id: doc.id,
-        title: doc.title,
-        content: doc.content,
-        relevance: doc.title.toLowerCase().includes(query.toLowerCase())
-          ? 0.8
-          : doc.content.toLowerCase().includes(query.toLowerCase())
-            ? 0.6
-            : 0.3,
-        matchedTerms: [query],
-        summary: `Found "${query}" in ${doc.type}`,
-        type: doc.type,
-        url: doc.url,
-      }))
-      .filter((result) => result.relevance > 0.3)
-      .sort((a, b) => b.relevance - a.relevance);
+    logger.error('[AI] smartSearch failed', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    throw new ExternalIntegrationError('openai', {
+      message: 'AI smart search failed',
+      cause: error instanceof Error ? error : new Error(String(error)),
+    });
   }
 }
 
@@ -290,8 +300,13 @@ Respond with JSON in this format: {
     const result = JSON.parse(response.choices[0].message.content || '{"suggestions": []}');
     return result.suggestions || [];
   } catch (error) {
-    console.error('Failed to generate search suggestions:', error);
-    return [];
+    logger.error('[AI] generateSearchSuggestions failed', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    throw new ExternalIntegrationError('openai', {
+      message: 'Failed to generate search suggestions',
+      cause: error instanceof Error ? error : new Error(String(error)),
+    });
   }
 }
 
@@ -356,8 +371,13 @@ Current Context:`;
 
     return response.choices[0].message.content || '';
   } catch (error) {
-    console.error('Failed to chat with copilot:', error);
-    throw new Error('AI Copilot is currently unavailable: ' + (error as Error).message);
+    logger.error('[AI] chatWithCopilot failed', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    throw new ExternalIntegrationError('openai', {
+      message: 'AI Copilot is currently unavailable',
+      cause: error instanceof Error ? error : new Error(String(error)),
+    });
   }
 }
 
@@ -410,8 +430,13 @@ Respond with JSON in this format: {
     const result = JSON.parse(response.choices[0].message.content || '{"tasks": []}');
     return result.tasks || [];
   } catch (error) {
-    console.error('Failed to extract tasks:', error);
-    return [];
+    logger.error('[AI] extractTasks failed', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    throw new ExternalIntegrationError('openai', {
+      message: 'Failed to extract tasks from content',
+      cause: error instanceof Error ? error : new Error(String(error)),
+    });
   }
 }
 
@@ -486,8 +511,13 @@ Find up to 5 most related pages, ranked by relevance (0.0-1.0).`;
       .sort((a: RelatedPage, b: RelatedPage) => b.relevance - a.relevance)
       .slice(0, 5);
   } catch (error) {
-    console.error('Failed to find related pages:', error);
-    return [];
+    logger.error('[AI] findRelatedPages failed', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    throw new ExternalIntegrationError('openai', {
+      message: 'Failed to find related pages',
+      cause: error instanceof Error ? error : new Error(String(error)),
+    });
   }
 }
 
@@ -508,18 +538,29 @@ export async function inlineAIAction(
     taskify: `Convert the following text into a concise, actionable task list. Return only the task lines, each starting with "- ":\n\n${text}`,
   };
 
-  const response = await getOpenAI().chat.completions.create({
-    model: 'gpt-4o',
-    messages: [
-      {
-        role: 'system',
-        content: 'You are a precise writing assistant. Follow the instruction exactly.',
-      },
-      { role: 'user', content: prompts[action] },
-    ],
-    max_tokens: 512,
-  });
+  try {
+    const response = await getOpenAI().chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        {
+          role: 'system',
+          content: 'You are a precise writing assistant. Follow the instruction exactly.',
+        },
+        { role: 'user', content: prompts[action] },
+      ],
+      max_tokens: 512,
+    });
 
-  const result = response.choices[0].message.content?.trim() || '';
-  return { action, result };
+    const result = response.choices[0].message.content?.trim() || '';
+    return { action, result };
+  } catch (error) {
+    logger.error('[AI] inlineAIAction failed', {
+      action,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    throw new ExternalIntegrationError('openai', {
+      message: `Inline AI action '${action}' failed`,
+      cause: error instanceof Error ? error : new Error(String(error)),
+    });
+  }
 }

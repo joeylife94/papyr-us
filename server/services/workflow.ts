@@ -10,6 +10,7 @@ import type { DBStorage } from '../storage.js';
 import * as aiService from './ai.js';
 import { sendEmail, isEmailConfigured } from './email.js';
 import logger from './logger.js';
+import { fetchWithRetry, ExternalIntegrationError } from './resilience.js';
 
 let _storage: DBStorage | null = null;
 
@@ -195,19 +196,32 @@ async function executeAction(
         const summary = await aiService.summarizeContent(context.trigger.content);
         return { success: true, result: { summary } };
 
-      case 'webhook':
-        const response = await fetch(processedConfig.url || '', {
-          method: processedConfig.method || 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...processedConfig.headers,
+      case 'webhook': {
+        // 5-second timeout; retries on 429/5xx with exponential backoff; throws on exhaustion.
+        const webhookUrl = processedConfig.url || '';
+        if (!webhookUrl) {
+          return { success: false, error: 'webhook requires a url in config' };
+        }
+        const webhookResponse = await fetchWithRetry(
+          webhookUrl,
+          {
+            method: processedConfig.method || 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...processedConfig.headers,
+            },
+            body: JSON.stringify(processedConfig.body || context),
           },
-          body: JSON.stringify(processedConfig.body || context),
-        });
-        const data = await response.json();
-        return { success: response.ok, result: data };
+          { timeoutMs: 5_000, serviceName: 'webhook' }
+        );
+        if (!webhookResponse.ok) {
+          throw new Error(`Webhook failed with status: ${webhookResponse.status}`);
+        }
+        const webhookData = await webhookResponse.json().catch(() => ({}));
+        return { success: true, result: webhookData };
+      }
 
-      case 'slack_webhook':
+      case 'slack_webhook': {
         if (!processedConfig.url) {
           return { success: false, error: 'slack_webhook requires a url in config' };
         }
@@ -218,31 +232,31 @@ async function executeAction(
           ...(processedConfig.icon_emoji && { icon_emoji: processedConfig.icon_emoji }),
           ...(processedConfig.blocks && { blocks: processedConfig.blocks }),
         };
-        const slackResponse = await fetch(processedConfig.url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(slackPayload),
-        });
-        return {
-          success: slackResponse.ok,
-          result: { status: slackResponse.status },
-        };
+        // 5-second timeout; retries on 429/5xx with exponential backoff; throws on exhaustion.
+        const slackResponse = await fetchWithRetry(
+          processedConfig.url,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(slackPayload),
+          },
+          { timeoutMs: 5_000, serviceName: 'slack_webhook' }
+        );
+        if (!slackResponse.ok) {
+          throw new Error(`Slack webhook failed with status: ${slackResponse.status}`);
+        }
+        return { success: true, result: { delivered: true } };
+      }
 
       case 'send_email': {
         // Real outbound email integration via SMTP (nodemailer).
         // Requires: EMAIL_HOST, EMAIL_USER, EMAIL_PASS in environment.
         //
-        // Recipient contract:
-        //   - config.to / config.recipients may be a string (single email or
-        //     comma-separated list) or an array of strings.
-        //   - SMTP path: accepts any valid email address string.
-        //   - In-app fallback path: only works for recipients whose value is a
-        //     valid numeric user ID (integer > 0).  Email address strings are
-        //     silently skipped by the fallback — the fallback does NOT look up
-        //     users by email address.  When the UI sends an email address the
-        //     fallback will produce zero notifications and success=false.
-        //     This is intentional: the fallback is for programmatic/internal
-        //     workflows that supply numeric IDs, not for arbitrary email strings.
+        // Fail-Fast contract:
+        //   - If SMTP is not configured — throws ExternalIntegrationError immediately.
+        //   - If SMTP send fails    — throws ExternalIntegrationError; no silent fallback
+        //     to in-app notifications.  The caller (executeWorkflow) records the run as
+        //     failed with the exact reason.
         const rawRecipients = processedConfig.to ?? processedConfig.recipients;
         const emailTo: string[] = Array.isArray(rawRecipients)
           ? rawRecipients.map(String)
@@ -262,75 +276,32 @@ async function executeAction(
           };
         }
 
-        // Attempt real outbound email first.
-        if (isEmailConfigured()) {
-          const emailResult = await sendEmail({
-            to: emailTo,
-            subject: emailSubject,
-            text: emailBody,
-            html: processedConfig.html || undefined,
+        if (!isEmailConfigured()) {
+          throw new ExternalIntegrationError('email', {
+            message:
+              'send_email: SMTP is not configured. ' +
+              'Set EMAIL_HOST, EMAIL_USER, and EMAIL_PASS to enable outbound email.',
           });
-
-          if (emailResult.sent) {
-            return {
-              success: true,
-              result: { sent: emailTo.length, messageId: emailResult.messageId, via: 'smtp' },
-            };
-          }
-
-          // SMTP attempt failed — fall through to in-app notification fallback below.
-          logger.warn('[Workflow] SMTP send failed, falling back to in-app notification', {
-            error: emailResult.error,
-            to: emailTo,
-            subject: emailSubject,
-          });
-        } else {
-          logger.warn(
-            '[Workflow] send_email: SMTP not configured (EMAIL_HOST / EMAIL_USER / EMAIL_PASS). ' +
-              'Will attempt in-app notification fallback for any numeric-ID recipients. ' +
-              'Email address recipients (e.g. from the UI) are NOT supported by the fallback — ' +
-              'set EMAIL_HOST/EMAIL_USER/EMAIL_PASS to enable real email delivery.',
-            { to: emailTo, subject: emailSubject }
-          );
         }
 
-        // Fallback: deliver as in-app notifications for users whose recipient value is a numeric ID.
-        // LIMITATION: email address strings (e.g. "user@example.com") are NOT resolved to user IDs.
-        // The fallback only works when the workflow action was configured with numeric user IDs
-        // (e.g. programmatic workflows).  UI-submitted email addresses will produce 0 notifications.
-        const fallbackNotifications: any[] = [];
-        for (const recipient of emailTo) {
-          const recipientId =
-            typeof recipient === 'number' ? recipient : parseInt(String(recipient), 10);
-          if (!Number.isInteger(recipientId) || recipientId <= 0) continue;
-          try {
-            const notification = await getWorkflowStorage().createNotification({
-              recipientId,
-              type: 'system',
-              title: emailSubject,
-              content: emailBody,
-              isRead: false,
-            });
-            fallbackNotifications.push(notification);
-          } catch (err) {
-            logger.error('[Workflow] Failed to create fallback notification', {
-              recipientId,
-              error: err instanceof Error ? err.message : 'Unknown error',
-            });
-          }
+        const emailResult = await sendEmail({
+          to: emailTo,
+          subject: emailSubject,
+          text: emailBody,
+          html: processedConfig.html || undefined,
+        });
+
+        if (emailResult.sent) {
+          return {
+            success: true,
+            result: { sent: emailTo.length, messageId: emailResult.messageId, via: 'smtp' },
+          };
         }
-        return {
-          success: fallbackNotifications.length > 0,
-          result: {
-            sent: fallbackNotifications.length,
-            fallback: 'in-app-notification',
-            smtpConfigured: isEmailConfigured(),
-            note:
-              fallbackNotifications.length === 0
-                ? 'No in-app notifications created. Fallback requires numeric user IDs; email address strings are not resolved.'
-                : undefined,
-          },
-        };
+
+        // SMTP send failed — fail-fast, no silent fallback.
+        throw new ExternalIntegrationError('email', {
+          message: `SMTP send failed: ${emailResult.error ?? 'unknown error'}`,
+        });
       }
 
       case 'assign_task':
@@ -355,8 +326,23 @@ async function executeAction(
         return { success: false, error: `Unknown action type: ${action.type}` };
     }
   } catch (error) {
-    logger.error('Action execution error:', {
+    if (error instanceof ExternalIntegrationError) {
+      // Transient external-service failure — log and re-throw so executeWorkflow's
+      // catch can record the run as failed and then propagate to executeWorkflowWithRetry.
+      logger.error('Action execution error', {
+        actionType: action.type,
+        errorType: 'ExternalIntegrationError',
+        serviceName: error.serviceName,
+        statusCode: error.statusCode,
+        attempts: error.attempts,
+        error: error.message,
+        stack: error.stack,
+      });
+      throw error;
+    }
+    logger.error('Action execution error', {
       actionType: action.type,
+      errorType: 'InternalError',
       error: error instanceof Error ? error.message : 'Unknown error',
       stack: error instanceof Error ? error.stack : undefined,
     });
@@ -446,7 +432,8 @@ export async function executeWorkflow(
       error: error instanceof Error ? error.message : 'Unknown error',
       completedAt: new Date(),
     });
-    return await getWorkflowStorage().getWorkflowRun(runId);
+    // Re-throw so executeWorkflowWithRetry can catch and apply exponential backoff.
+    throw error;
   }
 }
 

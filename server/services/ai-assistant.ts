@@ -5,6 +5,8 @@ import logger from './logger.js';
 const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
+      timeout: 15_000,
+      maxRetries: 3,
     })
   : null;
 
@@ -57,10 +59,7 @@ export class AIAssistantService {
    */
   async assist(request: AIAssistRequest): Promise<AIAssistResponse> {
     if (!this.isEnabled || !openai) {
-      return {
-        success: false,
-        error: 'AI assistant is not available. Please configure OPENAI_API_KEY.',
-      };
+      throw new Error('AI Service Unavailable: OPENAI_API_KEY is not configured.');
     }
 
     try {
@@ -90,10 +89,7 @@ export class AIAssistantService {
       const result = completion.choices[0]?.message?.content?.trim();
 
       if (!result) {
-        return {
-          success: false,
-          error: 'Failed to generate response',
-        };
+        throw new Error('Upstream AI failure: empty response from OpenAI');
       }
 
       logger.info(`AI Assistant - Success, Result length: ${result.length}`);
@@ -104,10 +100,7 @@ export class AIAssistantService {
       };
     } catch (error: any) {
       logger.error('AI Assistant error:', error);
-      return {
-        success: false,
-        error: error.message || 'Failed to process AI request',
-      };
+      throw error;
     }
   }
 
@@ -172,10 +165,7 @@ export class AIAssistantService {
     blockType: 'table' | 'list' | 'code'
   ): Promise<AIAssistResponse> {
     if (!this.isEnabled || !openai) {
-      return {
-        success: false,
-        error: 'AI assistant is not available.',
-      };
+      throw new Error('AI Service Unavailable: OPENAI_API_KEY is not configured.');
     }
 
     try {
@@ -216,10 +206,7 @@ export class AIAssistantService {
       const result = completion.choices[0]?.message?.content?.trim();
 
       if (!result) {
-        return {
-          success: false,
-          error: 'Failed to generate block content',
-        };
+        throw new Error('Upstream AI failure: empty response from OpenAI');
       }
 
       logger.info(`AI Block Generation - Success, Type: ${blockType}`);
@@ -230,10 +217,7 @@ export class AIAssistantService {
       };
     } catch (error: any) {
       logger.error('AI Block Generation error:', error);
-      return {
-        success: false,
-        error: error.message || 'Failed to generate block',
-      };
+      throw error;
     }
   }
 
@@ -242,12 +226,12 @@ export class AIAssistantService {
    */
   async getSuggestions(text: string, cursorPosition: number): Promise<string[]> {
     if (!this.isEnabled || !openai) {
-      return [];
+      throw new Error('AI Service Unavailable: OPENAI_API_KEY is not configured.');
     }
 
+    // Get text around cursor
+    const contextBefore = text.substring(Math.max(0, cursorPosition - 200), cursorPosition);
     try {
-      // Get text around cursor
-      const contextBefore = text.substring(Math.max(0, cursorPosition - 200), cursorPosition);
       const contextAfter = text.substring(
         cursorPosition,
         Math.min(text.length, cursorPosition + 50)
@@ -273,7 +257,7 @@ Suggest 3 short, relevant continuations (each 3-7 words). Return ONLY the sugges
       });
 
       const result = completion.choices[0]?.message?.content?.trim();
-      if (!result) return [];
+      if (!result) throw new Error('getSuggestions: empty response from OpenAI');
 
       const suggestions = result
         .split('\n')
@@ -283,7 +267,7 @@ Suggest 3 short, relevant continuations (each 3-7 words). Return ONLY the sugges
       return suggestions;
     } catch (error: any) {
       logger.error('AI Suggestions error:', error);
-      return [];
+      throw error;
     }
   }
 
@@ -292,10 +276,7 @@ Suggest 3 short, relevant continuations (each 3-7 words). Return ONLY the sugges
    */
   async autoFormat(text: string): Promise<AIAssistResponse> {
     if (!this.isEnabled || !openai) {
-      return {
-        success: false,
-        error: 'AI assistant is not available.',
-      };
+      throw new Error('AI Service Unavailable: OPENAI_API_KEY is not configured.');
     }
 
     try {
@@ -326,10 +307,7 @@ Return ONLY the formatted text, no explanations.`;
       const result = completion.choices[0]?.message?.content?.trim();
 
       if (!result) {
-        return {
-          success: false,
-          error: 'Failed to format text',
-        };
+        throw new Error('Upstream AI failure: empty response from OpenAI');
       }
 
       return {
@@ -338,10 +316,7 @@ Return ONLY the formatted text, no explanations.`;
       };
     } catch (error: any) {
       logger.error('AI Auto-format error:', error);
-      return {
-        success: false,
-        error: error.message || 'Failed to format text',
-      };
+      throw error;
     }
   }
 }

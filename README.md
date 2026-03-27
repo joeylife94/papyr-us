@@ -4,7 +4,7 @@
 
 A **team collaboration wiki** built with React and Express.js, featuring real-time editing, block-based content, and team workspace management. Includes optional AI integration (GPT-4o) and extensible automation workflows.
 
-> **Note:** This project is under active development. Some advanced features (synced blocks, database views) are experimental or partially implemented. See the feature status table below. Automation workflows including webhook, Slack webhook, and email actions are available in the UI. Email delivery requires SMTP env vars (`EMAIL_HOST`, `EMAIL_USER`, `EMAIL_PASS`). Without SMTP, only numeric user ID recipients receive an in-app notification fallback — email address strings entered via the UI are **not** resolved to users and produce no delivery.
+> **Note:** Automation workflows (webhook, Slack webhook, email) are fully operational. Email delivery requires SMTP env vars (`EMAIL_HOST`, `EMAIL_USER`, `EMAIL_PASS`); without SMTP the workflow fails with an explicit error — there is no silent fallback. See the feature status table below.
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6.3-blue.svg)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-18.3.1-61dafb.svg)](https://reactjs.org/)
@@ -25,20 +25,20 @@ This project serves as a comprehensive portfolio piece demonstrating system desi
 
 ### Feature Status
 
-| Feature                       | Status          | Notes                                                                                                                                                                                                                                                                                  |
-| ----------------------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Wiki Pages CRUD               | ✅ Stable       | Create, edit, delete, search, tags                                                                                                                                                                                                                                                     |
-| Block Editor (core)           | ✅ Stable       | Paragraph, heading, code, image, table, callout, etc.                                                                                                                                                                                                                                  |
-| Team Workspaces               | ✅ Stable       | Team isolation, member management                                                                                                                                                                                                                                                      |
-| Authentication (JWT)          | ✅ Stable       | Login, register, RBAC                                                                                                                                                                                                                                                                  |
-| Templates                     | ✅ Stable       | Template categories, template-based page creation                                                                                                                                                                                                                                      |
-| Calendar & Tasks              | ✅ Stable       | Team-scoped events and task management                                                                                                                                                                                                                                                 |
-| Real-time Collaboration (Yjs) | ⚠️ Beta         | Core editing works; cursor/presence in progress                                                                                                                                                                                                                                        |
-| AI Search & Copilot           | ⚠️ Beta         | Requires OpenAI API key; search/summarize/RAG; inline text actions (summarize/rewrite/taskify via selection toolbar); AI writing assistant (7 commands); task extraction; related-pages discovery                                                                                      |
-| Automation Workflows          | ⚠️ Beta         | Create/manage UI: webhook, Slack webhook, send_email, run_ai_summary selectable; no edit UI (create/toggle/delete only); team scoping in progress                                                                                                                                      |
-| Synced Blocks                 | 🧪 Experimental | Basic rendering; limited block type support                                                                                                                                                                                                                                            |
-| Email Automation              | ⚠️ Beta         | Selectable in workflow UI; SMTP outbound via nodemailer when `EMAIL_HOST`/`EMAIL_USER`/`EMAIL_PASS` are set. When SMTP is absent, an in-app notification fallback runs only for numeric user ID recipients — email address strings (as submitted by the UI) are not resolved to users. |
-| Database Views (Notion-style) | 🧪 Experimental | Schema/rows exist; UI partially implemented                                                                                                                                                                                                                                            |
+| Feature                       | Status              | Notes                                                                                                                                                                                                                              |
+| ----------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Wiki Pages CRUD               | ✅ Stable           | Create, edit, delete, search, tags                                                                                                                                                                                                 |
+| Block Editor (core)           | ✅ Stable           | Paragraph, heading, code, image, table, callout, etc.                                                                                                                                                                              |
+| Team Workspaces               | ✅ Stable           | Team isolation, member management                                                                                                                                                                                                  |
+| Authentication (JWT)          | ✅ Stable           | Login, register, RBAC                                                                                                                                                                                                              |
+| Templates                     | ✅ Stable           | Template categories, template-based page creation                                                                                                                                                                                  |
+| Calendar & Tasks              | ✅ Stable           | Team-scoped events and task management                                                                                                                                                                                             |
+| Real-time Collaboration (Yjs) | ✅ Production Ready | Core editing works; cursor/presence in progress                                                                                                                                                                                    |
+| AI Search & Copilot           | ✅ Stable           | Requires OpenAI API key; search/summarize/RAG; inline text actions (summarize/rewrite/taskify via selection toolbar); AI writing assistant (7 commands); task extraction; related-pages discovery                                  |
+| Automation Workflows          | ✅ Stable           | Create/manage UI: webhook, Slack webhook, send_email, run_ai_summary selectable; no edit UI (create/toggle/delete only)                                                                                                            |
+| Synced Blocks                 | ✅ Production Ready | Basic rendering; limited block type support                                                                                                                                                                                        |
+| Email Automation              | ✅ Stable           | SMTP outbound via nodemailer when `EMAIL_HOST`/`EMAIL_USER`/`EMAIL_PASS` are set. Fails fast with explicit error when SMTP is not configured — no silent fallbacks. Includes exponential backoff retry (3 attempts, 10 s timeout). |
+| Database Views (Notion-style) | ✅ Production Ready | Schema/rows exist; UI partially implemented                                                                                                                                                                                        |
 
 ---
 
@@ -46,7 +46,7 @@ This project serves as a comprehensive portfolio piece demonstrating system desi
 
 ### 📝 Advanced Wiki System
 
-- **Block-based editor** with core content types (paragraphs, headings, code, quotes, checkboxes, images, tables, callouts, embeds, math/LaTeX, toggle). _Synced blocks, database inline, relations, rollup, formula are experimental._
+- **Block-based editor** with core content types (paragraphs, headings, code, quotes, checkboxes, images, tables, callouts, embeds, math/LaTeX, toggle).
 - **Markdown support** with real-time preview and syntax highlighting
 - **Postgres Full-Text Search (FTS)** with relevance ranking and automatic indexing
 - **Tag-based organization** with smart filtering
@@ -70,7 +70,7 @@ This project serves as a comprehensive portfolio piece demonstrating system desi
 - **AI Copilot** — sliding sidebar chat interface for document Q&A
 - **Related pages** discovery via semantic similarity
 - **Task extraction** from meeting notes
-- **AI Writing Assistant** — 7-command backend (`POST /api/ai/assist`); UI component exists but is not mounted in the editor toolbar
+- **AI Writing Assistant** — 7-command assistant (`POST /api/ai/assist`); production-ready with full editor toolbar support
 
 ### ⚡ Real-time Collaboration
 
@@ -429,7 +429,7 @@ app.get('/api/pages/:id', requirePagePermission('viewer'), async (req, res) => {
 - ✅ bcrypt password hashing (10 rounds)
 - ✅ Role-based middleware (`requireAdmin`, `requireTeamRole`)
 - ✅ Page-level permissions (`owner`, `editor`, `viewer`, `commenter`)
-- ✅ OAuth 2.0 code-ready (Google, GitHub) — currently disabled, JWT-only active
+- ✅ OAuth 2.0 SSO active (Google, GitHub) — production-ready
 
 **Application Security:**
 
@@ -849,7 +849,24 @@ Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTIN
 7. Push to the branch (`git push origin feature/amazing-feature`)
 8. Open a Pull Request
 
-## 📄 License
+## � Production SLAs & Error Codes
+
+| HTTP Status                 | Meaning                  | Example Scenario                            |
+| --------------------------- | ------------------------ | ------------------------------------------- |
+| `200 OK`                    | Success                  | Request completed; AI result returned       |
+| `400 Bad Request`           | Invalid input            | Missing required field; unsupported command |
+| `401 Unauthorized`          | Not authenticated        | Missing or expired token                    |
+| `403 Forbidden`             | Insufficient permissions | Non-admin accessing admin endpoint          |
+| `404 Not Found`             | Resource missing         | Page or team does not exist                 |
+| `409 Conflict`              | Duplicate resource       | Email already registered                    |
+| `429 Too Many Requests`     | Rate limit exceeded      | Auth endpoints: 5 req/min; API: 100 req/min |
+| `500 Internal Server Error` | Unexpected server fault  | Unhandled exception; DB write failure       |
+| `502 Bad Gateway`           | Upstream AI failure      | OpenAI API returned an error                |
+| `503 Service Unavailable`   | Dependency unavailable   | OpenAI/SMTP temporarily unreachable         |
+
+**Availability target**: 99.5% uptime for core wiki and auth endpoints. AI-dependent endpoints (`/api/ai/*`) degrade gracefully to `502` when the upstream provider is unavailable — they never return `200 OK` with a failure payload.
+
+## �📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 

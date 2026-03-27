@@ -13,6 +13,9 @@ const featureLabels: Partial<Record<keyof FeatureFlags, string>> = {
   FEATURE_AI_SEARCH: 'AI Search',
 };
 
+// Features hardcoded as production-ready — bypass the runtime flag check.
+const PRODUCTION_READY = new Set<keyof Omit<FeatureFlags, 'PAPYR_MODE'>>(['FEATURE_AI_SEARCH']);
+
 export function FeatureGate({
   flag,
   children,
@@ -22,9 +25,9 @@ export function FeatureGate({
 }) {
   const { flags } = useFeatureFlags();
 
-  if (!flags[flag]) {
-    return <FeatureDisabledPage featureName={featureLabels[flag] || String(flag)} />;
+  if (PRODUCTION_READY.has(flag) || flags[flag]) {
+    return <>{children}</>;
   }
 
-  return <>{children}</>;
+  return <FeatureDisabledPage featureName={featureLabels[flag] || String(flag)} />;
 }

@@ -1,4 +1,4 @@
-# SSO 및 인증 가이드
+﻿# SSO 및 인증 가이드
 
 > 마지막 업데이트: 2026-02-01
 
@@ -40,7 +40,7 @@ Papyr.us의 SSO(Single Sign-On) 및 OIDC(OpenID Connect) 인증 통합 가이드
 4. Application type: Web application
 5. Authorized redirect URIs 추가:
    ```
-   https://your-domain.com/api/auth/sso/google/callback
+   https://your-domain.com/api/auth/google/callback
    ```
 
 ### 환경 변수
@@ -48,17 +48,17 @@ Papyr.us의 SSO(Single Sign-On) 및 OIDC(OpenID Connect) 인증 통합 가이드
 ```env
 GOOGLE_CLIENT_ID=xxx.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=xxx
-GOOGLE_CALLBACK_URL=https://your-domain.com/api/auth/sso/google/callback
+GOOGLE_CALLBACK_URL=https://your-domain.com/api/auth/google/callback
 ```
 
 ### 인증 플로우
 
 ```
-1. GET /api/auth/sso/google
+1. GET /api/auth/google
    → Google 로그인 페이지로 리다이렉트
 
 2. Google 인증 완료
-   → /api/auth/sso/google/callback 호출
+   → /api/auth/google/callback 호출
 
 3. 콜백 처리
    → JWT 토큰 발급
@@ -78,7 +78,7 @@ GOOGLE_CALLBACK_URL=https://your-domain.com/api/auth/sso/google/callback
    - Homepage URL: https://your-domain.com
    - Authorization callback URL:
      ```
-     https://your-domain.com/api/auth/sso/github/callback
+     https://your-domain.com/api/auth/github/callback
      ```
 
 ### 환경 변수
@@ -86,7 +86,7 @@ GOOGLE_CALLBACK_URL=https://your-domain.com/api/auth/sso/google/callback
 ```env
 GITHUB_CLIENT_ID=xxx
 GITHUB_CLIENT_SECRET=xxx
-GITHUB_CALLBACK_URL=https://your-domain.com/api/auth/sso/github/callback
+GITHUB_CALLBACK_URL=https://your-domain.com/api/auth/github/callback
 ```
 
 ---
@@ -102,7 +102,7 @@ GITHUB_CALLBACK_URL=https://your-domain.com/api/auth/sso/github/callback
    - Supported account types: 조직 요구사항에 맞게 선택
    - Redirect URI (Web):
      ```
-     https://your-domain.com/api/auth/sso/azuread/callback
+     https://your-domain.com/api/auth/azuread/callback
      ```
 4. Certificates & secrets > New client secret 생성
 5. API permissions > Add permission > Microsoft Graph > openid, email, profile
@@ -113,7 +113,7 @@ GITHUB_CALLBACK_URL=https://your-domain.com/api/auth/sso/github/callback
 AZURE_AD_CLIENT_ID=xxx
 AZURE_AD_CLIENT_SECRET=xxx
 AZURE_AD_TENANT_ID=xxx
-AZURE_AD_CALLBACK_URL=https://your-domain.com/api/auth/sso/azuread/callback
+AZURE_AD_CALLBACK_URL=https://your-domain.com/api/auth/azuread/callback
 ```
 
 ### 테넌트별 엔드포인트
@@ -137,7 +137,7 @@ UserInfo: https://graph.microsoft.com/oidc/userinfo
 5. 설정:
    - Sign-in redirect URIs:
      ```
-     https://your-domain.com/api/auth/sso/okta/callback
+     https://your-domain.com/api/auth/okta/callback
      ```
    - Sign-out redirect URIs:
      ```
@@ -150,7 +150,7 @@ UserInfo: https://graph.microsoft.com/oidc/userinfo
 OKTA_CLIENT_ID=xxx
 OKTA_CLIENT_SECRET=xxx
 OKTA_DOMAIN=your-org.okta.com
-OKTA_CALLBACK_URL=https://your-domain.com/api/auth/sso/okta/callback
+OKTA_CALLBACK_URL=https://your-domain.com/api/auth/okta/callback
 ```
 
 ### 엔드포인트
@@ -173,7 +173,7 @@ UserInfo: https://{domain}/oauth2/default/v1/userinfo
 4. Settings:
    - Allowed Callback URLs:
      ```
-     https://your-domain.com/api/auth/sso/auth0/callback
+     https://your-domain.com/api/auth/auth0/callback
      ```
    - Allowed Logout URLs:
      ```
@@ -186,7 +186,7 @@ UserInfo: https://{domain}/oauth2/default/v1/userinfo
 AUTH0_CLIENT_ID=xxx
 AUTH0_CLIENT_SECRET=xxx
 AUTH0_DOMAIN=your-tenant.auth0.com
-AUTH0_CALLBACK_URL=https://your-domain.com/api/auth/sso/auth0/callback
+AUTH0_CALLBACK_URL=https://your-domain.com/api/auth/auth0/callback
 ```
 
 ---
@@ -207,7 +207,7 @@ OIDC_ISSUER=https://your-idp.com
 OIDC_AUTHORIZATION_URL=https://your-idp.com/oauth2/authorize
 OIDC_TOKEN_URL=https://your-idp.com/oauth2/token
 OIDC_USERINFO_URL=https://your-idp.com/oauth2/userinfo
-OIDC_CALLBACK_URL=https://your-domain.com/api/auth/sso/oidc/callback
+OIDC_CALLBACK_URL=https://your-domain.com/api/auth/oidc/callback
 ```
 
 ### OIDC Discovery
@@ -297,7 +297,7 @@ if (existingUser) {
 ### SSO 시작
 
 ```
-GET /api/auth/sso/:provider
+GET /api/auth/:provider
 
 Response: 302 Redirect to IdP
 ```
@@ -305,7 +305,7 @@ Response: 302 Redirect to IdP
 ### SSO 콜백
 
 ```
-GET /api/auth/sso/:provider/callback
+GET /api/auth/:provider/callback
 
 Response: 302 Redirect to frontend with token
 ```
@@ -313,7 +313,7 @@ Response: 302 Redirect to frontend with token
 ### 활성화된 Provider 목록
 
 ```
-GET /api/auth/sso/providers
+GET /api/auth/providers
 
 Response:
 {
@@ -336,7 +336,7 @@ function SSOButtons() {
   const [providers, setProviders] = useState([]);
 
   useEffect(() => {
-    fetch('/api/auth/sso/providers')
+    fetch('/api/auth/providers')
       .then((res) => res.json())
       .then((data) => setProviders(data.providers.filter((p) => p.enabled)));
   }, []);
@@ -344,7 +344,7 @@ function SSOButtons() {
   return (
     <div>
       {providers.map((provider) => (
-        <a key={provider.id} href={`/api/auth/sso/${provider.id}`} className="btn btn-sso">
+        <a key={provider.id} href={`/api/auth/${provider.id}`} className="btn btn-sso">
           {provider.name}으로 로그인
         </a>
       ))}
@@ -355,22 +355,16 @@ function SSOButtons() {
 
 ### 콜백 처리
 
-```tsx
-// /auth/callback 페이지
-function AuthCallback() {
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get('token');
+SSO 인증 완료 후 서버는 JWT 토큰을 `HttpOnly` 쿠키(`accessToken`, `refreshToken`)로 자동 발급합니다. 프론트엔드 코드에서 URL 파라미터나 `localStorage`로 토큰을 읽을 필요가 없습니다 — 브라우저가 이후 모든 요청에 쿠키를 자동으로 첨부합니다.
 
-    if (token) {
-      localStorage.setItem('token', token);
-      window.location.href = '/dashboard';
-    }
-  }, []);
+API 요청 시 쿠키가 전송되도록 `credentials: 'include'` 옵션을 사용하십시오:
 
-  return <div>로그인 처리 중...</div>;
-}
+```typescript
+// API 요청 예시
+fetch('/api/auth/me', { credentials: 'include' });
 ```
+
+> **보안 참고**: 토큰을 `window.location.search`나 `localStorage`에 저장하는 방식은 XSS 공격에 취약합니다. Papyr.us는 `HttpOnly` 쿠키만 사용합니다.
 
 ---
 
@@ -396,9 +390,13 @@ const codeChallenge = crypto.createHash('sha256').update(codeVerifier).digest('b
 
 ### 토큰 저장
 
-- Access Token: 메모리 또는 HttpOnly 쿠키
-- Refresh Token: HttpOnly + Secure + SameSite 쿠키
-- 민감 정보는 localStorage 사용 지양
+모든 토큰은 서버 측에서 `HttpOnly` 쿠키로 자동 발급됩니다.
+
+- **Access Token** (`accessToken`): `HttpOnly; Secure; SameSite=Lax`, 7일 유효
+- **Refresh Token** (`refreshToken`): `HttpOnly; Secure; SameSite=Lax`, 30일 유효
+- 토큰은 `localStorage`, `sessionStorage`, URL 파라미터에 저장되지 않습니다
+
+> **참고**: `SameSite=Lax`는 OAuth/OIDC 콜백이 cross-site IdP 리다이렉트(GET)로 전달되기 때문에 의도적으로 선택된 표준입니다. `SameSite=Strict`를 사용하면 IdP 리다이렉트 후 쿠키가 전송되지 않아 인증이 실패합니다. `Lax`는 cross-site OAuth 플로우에서 올바른 표준입니다.
 
 ---
 

@@ -124,8 +124,20 @@ function extractBearerToken(authorizationHeader: string | undefined): string | u
   return authorizationHeader.slice('Bearer '.length).trim() || undefined;
 }
 
+/**
+ * Extract the JWT access token from the incoming request.
+ *
+ * Priority order (cookie-first):
+ *  1. HttpOnly `accessToken` cookie — set by the SSO callback and the
+ *     local login route.  Preferred: never visible to JavaScript or URL logs.
+ *  2. `Authorization: Bearer <token>` header — retained for programmatic
+ *     API clients (CI scripts, integrations) that cannot use cookies.
+ *
+ * Tokens must NEVER travel via URL query parameters; this function
+ * intentionally does not read from `req.query`.
+ */
 function getRequestToken(req: AuthRequest): string | undefined {
-  return extractBearerToken(req.headers.authorization) || (req as any).cookies?.accessToken;
+  return (req as any).cookies?.accessToken || extractBearerToken(req.headers.authorization);
 }
 
 function verifyRequestToken(req: AuthRequest): any {

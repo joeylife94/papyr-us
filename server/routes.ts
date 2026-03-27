@@ -1,4 +1,4 @@
-import type { Express } from 'express';
+﻿import type { Express } from 'express';
 import { createServer, type Server as HttpServer } from 'http';
 import { Server as SocketIoServer } from 'socket.io';
 import {
@@ -54,6 +54,7 @@ import * as aiService from './services/ai.js';
 import { aiAssistant } from './services/ai-assistant.js';
 import { triggerWorkflows, initWorkflowService, executeWorkflow } from './services/workflow.js';
 import logger from './services/logger.js';
+import { ExternalIntegrationError } from './services/resilience.js';
 import path from 'path';
 import { existsSync, appendFileSync } from 'fs';
 import type { Request } from 'express';
@@ -219,13 +220,13 @@ export async function registerRoutes(
         .cookie('accessToken', accessToken, {
           httpOnly: true,
           secure: config.isProduction,
-          sameSite: 'strict',
+          sameSite: 'lax',
           maxAge: 7 * 24 * 60 * 60 * 1000,
         })
         .cookie('refreshToken', refreshToken, {
           httpOnly: true,
           secure: config.isProduction,
-          sameSite: 'strict',
+          sameSite: 'lax',
           maxAge: 30 * 24 * 60 * 60 * 1000,
         })
         .status(201)
@@ -302,13 +303,13 @@ export async function registerRoutes(
         .cookie('accessToken', accessToken, {
           httpOnly: true,
           secure: config.isProduction,
-          sameSite: 'strict',
+          sameSite: 'lax',
           maxAge: 7 * 24 * 60 * 60 * 1000,
         })
         .cookie('refreshToken', refreshToken, {
           httpOnly: true,
           secure: config.isProduction,
-          sameSite: 'strict',
+          sameSite: 'lax',
           maxAge: 30 * 24 * 60 * 60 * 1000,
         })
         .json({
@@ -358,13 +359,13 @@ export async function registerRoutes(
         .cookie('accessToken', newAccessToken, {
           httpOnly: true,
           secure: config.isProduction,
-          sameSite: 'strict',
+          sameSite: 'lax',
           maxAge: 7 * 24 * 60 * 60 * 1000,
         })
         .cookie('refreshToken', newRefreshToken, {
           httpOnly: true,
           secure: config.isProduction,
-          sameSite: 'strict',
+          sameSite: 'lax',
           maxAge: 30 * 24 * 60 * 60 * 1000,
         })
         .json({
@@ -407,16 +408,17 @@ export async function registerRoutes(
       .clearCookie('accessToken', {
         httpOnly: true,
         secure: config.isProduction,
-        sameSite: 'strict',
+        sameSite: 'lax',
       })
       .clearCookie('refreshToken', {
         httpOnly: true,
         secure: config.isProduction,
-        sameSite: 'strict',
+        sameSite: 'lax',
       })
       .json({ message: 'Logged out successfully' });
   });
 
+  // Passport automatically handles OAuth2 state/nonce validation. SameSite=Lax is required for cross-site top-level redirects.
   // --- Social Auth Routes ---
 
   // Google Auth
@@ -441,13 +443,13 @@ export async function registerRoutes(
           .cookie('accessToken', accessToken, {
             httpOnly: true,
             secure: config.isProduction,
-            sameSite: 'strict',
+            sameSite: 'lax', // Lax required: callback arrives via cross-site IdP redirect
             maxAge: 7 * 24 * 60 * 60 * 1000,
           })
           .cookie('refreshToken', refreshToken, {
             httpOnly: true,
             secure: config.isProduction,
-            sameSite: 'strict',
+            sameSite: 'lax', // Lax required: callback arrives via cross-site IdP redirect
             maxAge: 30 * 24 * 60 * 60 * 1000,
           })
           .redirect('/');
@@ -477,13 +479,13 @@ export async function registerRoutes(
           .cookie('accessToken', accessToken, {
             httpOnly: true,
             secure: config.isProduction,
-            sameSite: 'strict',
+            sameSite: 'lax', // Lax required: callback arrives via cross-site IdP redirect
             maxAge: 7 * 24 * 60 * 60 * 1000,
           })
           .cookie('refreshToken', refreshToken, {
             httpOnly: true,
             secure: config.isProduction,
-            sameSite: 'strict',
+            sameSite: 'lax', // Lax required: callback arrives via cross-site IdP redirect
             maxAge: 30 * 24 * 60 * 60 * 1000,
           })
           .redirect('/');
@@ -1999,32 +2001,28 @@ export async function registerRoutes(
     }
   );
 
-  app.get(
-    '/api/dashboard/member/:memberId',
-    authMiddleware,
-    async (req: AuthRequest, res) => {
-      try {
-        const memberId = parseInt(req.params.memberId);
-        const member = await storage.getMember(memberId);
-        if (!member) {
-          return res.status(404).json({ message: 'Member not found' });
-        }
-
-        const userTeamIds = req.user?.id ? await storage.getUserTeamIds(req.user.id) : [];
-        if (!userTeamIds.includes(Number(member.teamId))) {
-          return res.status(403).json({ message: 'You are not a member of this team' });
-        }
-
-        const stats = await storage.getMemberProgressStats(memberId);
-        if (!stats) {
-          return res.status(404).json({ message: 'Member stats not found' });
-        }
-        res.json(stats);
-      } catch (error) {
-        res.status(500).json({ message: 'Server error' });
+  app.get('/api/dashboard/member/:memberId', authMiddleware, async (req: AuthRequest, res) => {
+    try {
+      const memberId = parseInt(req.params.memberId);
+      const member = await storage.getMember(memberId);
+      if (!member) {
+        return res.status(404).json({ message: 'Member not found' });
       }
+
+      const userTeamIds = req.user?.id ? await storage.getUserTeamIds(req.user.id) : [];
+      if (!userTeamIds.includes(Number(member.teamId))) {
+        return res.status(403).json({ message: 'You are not a member of this team' });
+      }
+
+      const stats = await storage.getMemberProgressStats(memberId);
+      if (!stats) {
+        return res.status(404).json({ message: 'Member stats not found' });
+      }
+      res.json(stats);
+    } catch (error) {
+      res.status(500).json({ message: 'Server error' });
     }
-  );
+  });
 
   // Tasks API
   app.get('/api/tasks', optionalAuth, requireTeamMembership, async (req: AuthRequest, res) => {
@@ -2470,47 +2468,43 @@ export async function registerRoutes(
       }
     });
 
-    app.patch(
-      '/api/notifications/:id/read',
-      authMiddleware,
-      async (req: AuthRequest, res) => {
-        try {
-          const id = parseInt(req.params.id);
-          // Ownership check: fetch before marking as read
-          const existing = await storage.getNotification(id);
-          if (!existing) {
-            return res.status(404).json({ message: 'Notification not found' });
-          }
-          if (req.user?.id && existing.recipientId !== req.user.id) {
-            return res.status(403).json({ message: 'Access denied' });
-          }
-          const notification = await storage.markNotificationAsRead(id);
-
-          if (!notification) {
-            return res.status(404).json({ message: 'Notification not found' });
-          }
-
-          // Realtime: emit updated notification and new unread count
-          try {
-            const ns = io?.of('/collab');
-            if (ns) {
-              ns.to(`user:${notification.recipientId}`).emit('notification:updated', notification);
-              const count = await storage.getUnreadNotificationCount(notification.recipientId);
-              ns.to(`user:${notification.recipientId}`).emit('notification:unread-count', {
-                recipientId: notification.recipientId,
-                count,
-              });
-            }
-          } catch (emitErr) {
-            console.warn('Socket emit failed for notification:read', emitErr);
-          }
-
-          res.json(notification);
-        } catch (error) {
-          res.status(400).json({ message: 'Invalid notification ID' });
+    app.patch('/api/notifications/:id/read', authMiddleware, async (req: AuthRequest, res) => {
+      try {
+        const id = parseInt(req.params.id);
+        // Ownership check: fetch before marking as read
+        const existing = await storage.getNotification(id);
+        if (!existing) {
+          return res.status(404).json({ message: 'Notification not found' });
         }
+        if (req.user?.id && existing.recipientId !== req.user.id) {
+          return res.status(403).json({ message: 'Access denied' });
+        }
+        const notification = await storage.markNotificationAsRead(id);
+
+        if (!notification) {
+          return res.status(404).json({ message: 'Notification not found' });
+        }
+
+        // Realtime: emit updated notification and new unread count
+        try {
+          const ns = io?.of('/collab');
+          if (ns) {
+            ns.to(`user:${notification.recipientId}`).emit('notification:updated', notification);
+            const count = await storage.getUnreadNotificationCount(notification.recipientId);
+            ns.to(`user:${notification.recipientId}`).emit('notification:unread-count', {
+              recipientId: notification.recipientId,
+              count,
+            });
+          }
+        } catch (emitErr) {
+          console.warn('Socket emit failed for notification:read', emitErr);
+        }
+
+        res.json(notification);
+      } catch (error) {
+        res.status(400).json({ message: 'Invalid notification ID' });
       }
-    );
+    });
 
     app.patch(
       '/api/notifications/read-all',
@@ -3065,217 +3059,213 @@ export async function registerRoutes(
     }
   });
 
-  if (featureFlags.FEATURE_AI_SEARCH) {
-    // AI ?�비??API
-    app.post('/api/ai/generate', requireAuthIfEnabled, async (req, res) => {
-      try {
-        const { prompt, type } = req.body;
-        const { generateContent } = await import('./services/ai.js');
-        const content = await generateContent(prompt, type);
-        res.json({ content });
-      } catch (error) {
-        res
-          .status(500)
-          .json({ message: 'Failed to generate content', error: (error as Error).message });
+  // AI ?�비??API
+  app.post('/api/ai/generate', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const { prompt, type } = req.body;
+      const { generateContent } = await import('./services/ai.js');
+      const content = await generateContent(prompt, type);
+      res.json({ content });
+    } catch (error) {
+      res
+        .status(500)
+        .json({ message: 'Failed to generate content', error: (error as Error).message });
+    }
+  });
+
+  app.post('/api/ai/improve', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const { content, title } = req.body;
+      const { generateContentSuggestions } = await import('./services/ai.js');
+      const suggestions = await generateContentSuggestions(content, title);
+      res.json({ suggestions });
+    } catch (error) {
+      res
+        .status(500)
+        .json({ message: 'Failed to generate suggestions', error: (error as Error).message });
+    }
+  });
+
+  // AI 검??API
+  app.post('/api/ai/search', requireAuthIfEnabled, async (req: AuthRequest, res) => {
+    try {
+      const { query, teamId } = req.body;
+
+      if (!query || query.trim().length === 0) {
+        return res.status(400).json({ message: 'Search query is required' });
       }
-    });
 
-    app.post('/api/ai/improve', requireAuthIfEnabled, async (req, res) => {
-      try {
-        const { content, title } = req.body;
-        const { generateContentSuggestions } = await import('./services/ai.js');
-        const suggestions = await generateContentSuggestions(content, title);
-        res.json({ suggestions });
-      } catch (error) {
-        res
-          .status(500)
-          .json({ message: 'Failed to generate suggestions', error: (error as Error).message });
+      // Gather the user's authorized team IDs once to avoid duplicate DB calls
+      const userTeamIds = req.user?.id ? await storage.getUserTeamIds(req.user.id) : [];
+
+      // If a specific teamId is requested, verify membership
+      if (teamId) {
+        if (!userTeamIds.map(String).includes(String(teamId))) {
+          return res.status(403).json({ message: 'You are not a member of this team' });
+        }
       }
-    });
 
-    // AI 검??API
-    app.post('/api/ai/search', requireAuthIfEnabled, async (req: AuthRequest, res) => {
-      try {
-        const { query, teamId } = req.body;
+      // Determine the scoped set of team IDs — never falls through to undefined / full-DB scan
+      const effectiveTeamIds: string[] = teamId ? [String(teamId)] : userTeamIds.map(String);
 
-        if (!query || query.trim().length === 0) {
-          return res.status(400).json({ message: 'Search query is required' });
-        }
-
-        // Gather the user's authorized team IDs once to avoid duplicate DB calls
-        const userTeamIds = req.user?.id ? await storage.getUserTeamIds(req.user.id) : [];
-
-        // If a specific teamId is requested, verify membership
-        if (teamId) {
-          if (!userTeamIds.map(String).includes(String(teamId))) {
-            return res.status(403).json({ message: 'You are not a member of this team' });
-          }
-        }
-
-        // Determine the scoped set of team IDs — never falls through to undefined / full-DB scan
-        const effectiveTeamIds: string[] = teamId ? [String(teamId)] : userTeamIds.map(String);
-
-        // If the user belongs to no teams, return empty results immediately
-        if (effectiveTeamIds.length === 0) {
-          return res.json({ results: [], query, totalResults: 0 });
-        }
-
-        // Aggregate results across all authorized teams, always passing an explicit teamId
-        const [pagesAgg, tasksAgg] = await Promise.all([
-          Promise.all(
-            effectiveTeamIds.map((tid) =>
-              storage.searchWikiPages({ query: '', teamId: tid, limit: 100, offset: 0 })
-            )
-          ),
-          Promise.all(effectiveTeamIds.map((tid) => storage.getTasks(tid))),
-        ]);
-        const allPages = pagesAgg.flatMap((r: any) => r.pages);
-        const allTasks = tasksAgg.flat();
-        // Aggregate files across ALL authorized teams — never scope to a single team
-        const filesPerTeam = await Promise.all(
-          effectiveTeamIds.map((tid) => listUploadedFiles(tid))
-        );
-        const allFiles = filesPerTeam.flatMap((r) => r.files);
-
-        const documents = [
-          ...allPages.map((page: any) => ({
-            id: page.id,
-            title: page.title,
-            content: page.content,
-            type: 'page' as const,
-            url: `/page/${page.slug}`,
-          })),
-          ...allTasks.map((task: any) => ({
-            id: task.id,
-            title: task.title,
-            content: task.description || '',
-            type: 'task' as const,
-            url: `/tasks`,
-          })),
-          ...allFiles.map((file: any) => ({
-            id: file.id || 0,
-            title: file.filename,
-            content: file.description || '',
-            type: 'file' as const,
-            url: `/files`,
-          })),
-        ];
-
-        const results = await smartSearch(query, documents);
-
-        res.json({
-          results,
-          query,
-          totalResults: results.length,
-        });
-      } catch (error) {
-        console.error('AI search error:', error);
-        res
-          .status(500)
-          .json({ message: 'Failed to perform AI search', error: (error as Error).message });
+      // If the user belongs to no teams, return empty results immediately
+      if (effectiveTeamIds.length === 0) {
+        return res.json({ results: [], query, totalResults: 0 });
       }
-    });
 
-    app.post('/api/ai/search-suggestions', requireAuthIfEnabled, async (req, res) => {
-      try {
-        const { query } = req.body;
-
-        if (!query || query.trim().length === 0) {
-          return res.json({ suggestions: [] });
-        }
-
-        const suggestions = await generateSearchSuggestions(query);
-        res.json({ suggestions });
-      } catch (error) {
-        console.error('Search suggestions error:', error);
-        res.status(500).json({
-          message: 'Failed to generate search suggestions',
-          error: (error as Error).message,
-        });
-      }
-    });
-
-    // AI Copilot Chat
-    app.post('/api/ai/copilot/chat', requireAuthIfEnabled, async (req, res) => {
-      try {
-        const { messages, context } = req.body;
-
-        if (!messages || !Array.isArray(messages)) {
-          return res.status(400).json({ error: 'Messages array is required' });
-        }
-
-        const response = await aiService.chatWithCopilot(messages, context || {});
-        res.json({ response });
-      } catch (error) {
-        console.error('Copilot chat error:', error);
-        res.status(500).json({
-          message: 'Failed to chat with copilot',
-          error: (error as Error).message,
-        });
-      }
-    });
-
-    // Extract tasks from content
-    app.post('/api/ai/extract-tasks', requireAuthIfEnabled, async (req, res) => {
-      try {
-        const { content } = req.body;
-
-        if (!content) {
-          return res.status(400).json({ error: 'Content is required' });
-        }
-
-        const tasks = await aiService.extractTasks(content);
-        res.json({ tasks });
-      } catch (error) {
-        console.error('Extract tasks error:', error);
-        res.status(500).json({
-          message: 'Failed to extract tasks',
-          error: (error as Error).message,
-        });
-      }
-    });
-
-    // Find related pages
-    app.post('/api/ai/related-pages', requireAuthIfEnabled, async (req: AuthRequest, res) => {
-      try {
-        const { content, title, pageId } = req.body;
-
-        if (!content || !title) {
-          return res.status(400).json({ error: 'Content and title are required' });
-        }
-
-        // Scope pages to the authenticated user's accessible teams — never pass undefined
-        const userTeamIdsForRelated = req.user?.id ? await storage.getUserTeamIds(req.user.id) : [];
-        if (userTeamIdsForRelated.length === 0) {
-          return res.json({ relatedPages: [] });
-        }
-        // Aggregate pages across ALL of the user's teams — not just the first one
-        const relatedPageResults = await Promise.all(
-          userTeamIdsForRelated.map((tid) =>
-            storage.searchWikiPages({ query: '', teamId: String(tid), limit: 100, offset: 0 })
+      // Aggregate results across all authorized teams, always passing an explicit teamId
+      const [pagesAgg, tasksAgg] = await Promise.all([
+        Promise.all(
+          effectiveTeamIds.map((tid) =>
+            storage.searchWikiPages({ query: '', teamId: tid, limit: 100, offset: 0 })
           )
-        );
-        const searchResults = { pages: relatedPageResults.flatMap((r: any) => r.pages) };
-        const availablePages = searchResults.pages
-          .filter((p: any) => p.id !== pageId)
-          .map((p: any) => ({
-            id: p.id,
-            title: p.title,
-            content: p.content,
-            tags: p.tags || [],
-          }));
+        ),
+        Promise.all(effectiveTeamIds.map((tid) => storage.getTasks(tid))),
+      ]);
+      const allPages = pagesAgg.flatMap((r: any) => r.pages);
+      const allTasks = tasksAgg.flat();
+      // Aggregate files across ALL authorized teams — never scope to a single team
+      const filesPerTeam = await Promise.all(effectiveTeamIds.map((tid) => listUploadedFiles(tid)));
+      const allFiles = filesPerTeam.flatMap((r) => r.files);
 
-        const relatedPages = await aiService.findRelatedPages(content, title, availablePages);
-        res.json({ relatedPages });
-      } catch (error) {
-        console.error('Find related pages error:', error);
-        res.status(500).json({
-          message: 'Failed to find related pages',
-          error: (error as Error).message,
-        });
+      const documents = [
+        ...allPages.map((page: any) => ({
+          id: page.id,
+          title: page.title,
+          content: page.content,
+          type: 'page' as const,
+          url: `/page/${page.slug}`,
+        })),
+        ...allTasks.map((task: any) => ({
+          id: task.id,
+          title: task.title,
+          content: task.description || '',
+          type: 'task' as const,
+          url: `/tasks`,
+        })),
+        ...allFiles.map((file: any) => ({
+          id: file.id || 0,
+          title: file.filename,
+          content: file.description || '',
+          type: 'file' as const,
+          url: `/files`,
+        })),
+      ];
+
+      const results = await smartSearch(query, documents);
+
+      res.json({
+        results,
+        query,
+        totalResults: results.length,
+      });
+    } catch (error) {
+      console.error('AI search error:', error);
+      res
+        .status(500)
+        .json({ message: 'Failed to perform AI search', error: (error as Error).message });
+    }
+  });
+
+  app.post('/api/ai/search-suggestions', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const { query } = req.body;
+
+      if (!query || query.trim().length === 0) {
+        return res.json({ suggestions: [] });
       }
-    });
-  }
+
+      const suggestions = await generateSearchSuggestions(query);
+      res.json({ suggestions });
+    } catch (error) {
+      console.error('Search suggestions error:', error);
+      res.status(500).json({
+        message: 'Failed to generate search suggestions',
+        error: (error as Error).message,
+      });
+    }
+  });
+
+  // AI Copilot Chat
+  app.post('/api/ai/copilot/chat', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const { messages, context } = req.body;
+
+      if (!messages || !Array.isArray(messages)) {
+        return res.status(400).json({ error: 'Messages array is required' });
+      }
+
+      const response = await aiService.chatWithCopilot(messages, context || {});
+      res.json({ response });
+    } catch (error) {
+      console.error('Copilot chat error:', error);
+      res.status(500).json({
+        message: 'Failed to chat with copilot',
+        error: (error as Error).message,
+      });
+    }
+  });
+
+  // Extract tasks from content
+  app.post('/api/ai/extract-tasks', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const { content } = req.body;
+
+      if (!content) {
+        return res.status(400).json({ error: 'Content is required' });
+      }
+
+      const tasks = await aiService.extractTasks(content);
+      res.json({ tasks });
+    } catch (error) {
+      console.error('Extract tasks error:', error);
+      res.status(500).json({
+        message: 'Failed to extract tasks',
+        error: (error as Error).message,
+      });
+    }
+  });
+
+  // Find related pages
+  app.post('/api/ai/related-pages', requireAuthIfEnabled, async (req: AuthRequest, res) => {
+    try {
+      const { content, title, pageId } = req.body;
+
+      if (!content || !title) {
+        return res.status(400).json({ error: 'Content and title are required' });
+      }
+
+      // Scope pages to the authenticated user's accessible teams — never pass undefined
+      const userTeamIdsForRelated = req.user?.id ? await storage.getUserTeamIds(req.user.id) : [];
+      if (userTeamIdsForRelated.length === 0) {
+        return res.json({ relatedPages: [] });
+      }
+      // Aggregate pages across ALL of the user's teams — not just the first one
+      const relatedPageResults = await Promise.all(
+        userTeamIdsForRelated.map((tid) =>
+          storage.searchWikiPages({ query: '', teamId: String(tid), limit: 100, offset: 0 })
+        )
+      );
+      const searchResults = { pages: relatedPageResults.flatMap((r: any) => r.pages) };
+      const availablePages = searchResults.pages
+        .filter((p: any) => p.id !== pageId)
+        .map((p: any) => ({
+          id: p.id,
+          title: p.title,
+          content: p.content,
+          tags: p.tags || [],
+        }));
+
+      const relatedPages = await aiService.findRelatedPages(content, title, availablePages);
+      res.json({ relatedPages });
+    } catch (error) {
+      console.error('Find related pages error:', error);
+      res.status(500).json({
+        message: 'Failed to find related pages',
+        error: (error as Error).message,
+      });
+    }
+  });
 
   // Knowledge Graph API
   app.get(
@@ -4342,122 +4332,128 @@ export async function registerRoutes(
     }
   });
 
-  if (featureFlags.FEATURE_AI_SEARCH) {
-    // ==================== AI Assistant Routes ====================
+  // ==================== AI Assistant Routes ====================
 
-    // Check AI availability
-    app.get('/api/ai/status', (req, res) => {
-      res.json({
-        available: aiAssistant.isAvailable(),
-        message: aiAssistant.isAvailable()
-          ? 'AI assistant is ready'
-          : 'AI assistant requires OPENAI_API_KEY configuration',
+  // Check AI availability
+  app.get('/api/ai/status', (req, res) => {
+    res.json({
+      available: aiAssistant.isAvailable(),
+      message: aiAssistant.isAvailable()
+        ? 'AI assistant is ready'
+        : 'AI assistant requires OPENAI_API_KEY configuration',
+    });
+  });
+
+  // AI text assistance
+  app.post('/api/ai/assist', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const { command, text, language, targetCase } = req.body;
+
+      if (!command || !text) {
+        return res.status(400).json({ error: 'command and text are required' });
+      }
+
+      const result = await aiAssistant.assist({
+        command,
+        text,
+        language,
+        targetCase,
       });
-    });
 
-    // AI text assistance
-    app.post('/api/ai/assist', requireAuthIfEnabled, async (req, res) => {
-      try {
-        const { command, text, language, targetCase } = req.body;
+      res.json(result);
+    } catch (error) {
+      logger.error('[Route] /api/ai/assist — upstream failure', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return res.status(502).json({ error: 'Upstream AI failure' });
+    }
+  });
 
-        if (!command || !text) {
-          return res.status(400).json({ error: 'command and text are required' });
-        }
+  // AI block generation
+  app.post('/api/ai/generate-block', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const { prompt, blockType } = req.body;
 
-        const result = await aiAssistant.assist({
-          command,
-          text,
-          language,
-          targetCase,
-        });
-
-        res.json(result);
-      } catch (error) {
-        console.error('AI assist error:', error);
-        res.status(500).json({ error: 'Failed to process AI request' });
+      if (!prompt || !blockType) {
+        return res.status(400).json({ error: 'prompt and blockType are required' });
       }
-    });
 
-    // AI block generation
-    app.post('/api/ai/generate-block', requireAuthIfEnabled, async (req, res) => {
-      try {
-        const { prompt, blockType } = req.body;
-
-        if (!prompt || !blockType) {
-          return res.status(400).json({ error: 'prompt and blockType are required' });
-        }
-
-        if (!['table', 'list', 'code'].includes(blockType)) {
-          return res
-            .status(400)
-            .json({ error: 'Invalid blockType. Must be: table, list, or code' });
-        }
-
-        const result = await aiAssistant.generateBlock(prompt, blockType);
-        res.json(result);
-      } catch (error) {
-        console.error('AI block generation error:', error);
-        res.status(500).json({ error: 'Failed to generate block' });
+      if (!['table', 'list', 'code'].includes(blockType)) {
+        return res.status(400).json({ error: 'Invalid blockType. Must be: table, list, or code' });
       }
-    });
 
-    // AI smart suggestions
-    app.post('/api/ai/suggestions', requireAuthIfEnabled, async (req, res) => {
-      try {
-        const { text, cursorPosition } = req.body;
+      const result = await aiAssistant.generateBlock(prompt, blockType);
+      res.json(result);
+    } catch (error) {
+      logger.error('[Route] /api/ai/generate-block — upstream failure', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return res.status(502).json({ error: 'Upstream AI failure' });
+    }
+  });
 
-        if (text === undefined || cursorPosition === undefined) {
-          return res.status(400).json({ error: 'text and cursorPosition are required' });
-        }
+  // AI smart suggestions
+  app.post('/api/ai/suggestions', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const { text, cursorPosition } = req.body;
 
-        const suggestions = await aiAssistant.getSuggestions(text, cursorPosition);
-        res.json({ suggestions });
-      } catch (error) {
-        console.error('AI suggestions error:', error);
-        res.status(500).json({ error: 'Failed to get suggestions' });
+      if (text === undefined || cursorPosition === undefined) {
+        return res.status(400).json({ error: 'text and cursorPosition are required' });
       }
-    });
 
-    // AI auto-format
-    app.post('/api/ai/auto-format', requireAuthIfEnabled, async (req, res) => {
-      try {
-        const { text } = req.body;
+      const suggestions = await aiAssistant.getSuggestions(text, cursorPosition);
+      res.json({ suggestions });
+    } catch (error) {
+      logger.error('[Route] /api/ai/suggestions — upstream failure', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return res.status(502).json({ error: 'Upstream AI failure' });
+    }
+  });
 
-        if (!text) {
-          return res.status(400).json({ error: 'text is required' });
-        }
+  // AI auto-format
+  app.post('/api/ai/auto-format', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const { text } = req.body;
 
-        const result = await aiAssistant.autoFormat(text);
-        res.json(result);
-      } catch (error) {
-        console.error('AI auto-format error:', error);
-        res.status(500).json({ error: 'Failed to format text' });
+      if (!text) {
+        return res.status(400).json({ error: 'text is required' });
       }
-    });
 
-    // Inline AI action on selected text (summarize | rewrite | taskify)
-    app.post('/api/ai/inline', requireAuthIfEnabled, async (req, res) => {
-      try {
-        const { action, text } = req.body;
+      const result = await aiAssistant.autoFormat(text);
+      res.json(result);
+    } catch (error) {
+      logger.error('[Route] /api/ai/auto-format — upstream failure', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return res.status(502).json({ error: 'Upstream AI failure' });
+    }
+  });
 
-        if (!action || !text) {
-          return res.status(400).json({ error: 'action and text are required' });
-        }
+  // Inline AI action on selected text (summarize | rewrite | taskify)
+  app.post('/api/ai/inline', requireAuthIfEnabled, async (req, res) => {
+    try {
+      const { action, text } = req.body;
 
-        if (!['summarize', 'rewrite', 'taskify'].includes(action)) {
-          return res
-            .status(400)
-            .json({ error: 'Invalid action. Must be: summarize, rewrite, or taskify' });
-        }
-
-        const result = await inlineAIAction(action, text);
-        res.json(result);
-      } catch (error) {
-        console.error('Inline AI error:', error);
-        res.status(500).json({ error: 'Failed to process inline AI request' });
+      if (!action || !text) {
+        return res.status(400).json({ error: 'action and text are required' });
       }
-    });
-  }
+
+      if (!['summarize', 'rewrite', 'taskify'].includes(action)) {
+        return res
+          .status(400)
+          .json({ error: 'Invalid action. Must be: summarize, rewrite, or taskify' });
+      }
+
+      const result = await inlineAIAction(action, text);
+      res.json(result);
+    } catch (error) {
+      logger.error('[Route] /api/ai/inline — upstream failure', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return res.status(502).json({ error: 'Upstream AI failure' });
+    }
+  });
 
   return { httpServer, io };
 }

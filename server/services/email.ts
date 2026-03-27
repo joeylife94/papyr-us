@@ -63,11 +63,19 @@ function getFromAddress(): string {
   return process.env.EMAIL_FROM || process.env.EMAIL_USER || 'no-reply@papyrus.local';
 }
 
+const SMTP_TIMEOUT_MS = 10_000;
+const SMTP_MAX_RETRIES = 3;
+
+function smtpDelay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
- * Send an outbound email via SMTP.
+ * Send an outbound email via SMTP with exponential backoff retry (max 3 attempts)
+ * and a strict 10-second per-attempt timeout.
  *
  * Returns { sent: true, messageId } on success.
- * Returns { sent: false, error } if email is not configured or sending fails.
+ * Returns { sent: false, error } if email is not configured or all attempts fail.
  * Never throws — callers decide what to do with the result.
  */
 export async function sendEmail(opts: SendEmailOptions): Promise<SendEmailResult> {
@@ -82,25 +90,64 @@ export async function sendEmail(opts: SendEmailOptions): Promise<SendEmailResult
     return { sent: false, error: 'SMTP not configured' };
   }
 
-  try {
-    const info = await transporter.sendMail({
-      from: getFromAddress(),
-      to: Array.isArray(opts.to) ? opts.to.join(', ') : opts.to,
-      subject: opts.subject,
-      text: opts.text,
-      html: opts.html,
-    });
+  let lastError: Error | null = null;
 
-    logger.info('[Email] Sent successfully', {
-      messageId: info.messageId,
-      to: opts.to,
-      subject: opts.subject,
-    });
+  for (let attempt = 1; attempt <= SMTP_MAX_RETRIES; attempt++) {
+    try {
+      const timeoutId = { ref: null as ReturnType<typeof setTimeout> | null };
+      const sendPromise = transporter.sendMail({
+        from: getFromAddress(),
+        to: Array.isArray(opts.to) ? opts.to.join(', ') : opts.to,
+        subject: opts.subject,
+        text: opts.text,
+        html: opts.html,
+      });
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId.ref = setTimeout(
+          () => reject(new Error(`SMTP timeout after ${SMTP_TIMEOUT_MS}ms`)),
+          SMTP_TIMEOUT_MS
+        );
+      });
 
-    return { sent: true, messageId: info.messageId };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    logger.error('[Email] Failed to send', { to: opts.to, subject: opts.subject, error: message });
-    return { sent: false, error: message };
+      const info = await Promise.race([
+        sendPromise.then((result) => {
+          if (timeoutId.ref !== null) clearTimeout(timeoutId.ref);
+          return result;
+        }),
+        timeoutPromise,
+      ]);
+
+      logger.info('[Email] Sent successfully', {
+        messageId: info.messageId,
+        to: opts.to,
+        subject: opts.subject,
+        attempt,
+      });
+
+      return { sent: true, messageId: info.messageId };
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error('Unknown error');
+      logger.warn('[Email] Send attempt failed', {
+        to: opts.to,
+        subject: opts.subject,
+        attempt,
+        maxRetries: SMTP_MAX_RETRIES,
+        error: lastError.message,
+      });
+
+      if (attempt < SMTP_MAX_RETRIES) {
+        // Exponential backoff: 2s, 4s
+        await smtpDelay(Math.pow(2, attempt) * 1000);
+      }
+    }
   }
+
+  const message = lastError?.message ?? 'Unknown error';
+  logger.error('[Email] Failed to send after all retries', {
+    to: opts.to,
+    subject: opts.subject,
+    maxRetries: SMTP_MAX_RETRIES,
+    error: message,
+  });
+  return { sent: false, error: message };
 }
