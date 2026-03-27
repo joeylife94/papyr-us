@@ -49,6 +49,7 @@ vi.mock('../services/ai', () => ({
   generateContentSuggestions: vi.fn(),
   smartSearch: vi.fn(),
   generateSearchSuggestions: vi.fn(),
+  inlineAIAction: vi.fn(),
 }));
 
 // Mock the storage module
@@ -71,6 +72,7 @@ import {
   generateContentSuggestions,
   smartSearch,
   generateSearchSuggestions,
+  inlineAIAction,
 } from '../services/ai';
 import { storage } from '../storage';
 import { listUploadedFiles } from '../services/upload.js';
@@ -173,5 +175,46 @@ describe('AI Services API', () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual(suggestions);
+  });
+});
+
+describe('Inline AI API (POST /api/ai/inline)', () => {
+  const token = jwt.sign({ id: 1, email: 'user@ai-test.com', role: 'user' }, AI_TEST_SECRET);
+
+  it('TC-AI-INL-001: processes a valid inline summarize action', async () => {
+    const selectedText = 'This is a long paragraph that needs to be summarized.';
+    const expected = { action: 'summarize', result: 'Short summary.' };
+    (inlineAIAction as vi.Mock).mockResolvedValue(expected);
+
+    const response = await request(app)
+      .post('/api/ai/inline')
+      .set('Cookie', authCookie(token))
+      .send({ action: 'summarize', text: selectedText });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual(expected);
+    expect(inlineAIAction).toHaveBeenCalledWith('summarize', selectedText);
+  });
+
+  it('TC-AI-INL-002: returns 400 for an unrecognized inline action', async () => {
+    const response = await request(app)
+      .post('/api/ai/inline')
+      .set('Cookie', authCookie(token))
+      .send({ action: 'invalid_action', text: 'some text' });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatch(/invalid action/i);
+    expect(inlineAIAction).not.toHaveBeenCalled();
+  });
+
+  it('TC-AI-INL-003: returns 400 when action or text is missing', async () => {
+    const response = await request(app)
+      .post('/api/ai/inline')
+      .set('Cookie', authCookie(token))
+      .send({ action: 'rewrite' }); // text is missing
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatch(/required/i);
+    expect(inlineAIAction).not.toHaveBeenCalled();
   });
 });

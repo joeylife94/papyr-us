@@ -4,7 +4,7 @@
 
 A **team collaboration wiki** built with React and Express.js, featuring real-time editing, block-based content, and team workspace management. Includes optional AI integration (GPT-4o) and extensible automation workflows.
 
-> **Note:** This project is under active development. Some advanced features (synced blocks, database views) are experimental or partially implemented. See the feature status table below. Automation workflows including webhook, Slack webhook, and email actions are fully available in the UI. Email delivery requires SMTP env vars (`EMAIL_HOST`, `EMAIL_USER`, `EMAIL_PASS`) and falls back to in-app notifications when they are not set.
+> **Note:** This project is under active development. Some advanced features (synced blocks, database views) are experimental or partially implemented. See the feature status table below. Automation workflows including webhook, Slack webhook, and email actions are available in the UI. Email delivery requires SMTP env vars (`EMAIL_HOST`, `EMAIL_USER`, `EMAIL_PASS`). Without SMTP, only numeric user ID recipients receive an in-app notification fallback — email address strings entered via the UI are **not** resolved to users and produce no delivery.
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6.3-blue.svg)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-18.3.1-61dafb.svg)](https://reactjs.org/)
@@ -34,7 +34,7 @@ This project serves as a comprehensive portfolio piece demonstrating system desi
 | Templates                     | ✅ Stable       | Template categories, template-based page creation                                                                                                                                                                                                                                      |
 | Calendar & Tasks              | ✅ Stable       | Team-scoped events and task management                                                                                                                                                                                                                                                 |
 | Real-time Collaboration (Yjs) | ⚠️ Beta         | Core editing works; cursor/presence in progress                                                                                                                                                                                                                                        |
-| AI Search & Copilot           | ⚠️ Beta         | Requires OpenAI API key; search/summarize/RAG                                                                                                                                                                                                                                          |
+| AI Search & Copilot           | ⚠️ Beta         | Requires OpenAI API key; search/summarize/RAG; inline text actions (summarize/rewrite/taskify via selection toolbar); AI writing assistant (7 commands); task extraction; related-pages discovery                                                                                      |
 | Automation Workflows          | ⚠️ Beta         | Create/manage UI: webhook, Slack webhook, send_email, run_ai_summary selectable; no edit UI (create/toggle/delete only); team scoping in progress                                                                                                                                      |
 | Synced Blocks                 | 🧪 Experimental | Basic rendering; limited block type support                                                                                                                                                                                                                                            |
 | Email Automation              | ⚠️ Beta         | Selectable in workflow UI; SMTP outbound via nodemailer when `EMAIL_HOST`/`EMAIL_USER`/`EMAIL_PASS` are set. When SMTP is absent, an in-app notification fallback runs only for numeric user ID recipients — email address strings (as submitted by the UI) are not resolved to users. |
@@ -65,10 +65,12 @@ This project serves as a comprehensive portfolio piece demonstrating system desi
 
 ### 🤖 AI Integration (GPT-4o)
 
-- **Smart search** with natural language queries
-- **Content generation** with context-aware suggestions
-- **Auto-suggestions** for search queries
-- **Related pages** discovery
+- **Inline AI editing** — select text in the editor to get a floating toolbar with Summarize, Rewrite, and Taskify actions (`POST /api/ai/inline`); this is the active AI editing path
+- **Smart search** with natural language queries and RAG pipeline
+- **AI Copilot** — sliding sidebar chat interface for document Q&A
+- **Related pages** discovery via semantic similarity
+- **Task extraction** from meeting notes
+- **AI Writing Assistant** — 7-command backend (`POST /api/ai/assist`); UI component exists but is not mounted in the editor toolbar
 
 ### ⚡ Real-time Collaboration
 

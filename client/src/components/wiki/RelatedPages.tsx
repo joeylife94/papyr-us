@@ -53,9 +53,9 @@ export function RelatedPages({ pageId, pageTitle, pageContent }: RelatedPagesPro
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          pageTitle,
-          pageContent,
-          limit: 5,
+          title: pageTitle,
+          content: pageContent,
+          pageId,
         }),
       });
       if (!response.ok) {

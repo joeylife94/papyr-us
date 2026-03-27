@@ -525,10 +525,14 @@ export default function AutomationPage() {
               <div className="space-y-2">
                 <Label>수신자 *</Label>
                 <Input
-                  placeholder="user@example.com"
+                  placeholder="user@example.com (SMTP 필요) 또는 사용자 ID (예: 5)"
                   value={actionConfig.recipients || ''}
                   onChange={(e) => setActionConfig({ ...actionConfig, recipients: e.target.value })}
                 />
+                <p className="text-xs text-muted-foreground">
+                  이메일 주소로 전송하려면 SMTP 환경변수(EMAIL_HOST, EMAIL_USER, EMAIL_PASS)가
+                  필요합니다. SMTP 미설정 시 숫자 사용자 ID만 인앱 알림으로 전달됩니다.
+                </p>
                 <Label>제목 *</Label>
                 <Input
                   placeholder="이메일 제목"

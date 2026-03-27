@@ -598,7 +598,7 @@ export interface WorkflowAction {
   config: {
     // For notifications
     message?: string;
-    recipients?: string[]; // user IDs or emails
+    recipients?: string[]; // numeric user IDs (integers) when SMTP is absent; email address strings require SMTP config (EMAIL_HOST/EMAIL_USER/EMAIL_PASS)
 
     // For task actions
     title?: string;
