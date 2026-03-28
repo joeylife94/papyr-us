@@ -162,7 +162,6 @@ scenarios:
             - statusCode: 200
 
       - think: 1
-
       # Delete page
       - delete:
           url: '/api/pages/{{ newPageId }}'
@@ -172,4 +171,3 @@ scenarios:
             - statusCode:
                 - 200
                 - 204
-
