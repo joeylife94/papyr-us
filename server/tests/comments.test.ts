@@ -277,4 +277,105 @@ describe('Comments Management API', () => {
       expect(response.status).toBe(401);
     });
   });
+
+  // ==================== P4: Display name normalization (storage-level) ====================
+  // These tests exercise the ACTUAL DBStorage.getCommentsByPageId mapper logic by
+  // bypassing the module-level mock via vi.importActual and injecting a mock Drizzle db.
+  // No mock is used for getCommentsByPageId itself — the real implementation runs.
+  describe('DBStorage.getCommentsByPageId — P4: display name normalization', () => {
+    const baseRow = {
+      id: 101,
+      content: 'Test comment',
+      author: 'original@test.com',
+      authorUserId: ownerUser.id,
+      pageId: pageId,
+      parentId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    it('TC-CMT-P4-001: dynamically reflects the latest user name after a rename (rename regression)', async () => {
+      const { DBStorage } = await vi.importActual<any>('../storage.js');
+
+      // Step 1: Insert a mock user with 'Old Name' and a comment authored by that user.
+      const rowsBeforeRename = [{ ...baseRow, _resolvedName: 'Old Name', _resolvedIsActive: true }];
+
+      // Step 2: Simulate updating the user's record in the database to 'New Name'.
+      // The JOIN will now resolve the latest name from the users table.
+      const rowsAfterRename = [{ ...baseRow, _resolvedName: 'New Name', _resolvedIsActive: true }];
+
+      const mockDb = {
+        select: vi.fn().mockReturnThis(),
+        from: vi.fn().mockReturnThis(),
+        leftJoin: vi.fn().mockReturnThis(),
+        where: vi.fn().mockReturnThis(),
+        orderBy: vi
+          .fn()
+          .mockResolvedValueOnce(rowsBeforeRename) // fetch before rename
+          .mockResolvedValueOnce(rowsAfterRename), // fetch after rename
+      };
+      const instance = Object.create(DBStorage.prototype);
+      instance.db = mockDb;
+
+      // Fetch before rename — should reflect 'Old Name'
+      const resultBefore = await instance.getCommentsByPageId(pageId);
+      expect(resultBefore[0].author).toBe('Old Name');
+
+      // Fetch after rename — JOIN must return the updated name 'New Name'
+      const resultAfter = await instance.getCommentsByPageId(pageId);
+
+      expect(resultAfter[0].author).toBe('New Name');
+      expect(resultAfter[0].authorUserId).toBe(ownerUser.id);
+    });
+
+    it('TC-CMT-P4-002: returns "Unknown User" when the comment author has been deleted', async () => {
+      const { DBStorage } = await vi.importActual<any>('../storage.js');
+      // Deleted user: ON DELETE SET NULL makes authorUserId null; LEFT JOIN finds no row
+      const rows = [
+        { ...baseRow, authorUserId: null, _resolvedName: null, _resolvedIsActive: null },
+      ];
+      const mockDb = {
+        select: vi.fn().mockReturnThis(),
+        from: vi.fn().mockReturnThis(),
+        leftJoin: vi.fn().mockReturnThis(),
+        where: vi.fn().mockReturnThis(),
+        orderBy: vi.fn().mockResolvedValue(rows),
+      };
+      const instance = Object.create(DBStorage.prototype);
+      instance.db = mockDb;
+
+      const result = await instance.getCommentsByPageId(pageId);
+
+      expect(result[0].author).toBe('Unknown User');
+      expect(result[0].authorUserId).toBeNull();
+    });
+
+    it('TC-CMT-P4-003: returns "Unknown User" when the comment author is inactive/withdrawn', async () => {
+      const { DBStorage } = await vi.importActual<any>('../storage.js');
+      // Inactive user: user row still exists but isActive = false
+      const rows = [
+        {
+          ...baseRow,
+          authorUserId: ownerUser.id,
+          _resolvedName: 'Withdrawn Person',
+          _resolvedIsActive: false,
+        },
+      ];
+      const mockDb = {
+        select: vi.fn().mockReturnThis(),
+        from: vi.fn().mockReturnThis(),
+        leftJoin: vi.fn().mockReturnThis(),
+        where: vi.fn().mockReturnThis(),
+        orderBy: vi.fn().mockResolvedValue(rows),
+      };
+      const instance = Object.create(DBStorage.prototype);
+      instance.db = mockDb;
+
+      const result = await instance.getCommentsByPageId(pageId);
+
+      expect(result[0].author).toBe('Unknown User');
+      // authorUserId is still present — the user row exists but is deactivated
+      expect(result[0].authorUserId).toBe(ownerUser.id);
+    });
+  });
 });

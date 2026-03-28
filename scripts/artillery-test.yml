@@ -1,5 +1,11 @@
 ## Artillery Load Testing Configuration
 ##
+## Updated to use Cookie-based authentication.
+## The login scenario extracts only the token values from Set-Cookie headers
+## (accessToken and refreshToken) via regex, discarding HttpOnly / Path / etc.
+## Subsequent requests inject a properly formatted Cookie header:
+##   Cookie: "accessToken={{ accessToken }}; refreshToken={{ refreshToken }}"
+##
 ## Alternative to k6 for Node.js based load testing
 ##
 ## Install: npm install -g artillery
@@ -99,35 +105,40 @@ scenarios:
   - name: 'Authenticated CRUD'
     weight: 10
     flow:
-      # Register
+      # Register (ignore 409 if user already exists)
       - post:
           url: '/api/auth/register'
           json:
             name: 'Artillery Test'
             email: '{{ testEmail }}'
             password: '{{ testPassword }}'
-          capture:
-            - json: '$.accessToken'
-              as: 'token'
 
-      # Login if registration failed (user exists)
+      # Login — extract token values from Set-Cookie headers via regex
       - post:
           url: '/api/auth/login'
-          ifTrue: '!token'
           json:
             email: '{{ testEmail }}'
             password: '{{ testPassword }}'
           capture:
-            - json: '$.accessToken'
-              as: 'token'
+            # Capture only the token value, discarding HttpOnly / Path / SameSite etc.
+            - header: 'set-cookie'
+              regexp: 'accessToken=([^;]+)'
+              group: 1
+              as: 'accessToken'
+            - header: 'set-cookie'
+              regexp: 'refreshToken=([^;]+)'
+              group: 1
+              as: 'refreshToken'
+          expect:
+            - statusCode: 200
 
       - think: 1
 
-      # Create page
+      # Create page — inject clean token cookies manually
       - post:
           url: '/api/pages'
           headers:
-            Authorization: 'Bearer {{ token }}'
+            Cookie: 'accessToken={{ accessToken }}; refreshToken={{ refreshToken }}'
           json:
             title: 'Artillery Test Page {{ $timestamp }}'
             content: 'Load testing content'
@@ -144,7 +155,7 @@ scenarios:
       - patch:
           url: '/api/pages/{{ newPageId }}'
           headers:
-            Authorization: 'Bearer {{ token }}'
+            Cookie: 'accessToken={{ accessToken }}; refreshToken={{ refreshToken }}'
           json:
             content: 'Updated at {{ $timestamp }}'
           expect:
@@ -156,8 +167,9 @@ scenarios:
       - delete:
           url: '/api/pages/{{ newPageId }}'
           headers:
-            Authorization: 'Bearer {{ token }}'
+            Cookie: 'accessToken={{ accessToken }}; refreshToken={{ refreshToken }}'
           expect:
             - statusCode:
                 - 200
                 - 204
+

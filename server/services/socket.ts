@@ -563,7 +563,7 @@ export async function setupSocketIO(
         socket.userId = String(decoded.id);
         socket.userEmail = decoded.email;
         socket.userRole = decoded.role;
-        console.log(`[Socket.IO] User authenticated: ${socket.userEmail} (${socket.userId})`);
+        logger.debug('[Socket.IO] User authenticated', { userId: socket.userId });
         next();
       } catch (error) {
         console.warn(
@@ -578,7 +578,7 @@ export async function setupSocketIO(
   }
 
   collabNamespace.on('connection', (socket: AuthenticatedSocket) => {
-    console.log(`[Collab] User connected: ${socket.userEmail} (${socket.id})`);
+    logger.info(`[Collab] User connected: ${socket.userEmail} (${socket.id})`);
 
     if (enableNotifications) {
       const authenticatedUserId = parsePositiveInt(socket.userId);
@@ -672,7 +672,7 @@ export async function setupSocketIO(
           const users = collaborationManager.getUsersInSession(pageId);
           socket.emit('session-users', users);
 
-          console.log(`[Collab] User ${user.name} joined document ${pageId}`);
+          logger.info(`[Collab] User ${user.name} joined document ${pageId}`);
         }
       );
 
@@ -831,7 +831,7 @@ export async function setupSocketIO(
 
           const memberRoom = `user:${requestedMemberId}`;
           socket.join(memberRoom);
-          console.log(`[Collab] User ${socket.userEmail} joined member room: ${memberRoom}`);
+          logger.info(`[Collab] User ${socket.userEmail} joined member room: ${memberRoom}`);
           if (typeof ack === 'function') ack({ ok: true });
         }
       );
@@ -839,7 +839,7 @@ export async function setupSocketIO(
 
     // Handle disconnection
     socket.on('disconnect', () => {
-      console.log(`[Collab] User disconnected: ${socket.userEmail} (${socket.id})`);
+      logger.info(`[Collab] User disconnected: ${socket.userEmail} (${socket.id})`);
 
       if (enableCollaboration) {
         // Find which document this user was in

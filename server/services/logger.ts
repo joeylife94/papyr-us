@@ -69,6 +69,50 @@ const colors = {
 
 winston.addColors(colors);
 
+// ==================== Sensitive Field Masking ====================
+
+/** Fields (matched case-insensitively as substrings) that must always be redacted. */
+const SENSITIVE_FIELDS = [
+  'password',
+  'hashedpassword',
+  'token',
+  'accesstoken',
+  'refreshtoken',
+  'cookie',
+  'authorization',
+  'secret',
+] as const;
+
+/**
+ * Recursively mask sensitive fields in a log metadata object.
+ * Any key whose lower-cased name contains one of SENSITIVE_FIELDS is replaced with '[REDACTED]'.
+ */
+export function maskSensitiveFields(meta: Record<string, unknown>): Record<string, unknown> {
+  const masked: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(meta)) {
+    const lowerKey = key.toLowerCase();
+    if (SENSITIVE_FIELDS.some((f) => lowerKey.includes(f))) {
+      masked[key] = '[REDACTED]';
+    } else if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      masked[key] = maskSensitiveFields(value as Record<string, unknown>);
+    } else {
+      masked[key] = value;
+    }
+  }
+  return masked;
+}
+
+/**
+ * Winston format that automatically redacts sensitive fields from every log entry.
+ * Applied to both development console and production JSON transports so that
+ * no sensitive auth data (tokens, cookies, passwords) ever reaches log storage.
+ */
+const maskFormat = winston.format((info) => {
+  const { level: lvl, message, timestamp, ...meta } = info as Record<string, unknown>;
+  const masked = maskSensitiveFields(meta);
+  return { level: lvl, message, timestamp, ...masked } as winston.Logform.TransformableInfo;
+})();
+
 // ==================== Log Level Configuration ====================
 const level = () => {
   const env = process.env.NODE_ENV || 'development';
@@ -76,6 +120,7 @@ const level = () => {
   if (process.env.LOG_LEVEL) {
     return process.env.LOG_LEVEL;
   }
+  // In production, cap at 'info' so debug-level auth logs are never emitted.
   return env === 'development' ? 'debug' : 'info';
 };
 
@@ -102,6 +147,7 @@ const jsonFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DDTHH:mm:ss.sssZ' }), // ISO 8601
   winston.format.errors({ stack: true }),
   injectContext(),
+  maskFormat,
   winston.format.json()
 );
 
@@ -112,6 +158,7 @@ const consoleFormat = winston.format.combine(
   winston.format.colorize({ all: true }),
   winston.format.timestamp({ format: 'HH:mm:ss' }),
   injectContext(),
+  maskFormat,
   winston.format.printf((info) => {
     const { timestamp, level, message, requestId, userId, ...meta } = info;
 

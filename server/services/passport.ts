@@ -4,6 +4,7 @@ import { Strategy as GitHubStrategy } from 'passport-github2';
 import { users } from '../../shared/schema.js';
 import { eq } from 'drizzle-orm';
 import { config } from '../config.js';
+import logger from './logger.js';
 import type { Pool } from 'pg';
 
 // The passport strategies need access to the database.
@@ -72,9 +73,9 @@ export function initPassportStrategies(db: any) {
         }
       )
     );
-    console.log('[Passport] Google OAuth strategy registered');
+    logger.info('[Passport] Google OAuth strategy registered');
   } else {
-    console.log(
+    logger.info(
       '[Passport] Google OAuth not configured (missing GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET)'
     );
   }
@@ -122,9 +123,9 @@ export function initPassportStrategies(db: any) {
         }
       )
     );
-    console.log('[Passport] GitHub OAuth strategy registered');
+    logger.info('[Passport] GitHub OAuth strategy registered');
   } else {
-    console.log(
+    logger.info(
       '[Passport] GitHub OAuth not configured (missing GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET)'
     );
   }

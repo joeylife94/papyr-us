@@ -359,11 +359,44 @@ export class DBStorage {
   }
 
   async getCommentsByPageId(pageId: number): Promise<Comment[]> {
-    return this.db
-      .select()
+    // P4: LEFT JOIN with users to resolve the current display name.
+    // Priority: User Table current name (users.name) > fallback 'Unknown User'.
+    // This prevents stale author names when a user later updates their profile.
+    // Users that are inactive/withdrawn are treated the same as deleted users.
+    const rows = await this.db
+      .select({
+        id: comments.id,
+        content: comments.content,
+        author: comments.author,
+        authorUserId: comments.authorUserId,
+        pageId: comments.pageId,
+        parentId: comments.parentId,
+        createdAt: comments.createdAt,
+        updatedAt: comments.updatedAt,
+        _resolvedName: users.name,
+        _resolvedIsActive: users.isActive,
+      })
       .from(comments)
+      .leftJoin(users, eq(comments.authorUserId, users.id))
       .where(eq(comments.pageId, pageId))
       .orderBy(asc(comments.createdAt));
+
+    return rows.map((row: (typeof rows)[number]) => ({
+      id: row.id,
+      content: row.content,
+      // Treat inactive/withdrawn users the same as deleted users: return 'Unknown User'.
+      // - row._resolvedName == null  → user account deleted (ON DELETE SET NULL)
+      // - row._resolvedIsActive === false → user account deactivated/withdrawn
+      author:
+        row._resolvedName == null || row._resolvedIsActive === false
+          ? 'Unknown User'
+          : row._resolvedName,
+      authorUserId: row.authorUserId,
+      pageId: row.pageId,
+      parentId: row.parentId,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    }));
   }
 
   async getComment(id: number): Promise<Comment | undefined> {

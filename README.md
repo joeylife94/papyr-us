@@ -425,7 +425,7 @@ app.get('/api/pages/:id', requirePagePermission('viewer'), async (req, res) => {
 
 **Authentication & Authorization:**
 
-- ✅ JWT-based authentication with secure token storage
+- ✅ JWT-based authentication — tokens are stored exclusively in **HttpOnly Cookies** (no `Authorization` header, no `accessToken` in response body)
 - ✅ bcrypt password hashing (10 rounds)
 - ✅ Role-based middleware (`requireAdmin`, `requireTeamRole`)
 - ✅ Page-level permissions (`owner`, `editor`, `viewer`, `commenter`)

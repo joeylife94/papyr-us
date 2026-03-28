@@ -1,6 +1,11 @@
 /**
  * k6 Load Testing Script for Papyr.us
  *
+ * Updated to use Cookie-based authentication.
+ * The login request extracts the Set-Cookie header and injects it into the
+ * Cookie header of all subsequent API calls.  All Authorization: Bearer logic
+ * has been removed.
+ *
  * Install k6: https://k6.io/docs/getting-started/installation/
  * Run: k6 run scripts/load-test.js
  *
@@ -41,56 +46,69 @@ export const options = {
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:5001';
 
 // Test data
-let authToken = null;
 const testUser = {
   email: `loadtest_${Date.now()}@test.com`,
   password: 'TestPassword123!',
   name: 'Load Test User',
 };
 
-// Setup function - runs once before test
+/**
+ * Parse the Set-Cookie response headers and build a single Cookie header string.
+ * Handles both a single string and an array of strings (k6 returns an array when
+ * multiple Set-Cookie headers are present).
+ *
+ * @param {string|string[]|undefined} setCookieHeader
+ * @returns {string} Cookie header value ready to inject into subsequent requests
+ */
+function parseCookies(setCookieHeader) {
+  if (!setCookieHeader) return '';
+  const headers = Array.isArray(setCookieHeader) ? setCookieHeader : [setCookieHeader];
+  return headers
+    .map((h) => h.split(';')[0].trim()) // Keep only name=value, discard directives
+    .filter(Boolean)
+    .join('; ');
+}
+
+// Setup function — runs once before the test
 export function setup() {
-  // Register a test user
-  const registerRes = http.post(
+  // Register a test user (ignore 409 if already exists)
+  http.post(
     `${BASE_URL}/api/auth/register`,
     JSON.stringify({
       name: testUser.name,
       email: testUser.email,
       password: testUser.password,
     }),
-    {
-      headers: { 'Content-Type': 'application/json' },
-    }
+    { headers: { 'Content-Type': 'application/json' } }
   );
 
-  if (registerRes.status === 201 || registerRes.status === 409) {
-    // Login to get token
-    const loginRes = http.post(
-      `${BASE_URL}/api/auth/login`,
-      JSON.stringify({
-        email: testUser.email,
-        password: testUser.password,
-      }),
-      {
-        headers: { 'Content-Type': 'application/json' },
-      }
-    );
+  // Login to obtain session cookies
+  const loginRes = http.post(
+    `${BASE_URL}/api/auth/login`,
+    JSON.stringify({
+      email: testUser.email,
+      password: testUser.password,
+    }),
+    { headers: { 'Content-Type': 'application/json' } }
+  );
 
-    if (loginRes.status === 200) {
-      const body = JSON.parse(loginRes.body);
-      return { token: body.accessToken || body.token };
-    }
+  if (loginRes.status === 200) {
+    // Extract the Set-Cookie header(s) and build a reusable Cookie string.
+    // k6's cookie jar does not persist across setup → VU boundaries, so we pass
+    // the cookie string explicitly through the data object returned here.
+    const cookieHeader = parseCookies(loginRes.headers['Set-Cookie']);
+    return { cookieHeader };
   }
 
-  return { token: null };
+  return { cookieHeader: '' };
 }
 
-// Main test function - runs for each VU
+// Main test function — runs for each VU
 export default function (data) {
-  const token = data.token;
+  const { cookieHeader } = data;
   const headers = {
     'Content-Type': 'application/json',
-    ...(token && { Authorization: `Bearer ${token}` }),
+    ...(cookieHeader && { Cookie: cookieHeader }),
   };
 
   // Test Group: Health Check
@@ -121,7 +139,7 @@ export default function (data) {
     errorRate.add(listRes.status !== 200);
 
     // Create page (if authenticated)
-    if (token) {
+    if (cookieHeader) {
       const createRes = http.post(
         `${BASE_URL}/api/pages`,
         JSON.stringify({
@@ -188,7 +206,7 @@ export default function (data) {
   sleep(0.5);
 
   // Test Group: Teams (if authenticated)
-  if (token) {
+  if (cookieHeader) {
     group('Teams', function () {
       const teamsRes = http.get(`${BASE_URL}/api/teams`, { headers });
 
@@ -204,10 +222,10 @@ export default function (data) {
   sleep(0.5);
 }
 
-// Teardown function - runs once after test
+// Teardown function — runs once after test
 export function teardown(data) {
   console.log('Load test completed');
-  console.log(`Token used: ${data.token ? 'Yes' : 'No'}`);
+  console.log(`Auth cookie present: ${data.cookieHeader ? 'Yes' : 'No'}`);
 }
 
 // Handle test summary

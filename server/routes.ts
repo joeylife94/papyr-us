@@ -150,54 +150,43 @@ export async function registerRoutes(
 
   // User Registration
   app.post('/api/auth/register', rlAuth, async (req, res) => {
-    console.log('--- [REGISTER] Received request ---');
     try {
-      if (process.env.E2E_DEBUG_AUTH === '1' || process.env.NODE_ENV !== 'production') {
-        // avoid logging sensitive fields like full password in logs
-        console.log('[E2E DEBUG] /api/auth/register body:', {
+      if (process.env.E2E_DEBUG_AUTH === '1') {
+        logger.debug('[E2E DEBUG] /api/auth/register body', {
           name: req.body?.name,
           email: req.body?.email,
         });
       }
       const { name, email, password } = req.body;
-      console.log(`[REGISTER] Data: email=${email}, name=${name}`);
       if (!name || !email || !password) {
-        console.log('[REGISTER] Validation failed: Missing fields');
         return res.status(400).json({ message: 'Name, email, and password are required' });
       }
 
       // Validate email format
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(email)) {
-        console.log('[REGISTER] Validation failed: Invalid email format');
         return res.status(400).json({ message: 'Invalid email format' });
       }
 
       // Validate password length (minimum 6 characters)
       if (password.length < 6) {
-        console.log('[REGISTER] Validation failed: Password too short');
         return res.status(400).json({ message: 'Password must be at least 6 characters long' });
       }
 
-      console.log('[REGISTER] Checking for existing user...');
       const existingUser = await storage.db.select().from(users).where(eq(users.email, email));
       if (existingUser.length > 0) {
-        console.log('[REGISTER] User already exists');
         return res.status(409).json({ message: 'User with this email already exists' });
       }
 
-      console.log('[REGISTER] Hashing password...');
       const hashedPassword = await bcrypt.hash(password, 10);
 
-      console.log('[REGISTER] Inserting new user into DB...');
       const newUserResult = await storage.db
         .insert(users)
         .values({ name, email, hashedPassword, provider: 'local' })
         .returning();
       const newUser = newUserResult[0];
-      console.log(`[REGISTER] User created successfully with ID: ${newUser.id}`);
-      if (process.env.E2E_DEBUG_AUTH === '1' || process.env.NODE_ENV !== 'production') {
-        console.log('[E2E DEBUG] /api/auth/register response user:', {
+      if (process.env.E2E_DEBUG_AUTH === '1') {
+        logger.debug('[E2E DEBUG] /api/auth/register response user', {
           id: newUser.id,
           email: newUser.email,
         });
@@ -234,7 +223,6 @@ export async function registerRoutes(
           message: 'User registered successfully',
           user: { id: newUser.id, name: newUser.name, email: newUser.email, role },
         });
-      console.log('--- [REGISTER] Response sent ---');
     } catch (error: any) {
       logger.error('Registration critical error:', {
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -252,9 +240,8 @@ export async function registerRoutes(
   // User Login
   app.post('/api/auth/login', rlAuth, async (req, res) => {
     try {
-      if (process.env.E2E_DEBUG_AUTH === '1' || process.env.NODE_ENV !== 'production') {
-        // Log email but not password
-        console.log('[E2E DEBUG] POST /api/auth/login body:', { email: req.body?.email });
+      if (process.env.E2E_DEBUG_AUTH === '1') {
+        logger.debug('[E2E DEBUG] POST /api/auth/login body', { email: req.body?.email });
       }
       const { email, password } = req.body;
       if (!email || !password) {
@@ -290,7 +277,7 @@ export async function registerRoutes(
       });
 
       if (process.env.E2E_DEBUG_AUTH === '1' || process.env.NODE_ENV !== 'production') {
-        console.log('[E2E DEBUG] login success:', {
+        logger.debug('[E2E DEBUG] login success:', {
           id: user.id,
           email: user.email,
           role,
@@ -382,11 +369,11 @@ export async function registerRoutes(
   // Get current user info (Protected Route)
   app.get('/api/auth/me', authMiddleware, async (req: any, res) => {
     try {
-      if (process.env.E2E_DEBUG_AUTH === '1' || process.env.NODE_ENV !== 'production') {
-        console.log('[E2E DEBUG] GET /api/auth/me headers:', {
-          authorization: !!req.headers.authorization,
+      if (process.env.E2E_DEBUG_AUTH === '1') {
+        logger.debug('[E2E DEBUG] GET /api/auth/me', {
+          hasAuthHeader: !!req.headers.authorization,
+          userId: (req.user as any)?.id,
         });
-        console.log('[E2E DEBUG] GET /api/auth/me decodedUser:', req.user);
       }
       const userResult = await storage.db
         .select({ id: users.id, name: users.name, email: users.email })

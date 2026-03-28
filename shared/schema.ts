@@ -427,6 +427,7 @@ export const users = pgTable('users', {
   hashedPassword: text('hashed_password'),
   provider: varchar('provider', { length: 50 }),
   providerId: varchar('provider_id', { length: 255 }),
+  isActive: boolean('is_active').notNull().default(true),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
