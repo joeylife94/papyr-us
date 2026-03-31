@@ -19,7 +19,7 @@ const cspDirectives = {
   scriptSrc: [
     "'self'",
     "'unsafe-inline'", // Required for some React features - consider removing in strict mode
-    "'unsafe-eval'", // Required for dev tools - remove in production
+    ...(config.isProduction ? [] : ["'unsafe-eval'"]), // Only for dev tools - never in production
     'https://cdn.jsdelivr.net', // For external libraries if needed
   ],
 

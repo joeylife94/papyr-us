@@ -5,6 +5,54 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 기반으로 하며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## [2.1.0] - 2026-03-31
+
+### 🔒 보안 강화
+
+#### Fixed
+
+- **SQL Injection 취약점 수정**: 인기 페이지 조회 엔드포인트에서 `sql.raw(String(days))` 사용 → parameterized `MAKE_INTERVAL(days => ${days})`로 교체
+- **bcrypt 해싱 일관성**: 회원가입 시 salt rounds 10 → 12로 통일 (비밀번호 변경과 동일)
+- **비밀번호 정책 강화**: 영문 + 숫자에 추가로 **특수문자 1개 이상** 필수
+- **AI 엔드포인트 Rate Limiting**: 15 req/min 제한 추가 (비용 폭주 방지)
+- **조회 기록 Rate Limiting**: `/api/pages/:id/view` 엔드포인트에 rate limiter 추가 (분석 데이터 스팸 방지)
+
+### ✨ 신규 기능 (포트폴리오)
+
+#### Added
+
+- **Soft Delete / 휴지통 시스템**
+  - 페이지 삭제 시 `deletedAt` 타임스탬프 설정 (즉시 제거 대신 soft delete)
+  - `GET /api/trash` — 휴지통 목록 조회
+  - `POST /api/trash/:id/restore` — 페이지 복원
+  - `DELETE /api/trash/:id` — 영구 삭제
+  - `DELETE /api/trash` — 관리자 전용 전체 비우기
+  - 모든 일반 조회(검색, 목록, 태그, 폴더)에서 삭제된 페이지 자동 제외
+
+- **페이지 복제 (Page Duplicate)**
+  - `POST /api/pages/:id/duplicate` — 원클릭 페이지 복제
+  - 제목, 내용, 블록, 태그, 아이콘, 커버이미지, 폴더 복사
+  - 새 slug 자동 생성 (`{원본}-copy-{timestamp}`)
+
+- **일괄 작업 API (Bulk Operations)**
+  - `POST /api/pages/bulk/move` — 여러 페이지 폴더 이동
+  - `POST /api/pages/bulk/tags` — 여러 페이지 태그 추가/제거
+  - `POST /api/pages/bulk/delete` — 여러 페이지 일괄 휴지통 이동
+
+- **대시보드 통계 API**
+  - `GET /api/dashboard/stats` — 페이지/태스크/댓글 수, 완료율, 최근 페이지, 주간 성장률
+
+- **헬스 체크 강화**
+  - `/health` 엔드포인트에 DB 연결 상태 확인 추가
+
+### Changed
+
+- DB 스키마: `wiki_pages` 테이블에 `deleted_at` 컬럼 추가
+- `storage.ts`: 모든 조회 메서드에 `isNull(wikiPages.deletedAt)` 조건 추가
+- `deleteWikiPage()`: hard delete → soft delete로 변경
+
+---
+
 ## [2.0.0] - 2026-02-01
 
 ### 🚀 프로덕션 준비 완료

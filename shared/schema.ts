@@ -66,6 +66,7 @@ export const wikiPages = pgTable('wiki_pages', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
   isPublished: boolean('is_published').notNull().default(true),
+  deletedAt: timestamp('deleted_at'), // Soft delete: null = active, set = trashed
   metadata: jsonb('metadata').default({}), // for frontmatter data
 });
 
@@ -777,6 +778,63 @@ export interface FormulaFieldConfig {
   expression: string; // e.g., "prop('Price') * prop('Quantity')"
   returnType: 'number' | 'text' | 'boolean' | 'date';
 }
+
+// ==================== Page Favorites / Bookmarks ====================
+
+export const pageFavorites = pgTable('page_favorites', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  pageId: integer('page_id')
+    .notNull()
+    .references(() => wikiPages.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const insertPageFavoriteSchema = createInsertSchema(pageFavorites).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertPageFavorite = z.infer<typeof insertPageFavoriteSchema>;
+export type PageFavorite = typeof pageFavorites.$inferSelect;
+
+// ==================== Page Analytics ====================
+
+export const pageViews = pgTable('page_views', {
+  id: serial('id').primaryKey(),
+  pageId: integer('page_id')
+    .notNull()
+    .references(() => wikiPages.id, { onDelete: 'cascade' }),
+  userId: integer('user_id').references(() => users.id, { onDelete: 'set null' }),
+  viewedAt: timestamp('viewed_at').notNull().defaultNow(),
+});
+
+export type PageView = typeof pageViews.$inferSelect;
+
+// ==================== Activity Feed ====================
+
+export const activityFeed = pgTable('activity_feed', {
+  id: serial('id').primaryKey(),
+  actorId: integer('actor_id').references(() => users.id, { onDelete: 'set null' }),
+  actorName: text('actor_name').notNull(),
+  action: text('action').notNull(), // 'page_created', 'page_updated', 'comment_added', 'task_completed', etc.
+  targetType: text('target_type').notNull(), // 'page', 'task', 'comment', 'team'
+  targetId: integer('target_id'),
+  targetTitle: text('target_title'),
+  teamId: integer('team_id').references(() => teams.id, { onDelete: 'cascade' }),
+  metadata: jsonb('metadata').default({}),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const insertActivityFeedSchema = createInsertSchema(activityFeed).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertActivityFeed = z.infer<typeof insertActivityFeedSchema>;
+export type ActivityFeedEntry = typeof activityFeed.$inferSelect;
 
 // Database field definition
 export interface DatabaseField {

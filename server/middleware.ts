@@ -42,8 +42,8 @@ export function log(message: string, source = 'express') {
 }
 
 export function setupBasicMiddleware(app: Express) {
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: false }));
+  app.use(express.json({ limit: '1mb' }));
+  app.use(express.urlencoded({ extended: false, limit: '1mb' }));
   app.use(cookieParser());
 }
 

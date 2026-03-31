@@ -110,7 +110,7 @@ export async function sendEmail(opts: SendEmailOptions): Promise<SendEmailResult
       });
 
       const info = await Promise.race([
-        sendPromise.then((result) => {
+        sendPromise.then((result: Awaited<ReturnType<typeof transporter.sendMail>>) => {
           if (timeoutId.ref !== null) clearTimeout(timeoutId.ref);
           return result;
         }),

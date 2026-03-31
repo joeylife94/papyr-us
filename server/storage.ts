@@ -119,12 +119,18 @@ export class DBStorage {
 
   // All method implementations remain the same as before...
   async getWikiPage(id: number): Promise<WikiPage | undefined> {
-    const result = await this.db.select().from(wikiPages).where(eq(wikiPages.id, id));
+    const result = await this.db
+      .select()
+      .from(wikiPages)
+      .where(and(eq(wikiPages.id, id), isNull(wikiPages.deletedAt)));
     return result[0];
   }
 
   async getWikiPageBySlug(slug: string): Promise<WikiPage | undefined> {
-    const result = await this.db.select().from(wikiPages).where(eq(wikiPages.slug, slug));
+    const result = await this.db
+      .select()
+      .from(wikiPages)
+      .where(and(eq(wikiPages.slug, slug), isNull(wikiPages.deletedAt)));
     return result[0];
   }
 
@@ -154,8 +160,51 @@ export class DBStorage {
   }
 
   async deleteWikiPage(id: number): Promise<boolean> {
+    // Soft delete: set deletedAt timestamp
+    const result = await this.db
+      .update(wikiPages)
+      .set({ deletedAt: new Date() })
+      .where(and(eq(wikiPages.id, id), isNull(wikiPages.deletedAt)))
+      .returning();
+    return result.length > 0;
+  }
+
+  async permanentlyDeleteWikiPage(id: number): Promise<boolean> {
     const result = await this.db.delete(wikiPages).where(eq(wikiPages.id, id)).returning();
     return result.length > 0;
+  }
+
+  async restoreWikiPage(id: number): Promise<WikiPage | undefined> {
+    const result = await this.db
+      .update(wikiPages)
+      .set({ deletedAt: null })
+      .where(eq(wikiPages.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async getTrashPages(teamId?: number): Promise<WikiPage[]> {
+    const conditions = [sql`${wikiPages.deletedAt} IS NOT NULL`];
+    if (teamId) {
+      conditions.push(eq(wikiPages.teamId, teamId));
+    }
+    return this.db
+      .select()
+      .from(wikiPages)
+      .where(and(...conditions))
+      .orderBy(desc(wikiPages.deletedAt));
+  }
+
+  async emptyTrash(teamId?: number): Promise<number> {
+    const conditions = [sql`${wikiPages.deletedAt} IS NOT NULL`];
+    if (teamId) {
+      conditions.push(eq(wikiPages.teamId, teamId));
+    }
+    const result = await this.db
+      .delete(wikiPages)
+      .where(and(...conditions))
+      .returning();
+    return result.length;
   }
 
   async searchWikiPages(params: SearchParams): Promise<{ pages: WikiPage[]; total: number }> {
@@ -181,6 +230,9 @@ export class DBStorage {
     const countQuery = this.db.select({ count: sql`count(*)` }).from(wikiPages);
 
     const conditions = [];
+
+    // Always exclude soft-deleted pages
+    conditions.push(isNull(wikiPages.deletedAt));
 
     if (hasQuery) {
       if (useFts) {
@@ -243,12 +295,15 @@ export class DBStorage {
     return this.db
       .select()
       .from(wikiPages)
-      .where(eq(wikiPages.folder, folder))
+      .where(and(eq(wikiPages.folder, folder), isNull(wikiPages.deletedAt)))
       .orderBy(desc(wikiPages.updatedAt));
   }
 
   async getAllTags(): Promise<Tag[]> {
-    const allPages = await this.db.select({ tags: wikiPages.tags }).from(wikiPages);
+    const allPages = await this.db
+      .select({ tags: wikiPages.tags })
+      .from(wikiPages)
+      .where(isNull(wikiPages.deletedAt));
     const tagCounts = new Map<string, number>();
     allPages.forEach((page: { tags: string[] }) => {
       page.tags?.forEach((tag: string) => {
@@ -259,7 +314,10 @@ export class DBStorage {
   }
 
   async getFolders(): Promise<string[]> {
-    const result = await this.db.selectDistinct({ folder: wikiPages.folder }).from(wikiPages);
+    const result = await this.db
+      .selectDistinct({ folder: wikiPages.folder })
+      .from(wikiPages)
+      .where(isNull(wikiPages.deletedAt));
     return result.map((r: { folder: string }) => r.folder);
   }
 
