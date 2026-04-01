@@ -32,8 +32,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    profiles:
-      - redis
 
   app:
     build: .
@@ -50,6 +48,8 @@ services:
       - REDIS_URL=redis://redis:6379
     depends_on:
       db:
+        condition: service_healthy
+      redis:                      
         condition: service_healthy
     volumes:
       - ./logs:/app/logs

@@ -71,6 +71,11 @@ export default defineConfig({
         target: process.env.NODE_ENV === 'test' ? 'http://localhost:5002' : 'http://app:5001',
         changeOrigin: true,
       },
+      '/socket.io': {
+        target: process.env.NODE_ENV === 'test' ? 'http://localhost:5002' : 'http://app:5001',
+        changeOrigin: true,
+        ws: true,
+      },
     },
   },
 });

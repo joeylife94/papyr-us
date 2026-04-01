@@ -10,3 +10,7 @@ coverage
 .vscode
 .DS_Store
 *.log
+backups
+pgdata
+redisdata
+.env

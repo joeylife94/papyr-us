@@ -1,3 +1,8 @@
+// Capture the native fetch at module-init time, before setup-fetch.ts can override
+// window.fetch. All calls in this module must use _nativeFetch to avoid the infinite
+// recursion: window.fetch → http() → window.fetch → ...
+const _nativeFetch = fetch;
+
 // Flag to prevent multiple concurrent refresh attempts
 let _refreshing: Promise<boolean> | null = null;
 
@@ -7,7 +12,7 @@ let _refreshing: Promise<boolean> | null = null;
  */
 async function tryRefreshToken(): Promise<boolean> {
   try {
-    const res = await fetch('/api/auth/refresh', {
+    const res = await _nativeFetch('/api/auth/refresh', {
       method: 'POST',
       credentials: 'include',
     });
@@ -20,7 +25,7 @@ async function tryRefreshToken(): Promise<boolean> {
 // Lightweight fetch wrapper: sends cookies automatically and handles 401
 export async function http(input: RequestInfo | URL, init: RequestInit = {}) {
   // Always include credentials so HttpOnly auth cookies are forwarded
-  const res = await fetch(input, { ...init, credentials: 'include' });
+  const res = await _nativeFetch(input, { ...init, credentials: 'include' });
 
   // Determine the request URL string for path-based skip logic
   const urlStr =
@@ -45,7 +50,7 @@ export async function http(input: RequestInfo | URL, init: RequestInit = {}) {
 
     if (refreshed) {
       // Retry with the new cookies the server just set
-      return fetch(input, { ...init, credentials: 'include' });
+      return _nativeFetch(input, { ...init, credentials: 'include' });
     }
 
     // Refresh failed — redirect to login
