@@ -1,0 +1,186 @@
+name: 7-Layer Test Architecture
+
+on:
+  push:
+    branches: [main, develop, 'day/**']
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch: {}
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  # ═══════════════════════════════════════════════════════════════════
+  # LAYER 0 · Static Gate  (must pass before any other layer runs)
+  # ═══════════════════════════════════════════════════════════════════
+  layer-0-static:
+    name: 'Layer 0 · Static Gate'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Lint (ESLint --max-warnings=0)
+        run: npm run lint
+      - name: Type check (tsc --noEmit)
+        run: tsc --noEmit
+      - name: Secret scan (secretlint)
+        run: npx secretlint "**/*"
+
+  # ═══════════════════════════════════════════════════════════════════
+  # LAYER 1 · Unit Tests
+  # ═══════════════════════════════════════════════════════════════════
+  layer-1-unit:
+    name: 'Layer 1 · Unit Tests'
+    runs-on: ubuntu-latest
+    needs: layer-0-static
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Run unit tests
+        run: npm run test:unit
+
+  # ═══════════════════════════════════════════════════════════════════
+  # LAYER 2 · Domain Invariant Tests
+  # ═══════════════════════════════════════════════════════════════════
+  layer-2-domain:
+    name: 'Layer 2 · Domain Invariants'
+    runs-on: ubuntu-latest
+    needs: layer-0-static
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Run domain invariant tests
+        run: npm run test:domain
+
+  # ═══════════════════════════════════════════════════════════════════
+  # LAYER 3 · Contract Tests
+  # ═══════════════════════════════════════════════════════════════════
+  layer-3-contract:
+    name: 'Layer 3 · Contract Tests'
+    runs-on: ubuntu-latest
+    needs: layer-0-static
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Run contract tests
+        run: npm run test:contract
+
+  # ═══════════════════════════════════════════════════════════════════
+  # LAYER 4 · Integration Tests  (requires Docker service)
+  # ═══════════════════════════════════════════════════════════════════
+  layer-4-integration:
+    name: 'Layer 4 · Integration Tests'
+    runs-on: ubuntu-latest
+    needs: [layer-1-unit, layer-2-domain, layer-3-contract]
+    # Docker is available on ubuntu-latest GitHub-hosted runners
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Run integration tests (docker-compose lifecycle managed by script)
+        run: npm run test:integration
+
+  # ═══════════════════════════════════════════════════════════════════
+  # LAYER 5 · E2E Tests  (frontend detected — requires DATABASE_URL)
+  # ═══════════════════════════════════════════════════════════════════
+  layer-5-e2e:
+    name: 'Layer 5 · E2E Tests'
+    runs-on: ubuntu-latest
+    needs: layer-4-integration
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: papyrus_user
+          POSTGRES_PASSWORD: papyrus_password_2024
+          POSTGRES_DB: papyrus_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U papyrus_user"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://papyrus_user:papyrus_password_2024@localhost:5432/papyrus_db
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Install Playwright browsers (chromium only)
+        run: npx playwright install chromium --with-deps
+      - name: Run Schema Migrations
+        run: npx drizzle-kit push --config drizzle.config.ts
+        env:
+          DATABASE_URL: postgresql://papyrus_user:papyrus_password_2024@localhost:5432/papyrus_db
+      - name: Run E2E tests (Layer 5)
+        run: npm run test:e2e
+
+  # ═══════════════════════════════════════════════════════════════════
+  # LAYER 6 · Visual & A11y Tests  (frontend detected)
+  # ═══════════════════════════════════════════════════════════════════
+  layer-6-visual:
+    name: 'Layer 6 · Visual & A11y'
+    runs-on: ubuntu-latest
+    needs: layer-5-e2e
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: papyrus_user
+          POSTGRES_PASSWORD: papyrus_password_2024
+          POSTGRES_DB: papyrus_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U papyrus_user"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://papyrus_user:papyrus_password_2024@localhost:5432/papyrus_db
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Install Playwright browsers (chromium only)
+        run: npx playwright install chromium --with-deps
+      - name: Run Schema Migrations
+        run: npx drizzle-kit push --config drizzle.config.ts
+        env:
+          DATABASE_URL: postgresql://papyrus_user:papyrus_password_2024@localhost:5432/papyrus_db
+      - name: Run visual & accessibility tests (Layer 6)
+        run: npm run test:visual
+      - name: Upload visual diff artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-test-results
+          path: test-results/
+          retention-days: 7
