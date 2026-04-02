@@ -1,0 +1,32 @@
+# Layer 4 integration test infrastructure
+# Runs isolated Postgres + Redis instances on dedicated ports to avoid
+# colliding with the dev docker-compose.yml (which uses 5433 / 6379).
+services:
+  db-test:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_DB: test_db
+    ports:
+      - '5434:5432'
+    # tmpfs keeps test data in RAM — wiped on container stop, no persistent state
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U test_user -d test_db']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  redis-test:
+    image: redis:7-alpine
+    ports:
+      - '6380:6379'
+    tmpfs:
+      - /data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 12
