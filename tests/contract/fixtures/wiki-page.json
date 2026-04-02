@@ -1,0 +1,17 @@
+{
+  "id": 1,
+  "title": "Welcome to Papyrus",
+  "slug": "welcome-to-papyrus",
+  "content": "# Welcome\n\nThis is our team wiki.",
+  "folder": "docs",
+  "tags": ["welcome", "overview"],
+  "author": "admin",
+  "parentId": null,
+  "teamId": null,
+  "createdAt": "2024-01-01T00:00:00.000Z",
+  "updatedAt": "2024-01-15T12:00:00.000Z",
+  "isPublished": true,
+  "deletedAt": null,
+  "metadata": {},
+  "blocks": []
+}
