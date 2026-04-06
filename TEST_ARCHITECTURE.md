@@ -15,8 +15,8 @@ a clear skip/fail contract.
 | 2     | Domain Invariants   | Vitest                               | `test:domain`      | Never skipped — pure function tests       |
 | 3     | Contract Tests      | Vitest · Zod                         | `test:contract`    | Never skipped — offline fixture-based     |
 | 4     | Integration Tests   | Vitest · Docker Compose · PostgreSQL | `test:integration` | Skipped when Docker daemon is unavailable |
-| 5     | E2E Tests           | Playwright (chromium)                | `test:e2e`         | Skipped when `DATABASE_URL` is not set    |
-| 6     | Visual & A11y Tests | Playwright · @axe-core/playwright    | `test:visual`      | Skipped when `DATABASE_URL` is not set    |
+| 5     | E2E Tests           | Playwright (chromium)                | `test:e2e`         | Skipped when Docker daemon is unavailable |
+| 6     | Visual & A11y Tests | Playwright · @axe-core/playwright    | `test:visual`      | Skipped when Docker daemon is unavailable |
 
 Run all layers in sequence (stops on first failure):
 
@@ -72,14 +72,26 @@ On machines without Docker the script logs `SKIP` and exits 0.
 
 Verifies **critical user flows from the browser perspective** using Playwright (chromium only).
 Tests cover: homepage reachability, login page rendering, and graceful 404 handling. The test
-server is started automatically by `playwright.layer5.config.ts` using `webServer`. The wrapper
-script `scripts/run-e2e-layer5.mjs` skips gracefully when `DATABASE_URL` is absent (the app
-server requires Postgres to start). Uses `waitFor` and `networkidle` — never `sleep`.
+server is started automatically by `playwright.layer5.config.ts` using `webServer`.
+
+These layers utilize an **auto-provisioning lifecycle**. The runner script
+`scripts/run-e2e-layer5.mjs` automatically starts a temporary Docker infrastructure
+(`docker-compose.test.yml` — PostgreSQL on port 5434, Redis on port 6380), injects the
+necessary `DATABASE_URL` and `REDIS_URL` into the process environment, and tears it down after
+execution via a `try/finally` block. **Manual environment variable setup is no longer
+required.** When Docker is unavailable the script logs `SKIP` and exits 0. Uses `waitFor`
+and `networkidle` — never `sleep`.
 
 ### Layer 6 · Visual & A11y Tests
 
 Catches **visual regressions and accessibility failures**. Screenshot baselines are stored in
 `tests/visual/layer6-visual.spec.ts-snapshots/` and compared on every run (diff threshold:
 0.1%). `@axe-core/playwright` scans each covered page with WCAG 2.0 A/AA rules and fails on any
-`critical` violation. Covered pages: `/login` (homepage) and `/` (root/dashboard). Like Layer 5,
-the wrapper script skips when `DATABASE_URL` is absent.
+`critical` violation. Covered pages: `/login` (homepage) and `/` (root/dashboard).
+
+These layers utilize an **auto-provisioning lifecycle**. The runner script
+`scripts/run-visual-layer6.mjs` automatically starts a temporary Docker infrastructure
+(`docker-compose.test.yml` — PostgreSQL on port 5434, Redis on port 6380), injects the
+necessary `DATABASE_URL` and `REDIS_URL` into the process environment, and tears it down after
+execution via a `try/finally` block. **Manual environment variable setup is no longer
+required.** When Docker is unavailable the script logs `SKIP` and exits 0.
