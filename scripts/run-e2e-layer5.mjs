@@ -1,45 +1,98 @@
 #!/usr/bin/env node
 /**
  * Layer 5 E2E test runner.
- * Prerequisite: DATABASE_URL must be set (app needs a database to start).
- * If DATABASE_URL is absent, prints SKIP and exits 0 (satisfies DONE criteria).
+ * Lifecycle: check Docker → start docker-compose.test.yml → wait for DB →
+ *            inject DATABASE_URL + REDIS_URL → run Playwright → teardown (always).
+ * If Docker is unavailable, prints SKIP with reason and exits 0.
+ * No manual DATABASE_URL setup required.
  */
-import { spawnSync } from 'child_process';
+import { execSync, spawnSync } from 'child_process';
 
-// ── Prerequisite check ────────────────────────────────────────────────────────
-if (!process.env.DATABASE_URL) {
-  // Try to load from .env.test if it exists
+const COMPOSE_FILE = 'docker-compose.test.yml';
+const TEST_DATABASE_URL = 'postgresql://test_user:test_password@localhost:5434/test_db';
+const TEST_REDIS_URL = 'redis://localhost:6380';
+const MAX_WAIT_MS = 60_000;
+const POLL_INTERVAL_MS = 2_000;
+
+function run(cmd, opts = {}) {
+  return spawnSync(cmd, { shell: true, stdio: 'inherit', ...opts });
+}
+
+function runCapture(cmd) {
   try {
-    const { readFileSync } = await import('fs');
-    const { resolve } = await import('path');
-    const envFile = readFileSync(resolve('.env.test'), 'utf-8');
-    for (const line of envFile.split('\n')) {
-      const m = line.match(/^DATABASE_URL=(.+)$/);
-      if (m) {
-        process.env.DATABASE_URL = m[1].trim();
-        break;
-      }
-    }
+    return execSync(cmd, { stdio: 'pipe' }).toString().trim();
   } catch {
-    // .env.test does not exist — that's fine
+    return null;
   }
 }
 
-if (!process.env.DATABASE_URL) {
+// ── 1. Prerequisite check ────────────────────────────────────────────────────
+const dockerCheck = runCapture('docker info');
+if (!dockerCheck) {
   console.log(
-    'SKIP [Layer 5 E2E]: DATABASE_URL is not set.\n' +
-      '  The app server requires a Postgres database to start.\n' +
-      '  Set DATABASE_URL (or create a .env.test file) and re-run to execute E2E tests.\n' +
-      '  Example: DATABASE_URL=postgresql://... pnpm test:e2e'
+    'SKIP [Layer 5 E2E]: Docker is not available on this machine. ' +
+      'Install Docker Desktop and ensure the daemon is running to enable E2E tests.'
   );
   process.exit(0);
 }
 
-console.log('[Layer 5 E2E] DATABASE_URL detected — running Playwright tests…');
+console.log('[Layer 5 E2E] Docker available — starting test infrastructure…');
 
-const result = spawnSync(
-  'npx playwright test --config playwright.layer5.config.ts --project=chromium',
-  { shell: true, stdio: 'inherit' }
-);
+// ── 2. Start containers ──────────────────────────────────────────────────────
+const up = run(`docker compose -f ${COMPOSE_FILE} up -d --wait`);
+if (up.status !== 0) {
+  console.error('[Layer 5 E2E] Failed to start docker-compose.test.yml — check Docker logs.');
+  process.exit(1);
+}
 
-process.exit(result.status ?? 1);
+// Register signal handlers so containers are torn down on Ctrl-C / SIGTERM.
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, () => {
+    console.log(`\n[Layer 5 E2E] ${sig} received — tearing down test infrastructure…`);
+    run(`docker compose -f ${COMPOSE_FILE} down`);
+    process.exit(1);
+  });
+}
+
+// ── Guarded section: teardown runs whether tests pass, fail, or throw ────────
+let exitCode = 1;
+try {
+  // ── 3. Wait for Postgres readiness ────────────────────────────────────────
+  console.log('[Layer 5 E2E] Waiting for Postgres to be ready…');
+  const deadline = Date.now() + MAX_WAIT_MS;
+  let ready = false;
+
+  while (Date.now() < deadline) {
+    const ping = runCapture(
+      `docker compose -f ${COMPOSE_FILE} exec -T db-test pg_isready -U test_user -d test_db`
+    );
+    if (ping && ping.includes('accepting connections')) {
+      ready = true;
+      break;
+    }
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+  }
+
+  if (!ready) {
+    console.error('[Layer 5 E2E] Postgres did not become ready within 60s — aborting.');
+    // exitCode stays 1; falls through to finally for teardown
+  } else {
+    // ── 4. Inject credentials and run Playwright ────────────────────────────
+    console.log(
+      '[Layer 5 E2E] Infrastructure ready — injecting DATABASE_URL and running Playwright tests…'
+    );
+    process.env.DATABASE_URL = TEST_DATABASE_URL;
+    process.env.REDIS_URL = TEST_REDIS_URL;
+
+    const result = run(
+      'npx playwright test --config playwright.layer5.config.ts --project=chromium'
+    );
+    exitCode = result.status ?? 1;
+  }
+} finally {
+  // ── 5. Teardown (always executes, even on uncaught exceptions) ────────────
+  console.log('[Layer 5 E2E] Tearing down test infrastructure…');
+  run(`docker compose -f ${COMPOSE_FILE} down`);
+}
+
+process.exit(exitCode);
