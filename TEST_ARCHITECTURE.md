@@ -95,3 +95,9 @@ These layers utilize an **auto-provisioning lifecycle**. The runner script
 necessary `DATABASE_URL` and `REDIS_URL` into the process environment, and tears it down after
 execution via a `try/finally` block. **Manual environment variable setup is no longer
 required.** When Docker is unavailable the script logs `SKIP` and exits 0.
+
+## Upgrade Roadmap
+
+For a detailed, UX-focused upgrade strategy (including storyboard screenshots for E2E), see:
+
+- `docs/testing/test-layer-upgrade-strategy.md`
