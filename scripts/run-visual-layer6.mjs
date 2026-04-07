@@ -29,9 +29,7 @@ function runCapture(cmd) {
 // ── 1. Prerequisite check ────────────────────────────────────────────────────
 const dockerCheck = runCapture('docker info');
 if (!dockerCheck) {
-  console.warn(
-    'VRT requires Docker to run Linux baseline. Skipping Layer 6.'
-  );
+  console.warn('VRT requires Docker to run Linux baseline. Skipping Layer 6.');
   process.exit(1);
 }
 

@@ -41,9 +41,9 @@ const result = spawnSync(
     '-w',
     '/work',
     PLAYWRIGHT_IMAGE,
-    '/bin/bash',                     // 1. bash 쉘을 호출
-    '-c',                            // 2. 커맨드 실행 플래그
-    'npm install && npx playwright test --config playwright.visual.config.ts --project=chromium --update-snapshots' // 3. 설치 후 테스트 실행
+    '/bin/bash', // 1. bash 쉘을 호출
+    '-c', // 2. 커맨드 실행 플래그
+    'npm install && npx playwright test --config playwright.visual.config.ts --project=chromium --update-snapshots', // 3. 설치 후 테스트 실행
   ],
   { stdio: 'inherit', shell: false }
 );
