@@ -3,6 +3,7 @@
 작성일: 2026-04-07
 
 ## 범위
+
 요청된 3개 축을 점검했습니다.
 
 - A. Linux baseline 정책
@@ -14,6 +15,7 @@
 ## A. Linux baseline 정책
 
 ### A-1) 현재 baseline이 어떤 OS 기준인가?
+
 현재 저장소의 실제 baseline 파일명은 아래 2개이며, 둘 다 `-win32` suffix를 가지고 있습니다.
 
 - `tests/visual/layer6-visual.spec.ts-snapshots/login-page-chromium-win32.png`
@@ -22,6 +24,7 @@
 즉, 현재 커밋되어 있는 baseline은 **Windows(win32) 기준**입니다.
 
 ### A-2) Linux에서 어떤 baseline miss가 나는가?
+
 Playwright snapshot naming 규칙상 플랫폼 suffix가 포함되므로, Linux 실행 시 기대 스냅샷은 일반적으로 `*-chromium-linux.png` 계열이 됩니다.
 현재 저장소에는 `*-win32.png`만 존재하므로 Linux runner에서 최초 비교 시에는 기본적으로 **baseline missing(또는 regenerate 필요)** 상태가 발생하는 구조입니다.
 
@@ -31,6 +34,7 @@ Playwright snapshot naming 규칙상 플랫폼 suffix가 포함되므로, Linux 
 - `root-page-chromium-linux.png` baseline 없음
 
 ### A-3) Linux 단일 정책이 자연스러운가?
+
 **네, CI 관점에서는 Linux 단일 정책이 더 자연스럽습니다.**
 
 근거:
@@ -50,6 +54,7 @@ Playwright snapshot naming 규칙상 플랫폼 suffix가 포함되므로, Linux 
 ## B. visual blocker
 
 ### B-1) `test:visual`의 “진짜 blocker”가 baseline miss 하나인가?
+
 **현재 즉시 blocker는 baseline miss 이전 단계의 인프라 이슈입니다.**
 
 `npm run test:visual` 실행 결과, Docker daemon 부재로 Layer 6이 SKIP됩니다.
@@ -64,6 +69,7 @@ Playwright snapshot naming 규칙상 플랫폼 suffix가 포함되므로, Linux 
 2. 2차 blocker(예상): Linux baseline 파일 부재
 
 ### B-2) 추가 font/render/layout 흔들림이 있는가?
+
 잠재 흔들림 요인은 존재합니다.
 
 1. **폰트 소스가 외부 Google Fonts(Inter) 의존**
@@ -76,6 +82,7 @@ Playwright snapshot naming 규칙상 플랫폼 suffix가 포함되므로, Linux 
 현재 visual spec은 `animations: 'disabled'` 및 `waitForTimeout(500)`을 적용하고 있어 애니메이션 축은 일부 완화되어 있습니다.
 
 ### B-3) CI visual diff 신뢰도는 충분한가?
+
 현 상태를 “높은 신뢰”라고 보기 어렵습니다.
 
 - baseline source OS와 CI OS가 분리될 가능성
@@ -90,24 +97,28 @@ Playwright snapshot naming 규칙상 플랫폼 suffix가 포함되므로, Linux 
 ## C. viewport / font / timezone 점검
 
 ### C-1) 현재 흔들림이 viewport 문제인가?
+
 부분적으로 가능하지만, 상대적으로 **우선순위는 중간**입니다.
 
 - 현재는 `devices['Desktop Chrome']`를 써서 viewport/device scale factor가 preset으로 들어가므로 완전 무고정은 아닙니다.
 - 하지만 장기적으로는 `viewport`, `deviceScaleFactor`를 명시해 두는 편이 더 안전합니다.
 
 ### C-2) 폰트 fallback 차이 가능성은?
+
 **높음(우선순위 상).**
 
 - `client/index.html`에서 Google Fonts(Inter) CDN을 preload/import합니다.
 - CI 네트워크 상태나 폰트 fetch 타이밍에 따라 fallback font가 섞이면 glyph 폭/줄바꿈/height가 달라질 수 있습니다.
 
 ### C-3) timezone/locale 차이 가능성은?
+
 **중~높음.**
 
 - visual config에 `timezoneId`, `locale`이 명시돼 있지 않습니다.
 - 캘린더/상대시간/요일 문자열이 있는 화면에서는 OS/runner 기본값 영향을 받습니다.
 
 ### C-4) 캡처 품질 고정 시 먼저 박아야 할 축(우선순위)
+
 추천 순서:
 
 1. **OS baseline 정책 통일**: Linux CI baseline 단일화
