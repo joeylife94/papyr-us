@@ -33,6 +33,7 @@
     "e2e": "dotenv -e .env.test -- npm run test:setup && dotenv -e .env.test -- npx playwright test",
     "test:e2e": "node scripts/run-e2e-layer5.mjs",
     "test:visual": "node scripts/run-visual-layer6.mjs",
+    "test:visual:update": "node scripts/update-visual-baselines.mjs",
     "test:all": "run-s test:static test:unit test:domain test:contract test:integration test:e2e test:visual",
     "prepare": "husky install"
   },

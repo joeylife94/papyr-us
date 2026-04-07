@@ -29,11 +29,10 @@ function runCapture(cmd) {
 // ── 1. Prerequisite check ────────────────────────────────────────────────────
 const dockerCheck = runCapture('docker info');
 if (!dockerCheck) {
-  console.log(
-    'SKIP [Layer 6 Visual]: Docker is not available on this machine. ' +
-      'Install Docker Desktop and ensure the daemon is running to enable visual/a11y tests.'
+  console.warn(
+    'VRT requires Docker to run Linux baseline. Skipping Layer 6.'
   );
-  process.exit(0);
+  process.exit(1);
 }
 
 console.log('[Layer 6 Visual] Docker available — starting test infrastructure…');

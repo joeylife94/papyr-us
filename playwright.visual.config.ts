@@ -28,11 +28,29 @@ export default defineConfig({
   use: {
     baseURL,
     trace: 'on-first-retry',
+    // ── Determinism: pin timezone, locale, and viewport globally ─────────────
+    timezoneId: 'UTC',
+    locale: 'en-US',
+    viewport: { width: 1280, height: 720 },
   },
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        // Explicit viewport overrides the device preset so snapshots are
+        // pixel-stable regardless of OS/display-scaling settings.
+        viewport: { width: 1280, height: 720 },
+        launchOptions: {
+          args: [
+            // Block external font CDN at DNS level – prevents timing flakiness
+            // caused by network round-trips to Google Fonts during rendering.
+            '--host-resolver-rules=MAP fonts.googleapis.com 127.0.0.1,' +
+              'MAP fonts.gstatic.com 127.0.0.1,' +
+              'MAP use.typekit.net 127.0.0.1',
+          ],
+        },
+      },
     },
   ],
   webServer: {
