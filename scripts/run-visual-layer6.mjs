@@ -67,7 +67,14 @@ console.log('[Layer 6 Visual] Docker available -- starting test infrastructure..
 
 // -- 2. Start DB + Redis containers ----------------------------------------------
 const up = spawnInherit('docker', [
-  'compose', '-p', COMPOSE_PROJECT, '-f', COMPOSE_FILE, 'up', '-d', '--wait',
+  'compose',
+  '-p',
+  COMPOSE_PROJECT,
+  '-f',
+  COMPOSE_FILE,
+  'up',
+  '-d',
+  '--wait',
 ]);
 if (up.status !== 0) {
   console.error('[Layer 6 Visual] Failed to start docker-compose.test.yml -- check Docker logs.');
@@ -121,21 +128,32 @@ try {
       'npx playwright test --config playwright.visual.config.ts --project=chromium';
 
     const result = spawnInherit('docker', [
-      'run', '--rm',
-      '--network', COMPOSE_NETWORK,
+      'run',
+      '--rm',
+      '--network',
+      COMPOSE_NETWORK,
       '--ipc=host',
       // Mount project root; the named volume shadows host node_modules so
       // Windows/macOS binaries are never exposed inside the container.
-      '-v', `${PROJECT_ROOT}:/work`,
-      '-v', `${NM_VOLUME}:/work/node_modules`,
-      '-w', '/work',
+      '-v',
+      `${PROJECT_ROOT}:/work`,
+      '-v',
+      `${NM_VOLUME}:/work/node_modules`,
+      '-w',
+      '/work',
       // Inject DB/Redis URLs using compose-network service hostnames.
-      '-e', `DATABASE_URL=${TEST_DATABASE_URL}`,
-      '-e', `REDIS_URL=${TEST_REDIS_URL}`,
-      '-e', 'NODE_ENV=test',
-      '-e', 'CI=true',
+      '-e',
+      `DATABASE_URL=${TEST_DATABASE_URL}`,
+      '-e',
+      `REDIS_URL=${TEST_REDIS_URL}`,
+      '-e',
+      'NODE_ENV=test',
+      '-e',
+      'CI=true',
       PLAYWRIGHT_IMAGE,
-      '/bin/bash', '-c', containerCmd,
+      '/bin/bash',
+      '-c',
+      containerCmd,
     ]);
 
     exitCode = result.status ?? 1;
