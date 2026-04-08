@@ -29,7 +29,7 @@ export default defineConfig({
     baseURL,
     trace: 'on-first-retry',
     // ── Determinism: pin timezone, locale, and viewport globally ─────────────
-    timezoneId: 'UTC',
+    timezoneId: 'Europe/Berlin',
     locale: 'en-US',
     viewport: { width: 1280, height: 720 },
   },
@@ -43,9 +43,16 @@ export default defineConfig({
         viewport: { width: 1280, height: 720 },
         launchOptions: {
           args: [
-            // Block external font CDN at DNS level – prevents timing flakiness
-            // caused by network round-trips to Google Fonts during rendering.
-            '--host-resolver-rules=MAP fonts.googleapis.com 127.0.0.1,' +
+            // Defense-in-depth Layer 1 (DNS / launch-time): map external font
+            // CDN hostnames to 127.0.0.1 inside Chrome's resolver before any
+            // TCP connection is attempted. This is the earliest possible
+            // interception point and is entirely deterministic.
+            // Layer 2 (runtime / network): page.route() abort in each spec's
+            // test.beforeEach catches any request that reaches Playwright's
+            // network stack — page.route() is a runtime API and cannot be
+            // expressed at this static config level.
+            '--host-resolver-rules=' +
+              'MAP fonts.googleapis.com 127.0.0.1,' +
               'MAP fonts.gstatic.com 127.0.0.1,' +
               'MAP use.typekit.net 127.0.0.1',
           ],

@@ -52,13 +52,32 @@ export default defineConfig({
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
+
+    /* ── Idempotency: pin rendering environment regardless of host OS ─────── */
+    timezoneId: 'Europe/Berlin',
+    locale: 'en-US',
+    viewport: { width: 1280, height: 720 },
   },
 
   /* Configure projects for major browsers */
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        /* ── Block external font CDNs at DNS level to prevent non-deterministic
+             rendering from network-timing jitter (Google Fonts, Typekit).
+             Equivalent to page.route() abort but operates before the TCP
+             handshake — the most reliable interception point for Chromium. ── */
+        launchOptions: {
+          args: [
+            '--host-resolver-rules=' +
+              'MAP fonts.googleapis.com 127.0.0.1,' +
+              'MAP fonts.gstatic.com 127.0.0.1,' +
+              'MAP use.typekit.net 127.0.0.1',
+          ],
+        },
+      },
     },
 
     {
