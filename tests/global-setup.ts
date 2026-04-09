@@ -1,5 +1,6 @@
 import { chromium, FullConfig } from '@playwright/test';
 import fs from 'fs';
+import net from 'net';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -7,10 +8,92 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const INFRA_TIMEOUT_MS = 30_000;
+const POLL_INTERVAL_MS = 1_000;
+
+/**
+ * Polls a TCP port until it accepts connections or the deadline expires.
+ * Throws (Hard Fail) if the port is not reachable within timeoutMs.
+ */
+async function waitForPort(host: string, port: number, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const reachable = await new Promise<boolean>((resolve) => {
+      const socket = new net.Socket();
+      const done = (ok: boolean) => {
+        socket.destroy();
+        resolve(ok);
+      };
+      socket.setTimeout(1_000);
+      socket.on('connect', () => done(true));
+      socket.on('error', () => done(false));
+      socket.on('timeout', () => done(false));
+      socket.connect(port, host);
+    });
+    if (reachable) return;
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+  }
+  throw new Error(
+    `[global-setup] HARD FAIL: ${host}:${port} did not become reachable within ${timeoutMs}ms. ` +
+      'Ensure Docker / DB / App server is running before executing the test suite.'
+  );
+}
+
+/**
+ * Polls an HTTP endpoint until it returns a non-5xx response or the deadline expires.
+ * Throws (Hard Fail) if the endpoint is not healthy within timeoutMs.
+ */
+async function waitForHttp(url: string, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let lastErr: unknown;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(3_000) });
+      if (res.status < 500) return; // 2xx / 3xx / 4xx all mean the server is up
+    } catch (err) {
+      lastErr = err;
+    }
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+  }
+  throw new Error(
+    `[global-setup] HARD FAIL: HTTP health check for ${url} timed out after ${timeoutMs}ms. ` +
+      `Last error: ${lastErr ?? 'non-2xx response'}. Aborting test suite.`
+  );
+}
+
 async function globalSetup(config: FullConfig) {
   const storagePath = process.env.STORAGE_STATE_PATH || path.join(__dirname, 'storageState.json');
 
   const baseURL = process.env.BASE_URL || 'http://localhost:5003';
+
+  // ── Infrastructure Health Check (Hard Fail) ────────────────────────────────
+  // Runs BEFORE any auth setup so broken infrastructure fails fast and clearly.
+  const appUrl = new URL(baseURL);
+  const appHost = appUrl.hostname;
+  const appPort = parseInt(appUrl.port || (appUrl.protocol === 'https:' ? '443' : '80'), 10);
+
+  // Parse DB connection from DATABASE_URL when present
+  const dbUrl = process.env.DATABASE_URL;
+  const dbChecks: Array<Promise<void>> = [];
+  if (dbUrl) {
+    try {
+      const db = new URL(dbUrl);
+      const dbHost = db.hostname || 'localhost';
+      const dbPort = parseInt(db.port || '5432', 10);
+      console.log(`[global-setup] Checking DB port ${dbHost}:${dbPort}...`);
+      dbChecks.push(waitForPort(dbHost, dbPort, INFRA_TIMEOUT_MS));
+    } catch {
+      // Malformed DATABASE_URL — skip TCP check, let the app fail naturally
+    }
+  }
+
+  console.log(`[global-setup] Checking app server at ${baseURL}...`);
+  await Promise.all([
+    waitForPort(appHost, appPort, INFRA_TIMEOUT_MS),
+    waitForHttp(baseURL, INFRA_TIMEOUT_MS),
+    ...dbChecks,
+  ]);
+  console.log('[global-setup] Infrastructure is healthy. Proceeding with auth setup.');
   const e2eEmail = process.env.E2E_EMAIL || 'test@example.com';
   const e2ePassword = process.env.E2E_PASSWORD || 'password123';
   const forceRegen = process.env.E2E_FORCE_REGENERATE === '1';

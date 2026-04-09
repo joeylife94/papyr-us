@@ -50,8 +50,10 @@ export default defineConfig({
         ? process.env.STORAGE_STATE_PATH || 'tests/storageState.json'
         : undefined,
 
-    /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
-    trace: 'on-first-retry',
+    /* Artifact retention policy: preserve evidence only on failure to minimise storage cost. */
+    trace: 'retain-on-failure',
+    video: 'retain-on-failure',
+    screenshot: 'only-on-failure',
 
     /* ── Idempotency: pin rendering environment regardless of host OS ─────── */
     timezoneId: 'Europe/Berlin',

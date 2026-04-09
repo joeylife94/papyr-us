@@ -3,7 +3,7 @@
  * Layer 5 E2E test runner.
  * Lifecycle: check Docker → start docker-compose.test.yml → wait for DB →
  *            inject DATABASE_URL + REDIS_URL → run Playwright → teardown (always).
- * If Docker is unavailable, prints SKIP with reason and exits 0.
+ * If Docker is unavailable, prints FATAL error and exits 1 (hard fail).
  * No manual DATABASE_URL setup required.
  */
 import { execSync, spawnSync } from 'child_process';
@@ -29,11 +29,11 @@ function runCapture(cmd) {
 // ── 1. Prerequisite check ────────────────────────────────────────────────────
 const dockerCheck = runCapture('docker info');
 if (!dockerCheck) {
-  console.log(
-    'SKIP [Layer 5 E2E]: Docker is not available on this machine. ' +
+  console.error(
+    'FATAL [Layer 5 E2E]: Docker is not available on this machine. ' +
       'Install Docker Desktop and ensure the daemon is running to enable E2E tests.'
   );
-  process.exit(0);
+  process.exit(1);
 }
 
 console.log('[Layer 5 E2E] Docker available — starting test infrastructure…');
