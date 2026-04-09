@@ -49,7 +49,7 @@ import {
 } from './p0-fixtures';
 
 test.describe('[S3] 문서 목록/검색에서 생성 문서 노출', () => {
-  test('S3-a: API 검색으로 생성 문서를 찾을 수 있다', async (_fixtures, testInfo) => {
+  test('S3-a: API 검색으로 생성 문서를 찾을 수 있다', async ({}, testInfo) => {
     const runId = generateRunId(testInfo.workerIndex);
     const baseURL = process.env.BASE_URL ?? 'http://localhost:5003';
     const createdPages: CreatedPage[] = [];
@@ -181,8 +181,18 @@ test.describe('[S3] 문서 목록/검색에서 생성 문서 노출', () => {
 
       await searchApiPromise;
 
-      // ── 결과: 제목 텍스트가 DOM 어딘가에 나타나야 한다 ─────────────────────
-      await expect(page.getByText(title)).toBeVisible({ timeout: 15_000 });
+      // ── 결과: 제목 텍스트가 검색 결과 영역에 나타나야 한다 ─────────────────
+      // Strict mode 위반 방지: 검색 결과 컨테이너 내 첫 번째 일치 항목으로 범위 한정
+      const searchResultsContainer = page
+        .locator('[role="listbox"]')
+        .or(page.locator('[role="list"]'))
+        .or(page.locator('[data-testid="search-results"]'))
+        .first();
+
+      const titleInResults = searchResultsContainer.getByText(title).first();
+      const titleFallback = page.getByText(title).first();
+
+      await expect(titleInResults.or(titleFallback).first()).toBeVisible({ timeout: 15_000 });
       await captureEvidence(page, 's3', 'result', 'results-visible');
     } finally {
       await cleanupTestPages(apiContext, createdPages);

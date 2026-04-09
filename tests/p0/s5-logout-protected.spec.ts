@@ -80,11 +80,13 @@ test.describe('[S5] 로그아웃 후 보호 페이지 접근 차단', () => {
         await avatarTrigger.click();
         await captureEvidence(page, 's5', 'action', 'menu-open');
 
-        const logoutMenuItem = page
+        // Strict mode 위반 방지: 컨텍스트 메뉴([role="menu"]) 내로 범위 한정
+        const dropdownMenu = page.locator('[role="menu"]');
+        const logoutMenuItem = dropdownMenu
           .getByRole('menuitem', { name: /log out/i })
-          .or(page.getByText('Log out'));
-        await expect(logoutMenuItem).toBeVisible({ timeout: 5_000 });
-        await logoutMenuItem.click();
+          .or(dropdownMenu.getByText(/log out/i));
+        await expect(logoutMenuItem.first()).toBeVisible({ timeout: 5_000 });
+        await logoutMenuItem.first().click();
       } else {
         // 폴백: JS 직접 호출로 로그아웃
         await page.evaluate(() =>
@@ -96,7 +98,7 @@ test.describe('[S5] 로그아웃 후 보호 페이지 접근 차단', () => {
       await logoutApiPromise.catch(() => null);
 
       // ── Result: /login 으로 이동 ──────────────────────────────────────────────
-      await expect(page).toHaveURL(/\/login/, { timeout: 20_000 });
+      await page.waitForURL(/\/login/, { timeout: 20_000 });
       await expect(page.getByRole('heading', { name: 'Login' })).toBeVisible({ timeout: 10_000 });
       await captureEvidence(page, 's5', 'result');
     } finally {
@@ -145,7 +147,7 @@ test.describe('[S5] 로그아웃 후 보호 페이지 접근 차단', () => {
     }
   });
 
-  test('S5-c: 로그아웃 후 /api/auth/me 는 401을 반환한다 (API)', async (_fixtures, testInfo) => {
+  test('S5-c: 로그아웃 후 /api/auth/me 는 401을 반환한다 (API)', async ({}, testInfo) => {
     const runId = generateRunId(testInfo.workerIndex);
     const baseURL = process.env.BASE_URL ?? 'http://localhost:5003';
 
@@ -181,9 +183,13 @@ test.describe('[S5] 로그아웃 후 보호 페이지 접근 차단', () => {
       await injectAuthCookies(page, credentials, baseURL);
       await page.goto('/', { waitUntil: 'domcontentloaded' });
 
-      // 로그아웃 + 쿠키 제거
-      await apiContext.post('/api/auth/logout');
+      // 로그아웃 + 쿠키 제거 (세션 파괴 응답 확인 후 진행)
+      const logoutResp = await apiContext.post('/api/auth/logout');
+      expect(logoutResp.status()).toBe(200);
       await page.context().clearCookies();
+
+      // ERR_ABORTED 방지: 현재 페이지의 네트워크 활동이 완전히 멈춘 뒤 이동
+      await page.waitForLoadState('networkidle').catch(() => null);
 
       await page.addInitScript(() => {
         Object.defineProperty(window, '__PLAYWRIGHT__', {
@@ -195,7 +201,7 @@ test.describe('[S5] 로그아웃 후 보호 페이지 접근 차단', () => {
 
       // 쓰기 보호 경로 접근
       await page.goto('/create', { waitUntil: 'domcontentloaded' });
-      await expect(page).toHaveURL(/\/login/, { timeout: 15_000 });
+      await page.waitForURL(/\/login/, { timeout: 15_000 });
     } finally {
       await apiContext.dispose();
     }

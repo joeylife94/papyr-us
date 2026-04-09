@@ -140,7 +140,7 @@ test.describe('[S2] 새 문서 생성 → 저장 확인', () => {
     }
   });
 
-  test('S2-b: API 직접 호출로 페이지를 생성하고 재조회할 수 있다', async (_fixtures, testInfo) => {
+  test('S2-b: API 직접 호출로 페이지를 생성하고 재조회할 수 있다', async ({}, testInfo) => {
     const runId = generateRunId(testInfo.workerIndex);
     const baseURL = process.env.BASE_URL ?? 'http://localhost:5003';
     const createdPages: CreatedPage[] = [];

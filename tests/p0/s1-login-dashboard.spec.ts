@@ -62,17 +62,20 @@ test.describe('[S1] 로그인 → 대시보드 진입', () => {
       await page.getByLabel('Password').fill(credentials.password);
       await captureEvidence(page, 's1', 'action');
 
-      // 로그인 API 응답을 기다린 후 버튼 클릭
-      const loginResponse = page.waitForResponse(
-        (resp) => resp.url().includes('/api/auth/login') && resp.status() === 200,
-        { timeout: 20_000 }
-      );
-      await page.getByRole('button', { name: 'Login with Email' }).click();
-      await loginResponse;
+      // 로그인 버튼 활성화 확인 후 클릭 + API 응답 동시 대기
+      const loginButton = page.getByRole('button', { name: 'Login with Email' });
+      await expect(loginButton).toBeEnabled({ timeout: 5_000 });
+      await Promise.all([
+        page.waitForResponse(
+          (resp) => resp.url().includes('/api/auth/login') && resp.status() === 200,
+          { timeout: 20_000 }
+        ),
+        loginButton.click(),
+      ]);
 
       // ── Result: 대시보드 진입 ────────────────────────────────────────────────
-      // 루트("/") 또는 대시보드로 이동 확인
-      await expect(page).toHaveURL(/^\/$|\/dashboard/, { timeout: 20_000 });
+      // 루트("/") 또는 대시보드로 이동 확인 (networkidle로 SPA 리다이렉트 완료 보장)
+      await page.waitForURL(/^\/$|\/dashboard/, { waitUntil: 'networkidle', timeout: 20_000 });
 
       // 인증된 UI 확인: 헤더 로고
       await expect(page.getByRole('link', { name: /Papyr\.us/i })).toBeVisible({ timeout: 15_000 });
