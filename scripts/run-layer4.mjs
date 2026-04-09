@@ -2,7 +2,7 @@
 /**
  * Layer 4 integration test runner.
  * Lifecycle: check Docker → start docker-compose.test.yml → wait for DB → run vitest → teardown.
- * If Docker is unavailable, prints SKIP with reason and exits 0 (satisfies DONE criteria).
+ * If Docker is unavailable, prints FATAL with reason and exits 1 (hard fail).
  */
 import { execSync, spawnSync } from 'child_process';
 
@@ -26,11 +26,11 @@ function runCapture(cmd) {
 // ── 1. Prerequisite check ────────────────────────────────────────────────────
 const dockerCheck = runCapture('docker info');
 if (!dockerCheck) {
-  console.log(
-    'SKIP [Layer 4]: Docker is not available on this machine. ' +
-      'Install Docker Desktop and ensure the daemon is running to enable integration tests.'
+  console.error(
+    'FATAL [Layer 4]: Docker is not available on this machine. ' +
+      'Install Docker Desktop and ensure the daemon is running. Aborting integration tests to avoid false-positive pass.'
   );
-  process.exit(0);
+  process.exit(1);
 }
 
 console.log('[Layer 4] Docker available — starting test infrastructure…');
