@@ -27,7 +27,11 @@ export default defineConfig({
   },
   use: {
     baseURL,
-    trace: 'on-first-retry',
+    // Artifact retention policy (global): keep debugging evidence only when
+    // tests fail, to avoid storage/I-O bloat in successful runs.
+    trace: 'retain-on-failure',
+    video: 'retain-on-failure',
+    screenshot: 'only-on-failure',
     // ── Determinism: pin timezone, locale, and viewport globally ─────────────
     timezoneId: 'Europe/Berlin',
     locale: 'en-US',
