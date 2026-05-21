@@ -67,7 +67,7 @@ function isImage(mimetype: string): boolean {
 }
 
 // File filter function
-function fileFilter(req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) {
+function fileFilter(_req: Express.Request, file: Express.Multer.File, cb: multer.FileFilterCallback) {
   if (!ALLOWED_FILE_TYPES.includes(file.mimetype)) {
     return cb(new Error(`File type ${file.mimetype} is not allowed`));
   }
@@ -235,8 +235,8 @@ export async function getFileTeamId(
 
 // List uploaded files
 export async function listUploadedFiles(teamId?: string): Promise<{
-  images: any[];
-  files: any[];
+  images: NonNullable<Awaited<ReturnType<typeof getFileInfo>> & { url: string }>[];
+  files: NonNullable<Awaited<ReturnType<typeof getFileInfo>> & { url: string }>[];
 }> {
   try {
     const [imageFiles, regularFiles] = await Promise.all([
@@ -271,8 +271,8 @@ export async function listUploadedFiles(teamId?: string): Promise<{
     );
 
     return {
-      images: images.filter(Boolean),
-      files: files.filter(Boolean),
+      images: images.filter((x): x is NonNullable<typeof x> => x !== null),
+      files: files.filter((x): x is NonNullable<typeof x> => x !== null),
     };
   } catch (error) {
     console.error('Error listing files:', error);

@@ -124,7 +124,8 @@ export interface JWTUser {
   id: number;
   email: string;
   name?: string;
-  role: string;
+  /** Present in JWT payloads; may be absent for OAuth/passport-deserialized users */
+  role?: string;
   /** Attached by requirePagePermission middleware — not a JWT claim */
   pagePermission?: string;
   /** Attached by requireTeamRole middleware — not a JWT claim */
@@ -136,12 +137,21 @@ export interface JWTUser {
 /**
  * Augment Passport's Express.User so that `req.user` from Passport-based
  * OAuth callbacks is compatible with our JWTUser shape.
+ * Note: `role` is optional here because DB users may not have a role field;
+ * the role is derived at JWT issuance time from adminEmails config.
  */
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-    interface User extends JWTUser {}
+    interface User {
+      id: number;
+      email: string;
+      name?: string;
+      role?: string;
+      pagePermission?: string;
+      teamRole?: string;
+    }
   }
 }
 

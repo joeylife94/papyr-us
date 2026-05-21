@@ -1,22 +1,24 @@
 import passport from 'passport';
-import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
-import { Strategy as GitHubStrategy } from 'passport-github2';
+import { Strategy as GoogleStrategy, type Profile as GoogleProfile, type VerifyCallback as GoogleVerifyCallback } from 'passport-google-oauth20';
+import { Strategy as GitHubStrategy, type Profile as GitHubProfile } from 'passport-github2';
 import { users } from '../../shared/schema.js';
 import { eq } from 'drizzle-orm';
 import { config } from '../config.js';
 import logger from './logger.js';
-import type { Pool } from 'pg';
+import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 // The passport strategies need access to the database.
 // Instead of importing storage directly (circular dependency), we accept a db
 // instance at setup time via `initPassportStrategies`.
-let _db: any = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyDb = NodePgDatabase<any>;
+let _db: AnyDb | null = null;
 
-export function initPassportStrategies(db: any) {
+export function initPassportStrategies(db: AnyDb) {
   _db = db;
 
   // --- Serialize / Deserialize ---
-  passport.serializeUser((user: any, done) => {
+  passport.serializeUser((user, done) => {
     done(null, user.id);
   });
 
@@ -42,21 +44,21 @@ export function initPassportStrategies(db: any) {
         async (
           accessToken: string,
           refreshToken: string,
-          profile: any,
-          done: (err: any, user?: any) => void
+          profile: GoogleProfile,
+          done: GoogleVerifyCallback
         ) => {
           try {
             const email = profile.emails?.[0]?.value;
             if (!email) {
-              return done(new Error('No email found from Google'), undefined);
+              return done(new Error('No email found from Google'), false);
             }
 
-            const existing = await _db.select().from(users).where(eq(users.email, email));
+            const existing = await _db!.select().from(users).where(eq(users.email, email));
 
             if (existing.length > 0) {
-              return done(null, existing[0]);
+              return done(null, existing[0] as Express.User);
             } else {
-              const newUser = await _db
+              const newUser = await _db!
                 .insert(users)
                 .values({
                   name: profile.displayName || email.split('@')[0],
@@ -65,10 +67,10 @@ export function initPassportStrategies(db: any) {
                   providerId: profile.id,
                 })
                 .returning();
-              return done(null, newUser[0]);
+              return done(null, newUser[0] as Express.User);
             }
           } catch (error) {
-            return done(error, undefined);
+            return done(error instanceof Error ? error : new Error(String(error)), false);
           }
         }
       )
@@ -92,21 +94,21 @@ export function initPassportStrategies(db: any) {
         async (
           accessToken: string,
           refreshToken: string,
-          profile: any,
-          done: (err: any, user?: any) => void
+          profile: GitHubProfile,
+          done: GoogleVerifyCallback
         ) => {
           try {
             const email = profile.emails?.[0]?.value;
             if (!email) {
-              return done(new Error('No email found from GitHub'), undefined);
+              return done(new Error('No email found from GitHub'), false);
             }
 
-            const existing = await _db.select().from(users).where(eq(users.email, email));
+            const existing = await _db!.select().from(users).where(eq(users.email, email));
 
             if (existing.length > 0) {
-              return done(null, existing[0]);
+              return done(null, existing[0] as Express.User);
             } else {
-              const newUser = await _db
+              const newUser = await _db!
                 .insert(users)
                 .values({
                   name: profile.displayName || profile.username || email.split('@')[0],
@@ -115,10 +117,10 @@ export function initPassportStrategies(db: any) {
                   providerId: profile.id,
                 })
                 .returning();
-              return done(null, newUser[0]);
+              return done(null, newUser[0] as Express.User);
             }
           } catch (error) {
-            return done(error, undefined);
+            return done(error instanceof Error ? error : new Error(String(error)), false);
           }
         }
       )

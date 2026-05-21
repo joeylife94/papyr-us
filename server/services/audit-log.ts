@@ -11,6 +11,7 @@
 import type { Pool } from 'pg';
 import logger from './logger.js';
 import type { Request, Response, NextFunction } from 'express';
+import type { JWTUser } from '../middleware.js';
 
 // Audit event types
 export enum AuditEventType {
@@ -73,7 +74,7 @@ interface AuditLogEntry {
   targetType?: string | null; // e.g., 'page', 'user', 'team'
   targetId?: number | string | null;
   action: string;
-  details?: Record<string, any> | null;
+  details?: Record<string, unknown> | null;
   ipAddress?: string | null;
   userAgent?: string | null;
   requestId?: string | null;
@@ -164,7 +165,7 @@ async function flushAuditBuffer(): Promise<void> {
     try {
       // Build batch insert query
       const values: string[] = [];
-      const params: any[] = [];
+      const params: unknown[] = [];
       let paramIndex = 1;
 
       for (const entry of groupEntries) {
@@ -225,7 +226,7 @@ export function logAuditEvent(entry: {
   targetType?: string | null;
   targetId?: number | string | null;
   action?: string;
-  details?: Record<string, any> | null;
+  details?: Record<string, unknown> | null;
   ipAddress?: string | null;
   userAgent?: string | null;
   requestId?: string | null;
@@ -280,14 +281,14 @@ export function getAuditContext(req: Request): {
   userAgent: string | null;
   requestId: string | null;
 } {
-  const user = (req as any).user;
+  const user = (req as Request & { user?: JWTUser }).user;
 
   return {
     userId: user?.id ?? null,
     userEmail: user?.email ?? null,
     ipAddress: req.ip || req.socket?.remoteAddress || null,
     userAgent: req.get('User-Agent') || null,
-    requestId: req.get('X-Request-ID') || (req as any).requestId || null,
+    requestId: req.get('X-Request-ID') || null,
   };
 }
 
@@ -354,9 +355,9 @@ export async function queryAuditLogs(
     limit?: number;
     offset?: number;
   }
-): Promise<any[]> {
+): Promise<Record<string, unknown>[]> {
   const conditions: string[] = ['1=1'];
-  const params: any[] = [];
+  const params: unknown[] = [];
   let paramIndex = 1;
 
   if (options.userId) {
@@ -409,7 +410,7 @@ export async function getUserAuditSummary(
   pool: Pool,
   userId: number,
   days: number = 30
-): Promise<any[]> {
+): Promise<Record<string, unknown>[]> {
   const result = await pool.query(
     `
     SELECT 

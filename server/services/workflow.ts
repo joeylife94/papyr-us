@@ -5,6 +5,8 @@ import type {
   WorkflowAction,
   WorkflowCondition,
   TriggerType,
+  Notification,
+  WikiPage,
 } from '@shared/schema';
 import type { DBStorage } from '../storage.js';
 import * as aiService from './ai.js';
@@ -13,6 +15,21 @@ import logger from './logger.js';
 import { fetchWithRetry, ExternalIntegrationError } from './resilience.js';
 
 let _storage: DBStorage | null = null;
+
+/** Runtime context passed to workflow conditions and actions. */
+interface WorkflowContext {
+  workflow: { id: number; name: string };
+  /** The entity (page, task, etc.) that triggered this run. */
+  trigger: {
+    id?: number;
+    teamId?: number;
+    author?: string;
+    content?: string;
+    [key: string]: unknown;
+  };
+  /** Populated by action results as action_0, action_1, … */
+  [key: string]: unknown;
+}
 
 /** Initialize the workflow service with a shared storage instance */
 export function initWorkflowService(storageInstance: DBStorage) {
@@ -32,7 +49,7 @@ function getWorkflowStorage(): DBStorage {
 }
 
 // Variable substitution helper
-function substituteVariables(template: string, variables: Record<string, any>): string {
+function substituteVariables(template: string, variables: Record<string, unknown>): string {
   let result = template;
   Object.entries(variables).forEach(([key, value]) => {
     const regex = new RegExp(`{{${key}}}`, 'g');
@@ -44,7 +61,7 @@ function substituteVariables(template: string, variables: Record<string, any>): 
 // Evaluate conditions
 function evaluateConditions(
   conditions: WorkflowCondition[],
-  context: Record<string, any>
+  context: WorkflowContext
 ): boolean {
   if (!conditions || conditions.length === 0) return true;
 
@@ -73,15 +90,20 @@ function evaluateConditions(
 }
 
 // Get nested object value by dot notation
-function getNestedValue(obj: any, path: string): any {
-  return path.split('.').reduce((current, key) => current?.[key], obj);
+function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
+  return path.split('.').reduce((current: unknown, key) => {
+    if (current && typeof current === 'object') {
+      return (current as Record<string, unknown>)[key];
+    }
+    return undefined;
+  }, obj as unknown);
 }
 
 // Execute a single action
 async function executeAction(
   action: WorkflowAction,
-  context: Record<string, any>
-): Promise<{ success: boolean; result?: any; error?: string }> {
+  context: WorkflowContext
+): Promise<{ success: boolean; result?: unknown; error?: string }> {
   try {
     const config = action.config;
 
@@ -98,7 +120,7 @@ async function executeAction(
           processedConfig.message || processedConfig.content || 'Workflow notification';
         const title = processedConfig.title || 'Workflow Alert';
 
-        const notifications: any[] = [];
+        const notifications: Notification[] = [];
         for (const recipientId of recipients) {
           try {
             const notification = await getWorkflowStorage().createNotification({
@@ -130,7 +152,7 @@ async function executeAction(
           priority: processedConfig.priority || 'medium',
           assignedTo: processedConfig.assignedTo,
           dueDate: processedConfig.dueDate ? new Date(processedConfig.dueDate) : undefined,
-          teamId: context.trigger?.teamId,
+          teamId: context.trigger?.teamId != null ? String(context.trigger.teamId) : '',
         });
         return { success: true, result: newTask };
 
@@ -154,7 +176,7 @@ async function executeAction(
           folder: processedConfig.folder || 'docs',
           tags: processedConfig.tags || [],
           author: context.trigger?.author || 'automation',
-          teamId: context.trigger?.teamId,
+          teamId: context.trigger?.teamId ?? null,
         });
         return { success: true, result: newPage };
 
@@ -180,7 +202,7 @@ async function executeAction(
           limit: 1000,
           offset: 0,
         });
-        const page = searchResult.pages.find((p: any) => p.id === context.trigger.id);
+        const page = searchResult.pages.find((p: WikiPage) => p.id === context.trigger.id);
         if (!page) {
           return { success: false, error: 'Page not found' };
         }
@@ -193,7 +215,7 @@ async function executeAction(
         if (!context.trigger?.content) {
           return { success: false, error: 'No content to summarize' };
         }
-        const summary = await aiService.summarizeContent(context.trigger.content);
+        const summary = await aiService.summarizeContent(String(context.trigger.content));
         return { success: true, result: { summary } };
 
       case 'webhook': {
@@ -356,7 +378,7 @@ async function executeAction(
 // Execute a complete workflow
 export async function executeWorkflow(
   workflow: Workflow,
-  triggerData: Record<string, any>
+  triggerData: WorkflowContext['trigger']
 ): Promise<WorkflowRun> {
   const runId = await getWorkflowStorage().createWorkflowRun({
     workflowId: workflow.id,
@@ -387,7 +409,7 @@ export async function executeWorkflow(
 
     // Execute actions sequentially
     const actions = workflow.actions as WorkflowAction[];
-    const results: any[] = [];
+    const results: Array<{ action: string; success: boolean; result?: unknown; error?: string }> = [];
 
     for (const action of actions) {
       const result = await executeAction(action, context);
@@ -408,8 +430,7 @@ export async function executeWorkflow(
       }
 
       // Update context with action results
-      const contextAny = context as any;
-      contextAny[`action_${results.length - 1}`] = result.result;
+      (context as Record<string, unknown>)[`action_${results.length - 1}`] = result.result;
     }
 
     // Mark as success

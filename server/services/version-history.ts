@@ -11,6 +11,7 @@
 import type { Pool } from 'pg';
 import logger from './logger.js';
 import { diff_match_patch } from 'diff-match-patch';
+import type { Block } from '../../shared/schema.js';
 
 // Version entry type
 export interface PageVersion {
@@ -20,7 +21,7 @@ export interface PageVersion {
   title: string;
   content: string;
   contentDelta?: string; // Compressed delta from previous version
-  blocks?: any;
+  blocks?: Block[];
   userId?: number;
   userEmail?: string;
   changeType: 'create' | 'update' | 'restore';
@@ -90,7 +91,7 @@ export async function createVersion(
   data: {
     title: string;
     content: string;
-    blocks?: any;
+    blocks?: Block[];
     userId?: number;
     userEmail?: string;
     changeType?: 'create' | 'update' | 'restore';
