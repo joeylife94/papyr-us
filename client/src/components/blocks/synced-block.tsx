@@ -3,12 +3,18 @@ import { Link2, Copy, Unlink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import type { Block, SyncedBlock as StoredSyncedBlock } from '@shared/schema';
+
+interface SyncedBlockListItem extends StoredSyncedBlock {
+  content: Block[];
+  referenceCount: number;
+}
 
 export interface SyncedBlockProps {
   originalBlockId?: string; // null if this is the original
-  syncedContent: any[]; // Content to sync
+  syncedContent: Block[]; // Content to sync
   isOriginal?: boolean;
-  onContentChange?: (content: any[]) => void;
+  onContentChange?: (content: Block[]) => void;
   onCreateOriginal?: () => void;
   onUnlink?: () => void;
   readOnly?: boolean;
@@ -35,9 +41,9 @@ export function SyncedBlock({
           if (!res.ok) throw new Error('Failed to fetch synced block');
           return res.json();
         })
-        .then((data) => {
-          if (data.content && Array.isArray(data.content)) {
-            onContentChange?.(data.content);
+        .then((data: StoredSyncedBlock) => {
+          if (Array.isArray(data.content)) {
+            onContentChange?.(data.content as Block[]);
           }
         })
         .catch((err) => {
@@ -115,7 +121,7 @@ export function SyncedBlock({
       >
         {/* Render synced content blocks */}
         <div className="space-y-2">
-          {syncedContent.map((block: any, index: number) => (
+          {syncedContent.map((block: Block, index: number) => (
             <div key={index} className="text-sm">
               {/* TODO: Render actual block content based on block type */}
               {block.type === 'paragraph' && <p>{block.content}</p>}
@@ -163,7 +169,7 @@ export function SyncedBlockPicker({
   onCreateNew,
   className = '',
 }: SyncedBlockPickerProps) {
-  const [syncedBlocks, setSyncedBlocks] = useState<any[]>([]);
+  const [syncedBlocks, setSyncedBlocks] = useState<SyncedBlockListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {

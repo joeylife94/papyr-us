@@ -103,6 +103,24 @@ interface TasksPageProps {
   teamName?: string;
 }
 
+type TaskFormState = {
+  title: string;
+  description: string;
+  status: Task['status'];
+  priority: number;
+  assignedTo: number | null;
+  teamId: string;
+  dueDate: string;
+  estimatedHours: number | '';
+  tags: string[];
+};
+
+type TaskFormSubmission = Omit<TaskFormState, 'estimatedHours'> & {
+  estimatedHours: number | null;
+};
+
+type TaskUpdatePayload = Partial<TaskFormSubmission>;
+
 export default function TasksPage({ teamName }: TasksPageProps) {
   const [selectedTeam, setSelectedTeam] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
@@ -146,7 +164,7 @@ export default function TasksPage({ teamName }: TasksPageProps) {
 
   // Create task mutation
   const createTaskMutation = useMutation({
-    mutationFn: async (taskData: any) => {
+    mutationFn: async (taskData: TaskFormSubmission) => {
       const taskWithTeam = teamName ? { ...taskData, teamId: teamName } : taskData;
       const response = await fetch('/api/tasks', {
         method: 'POST',
@@ -166,7 +184,7 @@ export default function TasksPage({ teamName }: TasksPageProps) {
 
   // Update task mutation
   const updateTaskMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: number; data: any }) => {
+    mutationFn: async ({ id, data }: { id: number; data: TaskUpdatePayload }) => {
       const response = await fetch(`/api/tasks/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -224,11 +242,11 @@ export default function TasksPage({ teamName }: TasksPageProps) {
       task.tags.some((tag) => tag.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
-  const handleCreateTask = (formData: any) => {
+  const handleCreateTask = (formData: TaskFormSubmission) => {
     createTaskMutation.mutate(formData);
   };
 
-  const handleUpdateTask = (id: number, data: any) => {
+  const handleUpdateTask = (id: number, data: TaskUpdatePayload) => {
     updateTaskMutation.mutate({ id, data });
   };
 
@@ -398,7 +416,7 @@ export default function TasksPage({ teamName }: TasksPageProps) {
             const taskId = Number(itemId);
             const task = filteredTasks.find((t) => t.id === taskId);
             if (task && toColumn !== task.status) {
-              handleUpdateTask(taskId, { status: toColumn });
+              handleUpdateTask(taskId, { status: toColumn as Task['status'] });
             }
           }}
           renderCard={(item) => {
@@ -589,13 +607,13 @@ export default function TasksPage({ teamName }: TasksPageProps) {
 // Task Form Component
 interface TaskFormProps {
   task?: Task;
-  onSubmit: (data: any) => void;
+  onSubmit: (data: TaskFormSubmission) => void;
   members: Member[];
   onCancel: () => void;
 }
 
 function TaskForm({ task, onSubmit, members, onCancel }: TaskFormProps) {
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<TaskFormState>({
     title: task?.title || '',
     description: task?.description || '',
     status: task?.status || 'todo',
@@ -660,7 +678,7 @@ function TaskForm({ task, onSubmit, members, onCancel }: TaskFormProps) {
           <Label htmlFor="status">상태</Label>
           <Select
             value={formData.status}
-            onValueChange={(value) => setFormData({ ...formData, status: value as any })}
+            onValueChange={(value) => setFormData({ ...formData, status: value as Task['status'] })}
           >
             <SelectTrigger>
               <SelectValue />

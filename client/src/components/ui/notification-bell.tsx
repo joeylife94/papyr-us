@@ -15,7 +15,7 @@ import { useFeatureFlags } from '@/features/FeatureFlagsContext';
 
 interface Notification {
   id: number;
-  type: 'comment' | 'mention' | 'task_due' | 'task_assigned';
+  type: string;
   title: string;
   content: string;
   recipientId: number;
@@ -24,7 +24,7 @@ interface Notification {
   relatedTaskId: number | null;
   relatedCommentId: number | null;
   isRead: boolean;
-  createdAt: string;
+  createdAt: string | Date;
 }
 
 interface NotificationBellProps {
@@ -62,7 +62,7 @@ export function NotificationBell({ recipientId }: NotificationBellProps) {
     // join member room
     joinMember(recipientId);
 
-    const handleNew = (notif: any) => {
+    const handleNew = (notif: Notification) => {
       if (!notif || notif.recipientId !== recipientId) return;
       // Optimistically update notifications list
       queryClient.setQueryData<Notification[] | undefined>(['notifications', recipientId], (old) =>
@@ -86,8 +86,8 @@ export function NotificationBell({ recipientId }: NotificationBellProps) {
     onNotificationUnreadCount(handleCount);
 
     return () => {
-      off('notification:new', handleNew as any);
-      off('notification:unread-count', handleCount as any);
+      off('notification:new', handleNew);
+      off('notification:unread-count', handleCount);
     };
   }, [
     enabled,

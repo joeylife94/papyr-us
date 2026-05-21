@@ -3,15 +3,16 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Quote, Trash2, Edit3, Check, X } from 'lucide-react';
+import type { Block, BlockType } from '@shared/schema';
 
 interface QuoteBlockProps {
-  block: any;
+  block: Block;
   isFocused: boolean;
   onFocus: () => void;
   onBlur: () => void;
-  onUpdate: (updates: any) => void;
+  onUpdate: (updates: Partial<Block>) => void;
   onDelete: () => void;
-  onAddBlock: (type?: any) => void;
+  onAddBlock: (type?: BlockType) => void;
 }
 
 export function QuoteBlock({

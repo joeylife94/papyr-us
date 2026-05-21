@@ -7,7 +7,7 @@ import { ImageBlock } from './image-block';
 import { TableBlock } from './table-block';
 import { CodeBlock } from './code-block';
 import { QuoteBlock } from './quote-block';
-import { CalloutBlock } from './callout-block';
+import { CalloutBlock, type CalloutBlockProps } from './callout-block';
 import { EmbedBlock } from './embed-block';
 import { MathBlock } from './math-block';
 import { SyncedBlock } from './synced-block';
@@ -35,7 +35,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useCollaboration } from '@/lib/socket';
+import {
+  useCollaboration,
+  type CursorUpdatePayload,
+  type DocumentChange,
+  type TypingPayload,
+} from '@/lib/socket';
 import { Badge } from '@/components/ui/badge';
 import { collaborationSync } from '@/lib/collaboration';
 import { useYjsCollaboration } from '@/hooks/useYjsCollaboration';
@@ -152,11 +157,13 @@ export function BlockEditor({
     { enabled: collaborationEnabled && !useYjs }
   );
 
+  type RemoteCollaborationChange = Parameters<typeof collaborationSync.processRemoteChange>[0];
+
   // 원격 변경사항 처리
   useEffect(() => {
     if (!collaboration.socket) return;
 
-    const handleDocumentChange = (change: any) => {
+    const handleDocumentChange = (change: DocumentChange) => {
       // validate payload and ignore own changes
       if (!change || typeof change !== 'object') return;
       if (change.userId && change.userId === userId) return;
@@ -164,7 +171,10 @@ export function BlockEditor({
       console.log('Received remote change:', change);
 
       // 충돌 해결 및 블록 업데이트
-      const updatedBlocks = collaborationSync.processRemoteChange(change, blocks);
+      const updatedBlocks = collaborationSync.processRemoteChange(
+        change as unknown as RemoteCollaborationChange,
+        blocks
+      );
       if (updatedBlocks !== blocks) {
         onChange(updatedBlocks);
       }
@@ -172,17 +182,17 @@ export function BlockEditor({
 
     collaboration.socket.on('document-change', handleDocumentChange);
 
-    const handleCursorUpdate = (payload: any) => {
+    const handleCursorUpdate = (payload: CursorUpdatePayload) => {
       // ignore own
       if (!payload || payload.userId === userId) return;
       // future: render live cursor for user
     };
 
-    const handleTypingStart = (payload: any) => {
+    const handleTypingStart = (_payload: TypingPayload) => {
       // handled by useCollaboration's state
     };
 
-    const handleTypingStop = (payload: any) => {
+    const handleTypingStop = (_payload: TypingPayload) => {
       // handled by useCollaboration's state
     };
 
@@ -341,10 +351,10 @@ export function BlockEditor({
       case 'paragraph':
         return (
           <div
-            onMouseMove={(e) => {
+            onMouseMove={(e: React.MouseEvent<HTMLDivElement>) => {
               if (pageId && collaboration.isConnected) {
                 try {
-                  collaboration.sendCursorUpdate({ x: (e as any).clientX, y: (e as any).clientY });
+                  collaboration.sendCursorUpdate({ x: e.clientX, y: e.clientY });
                 } catch (err) {
                   // ignore
                 }
@@ -373,7 +383,7 @@ export function BlockEditor({
         return (
           <CalloutBlock
             content={block.content}
-            color={(block.properties?.color as any) || 'blue'}
+            color={(block.properties?.color as CalloutBlockProps['color']) || 'blue'}
             icon={(block.properties?.icon as string) || 'lightbulb'}
             onContentChange={(content: string) => updateBlock(block.id, { content })}
             readOnly={false}
@@ -404,9 +414,9 @@ export function BlockEditor({
         return (
           <SyncedBlock
             originalBlockId={block.properties?.originalBlockId as string}
-            syncedContent={(block.properties?.syncedContent as any[]) || []}
+            syncedContent={(block.properties?.syncedContent as Block[]) || []}
             isOriginal={(block.properties?.isOriginal as boolean) || false}
-            onContentChange={(content: any[]) =>
+            onContentChange={(content: Block[]) =>
               updateBlock(block.id, { properties: { ...block.properties, syncedContent: content } })
             }
             onCreateOriginal={() => {

@@ -30,7 +30,7 @@ import {
   Zap,
   X,
 } from 'lucide-react';
-import type { WikiPage } from '@shared/schema';
+import type { CalendarEvent, Directory, Team, WikiPage } from '@shared/schema';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -56,6 +56,8 @@ const folderColors: Record<string, string> = {
   archive: 'text-slate-500',
 };
 
+type SidebarDirectory = Pick<Directory, 'name' | 'displayName' | 'order'>;
+
 export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: SidebarProps) {
   const { pathname } = useLocation();
   const { flags } = useFeatureFlags();
@@ -69,7 +71,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
   const [verifiedTeams, setVerifiedTeams] = useState<string[]>([]);
   const { toast } = useToast();
 
-  const defaultDirectories = [
+  const defaultDirectories: SidebarDirectory[] = [
     { name: 'docs', displayName: 'Documentation', order: 1 },
     { name: 'ideas', displayName: 'Ideas', order: 2 },
     { name: 'members', displayName: 'Members', order: 3 },
@@ -77,7 +79,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
     { name: 'archive', displayName: 'Archive', order: 5 },
   ];
 
-  const { data: directories = defaultDirectories } = useQuery<any[]>({
+  const { data: directories = defaultDirectories } = useQuery<SidebarDirectory[]>({
     queryKey: ['/api/admin/directories'],
     enabled: flags.FEATURE_ADMIN,
     initialData: defaultDirectories,
@@ -96,7 +98,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
     data: teams = [],
     isLoading: teamsLoading,
     error: teamsError,
-  } = useQuery<any[]>({
+  } = useQuery<Team[]>({
     queryKey: ['/api/teams'],
     enabled: flags.FEATURE_TEAMS,
     queryFn: async () => {
@@ -119,7 +121,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
   });
 
   // Query calendar events for search filtering
-  const { data: teamEvents = [] } = useQuery<any[]>({
+  const { data: teamEvents = [] } = useQuery<CalendarEvent[]>({
     queryKey: ['/api/calendar'],
     enabled: flags.FEATURE_CALENDAR,
     queryFn: async () => {
@@ -175,7 +177,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
   };
 
   // Search filtering helpers
-  const hasMatchingEvents = (events: any[], query: string) => {
+  const hasMatchingEvents = (events: CalendarEvent[], query: string) => {
     if (!query.trim()) return true;
     return events.some(
       (event) =>
@@ -194,7 +196,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
     );
   };
 
-  const handleTeamClick = (team: any) => {
+  const handleTeamClick = (team: Team) => {
     if (team.password && !verifiedTeams.includes(team.name)) {
       setPasswordPrompt({ teamName: team.name, teamId: team.id });
     } else {

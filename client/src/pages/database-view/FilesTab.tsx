@@ -7,9 +7,17 @@ import { useToast } from '@/hooks/use-toast';
 import { FILE_COLUMNS, getStatusColor } from './constants';
 import type { TabProps } from './types';
 
+interface UploadedFile {
+  filename: string;
+  mimetype: string;
+  size: number;
+  url?: string;
+  created: string;
+}
+
 interface FilesResponse {
-  images: any[];
-  files: any[];
+  images: UploadedFile[];
+  files: UploadedFile[];
 }
 
 export function FilesTab({ teamName, viewMode, galleryMode, onGalleryModeChange }: TabProps) {
@@ -52,8 +60,8 @@ export function FilesTab({ teamName, viewMode, galleryMode, onGalleryModeChange 
 
   const allFiles = useMemo(
     () => [
-      ...(filesData.images || []).map((f: any) => ({ ...f, type: 'image' })),
-      ...(filesData.files || []).map((f: any) => ({ ...f, type: 'file' })),
+      ...(filesData.images || []).map((file) => ({ ...file, type: 'image' as const })),
+      ...(filesData.files || []).map((file) => ({ ...file, type: 'file' as const })),
     ],
     [filesData]
   );
@@ -62,9 +70,11 @@ export function FilesTab({ teamName, viewMode, galleryMode, onGalleryModeChange 
     () =>
       allFiles.map((file) => ({
         id: file.filename,
+        filename: file.filename,
         title: file.filename,
         description: `${file.mimetype} • ${(file.size / 1024).toFixed(1)}KB`,
         image: file.type === 'image' ? file.url : undefined,
+        url: file.url,
         tags: [file.type, file.mimetype?.split('/')[1]].filter(Boolean),
         date: file.created,
         status: file.type,
@@ -74,14 +84,16 @@ export function FilesTab({ teamName, viewMode, galleryMode, onGalleryModeChange 
 
   // ─── Handlers ──────────────────────────────────────────────────────────────
 
-  const handleView = useCallback((item: any) => {
+  const handleView = useCallback((item: { url?: string }) => {
     if (item.url) window.open(item.url, '_blank', 'noopener,noreferrer');
   }, []);
 
   const handleDelete = useCallback(
-    (item: any) => {
-      if (confirm(`"${item.filename ?? item.title}" 파일을 삭제하시겠습니까?`)) {
-        deleteMutation.mutate(item.filename ?? item.title);
+    (item: { filename?: string; title?: string }) => {
+      const targetName = item.filename ?? item.title;
+      if (!targetName) return;
+      if (confirm(`"${targetName}" 파일을 삭제하시겠습니까?`)) {
+        deleteMutation.mutate(targetName);
       }
     },
     [deleteMutation]
@@ -116,9 +128,9 @@ export function FilesTab({ teamName, viewMode, galleryMode, onGalleryModeChange 
           title={`파일 (${allFiles.length})`}
           viewMode={galleryMode}
           onViewModeChange={onGalleryModeChange}
-          onView={handleView}
+          onView={(item) => handleView({ url: item.url })}
           onEdit={() => {}}
-          onDelete={handleDelete}
+          onDelete={(item) => handleDelete({ filename: item.filename, title: item.title })}
           onAdd={handleAdd}
           getStatusColor={getStatusColor}
         />

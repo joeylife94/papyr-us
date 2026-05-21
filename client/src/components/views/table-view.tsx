@@ -46,13 +46,13 @@ interface Column {
   width?: string;
 }
 
-interface TableViewProps {
-  data: any[];
+interface TableViewProps<T extends object> {
+  data: T[];
   columns: Column[];
   title?: string;
-  onEdit?: (item: any) => void;
-  onDelete?: (item: any) => void;
-  onView?: (item: any) => void;
+  onEdit?: (item: T) => void;
+  onDelete?: (item: T) => void;
+  onView?: (item: T) => void;
   onAdd?: () => void;
   searchable?: boolean;
   filterable?: boolean;
@@ -61,7 +61,7 @@ interface TableViewProps {
   itemsPerPage?: number;
 }
 
-export function TableView({
+export function TableView<T extends object>({
   data,
   columns,
   title,
@@ -74,7 +74,7 @@ export function TableView({
   sortable = true,
   pagination = true,
   itemsPerPage = 10,
-}: TableViewProps) {
+}: TableViewProps<T>) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [sortConfig, setSortConfig] = useState<{
@@ -90,7 +90,7 @@ export function TableView({
     // 검색 필터
     if (searchQuery) {
       result = result.filter((item) =>
-        Object.values(item).some((value) =>
+        Object.values(item as Record<string, unknown>).some((value) =>
           String(value).toLowerCase().includes(searchQuery.toLowerCase())
         )
       );
@@ -100,7 +100,7 @@ export function TableView({
     Object.entries(filters).forEach(([key, value]) => {
       if (value) {
         result = result.filter((item) => {
-          const itemValue = item[key];
+          const itemValue = (item as Record<string, unknown>)[key];
           if (typeof itemValue === 'string') {
             return itemValue.toLowerCase().includes(value.toLowerCase());
           }
@@ -117,12 +117,14 @@ export function TableView({
     if (!sortConfig) return filteredData;
 
     return [...filteredData].sort((a, b) => {
-      const aValue = a[sortConfig.key];
-      const bValue = b[sortConfig.key];
+      const aValue = (a as Record<string, unknown>)[sortConfig.key];
+      const bValue = (b as Record<string, unknown>)[sortConfig.key];
 
       if (aValue === bValue) return 0;
 
-      const comparison = aValue < bValue ? -1 : 1;
+      const normalizedA = aValue == null ? '' : String(aValue);
+      const normalizedB = bValue == null ? '' : String(bValue);
+      const comparison = normalizedA.localeCompare(normalizedB, undefined, { numeric: true });
       return sortConfig.direction === 'asc' ? comparison : -comparison;
     });
   }, [filteredData, sortConfig]);
@@ -167,16 +169,18 @@ export function TableView({
   };
 
   // 셀 렌더링
-  const renderCell = (item: any, column: Column) => {
-    const value = item[column.key];
+  const renderCell = (item: T, column: Column) => {
+    const value = (item as Record<string, unknown>)[column.key];
 
     switch (column.type) {
       case 'date':
-        return new Date(value).toLocaleDateString();
+        return value instanceof Date || typeof value === 'string' || typeof value === 'number'
+          ? new Date(value).toLocaleDateString()
+          : '';
 
       case 'select':
         const option = column.options?.find((opt) => opt.value === value);
-        return option?.label || value;
+        return option?.label || (value == null ? '' : String(value));
 
       case 'badge':
         if (Array.isArray(value)) {
@@ -192,7 +196,7 @@ export function TableView({
         }
         return (
           <Badge variant="secondary" className="text-xs">
-            {value}
+            {value == null ? '' : String(value)}
           </Badge>
         );
 
@@ -228,7 +232,7 @@ export function TableView({
         );
 
       default:
-        return value;
+        return value == null ? '' : String(value);
     }
   };
 
@@ -265,8 +269,8 @@ export function TableView({
         {filterable && (
           <div className="flex gap-2">
             {columns
-              .filter((col) => col.filterable && col.type === 'select')
-              .map((column) => (
+              .filter((col: Column) => col.filterable && col.type === 'select')
+              .map((column: Column) => (
                 <Select
                   key={column.key}
                   value={filters[column.key] || ''}
@@ -277,7 +281,7 @@ export function TableView({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="">전체</SelectItem>
-                    {column.options?.map((option) => (
+                    {column.options?.map((option: { value: string; label: string }) => (
                       <SelectItem key={option.value} value={option.value}>
                         {option.label}
                       </SelectItem>
@@ -305,7 +309,7 @@ export function TableView({
                     {column.label}
                     {sortable && column.sortable && (
                       <div className="flex flex-col">
-                        {sortConfig?.key === column.key ? (
+                        {sortConfig && sortConfig.key === column.key ? (
                           sortConfig.direction === 'asc' ? (
                             <ArrowUp className="h-3 w-3" />
                           ) : (
@@ -335,7 +339,7 @@ export function TableView({
             ) : (
               paginatedData.map((item, index) => (
                 <TableRow key={index}>
-                  {columns.map((column) => (
+                  {columns.map((column: Column) => (
                     <TableCell key={column.key}>{renderCell(item, column)}</TableCell>
                   ))}
                 </TableRow>

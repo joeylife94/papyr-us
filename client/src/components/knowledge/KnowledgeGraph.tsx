@@ -1,5 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import ForceGraph2D from 'react-force-graph-2d';
+import ForceGraph2D, {
+  type ForceGraphMethods,
+  type LinkObject,
+  type NodeObject,
+} from 'react-force-graph-2d';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
@@ -31,20 +35,28 @@ interface GraphNode {
 }
 
 interface GraphLink {
-  source: string;
-  target: string;
+  source: string | GraphNode;
+  target: string | GraphNode;
   type: 'content' | 'tag' | 'ai-recommended';
   strength: number;
+}
+
+interface GraphData {
+  nodes: GraphNode[];
+  links: GraphLink[];
 }
 
 interface KnowledgeGraphProps {
   teamId?: string;
 }
 
+const getGraphNodeId = (node: string | GraphNode) => (typeof node === 'string' ? node : node.id);
+
 export function KnowledgeGraph({ teamId }: KnowledgeGraphProps) {
   const navigate = useNavigate();
-  const graphRef = useRef<any>();
-  const [graphData, setGraphData] = useState<{ nodes: GraphNode[]; links: GraphLink[] }>({
+  const graphRef =
+    useRef<ForceGraphMethods<NodeObject<GraphNode>, LinkObject<GraphNode, GraphLink>>>();
+  const [graphData, setGraphData] = useState<GraphData>({
     nodes: [],
     links: [],
   });
@@ -80,7 +92,7 @@ export function KnowledgeGraph({ teamId }: KnowledgeGraphProps) {
         throw new Error('Failed to fetch graph data');
       }
 
-      const data = await response.json();
+      const data: GraphData = await response.json();
       setGraphData(data);
 
       // Find orphan pages (nodes with no connections)
@@ -103,18 +115,22 @@ export function KnowledgeGraph({ teamId }: KnowledgeGraphProps) {
     ),
     links: graphData.links.filter((link) => {
       const sourceExists = graphData.nodes.some(
-        (n) => n.id === link.source && n.name.toLowerCase().includes(searchQuery.toLowerCase())
+        (n) =>
+          n.id === getGraphNodeId(link.source) &&
+          n.name.toLowerCase().includes(searchQuery.toLowerCase())
       );
       const targetExists = graphData.nodes.some(
-        (n) => n.id === link.target && n.name.toLowerCase().includes(searchQuery.toLowerCase())
+        (n) =>
+          n.id === getGraphNodeId(link.target) &&
+          n.name.toLowerCase().includes(searchQuery.toLowerCase())
       );
       return sourceExists && targetExists;
     }),
   };
 
   // Handle node click
-  const handleNodeClick = (node: any) => {
-    setSelectedNode(node as GraphNode);
+  const handleNodeClick = (node: GraphNode) => {
+    setSelectedNode(node);
     if (node.type === 'page' && node.slug) {
       // Optionally navigate to the page
       // navigate(`/wiki/${node.slug}`);
@@ -122,17 +138,18 @@ export function KnowledgeGraph({ teamId }: KnowledgeGraphProps) {
   };
 
   // Handle node hover
-  const handleNodeHover = (node: any) => {
+  const handleNodeHover = (node: GraphNode | null) => {
     if (graphRef.current) {
       // Highlight connected nodes
       const connectedNodes = new Set<string>();
       graphData.links.forEach((link) => {
-        if (link.source === node?.id) connectedNodes.add(link.target);
-        if (link.target === node?.id) connectedNodes.add(link.source);
+        if (getGraphNodeId(link.source) === node?.id) connectedNodes.add(getGraphNodeId(link.target));
+        if (getGraphNodeId(link.target) === node?.id) connectedNodes.add(getGraphNodeId(link.source));
       });
 
       // Update node colors based on connection
-      graphRef.current.nodeColor((n: any) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (graphRef.current as unknown as any).nodeColor((n: GraphNode) => {
         if (n === node) return '#3B82F6'; // blue for selected
         if (connectedNodes.has(n.id)) return '#10B981'; // green for connected
         return n.color;
@@ -227,16 +244,16 @@ export function KnowledgeGraph({ teamId }: KnowledgeGraphProps) {
               ref={graphRef}
               graphData={filteredData}
               nodeLabel="name"
-              nodeColor={(node: any) => node.color}
-              nodeVal={(node: any) => node.val}
-              linkColor={(link: any) =>
+              nodeColor={(node: GraphNode) => node.color}
+              nodeVal={(node: GraphNode) => node.val}
+              linkColor={(link: GraphLink) =>
                 link.type === 'ai-recommended'
                   ? '#8B5CF6'
                   : link.type === 'tag'
                     ? '#F59E0B'
                     : '#64748B'
               }
-              linkWidth={(link: any) => link.strength}
+              linkWidth={(link: GraphLink) => link.strength}
               linkDirectionalParticles={2}
               linkDirectionalParticleWidth={2}
               onNodeClick={handleNodeClick}

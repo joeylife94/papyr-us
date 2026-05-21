@@ -23,10 +23,14 @@ interface YjsCollaborationOptions {
 }
 
 interface YjsCollaborationState {
-  isConnected: boolean;
-  userCount: number;
-  isSynced: boolean;
-  users: User[];
+ isConnected: boolean;
+ userCount: number;
+ isSynced: boolean;
+ users: User[];
+}
+
+interface AwarenessUserState {
+ user?: User;
 }
 
 // User color palette
@@ -107,7 +111,8 @@ export function useYjsCollaboration({
     // Listen for awareness changes (other users' cursors)
     const awarenessChangeHandler = () => {
       const users: User[] = [];
-      awareness.getStates().forEach((state: any, clientId: number) => {
+      const awarenessStates = awareness.getStates() as Map<number, AwarenessUserState>;
+      awarenessStates.forEach((state, clientId: number) => {
         if (clientId !== awareness.clientID && state.user) {
           users.push({
             id: state.user.id,
@@ -233,7 +238,7 @@ export function useYjsCollaboration({
     // Setup update broadcasting to server
     const ydoc = ydocRef.current;
     if (ydoc) {
-      const updateHandler = (update: Uint8Array, origin: any) => {
+      const updateHandler = (update: Uint8Array, origin: unknown) => {
         // Don't send update if it came from the server
         if (origin === 'server') return;
 
@@ -306,7 +311,7 @@ export function useYjsCollaboration({
     const awareness = awarenessRef.current;
     if (!awareness) return;
 
-    const currentState = awareness.getLocalState() as any;
+    const currentState = awareness.getLocalState() as AwarenessUserState | null;
     if (currentState?.user) {
       awareness.setLocalState({
         user: {

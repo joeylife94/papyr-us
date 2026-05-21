@@ -1,5 +1,6 @@
 import { io, Socket } from 'socket.io-client';
 import { useEffect, useRef, useState } from 'react';
+import type { Block, Notification as StoredNotification } from '@shared/schema';
 
 interface User {
   id: string;
@@ -7,20 +8,75 @@ interface User {
   teamId?: string;
 }
 
-interface DocumentChange {
+interface DocumentChangeData {
+  blocks?: Block[];
+  [key: string]: unknown;
+}
+
+export interface DocumentChange {
   pageId: number;
   blockId: string;
   type: 'insert' | 'update' | 'delete';
-  data?: any;
+  data?: DocumentChangeData;
   timestamp: number;
   userId: string;
 }
 
-interface CursorPosition {
+export interface CursorPosition {
   x: number;
   y: number;
   selection?: { start: number; end: number };
 }
+
+export interface CursorUpdatePayload {
+  pageId: number;
+  userId: string;
+  userName: string;
+  position: CursorPosition;
+  timestamp: number;
+}
+
+export interface TypingPayload {
+  pageId: number;
+  userId: string;
+  userName?: string;
+}
+
+export interface NotificationUnreadCountPayload {
+  recipientId: number;
+  count: number;
+}
+
+export type SocketNotification = Omit<StoredNotification, 'type' | 'createdAt'> & {
+  type: string;
+  createdAt: string | Date;
+};
+
+interface ReconnectingPayload {
+  attempt: number;
+  maxAttempts: number;
+  delay: number;
+}
+
+type SocketListener<TArgs extends unknown[] = unknown[]> = (...args: TArgs) => void;
+
+type SocketEventMap = {
+  connect: [];
+  disconnect: [reason: string];
+  reconnecting: [data: ReconnectingPayload];
+  reconnect_failed: [];
+  connect_error: [error: Error];
+  error: [error: Error];
+  'session-users': [users: User[]];
+  'user-joined': [data: { userId: string; userName: string }];
+  'user-left': [data: { userId: string }];
+  'typing-start': [data: TypingPayload];
+  'typing-stop': [data: TypingPayload];
+  'document-change': [change: DocumentChange];
+  'cursor-update': [payload: CursorUpdatePayload];
+  'notification:new': [notification: SocketNotification];
+  'notification:unread-count': [data: NotificationUnreadCountPayload];
+};
 
 interface CollaborationState {
   users: User[];
@@ -31,7 +87,7 @@ interface CollaborationState {
 
 class SocketManager {
   private socket: Socket | null = null;
-  private listeners: Map<string, Set<Function>> = new Map();
+  private listeners: Map<string, Set<SocketListener>> = new Map();
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000; // Start with 1 second
@@ -77,13 +133,13 @@ class SocketManager {
       }
     });
 
-    this.socket.on('connect_error', (error: any) => {
+    this.socket.on('connect_error', (error: Error) => {
       console.error('❌ Socket.IO connection error:', error.message);
       this.emitInternal('connect_error', error);
       this.scheduleReconnect();
     });
 
-    this.socket.on('error', (error: any) => {
+    this.socket.on('error', (error: Error) => {
       console.error('❌ Socket.IO error:', error);
       this.emitInternal('error', error);
     });
@@ -154,7 +210,9 @@ class SocketManager {
     this.reconnectDelay = 1000;
   }
 
-  on(event: string, callback: (...args: any[]) => void): void {
+  on<K extends keyof SocketEventMap>(event: K, callback: SocketListener<SocketEventMap[K]>): void;
+  on(event: string, callback: SocketListener): void;
+  on(event: string, callback: SocketListener): void {
     if (!this.listeners.has(event)) {
       this.listeners.set(event, new Set());
     }
@@ -165,18 +223,22 @@ class SocketManager {
     }
   }
 
-  off(event: string, callback: Function): void {
+  off<K extends keyof SocketEventMap>(event: K, callback: SocketListener<SocketEventMap[K]>): void;
+  off(event: string, callback: SocketListener): void;
+  off(event: string, callback: SocketListener): void {
     const listeners = this.listeners.get(event);
     if (listeners) {
       listeners.delete(callback);
     }
 
     if (this.socket) {
-      this.socket.off(event, callback as (...args: any[]) => void);
+      this.socket.off(event, callback);
     }
   }
 
-  emit(event: string, ...args: any[]): void {
+  emit<K extends keyof SocketEventMap>(event: K, ...args: SocketEventMap[K]): void;
+  emit(event: string, ...args: unknown[]): void;
+  emit(event: string, ...args: unknown[]): void {
     if (this.socket) {
       this.socket.emit(event, ...args);
     }
@@ -188,17 +250,17 @@ class SocketManager {
     this.socket.emit('join-member', { memberId });
   }
 
-  onNotificationNew(callback: (notification: any) => void): void {
+  onNotificationNew(callback: (notification: SocketNotification) => void): void {
     this.on('notification:new', callback);
   }
 
-  onNotificationUnreadCount(
-    callback: (data: { recipientId: number; count: number }) => void
-  ): void {
-    this.on('notification:unread-count', callback as any);
+  onNotificationUnreadCount(callback: (data: NotificationUnreadCountPayload) => void): void {
+    this.on('notification:unread-count', callback);
   }
 
-  private emitInternal(event: string, ...args: any[]): void {
+  private emitInternal<K extends keyof SocketEventMap>(event: K, ...args: SocketEventMap[K]): void;
+  private emitInternal(event: string, ...args: unknown[]): void;
+  private emitInternal(event: string, ...args: unknown[]): void {
     const listeners = this.listeners.get(event);
     if (listeners) {
       listeners.forEach((callback) => {
@@ -250,7 +312,7 @@ export function useSocket(options?: { enabled?: boolean }) {
       }
     };
 
-    const handleReconnecting = (data: { attempt: number; maxAttempts: number; delay: number }) => {
+    const handleReconnecting = (data: ReconnectingPayload) => {
       setIsReconnecting(true);
       setReconnectAttempt(data.attempt);
       setReconnectError(null);
@@ -343,7 +405,7 @@ export function useCollaboration(
       }));
     };
 
-    const handleTypingStart = (data: { userId: string; userName: string }) => {
+    const handleTypingStart = (data: TypingPayload) => {
       setCollaborationState((prev) => ({
         ...prev,
         typingUsers: [...prev.typingUsers.filter((id) => id !== data.userId), data.userId],

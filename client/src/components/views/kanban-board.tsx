@@ -3,13 +3,21 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Plus, GripVertical, MoreVertical } from 'lucide-react';
-import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-pangea/dnd';
+import {
+  DragDropContext,
+  Droppable,
+  Draggable,
+  type DropResult,
+  type DraggableProvided,
+  type DraggableStateSnapshot,
+  type DroppableProvided,
+  type DroppableStateSnapshot,
+} from '@hello-pangea/dnd';
 
-interface KanbanItem {
+interface KanbanItem extends Record<string, unknown> {
   id: string;
   title: string;
   description?: string | null;
-  [key: string]: any;
 }
 
 interface KanbanColumn {
@@ -95,23 +103,27 @@ export default function KanbanBoard({
     }
   };
 
-  const defaultRenderCard = (item: KanbanItem) => (
-    <div className="space-y-2">
-      <h4 className="font-medium text-sm">{item.title}</h4>
-      {item.description && (
-        <p className="text-xs text-muted-foreground line-clamp-2">{item.description}</p>
-      )}
-      {item.tags && item.tags.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {item.tags.slice(0, 3).map((tag: string, idx: number) => (
-            <Badge key={idx} variant="secondary" className="text-xs">
-              {tag}
-            </Badge>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+  const defaultRenderCard = (item: KanbanItem) => {
+    const tags = Array.isArray(item.tags) ? item.tags.filter((tag): tag is string => typeof tag === 'string') : [];
+
+    return (
+      <div className="space-y-2">
+        <h4 className="font-medium text-sm">{item.title}</h4>
+        {item.description && (
+          <p className="text-xs text-muted-foreground line-clamp-2">{item.description}</p>
+        )}
+        {tags.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {tags.slice(0, 3).map((tag, idx) => (
+              <Badge key={idx} variant="secondary" className="text-xs">
+                {tag}
+              </Badge>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <DragDropContext onDragEnd={handleDragEnd}>
@@ -140,7 +152,7 @@ export default function KanbanBoard({
               </CardHeader>
               <CardContent className="pt-0">
                 <Droppable droppableId={column.id}>
-                  {(provided: any, snapshot: any) => (
+                  {(provided: DroppableProvided, snapshot: DroppableStateSnapshot) => (
                     <div
                       ref={provided.innerRef}
                       {...provided.droppableProps}
@@ -150,7 +162,7 @@ export default function KanbanBoard({
                     >
                       {column.items.map((item, index) => (
                         <Draggable key={item.id} draggableId={item.id} index={index}>
-                          {(provided: any, snapshot: any) => (
+                          {(provided: DraggableProvided, snapshot: DraggableStateSnapshot) => (
                             <Card
                               ref={provided.innerRef}
                               {...provided.draggableProps}

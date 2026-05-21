@@ -9,7 +9,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { MoreHorizontal, Plus, User, Calendar, Tag, GripVertical } from 'lucide-react';
-interface KanbanItem {
+interface KanbanItem extends Record<string, unknown> {
   id: string;
   title: string;
   description?: string;
@@ -18,7 +18,6 @@ interface KanbanItem {
   assignee?: string;
   dueDate?: string;
   tags?: string[];
-  [key: string]: any;
 }
 
 interface KanbanColumn {
@@ -139,13 +138,24 @@ function DraggableItem({
 }
 
 // 드롭 가능한 컬럼 컴포넌트
+type DraggedKanbanItem = Pick<KanbanItem, 'id' | 'status'>;
+
+function isDraggedKanbanItem(value: unknown): value is DraggedKanbanItem {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  return typeof candidate.id === 'string' && typeof candidate.status === 'string';
+}
+
 function DroppableColumn({
   column,
   onDrop,
   children,
 }: {
   column: KanbanColumn;
-  onDrop: (item: any) => void;
+  onDrop: (item: DraggedKanbanItem) => void;
   children: React.ReactNode;
 }) {
   const [isOver, setIsOver] = useState(false);
@@ -164,8 +174,10 @@ function DroppableColumn({
     setIsOver(false);
 
     try {
-      const data = JSON.parse(e.dataTransfer.getData('text/plain'));
-      onDrop(data);
+      const data: unknown = JSON.parse(e.dataTransfer.getData('text/plain'));
+      if (isDraggedKanbanItem(data)) {
+        onDrop(data);
+      }
     } catch (error) {
       console.error('Drop data parsing error:', error);
     }
@@ -206,7 +218,7 @@ export function KanbanView({
   }, [data, columns]);
 
   // 아이템 드롭 핸들러
-  const handleDrop = (item: any, targetStatus: string) => {
+  const handleDrop = (item: DraggedKanbanItem, targetStatus: string) => {
     if (item.status !== targetStatus) {
       onItemMove?.(item.id, item.status, targetStatus);
     }

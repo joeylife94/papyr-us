@@ -6,6 +6,12 @@ import { GalleryView } from '@/components/views/gallery-view';
 import { useToast } from '@/hooks/use-toast';
 import { PAGE_COLUMNS, getStatusColor } from './constants';
 import type { TabProps } from './types';
+import type { WikiPage } from '@shared/schema';
+
+type PageRow = Omit<WikiPage, 'createdAt'> & {
+  tagsDisplay: string;
+  createdAt: string | null;
+};
 
 export function PagesTab({ teamName, viewMode, galleryMode, onGalleryModeChange }: TabProps) {
   const navigate = useNavigate();
@@ -18,13 +24,13 @@ export function PagesTab({ teamName, viewMode, galleryMode, onGalleryModeChange 
     data: pages = [],
     isLoading,
     isError,
-  } = useQuery<any[]>({
+  } = useQuery<WikiPage[]>({
     queryKey: ['/api/pages', teamName],
     queryFn: async () => {
       const url = teamName ? `/api/pages?teamId=${teamName}` : '/api/pages';
       const res = await fetch(url);
       if (!res.ok) throw new Error('페이지 데이터를 불러오지 못했습니다.');
-      const data = await res.json();
+      const data: { pages?: WikiPage[] } = await res.json();
       return data.pages || [];
     },
     staleTime: 30_000,
@@ -46,7 +52,7 @@ export function PagesTab({ teamName, viewMode, galleryMode, onGalleryModeChange 
 
   // ─── Data transform ────────────────────────────────────────────────────────
 
-  const transformedPages = useMemo(
+  const transformedPages = useMemo<PageRow[]>(
     () =>
       pages.map((page) => ({
         ...page,
@@ -61,6 +67,8 @@ export function PagesTab({ teamName, viewMode, galleryMode, onGalleryModeChange 
     () =>
       transformedPages.map((page) => ({
         id: String(page.id),
+        pageId: page.id,
+        slug: page.slug,
         title: page.title,
         description: page.content?.substring(0, 100),
         tags: page.tags,
@@ -74,16 +82,21 @@ export function PagesTab({ teamName, viewMode, galleryMode, onGalleryModeChange 
   // ─── Handlers ──────────────────────────────────────────────────────────────
 
   const handleView = useCallback(
-    (item: any) => {
+    (item: { slug?: string }) => {
       if (item.slug) navigate(`/page/${item.slug}`);
     },
     [navigate]
   );
-  const handleEdit = useCallback((item: any) => navigate(`/edit/${item.id}`), [navigate]);
+  const handleEdit = useCallback(
+    (item: { id?: number | string; pageId?: number }) => navigate(`/edit/${item.pageId ?? item.id}`),
+    [navigate]
+  );
   const handleDelete = useCallback(
-    (item: any) => {
+    (item: { id?: number | string; pageId?: number; title: string }) => {
+      const pageId = item.pageId ?? (typeof item.id === 'number' ? item.id : Number(item.id));
+      if (Number.isNaN(pageId)) return;
       if (confirm(`"${item.title}" 페이지를 삭제하시겠습니까?`)) {
-        deleteMutation.mutate(item.id);
+        deleteMutation.mutate(pageId);
       }
     },
     [deleteMutation]
@@ -117,9 +130,11 @@ export function PagesTab({ teamName, viewMode, galleryMode, onGalleryModeChange 
           title={`위키 페이지 (${pages.length})`}
           viewMode={galleryMode}
           onViewModeChange={onGalleryModeChange}
-          onView={handleView}
-          onEdit={handleEdit}
-          onDelete={handleDelete}
+          onView={(item) => handleView({ slug: item.slug })}
+          onEdit={(item) => handleEdit({ id: item.id, pageId: item.pageId })}
+          onDelete={(item) =>
+            handleDelete({ id: item.id, pageId: item.pageId, title: item.title })
+          }
           onAdd={handleAdd}
           getStatusColor={getStatusColor}
         />

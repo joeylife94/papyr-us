@@ -37,15 +37,16 @@ import {
   CheckCircle,
   XCircle,
 } from 'lucide-react';
+import type { WorkflowAction, WorkflowCondition, WorkflowTrigger } from '@shared/schema';
 
 interface WorkflowData {
   id: number;
   name: string;
   description?: string;
   isActive: boolean;
-  trigger: any;
-  actions: any[];
-  conditions?: any[];
+  trigger: WorkflowTrigger;
+  actions: WorkflowAction[];
+  conditions?: WorkflowCondition[];
   createdBy: string;
   createdAt: string;
   updatedAt: string;
@@ -186,7 +187,7 @@ export default function AutomationPage() {
     },
   });
 
-  const getTriggerLabel = (trigger: any) => {
+  const getTriggerLabel = (trigger?: WorkflowTrigger | null) => {
     const type = trigger?.type || 'unknown';
     const labels: Record<string, string> = {
       page_created: '페이지 생성 시',
@@ -203,7 +204,7 @@ export default function AutomationPage() {
     return labels[type] || type;
   };
 
-  const getActionLabels = (actions: any[]) => {
+  const getActionLabels = (actions: WorkflowAction[]) => {
     const labels: Record<string, string> = {
       send_notification: '알림 전송',
       create_task: '태스크 생성',

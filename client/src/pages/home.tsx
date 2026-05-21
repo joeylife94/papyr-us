@@ -1,4 +1,4 @@
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, type InfiniteData } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -20,8 +20,21 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
   const effectiveSort = searchQuery ? 'rank' : sort;
   const limit = 12;
 
-  const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage } =
-    useInfiniteQuery<{ pages: WikiPage[]; total: number; offset: number; limit: number }>({
+  const {
+    data,
+    isLoading,
+    error,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  }: {
+    data: InfiniteData<{ pages: WikiPage[]; total: number; offset: number; limit: number }> | undefined;
+    isLoading: boolean;
+    error: Error | null;
+    fetchNextPage: () => Promise<unknown>;
+    hasNextPage: boolean | undefined;
+    isFetchingNextPage: boolean;
+  } = useInfiniteQuery<{ pages: WikiPage[]; total: number; offset: number; limit: number }>({
       queryKey: ['/api/pages', searchQuery, selectedFolder, teamName, effectiveSort],
       queryFn: async ({ pageParam = 0 }) => {
         try {
@@ -58,15 +71,9 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
       retryDelay: 1000,
     });
 
-  const firstPage = (data as any)?.pages?.[0] as
-    | { pages: WikiPage[]; total: number; offset: number; limit: number }
-    | undefined;
+  const firstPage = data?.pages[0];
   const totalCount = firstPage?.total || 0;
-  const flatPages: WikiPage[] = (
-    (data as any)?.pages
-      ? ((data as any).pages as any[]).flatMap((p: any) => p.pages as WikiPage[])
-      : []
-  ) as WikiPage[];
+  const flatPages: WikiPage[] = data?.pages.flatMap((page) => page.pages) ?? [];
 
   return (
     <div className="space-y-8">
