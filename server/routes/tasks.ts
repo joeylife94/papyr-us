@@ -22,7 +22,7 @@ export function registerTasksRoutes(app: Express, storage: DBStorage): void {
       // If no teamId specified, scope to user's teams to prevent full data leak
       let tasks: Task[];
       if (!teamId) {
-        const userTeamIds = (req as any).userTeamIds as number[] | undefined;
+        const userTeamIds = req.userTeamIds as number[] | undefined;
         if (userTeamIds && userTeamIds.length > 0) {
           const allTasks = await Promise.all(
             userTeamIds.map((id) => storage.getTasks(String(id), status))

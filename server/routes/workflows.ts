@@ -48,7 +48,7 @@ export function registerWorkflowsRoutes(app: Express, storage: DBStorage): void 
       optionalAuth,
       requireTeamMembership,
       requireAuthIfEnabled,
-      async (req, res) => {
+      async (req: AuthRequest, res) => {
         try {
           const teamIdParam = req.query.teamId as string | undefined;
           let teamId: number | undefined;
@@ -64,7 +64,7 @@ export function registerWorkflowsRoutes(app: Express, storage: DBStorage): void 
           }
 
           if (!teamId) {
-            const userTeamIds = (req as any).userTeamIds as number[] | undefined;
+            const userTeamIds = req.userTeamIds;
             if (userTeamIds && userTeamIds.length > 0) {
               const allWorkflows = await Promise.all(
                 userTeamIds.map((tid) => storage.getWorkflows(tid))

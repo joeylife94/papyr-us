@@ -141,9 +141,7 @@ export function registerAuthRoutes(app: Express, storage: DBStorage): void {
         return res.status(401).json({ message: 'Invalid credentials' });
       }
 
-      const role =
-        Array.isArray((config as any).adminEmails) &&
-        (config as any).adminEmails.includes((user.email || '').toLowerCase())
+      const role = config.adminEmails.includes((user.email || '').toLowerCase())
           ? 'admin'
           : 'user';
 
@@ -190,7 +188,7 @@ export function registerAuthRoutes(app: Express, storage: DBStorage): void {
   app.post('/api/auth/refresh', rlAuth, async (req, res) => {
     try {
       // Cookie-based refresh token only — no body fallback
-      const refreshToken = (req as any).cookies?.refreshToken;
+      const refreshToken = req.cookies?.refreshToken;
 
       if (!refreshToken) {
         return res.status(401).json({ message: 'Refresh token required' });
@@ -246,18 +244,18 @@ export function registerAuthRoutes(app: Express, storage: DBStorage): void {
   });
 
   // Get current user info (Protected Route)
-  app.get('/api/auth/me', authMiddleware, async (req: any, res) => {
+  app.get('/api/auth/me', authMiddleware, async (req: AuthRequest, res) => {
     try {
       if (process.env.E2E_DEBUG_AUTH === '1') {
         logger.debug('[E2E DEBUG] GET /api/auth/me', {
           hasAuthHeader: !!req.headers.authorization,
-          userId: (req.user as any)?.id,
+          userId: req.user?.id,
         });
       }
       const userResult = await storage.db
         .select({ id: users.id, name: users.name, email: users.email })
         .from(users)
-        .where(eq(users.id, req.user.id));
+        .where(eq(users.id, req.user!.id));
       if (userResult.length === 0) {
         return res.status(404).json({ message: 'User not found' });
       }
@@ -293,16 +291,16 @@ export function registerAuthRoutes(app: Express, storage: DBStorage): void {
     app.get(
       '/api/auth/google/callback',
       passport.authenticate('google', { failureRedirect: '/login', session: false }),
-      (req: any, res) => {
-        const role = config.adminEmails.includes(req.user.email.toLowerCase()) ? 'admin' : 'user';
+      (req: AuthRequest, res) => {
+        const role = config.adminEmails.includes((req.user!.email || '').toLowerCase()) ? 'admin' : 'user';
         const accessToken = jwt.sign(
-          { id: req.user.id, email: req.user.email, role },
+          { id: req.user!.id, email: req.user!.email, role },
           config.jwtSecret,
           {
             expiresIn: '1h',
           }
         );
-        const refreshToken = jwt.sign({ id: req.user.id, type: 'refresh' }, config.jwtSecret, {
+        const refreshToken = jwt.sign({ id: req.user!.id, type: 'refresh' }, config.jwtSecret, {
           expiresIn: '30d',
         });
         res
@@ -329,16 +327,16 @@ export function registerAuthRoutes(app: Express, storage: DBStorage): void {
     app.get(
       '/api/auth/github/callback',
       passport.authenticate('github', { failureRedirect: '/login', session: false }),
-      (req: any, res) => {
-        const role = config.adminEmails.includes(req.user.email.toLowerCase()) ? 'admin' : 'user';
+      (req: AuthRequest, res) => {
+        const role = config.adminEmails.includes((req.user!.email || '').toLowerCase()) ? 'admin' : 'user';
         const accessToken = jwt.sign(
-          { id: req.user.id, email: req.user.email, role },
+          { id: req.user!.id, email: req.user!.email, role },
           config.jwtSecret,
           {
             expiresIn: '1h',
           }
         );
-        const refreshToken = jwt.sign({ id: req.user.id, type: 'refresh' }, config.jwtSecret, {
+        const refreshToken = jwt.sign({ id: req.user!.id, type: 'refresh' }, config.jwtSecret, {
           expiresIn: '30d',
         });
         res
@@ -370,7 +368,7 @@ export function registerAuthRoutes(app: Express, storage: DBStorage): void {
       }
 
       const { eq } = await import('drizzle-orm');
-      const db = (storage as any).db;
+      const db = storage.db;
 
       const [updated] = await db
         .update(users)
@@ -415,7 +413,7 @@ export function registerAuthRoutes(app: Express, storage: DBStorage): void {
       }
 
       const { eq } = await import('drizzle-orm');
-      const db = (storage as any).db;
+      const db = storage.db;
 
       const [user] = await db.select().from(users).where(eq(users.id, userId));
       if (!user || !user.hashedPassword) {

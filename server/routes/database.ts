@@ -7,7 +7,7 @@ export function registerDatabaseRoutes(app: Express, storage: DBStorage): void {
 
   app.post('/api/database/schemas', requireAuthIfEnabled, async (req: AuthRequest, res) => {
     try {
-      const { pageId, name, fields, primaryDisplay } = req.body;
+      const { pageId, name, fields, primaryDisplay: _primaryDisplay } = req.body;
 
       if (!pageId || !name || !fields) {
         return res.status(400).json({ error: 'pageId, name, and fields are required' });
@@ -21,7 +21,6 @@ export function registerDatabaseRoutes(app: Express, storage: DBStorage): void {
       const schema = await storage.createDatabaseSchema(pageId, userId, {
         name,
         fields,
-        primaryDisplay,
       });
 
       res.status(201).json(schema);
@@ -57,11 +56,10 @@ export function registerDatabaseRoutes(app: Express, storage: DBStorage): void {
         return res.status(400).json({ error: 'Invalid schema ID' });
       }
 
-      const { name, fields, primaryDisplay } = req.body;
+      const { name, fields, primaryDisplay: _primaryDisplay } = req.body;
       const schema = await storage.updateDatabaseSchema(id, {
         name,
         fields,
-        primaryDisplay,
       });
 
       res.json(schema);
@@ -269,18 +267,17 @@ export function registerDatabaseRoutes(app: Express, storage: DBStorage): void {
 
   app.post('/api/synced-blocks', requireAuthIfEnabled, async (req: AuthRequest, res) => {
     try {
-      const { originalBlockId, content } = req.body;
+      const { originalBlockId, content, pageId } = req.body;
 
-      if (!originalBlockId || !content) {
-        return res.status(400).json({ error: 'originalBlockId and content are required' });
+      if (!originalBlockId || !content || !pageId) {
+        return res.status(400).json({ error: 'originalBlockId, content, and pageId are required' });
       }
 
-      const userId = req.user?.id;
-      if (!userId) {
+      if (!req.user?.id) {
         return res.status(401).json({ error: 'User not authenticated' });
       }
 
-      const syncedBlock = await storage.createSyncedBlock(originalBlockId, userId, content);
+      const syncedBlock = await storage.createSyncedBlock(originalBlockId, pageId, content);
       res.status(201).json(syncedBlock);
     } catch (error) {
       console.error('Error creating synced block:', error);

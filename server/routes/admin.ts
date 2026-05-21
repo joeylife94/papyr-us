@@ -19,7 +19,7 @@ export function registerAdminRoutes(app: Express, storage: DBStorage): void {
           // Issue a short-lived admin token via httpOnly cookie only
           const token = jwt.sign(
             { role: 'admin', via: 'password' },
-            (config as any).jwtSecret || 'your-default-secret',
+            config.jwtSecret || 'your-default-secret',
             {
               expiresIn: '2h',
             }

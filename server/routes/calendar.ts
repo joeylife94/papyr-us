@@ -20,7 +20,7 @@ export function registerCalendarRoutes(app: Express, storage: DBStorage): void {
         // If no teamId specified, scope to user's teams to prevent full data leak
         let events: CalendarEvent[];
         if (!teamId) {
-          const userTeamIds = (req as any).userTeamIds as number[] | undefined;
+          const userTeamIds = req.userTeamIds as number[] | undefined;
           if (userTeamIds && userTeamIds.length > 0) {
             const allEvents = await Promise.all(
               userTeamIds.map((id) => storage.getCalendarEvents(id))
@@ -135,12 +135,13 @@ export function registerCalendarRoutes(app: Express, storage: DBStorage): void {
           const eventData = insertCalendarEventSchema.parse(requestData);
           const event = await storage.createCalendarEvent(eventData);
           res.status(201).json(event);
-        } catch (error: any) {
+        } catch (error) {
           console.error('Calendar event creation error:', error);
-          if (error.name === 'ZodError') {
+          if (error instanceof Error && error.name === 'ZodError') {
+            const zodError = error as Error & { errors?: unknown[] };
             return res.status(400).json({
               message: 'Invalid event data',
-              errors: error.errors,
+              errors: zodError.errors,
             });
           }
           res.status(400).json({ message: 'Invalid event data' });
@@ -214,12 +215,13 @@ export function registerCalendarRoutes(app: Express, storage: DBStorage): void {
           return res.status(404).json({ message: 'Event not found' });
         }
         res.json(event);
-      } catch (error: any) {
+      } catch (error) {
         console.error('Calendar event update error:', error);
-        if (error.name === 'ZodError') {
+        if (error instanceof Error && error.name === 'ZodError') {
+          const zodError = error as Error & { errors?: unknown[] };
           return res.status(400).json({
             message: 'Invalid event data',
-            errors: error.errors,
+            errors: zodError.errors,
           });
         }
         res.status(400).json({ message: 'Invalid event data' });

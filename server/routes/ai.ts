@@ -234,7 +234,7 @@ export function registerAIRoutes(app: Express, storage: DBStorage): void {
         const teamId = req.query.teamId as string | undefined;
         const includeAILinks = req.query.includeAI === 'true';
 
-        const userTeamIds: number[] = (req as any).userTeamIds ?? [];
+        const userTeamIds: number[] = req.userTeamIds ?? [];
 
         if (teamId && !userTeamIds.map(String).includes(teamId)) {
           return res.status(403).json({ message: 'You are not a member of this team' });

@@ -16,11 +16,23 @@ import {
   tasks,
   comments,
   users,
+  type WikiPage,
 } from '../../shared/schema.js';
 import { DBStorage } from '../storage.js';
 import { triggerWorkflows } from '../services/workflow.js';
 import logger from '../services/logger.js';
 import { and, isNull } from 'drizzle-orm';
+
+/** Lightweight node used when building the page-tree response. */
+interface PageTreeNode {
+  id: number;
+  title: string;
+  slug: string;
+  parentId: number | null;
+  folder: string;
+  updatedAt: Date;
+  children?: PageTreeNode[];
+}
 
 export function registerPagesRoutes(app: Express, storage: DBStorage): void {
   app.get('/api/pages', optionalAuth, async (req: AuthRequest, res) => {
@@ -60,7 +72,7 @@ export function registerPagesRoutes(app: Express, storage: DBStorage): void {
             const params = searchSchema.parse({
               query: req.query.q as string,
               folder: req.query.folder as string,
-              sort: req.query.sort as string as any,
+              sort: req.query.sort as string,
               tags: req.query.tags ? (req.query.tags as string).split(',') : undefined,
               limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
               offset: req.query.offset ? parseInt(req.query.offset as string) : undefined,
@@ -73,7 +85,7 @@ export function registerPagesRoutes(app: Express, storage: DBStorage): void {
             searchSchema.parse({
               query: req.query.q as string,
               folder: req.query.folder as string,
-              sort: req.query.sort as string as any,
+              sort: req.query.sort as string,
               tags: req.query.tags ? (req.query.tags as string).split(',') : undefined,
               limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
               offset: req.query.offset ? parseInt(req.query.offset as string) : undefined,
@@ -111,7 +123,7 @@ export function registerPagesRoutes(app: Express, storage: DBStorage): void {
         const searchParams = searchSchema.parse({
           query: req.query.q as string,
           folder: req.query.folder as string,
-          sort: req.query.sort as string as any,
+          sort: req.query.sort as string,
           tags: req.query.tags ? (req.query.tags as string).split(',') : undefined,
           limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
           offset: req.query.offset ? parseInt(req.query.offset as string) : undefined,
@@ -130,7 +142,7 @@ export function registerPagesRoutes(app: Express, storage: DBStorage): void {
       const searchParams = searchSchema.parse({
         query: req.query.q as string,
         folder: req.query.folder as string,
-        sort: req.query.sort as string as any,
+        sort: req.query.sort as string,
         tags: req.query.tags ? (req.query.tags as string).split(',') : undefined,
         limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
         offset: req.query.offset ? parseInt(req.query.offset as string) : undefined,
@@ -175,11 +187,11 @@ export function registerPagesRoutes(app: Express, storage: DBStorage): void {
     '/api/pages/slug/:slug',
     optionalAuth,
     requirePagePermission('viewer'),
-    async (req, res) => {
+    async (req: AuthRequest, res) => {
       try {
         // Use page resolved by requirePagePermission middleware if available
         const page =
-          (req as any)._resolvedPage || (await storage.getWikiPageBySlug(req.params.slug));
+          req._resolvedPage || (await storage.getWikiPageBySlug(req.params.slug));
 
         if (!page) {
           return res.status(404).json({ message: 'Page not found' });
@@ -259,7 +271,7 @@ export function registerPagesRoutes(app: Express, storage: DBStorage): void {
         if (oldPage && (updateData.content !== undefined || updateData.blocks !== undefined)) {
           try {
             // Get the current max version number
-            const db = (storage as any).db;
+            const db = storage.db;
             if (db) {
               const { pageVersions } = await import('@shared/schema');
               const { desc, eq, sql } = await import('drizzle-orm');
@@ -339,7 +351,7 @@ export function registerPagesRoutes(app: Express, storage: DBStorage): void {
     async (req, res) => {
       try {
         const pageId = parseInt(req.params.id);
-        const db = (storage as any).db;
+        const db = storage.db;
         if (!db) return res.status(500).json({ error: 'Database not available' });
 
         const { pageVersions } = await import('@shared/schema');
@@ -374,7 +386,7 @@ export function registerPagesRoutes(app: Express, storage: DBStorage): void {
     async (req, res) => {
       try {
         const versionId = parseInt(req.params.versionId);
-        const db = (storage as any).db;
+        const db = storage.db;
         if (!db) return res.status(500).json({ error: 'Database not available' });
 
         const { pageVersions } = await import('@shared/schema');
@@ -406,7 +418,7 @@ export function registerPagesRoutes(app: Express, storage: DBStorage): void {
       try {
         const pageId = parseInt(req.params.id);
         const versionId = parseInt(req.params.versionId);
-        const db = (storage as any).db;
+        const db = storage.db;
         if (!db) return res.status(500).json({ error: 'Database not available' });
 
         const { pageVersions } = await import('@shared/schema');
@@ -543,7 +555,7 @@ export function registerPagesRoutes(app: Express, storage: DBStorage): void {
     async (req: AuthRequest, res) => {
       try {
         const id = parseInt(req.params.id);
-        const db = (storage as any).db;
+        const db = storage.db;
         if (!db) return res.status(500).json({ error: 'Database not available' });
 
         const original = await storage.getWikiPage(id);
@@ -559,7 +571,7 @@ export function registerPagesRoutes(app: Express, storage: DBStorage): void {
           slug = `${baseSlug}-${suffix++}`;
         }
 
-        const author = (req as any).user?.email || (req as any).user?.name || original.author;
+        const author = req.user?.email || req.user?.name || original.author;
         const cloned = await storage.createWikiPage(
           {
             title: `${original.title} (Copy)`,
@@ -574,7 +586,7 @@ export function registerPagesRoutes(app: Express, storage: DBStorage): void {
             isPublished: false,
             metadata: original.metadata as any,
           },
-          (req as any).user?.id
+          req.user?.id
         );
 
         res.status(201).json(cloned);
@@ -595,7 +607,7 @@ export function registerPagesRoutes(app: Express, storage: DBStorage): void {
         return res.status(400).json({ error: 'pageIds (array) and folder (string) required' });
       }
 
-      const db = (storage as any).db;
+      const db = storage.db;
       const { inArray } = await import('drizzle-orm');
       const results = await db
         .update(wikiPages)
@@ -618,7 +630,7 @@ export function registerPagesRoutes(app: Express, storage: DBStorage): void {
         return res.status(400).json({ error: 'pageIds (array) required' });
       }
 
-      const db = (storage as any).db;
+      const db = storage.db;
       let updated = 0;
 
       for (const pageId of pageIds) {
@@ -689,7 +701,7 @@ export function registerPagesRoutes(app: Express, storage: DBStorage): void {
         '-' +
         Date.now().toString(36);
 
-      const author = (req as any).user?.email || (req as any).user?.name || 'imported';
+      const author = req.user?.email || req.user?.name || 'imported';
 
       const page = await storage.createWikiPage(
         {
@@ -702,7 +714,7 @@ export function registerPagesRoutes(app: Express, storage: DBStorage): void {
           teamId: teamId ? Number(teamId) : undefined,
           isPublished: true,
         },
-        (req as any).user?.id
+        req.user?.id
       );
 
       res.status(201).json(page);
@@ -716,7 +728,7 @@ export function registerPagesRoutes(app: Express, storage: DBStorage): void {
 
   app.get('/api/stats/dashboard', optionalAuth, async (req: AuthRequest, res) => {
     try {
-      const db = (storage as any).db;
+      const db = storage.db;
       if (!db) return res.status(500).json({ error: 'Database not available' });
 
       const { sql: sqlFn, count } = await import('drizzle-orm');
@@ -830,7 +842,7 @@ export function registerPagesRoutes(app: Express, storage: DBStorage): void {
       try {
         const parentId = parseInt(req.params.id);
         const allPages = await storage.searchWikiPages({ query: '', limit: 1000, offset: 0 });
-        const children = allPages.pages.filter((p: any) => p.parentId === parentId);
+        const children = allPages.pages.filter((p: WikiPage) => p.parentId === parentId);
         res.json(children);
       } catch (error) {
         console.error('Error fetching sub-pages:', error);
@@ -870,13 +882,13 @@ export function registerPagesRoutes(app: Express, storage: DBStorage): void {
         const seenIds = new Set<number>();
         const allPagesRaw = allResults
           .flatMap((r) => r.pages)
-          .filter((p: any) => {
+          .filter((p: WikiPage) => {
             if (seenIds.has(p.id)) return false;
             seenIds.add(p.id);
             return true;
           });
         // Build tree with the merged set
-        const pages = allPagesRaw.map((p: any) => ({
+        const pages = allPagesRaw.map((p: WikiPage): PageTreeNode => ({
           id: p.id,
           title: p.title,
           slug: p.slug,
@@ -884,22 +896,22 @@ export function registerPagesRoutes(app: Express, storage: DBStorage): void {
           folder: p.folder,
           updatedAt: p.updatedAt,
         }));
-        const rootPages = pages.filter((p: any) => !p.parentId);
-        const childMap = new Map<number, any[]>();
-        pages.forEach((p: any) => {
+        const rootPages = pages.filter((p) => !p.parentId);
+        const childMap = new Map<number, PageTreeNode[]>();
+        pages.forEach((p) => {
           if (p.parentId) {
             if (!childMap.has(p.parentId)) childMap.set(p.parentId, []);
             childMap.get(p.parentId)!.push(p);
           }
         });
-        const attachChildren = (page: any, depth = 0): any => {
+        const attachChildren = (page: PageTreeNode, depth = 0): PageTreeNode => {
           const children = childMap.get(page.id) || [];
           return {
             ...page,
-            children: depth < 3 ? children.map((c: any) => attachChildren(c, depth + 1)) : [],
+            children: depth < 3 ? children.map((c) => attachChildren(c, depth + 1)) : [],
           };
         };
-        return res.json(rootPages.map((p: any) => attachChildren(p)));
+        return res.json(rootPages.map((p) => attachChildren(p)));
       } else if (!teamId && !req.user?.id) {
         // Unauthenticated: in prod reject, in dev return only global pages
         if (config.enforceAuthForWrites) {
@@ -916,7 +928,7 @@ export function registerPagesRoutes(app: Express, storage: DBStorage): void {
       });
 
       // Build tree structure
-      const pages = allPages.pages.map((p: any) => ({
+      const pages = allPages.pages.map((p: WikiPage): PageTreeNode => ({
         id: p.id,
         title: p.title,
         slug: p.slug,
@@ -926,9 +938,9 @@ export function registerPagesRoutes(app: Express, storage: DBStorage): void {
       }));
 
       // Separate root pages and children
-      const rootPages = pages.filter((p: any) => !p.parentId);
-      const childMap = new Map<number, any[]>();
-      pages.forEach((p: any) => {
+      const rootPages = pages.filter((p) => !p.parentId);
+      const childMap = new Map<number, PageTreeNode[]>();
+      pages.forEach((p) => {
         if (p.parentId) {
           if (!childMap.has(p.parentId)) childMap.set(p.parentId, []);
           childMap.get(p.parentId)!.push(p);
@@ -936,15 +948,15 @@ export function registerPagesRoutes(app: Express, storage: DBStorage): void {
       });
 
       // Attach children recursively (max 3 levels)
-      const attachChildren = (page: any, depth = 0): any => {
+      const attachChildren = (page: PageTreeNode, depth = 0): PageTreeNode => {
         const children = childMap.get(page.id) || [];
         return {
           ...page,
-          children: depth < 3 ? children.map((c: any) => attachChildren(c, depth + 1)) : [],
+          children: depth < 3 ? children.map((c) => attachChildren(c, depth + 1)) : [],
         };
       };
 
-      const tree = rootPages.map((p: any) => attachChildren(p));
+      const tree = rootPages.map((p) => attachChildren(p));
       res.json(tree);
     } catch (error) {
       console.error('Error fetching page tree:', error);

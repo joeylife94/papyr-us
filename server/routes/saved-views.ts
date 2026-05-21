@@ -40,7 +40,7 @@ export function registerSavedViewsRoutes(app: Express, storage: DBStorage): void
               : undefined;
 
         if (!teamId) {
-          const userTeamIds = (req as any).userTeamIds as number[] | undefined;
+          const userTeamIds = req.userTeamIds as number[] | undefined;
           if (userTeamIds && userTeamIds.length > 0) {
             const allViews = await Promise.all(
               userTeamIds.map((tid) =>

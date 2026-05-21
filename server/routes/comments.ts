@@ -34,7 +34,7 @@ export function registerCommentsRoutes(app: Express, storage: DBStorage): void {
     async (req: AuthRequest, res) => {
       try {
         const pageId = parseInt(req.params.pageId);
-        const authenticatedUser = req.user as any;
+        const authenticatedUser = req.user;
 
         // Server-derive identity from authenticated user; reject anonymous for protected paths
         if (!authenticatedUser?.id) {
@@ -83,7 +83,7 @@ export function registerCommentsRoutes(app: Express, storage: DBStorage): void {
   app.put('/api/comments/:id', authMiddleware, async (req: AuthRequest, res) => {
     try {
       const id = parseInt(req.params.id);
-      const userId = (req.user as any)?.id;
+      const userId = req.user?.id;
 
       // Look up the comment to verify ownership
       const existing = await storage.getComment(id);
@@ -93,7 +93,7 @@ export function registerCommentsRoutes(app: Express, storage: DBStorage): void {
 
       // Owner-based authorization: only the comment author or an admin may edit
       const isOwner = existing.authorUserId != null && existing.authorUserId === userId;
-      const isAdmin = (req.user as any)?.role === 'admin';
+      const isAdmin = req.user?.role === 'admin';
       if (!isOwner && !isAdmin) {
         return res
           .status(403)
@@ -117,7 +117,7 @@ export function registerCommentsRoutes(app: Express, storage: DBStorage): void {
   app.delete('/api/comments/:id', authMiddleware, async (req: AuthRequest, res) => {
     try {
       const id = parseInt(req.params.id);
-      const userId = (req.user as any)?.id;
+      const userId = req.user?.id;
 
       // Look up the comment to verify ownership
       const existing = await storage.getComment(id);
@@ -127,7 +127,7 @@ export function registerCommentsRoutes(app: Express, storage: DBStorage): void {
 
       // Owner-based authorization: comment author, page editor, or admin may delete
       const isOwner = existing.authorUserId != null && existing.authorUserId === userId;
-      const isAdmin = (req.user as any)?.role === 'admin';
+      const isAdmin = req.user?.role === 'admin';
       let isPageEditor = false;
       if (!isOwner && !isAdmin) {
         isPageEditor = await storage.checkPagePermission(userId, existing.pageId, 'editor');

@@ -50,6 +50,8 @@ import {
   type PermissionLevel,
   type TeamMember,
   type TeamRole,
+  type DatabaseField,
+  type Block,
   databaseSchemas,
   databaseRows,
   databaseRelations,
@@ -72,7 +74,7 @@ import {
   publicLinks,
   teamMembers,
 } from '../shared/schema.js';
-import { drizzle } from 'drizzle-orm/node-postgres';
+import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { eq, like, and, sql, desc, asc, isNull, inArray } from 'drizzle-orm';
 import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
@@ -84,8 +86,20 @@ function isBcryptHash(value: string): boolean {
 }
 
 // Simplified and unified DBStorage
+
+/** Minimal schema registered with drizzle for relational (.query.*) access */
+const drizzleSchema = {
+  databaseSchemas,
+  databaseRows,
+  databaseRelations,
+  syncedBlocks,
+  syncedBlockReferences,
+  users,
+  wikiPages,
+};
+
 export class DBStorage {
-  public db: any;
+  public db: NodePgDatabase<typeof drizzleSchema>;
   public pool: Pool;
 
   constructor() {
@@ -114,7 +128,7 @@ export class DBStorage {
       console.error('[DB Pool] Unexpected error on idle client:', err.message);
     });
 
-    this.db = drizzle(this.pool);
+    this.db = drizzle(this.pool, { schema: drizzleSchema });
   }
 
   // All method implementations remain the same as before...
@@ -219,7 +233,9 @@ export class DBStorage {
         .replace(/[:&|!()]/g, ' ')
         .replace(/\s+/g, ' ');
 
-    // Build select with optional rank column
+    // Build select with optional rank column — use a type assertion so drizzle
+    // accepts the dynamically-composed column set.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const selectColumns: any = { ...wikiPages };
     if (useFts && hasQuery && params.sort === 'rank') {
       const q = sanitizeQuery(params.query!);
@@ -287,7 +303,7 @@ export class DBStorage {
         .orderBy(desc(wikiPages.updatedAt));
     }
 
-    const pages = await query;
+    const pages = (await query) as WikiPage[];
     return { pages, total };
   }
 
@@ -964,7 +980,7 @@ export class DBStorage {
 
     // Filter by trigger type (since JSONB query is complex, filter in memory)
     return allWorkflows.filter((w: Workflow) => {
-      const trigger = w.trigger as any;
+      const trigger = w.trigger as { type?: string } | null;
       return trigger?.type === triggerType;
     });
   }
@@ -1001,7 +1017,7 @@ export class DBStorage {
   async createWorkflowRun(run: {
     workflowId: number;
     status: string;
-    triggerData: any;
+    triggerData: Record<string, unknown>;
   }): Promise<number> {
     const result = await this.db.insert(workflowRuns).values(run).returning();
     return result[0].id;
@@ -1016,7 +1032,7 @@ export class DBStorage {
     id: number,
     update: {
       status?: string;
-      results?: any;
+      results?: unknown;
       error?: string;
       completedAt?: Date;
     }
@@ -1333,21 +1349,18 @@ export class DBStorage {
 
   async createDatabaseSchema(
     pageId: number,
-    userId: number,
+    _userId: number,
     schema: {
       name: string;
-      fields: any[];
-      primaryDisplay?: string;
+      fields: DatabaseField[];
     }
   ) {
     const [newSchema] = await this.db
       .insert(databaseSchemas)
       .values({
         pageId,
-        createdBy: userId,
         name: schema.name,
         fields: schema.fields,
-        primaryDisplay: schema.primaryDisplay,
       })
       .returning();
     return newSchema;
@@ -1361,12 +1374,13 @@ export class DBStorage {
 
   async updateDatabaseSchema(
     schemaId: number,
-    updates: { name?: string; fields?: any[]; primaryDisplay?: string }
+    updates: { name?: string; fields?: DatabaseField[] }
   ) {
     const [updated] = await this.db
       .update(databaseSchemas)
       .set({
-        ...updates,
+        ...(updates.name !== undefined && { name: updates.name }),
+        ...(updates.fields !== undefined && { fields: updates.fields }),
         updatedAt: new Date(),
       })
       .where(eq(databaseSchemas.id, schemaId))
@@ -1401,7 +1415,7 @@ export class DBStorage {
   async getDatabaseRows(schemaId: number) {
     return await this.db.query.databaseRows.findMany({
       where: eq(databaseRows.schemaId, schemaId),
-      orderBy: (rows: any, { desc }: any) => [desc(rows.createdAt)],
+      orderBy: (fields, { desc: orderDesc }) => [orderDesc(fields.createdAt)],
     });
   }
 
@@ -1477,23 +1491,23 @@ export class DBStorage {
     }
 
     // Get related rows data
-    const relatedRowIds = relations.map((r: any) => r.toRowId);
+    const relatedRowIds = relations.map((r) => r.toRowId);
     const relatedRows = await this.db.query.databaseRows.findMany({
       where: sql`id = ANY(${relatedRowIds})`,
     });
 
     const values = relatedRows
-      .map((row: any) => row.data[config.targetField])
-      .filter((v: any) => v !== null && v !== undefined);
+      .map((row) => (row.data as Record<string, unknown>)[config.targetField])
+      .filter((v) => v !== null && v !== undefined);
 
     switch (config.aggregation) {
       case 'count':
         return values.length;
       case 'sum':
-        return values.reduce((sum: number, val: any) => sum + Number(val), 0);
+        return values.reduce((sum: number, val) => sum + Number(val), 0);
       case 'avg':
         return values.length > 0
-          ? values.reduce((sum: number, val: any) => sum + Number(val), 0) / values.length
+          ? values.reduce((sum: number, val) => sum + Number(val), 0) / values.length
           : null;
       case 'min':
         return values.length > 0 ? Math.min(...values.map(Number)) : null;
@@ -1508,12 +1522,12 @@ export class DBStorage {
 
   // ==================== Synced Block Operations ====================
 
-  async createSyncedBlock(originalBlockId: string, userId: number, content: any[]) {
+  async createSyncedBlock(originalBlockId: string, pageId: number, content: Block[]) {
     const [syncedBlock] = await this.db
       .insert(syncedBlocks)
       .values({
         originalBlockId,
-        createdBy: userId,
+        pageId,
         content,
       })
       .returning();
@@ -1526,12 +1540,12 @@ export class DBStorage {
     });
   }
 
-  async updateSyncedBlockContent(originalBlockId: string, content: any[]) {
+  async updateSyncedBlockContent(originalBlockId: string, content: Block[]) {
     const [updated] = await this.db
       .update(syncedBlocks)
       .set({
         content,
-        lastSyncedAt: new Date(),
+        updatedAt: new Date(),
       })
       .where(eq(syncedBlocks.originalBlockId, originalBlockId))
       .returning();
@@ -1606,7 +1620,7 @@ export class DBStorage {
 
     // Combine all accessible page IDs
     const allPageIds = [
-      ...authorPages.map((p: any) => p.id),
+      ...authorPages.map((p: { id: number }) => p.id),
       ...permissionedPages.map((p: { pageId: number }) => p.pageId),
       ...teamPages.map((p: { pageId: number }) => p.pageId),
     ];
@@ -1618,16 +1632,16 @@ export class DBStorage {
       where: sql`page_id = ANY(${pageIds})`,
     });
 
-    const syncedBlockIds = Array.from(new Set(references.map((r: any) => r.syncedBlockId)));
+    const syncedBlockIds = Array.from(new Set(references.map((r) => r.syncedBlockId)));
 
     const blocks = await this.db.query.syncedBlocks.findMany({
       where: sql`id = ANY(${syncedBlockIds})`,
     });
 
     // Count references for each block
-    return blocks.map((block: any) => ({
+    return blocks.map((block) => ({
       ...block,
-      referenceCount: references.filter((r: any) => r.syncedBlockId === block.id).length,
+      referenceCount: references.filter((r) => r.syncedBlockId === block.id).length,
     }));
   }
 }

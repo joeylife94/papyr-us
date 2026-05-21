@@ -17,7 +17,7 @@ export function registerDashboardRoutes(app: Express, storage: DBStorage): void 
     requireTeamMembership,
     async (req: AuthRequest, res) => {
       try {
-        const userTeamIds: number[] = (req as any).userTeamIds ?? [];
+        const userTeamIds: number[] = req.userTeamIds ?? [];
         const overview = await storage.getDashboardOverview(userTeamIds);
         res.json(overview);
       } catch (error) {
@@ -34,7 +34,7 @@ export function registerDashboardRoutes(app: Express, storage: DBStorage): void 
       try {
         const teamId = req.params.teamId;
         // Verify requester belongs to the team being queried
-        const userTeamIds = (req as any).userTeamIds as number[] | undefined;
+        const userTeamIds = req.userTeamIds as number[] | undefined;
         if (userTeamIds && !userTeamIds.map(String).includes(teamId)) {
           return res.status(403).json({ message: 'You are not a member of this team' });
         }
@@ -74,7 +74,7 @@ export function registerDashboardRoutes(app: Express, storage: DBStorage): void 
   app.get('/api/stats/overview', authMiddleware, async (req: AuthRequest, res) => {
     try {
       const { sql } = await import('drizzle-orm');
-      const db = (storage as any).db;
+      const db = storage.db;
 
       const [pageCount] = await db.select({ count: sql<number>`COUNT(*)` }).from(wikiPages);
       const [userCount] = await db.select({ count: sql<number>`COUNT(*)` }).from(users);

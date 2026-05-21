@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import cookieParser from 'cookie-parser';
 import { config } from './config.js';
 import helmet from 'helmet';
+import type { WikiPage } from '../shared/schema.js';
 
 const SENSITIVE_KEYS = new Set([
   'token',
@@ -115,8 +116,41 @@ export function getServerConfig() {
   return { port, host, isProduction, isReplit };
 }
 
+/**
+ * Shape of the JWT access-token payload issued by the auth routes.
+ * `pagePermission` and `teamRole` are optionally attached by middleware.
+ */
+export interface JWTUser {
+  id: number;
+  email: string;
+  name?: string;
+  role: string;
+  /** Attached by requirePagePermission middleware — not a JWT claim */
+  pagePermission?: string;
+  /** Attached by requireTeamRole middleware — not a JWT claim */
+  teamRole?: string;
+  iat?: number;
+  exp?: number;
+}
+
+/**
+ * Augment Passport's Express.User so that `req.user` from Passport-based
+ * OAuth callbacks is compatible with our JWTUser shape.
+ */
+declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
+  namespace Express {
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+    interface User extends JWTUser {}
+  }
+}
+
 interface AuthRequest extends Request {
-  user?: any;
+  user?: JWTUser;
+  /** Populated by requireTeamMembership middleware */
+  userTeamIds?: number[];
+  /** Populated by requirePagePermission middleware (slug-based lookup cache) */
+  _resolvedPage?: WikiPage;
 }
 
 function extractBearerToken(authorizationHeader: string | undefined): string | undefined {
@@ -137,13 +171,13 @@ function extractBearerToken(authorizationHeader: string | undefined): string | u
  * intentionally does not read from `req.query`.
  */
 function getRequestToken(req: AuthRequest): string | undefined {
-  return (req as any).cookies?.accessToken || extractBearerToken(req.headers.authorization);
+  return req.cookies?.accessToken || extractBearerToken(req.headers.authorization);
 }
 
-function verifyRequestToken(req: AuthRequest): any {
+function verifyRequestToken(req: AuthRequest): JWTUser | undefined {
   const token = getRequestToken(req);
-  if (!token) return null;
-  return jwt.verify(token, config.jwtSecret);
+  if (!token) return undefined;
+  return jwt.verify(token, config.jwtSecret) as JWTUser;
 }
 
 export function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
@@ -198,7 +232,7 @@ export function optionalAuth(req: AuthRequest, _res: Response, next: NextFunctio
 export function requireTeamMembership(req: AuthRequest, res: Response, next: NextFunction) {
   // Dev mode without user — attach empty teamIds and continue
   if (!config.enforceAuthForWrites && (!req.user || !req.user.id)) {
-    (req as any).userTeamIds = [];
+    req.userTeamIds = [];
     return next();
   }
 
@@ -215,7 +249,7 @@ export function requireTeamMembership(req: AuthRequest, res: Response, next: Nex
       const userTeamIds = await storage.getUserTeamIds(req.user!.id);
 
       // Attach for downstream handlers to use for scoping
-      (req as any).userTeamIds = userTeamIds;
+      req.userTeamIds = userTeamIds;
 
       if (!teamIdRaw) {
         // No specific team requested — handler must scope using req.userTeamIds
@@ -248,11 +282,7 @@ export function requireTeamMembership(req: AuthRequest, res: Response, next: Nex
 export function requireAdmin(req: AuthRequest, res: Response, next: NextFunction) {
   // Try to decode JWT directly if provided (so this middleware can be used standalone)
   try {
-    const payload = verifyRequestToken(req) as {
-      id?: number;
-      email?: string;
-      role?: string;
-    } | null;
+    const payload = verifyRequestToken(req);
     if (payload) {
       req.user = payload;
     }
@@ -317,7 +347,7 @@ export function buildRateLimiter(opts?: { windowMs?: number; max?: number }) {
       try {
         const token = getRequestToken(req as AuthRequest);
         if (token) {
-          const payload: any = jwt.decode(token);
+        const payload = jwt.decode(token) as JWTUser | null;
           if (payload?.id || payload?.email) {
             return `${payload.id || ''}|${payload.email || ''}`;
           }
@@ -461,7 +491,7 @@ export function requirePagePermission(
           }
           pageId = page.id;
           // Store resolved page on request so handler can reuse it
-          (req as any)._resolvedPage = page;
+          req._resolvedPage = page;
         } else {
           return res.status(400).json({ message: 'Invalid page ID' });
         }
@@ -483,10 +513,9 @@ export function requirePagePermission(
       }
 
       // Store permission in request for later use
-      req.user = {
-        ...req.user,
-        pagePermission: requiredPermission,
-      };
+      if (req.user) {
+        req.user = { ...req.user, pagePermission: requiredPermission };
+      }
 
       next();
     } catch (error) {
@@ -514,10 +543,9 @@ export function checkPagePermission() {
       const userPermission = await storage.getUserPagePermission(userId, pageId);
 
       // Store permission in request
-      req.user = {
-        ...req.user,
-        pagePermission: userPermission,
-      };
+      if (req.user) {
+        req.user = { ...req.user, pagePermission: userPermission ?? undefined };
+      }
 
       next();
     } catch (error) {

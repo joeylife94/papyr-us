@@ -1,5 +1,4 @@
 import type { Express } from 'express';
-import type { Request } from 'express';
 import {
   authMiddleware,
   requireAuthIfEnabled,
@@ -21,8 +20,8 @@ import {
 import path from 'path';
 import { existsSync } from 'fs';
 
-interface MulterRequest extends Request {
-  files?: any[];
+interface MulterRequest extends AuthRequest {
+  files?: Express.Multer.File[] | { [fieldname: string]: Express.Multer.File[] };
 }
 
 const rlUpload = buildRateLimiter({ windowMs: 60_000, max: 30 });
@@ -34,7 +33,7 @@ export function registerUploadsRoutes(app: Express, storage: DBStorage): void {
     requireAuthIfEnabled,
     requireTeamMembership,
     upload.array('files', 5),
-    async (req: any, res) => {
+    async (req: MulterRequest, res) => {
       try {
         if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
           return res.status(400).json({ message: 'No files uploaded' });
@@ -42,18 +41,18 @@ export function registerUploadsRoutes(app: Express, storage: DBStorage): void {
 
         const teamId = req.body.teamId;
         const uploadedFiles = await Promise.all(
-          req.files.map((file: any) => processUploadedFile(file, teamId))
+          (req.files as Express.Multer.File[]).map((file: Express.Multer.File) => processUploadedFile(file, teamId))
         );
 
         res.status(201).json({
           message: `${uploadedFiles.length} file(s) uploaded successfully`,
           files: uploadedFiles,
         });
-      } catch (error: any) {
+      } catch (error) {
         console.error('Upload error:', error);
         res.status(400).json({
           message: 'Upload failed',
-          error: error.message,
+          error: error instanceof Error ? error.message : 'Unknown error',
         });
       }
     }
@@ -149,7 +148,7 @@ export function registerUploadsRoutes(app: Express, storage: DBStorage): void {
 
       if (!teamId) {
         // No teamId specified — scope to user's teams to prevent full data leak
-        const userTeamIds = (req as any).userTeamIds as number[] | undefined;
+        const userTeamIds = req.userTeamIds;
         if (userTeamIds && userTeamIds.length > 0) {
           const allLists = await Promise.all(
             userTeamIds.map((tid) => listUploadedFiles(String(tid)))
