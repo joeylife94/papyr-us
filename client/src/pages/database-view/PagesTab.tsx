@@ -73,7 +73,7 @@ export function PagesTab({ teamName, viewMode, galleryMode, onGalleryModeChange 
         description: page.content?.substring(0, 100),
         tags: page.tags,
         author: page.author,
-        date: page.createdAt,
+        date: page.createdAt ?? undefined,
         status: page.isPublished ? 'published' : 'draft',
       })),
     [transformedPages]

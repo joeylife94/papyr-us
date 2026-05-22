@@ -47,6 +47,12 @@ const notificationColors = {
 
 import { useSocket } from '@/lib/socket';
 
+type NotificationType = keyof typeof notificationIcons;
+
+function isKnownType(t: string): t is NotificationType {
+  return t in notificationIcons;
+}
+
 export function NotificationBell({ recipientId }: NotificationBellProps) {
   const [isOpen, setIsOpen] = useState(false);
   const queryClient = useQueryClient();
@@ -277,8 +283,8 @@ export function NotificationBell({ recipientId }: NotificationBellProps) {
               {unreadNotifications.length > 0 && (
                 <>
                   {unreadNotifications.map((notification) => {
-                    const Icon = notificationIcons[notification.type];
-                    const iconColor = notificationColors[notification.type];
+                    const Icon = isKnownType(notification.type) ? notificationIcons[notification.type] : MessageSquare;
+                    const iconColor = isKnownType(notification.type) ? notificationColors[notification.type] : 'text-gray-500';
 
                     return (
                       <DropdownMenuItem
@@ -305,7 +311,7 @@ export function NotificationBell({ recipientId }: NotificationBellProps) {
                             {notification.content}
                           </p>
                           <p className="text-xs text-muted-foreground mt-1">
-                            {formatTimeAgo(notification.createdAt)}
+                            {formatTimeAgo(typeof notification.createdAt === 'string' ? notification.createdAt : notification.createdAt.toISOString())}
                           </p>
                         </div>
                         <div className="flex-shrink-0">
@@ -321,8 +327,8 @@ export function NotificationBell({ recipientId }: NotificationBellProps) {
 
               {/* Read notifications */}
               {readNotifications.map((notification) => {
-                const Icon = notificationIcons[notification.type];
-                const iconColor = notificationColors[notification.type];
+                const Icon = isKnownType(notification.type) ? notificationIcons[notification.type] : MessageSquare;
+                const iconColor = isKnownType(notification.type) ? notificationColors[notification.type] : 'text-gray-500';
 
                 return (
                   <DropdownMenuItem
@@ -349,7 +355,7 @@ export function NotificationBell({ recipientId }: NotificationBellProps) {
                         {notification.content}
                       </p>
                       <p className="text-xs text-muted-foreground mt-1">
-                        {formatTimeAgo(notification.createdAt)}
+                        {formatTimeAgo(typeof notification.createdAt === 'string' ? notification.createdAt : notification.createdAt.toISOString())}
                       </p>
                     </div>
                   </DropdownMenuItem>
