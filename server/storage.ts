@@ -55,6 +55,7 @@ import {
   databaseRelations,
   syncedBlocks,
   syncedBlockReferences,
+  passwordResetTokens,
   users,
   calendarEvents,
   directories,
@@ -1629,6 +1630,59 @@ export class DBStorage {
       ...block,
       referenceCount: references.filter((r: any) => r.syncedBlockId === block.id).length,
     }));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Password Reset Tokens
+  // ---------------------------------------------------------------------------
+
+  /** Create a password reset token valid for `ttlMinutes` minutes (default 60). */
+  async createPasswordResetToken(userId: number, token: string, ttlMinutes = 60) {
+    const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000);
+    const [row] = await this.db
+      .insert(passwordResetTokens)
+      .values({ userId, token, expiresAt })
+      .returning();
+    return row;
+  }
+
+  /** Look up a token that has not yet been used and has not expired. */
+  async findValidPasswordResetToken(token: string) {
+    const [row] = await this.db
+      .select()
+      .from(passwordResetTokens)
+      .where(
+        and(
+          eq(passwordResetTokens.token, token),
+          isNull(passwordResetTokens.usedAt),
+          sql`${passwordResetTokens.expiresAt} > NOW()`
+        )
+      );
+    return row ?? null;
+  }
+
+  /** Mark a token as used so it cannot be replayed. */
+  async markPasswordResetTokenUsed(id: number) {
+    await this.db
+      .update(passwordResetTokens)
+      .set({ usedAt: new Date() })
+      .where(eq(passwordResetTokens.id, id));
+  }
+
+  /** Invalidate all existing (unused) tokens for a user — called after a successful reset. */
+  async invalidatePasswordResetTokens(userId: number) {
+    await this.db
+      .delete(passwordResetTokens)
+      .where(eq(passwordResetTokens.userId, userId));
+  }
+
+  /** Find a user by email (used during forgot-password flow). */
+  async findUserByEmail(email: string) {
+    const [row] = await this.db
+      .select()
+      .from(users)
+      .where(eq(users.email, email.toLowerCase().trim()));
+    return row ?? null;
   }
 }
 

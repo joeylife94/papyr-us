@@ -32,6 +32,8 @@ import NotFound from '@/pages/not-found';
 import SharedPage from '@/pages/shared-page';
 import LoginPage from '@/pages/login';
 import RegisterPage from '@/pages/register';
+import ForgotPasswordPage from '@/pages/forgot-password';
+import ResetPasswordPage from '@/pages/reset-password';
 import { FeatureGate } from '@/components/FeatureGate';
 
 // Components
@@ -123,6 +125,8 @@ function App() {
                 <Routes>
                   <Route path="/login" element={<LoginPage />} />
                   <Route path="/register" element={<RegisterPage />} />
+                  <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+                  <Route path="/reset-password" element={<ResetPasswordPage />} />
                   <Route path="/share/:token" element={<SharedPage />} />
                   <Route element={<ProtectedRoute />}>
                     <Route element={<AppLayout />}>
