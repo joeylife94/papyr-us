@@ -66,7 +66,7 @@ Verifies that the **application works with real infrastructure**. `docker-compos
 spins up a dedicated PostgreSQL instance (port 5434) and Redis (port 6380) using tmpfs mounts
 (wiped on container stop). `scripts/run-layer4.mjs` manages the full lifecycle: Docker
 availability check → `docker compose up` → health wait → Vitest run → `docker compose down`.
-On machines without Docker the script logs `SKIP` and exits 0.
+On machines without Docker the script logs a `FATAL` error and exits 1 (hard fail) to prevent false-positive passes from untested infrastructure.
 
 ### Layer 5 · E2E Tests
 
@@ -79,7 +79,7 @@ These layers utilize an **auto-provisioning lifecycle**. The runner script
 (`docker-compose.test.yml` — PostgreSQL on port 5434, Redis on port 6380), injects the
 necessary `DATABASE_URL` and `REDIS_URL` into the process environment, and tears it down after
 execution via a `try/finally` block. **Manual environment variable setup is no longer
-required.** When Docker is unavailable the script logs `SKIP` and exits 0. Uses `waitFor`
+required.** When Docker is unavailable the script logs a `FATAL` error and exits 1 (hard fail). Uses `waitFor`
 and `networkidle` — never `sleep`.
 
 ### Layer 6 · Visual & A11y Tests
@@ -94,7 +94,7 @@ These layers utilize an **auto-provisioning lifecycle**. The runner script
 (`docker-compose.test.yml` — PostgreSQL on port 5434, Redis on port 6380), injects the
 necessary `DATABASE_URL` and `REDIS_URL` into the process environment, and tears it down after
 execution via a `try/finally` block. **Manual environment variable setup is no longer
-required.** When Docker is unavailable the script logs `SKIP` and exits 0.
+required.** When Docker is unavailable the script logs a `FATAL` error and exits 1 (hard fail).
 
 ## Upgrade Roadmap
 
