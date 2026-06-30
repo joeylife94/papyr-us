@@ -476,8 +476,13 @@ export async function registerRoutes(
 
       const appUrl = process.env.APP_URL || `http://localhost:${process.env.PORT || 5001}`;
       const resetUrl = `${appUrl}/reset-password?token=${token}`;
-      // Escape for safe embedding in HTML attribute and text context
-      const resetUrlEscaped = resetUrl.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      // Escape all HTML special characters before embedding in email HTML
+      const resetUrlEscaped = resetUrl
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#x27;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
 
       await sendEmail({
         to: user.email,
