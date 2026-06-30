@@ -43,4 +43,35 @@ The table "Skip Condition" column already correctly described the trigger condit
 
 ## 3. FIX INSTRUCTIONS
 
-No further action required. All identified issues have been resolved.
+All issues identified in this audit pass have been resolved.
+
+---
+
+## 4. REMAINING WORK (Post-Audit)
+
+The items below were **not part of the original audit scope** but were identified during the improvement pass. They are tracked here for follow-up.
+
+### 🔒 Security / Infrastructure
+
+1. **Nonce-based CSP** (`server/services/security.ts:78`)
+   - Current: `script-src 'self' 'unsafe-inline'` — inline scripts permitted.
+   - Action: Generate a per-request nonce, attach it to `<script>` tags, and replace `'unsafe-inline'` with `'nonce-<value>'`.
+
+2. **Expired token cleanup job**
+   - Current: expired `password_reset_tokens` rows accumulate indefinitely.
+   - Action: Add a scheduled job (e.g. daily cron via `node-cron`) that executes `DELETE FROM password_reset_tokens WHERE expires_at < NOW()`.
+
+3. **`idx_prt_expires_at` index** ← *added in this PR (migration 0009)*
+   - Prerequisite for the cleanup job above to run efficiently.
+
+### 🧪 Tests
+
+4. **E2E coverage for forgot-password / reset-password flows**
+   - New Playwright specs for the `/forgot-password` and `/reset-password` pages are not yet written.
+
+5. **E2E coverage for `database-view/` refactor**
+   - `database-view/FilesTab.tsx` kanban path is untested; Playwright coverage was not updated after the refactor.
+
+### 📄 Docs
+
+6. **`docs/roadmap.md`** — completed sprint backlog entries need to be archived / checked off.
