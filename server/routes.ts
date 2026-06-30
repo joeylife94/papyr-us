@@ -469,6 +469,8 @@ export async function registerRoutes(
       // Invalidate any existing tokens before creating a new one
       await storage.invalidatePasswordResetTokens(user.id);
 
+      // 32 random bytes (256 bits of entropy) — sufficient to make brute-force
+      // or guessing attacks computationally infeasible within the 60-minute window.
       const token = randomBytes(32).toString('hex');
       await storage.createPasswordResetToken(user.id, token, 60); // 60 min TTL
 
@@ -537,9 +539,21 @@ export async function registerRoutes(
         .set({ hashedPassword, updatedAt: new Date() })
         .where(eq(users.id, resetToken.userId));
 
-      // Mark token used and clean up remaining tokens
+      // Mark token used and expire all remaining tokens for this user
       await storage.markPasswordResetTokenUsed(resetToken.id);
       await storage.invalidatePasswordResetTokens(resetToken.userId);
+
+      // Invalidate existing auth sessions so any previously-issued tokens cannot be reused
+      res.clearCookie('accessToken', {
+        httpOnly: true,
+        secure: config.isProduction,
+        sameSite: 'lax',
+      });
+      res.clearCookie('refreshToken', {
+        httpOnly: true,
+        secure: config.isProduction,
+        sameSite: 'lax',
+      });
 
       logAuditEvent({
         pool: storage.pool,

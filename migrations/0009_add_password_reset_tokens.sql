@@ -10,5 +10,6 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- The UNIQUE constraint above already creates an implicit index on token.
+-- Only a separate index on user_id is needed for the invalidation queries.
 CREATE INDEX IF NOT EXISTS idx_prt_user_id ON password_reset_tokens (user_id);
-CREATE INDEX IF NOT EXISTS idx_prt_token   ON password_reset_tokens (token);

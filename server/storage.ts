@@ -1669,11 +1669,19 @@ export class DBStorage {
       .where(eq(passwordResetTokens.id, id));
   }
 
-  /** Invalidate all existing (unused) tokens for a user — called after a successful reset. */
+  /**
+   * Expire all unused tokens for a user so they cannot be replayed.
+   * Rows are marked with `usedAt = now()` rather than deleted to preserve
+   * the audit trail (when/how many resets were requested per user).
+   * Called both before issuing a new token (dedup) and after a successful reset.
+   */
   async invalidatePasswordResetTokens(userId: number) {
     await this.db
-      .delete(passwordResetTokens)
-      .where(eq(passwordResetTokens.userId, userId));
+      .update(passwordResetTokens)
+      .set({ usedAt: new Date() })
+      .where(
+        and(eq(passwordResetTokens.userId, userId), isNull(passwordResetTokens.usedAt))
+      );
   }
 
   /** Find a user by email (used during forgot-password flow). */
