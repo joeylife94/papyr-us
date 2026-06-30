@@ -476,12 +476,14 @@ export async function registerRoutes(
 
       const appUrl = process.env.APP_URL || `http://localhost:${process.env.PORT || 5001}`;
       const resetUrl = `${appUrl}/reset-password?token=${token}`;
+      // Escape for safe embedding in HTML attribute and text context
+      const resetUrlEscaped = resetUrl.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
       await sendEmail({
         to: user.email,
         subject: 'Papyr.us — 비밀번호 재설정',
         text: `비밀번호를 재설정하려면 아래 링크를 클릭하세요 (1시간 내 유효):\n\n${resetUrl}\n\n본인이 요청하지 않은 경우 이 이메일을 무시하세요.`,
-        html: `<p>비밀번호를 재설정하려면 아래 링크를 클릭하세요 (1시간 내 유효):</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>본인이 요청하지 않은 경우 이 이메일을 무시하세요.</p>`,
+        html: `<p>비밀번호를 재설정하려면 아래 링크를 클릭하세요 (1시간 내 유효):</p><p><a href="${resetUrlEscaped}">${resetUrlEscaped}</a></p><p>본인이 요청하지 않은 경우 이 이메일을 무시하세요.</p>`,
       });
 
       logAuditEvent({

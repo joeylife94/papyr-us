@@ -11,5 +11,8 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
 );
 
 -- The UNIQUE constraint above already creates an implicit index on token.
--- Only a separate index on user_id is needed for the invalidation queries.
+-- Single-column index on user_id for simple user lookups.
 CREATE INDEX IF NOT EXISTS idx_prt_user_id ON password_reset_tokens (user_id);
+-- Composite index on (user_id, used_at) to optimise the invalidation query
+-- which filters on both columns simultaneously.
+CREATE INDEX IF NOT EXISTS idx_prt_user_id_used_at ON password_reset_tokens (user_id, used_at);

@@ -74,7 +74,7 @@ import {
   teamMembers,
 } from '../shared/schema.js';
 import { drizzle } from 'drizzle-orm/node-postgres';
-import { eq, like, and, sql, desc, asc, isNull, inArray } from 'drizzle-orm';
+import { eq, like, and, sql, desc, asc, isNull, inArray, gt } from 'drizzle-orm';
 import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 
@@ -1655,7 +1655,7 @@ export class DBStorage {
         and(
           eq(passwordResetTokens.token, token),
           isNull(passwordResetTokens.usedAt),
-          sql`${passwordResetTokens.expiresAt} > NOW()`
+          gt(passwordResetTokens.expiresAt, new Date())
         )
       );
     return row ?? null;
