@@ -14,3 +14,8 @@ backups
 pgdata
 redisdata
 .env
+.env.*
+!.env.example
+!.env.firebat.example
+playwright-report
+test-results
