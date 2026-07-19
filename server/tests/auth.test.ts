@@ -77,7 +77,7 @@ describe('Authentication API', () => {
       const response = await request(app).post('/api/auth/register').send({
         name: 'Test User',
         email: 'new.user@test.com',
-        password: 'password123',
+        password: 'Password123!',
       });
 
       expect(response.status).toBe(201);
@@ -94,7 +94,7 @@ describe('Authentication API', () => {
       const response = await request(app).post('/api/auth/register').send({
         name: 'Existing User',
         email: 'existing.user@test.com',
-        password: 'password123',
+        password: 'Password123!',
       });
 
       expect(response.status).toBe(409);
