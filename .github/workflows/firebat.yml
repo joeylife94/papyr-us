@@ -1,0 +1,186 @@
+name: Firebat Deployment Gate
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firebat-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  application-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Static analysis and secret scan
+        run: npm run test:static
+
+      - name: Unit and smoke tests
+        run: npm test
+
+      - name: Production build
+        run: npm run build
+
+  firebat-compose:
+    needs: application-validation
+    runs-on: ubuntu-latest
+    env:
+      APP_VERSION: ${{ github.sha }}
+      GIT_REVISION: ${{ github.sha }}
+      FIREBAT_BASE_URL: http://127.0.0.1:8801
+      FIREBAT_SMOKE_EMAIL: firebat-ci@example.com
+      FIREBAT_SMOKE_PASSWORD: FirebatSmoke!123
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install smoke-test dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Create isolated CI environment
+        run: |
+          cat > .env.firebat <<'EOF'
+          HOST_PORT=8801
+          POSTGRES_USER=papyr
+          POSTGRES_PASSWORD=firebat_ci_database_password
+          POSTGRES_DB=papyr
+          JWT_SECRET=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          ADMIN_PASSWORD=FirebatAdminGuard!123
+          ADMIN_EMAILS=firebat-ci@example.com
+          ENFORCE_AUTH_WRITES=true
+          ALLOW_ADMIN_PASSWORD=false
+          RATE_LIMIT_ENABLED=false
+          PAPYR_MODE=team
+          FEATURE_TEAMS=true
+          FEATURE_ADMIN=true
+          FEATURE_CALENDAR=true
+          FEATURE_TEMPLATES=true
+          FEATURE_AUTOMATION=false
+          FEATURE_NOTIFICATIONS=true
+          FEATURE_COLLABORATION=true
+          COLLAB_REQUIRE_AUTH=1
+          CORS_ALLOWED_ORIGINS=http://127.0.0.1:8801
+          CORS_ALLOW_CREDENTIALS=true
+          REDIS_ENABLED=true
+          OPENAI_API_KEY=
+          FIREBAT_SEED_ADMIN_NAME=Firebat CI
+          FIREBAT_SEED_ADMIN_EMAIL=firebat-ci@example.com
+          FIREBAT_SEED_ADMIN_PASSWORD=FirebatSmoke!123
+          SENTRY_DSN=
+          SENTRY_TRACES_SAMPLE_RATE=0.0
+          METRICS_ENABLED=true
+          LOG_LEVEL=info
+          EOF
+          chmod 600 .env.firebat
+
+      - name: Validate Compose configuration
+        run: docker compose --env-file .env.firebat -f compose.firebat.yml config --quiet
+
+      - name: Build production and migration images
+        run: |
+          docker compose --env-file .env.firebat -f compose.firebat.yml build app migrate
+          docker compose --profile seed --env-file .env.firebat -f compose.firebat.yml build seed
+
+      - name: Start PostgreSQL and Redis
+        run: docker compose --env-file .env.firebat -f compose.firebat.yml up -d db redis
+
+      - name: Run idempotent schema synchronization
+        run: |
+          docker compose --env-file .env.firebat -f compose.firebat.yml run --rm migrate
+          docker compose --env-file .env.firebat -f compose.firebat.yml run --rm migrate
+
+      - name: Run idempotent admin seed
+        run: |
+          docker compose --profile seed --env-file .env.firebat -f compose.firebat.yml run --rm seed
+          docker compose --profile seed --env-file .env.firebat -f compose.firebat.yml run --rm seed
+
+      - name: Start application
+        run: docker compose --env-file .env.firebat -f compose.firebat.yml up -d app
+
+      - name: Verify health, login, and WebSocket
+        run: |
+          sh scripts/healthcheck-firebat.sh
+          node scripts/smoke-firebat.mjs
+
+      - name: Validate image and runtime hardening
+        run: |
+          test "$(docker inspect --format '{{.Config.User}}' firebat-papyr-us)" = "node"
+          test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' firebat-papyr-us)" = "true"
+          test "$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' firebat-papyr-us)" = "$GITHUB_SHA"
+          test "$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' firebat-papyr-us)" = "$GITHUB_SHA"
+          test -z "$(docker port firebat-papyr-us-db 2>/dev/null)"
+          test -z "$(docker port firebat-papyr-us-redis 2>/dev/null)"
+          docker port firebat-papyr-us 5001/tcp | grep -Fx '127.0.0.1:8801'
+          curl -fsS http://127.0.0.1:8801/version | grep -F "$GITHUB_SHA"
+          curl -fsS http://127.0.0.1:8801/health | grep -F '"ai":"optional"'
+
+      - name: Create persistence markers
+        run: |
+          docker compose --env-file .env.firebat -f compose.firebat.yml exec -T db \
+            psql -U papyr -d papyr -v ON_ERROR_STOP=1 -c \
+            "INSERT INTO wiki_pages (title, slug, content, folder, author) VALUES ('Firebat CI', 'firebat-ci-persistence', 'persisted-before-recreate', 'docs', 'CI') ON CONFLICT (slug) DO UPDATE SET content = EXCLUDED.content;"
+          docker compose --env-file .env.firebat -f compose.firebat.yml exec -T redis \
+            redis-cli SET firebat:persistence persisted-before-recreate
+          docker compose --env-file .env.firebat -f compose.firebat.yml exec -T app \
+            sh -c "printf '%s' persisted-before-recreate > /app/server/uploads/files/firebat-ci-persistence.txt"
+
+      - name: Recreate containers without deleting volumes
+        run: |
+          docker compose --env-file .env.firebat -f compose.firebat.yml up -d --force-recreate db redis
+          for attempt in $(seq 1 60); do
+            db_status=$(docker inspect --format '{{.State.Health.Status}}' firebat-papyr-us-db 2>/dev/null || true)
+            redis_status=$(docker inspect --format '{{.State.Health.Status}}' firebat-papyr-us-redis 2>/dev/null || true)
+            if [ "$db_status" = healthy ] && [ "$redis_status" = healthy ]; then break; fi
+            sleep 2
+          done
+          test "$(docker inspect --format '{{.State.Health.Status}}' firebat-papyr-us-db)" = healthy
+          test "$(docker inspect --format '{{.State.Health.Status}}' firebat-papyr-us-redis)" = healthy
+          docker compose --env-file .env.firebat -f compose.firebat.yml up -d --force-recreate app
+          sh scripts/healthcheck-firebat.sh
+
+      - name: Verify PostgreSQL, Redis, and upload persistence
+        run: |
+          docker compose --env-file .env.firebat -f compose.firebat.yml exec -T db \
+            psql -U papyr -d papyr -tAc "SELECT content FROM wiki_pages WHERE slug='firebat-ci-persistence'" \
+            | grep -Fx 'persisted-before-recreate'
+          docker compose --env-file .env.firebat -f compose.firebat.yml exec -T redis \
+            redis-cli GET firebat:persistence | grep -Fx 'persisted-before-recreate'
+          docker compose --env-file .env.firebat -f compose.firebat.yml exec -T app \
+            cat /app/server/uploads/files/firebat-ci-persistence.txt | grep -Fx 'persisted-before-recreate'
+
+      - name: Confirm local environment file is ignored
+        run: |
+          git check-ignore -q .env.firebat
+          test -z "$(git ls-files .env.firebat)"
+
+      - name: Show service logs on failure
+        if: failure()
+        run: docker compose --env-file .env.firebat -f compose.firebat.yml logs --tail=300 app db redis
+
+      - name: Remove ephemeral CI stack
+        if: always()
+        run: docker compose --profile seed --env-file .env.firebat -f compose.firebat.yml down -v --remove-orphans
