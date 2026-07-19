@@ -4,14 +4,27 @@ set -eu
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$ROOT_DIR"
 
-if [ -f .env.firebat ]; then
-  set -a
-  # shellcheck disable=SC1091
-  . ./.env.firebat
-  set +a
-fi
+read_env_value() {
+  key=$1
+  file=$2
+  sed -n "s/^${key}=//p" "$file" \
+    | tail -n 1 \
+    | sed -e 's/\r$//' -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"
+}
 
+HOST_PORT=${HOST_PORT:-}
+if [ -z "$HOST_PORT" ] && [ -f .env.firebat ]; then
+  HOST_PORT=$(read_env_value HOST_PORT .env.firebat)
+fi
 HOST_PORT=${HOST_PORT:-8801}
+
+case "$HOST_PORT" in
+  ''|*[!0-9]*)
+    printf '[FAIL] HOST_PORT must be numeric: %s\n' "$HOST_PORT" >&2
+    exit 1
+    ;;
+esac
+
 MAX_ATTEMPTS=${HEALTHCHECK_MAX_ATTEMPTS:-60}
 SLEEP_SECONDS=${HEALTHCHECK_SLEEP_SECONDS:-2}
 HEALTH_URL="http://127.0.0.1:${HOST_PORT}/health"
