@@ -1,0 +1,64 @@
+# syntax=docker/dockerfile:1.7
+
+FROM node:20-bookworm-slim AS dependencies
+WORKDIR /app
+ENV HUSKY=0
+COPY package.json package-lock.json ./
+RUN npm ci --legacy-peer-deps
+
+FROM dependencies AS build
+COPY . .
+RUN npm run build
+
+FROM dependencies AS migrate
+COPY . .
+CMD ["npm", "run", "db:push", "--", "--force"]
+
+FROM migrate AS seed
+CMD ["node", "scripts/seed-firebat.mjs"]
+
+FROM node:20-bookworm-slim AS production-dependencies
+WORKDIR /app
+ENV NODE_ENV=production
+COPY package.json package-lock.json ./
+RUN node -e "const fs=require('fs'); const p=require('./package.json'); delete p.scripts.prepare; fs.writeFileSync('./package.json', JSON.stringify(p));" \
+    && npm ci --omit=dev --legacy-peer-deps \
+    && npm cache clean --force
+
+FROM node:20-bookworm-slim AS runtime
+ARG APP_VERSION=local
+ARG GIT_REVISION=unknown
+
+LABEL org.opencontainers.image.title="papyr-us" \
+      org.opencontainers.image.description="Papyr.us Firebat production service" \
+      org.opencontainers.image.version="${APP_VERSION}" \
+      org.opencontainers.image.revision="${GIT_REVISION}" \
+      org.opencontainers.image.source="https://github.com/joeylife94/papyr-us"
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates tini \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+ENV NODE_ENV=production \
+    PORT=5001 \
+    APP_VERSION=${APP_VERSION} \
+    GIT_REVISION=${GIT_REVISION} \
+    UPLOADS_DIR=/app/server/uploads \
+    LOG_DIR=/app/logs
+
+COPY --from=production-dependencies /app/node_modules ./node_modules
+COPY package.json package-lock.json ./
+COPY --from=build --chown=node:node /app/dist ./dist
+
+RUN mkdir -p /app/server/uploads/images /app/server/uploads/files /app/logs \
+    && chown -R node:node /app/server /app/logs
+
+USER node
+EXPOSE 5001
+
+HEALTHCHECK --interval=10s --timeout=6s --start-period=45s --retries=12 \
+  CMD node -e "fetch('http://127.0.0.1:5001/health').then(r=>{if(!r.ok)process.exit(1);return r.json()}).then(v=>{if(v.status!=='healthy')process.exit(1)}).catch(()=>process.exit(1))"
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["node", "dist/server/index.js"]
