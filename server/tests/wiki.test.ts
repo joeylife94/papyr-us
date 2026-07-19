@@ -130,13 +130,13 @@ describe('Wiki Page Management API', () => {
   });
 
   describe('DELETE /:id', () => {
-    it('TC-PAGE-008: should delete a page', async () => {
+    it('TC-PAGE-008: should move a page to trash', async () => {
       (storage.deleteWikiPage as vi.Mock).mockResolvedValue({ success: true });
 
       const response = await request(app).delete(`/api/pages/${mockPage.id}`);
 
       expect(response.status).toBe(200);
-      expect(response.body.message).toBe('Page deleted successfully');
+      expect(response.body.message).toBe('Page moved to trash');
       expect(storage.deleteWikiPage).toHaveBeenCalledWith(mockPage.id);
     });
   });
