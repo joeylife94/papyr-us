@@ -190,6 +190,30 @@ jobs:
         if: failure()
         run: docker compose --env-file .env.firebat -f compose.firebat.yml logs --tail=300 app db redis
 
+      - name: Capture Firebat startup diagnostics
+        if: failure()
+        run: |
+          mkdir -p firebat-diagnostics
+          docker compose --env-file .env.firebat -f compose.firebat.yml ps -a \
+            > firebat-diagnostics/compose-ps.txt 2>&1 || true
+          docker compose --env-file .env.firebat -f compose.firebat.yml logs --no-color app db redis \
+            > firebat-diagnostics/service-logs.txt 2>&1 || true
+          for container in firebat-papyr-us firebat-papyr-us-db firebat-papyr-us-redis; do
+            docker inspect --format '{{json .State}}' "$container" \
+              > "firebat-diagnostics/${container}-state.json" 2>&1 || true
+            docker inspect --format '{{json .Mounts}}' "$container" \
+              > "firebat-diagnostics/${container}-mounts.json" 2>&1 || true
+          done
+
+      - name: Upload Firebat startup diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firebat-compose-${{ github.run_id }}
+          path: firebat-diagnostics/
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Remove ephemeral CI stack
         if: always()
         run: docker compose --profile seed --env-file .env.firebat -f compose.firebat.yml down -v --remove-orphans
