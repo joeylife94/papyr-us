@@ -16,6 +16,7 @@ initSentry();
 
 import express from 'express';
 import { registerRoutes } from './routes.js';
+import { registerOperationalRoutes } from './operational.js';
 import { serveStaticAssets, serveIndex } from './static.js';
 import {
   log,
@@ -28,6 +29,7 @@ import {
 import { DBStorage } from './storage.js';
 import { metricsMiddleware, setupMetrics } from './services/metrics.js';
 import { requestContextMiddleware } from './services/logger.js';
+import { closeRedisConnections } from './services/redis.js';
 
 const app = express();
 
@@ -64,6 +66,8 @@ setupLoggingMiddleware(app);
 setupSecurity(app);
 
 (async () => {
+  // Register deterministic operational endpoints before the legacy route bundle.
+  registerOperationalRoutes(app, storage);
   serveStaticAssets(app);
   const { httpServer } = await registerRoutes(app, storage);
 
@@ -118,11 +122,13 @@ setupSecurity(app);
     httpServer.close(async () => {
       log('[SHUTDOWN] HTTP server closed.');
       try {
+        await closeRedisConnections();
+        log('[SHUTDOWN] Redis connections closed.');
         await storage.pool.end();
         log('[SHUTDOWN] Database pool closed.');
         process.exit(0);
       } catch (err) {
-        log(`[SHUTDOWN] Error closing database pool: ${(err as Error).message}`, 'error');
+        log(`[SHUTDOWN] Error closing dependencies: ${(err as Error).message}`, 'error');
         process.exit(1);
       }
     });
@@ -145,7 +151,6 @@ setupSecurity(app);
 // Global safety nets — prevent the process from crashing on stray errors
 process.on('uncaughtException', (err) => {
   console.error('[uncaughtException]', err);
-  // In production we should exit; in dev log and keep running for convenience
   if (process.env.NODE_ENV === 'production') process.exit(1);
 });
 
