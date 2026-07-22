@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { useFeatureFlags } from '@/features/FeatureFlagsContext';
+import { isRuntimeFeatureEnabled } from '@/features/runtimeFeatureGates';
 
 import {
   Book,
@@ -59,6 +60,9 @@ const folderColors: Record<string, string> = {
 export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: SidebarProps) {
   const { pathname } = useLocation();
   const { flags } = useFeatureFlags();
+  const showCollaborationTest = isRuntimeFeatureEnabled(flags, 'collaborationTest');
+  const showAiSearch = isRuntimeFeatureEnabled(flags, 'aiSearch');
+  const showKnowledgeGraph = isRuntimeFeatureEnabled(flags, 'knowledgeGraph');
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     docs: true, // docs expanded by default
   });
@@ -284,13 +288,15 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                   데이터베이스 뷰
                 </Button>
               </Link>
-              <Link to="/collaboration-test">
-                <Button variant="outline" className="w-full justify-start">
-                  <Users className="h-4 w-4 mr-2 text-green-500" />
-                  실시간 협업 테스트
-                </Button>
-              </Link>
-              {flags.FEATURE_AI_SEARCH ? (
+              {showCollaborationTest ? (
+                <Link to="/collaboration-test">
+                  <Button variant="outline" className="w-full justify-start">
+                    <Users className="h-4 w-4 mr-2 text-green-500" />
+                    실시간 협업 테스트
+                  </Button>
+                </Link>
+              ) : null}
+              {showAiSearch ? (
                 <Link to="/ai-search">
                   <Button variant="outline" className="w-full justify-start">
                     <Sparkles className="h-4 w-4 mr-2 text-purple-500" />
@@ -298,12 +304,14 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                   </Button>
                 </Link>
               ) : null}
-              <Link to="/knowledge-graph">
-                <Button variant="outline" className="w-full justify-start">
-                  <Network className="h-4 w-4 mr-2 text-cyan-500" />
-                  지식 그래프
-                </Button>
-              </Link>
+              {showKnowledgeGraph ? (
+                <Link to="/knowledge-graph">
+                  <Button variant="outline" className="w-full justify-start">
+                    <Network className="h-4 w-4 mr-2 text-cyan-500" />
+                    지식 그래프
+                  </Button>
+                </Link>
+              ) : null}
               {flags.FEATURE_AUTOMATION ? (
                 <Link to="/automation">
                   <Button variant="outline" className="w-full justify-start">
