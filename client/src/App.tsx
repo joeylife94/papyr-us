@@ -33,6 +33,7 @@ import SharedPage from '@/pages/shared-page';
 import LoginPage from '@/pages/login';
 import RegisterPage from '@/pages/register';
 import { FeatureGate } from '@/components/FeatureGate';
+import { runtimeFeatureGates } from '@/features/runtimeFeatureGates';
 
 // Components
 import ProtectedRoute from '@/components/ProtectedRoute';
@@ -169,11 +170,18 @@ function App() {
                       />
                       <Route path="/database" element={<DatabaseViewWrapper />} />
                       <Route path="/teams/:teamName/database" element={<DatabaseViewWrapper />} />
-                      <Route path="/collaboration-test" element={<CollaborationTest />} />
+                      <Route
+                        path="/collaboration-test"
+                        element={
+                          <FeatureGate flag={runtimeFeatureGates.collaborationTest}>
+                            <CollaborationTest />
+                          </FeatureGate>
+                        }
+                      />
                       <Route
                         path="/ai-search"
                         element={
-                          <FeatureGate flag="FEATURE_AI_SEARCH">
+                          <FeatureGate flag={runtimeFeatureGates.aiSearch}>
                             <AISearchPage />
                           </FeatureGate>
                         }
@@ -181,7 +189,7 @@ function App() {
                       <Route
                         path="/knowledge-graph"
                         element={
-                          <FeatureGate flag="FEATURE_AI_SEARCH">
+                          <FeatureGate flag={runtimeFeatureGates.knowledgeGraph}>
                             <KnowledgeGraphPage />
                           </FeatureGate>
                         }
@@ -197,7 +205,7 @@ function App() {
                       <Route
                         path="/teams/:teamName/knowledge-graph"
                         element={
-                          <FeatureGate flag="FEATURE_AI_SEARCH">
+                          <FeatureGate flag={runtimeFeatureGates.knowledgeGraph}>
                             <KnowledgeGraphPage />
                           </FeatureGate>
                         }
