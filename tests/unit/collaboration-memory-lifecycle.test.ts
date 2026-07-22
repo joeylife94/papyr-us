@@ -8,6 +8,7 @@ import {
   type CollabConfig,
 } from '../../server/services/yjs-collaboration';
 
+// Regression coverage for connection-scoped membership and bounded document snapshots.
 const legacyConfig: LegacyCollabConfig = {
   requireAuth: false,
   saveDebounceMs: 1000,
