@@ -26,6 +26,7 @@ jobs:
       - name: Apply patch
         shell: bash
         run: |
+          sed -i "/const { pageVersions } = await import('@shared\\/schema');/d" server/routes.ts
           if ! python scripts/agent_pr24_patch.py > pr24-patch-error.txt 2>&1; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -42,9 +43,9 @@ jobs:
       - name: Commit implementation and remove temporary automation
         shell: bash
         run: |
-          rm .github/workflows/agent-pr24.yml .github/workflows/agent-pr24-pr.yml scripts/agent_pr24_patch.py
+          rm -f .github/workflows/agent-pr24.yml .github/workflows/agent-pr24-pr.yml scripts/agent_pr24_patch.py pr24-patch-error.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add server/routes.ts server/storage.ts tests/unit/document-production-paths.test.ts .github/workflows/agent-pr24.yml .github/workflows/agent-pr24-pr.yml scripts/agent_pr24_patch.py
+          git add -A server/routes.ts server/storage.ts tests/unit/document-production-paths.test.ts .github/workflows scripts/agent_pr24_patch.py pr24-patch-error.txt
           git commit -m "fix: harden document production paths"
           git push origin HEAD:${{ github.event.pull_request.head.ref }}
