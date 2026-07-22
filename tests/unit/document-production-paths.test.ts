@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { buildUniqueSlugCandidate, DBStorage } from '../../server/storage';
 
+// Cover the two production regressions: alias resolution and duplicate slug insertion.
 const pageInput = {
   title: 'Duplicate title',
   slug: 'duplicate-title',
