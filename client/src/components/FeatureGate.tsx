@@ -1,6 +1,7 @@
 import React from 'react';
 import type { FeatureFlags } from '@shared/featureFlags';
 import { useFeatureFlags } from '@/features/FeatureFlagsContext';
+import { isFeatureFlagEnabled } from '@/features/runtimeFeatureGates';
 import FeatureDisabledPage from '@/pages/feature-disabled';
 
 const featureLabels: Partial<Record<keyof FeatureFlags, string>> = {
@@ -11,10 +12,8 @@ const featureLabels: Partial<Record<keyof FeatureFlags, string>> = {
   FEATURE_AUTOMATION: 'Automation',
   FEATURE_NOTIFICATIONS: 'Notifications',
   FEATURE_AI_SEARCH: 'AI Search',
+  FEATURE_COLLABORATION: 'Realtime Collaboration',
 };
-
-// Features hardcoded as production-ready — bypass the runtime flag check.
-const PRODUCTION_READY = new Set<keyof Omit<FeatureFlags, 'PAPYR_MODE'>>(['FEATURE_AI_SEARCH']);
 
 export function FeatureGate({
   flag,
@@ -25,7 +24,7 @@ export function FeatureGate({
 }) {
   const { flags } = useFeatureFlags();
 
-  if (PRODUCTION_READY.has(flag) || flags[flag]) {
+  if (isFeatureFlagEnabled(flags, flag)) {
     return <>{children}</>;
   }
 
