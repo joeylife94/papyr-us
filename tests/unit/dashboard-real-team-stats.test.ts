@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { DBStorage } from '../../server/storage';
 
+// Prevent the dashboard from returning to synthetic team IDs or incomplete empty states.
 describe('dashboard real-team behavior', () => {
   it('returns a complete empty overview for users with no teams', async () => {
     const storage = Object.create(DBStorage.prototype) as DBStorage;
