@@ -16,7 +16,7 @@ import { config } from '../config.js';
 type PermissionLevel = 'owner' | 'editor' | 'commenter' | 'viewer';
 type SaveReason = 'debounce' | 'interval' | 'manual' | 'ttl' | 'eviction';
 
-type CollabConfig = {
+export type CollabConfig = {
   saveDebounceMs: number;
   snapshotIntervalMs: number;
   docTtlMs: number;
@@ -25,6 +25,7 @@ type CollabConfig = {
   rateLimitUpdatesPerSec: number;
   rateLimitAwarenessPerSec: number;
   rateLimitSavesPerMin: number;
+  maxUpdateBytes: number;
   requireAuth: boolean;
 };
 
@@ -59,6 +60,12 @@ function getCollabConfig(): CollabConfig {
     2000
   );
   const rateLimitSavesPerMin = clampInt(process.env.COLLAB_RATE_LIMIT_SAVES_PER_MIN, 6, 1, 60);
+  const maxUpdateBytes = clampInt(
+    process.env.COLLAB_MAX_PAYLOAD_BYTES,
+    512 * 1024,
+    16 * 1024,
+    5 * 1024 * 1024
+  );
 
   // Ensure snapshot interval isn't smaller than debounce (to avoid pathological configs)
   const safeSnapshotIntervalMs = Math.max(snapshotIntervalMs, saveDebounceMs);
@@ -73,6 +80,7 @@ function getCollabConfig(): CollabConfig {
     rateLimitUpdatesPerSec,
     rateLimitAwarenessPerSec,
     rateLimitSavesPerMin,
+    maxUpdateBytes,
   };
 }
 
@@ -182,8 +190,9 @@ type DocState = {
   metrics: DocMetrics;
 };
 
-class YjsCollaborationManager {
+export class YjsCollaborationManager {
   private docs = new Map<string, DocState>();
+  private socketDocuments = new Map<string, string>();
   private saveLimiter = createSaveLimiter();
 
   constructor(
@@ -286,32 +295,49 @@ class YjsCollaborationManager {
     return await this.createDoc(documentId, pageId);
   }
 
+  private detachSocketFromDocument(socket: Socket, documentId: string): void {
+    const doc = this.docs.get(documentId);
+    socket.leave(documentId);
+    this.socketDocuments.delete(socket.id);
+    if (!doc) return;
+
+    doc.clients.delete(socket.id);
+    doc.lastAccessAt = Date.now();
+    if (doc.clients.size === 0) {
+      this.stopSnapshotTimer(doc);
+      this.scheduleTtlUnload(doc);
+    }
+  }
+
   async joinDocument(
     socket: Socket,
     documentId: string,
     pageId: number
   ): Promise<{ canEdit: boolean; permission: PermissionLevel | null }> {
+    const previousDocumentId = this.socketDocuments.get(socket.id);
+    if (previousDocumentId && previousDocumentId !== documentId) {
+      this.detachSocketFromDocument(socket, previousDocumentId);
+    }
+
     const doc = await this.getOrCreate(documentId, pageId);
     doc.lastAccessAt = Date.now();
 
-    // Max clients per doc guard
-    if (doc.clients.size >= this.cfg.maxClientsPerDoc) {
+    if (!doc.clients.has(socket.id) && doc.clients.size >= this.cfg.maxClientsPerDoc) {
       throw new Error(
         `Room is full (COLLAB_MAX_CLIENTS_PER_DOC=${this.cfg.maxClientsPerDoc}) for ${documentId}`
       );
     }
 
-    // Cancel pending TTL unload if someone joins
     if (doc.ttlTimer) {
       clearTimeout(doc.ttlTimer);
       doc.ttlTimer = undefined;
     }
 
     doc.clients.add(socket.id);
+    this.socketDocuments.set(socket.id, documentId);
     socket.join(documentId);
     this.ensureSnapshotTimer(doc);
 
-    // Permission info is stored on socket in setup handler; read it here.
     const permission = (socket.data.userPermission as PermissionLevel | null) ?? null;
     const canEdit = !!socket.data.canEdit;
 
@@ -329,25 +355,15 @@ class YjsCollaborationManager {
   }
 
   leaveDocument(socket: Socket): void {
-    const documentId = socket.data.documentId as string | undefined;
+    const documentId = this.socketDocuments.get(socket.id) ?? (socket.data.documentId as string | undefined);
     if (!documentId) return;
 
-    const doc = this.docs.get(documentId);
-    if (!doc) return;
-
-    doc.clients.delete(socket.id);
-    doc.lastAccessAt = Date.now();
-
+    this.detachSocketFromDocument(socket, documentId);
     logger.info('User left Yjs document', {
       documentId,
       socketId: socket.id,
-      remainingUsers: doc.clients.size,
+      remainingUsers: this.docs.get(documentId)?.clients.size ?? 0,
     });
-
-    if (doc.clients.size === 0) {
-      this.stopSnapshotTimer(doc);
-      this.scheduleTtlUnload(doc);
-    }
   }
 
   private scheduleDebouncedSave(doc: DocState): void {
@@ -452,6 +468,7 @@ class YjsCollaborationManager {
     if (doc.ttlTimer) clearTimeout(doc.ttlTimer);
 
     doc.ydoc.off('update', doc.updateListener);
+    doc.clients.clear();
     doc.ydoc.destroy();
     this.docs.delete(documentId);
 
@@ -569,6 +586,14 @@ export function setupYjsCollaboration(io: SocketIOServer, storage: DBStorage) {
 
         // Send current state to new client
         const stateVector = Y.encodeStateAsUpdate(ydoc);
+        if (stateVector.byteLength > cfg.maxUpdateBytes) {
+          yjsManager!.leaveDocument(socket);
+          socket.emit('yjs:error', {
+            message: 'Document is too large for realtime collaboration',
+            code: 'DOCUMENT_TOO_LARGE',
+          });
+          return;
+        }
         socket.emit('yjs:init', {
           stateVector: Buffer.from(stateVector).toString('base64'),
           userCount: yjsManager!.getUserCount(documentId),
@@ -576,7 +601,6 @@ export function setupYjsCollaboration(io: SocketIOServer, storage: DBStorage) {
           canEdit: joinResult.canEdit,
         });
         socket.data.documentId = documentId;
-        socket.data.ydoc = ydoc;
 
         logger.info('Client joined Yjs document', {
           socketId: socket.id,
@@ -637,7 +661,15 @@ export function setupYjsCollaboration(io: SocketIOServer, storage: DBStorage) {
         }
 
         // Apply update to Yjs document
+        if (typeof update !== 'string' || update.length > Math.ceil((cfg.maxUpdateBytes * 4) / 3) + 4) {
+          socket.emit('yjs:error', { message: 'Update payload too large', code: 'PAYLOAD_TOO_LARGE' });
+          return;
+        }
         const updateBuffer = Buffer.from(update, 'base64');
+        if (updateBuffer.byteLength > cfg.maxUpdateBytes) {
+          socket.emit('yjs:error', { message: 'Update payload too large', code: 'PAYLOAD_TOO_LARGE' });
+          return;
+        }
         Y.applyUpdate(doc.ydoc, updateBuffer, socket.id); // Use socket.id as origin
 
         logger.debug('Applied Yjs update', {
