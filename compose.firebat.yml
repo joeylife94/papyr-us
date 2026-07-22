@@ -1,0 +1,177 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: firebat-papyr-us-db
+    restart: unless-stopped
+    env_file:
+      - .env.firebat
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - firebat-internal
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    mem_limit: 768m
+    cpus: 0.75
+    pids_limit: 256
+
+  redis:
+    image: redis:7-alpine
+    container_name: firebat-papyr-us-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks:
+      - firebat-internal
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # The official image starts as root only long enough to inspect/chown
+    # persisted /data before dropping to the redis user. These capabilities
+    # are required when reopening the AOF directory after container recreation.
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    mem_limit: 256m
+    cpus: 0.35
+    pids_limit: 128
+
+  migrate:
+    image: firebat-papyr-us-migrate:${APP_VERSION:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile.firebat
+      target: migrate
+    env_file:
+      - .env.firebat
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - firebat-internal
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+
+  seed:
+    profiles: ["seed"]
+    image: firebat-papyr-us-seed:${APP_VERSION:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile.firebat
+      target: seed
+    env_file:
+      - .env.firebat
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - firebat-internal
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+
+  app:
+    image: firebat-papyr-us:${APP_VERSION:-local}
+    container_name: firebat-papyr-us
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: Dockerfile.firebat
+      target: runtime
+      args:
+        APP_VERSION: ${APP_VERSION:-local}
+        GIT_REVISION: ${GIT_REVISION:-unknown}
+    env_file:
+      - .env.firebat
+    environment:
+      NODE_ENV: production
+      PORT: 5001
+      APP_VERSION: ${APP_VERSION:-local}
+      GIT_REVISION: ${GIT_REVISION:-unknown}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379
+      REDIS_ENABLED: "true"
+      UPLOADS_DIR: /app/server/uploads
+      LOG_DIR: /app/logs
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${HOST_PORT:-8801}:5001"
+    volumes:
+      - uploads-data:/app/server/uploads
+      - logs-data:/app/logs
+    networks:
+      - firebat-internal
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch('http://127.0.0.1:5001/health').then(async r=>{if(!r.ok)process.exit(1);const v=await r.json();if(v.status!=='healthy'||v.database!=='ready'||v.redis!=='ready'||v.uploads!=='ready')process.exit(1)}).catch(()=>process.exit(1))
+      interval: 10s
+      timeout: 6s
+      retries: 12
+      start_period: 45s
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1024m
+    cpus: 1.25
+    pids_limit: 256
+
+networks:
+  firebat-internal:
+    name: firebat-papyr-us-network
+    driver: bridge
+
+volumes:
+  postgres-data:
+    name: firebat-papyr-us-postgres
+  redis-data:
+    name: firebat-papyr-us-redis
+  uploads-data:
+    name: firebat-papyr-us-uploads
+  logs-data:
+    name: firebat-papyr-us-logs

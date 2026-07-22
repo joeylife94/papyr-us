@@ -26,8 +26,8 @@ jobs:
       - run: npm ci
       - name: Lint (ESLint --max-warnings=0)
         run: npm run lint
-      - name: Type check (tsc --noEmit)
-        run: tsc --noEmit
+      - name: Type check
+        run: npm run check
       - name: Secret scan (secretlint)
         run: npx secretlint "**/*"
 
