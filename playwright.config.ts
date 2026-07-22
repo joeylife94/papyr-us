@@ -42,7 +42,7 @@ export default defineConfig({
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
-    baseURL: process.env.BASE_URL || 'http://localhost:5003',
+    baseURL: e2eBaseUrl,
 
     /* Use storage state only when explicitly enabled to avoid interfering with tests that perform UI login */
     storageState:
@@ -114,12 +114,10 @@ export default defineConfig({
   ],
 
   webServer: {
-    // Force write-guard for E2E so token removal yields 401 on write endpoints
-    command:
-      'dotenv -e .env.test -- cross-env PORT=5003 ENFORCE_AUTH_WRITES=true tsx server/index.ts',
-    url: process.env.BASE_URL || 'http://localhost:5003',
-    // Allow reusing an existing server (useful in local dev with docker-compose)
-    // Always start a fresh server so E2E-specific env flags take effect reliably
+    // server/index.ts loads .env.test when present, while CI-provided variables remain authoritative
+    command: `cross-env PORT=${e2ePort} NODE_ENV=test ENFORCE_AUTH_WRITES=true tsx server/index.ts`,
+    url: e2eBaseUrl,
+    // Playwright owns the E2E server lifecycle to prevent duplicate processes and port conflicts.
     reuseExistingServer: false,
     timeout: 240 * 1000,
   },
