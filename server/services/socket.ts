@@ -31,7 +31,7 @@ function parsePositiveInt(value: unknown): number | null {
   return n;
 }
 
-type LegacyCollabConfig = {
+export type LegacyCollabConfig = {
   requireAuth: boolean;
   saveDebounceMs: number;
   snapshotIntervalMs: number;
@@ -42,6 +42,8 @@ type LegacyCollabConfig = {
   rateLimitCursorPerSec: number;
   rateLimitTypingPerSec: number;
   rateLimitSavesPerMin: number;
+  maxPayloadBytes: number;
+  maxRetainedChanges: number;
 };
 
 function getLegacyCollabConfig(): LegacyCollabConfig {
@@ -66,6 +68,13 @@ function getLegacyCollabConfig(): LegacyCollabConfig {
   const rateLimitCursorPerSec = clampInt(process.env.COLLAB_RATE_LIMIT_CURSOR_PER_SEC, 30, 5, 2000);
   const rateLimitTypingPerSec = clampInt(process.env.COLLAB_RATE_LIMIT_TYPING_PER_SEC, 20, 5, 2000);
   const rateLimitSavesPerMin = clampInt(process.env.COLLAB_RATE_LIMIT_SAVES_PER_MIN, 6, 1, 60);
+  const maxPayloadBytes = clampInt(
+    process.env.COLLAB_MAX_PAYLOAD_BYTES,
+    512 * 1024,
+    16 * 1024,
+    5 * 1024 * 1024
+  );
+  const maxRetainedChanges = clampInt(process.env.COLLAB_MAX_RETAINED_CHANGES, 25, 0, 100);
 
   const safeSnapshotIntervalMs = Math.max(snapshotIntervalMs, saveDebounceMs);
 
@@ -80,6 +89,8 @@ function getLegacyCollabConfig(): LegacyCollabConfig {
     rateLimitCursorPerSec,
     rateLimitTypingPerSec,
     rateLimitSavesPerMin,
+    maxPayloadBytes,
+    maxRetainedChanges,
   };
 }
 
@@ -162,7 +173,7 @@ interface AuthenticatedSocket extends Socket {
   userRole?: string;
 }
 
-class CollaborationManager {
+export class CollaborationManager {
   private sessions = new Map<number, CollaborationSession>();
   private userSessions = new Map<string, number>(); // userId -> pageId
   private saveLimiter = createSaveLimiter();
@@ -195,58 +206,63 @@ class CollaborationManager {
     return this.sessions.get(pageId);
   }
 
-  joinSession(pageId: number, user: User): void {
+  joinSession(pageId: number, connectionId: string, user: User): void {
+    const previousPageId = this.userSessions.get(connectionId);
+    if (previousPageId && previousPageId !== pageId) {
+      this.leaveSession(connectionId);
+    }
+
     let session = this.getSession(pageId);
     if (!session) {
       session = this.createSession(pageId);
     }
 
-    // Cancel TTL unload if someone joins.
     if (session.ttlTimer) {
       clearTimeout(session.ttlTimer);
       session.ttlTimer = undefined;
     }
 
     session.lastAccessAt = Date.now();
-
-    session.users.set(user.id, user);
-    this.userSessions.set(user.id, pageId);
-
+    session.users.set(connectionId, user);
+    this.userSessions.set(connectionId, pageId);
     this.ensureSnapshotTimer(session);
   }
 
-  leaveSession(userId: string): void {
-    const pageId = this.userSessions.get(userId);
-    if (pageId) {
-      const session = this.getSession(pageId);
-      if (session) {
-        session.users.delete(userId);
-        session.lastAccessAt = Date.now();
-        if (session.users.size === 0) {
-          this.stopSnapshotTimer(session);
-          this.scheduleTtlUnload(session);
-        }
+  leaveSession(connectionId: string): void {
+    const pageId = this.userSessions.get(connectionId);
+    if (!pageId) return;
+
+    const session = this.getSession(pageId);
+    if (session) {
+      session.users.delete(connectionId);
+      session.lastAccessAt = Date.now();
+      if (session.users.size === 0) {
+        this.stopSnapshotTimer(session);
+        this.scheduleTtlUnload(session);
       }
-      this.userSessions.delete(userId);
     }
+    this.userSessions.delete(connectionId);
   }
 
   addChange(pageId: number, change: DocumentChange): void {
     const session = this.getSession(pageId);
-    if (session) {
-      session.lastAccessAt = Date.now();
-      session.changes.push(change);
-      // Keep only last 100 changes to prevent memory issues
-      if (session.changes.length > 100) {
-        session.changes = session.changes.slice(-100);
-      }
+    if (!session) return;
 
-      // Capture latest blocks for persistence (when available)
-      const blocks = change.data?.blocks;
-      if (Array.isArray(blocks)) {
-        session.latestBlocks = blocks;
-        this.markDirty(pageId);
-      }
+    session.lastAccessAt = Date.now();
+
+    const blocks = change.data?.blocks;
+    if (Array.isArray(blocks)) {
+      session.latestBlocks = blocks;
+      this.markDirty(pageId);
+    }
+
+    if (this.cfg.maxRetainedChanges > 0) {
+      const retainedChange: DocumentChange = Array.isArray(blocks)
+        ? { ...change, data: { blockCount: blocks.length } }
+        : change;
+      session.changes.push(retainedChange);
+      const overflow = session.changes.length - this.cfg.maxRetainedChanges;
+      if (overflow > 0) session.changes.splice(0, overflow);
     }
   }
 
@@ -373,6 +389,9 @@ class CollaborationManager {
     if (session.snapshotTimer) clearInterval(session.snapshotTimer);
     if (session.ttlTimer) clearTimeout(session.ttlTimer);
 
+    session.users.clear();
+    session.changes.length = 0;
+    session.latestBlocks = undefined;
     this.sessions.delete(pageId);
 
     logger.info('Unloaded legacy collab session from memory', {
@@ -515,6 +534,7 @@ export async function setupSocketIO(
 
   const io = new SocketIOServer(server, {
     cors: socketCorsOpts,
+    maxHttpBufferSize: legacyCfg.maxPayloadBytes,
   });
 
   // Setup Redis adapter for horizontal scaling (if Redis is configured)
@@ -626,6 +646,17 @@ export async function setupSocketIO(
             ? await storage.getUserPagePermission(userIdNum, pageId)
             : null;
           const canEdit = userPermission === 'owner' || userPermission === 'editor';
+          const previousPageId = (socket.data as any).pageId as number | undefined;
+          if (previousPageId && previousPageId !== pageId) {
+            collaborationManager.leaveSession(socket.id);
+            const previousRoom = `page:${previousPageId}`;
+            socket.leave(previousRoom);
+            socket.to(previousRoom).emit('user-left', {
+              userId: String(userIdNum ?? socket.id),
+              timestamp: Date.now(),
+            });
+          }
+
           (socket.data as any).pageId = pageId;
           (socket.data as any).userIdNum = userIdNum;
           (socket.data as any).userPermission = userPermission;
@@ -648,7 +679,7 @@ export async function setupSocketIO(
           };
 
           try {
-            collaborationManager.joinSession(pageId, user);
+            collaborationManager.joinSession(pageId, socket.id, user);
           } catch (e) {
             socket.emit('collab:error', {
               message: e instanceof Error ? e.message : 'Capacity exceeded',
@@ -784,7 +815,9 @@ export async function setupSocketIO(
         const pageId = parsePositiveInt(data.pageId);
         // Use only server-side identity; do not accept client-supplied data.userId.
         const userIdKey = String((socket.data as any).userIdNum ?? socket.userId ?? socket.id);
-        collaborationManager.leaveSession(userIdKey);
+        collaborationManager.leaveSession(socket.id);
+        (socket.data as any).pageId = undefined;
+        (socket.data as any).canEdit = false;
         if (pageId) {
           const roomName = `page:${pageId}`;
           socket.leave(roomName);
