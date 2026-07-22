@@ -1,0 +1,39 @@
+name: Update Visual Baselines (temporary)
+
+on:
+  push:
+    branches:
+      - agent/stabilize-visual-baselines
+
+permissions:
+  contents: write
+
+jobs:
+  update-baselines:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Generate Linux visual baselines
+        run: node scripts/update-visual-baselines.mjs
+
+      - name: Commit generated baselines
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/visual/layer6-visual.spec.ts-snapshots
+          if git diff --cached --quiet; then
+            echo "No baseline changes were generated."
+            exit 0
+          fi
+          git commit -m "test: add canonical visual baselines"
+          git push origin HEAD:${{ github.ref_name }}
