@@ -123,8 +123,8 @@ jobs:
           npm run db:push -- --force
           npm run test:db:seed
 
-      - name: Run Playwright E2E tests (chromium only)
-        run: npx playwright test --project=chromium --reporter=dot,html
+      - name: Run Layer 5 Playwright E2E tests
+        run: npx playwright test --config=playwright.layer5.config.ts --project=chromium --reporter=dot,html
 
       - name: Upload Playwright HTML report
         if: failure()
