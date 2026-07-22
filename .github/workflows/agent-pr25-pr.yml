@@ -1,0 +1,42 @@
+name: Agent PR25 pull request patch
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Extract and apply patch
+        shell: bash
+        run: |
+          awk '/python <<'"'"'PY'"'"'/{capture=1; next} /^          PY$/{capture=0} capture{sub(/^          /, ""); print}' .github/workflows/agent-pr25.yml > /tmp/agent-pr25.py
+          python /tmp/agent-pr25.py
+      - run: npm ci --ignore-scripts
+      - run: npm run check
+      - run: npm run test:unit
+      - name: Commit implementation and remove temporary automation
+        shell: bash
+        run: |
+          rm .github/workflows/agent-pr25.yml .github/workflows/agent-pr25-pr.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add server/storage.ts tests/unit/dashboard-real-team-stats.test.ts .github/workflows/agent-pr25.yml .github/workflows/agent-pr25-pr.yml
+          git commit -m "fix: aggregate dashboard by accessible teams"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
