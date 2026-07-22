@@ -23,20 +23,17 @@ jobs:
         with:
           node-version: '20'
           cache: npm
-      - name: Extract and apply patch
-        shell: bash
-        run: |
-          awk '/python <<'"'"'PY'"'"'/{capture=1; next} /^          PY$/{capture=0} capture{sub(/^          /, ""); print}' .github/workflows/agent-pr24.yml > /tmp/agent-pr24.py
-          python /tmp/agent-pr24.py
+      - name: Apply patch
+        run: python scripts/agent_pr24_patch.py
       - run: npm ci --ignore-scripts
       - run: npm run check
       - run: npm run test:unit
       - name: Commit implementation and remove temporary automation
         shell: bash
         run: |
-          rm .github/workflows/agent-pr24.yml .github/workflows/agent-pr24-pr.yml
+          rm .github/workflows/agent-pr24.yml .github/workflows/agent-pr24-pr.yml scripts/agent_pr24_patch.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add server/routes.ts server/storage.ts tests/unit/document-production-paths.test.ts .github/workflows/agent-pr24.yml .github/workflows/agent-pr24-pr.yml
+          git add server/routes.ts server/storage.ts tests/unit/document-production-paths.test.ts .github/workflows/agent-pr24.yml .github/workflows/agent-pr24-pr.yml scripts/agent_pr24_patch.py
           git commit -m "fix: harden document production paths"
           git push origin HEAD:${{ github.event.pull_request.head.ref }}
