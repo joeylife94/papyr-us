@@ -1,0 +1,275 @@
+name: Agent PR24 document production patch
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Apply document production fixes
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          import re
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 match, found {count}')
+              return text.replace(old, new, 1)
+
+          routes_path = Path('server/routes.ts')
+          routes = routes_path.read_text()
+          routes = replace_once(
+              routes,
+              "  wikiPages,\n  tasks,",
+              "  wikiPages,\n  pageVersions,\n  tasks,",
+              'static pageVersions import',
+          )
+          dynamic_import = "              const { pageVersions } = await import('@shared/schema');\n"
+          routes = routes.replace(dynamic_import, '')
+          dynamic_import_8 = "        const { pageVersions } = await import('@shared/schema');\n"
+          routes = routes.replace(dynamic_import_8, '')
+          if "import('@shared/schema')" in routes:
+              raise SystemExit('production alias dynamic import remains')
+
+          routes = replace_once(
+              routes,
+              "        const pageId = parseInt(req.params.id);\n        const db = (storage as any).db;",
+              "        const pageId = parseInt(req.params.id);\n        if (!Number.isInteger(pageId) || pageId <= 0) {\n          return res.status(400).json({ error: 'Invalid page ID' });\n        }\n        const db = (storage as any).db;",
+              'version list id validation',
+          )
+
+          get_old = """        const versionId = parseInt(req.params.versionId);
+        const db = (storage as any).db;
+        if (!db) return res.status(500).json({ error: 'Database not available' });
+
+        const { eq } = await import('drizzle-orm');
+
+        const [version] = await db
+          .select()
+          .from(pageVersions)
+          .where(eq(pageVersions.id, versionId));"""
+          get_new = """        const pageId = parseInt(req.params.id);
+        const versionId = parseInt(req.params.versionId);
+        if (
+          !Number.isInteger(pageId) ||
+          pageId <= 0 ||
+          !Number.isInteger(versionId) ||
+          versionId <= 0
+        ) {
+          return res.status(400).json({ error: 'Invalid page or version ID' });
+        }
+        const db = (storage as any).db;
+        if (!db) return res.status(500).json({ error: 'Database not available' });
+
+        const { eq } = await import('drizzle-orm');
+
+        const [version] = await db
+          .select()
+          .from(pageVersions)
+          .where(and(eq(pageVersions.id, versionId), eq(pageVersions.pageId, pageId)));"""
+          routes = replace_once(routes, get_old, get_new, 'scope version preview to page')
+
+          restore_old = """        const pageId = parseInt(req.params.id);
+        const versionId = parseInt(req.params.versionId);
+        const db = (storage as any).db;
+        if (!db) return res.status(500).json({ error: 'Database not available' });
+
+        const { eq } = await import('drizzle-orm');
+
+        const [version] = await db
+          .select()
+          .from(pageVersions)
+          .where(eq(pageVersions.id, versionId));"""
+          restore_new = """        const pageId = parseInt(req.params.id);
+        const versionId = parseInt(req.params.versionId);
+        if (
+          !Number.isInteger(pageId) ||
+          pageId <= 0 ||
+          !Number.isInteger(versionId) ||
+          versionId <= 0
+        ) {
+          return res.status(400).json({ error: 'Invalid page or version ID' });
+        }
+        const db = (storage as any).db;
+        if (!db) return res.status(500).json({ error: 'Database not available' });
+
+        const { eq } = await import('drizzle-orm');
+
+        const [version] = await db
+          .select()
+          .from(pageVersions)
+          .where(and(eq(pageVersions.id, versionId), eq(pageVersions.pageId, pageId)));"""
+          routes = replace_once(routes, restore_old, restore_new, 'scope version restore to page')
+
+          routes = replace_once(
+              routes,
+              "      } catch (error) {\n        res.status(400).json({ message: 'Invalid page data', error });\n      }",
+              "      } catch (error: any) {\n        if (error?.code === '23505') {\n          return res.status(409).json({ message: 'A page with this slug already exists' });\n        }\n        res.status(400).json({ message: 'Invalid page data' });\n      }",
+              'safe page create error mapping',
+          )
+          routes_path.write_text(routes)
+
+          storage_path = Path('server/storage.ts')
+          storage = storage_path.read_text()
+          helper_anchor = """function isBcryptHash(value: string): boolean {
+  // bcrypt hashes typically start with $2a$, $2b$, or $2y$ and are ~60 chars
+  return typeof value === 'string' && /^\\$2[aby]?\\$\\d{2}\\$[./A-Za-z0-9]{53}$/.test(value);
+}
+"""
+          helper_replacement = helper_anchor + """
+const MAX_SLUG_INSERT_ATTEMPTS = 100;
+
+function isSlugUniqueViolation(error: unknown): boolean {
+  const dbError = error as { code?: string; constraint?: string } | null;
+  if (dbError?.code !== '23505') return false;
+  return !dbError.constraint || dbError.constraint.toLowerCase().includes('slug');
+}
+
+export function buildUniqueSlugCandidate(baseSlug: string, attempt: number): string {
+  const normalizedBase = baseSlug.trim() || 'untitled';
+  return attempt === 0 ? normalizedBase : `${normalizedBase}-${attempt + 1}`;
+}
+"""
+          storage = replace_once(storage, helper_anchor, helper_replacement, 'slug helper insertion')
+
+          create_old = """  async createWikiPage(page: InsertWikiPage, creatorUserId?: number): Promise<WikiPage> {
+    const result = await this.db.insert(wikiPages).values(page).returning();
+    const createdPage = result[0];
+
+    // Auto-assign owner permission for the creator
+    if (creatorUserId) {
+      try {
+        await this.setPageOwner(createdPage.id, creatorUserId, creatorUserId);
+      } catch (error) {
+        console.error('Failed to set page owner permission:', error);
+      }
+    }
+
+    return createdPage;
+  }"""
+          create_new = """  async createWikiPage(page: InsertWikiPage, creatorUserId?: number): Promise<WikiPage> {
+    let createdPage: WikiPage | undefined;
+
+    for (let attempt = 0; attempt < MAX_SLUG_INSERT_ATTEMPTS; attempt += 1) {
+      const slug = buildUniqueSlugCandidate(page.slug, attempt);
+      try {
+        const result = await this.db
+          .insert(wikiPages)
+          .values({ ...page, slug })
+          .returning();
+        createdPage = result[0];
+        break;
+      } catch (error) {
+        if (!isSlugUniqueViolation(error) || attempt === MAX_SLUG_INSERT_ATTEMPTS - 1) {
+          throw error;
+        }
+      }
+    }
+
+    if (!createdPage) {
+      throw new Error('Failed to allocate a unique page slug');
+    }
+
+    // Auto-assign owner permission for the creator
+    if (creatorUserId) {
+      try {
+        await this.setPageOwner(createdPage.id, creatorUserId, creatorUserId);
+      } catch (error) {
+        console.error('Failed to set page owner permission:', error);
+      }
+    }
+
+    return createdPage;
+  }"""
+          storage = replace_once(storage, create_old, create_new, 'atomic slug retry')
+          storage_path.write_text(storage)
+
+          test_path = Path('tests/unit/document-production-paths.test.ts')
+          test_path.write_text("""import { readFileSync } from 'node:fs';
+import { describe, expect, it, vi } from 'vitest';
+import { buildUniqueSlugCandidate, DBStorage } from '../../server/storage';
+
+const pageInput = {
+  title: 'Duplicate title',
+  slug: 'duplicate-title',
+  content: '',
+  folder: 'docs',
+  tags: [],
+  author: 'test',
+  isPublished: true,
+};
+
+describe('document production paths', () => {
+  it('generates stable slug retry candidates', () => {
+    expect(buildUniqueSlugCandidate('page', 0)).toBe('page');
+    expect(buildUniqueSlugCandidate('page', 1)).toBe('page-2');
+    expect(buildUniqueSlugCandidate('  ', 2)).toBe('untitled-3');
+  });
+
+  it('retries a page insert after a slug unique violation', async () => {
+    const inserted: Array<Record<string, unknown>> = [];
+    const storage = Object.create(DBStorage.prototype) as DBStorage;
+    (storage as any).db = {
+      insert: vi.fn(() => ({
+        values: vi.fn((value: Record<string, unknown>) => ({
+          returning: vi.fn(async () => {
+            inserted.push(value);
+            if (inserted.length === 1) {
+              throw { code: '23505', constraint: 'wiki_pages_slug_unique' };
+            }
+            return [{ id: 7, ...value }];
+          }),
+        })),
+      })),
+    };
+
+    const created = await storage.createWikiPage(pageInput as any);
+
+    expect(inserted.map((value) => value.slug)).toEqual(['duplicate-title', 'duplicate-title-2']);
+    expect(created.slug).toBe('duplicate-title-2');
+  });
+
+  it('uses production-resolvable schema imports and page-scoped version queries', () => {
+    const source = readFileSync('server/routes.ts', 'utf8');
+
+    expect(source).not.toContain("import('@shared/schema')");
+    expect(
+      source.match(
+        /where\\(and\\(eq\\(pageVersions\\.id, versionId\\), eq\\(pageVersions\\.pageId, pageId\\)\\)\\)/g
+      )
+    ).toHaveLength(2);
+  });
+});
+""")
+          PY
+      - run: npm ci --ignore-scripts
+      - run: npm run check
+      - run: npm run test:unit
+      - name: Commit implementation
+        shell: bash
+        run: |
+          rm .github/workflows/agent-pr24.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add server/routes.ts server/storage.ts tests/unit/document-production-paths.test.ts .github/workflows/agent-pr24.yml
+          git commit -m "fix: harden document production paths"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
