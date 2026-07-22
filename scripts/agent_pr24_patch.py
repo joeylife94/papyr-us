@@ -1,102 +1,166 @@
 from pathlib import Path
-import re
 
 
-def replace_once(text: str, old: str, new: str, label: str) -> str:
-    count = text.count(old)
-    if count != 1:
-        raise RuntimeError(f'{label}: expected 1 match, found {count}')
-    return text.replace(old, new, 1)
+def replace_between(text: str, start_marker: str, end_marker: str, replacement: str) -> str:
+    start = text.index(start_marker)
+    end = text.index(end_marker, start)
+    return text[:start] + replacement + text[end:]
 
 
 routes_path = Path('server/routes.ts')
 routes = routes_path.read_text()
-routes = replace_once(
+
+if '  pageVersions,\n' not in routes:
+    routes = routes.replace(
+        '  wikiPages,\n  tasks,',
+        '  wikiPages,\n  pageVersions,\n  tasks,',
+        1,
+    )
+
+version_routes = """  // Page Version History API
+  app.get(
+    '/api/pages/:id/versions',
+    optionalAuth,
+    requirePagePermission('viewer'),
+    async (req, res) => {
+      try {
+        const pageId = parseInt(req.params.id);
+        if (!Number.isInteger(pageId) || pageId <= 0) {
+          return res.status(400).json({ error: 'Invalid page ID' });
+        }
+
+        const db = (storage as any).db;
+        if (!db) return res.status(500).json({ error: 'Database not available' });
+
+        const { desc } = await import('drizzle-orm');
+        const versions = await db
+          .select({
+            id: pageVersions.id,
+            pageId: pageVersions.pageId,
+            title: pageVersions.title,
+            author: pageVersions.author,
+            versionNumber: pageVersions.versionNumber,
+            changeDescription: pageVersions.changeDescription,
+            createdAt: pageVersions.createdAt,
+          })
+          .from(pageVersions)
+          .where(eq(pageVersions.pageId, pageId))
+          .orderBy(desc(pageVersions.versionNumber));
+
+        res.json(versions);
+      } catch (error) {
+        console.error('Error fetching page versions:', error);
+        res.status(500).json({ error: 'Failed to fetch page versions' });
+      }
+    }
+  );
+
+  app.get(
+    '/api/pages/:id/versions/:versionId',
+    optionalAuth,
+    requirePagePermission('viewer'),
+    async (req, res) => {
+      try {
+        const pageId = parseInt(req.params.id);
+        const versionId = parseInt(req.params.versionId);
+        if (
+          !Number.isInteger(pageId) ||
+          pageId <= 0 ||
+          !Number.isInteger(versionId) ||
+          versionId <= 0
+        ) {
+          return res.status(400).json({ error: 'Invalid page or version ID' });
+        }
+
+        const db = (storage as any).db;
+        if (!db) return res.status(500).json({ error: 'Database not available' });
+
+        const [version] = await db
+          .select()
+          .from(pageVersions)
+          .where(and(eq(pageVersions.id, versionId), eq(pageVersions.pageId, pageId)));
+
+        if (!version) {
+          return res.status(404).json({ error: 'Version not found' });
+        }
+
+        res.json(version);
+      } catch (error) {
+        console.error('Error fetching page version:', error);
+        res.status(500).json({ error: 'Failed to fetch page version' });
+      }
+    }
+  );
+
+  // Restore a specific version
+  app.post(
+    '/api/pages/:id/versions/:versionId/restore',
+    requireAuthIfEnabled,
+    requirePagePermission('editor'),
+    async (req: AuthRequest, res) => {
+      try {
+        const pageId = parseInt(req.params.id);
+        const versionId = parseInt(req.params.versionId);
+        if (
+          !Number.isInteger(pageId) ||
+          pageId <= 0 ||
+          !Number.isInteger(versionId) ||
+          versionId <= 0
+        ) {
+          return res.status(400).json({ error: 'Invalid page or version ID' });
+        }
+
+        const db = (storage as any).db;
+        if (!db) return res.status(500).json({ error: 'Database not available' });
+
+        const [version] = await db
+          .select()
+          .from(pageVersions)
+          .where(and(eq(pageVersions.id, versionId), eq(pageVersions.pageId, pageId)));
+
+        if (!version) {
+          return res.status(404).json({ error: 'Version not found' });
+        }
+
+        const restoredPage = await storage.updateWikiPage(pageId, {
+          title: version.title,
+          content: version.content,
+          blocks: version.blocks as any,
+        });
+
+        if (!restoredPage) {
+          return res.status(404).json({ error: 'Page not found' });
+        }
+
+        res.json(restoredPage);
+      } catch (error) {
+        console.error('Error restoring page version:', error);
+        res.status(500).json({ error: 'Failed to restore page version' });
+      }
+    }
+  );
+
+"""
+
+routes = replace_between(
     routes,
-    '  wikiPages,\n  tasks,',
-    '  wikiPages,\n  pageVersions,\n  tasks,',
-    'static pageVersions import',
+    '  // Page Version History API\n',
+    "  app.delete(\n    '/api/pages/:id',",
+    version_routes,
 )
-routes = routes.replace("        const { pageVersions } = await import('@shared/schema');\n", '')
-routes = routes.replace("              const { pageVersions } = await import('@shared/schema');\n", '')
+
 if "import('@shared/schema')" in routes:
     raise RuntimeError('production schema alias import remains')
 
-list_pattern = re.compile(
-    r"(app\.get\(\s*'/api/pages/:id/versions'.*?const pageId = parseInt\(req\.params\.id\);)(\s*const db = \(storage as any\)\.db;)",
-    re.S,
-)
-routes, count = list_pattern.subn(
-    r"\1\n        if (!Number.isInteger(pageId) || pageId <= 0) {\n          return res.status(400).json({ error: 'Invalid page ID' });\n        }\2",
-    routes,
-    count=1,
-)
-if count != 1:
-    raise RuntimeError(f'version list validation: expected 1 match, found {count}')
-
-preview_old = """        const versionId = parseInt(req.params.versionId);
-        const db = (storage as any).db;
-        if (!db) return res.status(500).json({ error: 'Database not available' });
-
-        const { eq } = await import('drizzle-orm');
-
-        const [version] = await db
-          .select()
-          .from(pageVersions)
-          .where(eq(pageVersions.id, versionId));"""
-preview_new = """        const pageId = parseInt(req.params.id);
-        const versionId = parseInt(req.params.versionId);
-        if (!Number.isInteger(pageId) || pageId <= 0 || !Number.isInteger(versionId) || versionId <= 0) {
-          return res.status(400).json({ error: 'Invalid page or version ID' });
-        }
-        const db = (storage as any).db;
-        if (!db) return res.status(500).json({ error: 'Database not available' });
-
-        const { eq } = await import('drizzle-orm');
-
-        const [version] = await db
-          .select()
-          .from(pageVersions)
-          .where(and(eq(pageVersions.id, versionId), eq(pageVersions.pageId, pageId)));"""
-routes = replace_once(routes, preview_old, preview_new, 'page-scoped version preview')
-
-restore_old = """        const pageId = parseInt(req.params.id);
-        const versionId = parseInt(req.params.versionId);
-        const db = (storage as any).db;
-        if (!db) return res.status(500).json({ error: 'Database not available' });
-
-        const { eq } = await import('drizzle-orm');
-
-        const [version] = await db
-          .select()
-          .from(pageVersions)
-          .where(eq(pageVersions.id, versionId));"""
-restore_new = """        const pageId = parseInt(req.params.id);
-        const versionId = parseInt(req.params.versionId);
-        if (!Number.isInteger(pageId) || pageId <= 0 || !Number.isInteger(versionId) || versionId <= 0) {
-          return res.status(400).json({ error: 'Invalid page or version ID' });
-        }
-        const db = (storage as any).db;
-        if (!db) return res.status(500).json({ error: 'Database not available' });
-
-        const { eq } = await import('drizzle-orm');
-
-        const [version] = await db
-          .select()
-          .from(pageVersions)
-          .where(and(eq(pageVersions.id, versionId), eq(pageVersions.pageId, pageId)));"""
-routes = replace_once(routes, restore_old, restore_new, 'page-scoped version restore')
 routes_path.write_text(routes)
 
 storage_path = Path('server/storage.ts')
 storage = storage_path.read_text()
-helper_anchor = """function isBcryptHash(value: string): boolean {
-  // bcrypt hashes typically start with $2a$, $2b$, or $2y$ and are ~60 chars
-  return typeof value === 'string' && /^\\$2[aby]?\\$\\d{2}\\$[./A-Za-z0-9]{53}$/.test(value);
-}
-"""
-helper_replacement = helper_anchor + """
-const MAX_SLUG_INSERT_ATTEMPTS = 100;
+
+if 'export function buildUniqueSlugCandidate' not in storage:
+    helper_marker = '// Simplified and unified DBStorage\n'
+    helper_index = storage.index(helper_marker)
+    helpers = """const MAX_SLUG_INSERT_ATTEMPTS = 100;
 
 function isSlugUniqueViolation(error: unknown): boolean {
   const dbError = error as { code?: string; constraint?: string } | null;
@@ -108,10 +172,13 @@ export function buildUniqueSlugCandidate(baseSlug: string, attempt: number): str
   const normalizedBase = baseSlug.trim() || 'untitled';
   return attempt === 0 ? normalizedBase : `${normalizedBase}-${attempt + 1}`;
 }
-"""
-storage = replace_once(storage, helper_anchor, helper_replacement, 'slug helpers')
 
-create_start = storage.index('  async createWikiPage(page: InsertWikiPage, creatorUserId?: number): Promise<WikiPage> {')
+"""
+    storage = storage[:helper_index] + helpers + storage[helper_index:]
+
+create_start = storage.index(
+    '  async createWikiPage(page: InsertWikiPage, creatorUserId?: number): Promise<WikiPage> {'
+)
 create_end = storage.index('\n  async updateWikiPage(', create_start)
 create_method = """  async createWikiPage(page: InsertWikiPage, creatorUserId?: number): Promise<WikiPage> {
     let createdPage: WikiPage | undefined;
@@ -129,7 +196,9 @@ create_method = """  async createWikiPage(page: InsertWikiPage, creatorUserId?: 
       }
     }
 
-    if (!createdPage) throw new Error('Failed to allocate a unique page slug');
+    if (!createdPage) {
+      throw new Error('Failed to allocate a unique page slug');
+    }
 
     if (creatorUserId) {
       try {
@@ -174,7 +243,9 @@ describe('document production paths', () => {
         values: vi.fn((value: Record<string, unknown>) => ({
           returning: vi.fn(async () => {
             inserted.push(value);
-            if (inserted.length === 1) throw { code: '23505', constraint: 'wiki_pages_slug_unique' };
+            if (inserted.length === 1) {
+              throw { code: '23505', constraint: 'wiki_pages_slug_unique' };
+            }
             return [{ id: 7, ...value }];
           }),
         })),
@@ -182,14 +253,21 @@ describe('document production paths', () => {
     };
 
     const created = await storage.createWikiPage(pageInput as any);
-    expect(inserted.map((value) => value.slug)).toEqual(['duplicate-title', 'duplicate-title-2']);
+    expect(inserted.map((value) => value.slug)).toEqual([
+      'duplicate-title',
+      'duplicate-title-2',
+    ]);
     expect(created.slug).toBe('duplicate-title-2');
   });
 
   it('uses production-resolvable and page-scoped version queries', () => {
     const source = readFileSync('server/routes.ts', 'utf8');
     expect(source).not.toContain("import('@shared/schema')");
-    expect(source.match(/where\\(and\\(eq\\(pageVersions\\.id, versionId\\), eq\\(pageVersions\\.pageId, pageId\\)\\)\\)/g)).toHaveLength(2);
+    expect(
+      source.match(
+        /where\\(and\\(eq\\(pageVersions\\.id, versionId\\), eq\\(pageVersions\\.pageId, pageId\\)\\)\\)/g
+      )
+    ).toHaveLength(2);
   });
 });
 """)
