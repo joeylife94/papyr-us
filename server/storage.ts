@@ -83,6 +83,19 @@ function isBcryptHash(value: string): boolean {
   return typeof value === 'string' && /^\$2[aby]?\$\d{2}\$[./A-Za-z0-9]{53}$/.test(value);
 }
 
+const MAX_SLUG_INSERT_ATTEMPTS = 100;
+
+function isSlugUniqueViolation(error: unknown): boolean {
+  const dbError = error as { code?: string; constraint?: string } | null;
+  if (dbError?.code !== '23505') return false;
+  return !dbError.constraint || dbError.constraint.toLowerCase().includes('slug');
+}
+
+export function buildUniqueSlugCandidate(baseSlug: string, attempt: number): string {
+  const normalizedBase = baseSlug.trim() || 'untitled';
+  return attempt === 0 ? normalizedBase : `${normalizedBase}-${attempt + 1}`;
+}
+
 // Simplified and unified DBStorage
 export class DBStorage {
   public db: any;
@@ -135,10 +148,25 @@ export class DBStorage {
   }
 
   async createWikiPage(page: InsertWikiPage, creatorUserId?: number): Promise<WikiPage> {
-    const result = await this.db.insert(wikiPages).values(page).returning();
-    const createdPage = result[0];
+    let createdPage: WikiPage | undefined;
 
-    // Auto-assign owner permission for the creator
+    for (let attempt = 0; attempt < MAX_SLUG_INSERT_ATTEMPTS; attempt += 1) {
+      const slug = buildUniqueSlugCandidate(page.slug, attempt);
+      try {
+        const result = await this.db.insert(wikiPages).values({ ...page, slug }).returning();
+        createdPage = result[0];
+        break;
+      } catch (error) {
+        if (!isSlugUniqueViolation(error) || attempt === MAX_SLUG_INSERT_ATTEMPTS - 1) {
+          throw error;
+        }
+      }
+    }
+
+    if (!createdPage) {
+      throw new Error('Failed to allocate a unique page slug');
+    }
+
     if (creatorUserId) {
       try {
         await this.setPageOwner(createdPage.id, creatorUserId, creatorUserId);

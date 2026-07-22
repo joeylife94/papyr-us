@@ -41,6 +41,7 @@ import {
   pageViews,
   activityFeed,
   wikiPages,
+  pageVersions,
   tasks,
   comments,
   users,
@@ -762,7 +763,6 @@ export async function registerRoutes(
             // Get the current max version number
             const db = (storage as any).db;
             if (db) {
-              const { pageVersions } = await import('@shared/schema');
               const { desc, eq, sql } = await import('drizzle-orm');
               const [latestVersion] = await db
                 .select({
@@ -840,12 +840,14 @@ export async function registerRoutes(
     async (req, res) => {
       try {
         const pageId = parseInt(req.params.id);
+        if (!Number.isInteger(pageId) || pageId <= 0) {
+          return res.status(400).json({ error: 'Invalid page ID' });
+        }
+
         const db = (storage as any).db;
         if (!db) return res.status(500).json({ error: 'Database not available' });
 
-        const { pageVersions } = await import('@shared/schema');
-        const { desc, eq } = await import('drizzle-orm');
-
+        const { desc } = await import('drizzle-orm');
         const versions = await db
           .select({
             id: pageVersions.id,
@@ -874,17 +876,24 @@ export async function registerRoutes(
     requirePagePermission('viewer'),
     async (req, res) => {
       try {
+        const pageId = parseInt(req.params.id);
         const versionId = parseInt(req.params.versionId);
+        if (
+          !Number.isInteger(pageId) ||
+          pageId <= 0 ||
+          !Number.isInteger(versionId) ||
+          versionId <= 0
+        ) {
+          return res.status(400).json({ error: 'Invalid page or version ID' });
+        }
+
         const db = (storage as any).db;
         if (!db) return res.status(500).json({ error: 'Database not available' });
-
-        const { pageVersions } = await import('@shared/schema');
-        const { eq } = await import('drizzle-orm');
 
         const [version] = await db
           .select()
           .from(pageVersions)
-          .where(eq(pageVersions.id, versionId));
+          .where(and(eq(pageVersions.id, versionId), eq(pageVersions.pageId, pageId)));
 
         if (!version) {
           return res.status(404).json({ error: 'Version not found' });
@@ -907,22 +916,27 @@ export async function registerRoutes(
       try {
         const pageId = parseInt(req.params.id);
         const versionId = parseInt(req.params.versionId);
+        if (
+          !Number.isInteger(pageId) ||
+          pageId <= 0 ||
+          !Number.isInteger(versionId) ||
+          versionId <= 0
+        ) {
+          return res.status(400).json({ error: 'Invalid page or version ID' });
+        }
+
         const db = (storage as any).db;
         if (!db) return res.status(500).json({ error: 'Database not available' });
-
-        const { pageVersions } = await import('@shared/schema');
-        const { eq } = await import('drizzle-orm');
 
         const [version] = await db
           .select()
           .from(pageVersions)
-          .where(eq(pageVersions.id, versionId));
+          .where(and(eq(pageVersions.id, versionId), eq(pageVersions.pageId, pageId)));
 
         if (!version) {
           return res.status(404).json({ error: 'Version not found' });
         }
 
-        // Restore the page to this version
         const restoredPage = await storage.updateWikiPage(pageId, {
           title: version.title,
           content: version.content,
