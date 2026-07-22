@@ -655,34 +655,52 @@ export class DBStorage {
 
   async getDashboardOverview(teamIds: number[]): Promise<any> {
     if (teamIds.length === 0) {
-      return { totalPages: 0, totalComments: 0, totalMembers: 0, totalTasks: 0 };
+      return {
+        totalPages: 0,
+        totalComments: 0,
+        totalMembers: 0,
+        totalTasks: 0,
+        activeTeams: 0,
+        recentActivity: [],
+        teamStats: [],
+      };
     }
+
     const teamIdStrings = teamIds.map(String);
-    const [pageCountResult, commentCountResult, memberCountResult, taskCountResult] =
+    const [pageCountResult, commentCountResult, memberCountResult, taskCountResult, teamRecords] =
       await Promise.all([
-        this.db
-          .select({ count: sql`count(*)` })
-          .from(wikiPages)
-          .where(inArray(wikiPages.teamId, teamIds)),
-        this.db
-          .select({ count: sql`count(*)` })
-          .from(comments)
-          .innerJoin(wikiPages, eq(comments.pageId, wikiPages.id))
-          .where(inArray(wikiPages.teamId, teamIds)),
-        this.db
-          .select({ count: sql`count(*)` })
-          .from(members)
-          .where(inArray(members.teamId, teamIds)),
-        this.db
-          .select({ count: sql`count(*)` })
-          .from(tasks)
-          .where(inArray(tasks.teamId, teamIdStrings)),
+        this.db.select({ count: sql`count(*)` }).from(wikiPages).where(inArray(wikiPages.teamId, teamIds)),
+        this.db.select({ count: sql`count(*)` }).from(comments).innerJoin(wikiPages, eq(comments.pageId, wikiPages.id)).where(inArray(wikiPages.teamId, teamIds)),
+        this.db.select({ count: sql`count(*)` }).from(members).where(inArray(members.teamId, teamIds)),
+        this.db.select({ count: sql`count(*)` }).from(tasks).where(inArray(tasks.teamId, teamIdStrings)),
+        this.db.select({ id: teams.id, name: teams.name, displayName: teams.displayName }).from(teams).where(inArray(teams.id, teamIds)),
       ]);
+
+    const teamStats = await Promise.all(
+      teamRecords.map(async (team: { id: number; name: string; displayName: string }) => {
+        const [pagesResult, commentsResult, tasksResult] = await Promise.all([
+this.db.select({ count: sql`count(*)` }).from(wikiPages).where(and(eq(wikiPages.teamId, team.id), isNull(wikiPages.deletedAt))),
+this.db.select({ count: sql`count(*)` }).from(comments).innerJoin(wikiPages, eq(comments.pageId, wikiPages.id)).where(and(eq(wikiPages.teamId, team.id), isNull(wikiPages.deletedAt))),
+this.db.select({ count: sql`count(*)` }).from(tasks).where(eq(tasks.teamId, String(team.id))),
+        ]);
+        return {
+teamId: team.id,
+name: team.displayName || team.name,
+pages: Number(pagesResult[0].count),
+comments: Number(commentsResult[0].count),
+tasks: Number(tasksResult[0].count),
+        };
+      })
+    );
+
     return {
       totalPages: Number(pageCountResult[0].count),
       totalComments: Number(commentCountResult[0].count),
       totalMembers: Number(memberCountResult[0].count),
       totalTasks: Number(taskCountResult[0].count),
+      activeTeams: teamRecords.length,
+      recentActivity: [],
+      teamStats,
     };
   }
 
