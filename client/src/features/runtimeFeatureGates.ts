@@ -1,4 +1,4 @@
-import type { FeatureFlags } from '@shared/featureFlags';
+import type { FeatureFlags } from '../../../shared/featureFlags';
 
 type RuntimeFeatureFlag = keyof Omit<FeatureFlags, 'PAPYR_MODE'>;
 
