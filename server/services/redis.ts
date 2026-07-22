@@ -9,13 +9,16 @@
  * @see https://redis.io/
  */
 
-import Redis from 'ioredis';
-import { config } from '../config.js';
+import Redis, { type RedisOptions } from 'ioredis';
 import logger from './logger.js';
 
-// Redis connection singleton
+// Redis connection singletons. Connection promises prevent concurrent callers
+// (health checks, cache access, and Socket.IO setup) from calling connect() on
+// the same ioredis instance while it is already connecting.
 let redisClient: Redis | null = null;
+let redisConnectionPromise: Promise<Redis> | null = null;
 let subscriberClient: Redis | null = null;
+let subscriberConnectionPromise: Promise<Redis> | null = null;
 
 /**
  * Get Redis configuration from environment
@@ -36,29 +39,39 @@ function getRedisConfig() {
   };
 }
 
+function getRedisOptions(): RedisOptions {
+  return {
+    retryStrategy: (times) => {
+      // Exponential backoff: 100ms, 200ms, 400ms... max 30s
+      const delay = Math.min(times * 100, 30000);
+      logger.warn(`Redis reconnecting (attempt ${times})...`, { delay });
+      return delay;
+    },
+    maxRetriesPerRequest: 3,
+    enableReadyCheck: true,
+    // All clients use explicit lazy connection. Without this option the URL
+    // constructor connects immediately and a later connect() throws
+    // "Redis is already connecting/connected".
+    lazyConnect: true,
+  };
+}
+
 /**
  * Create Redis client with connection handling
  */
 function createRedisClient(name: string = 'main'): Redis {
   const redisConfig = getRedisConfig();
+  const options = getRedisOptions();
 
   const client = redisConfig.url
-    ? new Redis(redisConfig.url)
+    ? new Redis(redisConfig.url, options)
     : new Redis({
+        ...options,
         host: redisConfig.host,
         port: redisConfig.port,
         password: redisConfig.password,
         db: redisConfig.db,
         keyPrefix: redisConfig.keyPrefix,
-        retryStrategy: (times) => {
-          // Exponential backoff: 100ms, 200ms, 400ms... max 30s
-          const delay = Math.min(times * 100, 30000);
-          logger.warn(`Redis reconnecting (attempt ${times})...`, { delay });
-          return delay;
-        },
-        maxRetriesPerRequest: 3,
-        enableReadyCheck: true,
-        lazyConnect: true,
       });
 
   // Connection event handlers
@@ -85,6 +98,24 @@ function createRedisClient(name: string = 'main'): Redis {
   return client;
 }
 
+async function connectClient(client: Redis, name: string): Promise<Redis> {
+  // A ready or reconnecting client can accept commands; ioredis queues them
+  // while reconnecting. Explicit connect() is only valid in the wait state.
+  if (client.status !== 'wait') {
+    return client;
+  }
+
+  try {
+    await client.connect();
+    return client;
+  } catch (err) {
+    logger.error(`Failed to connect Redis ${name}`, {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  }
+}
+
 /**
  * Check if Redis is configured/enabled
  */
@@ -104,16 +135,29 @@ export async function getRedisClient(): Promise<Redis | null> {
     return null;
   }
 
-  if (!redisClient) {
-    redisClient = createRedisClient('main');
-    await redisClient.connect().catch((err) => {
-      logger.error('Failed to connect to Redis', { error: err.message });
-      redisClient = null;
-      throw err;
-    });
+  if (redisClient?.status === 'end') {
+    redisClient = null;
   }
 
-  return redisClient;
+  if (!redisClient) {
+    redisClient = createRedisClient('main');
+  }
+
+  if (!redisConnectionPromise) {
+    const client = redisClient;
+    redisConnectionPromise = connectClient(client, 'main')
+      .catch((err) => {
+        if (redisClient === client) {
+          redisClient = null;
+        }
+        throw err;
+      })
+      .finally(() => {
+        redisConnectionPromise = null;
+      });
+  }
+
+  return redisConnectionPromise;
 }
 
 /**
@@ -124,38 +168,64 @@ export async function getSubscriberClient(): Promise<Redis | null> {
     return null;
   }
 
-  if (!subscriberClient) {
-    subscriberClient = createRedisClient('subscriber');
-    await subscriberClient.connect().catch((err) => {
-      logger.error('Failed to connect Redis subscriber', { error: err.message });
-      subscriberClient = null;
-      throw err;
-    });
+  if (subscriberClient?.status === 'end') {
+    subscriberClient = null;
   }
 
-  return subscriberClient;
+  if (!subscriberClient) {
+    subscriberClient = createRedisClient('subscriber');
+  }
+
+  if (!subscriberConnectionPromise) {
+    const client = subscriberClient;
+    subscriberConnectionPromise = connectClient(client, 'subscriber')
+      .catch((err) => {
+        if (subscriberClient === client) {
+          subscriberClient = null;
+        }
+        throw err;
+      })
+      .finally(() => {
+        subscriberConnectionPromise = null;
+      });
+  }
+
+  return subscriberConnectionPromise;
 }
 
 /**
  * Close all Redis connections
  */
 export async function closeRedisConnections(): Promise<void> {
-  const closePromises: Promise<void>[] = [];
+  // Wait for in-flight connections before closing so shutdown cannot race with
+  // application startup or a health probe.
+  await Promise.allSettled(
+    [redisConnectionPromise, subscriberConnectionPromise].filter(
+      (promise): promise is Promise<Redis> => promise !== null
+    )
+  );
 
-  if (redisClient) {
+  const closePromises: Promise<unknown>[] = [];
+  const main = redisClient;
+  const subscriber = subscriberClient;
+
+  redisClient = null;
+  subscriberClient = null;
+  redisConnectionPromise = null;
+  subscriberConnectionPromise = null;
+
+  if (main && main.status !== 'end') {
     closePromises.push(
-      redisClient.quit().then(() => {
+      main.quit().then(() => {
         logger.info('Redis main client disconnected');
-        redisClient = null;
       })
     );
   }
 
-  if (subscriberClient) {
+  if (subscriber && subscriber.status !== 'end') {
     closePromises.push(
-      subscriberClient.quit().then(() => {
+      subscriber.quit().then(() => {
         logger.info('Redis subscriber client disconnected');
-        subscriberClient = null;
       })
     );
   }
