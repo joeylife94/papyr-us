@@ -65,7 +65,9 @@ import {
 import {
   normalizeRetrievalQuery,
   retrieveDocuments,
+  applyAiReranking,
   RetrievalValidationError,
+  MAX_AI_RERANK_CANDIDATES,
 } from './services/retrieval.js';
 import * as aiService from './services/ai.js';
 import { aiAssistant } from './services/ai-assistant.js';
@@ -3508,15 +3510,21 @@ export async function registerRoutes(
         return res.json({ results: [], query: retrievalQuery.query, totalResults: 0 });
       }
 
-      // Re-rank the retrieved candidates with the LLM when it is available. If
-      // the AI provider is unreachable, fall back to the FTS ranking rather than
-      // failing the request — retrieval does not depend on AI.
-      let ranked = retrieved;
+      // Re-rank with the LLM when one is configured. Only the head of the
+      // candidate list is ever sent: retrieval may return up to 50 documents, but
+      // the prompt is capped independently at MAX_AI_RERANK_CANDIDATES. The tail
+      // keeps its FTS ordering and is re-appended by applyAiReranking.
+      //
+      // If the provider is unreachable or answers with something unusable, the FTS
+      // ordering is returned and the request still succeeds — retrieval does not
+      // depend on AI.
+      let outcome = applyAiReranking(retrieved, null);
       if (isAIAvailable()) {
         try {
+          const candidates = retrieved.slice(0, MAX_AI_RERANK_CANDIDATES);
           const scored = await smartSearch(
             retrievalQuery.query,
-            retrieved.map((doc) => ({
+            candidates.map((doc) => ({
               id: doc.pageId,
               title: doc.title,
               content: doc.snippet,
@@ -3524,15 +3532,9 @@ export async function registerRoutes(
               url: `/page/${doc.slug}`,
             }))
           );
-          const byId = new Map(retrieved.map((doc) => [doc.pageId, doc]));
-          const reordered = scored
-            .map((hit) => {
-              const source = byId.get(hit.id);
-              // Never surface a document the retrieval layer did not return.
-              return source ? { ...source, score: hit.relevance ?? source.score } : null;
-            })
-            .filter((doc): doc is (typeof retrieved)[number] => doc !== null);
-          if (reordered.length > 0) ranked = reordered;
+          // Merge against the full retrieved set so documents outside the AI
+          // window are preserved rather than dropped.
+          outcome = applyAiReranking(retrieved, scored);
         } catch (error) {
           logger.warn('[Route] /api/ai/search — AI re-ranking failed, using FTS ranking', {
             error: error instanceof Error ? error.message : 'Unknown error',
@@ -3541,9 +3543,10 @@ export async function registerRoutes(
       }
 
       res.json({
-        results: ranked,
+        results: outcome.results,
+        rankingSource: outcome.rankingSource,
         query: retrievalQuery.query,
-        totalResults: ranked.length,
+        totalResults: outcome.results.length,
       });
     } catch (error) {
       logger.error('[Route] /api/ai/search failed', {

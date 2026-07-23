@@ -25,6 +25,15 @@ export const MAX_RETRIEVAL_LIMIT = 50;
 /** Default top-k when the caller does not specify one. */
 export const DEFAULT_RETRIEVAL_LIMIT = 10;
 
+/**
+ * Maximum number of retrieved documents ever handed to an AI re-ranker.
+ *
+ * Deliberately lower than MAX_RETRIEVAL_LIMIT: retrieval may legitimately return
+ * 50 candidates, but the prompt must not grow to match. Candidates beyond this
+ * cut keep their FTS ordering and are appended after the re-ranked head.
+ */
+export const MAX_AI_RERANK_CANDIDATES = 15;
+
 /** Maximum snippet length handed to downstream consumers, in characters. */
 export const MAX_SNIPPET_LENGTH = 400;
 
@@ -40,16 +49,48 @@ export interface RetrievalQuery {
   limit: number;
 }
 
-/** A single normalized retrieval hit. */
+/** How the returned ordering was produced. */
+export type RankingSource = 'fts' | 'ai-reranked';
+
+/**
+ * A single normalized retrieval hit.
+ *
+ * Scores from different rankers are kept in separate fields on purpose. `ftsScore`
+ * is a `ts_rank` value — small, unbounded above, and only comparable within one
+ * result set. `aiScore` is a 0–1 relevance from the re-ranker and is absent unless
+ * a re-ranker actually scored this document. Neither is a percentage. `rank` is the
+ * 1-based position in the returned ordering and is the field callers should display.
+ */
 export interface RetrievalResult {
   pageId: number;
   teamId: number | null;
   /** Page slug, so callers can build a link without a second lookup. */
   slug: string;
   title: string;
+  /**
+   * Plain text. `ts_headline` is configured with empty StartSel/StopSel so no
+   * markup is emitted, and the snippet must be rendered as a text node.
+   */
   snippet: string;
-  score: number;
+  /** PostgreSQL `ts_rank` value. Ordering key only — not a percentage. */
+  ftsScore: number;
+  /** AI relevance (0–1), present only on documents an AI re-ranker scored. */
+  aiScore?: number;
+  /** 1-based position in the returned ordering. */
+  rank: number;
   sourceType: 'page';
+}
+
+/** A ranking hint from an AI re-ranker, in the re-ranker's preferred order. */
+export interface AiRankedHit {
+  id: unknown;
+  relevance?: unknown;
+}
+
+/** The outcome of a retrieval, including how it was ordered. */
+export interface RetrievalOutcome {
+  results: RetrievalResult[];
+  rankingSource: RankingSource;
 }
 
 /** Raw row shape the storage layer is expected to produce. */
@@ -187,21 +228,99 @@ export function normalizeRetrievalResults(
   limit: number
 ): RetrievalResult[] {
   const allowed = new Set(allowedTeamIds);
+  const seen = new Set<number>();
 
   return rows
     .filter((row) => row.teamId !== null && allowed.has(row.teamId))
     .filter((row) => Number.isInteger(row.pageId))
+    .filter((row) => {
+      // A page must never appear twice, whatever the query layer returned.
+      if (seen.has(row.pageId)) return false;
+      seen.add(row.pageId);
+      return true;
+    })
     .map((row) => ({
       pageId: row.pageId,
       teamId: row.teamId,
       slug: (row.slug ?? '').trim(),
       title: (row.title ?? '').trim() || 'Untitled',
       snippet: normalizeSnippet(row.snippet, row.title ?? ''),
-      score: normalizeScore(row.score),
+      ftsScore: normalizeScore(row.score),
+      rank: 0, // assigned below, once the ordering is final
       sourceType: 'page' as const,
     }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
+    .sort((a, b) => b.ftsScore - a.ftsScore)
+    .slice(0, limit)
+    .map((result, index) => ({ ...result, rank: index + 1 }));
+}
+
+/** Re-number results so `rank` always matches the returned ordering. */
+function withRanks(results: RetrievalResult[]): RetrievalResult[] {
+  return results.map((result, index) => ({ ...result, rank: index + 1 }));
+}
+
+function normalizeAiScore(relevance: unknown): number | undefined {
+  const value = typeof relevance === 'number' ? relevance : Number(relevance);
+  if (!Number.isFinite(value) || value < 0 || value > 1) return undefined;
+  return value;
+}
+
+/**
+ * Apply an AI re-ranker's ordering to the retrieved candidates.
+ *
+ * The re-ranker may only reorder what retrieval already returned. Policy:
+ *
+ *  - hits are consumed in the order the re-ranker supplied them;
+ *  - a hit whose id is not among the candidates is discarded — the AI layer can
+ *    never introduce a document, whether by hallucination or by injection;
+ *  - a repeated id is counted once;
+ *  - an unusable relevance value drops `aiScore` but keeps the ordering hint;
+ *  - candidates the re-ranker omitted are appended in their original FTS order,
+ *    so no retrieved document is silently lost;
+ *  - if nothing usable comes back — empty array, wrong type, or no id matching a
+ *    candidate — the FTS ordering is returned unchanged.
+ *
+ * Never throws: a malformed re-ranker response degrades to `'fts'`.
+ */
+export function applyAiReranking(
+  candidates: RetrievalResult[],
+  hits: unknown
+): RetrievalOutcome {
+  const ftsOrder: RetrievalOutcome = {
+    results: withRanks(candidates),
+    rankingSource: 'fts',
+  };
+
+  if (!Array.isArray(hits) || hits.length === 0) return ftsOrder;
+
+  const byPageId = new Map(candidates.map((candidate) => [candidate.pageId, candidate]));
+  const taken = new Set<number>();
+  const reordered: RetrievalResult[] = [];
+
+  for (const hit of hits) {
+    if (hit === null || typeof hit !== 'object') continue;
+
+    const rawId = (hit as AiRankedHit).id;
+    const pageId = typeof rawId === 'number' ? rawId : Number(rawId);
+    if (!Number.isInteger(pageId)) continue;
+
+    const candidate = byPageId.get(pageId);
+    if (!candidate || taken.has(pageId)) continue;
+
+    taken.add(pageId);
+    const aiScore = normalizeAiScore((hit as AiRankedHit).relevance);
+    reordered.push(aiScore === undefined ? candidate : { ...candidate, aiScore });
+  }
+
+  // Nothing the re-ranker said was usable — do not claim an AI ordering.
+  if (reordered.length === 0) return ftsOrder;
+
+  const omitted = candidates.filter((candidate) => !taken.has(candidate.pageId));
+
+  return {
+    results: withRanks([...reordered, ...omitted]),
+    rankingSource: 'ai-reranked',
+  };
 }
 
 /**

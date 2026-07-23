@@ -16,12 +16,15 @@ interface SearchResult {
   slug: string;
   title: string;
   snippet: string;
-  score: number;
+  ftsScore: number;
+  aiScore?: number;
+  rank: number;
   sourceType: 'page';
 }
 
 interface SearchResponse {
   results: SearchResult[];
+  rankingSource: 'fts' | 'ai-reranked';
   query: string;
   totalResults: number;
 }
@@ -192,7 +195,11 @@ export function AISearch({ teamId }: { teamId?: string }) {
             </h3>
             <Badge variant="outline" className="flex items-center space-x-1">
               <Sparkles className="h-3 w-3" />
-              <span>AI 검색</span>
+              <span>
+                {searchMutation.data.rankingSource === 'ai-reranked'
+                  ? 'AI 재정렬'
+                  : '전문 검색(FTS)'}
+              </span>
             </Badge>
           </div>
 
@@ -206,7 +213,7 @@ export function AISearch({ teamId }: { teamId?: string }) {
             </Card>
           ) : (
             <div className="space-y-4">
-              {searchMutation.data.results.map((result, index) => (
+              {searchMutation.data.results.map((result) => (
                 <Card key={result.pageId} className="hover:shadow-md transition-shadow">
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between mb-2">
@@ -215,14 +222,16 @@ export function AISearch({ teamId }: { teamId?: string }) {
                         <h4 className="font-semibold text-lg">{result.title}</h4>
                         <Badge className={getTypeColor(result.sourceType)}>페이지</Badge>
                       </div>
-                      {/* Rank position, not a percentage: the score scale differs
-                          between FTS ranking and AI re-ranking. */}
+                      {/* Rank position, not a percentage: ftsScore and aiScore use
+                          different scales and must not be shown as one number. */}
                       <div className="flex items-center space-x-2 text-sm text-gray-500">
                         <Star className="h-4 w-4" />
-                        <span>#{index + 1}</span>
+                        <span>#{result.rank}</span>
                       </div>
                     </div>
 
+                    {/* Snippets are untrusted page content: ts_headline does not
+                        sanitise them. Render as a text node only — never as raw HTML. */}
                     <p className="text-gray-600 dark:text-gray-400 mb-3 line-clamp-2">
                       {result.snippet}
                     </p>
