@@ -56,3 +56,33 @@ export const AuthLoginResponseSchema = z.object({
 });
 
 export type AuthLoginResponse = z.infer<typeof AuthLoginResponseSchema>;
+
+// ─── POST /api/ai/search ─────────────────────────────────────────────────────
+
+/**
+ * Contract: a single retrieval hit.
+ *
+ * `teamId` is mandatory and non-null: every returned document must be
+ * attributable to a team the caller can read, so isolation stays verifiable
+ * from the response alone.
+ */
+export const RetrievalResultSchema = z.object({
+  pageId: z.number().int().positive(),
+  teamId: z.number().int().positive(),
+  slug: z.string(),
+  title: z.string().min(1),
+  snippet: z.string(),
+  score: z.number().nonnegative(),
+  sourceType: z.literal('page'),
+});
+
+export type RetrievalResultResponse = z.infer<typeof RetrievalResultSchema>;
+
+/** Contract: shape of the POST /api/ai/search response body. */
+export const SearchResponseSchema = z.object({
+  results: z.array(RetrievalResultSchema),
+  query: z.string(),
+  totalResults: z.number().int().nonnegative(),
+});
+
+export type SearchResponse = z.infer<typeof SearchResponseSchema>;
