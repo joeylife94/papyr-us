@@ -45,6 +45,8 @@ vi.mock('../features', () => ({
 
 // Mock the AI and dependent storage services
 vi.mock('../services/ai', () => ({
+  // No API key in tests — the route must fall back to FTS ranking.
+  isAIAvailable: vi.fn(() => false),
   generateContent: vi.fn(),
   generateContentSuggestions: vi.fn(),
   smartSearch: vi.fn(),
@@ -73,6 +75,7 @@ import {
   smartSearch,
   generateSearchSuggestions,
   inlineAIAction,
+  isAIAvailable,
 } from '../services/ai';
 import { storage } from '../storage';
 import { listUploadedFiles } from '../services/upload.js';
@@ -134,23 +137,21 @@ describe('AI Services API', () => {
     expect(response.body).toEqual(suggestions);
   });
 
-  it('TC-AI-003: should perform an AI-powered search across documents', async () => {
+  it('TC-AI-003: should perform a team-scoped retrieval search across documents', async () => {
     const query = 'What is the project status?';
     const teamId = 1; // numeric ID must match getUserTeamIds mock
-    const searchResults = [
-      { id: 1, title: 'Project Status Page', content: 'Everything is on track.', type: 'page' },
-    ];
 
-    // Mock dependent data sources
-    (storage.searchWikiPages as vi.Mock).mockResolvedValue({
-      pages: [
-        { id: 1, title: 'Project Status Page', content: 'Everything is on track.', slug: 'status' },
-      ],
-    });
-    (storage.getTasks as vi.Mock).mockResolvedValue([]);
     (storage.getUserTeamIds as vi.Mock).mockResolvedValue([teamId]);
-    (listUploadedFiles as vi.Mock).mockResolvedValue({ files: [] });
-    (smartSearch as vi.Mock).mockResolvedValue(searchResults);
+    (storage.retrieveTeamScopedPages as vi.Mock).mockResolvedValue([
+      {
+        pageId: 1,
+        teamId,
+        slug: 'status',
+        title: 'Project Status Page',
+        snippet: 'Everything is on track.',
+        score: 0.42,
+      },
+    ]);
 
     const token = jwt.sign({ id: 1, email: 'user@test.com', role: 'user' }, AI_TEST_SECRET);
     const response = await request(app)
@@ -159,8 +160,126 @@ describe('AI Services API', () => {
       .send({ query, teamId });
 
     expect(response.status).toBe(200);
-    expect(response.body.results).toEqual(searchResults);
-    expect(smartSearch).toHaveBeenCalled();
+    expect(response.body.results).toEqual([
+      {
+        pageId: 1,
+        teamId,
+        slug: 'status',
+        title: 'Project Status Page',
+        snippet: 'Everything is on track.',
+        score: 0.42,
+        sourceType: 'page',
+      },
+    ]);
+    expect(storage.retrieveTeamScopedPages).toHaveBeenCalledWith(
+      expect.objectContaining({ teamIds: [teamId] })
+    );
+  });
+
+  it('TC-AI-005: retrieval search still works when no AI provider is configured', async () => {
+    // isAIAvailable() is false without OPENAI_API_KEY, so no LLM call is made,
+    // but the FTS-ranked results must still be returned.
+    (storage.getUserTeamIds as vi.Mock).mockResolvedValue([1]);
+    (storage.retrieveTeamScopedPages as vi.Mock).mockResolvedValue([
+      { pageId: 7, teamId: 1, slug: 'runbook', title: 'Runbook', snippet: 'restart the worker', score: 0.3 },
+    ]);
+
+    const token = jwt.sign({ id: 1, email: 'user@test.com', role: 'user' }, AI_TEST_SECRET);
+    const response = await request(app)
+      .post('/api/ai/search')
+      .set('Cookie', authCookie(token))
+      .send({ query: 'runbook' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.results).toHaveLength(1);
+    expect(response.body.results[0].pageId).toBe(7);
+    expect(smartSearch).not.toHaveBeenCalled();
+  });
+
+  it('TC-AI-007: AI re-ranking cannot introduce a document retrieval did not return', async () => {
+    (isAIAvailable as vi.Mock).mockReturnValue(true);
+    (storage.getUserTeamIds as vi.Mock).mockResolvedValue([1]);
+    (storage.retrieveTeamScopedPages as vi.Mock).mockResolvedValue([
+      { pageId: 7, teamId: 1, slug: 'runbook', title: 'Runbook', snippet: 'restart the worker', score: 0.3 },
+    ]);
+    // A compromised / hallucinating model returns an id outside the candidate set.
+    (smartSearch as vi.Mock).mockResolvedValue([
+      { id: 999, title: 'Other team doc', content: 'secret', relevance: 0.99, type: 'page' },
+      { id: 7, title: 'Runbook', content: 'restart the worker', relevance: 0.5, type: 'page' },
+    ]);
+
+    const token = jwt.sign({ id: 1, email: 'user@test.com', role: 'user' }, AI_TEST_SECRET);
+    const response = await request(app)
+      .post('/api/ai/search')
+      .set('Cookie', authCookie(token))
+      .send({ query: 'runbook' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.results.map((r: { pageId: number }) => r.pageId)).toEqual([7]);
+    expect(JSON.stringify(response.body)).not.toContain('secret');
+  });
+
+  it('TC-AI-008: hands the AI layer only the bounded retrieval candidates', async () => {
+    (isAIAvailable as vi.Mock).mockReturnValue(true);
+    (storage.getUserTeamIds as vi.Mock).mockResolvedValue([1]);
+    (storage.retrieveTeamScopedPages as vi.Mock).mockResolvedValue([
+      { pageId: 7, teamId: 1, slug: 'runbook', title: 'Runbook', snippet: 'restart the worker', score: 0.3 },
+    ]);
+    (smartSearch as vi.Mock).mockResolvedValue([]);
+
+    const token = jwt.sign({ id: 1, email: 'user@test.com', role: 'user' }, AI_TEST_SECRET);
+    await request(app)
+      .post('/api/ai/search')
+      .set('Cookie', authCookie(token))
+      .send({ query: 'runbook' });
+
+    const [, documents] = (smartSearch as vi.Mock).mock.calls[0];
+    expect(documents).toHaveLength(1);
+    // Snippets, not full page bodies, are what reaches the prompt.
+    expect(documents[0].content).toBe('restart the worker');
+  });
+
+  it('TC-AI-009: falls back to FTS ranking when the AI provider fails', async () => {
+    (isAIAvailable as vi.Mock).mockReturnValue(true);
+    (storage.getUserTeamIds as vi.Mock).mockResolvedValue([1]);
+    (storage.retrieveTeamScopedPages as vi.Mock).mockResolvedValue([
+      { pageId: 7, teamId: 1, slug: 'runbook', title: 'Runbook', snippet: 'restart the worker', score: 0.3 },
+    ]);
+    (smartSearch as vi.Mock).mockRejectedValue(new Error('openai unavailable'));
+
+    const token = jwt.sign({ id: 1, email: 'user@test.com', role: 'user' }, AI_TEST_SECRET);
+    const response = await request(app)
+      .post('/api/ai/search')
+      .set('Cookie', authCookie(token))
+      .send({ query: 'runbook' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.results.map((r: { pageId: number }) => r.pageId)).toEqual([7]);
+  });
+
+  it('TC-AI-006: never passes the whole workspace to the AI layer', async () => {
+    (storage.getUserTeamIds as vi.Mock).mockResolvedValue([1]);
+    (storage.retrieveTeamScopedPages as vi.Mock).mockImplementation(
+      async ({ limit }: { limit: number }) =>
+        Array.from({ length: limit }, (_, i) => ({
+          pageId: i + 1,
+          teamId: 1,
+          slug: `page-${i}`,
+          title: `Page ${i}`,
+          snippet: 'content',
+          score: 1 - i / 100,
+        }))
+    );
+
+    const token = jwt.sign({ id: 1, email: 'user@test.com', role: 'user' }, AI_TEST_SECRET);
+    const response = await request(app)
+      .post('/api/ai/search')
+      .set('Cookie', authCookie(token))
+      .send({ query: 'anything', limit: 9999 });
+
+    expect(response.status).toBe(200);
+    // The top-k cap holds regardless of what the caller asks for.
+    expect(response.body.results.length).toBeLessThanOrEqual(50);
   });
 
   it('TC-AI-004: should get search suggestions based on a query', async () => {

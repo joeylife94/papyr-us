@@ -11,6 +11,7 @@ import {
   WikiPageResponseSchema,
   AuthMeResponseSchema,
   AuthLoginResponseSchema,
+  SearchResponseSchema,
 } from '../../contracts/api.schema';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -79,5 +80,53 @@ describe('Contract: POST /api/auth/login → AuthLoginResponse', () => {
   it('rejects a response where "user" object is absent', () => {
     const broken = { message: 'Login successful' };
     expect(AuthLoginResponseSchema.safeParse(broken).success).toBe(false);
+  });
+});
+
+// ─── AI search contract ───────────────────────────────────────────────────────
+
+describe('Contract: POST /api/ai/search → SearchResponse', () => {
+  const fixture = loadFixture('ai-search.json') as {
+    results: Array<Record<string, unknown>>;
+    query: string;
+    totalResults: number;
+  };
+
+  it('recorded fixture satisfies the declared schema', () => {
+    const result = SearchResponseSchema.safeParse(fixture);
+    expect(result.success, result.error?.format() as any).toBe(true);
+  });
+
+  it('requires every result to carry a teamId, so isolation stays auditable', () => {
+    const broken = {
+      ...fixture,
+      results: [{ ...fixture.results[0], teamId: undefined }],
+    };
+    expect(SearchResponseSchema.safeParse(broken).success).toBe(false);
+  });
+
+  it('rejects a result whose teamId is null', () => {
+    const broken = { ...fixture, results: [{ ...fixture.results[0], teamId: null }] };
+    expect(SearchResponseSchema.safeParse(broken).success).toBe(false);
+  });
+
+  it('rejects a result missing its relevance score', () => {
+    const broken = { ...fixture, results: [{ ...fixture.results[0], score: undefined }] };
+    expect(SearchResponseSchema.safeParse(broken).success).toBe(false);
+  });
+
+  it('rejects a negative relevance score', () => {
+    const broken = { ...fixture, results: [{ ...fixture.results[0], score: -1 }] };
+    expect(SearchResponseSchema.safeParse(broken).success).toBe(false);
+  });
+
+  it('rejects an unknown sourceType', () => {
+    const broken = { ...fixture, results: [{ ...fixture.results[0], sourceType: 'task' }] };
+    expect(SearchResponseSchema.safeParse(broken).success).toBe(false);
+  });
+
+  it('accepts an empty result set', () => {
+    const empty = { results: [], query: 'nothing matches', totalResults: 0 };
+    expect(SearchResponseSchema.safeParse(empty).success).toBe(true);
   });
 });
