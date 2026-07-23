@@ -6,7 +6,9 @@
       "slug": "firebat-deployment-runbook",
       "title": "Firebat deployment runbook",
       "snippet": "Bring the stack up with docker compose --env-file .env.firebat",
-      "score": 0.6079271,
+      "ftsScore": 0.6079271,
+      "aiScore": 0.94,
+      "rank": 1,
       "sourceType": "page"
     },
     {
@@ -15,10 +17,13 @@
       "slug": "redis-lifecycle-notes",
       "title": "Redis lifecycle notes",
       "snippet": "Redis 7 is used for the socket.io adapter and session store",
-      "score": 0.0303964,
+      "ftsScore": 0.0303964,
+      "aiScore": 0.41,
+      "rank": 2,
       "sourceType": "page"
     }
   ],
+  "rankingSource": "ai-reranked",
   "query": "deployment runbook",
   "totalResults": 2
 }

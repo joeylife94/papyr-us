@@ -6,6 +6,7 @@ import { describe, it, expect } from 'vitest';
 import {
   normalizeRetrievalQuery,
   normalizeRetrievalResults,
+  applyAiReranking,
   sanitizeFtsQuery,
   RetrievalValidationError,
   DEFAULT_RETRIEVAL_LIMIT,
@@ -13,6 +14,7 @@ import {
   MAX_QUERY_LENGTH,
   MAX_SNIPPET_LENGTH,
   type RetrievedPageRow,
+  type RetrievalResult,
 } from '../../server/services/retrieval';
 
 const validInput = { query: 'release notes', userId: 1, teamIds: [10, 20] };
@@ -126,7 +128,8 @@ describe('normalizeRetrievalResults', () => {
         slug: 'deploy-guide',
         title: 'Deploy guide',
         snippet: 'How to deploy',
-        score: 0.5,
+        ftsScore: 0.5,
+        rank: 1,
         sourceType: 'page',
       },
     ]);
@@ -152,12 +155,12 @@ describe('normalizeRetrievalResults', () => {
   });
 
   it('coerces a string score from the driver into a number', () => {
-    expect(normalizeRetrievalResults([row({ score: '0.25' })], [10], 10)[0].score).toBe(0.25);
+    expect(normalizeRetrievalResults([row({ score: '0.25' })], [10], 10)[0].ftsScore).toBe(0.25);
   });
 
   it('falls back to zero for an unusable score', () => {
-    expect(normalizeRetrievalResults([row({ score: null })], [10], 10)[0].score).toBe(0);
-    expect(normalizeRetrievalResults([row({ score: 'x' })], [10], 10)[0].score).toBe(0);
+    expect(normalizeRetrievalResults([row({ score: null })], [10], 10)[0].ftsScore).toBe(0);
+    expect(normalizeRetrievalResults([row({ score: 'x' })], [10], 10)[0].ftsScore).toBe(0);
   });
 
   it('substitutes a placeholder for a blank title', () => {
@@ -178,5 +181,173 @@ describe('normalizeRetrievalResults', () => {
 
   it('tolerates an empty row set', () => {
     expect(normalizeRetrievalResults([], [10], 10)).toEqual([]);
+  });
+});
+
+describe('normalizeRetrievalResults — rank and duplicates', () => {
+  const row = (over: Partial<RetrievedPageRow> = {}): RetrievedPageRow => ({
+    pageId: 1,
+    teamId: 10,
+    slug: 'deploy-guide',
+    title: 'Deploy guide',
+    snippet: 'How to deploy',
+    score: 0.5,
+    ...over,
+  });
+
+  it('assigns 1-based ranks matching the returned ordering', () => {
+    const rows = [row({ pageId: 1, score: 0.1 }), row({ pageId: 2, score: 0.9 })];
+    expect(normalizeRetrievalResults(rows, [10], 10).map((r) => [r.pageId, r.rank])).toEqual([
+      [2, 1],
+      [1, 2],
+    ]);
+  });
+
+  it('collapses a duplicated pageId from the query layer', () => {
+    const rows = [row({ pageId: 1 }), row({ pageId: 1 })];
+    expect(normalizeRetrievalResults(rows, [10], 10)).toHaveLength(1);
+  });
+
+  it('does not attach an aiScore when no re-ranker ran', () => {
+    expect(normalizeRetrievalResults([row()], [10], 10)[0].aiScore).toBeUndefined();
+  });
+});
+
+// ─── AI re-ranking defence ────────────────────────────────────────────────────
+
+describe('applyAiReranking', () => {
+  const candidate = (pageId: number, ftsScore: number): RetrievalResult => ({
+    pageId,
+    teamId: 10,
+    slug: `page-${pageId}`,
+    title: `Page ${pageId}`,
+    snippet: 'body',
+    ftsScore,
+    rank: 0,
+    sourceType: 'page',
+  });
+
+  // FTS order is 1, 2, 3 (descending ftsScore).
+  const candidates = [candidate(1, 0.9), candidate(2, 0.5), candidate(3, 0.1)];
+
+  it('reorders candidates according to the AI ordering', () => {
+    const out = applyAiReranking(candidates, [
+      { id: 3, relevance: 0.9 },
+      { id: 1, relevance: 0.8 },
+      { id: 2, relevance: 0.7 },
+    ]);
+    expect(out.results.map((r) => r.pageId)).toEqual([3, 1, 2]);
+    expect(out.rankingSource).toBe('ai-reranked');
+  });
+
+  it('records aiScore alongside the preserved ftsScore', () => {
+    const out = applyAiReranking(candidates, [{ id: 2, relevance: 0.75 }]);
+    const top = out.results[0];
+    expect(top.pageId).toBe(2);
+    expect(top.aiScore).toBe(0.75);
+    expect(top.ftsScore).toBe(0.5); // FTS score is not overwritten
+  });
+
+  it('re-numbers rank to match the AI ordering', () => {
+    const out = applyAiReranking(candidates, [{ id: 3, relevance: 0.9 }]);
+    expect(out.results.map((r) => r.rank)).toEqual([1, 2, 3]);
+    expect(out.results[0].pageId).toBe(3);
+  });
+
+  it('discards a pageId that was never a candidate', () => {
+    const out = applyAiReranking(candidates, [
+      { id: 999, relevance: 0.99 },
+      { id: 1, relevance: 0.5 },
+    ]);
+    expect(out.results.map((r) => r.pageId)).toEqual([1, 2, 3]);
+    expect(out.results.some((r) => r.pageId === 999)).toBe(false);
+  });
+
+  it('discards a non-existent pageId supplied as a string', () => {
+    const out = applyAiReranking(candidates, [{ id: '4242', relevance: 0.99 }]);
+    expect(out.results.map((r) => r.pageId)).toEqual([1, 2, 3]);
+    expect(out.rankingSource).toBe('fts');
+  });
+
+  it('counts a repeated pageId once', () => {
+    const out = applyAiReranking(candidates, [
+      { id: 3, relevance: 0.9 },
+      { id: 3, relevance: 0.8 },
+      { id: 1, relevance: 0.7 },
+    ]);
+    expect(out.results.map((r) => r.pageId)).toEqual([3, 1, 2]);
+    expect(out.results).toHaveLength(3);
+  });
+
+  it('appends omitted candidates in their original FTS order', () => {
+    const out = applyAiReranking(candidates, [{ id: 3, relevance: 0.9 }]);
+    // 3 was re-ranked to the top; 1 and 2 follow in FTS order.
+    expect(out.results.map((r) => r.pageId)).toEqual([3, 1, 2]);
+  });
+
+  it('never loses a retrieved document', () => {
+    const out = applyAiReranking(candidates, [{ id: 2, relevance: 0.9 }]);
+    expect(out.results).toHaveLength(candidates.length);
+  });
+
+  it('keeps the ordering hint but drops an out-of-range aiScore', () => {
+    const out = applyAiReranking(candidates, [{ id: 3, relevance: 42 }]);
+    expect(out.results[0].pageId).toBe(3);
+    expect(out.results[0].aiScore).toBeUndefined();
+  });
+
+  it('keeps the ordering hint but drops a non-numeric aiScore', () => {
+    const out = applyAiReranking(candidates, [{ id: 3, relevance: 'very relevant' }]);
+    expect(out.results[0].pageId).toBe(3);
+    expect(out.results[0].aiScore).toBeUndefined();
+  });
+
+  it('drops a negative aiScore', () => {
+    const out = applyAiReranking(candidates, [{ id: 3, relevance: -0.5 }]);
+    expect(out.results[0].aiScore).toBeUndefined();
+  });
+
+  it('falls back to FTS order for an empty AI response', () => {
+    const out = applyAiReranking(candidates, []);
+    expect(out.results.map((r) => r.pageId)).toEqual([1, 2, 3]);
+    expect(out.rankingSource).toBe('fts');
+  });
+
+  it('falls back to FTS order when the response is not an array', () => {
+    for (const malformed of [null, undefined, {}, 'results', 42, { results: [] }]) {
+      const out = applyAiReranking(candidates, malformed);
+      expect(out.results.map((r) => r.pageId)).toEqual([1, 2, 3]);
+      expect(out.rankingSource).toBe('fts');
+    }
+  });
+
+  it('falls back to FTS order when no hit matches a candidate', () => {
+    const out = applyAiReranking(candidates, [{ id: 900 }, { id: 901 }]);
+    expect(out.results.map((r) => r.pageId)).toEqual([1, 2, 3]);
+    expect(out.rankingSource).toBe('fts');
+  });
+
+  it('ignores malformed entries inside an otherwise usable response', () => {
+    const out = applyAiReranking(candidates, [
+      null,
+      'nonsense',
+      { relevance: 0.9 }, // no id
+      { id: null },
+      { id: 3, relevance: 0.9 },
+    ]);
+    expect(out.results.map((r) => r.pageId)).toEqual([3, 1, 2]);
+    expect(out.rankingSource).toBe('ai-reranked');
+  });
+
+  it('reports fts for an empty candidate set', () => {
+    const out = applyAiReranking([], [{ id: 1, relevance: 0.9 }]);
+    expect(out.results).toEqual([]);
+    expect(out.rankingSource).toBe('fts');
+  });
+
+  it('does not mutate the candidates it was given', () => {
+    const snapshot = JSON.parse(JSON.stringify(candidates));
+    applyAiReranking(candidates, [{ id: 3, relevance: 0.9 }]);
+    expect(candidates).toEqual(snapshot);
   });
 });

@@ -110,13 +110,39 @@ describe('Contract: POST /api/ai/search → SearchResponse', () => {
     expect(SearchResponseSchema.safeParse(broken).success).toBe(false);
   });
 
-  it('rejects a result missing its relevance score', () => {
-    const broken = { ...fixture, results: [{ ...fixture.results[0], score: undefined }] };
+  it('rejects a result missing its FTS score', () => {
+    const broken = { ...fixture, results: [{ ...fixture.results[0], ftsScore: undefined }] };
     expect(SearchResponseSchema.safeParse(broken).success).toBe(false);
   });
 
-  it('rejects a negative relevance score', () => {
-    const broken = { ...fixture, results: [{ ...fixture.results[0], score: -1 }] };
+  it('rejects a negative FTS score', () => {
+    const broken = { ...fixture, results: [{ ...fixture.results[0], ftsScore: -1 }] };
+    expect(SearchResponseSchema.safeParse(broken).success).toBe(false);
+  });
+
+  it('accepts a result with no aiScore (FTS-only ranking)', () => {
+    const { aiScore: _drop, ...ftsOnly } = fixture.results[0] as { aiScore: number };
+    const body = { ...fixture, rankingSource: 'fts', results: [ftsOnly] };
+    expect(SearchResponseSchema.safeParse(body).success).toBe(true);
+  });
+
+  it('rejects an aiScore outside [0, 1]', () => {
+    const broken = { ...fixture, results: [{ ...fixture.results[0], aiScore: 1.5 }] };
+    expect(SearchResponseSchema.safeParse(broken).success).toBe(false);
+  });
+
+  it('requires rank to be a positive integer', () => {
+    const broken = { ...fixture, results: [{ ...fixture.results[0], rank: 0 }] };
+    expect(SearchResponseSchema.safeParse(broken).success).toBe(false);
+  });
+
+  it('requires rankingSource so an FTS ordering is never mistaken for an AI one', () => {
+    const { rankingSource: _drop, ...broken } = fixture as { rankingSource: string };
+    expect(SearchResponseSchema.safeParse(broken).success).toBe(false);
+  });
+
+  it('rejects an unknown rankingSource', () => {
+    const broken = { ...fixture, rankingSource: 'vector' };
     expect(SearchResponseSchema.safeParse(broken).success).toBe(false);
   });
 
@@ -126,7 +152,12 @@ describe('Contract: POST /api/ai/search → SearchResponse', () => {
   });
 
   it('accepts an empty result set', () => {
-    const empty = { results: [], query: 'nothing matches', totalResults: 0 };
+    const empty = {
+      results: [],
+      rankingSource: 'fts',
+      query: 'nothing matches',
+      totalResults: 0,
+    };
     expect(SearchResponseSchema.safeParse(empty).success).toBe(true);
   });
 });

@@ -159,7 +159,9 @@ describe('Domain invariant: retrieval works without AI', () => {
     delete process.env.OPENAI_API_KEY;
     const results = await retrieve(fakeStore(), [10]);
     expect(results.length).toBeGreaterThan(0);
-    expect(results[0].score).toBeGreaterThan(0);
+    expect(results[0].ftsScore).toBeGreaterThan(0);
+    expect(results[0].rank).toBe(1);
+    expect(results[0].aiScore).toBeUndefined();
     expect(results.every((r) => r.sourceType === 'page')).toBe(true);
   });
 });

@@ -167,10 +167,12 @@ describe('AI Services API', () => {
         slug: 'status',
         title: 'Project Status Page',
         snippet: 'Everything is on track.',
-        score: 0.42,
+        ftsScore: 0.42,
+        rank: 1,
         sourceType: 'page',
       },
     ]);
+    expect(response.body.rankingSource).toBe('fts');
     expect(storage.retrieveTeamScopedPages).toHaveBeenCalledWith(
       expect.objectContaining({ teamIds: [teamId] })
     );
@@ -237,6 +239,70 @@ describe('AI Services API', () => {
     expect(documents).toHaveLength(1);
     // Snippets, not full page bodies, are what reaches the prompt.
     expect(documents[0].content).toBe('restart the worker');
+  });
+
+  it('TC-AI-010: caps AI re-rank candidates well below the retrieval limit', async () => {
+    (isAIAvailable as vi.Mock).mockReturnValue(true);
+    (storage.getUserTeamIds as vi.Mock).mockResolvedValue([1]);
+    // Retrieval legitimately returns 50 documents…
+    (storage.retrieveTeamScopedPages as vi.Mock).mockResolvedValue(
+      Array.from({ length: 50 }, (_, i) => ({
+        pageId: i + 1,
+        teamId: 1,
+        slug: `page-${i + 1}`,
+        title: `Page ${i + 1}`,
+        snippet: 'body',
+        score: 1 - i / 100,
+      }))
+    );
+    (smartSearch as vi.Mock).mockResolvedValue([]);
+
+    const token = jwt.sign({ id: 1, email: 'user@test.com', role: 'user' }, AI_TEST_SECRET);
+    const response = await request(app)
+      .post('/api/ai/search')
+      .set('Cookie', authCookie(token))
+      .send({ query: 'anything', limit: 50 });
+
+    // …but the prompt only ever sees the head of that list.
+    const [, documents] = (smartSearch as vi.Mock).mock.calls[0];
+    expect(documents).toHaveLength(15);
+
+    // Nothing retrieved is lost: the tail keeps its FTS ordering.
+    expect(response.body.results).toHaveLength(50);
+    expect(response.body.rankingSource).toBe('fts');
+    expect(response.body.results.map((r: { rank: number }) => r.rank).slice(0, 3)).toEqual([
+      1, 2, 3,
+    ]);
+  });
+
+  it('TC-AI-011: re-ranks the AI window while preserving documents outside it', async () => {
+    (isAIAvailable as vi.Mock).mockReturnValue(true);
+    (storage.getUserTeamIds as vi.Mock).mockResolvedValue([1]);
+    (storage.retrieveTeamScopedPages as vi.Mock).mockResolvedValue(
+      Array.from({ length: 20 }, (_, i) => ({
+        pageId: i + 1,
+        teamId: 1,
+        slug: `page-${i + 1}`,
+        title: `Page ${i + 1}`,
+        snippet: 'body',
+        score: 1 - i / 100,
+      }))
+    );
+    // The model promotes the last document inside the 15-item window.
+    (smartSearch as vi.Mock).mockResolvedValue([{ id: 15, relevance: 0.99, type: 'page' }]);
+
+    const token = jwt.sign({ id: 1, email: 'user@test.com', role: 'user' }, AI_TEST_SECRET);
+    const response = await request(app)
+      .post('/api/ai/search')
+      .set('Cookie', authCookie(token))
+      .send({ query: 'anything', limit: 20 });
+
+    expect(response.body.rankingSource).toBe('ai-reranked');
+    expect(response.body.results[0].pageId).toBe(15);
+    expect(response.body.results[0].aiScore).toBe(0.99);
+    // Documents 16-20 were never shown to the model but must still be returned.
+    expect(response.body.results).toHaveLength(20);
+    expect(response.body.results.map((r: { pageId: number }) => r.pageId)).toContain(20);
   });
 
   it('TC-AI-009: falls back to FTS ranking when the AI provider fails', async () => {
