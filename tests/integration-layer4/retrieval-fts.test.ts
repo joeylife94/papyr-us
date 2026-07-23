@@ -123,6 +123,30 @@ beforeAll(async () => {
     teamId: null,
   });
   await insertPage({
+    slug: 'a-korean-guide',
+    title: '배포 가이드',
+    content: '파이어뱃 스택을 docker compose 로 배포하는 방법',
+    teamId: TEAM_A,
+  });
+  await insertPage({
+    slug: 'a-korean-retro',
+    title: '회고',
+    content: '지난주 배포 는 문제없이 끝났다',
+    teamId: TEAM_A,
+  });
+  await insertPage({
+    slug: 'b-korean-secret',
+    title: '배포 자격증명',
+    content: '팀 비 배포 토큰 목록',
+    teamId: TEAM_B,
+  });
+  await insertPage({
+    slug: 'a-html-content',
+    title: 'Markup sample',
+    content: 'deploy <img src=x onerror=alert(1)> and <b>bold</b> markup',
+    teamId: TEAM_A,
+  });
+  await insertPage({
     slug: 'a-deleted-deploy',
     title: 'Archived deploy plan',
     content: 'deploy plan that was trashed',
@@ -149,7 +173,11 @@ describe('retrieveTeamScopedPages: the generated SQL runs against Postgres', () 
     });
 
     expect(rows.length).toBeGreaterThan(0);
-    expect(rows.map((r) => r.slug).sort()).toEqual(['a-deploy-retro', 'a-deploy-runbook']);
+    expect(rows.map((r) => r.slug).sort()).toEqual([
+      'a-deploy-retro',
+      'a-deploy-runbook',
+      'a-html-content',
+    ]);
   });
 
   it('never returns another team’s page', async () => {
@@ -190,6 +218,7 @@ describe('retrieveTeamScopedPages: the generated SQL runs against Postgres', () 
     expect(rows.map((r) => r.slug).sort()).toEqual([
       'a-deploy-retro',
       'a-deploy-runbook',
+      'a-html-content',
       'b-deploy-secrets',
     ]);
   });
@@ -248,5 +277,132 @@ describe('retrieveTeamScopedPages: the generated SQL runs against Postgres', () 
       limit: 10,
     });
     expect(Array.isArray(rows)).toBe(true);
+  });
+});
+
+describe('Text search configuration is explicit, not inherited from the server', () => {
+  it('does not depend on default_text_search_config', async () => {
+    // Flip the session default to something that would change results if any of
+    // to_tsvector / plainto_tsquery / ts_headline relied on it.
+    await storage.pool.query(`SET default_text_search_config = 'pg_catalog.german'`);
+    try {
+      const rows = await storage.retrieveTeamScopedPages({
+        query: 'deploy',
+        teamIds: [TEAM_A],
+        limit: 10,
+      });
+      expect(rows.map((r) => r.slug).sort()).toEqual([
+        'a-deploy-retro',
+        'a-deploy-runbook',
+        'a-html-content',
+      ]);
+    } finally {
+      await storage.pool.query(`RESET default_text_search_config`);
+    }
+  });
+});
+
+describe('Korean content under the "simple" configuration', () => {
+  it('matches a Korean term in a page title', async () => {
+    const rows = await storage.retrieveTeamScopedPages({
+      query: '배포',
+      teamIds: [TEAM_A],
+      limit: 10,
+    });
+    expect(rows.map((r) => r.slug)).toContain('a-korean-guide');
+  });
+
+  it('matches a Korean term in page content', async () => {
+    const rows = await storage.retrieveTeamScopedPages({
+      query: '배포',
+      teamIds: [TEAM_A],
+      limit: 10,
+    });
+    expect(rows.map((r) => r.slug)).toContain('a-korean-retro');
+  });
+
+  it('keeps team isolation for Korean queries', async () => {
+    const rows = await storage.retrieveTeamScopedPages({
+      query: '배포',
+      teamIds: [TEAM_A],
+      limit: 10,
+    });
+    expect(rows.some((r) => r.slug === 'b-korean-secret')).toBe(false);
+  });
+
+  it('ranks a Korean title match above a body-only match', async () => {
+    const rows = await storage.retrieveTeamScopedPages({
+      query: '배포 가이드',
+      teamIds: [TEAM_A],
+      limit: 10,
+    });
+    expect(rows[0].slug).toBe('a-korean-guide');
+  });
+
+  it('matches a mixed Korean/English query', async () => {
+    const rows = await storage.retrieveTeamScopedPages({
+      query: '배포 docker',
+      teamIds: [TEAM_A],
+      limit: 10,
+    });
+    expect(rows.map((r) => r.slug)).toContain('a-korean-guide');
+  });
+
+  it('DOCUMENTS A LIMITATION: no morphological analysis, so a particle-suffixed form does not match', async () => {
+    // '배포하는' contains '배포' but the 'simple' configuration does not stem or
+    // segment Korean, so this is a distinct lexeme. Recorded as a known limitation
+    // in docs/retrieval-architecture.md; fixing it needs an analyzer extension.
+    const rows = await storage.retrieveTeamScopedPages({
+      query: '배포하는',
+      teamIds: [TEAM_A],
+      limit: 10,
+    });
+    expect(rows.some((r) => r.slug === 'a-korean-retro')).toBe(false);
+  });
+});
+
+describe('ts_headline emits no highlight markers', () => {
+  it('adds no <b> wrapper around matched terms', async () => {
+    const rows = await storage.retrieveTeamScopedPages({
+      query: 'deploy',
+      teamIds: [TEAM_A],
+      limit: 10,
+    });
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(row.snippet ?? '').not.toContain('<b>');
+      expect(row.snippet ?? '').not.toContain('</b>');
+    }
+  });
+
+  it('does not leak the option string into the snippet', async () => {
+    // Regression guard: `StartSel=` without quotes makes Postgres swallow the rest
+    // of the option string as the selector value, so ',StopSel=' appears in output.
+    const rows = await storage.retrieveTeamScopedPages({
+      query: 'deploy',
+      teamIds: [TEAM_A],
+      limit: 10,
+    });
+    for (const row of rows) {
+      expect(row.snippet ?? '').not.toContain('StopSel');
+      expect(row.snippet ?? '').not.toContain('StartSel');
+    }
+  });
+
+  it('SECURITY: page markup can survive into the snippet, so it is untrusted text', async () => {
+    // ts_headline does NOT sanitise the document. A well-formed tag is often
+    // dropped by the text parser, but an attribute-bearing tag such as
+    // `<img src=x onerror=...>` is preserved verbatim. The snippet is therefore
+    // untrusted: the client renders it as a JSX text node and must never use
+    // dangerouslySetInnerHTML. This test documents the exposure so the render-side
+    // guarantee cannot be quietly dropped.
+    const rows = await storage.retrieveTeamScopedPages({
+      query: 'deploy',
+      teamIds: [TEAM_A],
+      limit: 10,
+    });
+    const sample = rows.find((r) => r.slug === 'a-html-content');
+    expect(sample).toBeDefined();
+    expect(sample!.snippet).toContain('<img');
   });
 });

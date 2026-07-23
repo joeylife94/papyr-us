@@ -349,7 +349,15 @@ export class DBStorage {
         teamId: wikiPages.teamId,
         slug: wikiPages.slug,
         title: wikiPages.title,
-        snippet: sql<string>`ts_headline('simple', ${wikiPages.content}, ${tsquery}, 'MaxFragments=1,MaxWords=40,MinWords=15,ShortWord=3,StartSel=,StopSel=')`,
+        // StartSel/StopSel are quoted empty strings so no highlight markers are
+        // emitted. Writing them unquoted (`StartSel=`) does NOT mean "empty" —
+        // Postgres consumes the rest of the option string as the value and the
+        // default `</b>` stop marker survives into the snippet.
+        //
+        // ts_headline still does not sanitise the document: content such as
+        // `<img src=x onerror=...>` can appear verbatim in the output. Snippets are
+        // therefore untrusted plain text and must never be rendered as HTML.
+        snippet: sql<string>`ts_headline('simple', ${wikiPages.content}, ${tsquery}, 'MaxFragments=1,MaxWords=40,MinWords=15,ShortWord=3,StartSel="",StopSel=""')`,
         score: rank,
       })
       .from(wikiPages)
