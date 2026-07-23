@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { Search, Sparkles, FileText, CheckSquare, File, Clock, Star } from 'lucide-react';
+import { Search, Sparkles, FileText, Clock, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,15 +9,15 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 
+/** Mirrors RetrievalResultSchema in contracts/api.schema.ts. */
 interface SearchResult {
-  id: number;
+  pageId: number;
+  teamId: number;
+  slug: string;
   title: string;
-  content: string;
-  relevance: number;
-  matchedTerms: string[];
-  summary: string;
-  type: 'page' | 'task' | 'file';
-  url: string;
+  snippet: string;
+  score: number;
+  sourceType: 'page';
 }
 
 interface SearchResponse {
@@ -98,37 +98,20 @@ export function AISearch({ teamId }: { teamId?: string }) {
     handleSearch(suggestion);
   };
 
-  const getTypeIcon = (type: string) => {
-    switch (type) {
+  const getTypeIcon = (sourceType: SearchResult['sourceType']) => {
+    switch (sourceType) {
       case 'page':
-        return <FileText className="h-4 w-4" />;
-      case 'task':
-        return <CheckSquare className="h-4 w-4" />;
-      case 'file':
-        return <File className="h-4 w-4" />;
       default:
         return <FileText className="h-4 w-4" />;
     }
   };
 
-  const getTypeColor = (type: string) => {
-    switch (type) {
+  const getTypeColor = (sourceType: SearchResult['sourceType']) => {
+    switch (sourceType) {
       case 'page':
+      default:
         return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
-      case 'task':
-        return 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200';
-      case 'file':
-        return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
-      default:
-        return 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200';
     }
-  };
-
-  const formatRelevance = (relevance: number) => {
-    if (relevance >= 0.9) return '매우 관련';
-    if (relevance >= 0.7) return '관련';
-    if (relevance >= 0.5) return '부분 관련';
-    return '낮은 관련';
   };
 
   return (
@@ -223,54 +206,35 @@ export function AISearch({ teamId }: { teamId?: string }) {
             </Card>
           ) : (
             <div className="space-y-4">
-              {searchMutation.data.results.map((result) => (
-                <Card
-                  key={`${result.type}-${result.id}`}
-                  className="hover:shadow-md transition-shadow"
-                >
+              {searchMutation.data.results.map((result, index) => (
+                <Card key={result.pageId} className="hover:shadow-md transition-shadow">
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex items-center space-x-2">
-                        {getTypeIcon(result.type)}
+                        {getTypeIcon(result.sourceType)}
                         <h4 className="font-semibold text-lg">{result.title}</h4>
-                        <Badge className={getTypeColor(result.type)}>
-                          {result.type === 'page' && '페이지'}
-                          {result.type === 'task' && '과제'}
-                          {result.type === 'file' && '파일'}
-                        </Badge>
+                        <Badge className={getTypeColor(result.sourceType)}>페이지</Badge>
                       </div>
+                      {/* Rank position, not a percentage: the score scale differs
+                          between FTS ranking and AI re-ranking. */}
                       <div className="flex items-center space-x-2 text-sm text-gray-500">
                         <Star className="h-4 w-4" />
-                        <span>{formatRelevance(result.relevance)}</span>
+                        <span>#{index + 1}</span>
                       </div>
                     </div>
 
                     <p className="text-gray-600 dark:text-gray-400 mb-3 line-clamp-2">
-                      {result.summary || result.content.substring(0, 200)}...
+                      {result.snippet}
                     </p>
-
-                    {result.matchedTerms.length > 0 && (
-                      <div className="flex items-center space-x-2 mb-3">
-                        <span className="text-sm text-gray-500">일치하는 용어:</span>
-                        {result.matchedTerms.map((term, index) => (
-                          <Badge key={index} variant="secondary" className="text-xs">
-                            {term}
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
 
                     <div className="flex items-center justify-between">
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => window.open(result.url, '_blank')}
+                        onClick={() => window.open(`/page/${result.slug}`, '_blank')}
                       >
                         보기
                       </Button>
-                      <div className="text-xs text-gray-500">
-                        관련도: {Math.round(result.relevance * 100)}%
-                      </div>
                     </div>
                   </CardContent>
                 </Card>

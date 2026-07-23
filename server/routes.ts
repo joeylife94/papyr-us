@@ -56,7 +56,17 @@ import {
   getFileInfo,
   getFileTeamId,
 } from './services/upload.js';
-import { smartSearch, generateSearchSuggestions, inlineAIAction } from './services/ai.js';
+import {
+  smartSearch,
+  generateSearchSuggestions,
+  inlineAIAction,
+  isAIAvailable,
+} from './services/ai.js';
+import {
+  normalizeRetrievalQuery,
+  retrieveDocuments,
+  RetrievalValidationError,
+} from './services/retrieval.js';
 import * as aiService from './services/ai.js';
 import { aiAssistant } from './services/ai-assistant.js';
 import { triggerWorkflows, initWorkflowService, executeWorkflow } from './services/workflow.js';
@@ -3444,17 +3454,22 @@ export async function registerRoutes(
     }
   });
 
-  // AI ��??API
+  // AI search API.
+  //
+  // Pipeline: authenticate → resolve accessible teams → team-scoped Postgres FTS
+  // retrieval (top-k, ranked in the database) → optional LLM re-ranking over the
+  // retrieved candidates only. The LLM never sees more than `limit` snippets, so
+  // token cost is bounded by the request rather than by workspace size.
   app.post('/api/ai/search', rlAI, requireAuthIfEnabled, async (req: AuthRequest, res) => {
     try {
-      const { query, teamId } = req.body;
+      const { query, teamId, limit } = req.body;
 
-      if (!query || query.trim().length === 0) {
-        return res.status(400).json({ message: 'Search query is required' });
+      if (!req.user?.id) {
+        return res.status(401).json({ message: 'Authentication required' });
       }
 
       // Gather the user's authorized team IDs once to avoid duplicate DB calls
-      const userTeamIds = req.user?.id ? await storage.getUserTeamIds(req.user.id) : [];
+      const userTeamIds = await storage.getUserTeamIds(req.user.id);
 
       // If a specific teamId is requested, verify membership
       if (teamId) {
@@ -3463,65 +3478,78 @@ export async function registerRoutes(
         }
       }
 
-      // Determine the scoped set of team IDs ? never falls through to undefined / full-DB scan
-      const effectiveTeamIds: string[] = teamId ? [String(teamId)] : userTeamIds.map(String);
+      // Scoped set of team IDs — never falls through to undefined / full-DB scan
+      const effectiveTeamIds = teamId ? [Number(teamId)] : userTeamIds.map(Number);
 
-      // If the user belongs to no teams, return empty results immediately
+      // A user with no accessible teams has nothing to retrieve. This is not an
+      // input error, so it is answered before query normalization.
       if (effectiveTeamIds.length === 0) {
         return res.json({ results: [], query, totalResults: 0 });
       }
 
-      // Aggregate results across all authorized teams, always passing an explicit teamId
-      const [pagesAgg, tasksAgg] = await Promise.all([
-        Promise.all(
-          effectiveTeamIds.map((tid) =>
-            storage.searchWikiPages({ query: '', teamId: tid, limit: 100, offset: 0 })
-          )
-        ),
-        Promise.all(effectiveTeamIds.map((tid) => storage.getTasks(tid))),
-      ]);
-      const allPages = pagesAgg.flatMap((r: any) => r.pages);
-      const allTasks = tasksAgg.flat();
-      // Aggregate files across ALL authorized teams ? never scope to a single team
-      const filesPerTeam = await Promise.all(effectiveTeamIds.map((tid) => listUploadedFiles(tid)));
-      const allFiles = filesPerTeam.flatMap((r) => r.files);
+      let retrievalQuery;
+      try {
+        retrievalQuery = normalizeRetrievalQuery({
+          query,
+          userId: req.user.id,
+          teamIds: effectiveTeamIds,
+          limit,
+        });
+      } catch (error) {
+        if (error instanceof RetrievalValidationError) {
+          return res.status(error.statusCode).json({ message: error.message });
+        }
+        throw error;
+      }
 
-      const documents = [
-        ...allPages.map((page: any) => ({
-          id: page.id,
-          title: page.title,
-          content: page.content,
-          type: 'page' as const,
-          url: `/page/${page.slug}`,
-        })),
-        ...allTasks.map((task: any) => ({
-          id: task.id,
-          title: task.title,
-          content: task.description || '',
-          type: 'task' as const,
-          url: `/tasks`,
-        })),
-        ...allFiles.map((file: any) => ({
-          id: file.id || 0,
-          title: file.filename,
-          content: file.description || '',
-          type: 'file' as const,
-          url: `/files`,
-        })),
-      ];
+      const retrieved = await retrieveDocuments(storage, retrievalQuery);
 
-      const results = await smartSearch(query, documents);
+      if (retrieved.length === 0) {
+        return res.json({ results: [], query: retrievalQuery.query, totalResults: 0 });
+      }
+
+      // Re-rank the retrieved candidates with the LLM when it is available. If
+      // the AI provider is unreachable, fall back to the FTS ranking rather than
+      // failing the request — retrieval does not depend on AI.
+      let ranked = retrieved;
+      if (isAIAvailable()) {
+        try {
+          const scored = await smartSearch(
+            retrievalQuery.query,
+            retrieved.map((doc) => ({
+              id: doc.pageId,
+              title: doc.title,
+              content: doc.snippet,
+              type: 'page' as const,
+              url: `/page/${doc.slug}`,
+            }))
+          );
+          const byId = new Map(retrieved.map((doc) => [doc.pageId, doc]));
+          const reordered = scored
+            .map((hit) => {
+              const source = byId.get(hit.id);
+              // Never surface a document the retrieval layer did not return.
+              return source ? { ...source, score: hit.relevance ?? source.score } : null;
+            })
+            .filter((doc): doc is (typeof retrieved)[number] => doc !== null);
+          if (reordered.length > 0) ranked = reordered;
+        } catch (error) {
+          logger.warn('[Route] /api/ai/search — AI re-ranking failed, using FTS ranking', {
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
+        }
+      }
 
       res.json({
-        results,
-        query,
-        totalResults: results.length,
+        results: ranked,
+        query: retrievalQuery.query,
+        totalResults: ranked.length,
       });
     } catch (error) {
-      console.error('AI search error:', error);
-      res
-        .status(500)
-        .json({ message: 'Failed to perform AI search', error: (error as Error).message });
+      logger.error('[Route] /api/ai/search failed', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      res.status(500).json({ message: 'Failed to perform AI search' });
     }
   });
 

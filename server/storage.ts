@@ -76,6 +76,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { eq, like, and, sql, desc, asc, isNull, inArray } from 'drizzle-orm';
 import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
+import type { RetrievedPageRow } from './services/retrieval.js';
 
 // Helper: detect if a string looks like a bcrypt hash
 function isBcryptHash(value: string): boolean {
@@ -317,6 +318,50 @@ export class DBStorage {
 
     const pages = await query;
     return { pages, total };
+  }
+
+  /**
+   * Team-scoped full-text retrieval over wiki pages.
+   *
+   * Ranking, snippet extraction and the top-k cut all happen in Postgres so the
+   * caller never materialises a workspace in memory. Backing index:
+   * `idx_wiki_pages_search_vector` (see drizzle/0005_add_wiki_pages_fts.sql).
+   *
+   * Guarantees enforced here:
+   *   - only pages whose `team_id` is in `teamIds` are considered;
+   *   - soft-deleted pages (`deleted_at IS NOT NULL`) are excluded;
+   *   - at most `limit` rows are returned.
+   */
+  async retrieveTeamScopedPages(params: {
+    query: string;
+    teamIds: number[];
+    limit: number;
+  }): Promise<RetrievedPageRow[]> {
+    // An empty team set can never match anything; avoid emitting `IN ()`.
+    if (params.teamIds.length === 0) return [];
+
+    const tsquery = sql`plainto_tsquery('simple', ${params.query})`;
+    const rank = sql<number>`ts_rank(search_vector, ${tsquery})`;
+
+    return this.db
+      .select({
+        pageId: wikiPages.id,
+        teamId: wikiPages.teamId,
+        slug: wikiPages.slug,
+        title: wikiPages.title,
+        snippet: sql<string>`ts_headline('simple', ${wikiPages.content}, ${tsquery}, 'MaxFragments=1,MaxWords=40,MinWords=15,ShortWord=3,StartSel=,StopSel=')`,
+        score: rank,
+      })
+      .from(wikiPages)
+      .where(
+        and(
+          isNull(wikiPages.deletedAt),
+          inArray(wikiPages.teamId, params.teamIds),
+          sql`search_vector @@ ${tsquery}`
+        )
+      )
+      .orderBy(desc(rank), desc(wikiPages.updatedAt))
+      .limit(params.limit);
   }
 
   async getWikiPagesByFolder(folder: string): Promise<WikiPage[]> {
