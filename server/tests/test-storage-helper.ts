@@ -19,6 +19,16 @@ export function buildMockStorage(actualModule: any) {
   for (const key of methodNames) {
     instance[key] = vi.fn();
   }
+
+  // Generic route tests use this helper as a happy-path storage fixture. Page
+  // authorization tests override this mock explicitly with true/false, while
+  // retrieval's ACL denial/fail-closed behavior is covered in the domain layer.
+  // Giving the generic mock an explicit allow value prevents unrelated tests from
+  // accidentally treating Vitest's default `undefined` return as an ACL denial.
+  if (instance.checkPagePermission) {
+    instance.checkPagePermission.mockResolvedValue(true);
+  }
+
   return instance;
 }
 
