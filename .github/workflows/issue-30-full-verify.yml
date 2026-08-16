@@ -1,0 +1,65 @@
+name: Issue 30 Full Verification
+
+on:
+  push:
+    branches:
+      - fix/30-ai-search-empty-contract
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: papyrus_user
+          POSTGRES_PASSWORD: papyrus_password_2024
+          POSTGRES_DB: papyrus_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U papyrus_user"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://papyrus_user:papyrus_password_2024@localhost:5432/papyrus_db
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/30-ai-search-empty-contract
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Contributor verification gate
+        run: node scripts/verify-contributor.mjs
+
+      - name: Apply test database schema
+        run: npx drizzle-kit push --config drizzle.config.ts
+
+      - name: Integration tests
+        run: npm run test:integration
+
+      - name: Remove temporary verification workflow
+        shell: bash
+        run: |
+          rm .github/workflows/issue-30-full-verify.yml
+          git config user.name "Papyr Issue 30 Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add .github/workflows/issue-30-full-verify.yml
+          git diff --cached --check
+          git commit -m "chore: remove temporary issue 30 verification"
+          git push origin HEAD:fix/30-ai-search-empty-contract
