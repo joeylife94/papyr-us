@@ -26,8 +26,7 @@
 
 <!-- Record exact commands and outcomes. Never mark an unrun check as passing. -->
 
-- [ ] Relevant static/unit/domain/contract/smoke checks
-- [ ] `npm run build` when code or build inputs changed
+- [ ] `node scripts/verify-contributor.mjs` for normal code changes
 - [ ] Integration coverage when DB/SQL/migration behavior changed
 - [ ] Browser/E2E evidence when user-visible behavior changed
 
