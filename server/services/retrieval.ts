@@ -37,16 +37,20 @@ export const MAX_AI_RERANK_CANDIDATES = 15;
 /** Maximum snippet length handed to downstream consumers, in characters. */
 export const MAX_SNIPPET_LENGTH = 400;
 
-/** A validated retrieval request. Produced only by {@link normalizeRetrievalQuery}. */
-export interface RetrievalQuery {
+/** Request fields that can be validated independently of workspace membership. */
+export interface NormalizedSearchRequest {
   /** Sanitized, non-empty search text. */
   query: string;
-  /** The authenticated user performing the retrieval. */
+  /** The authenticated user performing the search. */
   userId: number;
-  /** Teams the user is permitted to read. Never empty. */
-  teamIds: number[];
   /** Top-k bound, always within [1, MAX_RETRIEVAL_LIMIT]. */
   limit: number;
+}
+
+/** A validated retrieval request. Produced only by {@link normalizeRetrievalQuery}. */
+export interface RetrievalQuery extends NormalizedSearchRequest {
+  /** Teams the user is permitted to read. Never empty. */
+  teamIds: number[];
 }
 
 /** How the returned ordering was produced. */
@@ -155,19 +159,17 @@ function coerceLimit(limit: unknown): number {
 }
 
 /**
- * Validate and normalize an untrusted retrieval request.
+ * Validate request fields whose semantics do not depend on workspace membership.
  *
- * Throws {@link RetrievalValidationError} for anything a caller could plausibly
- * get wrong; the route layer maps that to a 400. An authenticated user with no
- * accessible teams is a validation failure here rather than an empty result, so
- * callers must decide explicitly what to do about it.
+ * Keeping this separate lets a route validate query/limit consistently even when
+ * the authenticated user currently has no accessible teams, while leaving the
+ * non-empty team-scope invariant owned by {@link normalizeRetrievalQuery}.
  */
-export function normalizeRetrievalQuery(input: {
+export function normalizeSearchRequest(input: {
   query?: unknown;
   userId?: unknown;
-  teamIds?: unknown;
   limit?: unknown;
-}): RetrievalQuery {
+}): NormalizedSearchRequest {
   if (typeof input.query !== 'string') {
     throw new RetrievalValidationError('query is required');
   }
@@ -185,6 +187,29 @@ export function normalizeRetrievalQuery(input: {
     throw new RetrievalValidationError('a valid authenticated userId is required');
   }
 
+  return {
+    query,
+    userId,
+    limit: coerceLimit(input.limit),
+  };
+}
+
+/**
+ * Validate and normalize an untrusted retrieval request.
+ *
+ * Throws {@link RetrievalValidationError} for anything a caller could plausibly
+ * get wrong; the route layer maps that to a 400. Retrieval itself always requires
+ * at least one accessible team so callers cannot accidentally fall through to an
+ * unscoped storage query.
+ */
+export function normalizeRetrievalQuery(input: {
+  query?: unknown;
+  userId?: unknown;
+  teamIds?: unknown;
+  limit?: unknown;
+}): RetrievalQuery {
+  const request = normalizeSearchRequest(input);
+
   if (!Array.isArray(input.teamIds)) {
     throw new RetrievalValidationError('teamIds must be an array');
   }
@@ -197,10 +222,8 @@ export function normalizeRetrievalQuery(input: {
   }
 
   return {
-    query,
-    userId,
+    ...request,
     teamIds: Array.from(new Set(teamIds)),
-    limit: coerceLimit(input.limit),
   };
 }
 
