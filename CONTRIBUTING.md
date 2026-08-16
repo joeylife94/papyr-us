@@ -75,6 +75,14 @@ Do **not** push feature work directly to `main`.
 
 ## 4. Scripts you should know
 
+For the normal pre-review baseline:
+
+```bash
+node scripts/verify-contributor.mjs
+```
+
+The runner executes the existing static, unit, domain, contract, smoke, and build commands in sequence. Individual commands remain available when iterating or when a work item needs a narrower check:
+
 ```bash
 npm run check
 npm run lint
@@ -89,7 +97,7 @@ npm run test:visual
 npm run build
 ```
 
-`package.json` is the source of truth for the current script definitions.
+`package.json` remains the source of truth for the individual script definitions.
 
 ## 5. Verification expectations
 
@@ -99,17 +107,12 @@ Verification should match the boundary being changed.
 
 - Check Markdown/YAML structure and referenced repository paths/commands.
 
-### Local code behavior
+### Normal code changes
 
-Run the relevant static, unit, domain, contract, and smoke checks. For a broad code change, the usual pre-review set is:
+Run:
 
 ```bash
-npm run test:static
-npm run test:unit
-npm run test:domain
-npm run test:contract
-npm run test:smoke
-npm run build
+node scripts/verify-contributor.mjs
 ```
 
 ### Database / SQL / migrations

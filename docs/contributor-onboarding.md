@@ -96,18 +96,13 @@ While implementing:
 
 ## 6. Verify at the changed boundary
 
-For a broad code contribution, start with:
+For a normal code contribution, run one baseline command before review:
 
 ```bash
-npm run test:static
-npm run test:unit
-npm run test:domain
-npm run test:contract
-npm run test:smoke
-npm run build
+node scripts/verify-contributor.mjs
 ```
 
-Add `npm run test:integration` for database/SQL/migration changes. Add E2E/browser evidence for user-visible behavior that cannot be proven below the UI.
+It executes static, unit, domain, contract, smoke, and build checks in sequence. Add `npm run test:integration` for database/SQL/migration changes. Add E2E/browser evidence for user-visible behavior that cannot be proven below the UI.
 
 If a check is blocked by the environment, save the exact command and blocker for the PR.
 
