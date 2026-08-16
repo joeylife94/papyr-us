@@ -11,6 +11,11 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { DBStorage } from '../../server/storage.js';
+import {
+  normalizeRetrievalQuery,
+  retrieveDocuments,
+  type RetrievalStore,
+} from '../../server/services/retrieval.js';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 
@@ -102,6 +107,12 @@ beforeAll(async () => {
     slug: 'a-deploy-retro',
     title: 'Retro',
     content: 'The deploy went fine last week',
+    teamId: TEAM_A,
+  });
+  await insertPage({
+    slug: 'a-project-status',
+    title: 'Project Status',
+    content: 'Current delivery milestones and release readiness',
     teamId: TEAM_A,
   });
   await insertPage({
@@ -277,6 +288,28 @@ describe('retrieveTeamScopedPages: the generated SQL runs against Postgres', () 
       limit: 10,
     });
     expect(Array.isArray(rows)).toBe(true);
+  });
+});
+
+describe('question-style retrieval fallback against real Postgres', () => {
+  it('recovers a relevant page when strict simple-FTS requires every filler word', async () => {
+    const store: RetrievalStore = {
+      retrieveTeamScopedPages: storage.retrieveTeamScopedPages.bind(storage),
+      checkPagePermission: async () => true,
+    };
+
+    const results = await retrieveDocuments(
+      store,
+      normalizeRetrievalQuery({
+        query: 'What is the project status?',
+        userId: 1,
+        teamIds: [TEAM_A],
+        limit: 10,
+      })
+    );
+
+    expect(results.map((result) => result.slug)).toContain('a-project-status');
+    expect(results[0].slug).toBe('a-project-status');
   });
 });
 
