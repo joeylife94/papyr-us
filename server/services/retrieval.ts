@@ -36,6 +36,12 @@ export const DEFAULT_RETRIEVAL_LIMIT = 10;
  */
 export const MAX_AI_RERANK_CANDIDATES = 15;
 
+/** Maximum number of single-term FTS probes used by the zero-hit recall fallback. */
+export const MAX_FALLBACK_TERMS = 8;
+
+/** Maximum title length allowed to leave retrieval, keeping downstream AI input bounded. */
+export const MAX_RESULT_TITLE_LENGTH = 200;
+
 /** Maximum snippet length handed to downstream consumers, in characters. */
 export const MAX_SNIPPET_LENGTH = 400;
 
@@ -62,23 +68,26 @@ export type RankingSource = 'fts' | 'ai-reranked';
  * A single normalized retrieval hit.
  *
  * Scores from different rankers are kept in separate fields on purpose. `ftsScore`
- * is a `ts_rank` value — small, unbounded above, and only comparable within one
- * result set. `aiScore` is a 0–1 relevance from the re-ranker and is absent unless
- * a re-ranker actually scored this document. Neither is a percentage. `rank` is the
- * 1-based position in the returned ordering and is the field callers should display.
+ * is a `ts_rank`-derived value — unbounded above and only comparable within one
+ * result set. On the zero-hit fallback it also incorporates how many query terms
+ * matched, so it must never be presented as a probability. `aiScore` is a 0–1
+ * relevance from the re-ranker and is absent unless a re-ranker actually scored
+ * this document. `rank` is the 1-based position in the returned ordering and is
+ * the field callers should display.
  */
 export interface RetrievalResult {
   pageId: number;
   teamId: number | null;
   /** Page slug, so callers can build a link without a second lookup. */
   slug: string;
+  /** Bounded title text. */
   title: string;
   /**
    * Plain text. `ts_headline` is configured with empty StartSel/StopSel so no
    * markup is emitted, and the snippet must be rendered as a text node.
    */
   snippet: string;
-  /** PostgreSQL `ts_rank` value. Ordering key only — not a percentage. */
+  /** PostgreSQL `ts_rank`-derived ordering key — not a percentage. */
   ftsScore: number;
   /** AI relevance (0–1), present only on documents an AI re-ranker scored. */
   aiScore?: number;
@@ -149,6 +158,27 @@ export function sanitizeFtsQuery(raw: string): string {
     .replace(/[:&|!()*<>]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/**
+ * Extract a small, language-agnostic set of terms for the zero-hit recall fallback.
+ *
+ * We intentionally do not maintain a stop-word dictionary. Longer terms are tried
+ * first because they are usually more discriminative, and the hard cap keeps the
+ * number of additional indexed DB probes independent of query/workspace size.
+ */
+export function extractFallbackTerms(query: string): string[] {
+  const rawTerms = query.match(/[\p{L}\p{N}]+/gu) ?? [];
+  const unique = new Map<string, string>();
+
+  for (const term of rawTerms) {
+    const key = term.toLocaleLowerCase();
+    if (!unique.has(key)) unique.set(key, term);
+  }
+
+  return [...unique.values()]
+    .sort((a, b) => b.length - a.length)
+    .slice(0, MAX_FALLBACK_TERMS);
 }
 
 function coerceLimit(limit: unknown): number {
@@ -240,9 +270,64 @@ function normalizeScore(score: RetrievedPageRow['score']): number {
   return value;
 }
 
+function normalizeTitle(title: string | null): string {
+  const source = (title ?? '').trim() || 'Untitled';
+  return source.length > MAX_RESULT_TITLE_LENGTH
+    ? source.slice(0, MAX_RESULT_TITLE_LENGTH)
+    : source;
+}
+
 function normalizeSnippet(snippet: string | null, fallback: string): string {
   const source = (snippet ?? '').trim() || fallback.trim();
   return source.length > MAX_SNIPPET_LENGTH ? `${source.slice(0, MAX_SNIPPET_LENGTH)}…` : source;
+}
+
+/**
+ * Merge bounded single-term fallback batches back into one bounded candidate set.
+ *
+ * A page matching more query terms should outrank a page matching only one. We
+ * therefore combine the number of distinct term hits with the sum of each
+ * Postgres `ts_rank`. The resulting score remains an ordering key only.
+ */
+function mergeFallbackRows(
+  batches: RetrievedPageRow[][],
+  limit: number
+): RetrievedPageRow[] {
+  const combined = new Map<
+    number,
+    { row: RetrievedPageRow; termHits: number; scoreSum: number }
+  >();
+
+  for (const batch of batches) {
+    const seenInBatch = new Set<number>();
+    for (const row of batch ?? []) {
+      if (!Number.isInteger(row.pageId) || seenInBatch.has(row.pageId)) continue;
+      seenInBatch.add(row.pageId);
+
+      const current = combined.get(row.pageId);
+      if (current) {
+        current.termHits += 1;
+        current.scoreSum += normalizeScore(row.score);
+      } else {
+        combined.set(row.pageId, {
+          row,
+          termHits: 1,
+          scoreSum: normalizeScore(row.score),
+        });
+      }
+    }
+  }
+
+  return [...combined.values()]
+    .sort((a, b) => {
+      if (b.termHits !== a.termHits) return b.termHits - a.termHits;
+      return b.scoreSum - a.scoreSum;
+    })
+    .slice(0, limit)
+    .map(({ row, termHits, scoreSum }) => ({
+      ...row,
+      score: termHits + scoreSum,
+    }));
 }
 
 /**
@@ -273,7 +358,7 @@ export function normalizeRetrievalResults(
       pageId: row.pageId,
       teamId: row.teamId,
       slug: (row.slug ?? '').trim(),
-      title: (row.title ?? '').trim() || 'Untitled',
+      title: normalizeTitle(row.title),
       snippet: normalizeSnippet(row.snippet, row.title ?? ''),
       ftsScore: normalizeScore(row.score),
       rank: 0, // assigned below, once the ordering is final
@@ -356,21 +441,43 @@ export function applyAiReranking(
 /**
  * Run a team-scoped retrieval.
  *
- * FTS ranking and the initial top-k cut happen in Postgres. The resulting bounded
- * candidate set is then checked against Papyr's existing page-level `viewer`
- * permission before normalization or downstream AI use. Permission failures are
- * not caught here: they fail the request closed rather than returning a candidate
- * whose read authorization could not be established.
+ * The strict query runs first and preserves existing exact multi-term behaviour.
+ * When it returns zero rows, a bounded single-term fallback recovers candidate
+ * recall for question-style natural language without changing the storage query
+ * contract or introducing a workspace scan. All fallback queries still execute
+ * through the same parameterized Postgres FTS path, and merged candidates are
+ * reduced back to the original top-k before page-level authorization.
+ *
+ * The resulting bounded candidate set is then checked against Papyr's existing
+ * page-level `viewer` permission before normalization or downstream AI use.
+ * Permission failures are not caught here: they fail the request closed rather
+ * than returning a candidate whose read authorization could not be established.
  */
 export async function retrieveDocuments(
   store: RetrievalStore,
   request: RetrievalQuery
 ): Promise<RetrievalResult[]> {
-  const rows = await store.retrieveTeamScopedPages({
+  let rows = await store.retrieveTeamScopedPages({
     query: request.query,
     teamIds: request.teamIds,
     limit: request.limit,
   });
+
+  if ((rows ?? []).length === 0) {
+    const fallbackTerms = extractFallbackTerms(request.query);
+    if (fallbackTerms.length > 1) {
+      const batches = await Promise.all(
+        fallbackTerms.map((query) =>
+          store.retrieveTeamScopedPages({
+            query,
+            teamIds: request.teamIds,
+            limit: request.limit,
+          })
+        )
+      );
+      rows = mergeFallbackRows(batches, request.limit);
+    }
+  }
 
   const allowedTeams = new Set(request.teamIds);
   const scopedRows = (rows ?? []).filter(
