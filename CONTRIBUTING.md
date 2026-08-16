@@ -1,99 +1,186 @@
 # Contributing to Papyr.us
 
-Thanks for wanting to contribute! This document explains the basic developer workflow, how to run tests, and PR expectations.
+Papyr.us is developed with humans and coding agents working together. The contribution model is outcome-driven: Issues define the problem contract and boundaries; the assigned contributor owns the implementation approach and proves completion in the PR.
 
-## Getting started (local)
+Read [`AGENTS.md`](AGENTS.md) before starting non-trivial work.
 
-1. Clone the repo and install dependencies:
+## 1. Start from a work contract
+
+Use the **AI-native work item** Issue template for meaningful changes. A good work item defines:
+
+- **Current State** — what is true now.
+- **Target State** — what must be true when complete.
+- **Constraints** — invariants and boundaries that must not change.
+- **Non-goals** — adjacent work intentionally excluded.
+- **Done Evidence** — how completion will be proven.
+- **Ownership** — the problem area being occupied so others can avoid overlapping work.
+
+Do not turn the Issue into a file-by-file implementation recipe unless a specific implementation detail is itself a constraint.
+
+Before editing, check open Issues and PRs for overlapping ownership.
+
+## 2. Local setup
+
+### Prerequisites
+
+- Node.js 20
+- npm
+- Docker Desktop / Docker Engine with Compose when using the containerized database path
+- Git
+
+### Clone and install
 
 ```bash
 git clone <repo-url>
 cd papyr-us
 npm ci
-```
-
-2. Create a local `.env` file (copy from example if present):
-
-```bash
 cp .env.example .env
-# Edit .env as needed (DB URL, OPENAI_API_KEY, etc.)
 ```
 
-3. Start the development environment:
+PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Review `.env` before starting. Never commit secrets or local `.env` files.
+
+### Start the development environment
+
+For the repository's Docker path:
 
 ```bash
-# Option A - development server (frontend + backend via tsx)
+docker compose up -d
+```
+
+For the application development server:
+
+```bash
 npm run dev
-
-# Option B - using docker-compose (recommended for parity)
-docker-compose up --build
 ```
 
-## Scripts you should know
+See [`docs/development-setup.md`](docs/development-setup.md) for Windows, Docker, database, and deployment details.
 
-- `npm run dev` - start server in development (uses tsx)
-- `npm run check` - TypeScript type check (`tsc`)
-- `npm test` - run unit/integration tests (Vitest)
-- `npm run build` - build server and client for production
-- `npm run e2e` - run Playwright E2E tests (requires test DB / .env.test)
+## 3. Development flow
 
-## Running tests
+1. Start from current `main` unless the work item says otherwise.
+2. Create a focused branch such as `feat/...`, `fix/...`, `refactor/...`, or `agent/...`.
+3. Let the contributor + coding agent inspect the codebase and choose the implementation inside the Issue constraints.
+4. Run narrow checks while iterating.
+5. Run the relevant boundary-level checks before review.
+6. Open a focused PR using the repository PR template and record exact evidence.
+7. Get review before merge.
 
-- Unit/integration tests:
+Do **not** push feature work directly to `main`.
+
+## 4. Scripts you should know
 
 ```bash
-npm test
+npm run check
+npm run lint
+npm run test:static
+npm run test:unit
+npm run test:domain
+npm run test:contract
+npm run test:smoke
+npm run test:integration
+npm run test:e2e
+npm run test:visual
+npm run build
 ```
 
-## End-to-end tests (Playwright):
+`package.json` is the source of truth for the current script definitions.
 
-1. Copy the example test env and edit values for your local environment:
+## 5. Verification expectations
+
+Verification should match the boundary being changed.
+
+### Docs / workflow only
+
+- Check Markdown/YAML structure and referenced repository paths/commands.
+
+### Local code behavior
+
+Run the relevant static, unit, domain, contract, and smoke checks. For a broad code change, the usual pre-review set is:
 
 ```bash
-# Unix / Git Bash
+npm run test:static
+npm run test:unit
+npm run test:domain
+npm run test:contract
+npm run test:smoke
+npm run build
+```
+
+### Database / SQL / migrations
+
+Also run:
+
+```bash
+npm run test:integration
+```
+
+### User-visible behavior
+
+Run the relevant E2E/browser coverage when the behavior cannot be proven below the UI boundary.
+
+If a required check cannot run in the current environment, record the exact command, blocker, and substitute evidence in the PR. Never report an unrun check as passing.
+
+## 6. E2E setup
+
+Create a test environment file:
+
+```bash
 cp .env.test.example .env.test
+```
 
-# PowerShell
+PowerShell:
+
+```powershell
 Copy-Item .env.test.example .env.test
 ```
 
-2. Make sure you have a local Postgres instance matching `DATABASE_URL` in `.env.test` and run the test DB setup:
+Make sure the test PostgreSQL instance matches `DATABASE_URL`, then run the repository setup/tests as required:
 
 ```bash
 npm run test:setup
+npm run test:e2e
 ```
 
-3. Run Playwright E2E:
+The `start:e2e` package script currently launches the E2E server on **port 5003**. If Playwright browser dependencies are missing, install them with the appropriate Playwright install command for your environment.
 
-```bash
-npm run e2e
-```
+## 7. Pull request expectations
 
-Notes:
+A reviewer should be able to determine quickly:
 
-- E2E requires a running DB and the `start:e2e` script will launch the test server on port 5001.
-- If you run into Playwright browser errors, run `npx playwright install` to install required browsers.
+- the starting state,
+- the target state,
+- the constraints/non-goals,
+- the high-level implementation,
+- the verification evidence,
+- known risk or follow-up work.
 
-## Code style
+Prefer small PRs with one problem contract. Split opportunistic cleanup when it is not necessary to reach the target state.
 
-- Use TypeScript and follow the project's existing patterns.
-- Keep changes small and focused per PR.
-- If adding new dependencies, prefer well-maintained packages.
+## 8. AI usage
 
-## Branching & PRs
+AI assistance is expected. Contributors do not need to minimize AI-generated code or disclose every prompt.
 
-- Branch from `main` and name branches like `feat/short-description` or `fix/short-description`.
-- Open a PR with a clear description of what you changed and why.
-- Include test coverage for new behaviors where possible.
-- The CI will run type checks and tests; fix any failures before requesting review.
+The contributor is still responsible for:
 
-## Security & sensitive data
+- understanding the Issue contract,
+- accepting or changing the proposed implementation approach,
+- checking repository-wide side effects,
+- producing truthful test evidence,
+- and explaining important design decisions.
 
-- Do not commit secrets (API keys, DB passwords). Use `.env` files and add them to `.gitignore`.
-- For any password or secret-related field stored in the DB, prefer hashed storage. Discuss migrations with maintainers.
+The success metric is not how much code a human typed; it is whether the target state was reached safely and remains understandable to the next contributor.
 
-## Help & communication
+## 9. Security and sensitive data
 
-If you're unsure where to start, open an issue with the label `good first issue` or contact the maintainers for guidance.
+- Never commit API keys, passwords, tokens, or `.env` files.
+- Do not weaken authentication, authorization, team isolation, or feature gates without an explicit approved work item.
+- Treat AI output, uploaded data, search snippets, and remote content as untrusted input.
+- Discuss destructive migrations or data-loss behavior before implementation.
 
-Thanks — your contributions are appreciated! 🎉
+For security-sensitive work, prefer explicit failure over silent fallback.
