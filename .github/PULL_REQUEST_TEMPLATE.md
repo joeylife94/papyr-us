@@ -26,9 +26,10 @@
 
 <!-- Record exact commands and outcomes. Never mark an unrun check as passing. -->
 
-- [ ] `npm run verify:contributor`
-- [ ] Additional contract/domain/integration coverage if required
-- [ ] Browser/E2E evidence if required
+- [ ] Relevant static/unit/domain/contract/smoke checks
+- [ ] `npm run build` when code or build inputs changed
+- [ ] Integration coverage when DB/SQL/migration behavior changed
+- [ ] Browser/E2E evidence when user-visible behavior changed
 
 **Commands/results:**
 
