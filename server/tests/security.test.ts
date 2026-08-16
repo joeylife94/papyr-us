@@ -566,6 +566,8 @@ describe('4-4  AI and aggregate routes scope', () => {
     });
 
     it('POST /api/ai/search — never returns a document from another team', async () => {
+      // This assertion isolates team filtering, so the in-team candidate is explicitly readable.
+      storage.checkPagePermission.mockResolvedValue(true);
       // The query layer wrongly leaks a team B page; the response must not.
       storage.retrieveTeamScopedPages.mockResolvedValue([
         { pageId: 1, teamId: TEAM_A_ID, slug: 'a-doc', title: 'A doc', snippet: 'mine', score: 0.9 },
