@@ -63,6 +63,7 @@ import {
   isAIAvailable,
 } from './services/ai.js';
 import {
+  normalizeSearchRequest,
   normalizeRetrievalQuery,
   retrieveDocuments,
   applyAiReranking,
@@ -3480,22 +3481,42 @@ export async function registerRoutes(
         }
       }
 
-      // Scoped set of team IDs — never falls through to undefined / full-DB scan
+      // Validate request fields before the no-team success path so query/limit
+      // semantics do not depend on current workspace membership.
+      let normalizedRequest;
+      try {
+        normalizedRequest = normalizeSearchRequest({
+          query,
+          userId: req.user.id,
+          limit,
+        });
+      } catch (error) {
+        if (error instanceof RetrievalValidationError) {
+          return res.status(error.statusCode).json({ message: error.message });
+        }
+        throw error;
+      }
+
+      // Scoped set of team IDs — never falls through to undefined / full-DB scan.
       const effectiveTeamIds = teamId ? [Number(teamId)] : userTeamIds.map(Number);
 
-      // A user with no accessible teams has nothing to retrieve. This is not an
-      // input error, so it is answered before query normalization.
+      // A valid search with no accessible teams has no documents to retrieve, but
+      // still returns the same successful SearchResponse contract as every other
+      // zero-result path. Retrieval itself retains its non-empty team invariant.
       if (effectiveTeamIds.length === 0) {
-        return res.json({ results: [], query, totalResults: 0 });
+        return res.json({
+          results: [],
+          rankingSource: 'fts',
+          query: normalizedRequest.query,
+          totalResults: 0,
+        });
       }
 
       let retrievalQuery;
       try {
         retrievalQuery = normalizeRetrievalQuery({
-          query,
-          userId: req.user.id,
+          ...normalizedRequest,
           teamIds: effectiveTeamIds,
-          limit,
         });
       } catch (error) {
         if (error instanceof RetrievalValidationError) {
@@ -3507,7 +3528,12 @@ export async function registerRoutes(
       const retrieved = await retrieveDocuments(storage, retrievalQuery);
 
       if (retrieved.length === 0) {
-        return res.json({ results: [], query: retrievalQuery.query, totalResults: 0 });
+        return res.json({
+          results: [],
+          rankingSource: 'fts',
+          query: retrievalQuery.query,
+          totalResults: 0,
+        });
       }
 
       // Re-rank with the LLM when one is configured. Only the head of the
