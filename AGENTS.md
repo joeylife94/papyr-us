@@ -69,13 +69,18 @@ Add or run browser/E2E coverage when the change cannot be proven below the UI bo
 
 ### Before review
 
-Prefer:
+For code changes, run the applicable repository gates and record the exact results in the PR:
 
 ```bash
-npm run verify:contributor
+npm run test:static
+npm run test:unit
+npm run test:domain
+npm run test:contract
+npm run test:smoke
+npm run build
 ```
 
-This is the contributor pre-PR gate. Database-backed integration and browser tests remain separate when required by the work item.
+Database-backed integration (`npm run test:integration`) and browser/E2E checks remain additional requirements when the work item crosses those boundaries.
 
 If a required check cannot run because of the environment, record the exact command, blocker, and what was verified instead. Do not report an unrun test as passing.
 
