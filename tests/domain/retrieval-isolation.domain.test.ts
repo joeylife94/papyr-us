@@ -36,13 +36,19 @@ const CORPUS: FakePage[] = [
 ];
 
 /**
- * A stand-in for the SQL layer that applies the same filters the real query is
- * required to apply: team scope, soft-delete exclusion, and the top-k bound.
+ * A stand-in for the SQL and permission layers. The query slice applies the same
+ * team/deletion/top-k rules as storage, while `deniedPageIds` lets tests model an
+ * explicit page ACL that is narrower than team membership.
  */
-function fakeStore(corpus: FakePage[] = CORPUS): RetrievalStore & { calls: unknown[] } {
+function fakeStore(
+  corpus: FakePage[] = CORPUS,
+  deniedPageIds: Set<number> = new Set()
+): RetrievalStore & { calls: unknown[]; permissionCalls: unknown[] } {
   const calls: unknown[] = [];
+  const permissionCalls: unknown[] = [];
   return {
     calls,
+    permissionCalls,
     async retrieveTeamScopedPages(params) {
       calls.push(params);
       const rows: RetrievedPageRow[] = corpus
@@ -60,6 +66,10 @@ function fakeStore(corpus: FakePage[] = CORPUS): RetrievalStore & { calls: unkno
           score: 1 - index * 0.1,
         }));
       return rows.slice(0, params.limit);
+    },
+    async checkPagePermission(userId, pageId, requiredPermission) {
+      permissionCalls.push({ userId, pageId, requiredPermission });
+      return !deniedPageIds.has(pageId);
     },
   };
 }
@@ -101,20 +111,46 @@ describe('Domain invariant: team isolation', () => {
 
   it('drops out-of-scope rows even if the query layer wrongly returns them', async () => {
     // Simulates a regression in SQL construction: the store leaks team 20.
+    const checkPagePermission = vi.fn(async () => true);
     const leakyStore: RetrievalStore = {
       retrieveTeamScopedPages: vi.fn(async () => [
         { pageId: 1, teamId: 10, slug: 'a', title: 'A', snippet: 'a', score: 0.9 },
         { pageId: 3, teamId: 20, slug: 'b', title: 'B', snippet: 'b', score: 0.8 },
       ]),
+      checkPagePermission,
     };
     const results = await retrieve(leakyStore, [10]);
     expect(results.map((r) => r.pageId)).toEqual([1]);
+    expect(checkPagePermission).toHaveBeenCalledTimes(1);
+    expect(checkPagePermission).toHaveBeenCalledWith(1, 1, 'viewer');
   });
 
   it('passes the caller’s team scope through to the query layer', async () => {
     const store = fakeStore();
     await retrieve(store, [10, 20]);
     expect(store.calls[0]).toMatchObject({ teamIds: [10, 20] });
+  });
+});
+
+describe('Domain invariant: page-level read permissions', () => {
+  it('drops a same-team page when the existing page ACL denies viewer access', async () => {
+    const store = fakeStore(CORPUS, new Set([2]));
+    const results = await retrieve(store, [10]);
+
+    expect(results.map((r) => r.pageId)).toEqual([1]);
+    expect(store.permissionCalls).toEqual([
+      { userId: 1, pageId: 1, requiredPermission: 'viewer' },
+      { userId: 1, pageId: 2, requiredPermission: 'viewer' },
+    ]);
+  });
+
+  it('fails closed when the page permission check cannot establish access', async () => {
+    const store = fakeStore();
+    store.checkPagePermission = vi.fn(async () => {
+      throw new Error('permission backend unavailable');
+    });
+
+    await expect(retrieve(store, [10])).rejects.toThrow('permission backend unavailable');
   });
 });
 
