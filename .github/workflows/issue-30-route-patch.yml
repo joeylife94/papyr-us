@@ -1,0 +1,82 @@
+name: Issue 30 Route Patch
+
+on:
+  push:
+    branches:
+      - fix/30-ai-search-empty-contract
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/30-ai-search-empty-contract
+          fetch-depth: 0
+
+      - name: Apply bounded route patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('server/routes.ts')
+          text = path.read_text()
+
+          replacements = [
+              (
+                  "  normalizeRetrievalQuery,\n  retrieveDocuments,",
+                  "  normalizeSearchRequest,\n  normalizeRetrievalQuery,\n  retrieveDocuments,",
+              ),
+              (
+                  """      // Scoped set of team IDs — never falls through to undefined / full-DB scan\n      const effectiveTeamIds = teamId ? [Number(teamId)] : userTeamIds.map(Number);\n\n      // A user with no accessible teams has nothing to retrieve. This is not an\n      // input error, so it is answered before query normalization.\n      if (effectiveTeamIds.length === 0) {\n        return res.json({ results: [], query, totalResults: 0 });\n      }\n\n      let retrievalQuery;\n      try {\n        retrievalQuery = normalizeRetrievalQuery({\n          query,\n          userId: req.user.id,\n          teamIds: effectiveTeamIds,\n          limit,\n        });\n      } catch (error) {\n        if (error instanceof RetrievalValidationError) {\n          return res.status(error.statusCode).json({ message: error.message });\n        }\n        throw error;\n      }\n""",
+                  """      // Validate request fields before the no-team success path so query/limit\n      // semantics do not depend on current workspace membership.\n      let normalizedRequest;\n      try {\n        normalizedRequest = normalizeSearchRequest({\n          query,\n          userId: req.user.id,\n          limit,\n        });\n      } catch (error) {\n        if (error instanceof RetrievalValidationError) {\n          return res.status(error.statusCode).json({ message: error.message });\n        }\n        throw error;\n      }\n\n      // Scoped set of team IDs — never falls through to undefined / full-DB scan.\n      const effectiveTeamIds = teamId ? [Number(teamId)] : userTeamIds.map(Number);\n\n      // A valid search with no accessible teams has no documents to retrieve, but\n      // still returns the same successful SearchResponse contract as every other\n      // zero-result path. Retrieval itself retains its non-empty team invariant.\n      if (effectiveTeamIds.length === 0) {\n        return res.json({\n          results: [],\n          rankingSource: 'fts',\n          query: normalizedRequest.query,\n          totalResults: 0,\n        });\n      }\n\n      let retrievalQuery;\n      try {\n        retrievalQuery = normalizeRetrievalQuery({\n          ...normalizedRequest,\n          teamIds: effectiveTeamIds,\n        });\n      } catch (error) {\n        if (error instanceof RetrievalValidationError) {\n          return res.status(error.statusCode).json({ message: error.message });\n        }\n        throw error;\n      }\n""",
+              ),
+              (
+                  "        return res.json({ results: [], query: retrievalQuery.query, totalResults: 0 });",
+                  "        return res.json({\n          results: [],\n          rankingSource: 'fts',\n          query: retrievalQuery.query,\n          totalResults: 0,\n        });",
+              ),
+          ]
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one match, found {count}: {old[:80]!r}')
+              text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+
+          git diff --check
+          git diff -- server/routes.ts
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run check
+
+      - name: Focused regression tests
+        run: npx vitest run server/tests/ai-search-empty-contract.test.ts tests/unit/retrieval-query.test.ts
+
+      - name: Commit verified route patch and remove temporary workflow
+        shell: bash
+        run: |
+          rm .github/workflows/issue-30-route-patch.yml
+          git config user.name "Papyr Issue 30 Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add server/routes.ts .github/workflows/issue-30-route-patch.yml
+          git diff --cached --check
+          git commit -m "fix: keep AI search empty responses in contract"
+          git push origin HEAD:fix/30-ai-search-empty-contract
