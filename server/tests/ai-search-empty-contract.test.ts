@@ -12,7 +12,7 @@ const AI_TEST_SECRET = 'ai-search-contract-secret';
 
 vi.mock('../config', () => ({
   config: {
-    jwtSecret: AI_TEST_SECRET,
+    jwtSecret: 'ai-search-contract-secret',
     adminPassword: 'test-admin',
     adminEmails: [],
     enforceAuthForWrites: true,
