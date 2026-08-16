@@ -10,9 +10,11 @@
  * Layering:
  *   route → retrieval service → storage/query layer → (optional) AI ranking
  *
- * The two invariants this module exists to guarantee:
- *   1. Only documents belonging to the caller's accessible teams are ever returned.
- *   2. The result set is bounded, so downstream token cost cannot grow with the
+ * The invariants this module exists to guarantee:
+ *   1. Only documents belonging to the caller's accessible teams are considered.
+ *   2. Existing page-level read permissions are re-checked before a document can
+ *      leave retrieval or be handed to an AI re-ranker.
+ *   3. The result set is bounded, so downstream token cost cannot grow with the
  *      size of the workspace.
  */
 
@@ -117,6 +119,11 @@ export interface RetrievalStore {
     teamIds: number[];
     limit: number;
   }): Promise<RetrievedPageRow[]>;
+  checkPagePermission(
+    userId: number,
+    pageId: number,
+    requiredPermission: 'viewer'
+  ): Promise<boolean>;
 }
 
 /** Raised when a retrieval request cannot be validated. Carries an HTTP status. */
@@ -349,8 +356,11 @@ export function applyAiReranking(
 /**
  * Run a team-scoped retrieval.
  *
- * Ranking and filtering happen in Postgres; this function never loads the
- * workspace into memory to filter it in JavaScript.
+ * FTS ranking and the initial top-k cut happen in Postgres. The resulting bounded
+ * candidate set is then checked against Papyr's existing page-level `viewer`
+ * permission before normalization or downstream AI use. Permission failures are
+ * not caught here: they fail the request closed rather than returning a candidate
+ * whose read authorization could not be established.
  */
 export async function retrieveDocuments(
   store: RetrievalStore,
@@ -362,5 +372,19 @@ export async function retrieveDocuments(
     limit: request.limit,
   });
 
-  return normalizeRetrievalResults(rows ?? [], request.teamIds, request.limit);
+  const allowedTeams = new Set(request.teamIds);
+  const scopedRows = (rows ?? []).filter(
+    (row) =>
+      row.teamId !== null &&
+      allowedTeams.has(row.teamId) &&
+      Number.isInteger(row.pageId) &&
+      row.pageId > 0
+  );
+
+  const readable = await Promise.all(
+    scopedRows.map((row) => store.checkPagePermission(request.userId, row.pageId, 'viewer'))
+  );
+  const readableRows = scopedRows.filter((_row, index) => readable[index]);
+
+  return normalizeRetrievalResults(readableRows, request.teamIds, request.limit);
 }
