@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   isTaskTeamSelectionLocked,
+  membersForTaskTeam,
   resolveTaskFormTeamId,
 } from '../../client/src/lib/task-team-scope';
 
@@ -37,5 +38,23 @@ describe('task form team scope', () => {
   it('locks team selection only when the page has an effective team scope', () => {
     expect(isTaskTeamSelectionLocked('10')).toBe(true);
     expect(isTaskTeamSelectionLocked(undefined)).toBe(false);
+  });
+
+  it('limits assignee options to members of the selected task team', () => {
+    const members = [
+      { id: 1, name: 'Alpha One', teamId: 10 },
+      { id: 2, name: 'Beta One', teamId: 20 },
+      { id: 3, name: 'Unscoped', teamId: null },
+      { id: 4, name: 'Alpha Two', teamId: '10' },
+    ];
+
+    expect(membersForTaskTeam(members, '10')).toEqual([members[0], members[3]]);
+    expect(membersForTaskTeam(members, '20')).toEqual([members[1]]);
+  });
+
+  it('returns no assignee options when the task form has no valid team', () => {
+    const members = [{ id: 1, name: 'Alpha One', teamId: 10 }];
+    expect(membersForTaskTeam(members, undefined)).toEqual([]);
+    expect(membersForTaskTeam(members, '')).toEqual([]);
   });
 });
