@@ -12,7 +12,7 @@ current_phase: "Phase 1 — Baseline Closure"
 priority: "P0"
 last_updated: "2026-08-18"
 repository: "joeylife94/papyr-us"
-baseline_main_sha: "7a40af50fad3a2b800a067ab23c07a680f272671"
+baseline_main_sha: "5eb9116e772d4aad511f2532dba193d424549c28"
 tags:
   - project/papyr-us
   - freelancers/production
@@ -207,7 +207,7 @@ AI 실패가 기본 제품을 깨뜨리면 안 된다.
 |---|---|
 | Repository | `joeylife94/papyr-us` |
 | Default branch | `main` |
-| Current main SHA before this ledger update | `7a40af50fad3a2b800a067ab23c07a680f272671` |
+| Current main SHA before this ledger update | `5eb9116e772d4aad511f2532dba193d424549c28` |
 | Working maturity | `v0.8` — internal label |
 | Product state | Engineering-rich / product-proof closure incomplete |
 | Public repository | Yes |
@@ -264,26 +264,23 @@ Stacked retrieval branch를 무작정 merge하지 않는다.
 
 ## 4.4 Current Hard Blocker
 
-The original TypeScript compatibility blocker on PR #40 is resolved on candidate commit `9db02717bd868e5dc3dc093870c337afb1dd0aed`:
+The original TypeScript compatibility blocker on PR #40 was resolved on candidate commit `9db02717bd868e5dc3dc093870c337afb1dd0aed`.
 
-- 7-Layer Layer 0 Static Gate: PASS
+The next Layer 1 unit failure was traced to a contradictory fallback-ranking fixture and corrected in `5ab0917105ce77649b1f94907afab1e3b7c70653`.
+
+Exact-tree verification for `5ab0917105ce77649b1f94907afab1e3b7c70653` is now fully green:
+
 - CI: PASS
+- 7-Layer Test Architecture: PASS
 - Firebat Deployment Gate: PASS
 
-The next observed blocker was Layer 1 unit test failure:
+Current `main` had advanced by two documentation-only commits adding/updating this MASTER. Compare inspection confirmed the only `main`-side file change since PR #40's original base was `PAPYR_US_MASTER.md`; no product-code overlap existed.
 
-```text
-tests/unit/retrieval-fallback.test.ts
-expected pageId 1, received pageId 2
-```
+PR #40 was therefore synchronized with current `main` using merge candidate commit:
 
-Inspection showed the fixture contradicted the documented merge ranking contract. Both rows matched two fallback terms, while the `noise` fixture had a larger FTS score (`0.9`) than the `relevant` fixture (`0.7`), so the implementation correctly ranked page 2 first on the score tie-breaker.
+`fa518f24b14fb33729b87af5545e349cb1521dd0`
 
-The test fixture was corrected on PR #40 commit:
-
-`5ab0917105ce77649b1f94907afab1e3b7c70653`
-
-New CI / 7-Layer / Firebat workflows are in progress. **Do not mark GAP-002 closed until the exact candidate tree is green.**
+The exact-tree CI / 7-Layer / Firebat workflows for `fa518f2...` are currently in progress. **Do not merge or mark GAP-002 closed until this base-synchronized candidate is green.**
 
 ## 4.5 Truthfulness Gap
 
@@ -512,8 +509,8 @@ Deploy
 
 | ID | Area | Current | v1.0 Target | Priority | Status |
 |---|---|---|---|---|---|
-| GAP-001 | Retrieval integration | Final candidate is PR #40; not merged | One reviewed merge path on `main` | P0 | IN PROGRESS |
-| GAP-002 | PR #40 verification | Static fixed; unit fixture fix pushed; exact-tree workflows running | Required downstream GREEN | P0 | IN PROGRESS |
+| GAP-001 | Retrieval integration | Final candidate is PR #40; base-synchronized candidate not merged | One reviewed merge path on `main` | P0 | IN PROGRESS |
+| GAP-002 | PR #40 verification | `5ab0917...` GREEN; `fa518f2...` exact-tree workflows running after main sync | Required downstream GREEN on final candidate | P0 | IN PROGRESS |
 | GAP-003 | AI claims | README overclaim | Verified claim only | P0 | OPEN |
 | GAP-004 | Golden Journeys | 기능은 있으나 product contract evidence 미완료 | GJ-01..08 complete | P0 | OPEN |
 | GAP-005 | Tasks team filter | Issue #31 | Truthful team/query/cache semantics | P0 | VERIFY/FIX |
@@ -795,34 +792,32 @@ Embeddings / pgvector / chunking / citation은 deferred.
 > [!info] CURRENT
 > **Date:** 2026-08-18 KST  
 > **Phase:** Phase 1 — Baseline Closure  
-> **Main before current ledger commit:** `7a40af50fad3a2b800a067ab23c07a680f272671`  
-> **Active retrieval candidate:** PR #40 / `fix/retrieval-final-review-gaps` / `5ab0917105ce77649b1f94907afab1e3b7c70653`
+> **Main before current ledger commit:** `5eb9116e772d4aad511f2532dba193d424549c28`  
+> **Active retrieval candidate:** PR #40 / `fix/retrieval-final-review-gaps` / `fa518f24b14fb33729b87af5545e349cb1521dd0`
 
 ## Current Objective
 
-Get the exact PR #40 candidate fully green, then integrate the retrieval stack exactly once and align README claims.
+Confirm the base-synchronized PR #40 candidate fully green, then integrate the retrieval stack exactly once and align README claims.
 
 ## Current Blocker
 
-No known static/typecheck blocker remains.
+No known code/test blocker remains on the previously verified candidate `5ab0917...`.
 
-The prior Layer 1 unit failure on `9db02717bd868e5dc3dc093870c337afb1dd0aed` was traced to a contradictory test fixture and corrected in `5ab0917105ce77649b1f94907afab1e3b7c70653`.
-
-The exact-tree workflows for `5ab0917...` are still running. Until they complete, the candidate is **NOT VERIFIED** and must not be merged.
+Current blocker is verification-only: the newly synchronized candidate `fa518f2...` includes current `main`'s MASTER ledger and must complete its exact-tree CI / 7-Layer / Firebat workflows before merge.
 
 ## Verified Facts
 
 - Phase 0 is closed: MASTER exists on `main`.
-- `main` before this ledger update: `7a40af50fad3a2b800a067ab23c07a680f272671`.
-- PR #40 remains Open / Draft and mergeable.
-- PR #40 candidate `9db0271...`:
+- `main` before this ledger update: `5eb9116e772d4aad511f2532dba193d424549c28`.
+- PR #40 remains Open / Draft.
+- PR #40 candidate `5ab0917105ce77649b1f94907afab1e3b7c70653`:
   - CI PASS
+  - 7-Layer Test Architecture PASS
   - Firebat Deployment Gate PASS
-  - 7-Layer Layer 0 Static Gate PASS
-  - 7-Layer failed only at Layer 1 Unit Tests; downstream Layer 4/5/6 skipped.
-- Layer 1 failure was `retrieval-fallback.test.ts` expecting page 1 while fixture scoring contract ranked page 2.
-- Fix commit `5ab0917...` changes only the unit fixture semantics/comment; retrieval implementation behavior is unchanged.
-- New CI / 7-Layer / Firebat workflows for `5ab0917...` are in progress.
+- Compare `f34966a... -> main` showed `main` ahead by 2 commits and only `PAPYR_US_MASTER.md` changed on the main side.
+- Compare `main -> 5ab0917...` showed retrieval candidate diverged only because of those two ledger commits; no product-code overlap from main was introduced.
+- PR #40 was synchronized with current main in merge candidate `fa518f24b14fb33729b87af5545e349cb1521dd0`.
+- CI / 7-Layer / Firebat workflows for `fa518f2...` started automatically and are in progress.
 - CI install currently reports 51 dependency findings: 4 low / 17 moderate / 27 high / 3 critical. This is tracked under GAP-007 and is not yet triaged for reachability.
 
 ## Next Work — STRICT ORDER
@@ -830,11 +825,13 @@ The exact-tree workflows for `5ab0917...` are still running. Until they complete
 1. [x] MASTER merged to `main` / Phase 0 closed
 2. [x] #27 / #40 topology narrowed to #40 as final candidate path
 3. [x] PR #40 TypeScript compatibility blocker fixed
-4. [ ] Confirm all required workflows on `5ab0917...`
-5. [ ] If any check fails, inspect the exact failing job and apply the smallest safe fix
-6. [ ] If required checks are green, merge secure retrieval stack to `main` exactly once and supersede #27
-7. [ ] README AI/Search claim correction
-8. [ ] MASTER final Phase 1 SHA / evidence / residual risk update
+4. [x] `5ab0917...` required workflows GREEN
+5. [x] Synchronize final retrieval candidate with current `main`
+6. [ ] Confirm all required workflows on `fa518f2...`
+7. [ ] If any check fails, inspect the exact failing job and apply the smallest safe fix
+8. [ ] If green, merge secure retrieval stack to `main` exactly once and supersede #27
+9. [ ] README AI/Search claim correction
+10. [ ] MASTER final Phase 1 SHA / evidence / residual risk update
 
 ## DO NOT START
 
@@ -893,21 +890,20 @@ For `9db0271...`:
 - Layer 1 Unit Tests: FAIL — 91 PASS / 1 FAIL.
 - Layer 4 / 5 / 6 and sequential smoke: SKIPPED due Layer 1 dependency.
 
-For `5ab0917...`:
-- CI: IN PROGRESS at ledger-update time.
-- 7-Layer: IN PROGRESS at ledger-update time.
-- Firebat Deployment Gate: IN PROGRESS at ledger-update time.
+For `5ab0917...` at iteration-2 ledger time:
+- CI: IN PROGRESS.
+- 7-Layer: IN PROGRESS.
+- Firebat Deployment Gate: IN PROGRESS.
 
 ### Not Verified
-- No claim that `5ab0917...` is green yet.
+- At iteration-2 close, no claim was made that `5ab0917...` was green.
 - No retrieval merge to `main`.
 - No README claim correction yet.
 - No dependency reachability triage yet.
 
 ### Residual Risks
-- New candidate may expose another downstream failure once Layer 1 passes.
-- PR #40 is still a draft and not release evidence until all required exact-tree gates complete.
-- Dependency audit findings remain unclassified.
+- PR #40 remained draft and not release evidence until all required exact-tree gates completed.
+- Dependency audit findings remained unclassified.
 
 ### Decision
 - [ ] PASS
@@ -925,6 +921,80 @@ For `5ab0917...`:
 1. Inspect all workflow results for `5ab0917...`.
 2. If any fail, fix only the first blocking boundary and re-run.
 3. If green, proceed to single-path retrieval integration and README truthfulness work.
+
+---
+
+## 2026-08-18 — Retrieval verification iteration 3
+
+### Gap
+`GAP-002` / `GAP-001`
+
+### Goal
+Convert the now-green retrieval candidate into a candidate synchronized with current `main`, without merging an unverified tree.
+
+### What Changed
+- Confirmed all three required workflows on `5ab0917105ce77649b1f94907afab1e3b7c70653` are GREEN.
+- Compared the original PR base with current `main` and confirmed the two main-side commits change only `PAPYR_US_MASTER.md`.
+- Built a merge tree that preserves the fully verified retrieval candidate and current `main` ledger.
+- Created merge candidate `fa518f24b14fb33729b87af5545e349cb1521dd0` with parents `5ab0917...` and `5eb9116...`.
+- Fast-forwarded branch `fix/retrieval-final-review-gaps` to `fa518f2...`.
+- Updated this root MASTER on `main` with the exact candidate state and pending validation.
+
+### Actually Executed
+- Fetched PR #40 current state and candidate SHA.
+- Queried GitHub Actions runs for `5ab0917...`.
+- Compared `f34966a...` vs `main` and `main` vs `5ab0917...`.
+- Created Git tree `a1a857fdb76092c5295c0ab24226695e30ba06f7` from the verified retrieval tree plus current MASTER blob.
+- Created merge commit `fa518f24b14fb33729b87af5545e349cb1521dd0`.
+- Updated PR #40 branch ref without force.
+- Confirmed new CI / 7-Layer / Firebat runs started for `fa518f2...`.
+
+### PASS Evidence
+For `5ab0917...`:
+- CI run #113: PASS
+- 7-Layer Test Architecture run #102: PASS
+- Firebat Deployment Gate run #68: PASS
+
+Repository topology evidence:
+- Current `main` was only 2 documentation commits ahead of PR's original base.
+- Only `PAPYR_US_MASTER.md` changed on the main side.
+- Branch ref update to `fa518f2...` succeeded without force.
+
+### Failed / Pending Evidence
+For `fa518f2...` at ledger-update time:
+- CI run #115: IN PROGRESS
+- 7-Layer Test Architecture run #104: IN PROGRESS
+- Firebat Deployment Gate run #70: IN PROGRESS
+
+### Not Verified
+- `fa518f2...` is not yet accepted as the final green tree.
+- PR #40 has not been merged.
+- PR #27 has not yet been superseded/closed.
+- README AI/Search claims are not yet corrected.
+- Dependency audit findings are not yet reachability-triaged.
+
+### Residual Risks
+- The base-synchronized merge candidate could reveal an integration-only failure despite the product-code candidate being green.
+- The hourly ledger update advances `main` documentation after candidate sync; this does not alter product code, but final integration must still preserve the authoritative MASTER without duplicate retrieval merges.
+- Dependency audit findings remain unclassified.
+
+### Decision
+- [ ] PASS
+- [x] PARTIAL
+- [ ] FAIL
+- [ ] BLOCKED
+
+### Repository State
+- Main before ledger commit: `5eb9116e772d4aad511f2532dba193d424549c28`
+- Branch: `fix/retrieval-final-review-gaps`
+- PR: `#40`
+- Previously verified candidate: `5ab0917105ce77649b1f94907afab1e3b7c70653`
+- Current synchronized candidate: `fa518f24b14fb33729b87af5545e349cb1521dd0`
+
+### Next
+1. Confirm all workflow results for `fa518f2...`.
+2. If any fail, inspect and fix only the first blocking boundary.
+3. If all green, merge #40 exactly once, supersede #27, then correct README AI/Search claims.
 
 ---
 
