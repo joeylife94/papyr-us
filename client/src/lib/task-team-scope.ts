@@ -7,9 +7,11 @@ export interface TaskTeamOption {
  * Resolve the team a task form should submit against.
  *
  * Precedence is intentional:
- * 1. Existing task team when editing.
- * 2. Effective route/filter team when the page is scoped.
- * 3. First accessible team when creating from the all-teams view.
+ * 1. Effective route/filter team when the page is scoped.
+ * 2. Existing task team while editing from the all-teams view, but only if
+ *    that team is still present in the user's accessible team list.
+ * 3. First accessible team when creating from the all-teams view or when an
+ *    existing task team is no longer accessible.
  * 4. Empty string when the user has no accessible team.
  */
 export function resolveTaskFormTeamId(
@@ -17,8 +19,14 @@ export function resolveTaskFormTeamId(
   effectiveTeamId: string | undefined,
   teams: TaskTeamOption[]
 ): string {
-  if (taskTeamId) return String(taskTeamId);
   if (effectiveTeamId) return String(effectiveTeamId);
+
+  if (taskTeamId) {
+    const normalizedTaskTeamId = String(taskTeamId);
+    const taskTeamIsAccessible = teams.some((team) => String(team.id) === normalizedTaskTeamId);
+    if (taskTeamIsAccessible) return normalizedTaskTeamId;
+  }
+
   return teams.length > 0 ? String(teams[0].id) : '';
 }
 
