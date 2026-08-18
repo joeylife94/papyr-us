@@ -10,8 +10,12 @@ describe('task form team scope', () => {
     { id: '20', name: 'Beta' },
   ];
 
-  it('preserves the existing task team while editing', () => {
-    expect(resolveTaskFormTeamId('20', '10', teams)).toBe('20');
+  it('makes the effective route/filter team authoritative for scoped forms', () => {
+    expect(resolveTaskFormTeamId('20', '10', teams)).toBe('10');
+  });
+
+  it('preserves an accessible existing task team while editing from all teams', () => {
+    expect(resolveTaskFormTeamId('20', undefined, teams)).toBe('20');
   });
 
   it('uses the effective route/filter team for a new scoped task', () => {
@@ -20,6 +24,10 @@ describe('task form team scope', () => {
 
   it('defaults a new all-teams task to the first accessible team', () => {
     expect(resolveTaskFormTeamId(undefined, undefined, teams)).toBe('10');
+  });
+
+  it('falls back to an accessible team when the existing task team is no longer accessible', () => {
+    expect(resolveTaskFormTeamId('30', undefined, teams)).toBe('10');
   });
 
   it('returns no team when the user has no accessible team', () => {
