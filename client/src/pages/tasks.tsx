@@ -5,7 +5,6 @@ import { Badge } from '../components/ui/badge';
 import { Progress } from '../components/ui/progress';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { Label } from '../components/ui/label';
 import {
   Select,
   SelectContent,
@@ -17,12 +16,10 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from '../components/ui/dialog';
-import { Textarea } from '../components/ui/textarea';
 import {
   Plus,
   Calendar,
@@ -38,6 +35,7 @@ import {
 } from 'lucide-react';
 import KanbanBoard from '../components/views/kanban-board';
 import { TaskCharts } from '../components/tasks/TaskCharts';
+import { TaskForm } from '../components/tasks/TaskForm';
 
 interface Task {
   id: number;
@@ -116,7 +114,6 @@ export default function TasksPage({ teamName }: TasksPageProps) {
 
   const { data: teams = [] } = useQuery<Team[]>({
     queryKey: ['/api/teams'],
-    enabled: !teamName,
     queryFn: async () => {
       const response = await fetch('/api/teams');
       if (!response.ok) {
@@ -139,7 +136,6 @@ export default function TasksPage({ teamName }: TasksPageProps) {
         throw new Error('Failed to fetch tasks');
       }
       const data = await response.json();
-      // API returns { tasks: [...], pagination: {...} }, extract the array
       return Array.isArray(data) ? data : data.tasks || [];
     },
   });
@@ -229,7 +225,6 @@ export default function TasksPage({ teamName }: TasksPageProps) {
     },
   });
 
-  // Filter tasks based on search query
   const filteredTasks = tasks.filter(
     (task) =>
       task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -283,7 +278,6 @@ export default function TasksPage({ teamName }: TasksPageProps) {
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">과제 트래커</h1>
@@ -303,13 +297,14 @@ export default function TasksPage({ teamName }: TasksPageProps) {
             <TaskForm
               onSubmit={handleCreateTask}
               members={members}
+              teams={teams}
+              effectiveTeamId={effectiveTeamId}
               onCancel={() => setIsCreateDialogOpen(false)}
             />
           </DialogContent>
         </Dialog>
       </div>
 
-      {/* Filters and View Toggle */}
       <div className="flex flex-col sm:flex-row gap-4">
         <div className="flex-1">
           <div className="relative">
@@ -377,7 +372,6 @@ export default function TasksPage({ teamName }: TasksPageProps) {
         </Select>
       </div>
 
-      {/* Tasks View - Table, Kanban or Charts */}
       {viewMode === 'charts' ? (
         <TaskCharts tasks={filteredTasks} />
       ) : viewMode === 'kanban' ? (
@@ -444,6 +438,8 @@ export default function TasksPage({ teamName }: TasksPageProps) {
                             task={task}
                             onSubmit={(data) => handleUpdateTask(task.id, data)}
                             members={members}
+                            teams={teams}
+                            effectiveTeamId={effectiveTeamId}
                             onCancel={() => setEditingTask(null)}
                           />
                         </DialogContent>
@@ -512,6 +508,8 @@ export default function TasksPage({ teamName }: TasksPageProps) {
                           task={task}
                           onSubmit={(data) => handleUpdateTask(task.id, data)}
                           members={members}
+                          teams={teams}
+                          effectiveTeamId={effectiveTeamId}
                           onCancel={() => setEditingTask(null)}
                         />
                       </DialogContent>
@@ -524,7 +522,6 @@ export default function TasksPage({ teamName }: TasksPageProps) {
               </CardHeader>
 
               <CardContent className="space-y-4">
-                {/* Status and Priority */}
                 <div className="flex items-center gap-2">
                   <Badge className={statusColors[task.status]}>{statusLabels[task.status]}</Badge>
                   <Badge className={priorityColors[task.priority as keyof typeof priorityColors]}>
@@ -532,7 +529,6 @@ export default function TasksPage({ teamName }: TasksPageProps) {
                   </Badge>
                 </div>
 
-                {/* Progress */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-sm">
                     <span>진도</span>
@@ -549,7 +545,6 @@ export default function TasksPage({ teamName }: TasksPageProps) {
                   />
                 </div>
 
-                {/* Assignment and Due Date */}
                 <div className="flex items-center justify-between text-sm text-muted-foreground">
                   <div className="flex items-center gap-1">
                     <User className="w-4 h-4" />
@@ -563,7 +558,6 @@ export default function TasksPage({ teamName }: TasksPageProps) {
                   </div>
                 </div>
 
-                {/* Time Estimates */}
                 {(task.estimatedHours || task.actualHours) && (
                   <div className="flex items-center justify-between text-sm text-muted-foreground">
                     <div className="flex items-center gap-1">
@@ -574,7 +568,6 @@ export default function TasksPage({ teamName }: TasksPageProps) {
                   </div>
                 )}
 
-                {/* Tags */}
                 {task.tags.length > 0 && (
                   <div className="flex flex-wrap gap-1">
                     {task.tags.map((tag, index) => (
@@ -601,165 +594,5 @@ export default function TasksPage({ teamName }: TasksPageProps) {
         </div>
       )}
     </div>
-  );
-}
-
-// Task Form Component
-interface TaskFormProps {
-  task?: Task;
-  onSubmit: (data: any) => void;
-  members: Member[];
-  onCancel: () => void;
-}
-
-function TaskForm({ task, onSubmit, members, onCancel }: TaskFormProps) {
-  const [formData, setFormData] = useState({
-    title: task?.title || '',
-    description: task?.description || '',
-    status: task?.status || 'todo',
-    priority: task?.priority || 3,
-    assignedTo: task?.assignedTo || null,
-    teamId: task?.teamId || 'team1',
-    dueDate: task?.dueDate ? task.dueDate.split('T')[0] : '',
-    estimatedHours: task?.estimatedHours || '',
-    tags: task?.tags || [],
-  });
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSubmit({
-      ...formData,
-      estimatedHours: formData.estimatedHours ? parseInt(String(formData.estimatedHours)) : null,
-      assignedTo: formData.assignedTo ? parseInt(String(formData.assignedTo)) : null,
-    });
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="title">제목</Label>
-          <Input
-            id="title"
-            value={formData.title}
-            onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-            required
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="teamId">팀</Label>
-          <Select
-            value={formData.teamId}
-            onValueChange={(value) => setFormData({ ...formData, teamId: value })}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="team1">Team Alpha</SelectItem>
-              <SelectItem value="team2">Team Beta</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="description">설명</Label>
-        <Textarea
-          id="description"
-          value={formData.description}
-          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-          rows={3}
-        />
-      </div>
-
-      <div className="grid grid-cols-3 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="status">상태</Label>
-          <Select
-            value={formData.status}
-            onValueChange={(value) => setFormData({ ...formData, status: value as any })}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="todo">할 일</SelectItem>
-              <SelectItem value="in_progress">진행 중</SelectItem>
-              <SelectItem value="review">검토</SelectItem>
-              <SelectItem value="done">완료</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="priority">우선순위</Label>
-          <Select
-            value={String(formData.priority)}
-            onValueChange={(value) => setFormData({ ...formData, priority: parseInt(value) })}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="1">매우 높음</SelectItem>
-              <SelectItem value="2">높음</SelectItem>
-              <SelectItem value="3">보통</SelectItem>
-              <SelectItem value="4">낮음</SelectItem>
-              <SelectItem value="5">매우 낮음</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="assignedTo">담당자</Label>
-          <Select
-            value={String(formData.assignedTo) || ''}
-            onValueChange={(value) =>
-              setFormData({ ...formData, assignedTo: value ? parseInt(value) : null })
-            }
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="담당자 선택" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="">미배정</SelectItem>
-              {members.map((member) => (
-                <SelectItem key={member.id} value={member.id.toString()}>
-                  {member.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="dueDate">마감일</Label>
-          <Input
-            id="dueDate"
-            type="date"
-            value={formData.dueDate}
-            onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="estimatedHours">예상 시간 (시간)</Label>
-          <Input
-            id="estimatedHours"
-            type="number"
-            value={formData.estimatedHours}
-            onChange={(e) => setFormData({ ...formData, estimatedHours: Number(e.target.value) })}
-            min="0"
-          />
-        </div>
-      </div>
-
-      <DialogFooter>
-        <Button type="button" variant="outline" onClick={onCancel}>
-          취소
-        </Button>
-        <Button type="submit">{task ? '수정' : '생성'}</Button>
-      </DialogFooter>
-    </form>
   );
 }
