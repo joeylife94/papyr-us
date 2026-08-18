@@ -12,7 +12,7 @@ current_phase: "Phase 2 — Product Closure"
 priority: "P0"
 last_updated: "2026-08-19"
 repository: "joeylife94/papyr-us"
-baseline_main_sha: "0ecd28dcf200d65a2925e6ea1a3650650b067fa9"
+baseline_main_sha: "b049aa8dfc3b7de347a6084ce1ebc5576485cf39"
 tags:
   - project/papyr-us
   - freelancers/production
@@ -153,11 +153,13 @@ Acceptance:
 
 Current:
 - list/filter/query/cache defect CLOSED
-- task create/edit form scope remains the current blocker because `client/src/pages/tasks.tsx` still owns the old inline `TaskForm` with `team1` and Team Alpha/Beta synthetic choices
-- PR #45 helper contract is GREEN on exact candidate `fc9213d3a48dd623483e545a35218e1f6a0e38d1`: CI #134 PASS / 7-Layer #123 PASS / Firebat #89 PASS
-- PR #45 current head `203ffc2561c7cb746315bec341c09792b440ba87` adds `client/src/components/tasks/TaskForm.tsx`, a production-ready real-team form component that consumes the helper, renders only supplied teams, locks scoped forms, clears stale assignment when team changes, and blocks submit when no valid team exists
-- the new component is not yet wired into `tasks.tsx`; therefore no user-visible closure claim
-- fresh checks for `203ffc2561c7cb746315bec341c09792b440ba87` are running
+- PR #45 helper contract GREEN on `fc9213d3a48dd623483e545a35218e1f6a0e38d1`: CI #134 PASS / 7-Layer #123 PASS / Firebat #89 PASS
+- preparatory real-team `TaskForm` component GREEN on `203ffc2561c7cb746315bec341c09792b440ba87`: CI #136 PASS / 7-Layer #125 PASS / Firebat #91 PASS
+- PR #45 current head `3ea1ea59a68753fbe48d2efe968100c5429d25e9` wires the new component into active `client/src/pages/tasks.tsx` create and edit paths, passes `teams + effectiveTeamId`, fetches accessible teams on scoped pages, and removes the old inline Team Alpha/Beta synthetic form implementation
+- exact-head CI / 7-Layer / Firebat for `3ea1ea59...` are running; no merge or task-form closure claim yet
+- direct task create/update browser evidence with real team IDs remains required
+- all-teams member assignment scoping still requires direct proof or narrowing before merge if it permits cross-team choices
+- Calendar create/update/view proof remains required
 - overall GJ-05 OPEN
 
 ## GJ-06 — Secure Search
@@ -276,79 +278,78 @@ A skipped required gate is not PASS.
 > [!info] CURRENT  
 > **Date:** 2026-08-19 KST  
 > **Phase:** Phase 2 — Product Closure  
-> **Main at iteration start:** `0ecd28dcf200d65a2925e6ea1a3650650b067fa9`  
+> **Main at iteration start:** `b049aa8dfc3b7de347a6084ce1ebc5576485cf39`  
 > **Highest active gap:** GAP-004 / GJ-05 Tasks + Calendar proof  
 > **Active branch:** `fix/tasks-form-team-scope`  
 > **Active PR:** #45 draft  
-> **Candidate head:** `203ffc2561c7cb746315bec341c09792b440ba87`
+> **Candidate head:** `3ea1ea59a68753fbe48d2efe968100c5429d25e9`
 
 ## What Changed
 
-- Re-read `PAPYR_US_MASTER.md` on `main` and confirmed Phase 2 / GJ-05 as the highest-priority open path.
-- Re-checked PR #45 exact helper candidate `fc9213d3a48dd623483e545a35218e1f6a0e38d1` and confirmed all three workflows are GREEN.
-- Added `client/src/components/tasks/TaskForm.tsx` on PR #45 as the bounded next implementation step.
-- The new component uses `resolveTaskFormTeamId` and `isTaskTeamSelectionLocked`, renders only supplied team options, removes synthetic Team Alpha/Beta semantics from the replacement component, clears assignee state when team changes, and disables submit if no real team can be resolved.
-- Updated PR #45 description to make final `tasks.tsx` wiring + direct create/update evidence explicit merge prerequisites.
-- Did not merge or claim GJ-05 closure because the existing inline form in `tasks.tsx` remains active production code.
+- Re-read the root MASTER on `main` and confirmed Phase 2 / GJ-05 remains the highest-priority path.
+- Confirmed previous PR #45 candidate `203ffc2561c7cb746315bec341c09792b440ba87` completed GREEN: CI #136 / 7-Layer #125 / Firebat #91 PASS.
+- Replaced the active inline `TaskForm` in `client/src/pages/tasks.tsx` with `client/src/components/tasks/TaskForm.tsx` for create and both edit surfaces.
+- Active forms now receive actual `teams` plus `effectiveTeamId`; `/api/teams` is fetched on scoped as well as all-team Tasks pages.
+- Removed the old local synthetic `team1` / Team Alpha / Team Beta form implementation from `tasks.tsx`.
+- Updated PR #45 description with the wired state and remaining merge gates.
+- Did not merge or mark GJ-05 PASS because fresh exact-head workflows and direct task create/update evidence are still outstanding.
 
 ## Actually Executed
 
-- Read the root MASTER from `main`.
-- Confirmed `main` head `0ecd28dcf200d65a2925e6ea1a3650650b067fa9` through the branch API.
-- Read PR #45 metadata and current branch head.
-- Queried exact workflow runs for helper candidate `fc9213d3a48dd623483e545a35218e1f6a0e38d1`.
-- Created `client/src/components/tasks/TaskForm.tsx` on `fix/tasks-form-team-scope`.
-- Advanced PR #45 to `203ffc2561c7cb746315bec341c09792b440ba87`.
-- Updated PR #45 body with current contract, verification, and remaining merge gates.
-- Triggered/observed fresh workflows for the new exact head.
+- Read `PAPYR_US_MASTER.md` from `main`.
+- Confirmed `main` iteration-start head `b049aa8dfc3b7de347a6084ce1ebc5576485cf39`.
+- Read PR #45 metadata and branch files.
+- Queried workflows for `203ffc2561...` and confirmed all three PASS.
+- Updated `client/src/pages/tasks.tsx` on `fix/tasks-form-team-scope`.
+- Advanced PR #45 head to `3ea1ea59a68753fbe48d2efe968100c5429d25e9`.
+- Updated PR #45 body.
+- Queried new exact-head workflow state twice.
 - Updated this authoritative ledger on `main`.
 
 ## Checks / Current Evidence
 
-Helper candidate `fc9213d3a48dd623483e545a35218e1f6a0e38d1`:
-- CI #134 — **PASS**
-- 7-Layer #123 — **PASS**
-- Firebat #89 — **PASS**
+Preparatory candidate `203ffc2561c7cb746315bec341c09792b440ba87`:
+- CI #136 — **PASS**
+- 7-Layer #125 — **PASS**
+- Firebat #91 — **PASS**
 
-Current candidate `203ffc2561c7cb746315bec341c09792b440ba87`:
-- CI #136 — **IN PROGRESS** at latest check
-- 7-Layer #125 — **IN PROGRESS** at latest check
-- Firebat #91 — **IN PROGRESS** at latest check
+Current wired candidate `3ea1ea59a68753fbe48d2efe968100c5429d25e9`:
+- CI #138 — **IN PROGRESS** at latest check
+- 7-Layer #127 — **IN PROGRESS** at latest check
+- Firebat #93 — **IN PROGRESS** at latest check
 
-No merge performed. No TaskForm/GJ-05 closure claim made.
+No merge performed. No GJ-05 closure claim made.
 
 ## Not Verified
 
-- Full workflow completion for `203ffc2561c7cb746315bec341c09792b440ba87`.
-- `tasks.tsx` production wiring to the new real-team `TaskForm` component.
-- Browser/Playwright proof for task create/edit using real accessible team IDs.
-- Correct member list scoping after changing team from the all-teams form.
+- Final workflow completion for `3ea1ea59a68753fbe48d2efe968100c5429d25e9`.
+- Browser/Playwright task create using a real accessible team ID through the newly wired form.
+- Browser/Playwright task edit/update through the newly wired form.
+- All-teams member assignment behavior after selecting/changing the form team.
 - Calendar create/update/view part of GJ-05.
 
 ## Residual Risks / Blockers
 
-- User-visible production behavior is still the old inline `TaskForm`; it can still submit `team1` and display Team Alpha/Beta until `tasks.tsx` is wired.
-- The new replacement component is not yet consumed, so this commit is preparatory and must not be represented as fixing the production journey by itself.
-- In all-teams mode, member fetching is still broader than a selected form team; assignment behavior must be directly proven or narrowed during wiring.
-- PR #45 remains draft/unmerged until final wiring, direct task create/update evidence, and exact-tree GREEN verification are complete.
+- PR #45 remains draft/unmerged until exact-head checks are GREEN and direct task create/update evidence exists.
+- In all-teams mode, `/api/members` is still fetched without a selected form-team query; the form clears an old assignee when team changes, but member option reachability must be directly proven or narrowed before merge if cross-team choices remain possible.
+- Calendar proof is still absent, so GJ-05 cannot close even after task-form merge.
 
 ## Repo / PR State
 
-- `main` at iteration start: `0ecd28dcf200d65a2925e6ea1a3650650b067fa9`
+- `main` at iteration start: `b049aa8dfc3b7de347a6084ce1ebc5576485cf39`
 - active branch: `fix/tasks-form-team-scope`
-- PR #45: OPEN / DRAFT
-- helper GREEN candidate: `fc9213d3a48dd623483e545a35218e1f6a0e38d1`
-- current PR head: `203ffc2561c7cb746315bec341c09792b440ba87`
-- current candidate workflows: CI #136 / 7-Layer #125 / Firebat #91 in progress at latest observation
+- PR #45: OPEN / DRAFT / UNMERGED
+- prior component GREEN candidate: `203ffc2561c7cb746315bec341c09792b440ba87`
+- current wired candidate: `3ea1ea59a68753fbe48d2efe968100c5429d25e9`
+- current candidate workflows: CI #138 / 7-Layer #127 / Firebat #93 in progress at latest observation
 
 ## Exact Next Action
 
-1. Check exact candidate `203ffc2561...` workflows and inspect the first failure if any.
-2. Replace the inline `TaskForm` in `client/src/pages/tasks.tsx` with `client/src/components/tasks/TaskForm.tsx`.
-3. Pass `teams + effectiveTeamId` into create/edit forms and remove the old local `team1` / Team Alpha/Beta form implementation.
-4. Ensure member assignment cannot carry stale cross-team state; prefer team-scoped members once form team changes.
-5. Add direct task create/update regression/browser evidence using real accessible team IDs.
-6. Then prove Calendar create/update/view before GJ-05 PASS.
+1. Check exact candidate `3ea1ea59...` workflows; inspect and minimally fix the first failure if any.
+2. If GREEN, add direct task create/update browser or deterministic E2E evidence using real accessible team IDs.
+3. During that proof, verify all-team member selection cannot choose a member outside the selected form team; if it can, narrow member fetching/selection with the smallest safe change.
+4. Only then mark PR #45 ready and merge with exact-head guard.
+5. After task path merges, prove Calendar create/update/view before GJ-05 PASS.
 
 ## DO NOT START
 
