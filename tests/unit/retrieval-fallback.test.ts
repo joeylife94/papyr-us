@@ -28,7 +28,10 @@ const noise: RetrievedPageRow = {
   slug: 'generic-note',
   title: 'Generic note',
   snippet: 'what the team discussed',
-  score: 0.9,
+  // Keep the fixture below the relevant row on the FTS tie-breaker. This test
+  // verifies zero-hit fallback recovery; merge-score tie-breaking is a separate
+  // behavior and should not accidentally contradict the expected ranking here.
+  score: 0.3,
 };
 
 function fallbackStore(): RetrievalStore & { retrieveTeamScopedPages: ReturnType<typeof vi.fn> } {
