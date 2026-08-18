@@ -154,8 +154,10 @@ Acceptance:
 Current:
 - list/filter/query/cache defect CLOSED
 - task create/edit form scope remains the current blocker: `TaskForm` still defaults to `team1` and renders Team Alpha/Beta synthetic choices
-- PR #45 contains the replacement scope helper contract and unit tests; production UI is not wired yet
-- exact helper candidate `e634f93727feb1a72232315e372546ff8f399695`: CI #127 PASS, Firebat #82 PASS, 7-Layer #116 still IN PROGRESS at the latest check
+- PR #45 now contains a hardened team-scope helper contract: effective route/filter scope wins; all-team editing preserves only an actually accessible existing team; otherwise creation/edit falls back to an accessible team or empty when none exists
+- exact helper candidate `fc9213d3a48dd623483e545a35218e1f6a0e38d1`; fresh CI #134 / 7-Layer #123 / Firebat #89 started for this exact head
+- previous helper candidate `e634f93727feb1a72232315e372546ff8f399695` is superseded; its 7-Layer #116 remained abnormally in progress and is no longer the acceptance candidate
+- production UI is not wired yet
 - overall GJ-05 OPEN
 
 ## GJ-06 — Secure Search
@@ -264,6 +266,7 @@ A skipped required gate is not PASS.
 - **D-005:** MASTER-only commits do not reset accepted executable evidence.
 - **D-006:** bounded defect closure does not equal containing Golden Journey closure.
 - **D-007:** GJ-05 task-form team semantics must use actual accessible/effective team scope; synthetic `team1/team2` values are not valid production behavior.
+- **D-008:** scoped task forms treat effective route/filter team as authoritative; all-team edit may preserve an existing team only while that team remains accessible.
 
 ---
 
@@ -272,68 +275,79 @@ A skipped required gate is not PASS.
 > [!info] CURRENT  
 > **Date:** 2026-08-19 KST  
 > **Phase:** Phase 2 — Product Closure  
-> **Main at iteration start:** `31b1fc80c3bd4c3574216447fbb1ca6871c740a3`  
+> **Main at iteration start:** `bd05d5c10c730412ec7c992c4ce0e44089b9ee0f`  
 > **Highest active gap:** GAP-004 / GJ-05 Tasks + Calendar proof  
 > **Active branch:** `fix/tasks-form-team-scope`  
 > **Active PR:** #45 draft  
-> **Candidate head:** `e634f93727feb1a72232315e372546ff8f399695`
+> **Candidate head:** `fc9213d3a48dd623483e545a35218e1f6a0e38d1`
 
 ## What Changed
 
-- Re-read the authoritative MASTER from `main` and confirmed the iteration-start `main` SHA.
-- Re-queried exact candidate workflows for PR #45.
-- CI #127 and Firebat #82 remain GREEN; 7-Layer #116 remains IN PROGRESS.
-- No product code was changed or merged while the required candidate gate is incomplete.
-- The production blocker remains unchanged: `TaskForm` still exposes synthetic `team1/team2` semantics and is not wired to accessible/effective teams.
+- Re-read the authoritative MASTER from `main` and confirmed main head `bd05d5c10c730412ec7c992c4ce0e44089b9ee0f`.
+- Re-checked PR #45 and the previous candidate workflows.
+- Because 7-Layer #116 remained abnormally IN PROGRESS for the superseded helper-only candidate, this iteration did not merely repeat the pending state.
+- Hardened `resolveTaskFormTeamId` so effective route/filter scope is authoritative, stale/inaccessible existing task teams are not preserved, and all-team fallback can only select an accessible team.
+- Expanded the unit contract from 5 to 7 cases, including authoritative scoped override and inaccessible existing-team fallback.
+- New exact candidate is `fc9213d3a48dd623483e545a35218e1f6a0e38d1`; fresh workflows were triggered.
+- Production `TaskForm` is still not wired; no merge and no GJ-05 closure claim.
 
 ## Actually Executed
 
 - Read `PAPYR_US_MASTER.md` from `main`.
-- Confirmed `main` head `31b1fc80c3bd4c3574216447fbb1ca6871c740a3` at iteration start.
-- Queried workflow runs for candidate `e634f93727feb1a72232315e372546ff8f399695`.
-- Attempted deeper workflow-job inspection; the available GitHub connector does not expose that jobs endpoint through its approved fetch surface, so no unsupported inference was made.
+- Confirmed `main` head through the GitHub branch API.
+- Read PR #45 metadata and exact candidate workflow state.
+- Re-checked 7-Layer #116 and confirmed it still reports IN PROGRESS; jobs endpoint remains unavailable through the approved connector fetch surface.
+- Updated `client/src/lib/task-team-scope.ts` on `fix/tasks-form-team-scope`.
+- Updated `tests/unit/task-team-scope.test.ts` on the same branch.
+- Triggered fresh repository workflows by advancing PR #45 to exact head `fc9213d3a48dd623483e545a35218e1f6a0e38d1`.
 - Updated this authoritative ledger on `main` with the exact observed state.
 
 ## Checks / Current Evidence
 
-For candidate `e634f93727feb1a72232315e372546ff8f399695`:
+Superseded candidate `e634f93727feb1a72232315e372546ff8f399695`:
 - CI #127 — **PASS**
 - Firebat #82 — **PASS**
-- 7-Layer #116 — **IN PROGRESS**
+- 7-Layer #116 — **IN PROGRESS / superseded**
 
-No merge performed. No task-form closure or GJ-05 PASS claim made.
+Current candidate `fc9213d3a48dd623483e545a35218e1f6a0e38d1`:
+- CI #134 — **QUEUED** at latest check
+- 7-Layer #123 — **IN PROGRESS** at latest check
+- Firebat #89 — **PENDING** at latest check
+
+No merge performed. No helper, TaskForm, or GJ-05 closure claim made.
 
 ## Not Verified
 
-- Full 7-Layer completion for the helper candidate.
-- `tasks.tsx` production wiring to the tested task-team scope helper / accessible teams.
+- Fresh full workflow completion for `fc9213d3a48dd623483e545a35218e1f6a0e38d1`.
+- `tasks.tsx` production wiring to the hardened task-team scope helper / accessible teams.
 - Browser/Playwright proof for task create/edit with real team IDs.
+- Assignment behavior when the all-team form changes task team.
 - Calendar create/update/view part of GJ-05.
 
 ## Residual Risks / Blockers
 
-- In the all-teams Tasks view, create can still submit synthetic `team1` until TaskForm is wired.
-- Scoped routes may override create payload, but the visible selector remains misleading and edit semantics are not yet enforced by UI.
-- PR #45 remains draft/unmerged until product wiring plus exact-tree verification are complete.
-- The immediate gate is still 7-Layer #116 being incomplete; this is not evidence of product failure.
+- In the all-teams Tasks view, create can still submit synthetic `team1` until production `TaskForm` is wired.
+- The hardened helper is not yet consumed by production UI, so this branch change alone does not fix user-visible behavior.
+- PR #45 remains draft/unmerged until production wiring plus exact-tree verification are complete.
+- The prior stuck 7-Layer run is no longer acceptance evidence; the new exact head has fresh workflows and is the only current candidate.
 
 ## Repo / PR State
 
-- `main` at iteration start: `31b1fc80c3bd4c3574216447fbb1ca6871c740a3`
+- `main` at iteration start: `bd05d5c10c730412ec7c992c4ce0e44089b9ee0f`
 - active branch: `fix/tasks-form-team-scope`
 - PR #45: OPEN / DRAFT
-- PR head: `e634f93727feb1a72232315e372546ff8f399695`
-- helper-only candidate: CI + Firebat GREEN, 7-Layer pending
+- PR head: `fc9213d3a48dd623483e545a35218e1f6a0e38d1`
+- old candidate `e634f937...`: superseded
+- current candidate workflows: CI #134 queued / 7-Layer #123 in progress / Firebat #89 pending at latest observation
 
 ## Exact Next Action
 
-1. Re-check 7-Layer #116.
-2. If it fails, inspect and fix only the first failing boundary.
-3. If it passes, wire `TaskForm` to `teams + effectiveTeamId` using the tested helper.
-4. Remove Team Alpha/Beta and `team1` defaults from production UI.
-5. Ensure scoped forms cannot drift from route/filter team and all-teams creation chooses only accessible teams.
-6. Add direct task create/update regression/browser evidence.
-7. Then prove Calendar create/update/view before GJ-05 PASS.
+1. Check exact candidate `fc9213d3...` workflows and inspect the first failure if any.
+2. Wire `TaskForm` to `teams + effectiveTeamId` using the hardened helper.
+3. Remove Team Alpha/Beta and `team1` defaults from production UI.
+4. Disable or lock team selection under authoritative scoped routes; in all-teams mode offer only accessible teams and block submit when none exists.
+5. Add direct task create/update regression/browser evidence, including real team IDs and no stale cross-team form state.
+6. Then prove Calendar create/update/view before GJ-05 PASS.
 
 ## DO NOT START
 
