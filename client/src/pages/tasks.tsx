@@ -31,11 +31,6 @@ import {
   Tag,
   Edit,
   Trash2,
-  CheckCircle,
-  Circle,
-  AlertCircle,
-  TrendingUp,
-  Filter,
   Search,
   LayoutGrid,
   List,
@@ -67,6 +62,11 @@ interface Member {
   id: number;
   name: string;
   role: string;
+}
+
+interface Team {
+  id: number | string;
+  name: string;
 }
 
 const statusColors = {
@@ -112,13 +112,26 @@ export default function TasksPage({ teamName }: TasksPageProps) {
   const [viewMode, setViewMode] = useState<'table' | 'kanban' | 'charts'>('table');
 
   const queryClient = useQueryClient();
+  const effectiveTeamId = teamName || (selectedTeam === 'all' ? undefined : selectedTeam);
+
+  const { data: teams = [] } = useQuery<Team[]>({
+    queryKey: ['/api/teams'],
+    enabled: !teamName,
+    queryFn: async () => {
+      const response = await fetch('/api/teams');
+      if (!response.ok) {
+        throw new Error('Failed to fetch teams');
+      }
+      return response.json();
+    },
+  });
 
   // Fetch tasks
   const { data: tasks = [], isLoading } = useQuery<Task[]>({
-    queryKey: ['tasks', teamName, selectedStatus],
+    queryKey: ['tasks', effectiveTeamId || 'all', selectedStatus],
     queryFn: async () => {
       const params = new URLSearchParams();
-      if (teamName) params.append('teamId', teamName);
+      if (effectiveTeamId) params.append('teamId', effectiveTeamId);
       if (selectedStatus !== 'all') params.append('status', selectedStatus);
 
       const response = await fetch(`/api/tasks?${params.toString()}`);
@@ -131,11 +144,11 @@ export default function TasksPage({ teamName }: TasksPageProps) {
     },
   });
 
-  // Fetch members for assignment
+  // Fetch members for assignment/name resolution inside the same effective team scope.
   const { data: members = [] } = useQuery<Member[]>({
-    queryKey: ['members', teamName],
+    queryKey: ['members', effectiveTeamId || 'all'],
     queryFn: async () => {
-      const url = teamName ? `/api/members?teamId=${teamName}` : '/api/members';
+      const url = effectiveTeamId ? `/api/members?teamId=${effectiveTeamId}` : '/api/members';
       const response = await fetch(url);
       if (!response.ok) {
         throw new Error('Failed to fetch members');
@@ -159,7 +172,7 @@ export default function TasksPage({ teamName }: TasksPageProps) {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tasks', teamName] });
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
       setIsCreateDialogOpen(false);
     },
   });
@@ -178,7 +191,7 @@ export default function TasksPage({ teamName }: TasksPageProps) {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tasks', teamName] });
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
       setEditingTask(null);
     },
   });
@@ -194,7 +207,7 @@ export default function TasksPage({ teamName }: TasksPageProps) {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tasks', teamName] });
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
     },
   });
 
@@ -212,7 +225,7 @@ export default function TasksPage({ teamName }: TasksPageProps) {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tasks', teamName] });
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
     },
   });
 
@@ -335,16 +348,21 @@ export default function TasksPage({ teamName }: TasksPageProps) {
             차트
           </Button>
         </div>
-        <Select value={selectedTeam} onValueChange={setSelectedTeam}>
-          <SelectTrigger className="w-full sm:w-[180px]">
-            <SelectValue placeholder="팀 선택" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">모든 팀</SelectItem>
-            <SelectItem value="team1">Team Alpha</SelectItem>
-            <SelectItem value="team2">Team Beta</SelectItem>
-          </SelectContent>
-        </Select>
+        {!teamName && (
+          <Select value={selectedTeam} onValueChange={setSelectedTeam}>
+            <SelectTrigger className="w-full sm:w-[180px]">
+              <SelectValue placeholder="팀 선택" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">모든 팀</SelectItem>
+              {teams.map((team) => (
+                <SelectItem key={team.id} value={String(team.id)}>
+                  {team.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         <Select value={selectedStatus} onValueChange={setSelectedStatus}>
           <SelectTrigger className="w-full sm:w-[180px]">
             <SelectValue placeholder="상태 선택" />
@@ -576,7 +594,7 @@ export default function TasksPage({ teamName }: TasksPageProps) {
       {filteredTasks.length === 0 && (
         <div className="text-center py-12">
           <div className="text-muted-foreground">
-            {searchQuery || selectedTeam !== 'all' || selectedStatus !== 'all'
+            {searchQuery || effectiveTeamId || selectedStatus !== 'all'
               ? '검색 조건에 맞는 과제가 없습니다.'
               : '아직 과제가 없습니다. 새 과제를 추가해보세요!'}
           </div>
