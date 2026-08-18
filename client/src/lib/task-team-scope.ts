@@ -3,6 +3,12 @@ export interface TaskTeamOption {
   name: string;
 }
 
+export interface TaskFormMemberOption {
+  id: number;
+  name: string;
+  teamId: number | string | null;
+}
+
 /**
  * Resolve the team a task form should submit against.
  *
@@ -28,6 +34,22 @@ export function resolveTaskFormTeamId(
   }
 
   return teams.length > 0 ? String(teams[0].id) : '';
+}
+
+/**
+ * Only members belonging to the task form's selected team are valid assignee
+ * options. This is especially important in the all-teams view where the
+ * members endpoint legitimately returns the union of the user's teams.
+ */
+export function membersForTaskTeam<T extends TaskFormMemberOption>(
+  members: T[],
+  teamId: string | null | undefined
+): T[] {
+  if (!teamId) return [];
+  const normalizedTeamId = String(teamId);
+  return members.filter(
+    (member) => member.teamId !== null && String(member.teamId) === normalizedTeamId
+  );
 }
 
 /**
