@@ -76,8 +76,8 @@ export default function AISearchPage() {
               <div className="text-sm space-y-2">
                 <p>• 구체적인 키워드를 사용하세요</p>
                 <p>• 질문 형태로 검색해보세요</p>
-                <p>• 파일명, 태그, 내용을 모두 검색합니다</p>
-                <p>• 페이지, 과제, 파일을 통합 검색합니다</p>
+                <p>• 페이지 제목, 태그, 문서 내용을 검색합니다</p>
+                <p>• 현재는 팀 위키 페이지를 대상으로 검색합니다</p>
               </div>
             </CardContent>
           </Card>
@@ -91,7 +91,7 @@ export default function AISearchPage() {
                 <p className="text-gray-600">"프로젝트 계획서"</p>
                 <p className="text-gray-600">"다음 주 회의록"</p>
                 <p className="text-gray-600">"사용자 가이드 문서"</p>
-                <p className="text-gray-600">"완료된 과제 목록"</p>
+                <p className="text-gray-600">"프로젝트 진행 상황은?"</p>
               </div>
             </CardContent>
           </Card>

@@ -56,3 +56,49 @@ export const AuthLoginResponseSchema = z.object({
 });
 
 export type AuthLoginResponse = z.infer<typeof AuthLoginResponseSchema>;
+
+// ─── POST /api/ai/search ─────────────────────────────────────────────────────
+
+/**
+ * Contract: a single retrieval hit.
+ *
+ * `teamId` is mandatory and non-null: every returned document must be
+ * attributable to a team the caller can read, so isolation stays verifiable
+ * from the response alone.
+ */
+export const RetrievalResultSchema = z.object({
+  pageId: z.number().int().positive(),
+  teamId: z.number().int().positive(),
+  slug: z.string(),
+  title: z.string().min(1),
+  /** Plain text — no markup. Consumers must render it as a text node. */
+  snippet: z.string(),
+  /**
+   * PostgreSQL `ts_rank`: small, unbounded above, comparable only within one
+   * result set. Not a percentage.
+   */
+  ftsScore: z.number().nonnegative(),
+  /** AI relevance in [0, 1]. Absent unless an AI re-ranker scored this document. */
+  aiScore: z.number().min(0).max(1).optional(),
+  /** 1-based position in the returned ordering — the field to display. */
+  rank: z.number().int().positive(),
+  sourceType: z.literal('page'),
+});
+
+export type RetrievalResultResponse = z.infer<typeof RetrievalResultSchema>;
+
+/**
+ * Contract: shape of the POST /api/ai/search response body.
+ *
+ * `rankingSource` tells the caller which ranker produced the ordering, so an
+ * FTS ranking is never mistaken for an AI-scored one. It is `'fts'` whenever no
+ * AI provider ran, the provider failed, or its response was unusable.
+ */
+export const SearchResponseSchema = z.object({
+  results: z.array(RetrievalResultSchema),
+  rankingSource: z.enum(['fts', 'ai-reranked']),
+  query: z.string(),
+  totalResults: z.number().int().nonnegative(),
+});
+
+export type SearchResponse = z.infer<typeof SearchResponseSchema>;

@@ -70,6 +70,8 @@ vi.mock('../services/upload', async () => {
 
 // ─── AI service mock ──────────────────────────────────────────────────────────
 vi.mock('../services/ai', async () => ({
+  // No API key in tests — the route must fall back to FTS ranking.
+  isAIAvailable: vi.fn(() => false),
   smartSearch: vi.fn().mockResolvedValue([]),
   generateSearchSuggestions: vi.fn().mockResolvedValue([]),
   generateContent: vi.fn().mockResolvedValue(''),
@@ -551,16 +553,72 @@ describe('4-4  AI and aggregate routes scope', () => {
     });
 
     it('POST /api/ai/search — scopes to own team when teamId is not specified', async () => {
-      storage.searchWikiPages.mockResolvedValue({ pages: [] });
-      storage.getTasks.mockResolvedValue([]);
+      storage.retrieveTeamScopedPages.mockResolvedValue([]);
       const res = await request(app)
         .post('/api/ai/search')
         .set(auth(tokenA))
         .send({ query: 'hello' });
       expect(res.status).toBe(200);
-      // Should NOT have queried with no teamId / all teams
-      const callArg = storage.searchWikiPages.mock.calls[0]?.[0];
-      expect(callArg?.teamId).toBeDefined();
+      // Retrieval must always be handed an explicit, non-empty team scope —
+      // never undefined, which would become a full-database scan.
+      const callArg = storage.retrieveTeamScopedPages.mock.calls[0]?.[0];
+      expect(callArg?.teamIds).toEqual([TEAM_A_ID]);
+    });
+
+    it('POST /api/ai/search — never returns a document from another team', async () => {
+      // This assertion isolates team filtering, so the in-team candidate is explicitly readable.
+      storage.checkPagePermission.mockResolvedValue(true);
+      // The query layer wrongly leaks a team B page; the response must not.
+      storage.retrieveTeamScopedPages.mockResolvedValue([
+        { pageId: 1, teamId: TEAM_A_ID, slug: 'a-doc', title: 'A doc', snippet: 'mine', score: 0.9 },
+        { pageId: 2, teamId: TEAM_B_ID, slug: 'b-doc', title: 'B doc', snippet: 'secret', score: 0.8 },
+      ]);
+      const res = await request(app)
+        .post('/api/ai/search')
+        .set(auth(tokenA))
+        .send({ query: 'hello' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.results.map((r: { pageId: number }) => r.pageId)).toEqual([1]);
+      expect(JSON.stringify(res.body)).not.toContain('secret');
+    });
+
+    it('POST /api/ai/search — returns an empty result set for a user with no teams', async () => {
+      storage.getUserTeamIds.mockResolvedValueOnce([]);
+      const res = await request(app)
+        .post('/api/ai/search')
+        .set(auth(tokenA))
+        .send({ query: 'hello' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.results).toEqual([]);
+      expect(storage.retrieveTeamScopedPages).not.toHaveBeenCalled();
+    });
+
+    it('POST /api/ai/search — rejects an empty query', async () => {
+      const res = await request(app).post('/api/ai/search').set(auth(tokenA)).send({ query: '   ' });
+      expect(res.status).toBe(400);
+      expect(storage.retrieveTeamScopedPages).not.toHaveBeenCalled();
+    });
+
+    it('POST /api/ai/search — rejects an over-long query', async () => {
+      const res = await request(app)
+        .post('/api/ai/search')
+        .set(auth(tokenA))
+        .send({ query: 'a'.repeat(5000) });
+      expect(res.status).toBe(400);
+      expect(storage.retrieveTeamScopedPages).not.toHaveBeenCalled();
+    });
+
+    it('POST /api/ai/search — caps the retrieval limit a caller can request', async () => {
+      storage.retrieveTeamScopedPages.mockResolvedValue([]);
+      await request(app)
+        .post('/api/ai/search')
+        .set(auth(tokenA))
+        .send({ query: 'hello', limit: 100000 });
+
+      const callArg = storage.retrieveTeamScopedPages.mock.calls[0]?.[0];
+      expect(callArg.limit).toBeLessThanOrEqual(50);
     });
   });
 
