@@ -161,7 +161,8 @@ Acceptance:
 Current:
 
 - list/filter/query/cache defect CLOSED
-- **task create/edit form scope is now confirmed as a blocker:** current `TaskForm` still defaults to `team1` and renders hard-coded Team Alpha/Beta choices
+- **task create/edit form scope is confirmed as a blocker:** current `TaskForm` still defaults to `team1` and renders hard-coded Team Alpha/Beta choices
+- PR #45 defines the replacement scope contract but production UI is not wired yet
 - overall GJ-05 OPEN
 
 ## GJ-06 — Secure Search
@@ -228,18 +229,6 @@ Required by final release boundary:
 
 A skipped required gate is not PASS.
 
-Evidence record:
-
-```text
-Tree/SHA:
-Commands/workflows executed:
-PASS evidence:
-Failures/pending:
-Not executed:
-Known residual risk:
-Decision:
-```
-
 ---
 
 # 7. v1.0 Exit Criteria
@@ -272,12 +261,6 @@ Decision:
 - [ ] screenshot/GIF set
 - [ ] Wishket case study
 
-## Freeze
-- [ ] final main SHA
-- [ ] tag/release decision
-- [ ] residual risks
-- [ ] human final review
-
 ---
 
 # 8. Decision Log
@@ -305,51 +288,54 @@ Decision:
 
 ## What Changed
 
-- Re-read `main` MASTER and inspected existing Playwright/E2E search coverage.
-- Reproduced the next GJ-05 blocker in current `client/src/pages/tasks.tsx`: `TaskForm` still defaults `teamId` to `team1` and exposes hard-coded Team Alpha/Beta options rather than actual accessible teams.
-- Created branch `fix/tasks-form-team-scope` from current main.
-- Added `client/src/lib/task-team-scope.ts` with an explicit pure team-scope contract.
+- Re-read `main` MASTER and inspected existing Playwright/E2E coverage.
+- Reproduced the next GJ-05 blocker: `TaskForm` still defaults `teamId` to `team1` and exposes hard-coded Team Alpha/Beta options rather than actual accessible teams.
+- Created branch `fix/tasks-form-team-scope`.
+- Added `client/src/lib/task-team-scope.ts` with explicit pure team-scope rules.
 - Added `tests/unit/task-team-scope.test.ts` covering edit precedence, effective scoped team, all-team default, no-team behavior, and selection locking.
 - Opened draft PR #45.
 
 ## Actually Executed
 
 - Read `PAPYR_US_MASTER.md` from `main`.
-- Confirmed `main` start SHA `c0d8dfc9993bb5f03bff1f5f17af05e032ac950a`.
-- Inspected `tests/example.spec.ts`, `client/src/pages/tasks.tsx`, and the task form implementation.
-- Created two commits on `fix/tasks-form-team-scope`:
+- Confirmed iteration-start main SHA `c0d8dfc9993bb5f03bff1f5f17af05e032ac950a`.
+- Inspected `tests/example.spec.ts` and `client/src/pages/tasks.tsx` including `TaskForm`.
+- Created branch commits:
   - `5a1c0b481f2eeb7f2008229c9163556bdf9a7c75` helper contract
   - `e634f93727feb1a72232315e372546ff8f399695` unit coverage
 - Opened draft PR #45.
-- Queried workflow runs for candidate `e634f937...`; no workflow run was returned yet at the time of this ledger update.
+- Queried exact candidate workflow runs after PR creation.
 
 ## Checks / Current Evidence
 
-- Helper contract has explicit deterministic unit tests committed.
-- CI / 7-Layer / Firebat: **not yet available for candidate `e634f937...`** at checkpoint time.
-- No merge performed.
-- No GJ-05 PASS claim made.
+For candidate `e634f93727feb1a72232315e372546ff8f399695`:
+
+- CI #127 — **IN PROGRESS**
+- 7-Layer #116 — **IN PROGRESS**
+- Firebat #82 — **IN PROGRESS**
+
+No merge performed. No GJ-05 PASS claim made.
 
 ## Not Verified
 
-- `tasks.tsx` is not yet wired to the new helper; current hard-coded form remains active product behavior.
+- `tasks.tsx` is not yet wired to the helper; current hard-coded form remains active product behavior.
 - Browser/Playwright proof for task create/edit team scope has not run.
 - Calendar create/update/view part of GJ-05 remains unproven.
 
 ## Residual Risks / Blockers
 
-- In the all-teams Tasks view, creating a task can still submit synthetic `team1` unless product UI is wired to accessible teams.
-- Scoped routes override create payload today, but the visible form remains misleading and edit semantics are not frozen.
-- PR #45 is intentionally draft and must not merge in its helper-only state.
+- In the all-teams Tasks view, creating a task can still submit synthetic `team1` until product UI is wired to accessible teams.
+- Scoped routes override create payload today, but the visible form is misleading and edit semantics are not frozen in UI.
+- PR #45 is intentionally draft and must not merge in helper-only state.
 
 ## Exact Next Action
 
-1. Inspect candidate #45 workflows; fix the first failure if any.
+1. Inspect CI #127 / 7-Layer #116 / Firebat #82; fix first failure if any.
 2. Wire `TaskForm` to `teams + effectiveTeamId` using the tested helper.
 3. Remove Team Alpha/Beta and `team1` defaults from production UI.
 4. Ensure scoped forms cannot drift from route/filter team and all-teams creation chooses only accessible teams.
-5. Add direct regression/browser evidence for task create/update scope.
-6. Then inspect and prove Calendar create/update/view before marking GJ-05 PASS.
+5. Add direct task create/update regression/browser evidence.
+6. Then prove Calendar create/update/view before GJ-05 PASS.
 
 ## DO NOT START
 
