@@ -6,13 +6,13 @@ aliases:
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.1"
+version: "0.2"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
-current_phase: "Phase 1 — Baseline Closure"
+current_phase: "Phase 2 — Product Closure"
 priority: "P0"
 last_updated: "2026-08-18"
 repository: "joeylife94/papyr-us"
-baseline_main_sha: "6eaebf1e303c669743771c80580075c6685e86e8"
+baseline_main_sha: "7810da0bd20f29b10f9044b9f97da7a94dbafa74"
 tags:
   - project/papyr-us
   - freelancers/production
@@ -22,41 +22,56 @@ tags:
 
 # PAPYR.US MASTER
 
-> **Status:** AUTHORITATIVE PROJECT CONTRACT — v0.1  
+> **Status:** AUTHORITATIVE PROJECT CONTRACT — v0.2  
 > **Last updated:** 2026-08-18 KST  
 > **Target:** Papyr.us v1.0 — Small-team Production Ready + Wishket Proof Ready
 
 > [!important] 사용 규칙
-> 이 문서는 Papyr.us의 **현재 상태 / 목표 / 작업 범위 / 완료 조건**을 판단하는 기준 문서다.  
+> 이 문서는 Papyr.us의 **현재 상태 / 목표 / 작업 범위 / 완료 조건**을 판단하는 단일 기준 문서다.  
 > 매 작업 시작 전 확인하고, 작업 종료 후 Evidence와 Latest Checkpoint를 갱신한다.
 
 ---
 
-## 0. Authority
+# 0. Authority
 
 이 파일은 Papyr.us의 authoritative project-state 및 closure contract다.
 
-작업 시작 전 아래 네 가지를 반드시 확인한다.
+작업 시작 전 확인:
 
 1. 현재 `main`에서 실제로 무엇이 참인가?
 2. v1.0은 정확히 어디까지인가?
 3. 이번 작업이 닫는 Gap은 무엇인가?
 4. 어떤 실행 증거가 있어야 해당 Gap을 CLOSED로 볼 수 있는가?
 
-### Authority Rules
+## Authority Rules
 
-- `main`이 기본 product baseline이다. 단, 이 문서가 특정 in-flight branch/PR을 명시하는 경우 예외.
+- `main`이 기본 product baseline이다. 단, 이 문서가 특정 in-flight branch/PR을 명시하면 해당 candidate를 검증 대상으로 본다.
 - README, archive 문서, Issue, PR 설명, implementation-agent 요약은 supporting evidence이며 단독 authority가 아니다.
 - 코드가 존재한다고 기능 완료로 간주하지 않는다.
 - 필요한 acceptance evidence가 PASS해야 완료로 인정한다.
 - Implementation-agent self-check는 self-report이며 final truth가 아니다.
-- 모든 완료 작업은 아래 네 항목을 남긴다.
+- 모든 작업 결과는 반드시 아래를 남긴다.
   - What changed
   - What was actually executed
   - What was not verified
   - What risks remain
+  - Repository / branch / PR / SHA
+  - Exact next action
 - Human review가 최종 gate다.
 - v1.0 scope를 넓히기 전에 이 문서를 먼저 수정한다.
+
+## Ledger-only Commit Rule
+
+MASTER 자체를 매 iteration `main`에 갱신하면 새로운 SHA가 생성된다. 따라서 "현재 main SHA를 검증한 뒤 MASTER를 갱신하고, 다시 새 main SHA를 검증"하는 무한 루프를 만들지 않는다.
+
+Phase/gap closure의 executable evidence는 다음 기준으로 고정한다.
+
+- 제품/런타임/README 등 검증 대상 변경이 있는 경우: **해당 exact candidate tree**의 required workflow PASS가 authority.
+- 그 candidate가 guarded merge된 뒤 추가된 변경이 **오직 `PAPYR_US_MASTER.md` ledger-only update**인 경우: 이전 exact candidate evidence를 무효화하지 않는다.
+- MASTER-only commit은 executable product tree 변경으로 간주하지 않는다.
+- 제품 코드/설정/의존성/README/배포 경로가 다시 바뀌면 새 exact-tree evidence가 필요하다.
+
+이 규칙은 증거 기준을 낮추는 것이 아니라, 상태 기록 행위가 스스로 closure를 영구 지연시키는 순환을 제거한다.
 
 ---
 
@@ -80,13 +95,11 @@ v1.0은 다음을 증명해야 한다.
 
 **Papyr.us v1.0 = Small-team Production Ready**
 
-기준 사용 범위:
-
-- 약 5~20명 규모의 내부 팀
-- 일반적인 핵심 사용에서 개발자 개입 불필요
+- 약 5~20명 규모 내부 팀
+- 일반 핵심 사용에서 개발자 개입 불필요
 - 실제 내부 Wiki / 업무 협업 용도로 사용 가능
 
-이 숫자는 load-test guarantee가 아니라 **제품 범위 정의**다.
+이 숫자는 load-test guarantee가 아니라 제품 범위 정의다.
 
 ## Proof Definition
 
@@ -116,18 +129,14 @@ v1.0은 다음을 증명해야 한다.
 - Page-level access control
 - Wiki Page CRUD
 - Core Block Editor
-- 정상적인 Wiki organization
+- Wiki organization
 - Page version history / restore
 - Team-scoped document search
 - Tasks basic lifecycle
 - Calendar basic lifecycle
-- Golden Journey의 empty/error/permission-denied UX
+- Golden Journey empty/error/permission-denied UX
 
 ### AI Boundary
-
-AI는 core product의 필수 dependency가 아니다.
-
-v1.0의 검색/AI 경계:
 
 ```text
 User query
@@ -138,26 +147,22 @@ User query
   -> optional AI re-ranking / assistance
 ```
 
-기존 AI 기능 중 아래는 user-visible path가 검증된 경우에만 포함한다.
+Rules:
 
-- Summarization
-- Rewrite
-- Task extraction
-- 기타 AI assistance
-
-AI 실패가 기본 제품을 깨뜨리면 안 된다.
+- AI는 core product의 필수 dependency가 아니다.
+- OpenAI key 없이 core wiki/team/task/search가 동작해야 한다.
+- AI는 authorized bounded candidates 밖의 문서를 추가할 수 없다.
+- Public claim은 실제 verified implementation보다 강하면 안 된다.
 
 ### Operations
 
 - PostgreSQL = durable business-data source of truth
 - Redis = non-authoritative supporting runtime state
 - Dockerized runtime
-- Health endpoint
-- Version endpoint
+- Health/version endpoints
 - Persistent data/uploads volumes
 - Repeatable schema setup/migration
-- Backup
-- Restore/recovery
+- Backup + restore/recovery
 - Structured logs
 - Repeatable smoke verification
 
@@ -165,16 +170,14 @@ AI 실패가 기본 제품을 깨뜨리면 안 된다.
 
 - Sanitized public demo
 - Demo-safe seed data/account
-- 대표 Screenshot 6~8장
-- 필요 시 short GIF 2~3개
-- Current architecture diagram 1장
+- Screenshot 6~8장
+- 필요 시 short GIF/video 2~3개
+- Current architecture diagram
 - Truthful README feature/status table
 - Current verification summary
-- Wishket용 short case study
+- Wishket short case study
 
 ## 3.2 Explicitly NOT Required for v1.0
-
-아래 항목으로 v1.0을 지연시키지 않는다.
 
 - Embeddings
 - pgvector
@@ -194,7 +197,6 @@ AI 실패가 기본 제품을 깨뜨리면 안 된다.
 - Enterprise SAML/SSO completeness
 - Broad third-party integration catalog
 
-> [!warning]
 > 실제 고객 요구가 생기지 않는 한 위 항목은 **v1.1+**.
 
 ---
@@ -207,126 +209,99 @@ AI 실패가 기본 제품을 깨뜨리면 안 된다.
 |---|---|
 | Repository | `joeylife94/papyr-us` |
 | Default branch | `main` |
-| Current main SHA before this ledger update | `6eaebf1e303c669743771c80580075c6685e86e8` |
+| Main before this ledger update | `7810da0bd20f29b10f9044b9f97da7a94dbafa74` |
 | Working maturity | `v0.8` — internal label |
 | Product state | Engineering-rich / product-proof closure incomplete |
 | Public repository | Yes |
 | Public sanitized demo | Not established |
 | Private runtime | Firebat / Tailnet-only deployment path exists |
 
-## 4.2 Strong Existing Foundations
+## 4.2 Accepted Baseline Evidence
 
-- React + TypeScript
-- Express + TypeScript
-- PostgreSQL + Drizzle
-- Authentication / Authorization
-- Team workspaces
-- Wiki/document workflows
-- Tasks / Calendar
-- Version history / Restore
-- Socket.IO / Yjs
-- Docker
-- Redis
-- CI workflows
-- Unit / Domain / Contract / Integration / E2E / Visual test architecture
-- Firebat deployment / smoke tooling
-- AI-assisted features
+### Retrieval integration
 
-> 코드가 존재한다는 것과 v1.0 사용 경로가 검증됐다는 것은 별개다.
+- PR #40 = accepted final retrieval superset.
+- Exact candidate `fa518f24b14fb33729b87af5545e349cb1521dd0`:
+  - CI #115 PASS
+  - 7-Layer #104 PASS
+  - Firebat #70 PASS
+- Merged once to `main` as `9aa941c3f098f0190cf4d374736140b60a9715bc`.
+- PR #27 closed/superseded to prevent duplicate integration.
 
-## 4.3 Retrieval Integration State
-
-Secure retrieval is now integrated into `main` through the single accepted path.
-
-Relevant PRs:
-
-- PR #27 — team-scoped document retrieval foundation — superseded/closed after final stack integration
-- PR #36 — empty-response contract fix — included in final retrieval stack
-- PR #38 — page ACL enforcement — included in final retrieval stack
-- PR #40 — final retrieval review gaps — MERGED
-
-### Final topology decision
-
-- PR #40 was the final superset candidate.
-- The base-synchronized candidate `fa518f24b14fb33729b87af5545e349cb1521dd0` passed all required workflows.
-- PR #40 was marked ready only after that exact-tree evidence was available.
-- PR #40 was merged exactly once into `main` as merge commit `9aa941c3f098f0190cf4d374736140b60a9715bc`.
-- PR #27 was then closed/superseded so it cannot be merged separately as a duplicate retrieval path.
-
-## 4.4 Retrieval Verification Result
-
-The original TypeScript compatibility blocker on PR #40 was resolved on candidate commit `9db02717bd868e5dc3dc093870c337afb1dd0aed`.
-
-The next Layer 1 unit failure was traced to a contradictory fallback-ranking fixture and corrected in `5ab0917105ce77649b1f94907afab1e3b7c70653`.
-
-Exact-tree verification for `5ab0917105ce77649b1f94907afab1e3b7c70653` was fully green:
-
-- CI: PASS
-- 7-Layer Test Architecture: PASS
-- Firebat Deployment Gate: PASS
-
-The candidate was then synchronized with current `main` as:
-
-`fa518f24b14fb33729b87af5545e349cb1521dd0`
-
-Exact-tree verification for `fa518f24b14fb33729b87af5545e349cb1521dd0` was also fully green:
-
-- CI run #115: PASS
-- 7-Layer Test Architecture run #104: PASS
-- Firebat Deployment Gate run #70: PASS
-
-Merge result:
-
-`9aa941c3f098f0190cf4d374736140b60a9715bc`
-
-**GAP-001 and GAP-002 are closed.**
-
-## 4.5 Truthfulness Result
-
-README AI/Search correction is now merged into `main` through PR #43.
+### README truthfulness
 
 Accepted v1.0 wording:
 
 > Team-scoped PostgreSQL full-text retrieval with page-level authorization and optional bounded AI re-ranking.
 
-Exact candidate `fc60659648d541dbc5abded4d4bb6086a436d822` passed all required workflows before merge:
+- PR #43 candidate `fc60659648d541dbc5abded4d4bb6086a436d822`:
+  - CI #119 PASS
+  - 7-Layer #108 PASS
+  - Firebat #74 PASS
+- Merged as `6eaebf1e303c669743771c80580075c6685e86e8`.
+- Subsequent `main` commit `7810da0bd20f29b10f9044b9f97da7a94dbafa74` changes only this MASTER ledger.
 
-- CI run #119: PASS
-- 7-Layer Test Architecture run #108: PASS
-- Firebat Deployment Gate run #74: PASS
+### Phase 1 decision
 
-PR #43 merged as `6eaebf1e303c669743771c80580075c6685e86e8`. Unsupported public claims around complete RAG, semantic/vector search, embeddings, generated citations, and broad task/file search are no longer the v1.0 README contract.
+**Phase 1 CLOSED.**
 
-**GAP-003 is closed.**
+Reason:
 
-## 4.6 Proof Packaging Gap
+- accepted executable candidate is GREEN;
+- retrieval integration blocker is closed;
+- README search/AI contract is truthful;
+- the only post-acceptance main change before this iteration is ledger-only and does not alter executable/product behavior.
 
-현재 부족한 Proof:
+## 4.3 Current Product Work
 
-- Public sanitized demo 없음
-- `docs/assets` proof screenshot set 부족
-- Root `AUDIT_REPORT.md`의 historical `AUDIT RESULT: FAIL`이 current status처럼 보일 위험
-- README가 client demo 중심이 아니라 feature-heavy
-- Current v1.0 closure report 없음
+Issue #31 is reproduced on current code.
 
-## 4.7 Known Product Gap
+Observed before-state in `client/src/pages/tasks.tsx`:
 
-Issue #31:
+- filter options hard-coded as `Team Alpha` / `Team Beta`;
+- `selectedTeam` did not affect `/api/tasks` request;
+- task query key omitted `selectedTeam`;
+- page-scoped `teamName` and free selector did not resolve through one effective scope.
 
-- Tasks page team selector가 hard-coded team을 사용하거나
-- selector 변경이 실제 task query scope에 반영되지 않는 문제
+Current candidate:
 
-Phase 2에서 반드시 재현 여부 확인.
+- Branch: `fix/tasks-team-filter`
+- PR: #44 — draft
+- Candidate SHA: `a471f31a015f6642924b4fd9594bf9ed83ed34f3`
+- Scope: one frontend file, `client/src/pages/tasks.tsx`
+
+Candidate changes:
+
+- fetch accessible teams from existing `/api/teams`;
+- derive `effectiveTeamId` from route prop or free selector;
+- include effective team in `/api/tasks` request and task cache key;
+- use same effective scope for member lookup/cache;
+- hide free team selector when route scope is authoritative;
+- invalidate all task-scope cache entries after mutation rather than one stale scope key;
+- backend authorization unchanged.
+
+Current verification at ledger time:
+
+- CI #123: IN PROGRESS
+- 7-Layer #112: IN PROGRESS
+- Firebat #78: IN PROGRESS
+
+PR #44 is **not accepted and not mergeable evidence yet**.
+
+## 4.4 Known Product/Proof Gaps
+
+- Issue #31 / GJ-05 task team-filter contract: IN PROGRESS on PR #44.
+- Task create/edit form still contains pre-existing hard-coded team choices; deliberately not broadened into PR #44 unless verification proves it blocks the Issue #31 contract.
+- Public sanitized demo 없음.
+- Root `AUDIT_REPORT.md` historical FAIL presentation risk.
+- Curated proof screenshots 없음.
+- Dependency audit findings: 51 total observed previously (4 low / 17 moderate / 27 high / 3 critical), reachability triage not complete.
 
 ---
 
 # 5. Golden Journeys
 
-기능 개수가 아니라 이 Journey들이 제품을 정의한다.
-
 ## GJ-01 — Authentication and Team Entry
-
-### Target
 
 ```text
 Register/Login
@@ -335,85 +310,32 @@ Register/Login
 -> see team-scoped content
 ```
 
-### Acceptance
-- Valid auth PASS
-- Invalid credentials clear failure
-- Logout/session expiry predictable
-- Unauthorized team access impossible
-
-### Evidence
-- E2E
-- Authorization/domain test
-- Screenshot / short demo
+Acceptance: valid auth, clear invalid auth, predictable logout/session expiry, unauthorized team access impossible.
 
 ## GJ-02 — Document Lifecycle
 
-### Target
-
 ```text
-Create page
--> edit supported blocks
--> save
--> reopen
--> update
--> delete/restore
+Create page -> edit -> save -> reopen -> update -> delete/restore
 ```
 
-### Acceptance
-- Reload/restart 후 데이터 유지
-- Slug/title collision deterministic
-- Silent data loss 없음
-
-### Evidence
-- Integration test
-- E2E
-- Deployed runtime smoke
+Acceptance: persistence, deterministic collisions, no silent data loss.
 
 ## GJ-03 — Authorization Boundary
 
-### Target
-
 ```text
 Authorized user -> allowed page/search
-Unauthorized user -> same content attempt
--> unauthorized content never returned
+Unauthorized user -> same attempt -> fail closed
 ```
 
-### Acceptance
-- Team isolation
-- Page-level viewer ACL
-- Unauthorized metadata/snippet downstream AI 유입 없음
-- Fail closed
-
-### Evidence
-- Domain test
-- Real PostgreSQL integration
-- E2E/API
+Acceptance: team isolation, page ACL, no unauthorized snippet/metadata downstream.
 
 ## GJ-04 — Version Recovery
 
-### Target
-
 ```text
-Edit
--> version snapshot
--> inspect previous
--> restore
--> verify restored content
+Edit -> history -> inspect previous -> restore -> verify durable restored state
 ```
 
-### Acceptance
-- Correct page/version scope
-- Intended page만 restore
-- Restore persistence
-
-### Evidence
-- Regression test
-- Deployed API/UI smoke
-
 ## GJ-05 — Tasks and Calendar
-
-### Target
 
 ```text
 Create task/event
@@ -422,19 +344,15 @@ Create task/event
 -> view correct team data
 ```
 
-### Acceptance
+Acceptance:
+
 - Real accessible teams 표시
 - Team selection이 effective query scope 변경
-- `all`에서 unauthorized data leak 없음
+- `all`에서 backend authorization 범위만 집계
 - Cache가 다른 team stale data 재사용하지 않음
-
-### Evidence
-- Frontend/API regression
-- E2E/browser evidence
+- Scoped `teamName` behavior가 authoritative
 
 ## GJ-06 — Secure Search
-
-### Target
 
 ```text
 Natural-language / keyword query
@@ -443,68 +361,17 @@ Natural-language / keyword query
 -> authorized ranked pages
 ```
 
-### Acceptance
-- Query validation consistent
-- Team scope mandatory
-- Page ACL mandatory
-- Retrieval bounded
-- 일반 사용자 문장도 documented lexical limits 내에서 유효
-- Workspace-wide prompt scan 없음
-
-### Evidence
-- Unit
-- Domain
-- Contract
-- Real PostgreSQL integration
-- Browser/E2E
-
 ## GJ-07 — Optional AI Assistance
 
-### Target
-
 ```text
-Authorized bounded context
--> optional AI
--> validated/fallback-safe result
+Authorized bounded context -> optional AI -> validated/fallback-safe result
 ```
-
-### Acceptance
-- OpenAI key 없이 core product 정상
-- AI가 unauthorized candidate 추가 불가
-- Prompt/candidate bounded
-- Provider failure explicit
-- Public claim truthful
-
-### Evidence
-- Unit/Contract AI boundary
-- Public에 AI를 보여준다면 successful configured path 1개
-- unavailable/failure path 1개
 
 ## GJ-08 — Operational Recovery
 
-### Target
-
 ```text
-Deploy
--> health/version
--> create durable data
--> recreate runtime
--> persistence check
--> backup
--> restore verification
+Deploy -> health/version -> durable data -> recreate runtime -> persistence -> backup -> restore
 ```
-
-### Acceptance
-- Durable boundary가 문서와 일치
-- Container recreation으로 business data 손실 없음
-- Backup 생성 가능
-- Restore drill 실제 실행
-
-### Evidence
-- Firebat/deployment gate
-- Runtime smoke
-- Backup manifest/command evidence
-- Restore-drill evidence
 
 ---
 
@@ -512,15 +379,15 @@ Deploy
 
 | ID | Area | Current | v1.0 Target | Priority | Status |
 |---|---|---|---|---|---|
-| GAP-001 | Retrieval integration | PR #40 final superset merged once to `main` | One reviewed merge path on `main` | P0 | CLOSED |
-| GAP-002 | PR #40 verification | `fa518f2...` CI / 7-Layer / Firebat GREEN before merge | Required downstream GREEN on final candidate | P0 | CLOSED |
-| GAP-003 | AI claims | PR #43 merged after exact candidate workflow PASS | Verified claim only on `main` | P0 | CLOSED |
-| GAP-004 | Golden Journeys | 기능은 있으나 product contract evidence 미완료 | GJ-01..08 complete | P0 | OPEN |
-| GAP-005 | Tasks team filter | Issue #31 | Truthful team/query/cache semantics | P0 | VERIFY/FIX |
+| GAP-001 | Retrieval integration | PR #40 merged once | Reviewed secure path on `main` | P0 | CLOSED |
+| GAP-002 | Retrieval verification | `fa518f2...` all required workflows green | GREEN exact candidate | P0 | CLOSED |
+| GAP-003 | AI/Search claims | PR #43 merged after exact-tree PASS | Verified claim only | P0 | CLOSED |
+| GAP-004 | Golden Journeys | Product-level proof incomplete | GJ-01..08 complete | P0 | OPEN |
+| GAP-005 | Tasks team filter | PR #44 candidate in verification | Truthful team/query/cache semantics | P0 | IN PROGRESS |
 | GAP-006 | Public demo | Private runtime only | Sanitized public demo | P0 | OPEN |
-| GAP-007 | Dependency security | 51 npm audit findings observed on CI install: 4 low / 17 moderate / 27 high / 3 critical | 분류 + blocking risk 해결 | P0 | OPEN |
-| GAP-008 | Runtime recovery | Backup docs 존재 | Restore drill evidence | P1 | OPEN |
-| GAP-009 | Historical audit | Root FAIL report | Archived/superseded | P1 | OPEN |
+| GAP-007 | Dependency security | 51 audit findings untriaged for reachability | blocking risk resolved/dispositioned | P0 | OPEN |
+| GAP-008 | Runtime recovery | Backup docs exist | Restore drill evidence | P1 | OPEN |
+| GAP-009 | Historical audit | Root FAIL report visible | Archived/superseded | P1 | OPEN |
 | GAP-010 | Proof screenshots | Curated set 없음 | 6–8 screenshots | P1 | OPEN |
 | GAP-011 | Demo narrative | Feature-heavy README | 3–5 min walkthrough | P1 | OPEN |
 | GAP-012 | Case study | 없음 | Wishket case study | P1 | OPEN |
@@ -534,162 +401,102 @@ Deploy
 
 ## Phase 0 — Authority Baseline
 
-### Goal
-Single source of truth 확립.
+**Status: CLOSED**
 
-### Deliverable
-`PAPYR_US_MASTER.md`
-
-### Success
-- v1.0 scope 명확
-- Out-of-scope 명확
-- Baseline SHA 기록
-- Blocker 기록
-- Golden Journey/quality gate freeze
-
-### Closure
-- MASTER reviewed
-- MASTER merged to `main`
-
-### Status
-**CLOSED** — MASTER is present on `main` at commit `7a40af50fad3a2b800a067ab23c07a680f272671`.
+Closure: authoritative MASTER exists on `main`.
 
 ## Phase 1 — Baseline Closure
 
-### Goal
-Repository를 하나의 trustworthy integration baseline으로 복구.
+**Status: CLOSED**
 
-### Work
-1. Retrieval PR merge topology 정리
-2. PR #40 verification blocker 수정
-3. Exact tree 전체 verification
-4. Retrieval stack 단 한 번 main 통합
-5. README AI/retrieval claim 수정
-6. Post-merge SHA/Evidence MASTER 기록
+Closure evidence:
 
-### Closure
-> `main` GREEN + truthful + P0 integration blocker 없음.
-
-### Status
-**VERIFICATION PENDING** — retrieval integration and README truthfulness are complete; direct workflow evidence for the resulting current `main` ledger tree is the remaining Phase 1 closure signal.
+- secure retrieval exact candidate GREEN and merged once;
+- README truthfulness exact candidate GREEN and merged;
+- no known P0 integration/static blocker;
+- only later main delta before Phase 2 start was MASTER ledger-only.
 
 ## Phase 2 — Product Closure
 
-### Goal
-Core 기능을 하나의 coherent product로 만든다.
+**Status: ACTIVE**
 
-### Work
-- GJ-01 ~ GJ-07 실제 UI/API 실행
-- Issue #31 재현 및 필요 시 수정
-- 아래 경우만 수정:
+Goal: core 기능을 coherent product로 증명.
+
+Work:
+
+- GJ-01 ~ GJ-07 actual UI/API verification
+- Issue #31 / GAP-005 first bounded target
+- 수정 허용:
   - Golden Journey break
   - Authorization failure
   - Data loss
   - Broken empty/error UX
   - User-visible blocker
 
-### 금지
+금지:
+
 - unrelated feature 추가
 - 대규모 redesign
 - v1.1 기능 착수
 
-### Closure
-GJ-01 ~ GJ-07 PASS.
+Closure: GJ-01 ~ GJ-07 PASS.
 
 ## Phase 3 — Operational & Security Readiness
 
-### Goal
-“실행된다”가 아니라 “운영할 수 있다”를 증명.
+Goal: deploy / persistence / backup / restore / logs / dependency triage 증명.
 
-### Work
-- Deployment
-- Persistence recreation
-- Backup
-- Restore drill
-- Health/version/log
-- Dependency vulnerability triage
-- Secret/example 확인
-
-### Closure
-- GJ-08 PASS
-- High/Critical dependency finding 분류 완료
-- Production-reachable blocking risk 해결/수용
+Closure: GJ-08 PASS + security triage complete.
 
 ## Phase 4 — Public Demo
 
-### Goal
-잠재 고객이 바로 검증 가능한 제품 제공.
+Goal: sanitized public reviewer path.
 
-### Constraints
-- Firebat/Tailnet private data 노출 금지
-- Sanitized seed
-- Undocumented manual repair 금지
-- AI는 안전한 quota가 없으면 제한/disable 가능
-
-### Closure
-Clean browser에서 신규 reviewer가 demo script 완료.
+Closure: clean browser에서 신규 reviewer가 demo script 완료.
 
 ## Phase 5 — Proof Packaging
 
-### Goal
-Verified product를 재사용 가능한 판매/납품 Proof로 변환.
+Deliverables:
 
-### Deliverables
-- Client-oriented README
-- Feature/status table
-- Architecture diagram
-- Screenshot 6~8장
-- Interaction capture 2~3개
-- Verification summary
+- client-oriented README
+- architecture diagram
+- screenshots/GIF/video
+- verification summary
 - Wishket case study
-- Limitations / deferred roadmap
-
-### Closure
-> Papyr.us 링크 하나만 전달해도 추가 설명 없이 Proof 역할 수행.
+- limitations/deferred roadmap
 
 ## Phase 6 — v1.0 Freeze
 
-### Required
-- Final `main` SHA
-- v1.0 tag/release decision
-- Golden Journey matrix
-- Quality-gate matrix
-- Demo URL
-- Known limitations
-- Deferred roadmap
-- Final Proof assets
-
-### Closure
-Section 9 Exit Criteria 전부 PASS.
+Required: final main SHA, tag/release decision, Golden Journey matrix, gate matrix, demo URL, residual risks, final proof assets.
 
 ---
 
 # 8. Quality Gates
 
-| Gate | Required | Notes |
-|---|---|---|
-| TypeScript | Yes | Blocking |
-| ESLint | Yes | Zero-warning where configured |
-| Secret scan | Yes | Must execute |
-| Unit | Yes | Pure/local logic |
-| Domain | Yes | Auth/isolation invariants |
-| Contract | Yes | API/schema |
-| Integration | Yes | Real PostgreSQL where needed |
-| Smoke | Yes | Critical runtime/API |
-| Production build | Yes | Exact release tree |
-| Playwright E2E | Yes | Golden Journeys |
-| Visual/A11y | Yes for proof surfaces | Current UI evidence |
-| Firebat gate | Yes | Private reference runtime |
-| Public-demo smoke | Yes | Firebat과 별도 |
-| Dependency security triage | Yes | Non-blocking audit만으로 불충분 |
-| Backup/Restore drill | Yes | 실제 restore 실행 |
+| Gate | Required |
+|---|---|
+| TypeScript | Yes |
+| ESLint | Yes |
+| Secret scan | Yes |
+| Unit | Yes |
+| Domain | Yes |
+| Contract | Yes |
+| Integration / real PostgreSQL | Yes where relevant |
+| Smoke | Yes |
+| Production build | Yes |
+| Playwright E2E | Yes for Golden Journeys |
+| Visual/A11y | Yes for proof surfaces |
+| Firebat gate | Yes |
+| Public-demo smoke | Yes |
+| Dependency security triage | Yes |
+| Backup/Restore drill | Yes |
 
-## Evidence Template
+Evidence template:
 
 ```text
 Tree/SHA:
 Commands/workflows executed:
 PASS evidence:
+Failed/pending:
 Not executed:
 Known residual risk:
 Reviewer decision:
@@ -700,6 +507,7 @@ Reviewer decision:
 # 9. v1.0 Exit Criteria
 
 ## Product
+
 - [ ] GJ-01 Authentication and Team Entry — PASS
 - [ ] GJ-02 Document Lifecycle — PASS
 - [ ] GJ-03 Authorization Boundary — PASS
@@ -710,6 +518,7 @@ Reviewer decision:
 - [ ] GJ-08 Operational Recovery — PASS
 
 ## Engineering
+
 - [ ] Static/unit/domain/contract/integration/smoke/build — PASS on final tree
 - [ ] Required E2E — PASS
 - [ ] Visual/A11y proof surfaces — PASS
@@ -718,20 +527,23 @@ Reviewer decision:
 - [ ] No known P0 authorization/data-loss defect
 
 ## Product Truthfulness
-- [x] README claims = implementation for v1.0 search boundary
-- [x] Complete-RAG claim 없음 unless evidence 존재
+
+- [x] README search/AI claims = verified v1.0 implementation boundary
+- [x] Complete-RAG claim 없음 without evidence
 - [ ] Known limitations visible
-- [ ] Historical audits가 current status로 오인되지 않음
+- [ ] Historical audits cannot be mistaken for current quality status
 
 ## Proof
+
 - [ ] Sanitized public demo
-- [ ] Demo seed/account documented
+- [ ] Demo seed/access documented
 - [ ] Demo script clean-session validation
 - [ ] Architecture diagram
 - [ ] Screenshot set
 - [ ] Wishket case study
 
 ## Freeze
+
 - [ ] Final `main` SHA
 - [ ] Release/tag decision
 - [ ] Residual risks
@@ -742,481 +554,175 @@ Reviewer decision:
 # 10. Deferred Backlog — v1.1+
 
 ## AI / Retrieval
-1. Document chunking
-2. Embedding abstraction
-3. pgvector
-4. Hybrid lexical + vector retrieval
-5. Grounded answer generation
-6. Source citations
-7. Task/file indexing
-8. Korean morphology improvement
 
-## Product
-- Advanced database views
-- Realtime presence/cursor UX expansion
-- Broader automation
-- Enterprise SSO
-- Billing
-- Advanced analytics
-- Mobile-native
+- document chunking
+- embedding abstraction
+- pgvector
+- hybrid lexical/vector retrieval
+- grounded generation
+- source citations
+- task/file indexing
+- Korean morphology improvement
 
-## Infrastructure
-- HA
-- Kubernetes
-- Multi-region
-- Advanced autoscaling
+## Product / Infrastructure
+
+- advanced database views
+- expanded realtime presence/cursor UX
+- enterprise SSO
+- billing
+- advanced analytics
+- mobile-native
+- HA / Kubernetes / multi-region
 
 ---
 
 # 11. Decision Log
 
-## D-001 — 2026-08-18 — v1.0 Boundary
-**Decision:** `Small-team Production Ready + Wishket Proof Ready`  
-**Not:** Feature completeness.
+## D-001 — v1.0 Boundary
+`Small-team Production Ready + Wishket Proof Ready`, not feature completeness.
 
-## D-002 — 2026-08-18 — AI Optional
-Core wiki/team/task/search는 external AI provider 없이 동작해야 한다.
+## D-002 — AI Optional
+Core product remains operational without external AI credentials.
 
-## D-003 — 2026-08-18 — Full RAG Deferred
-v1.0 secure search:
+## D-003 — Full RAG Deferred
+v1.0 search = PostgreSQL FTS + authorization + bounded optional AI re-ranking.
 
-```text
-PostgreSQL FTS
-+ Authorization
-+ Bounded Optional AI Re-ranking
-```
+## D-004 — One Master File
+`PAPYR_US_MASTER.md` is the start/end state ledger for every implementation iteration.
 
-Embeddings / pgvector / chunking / citation은 deferred.
-
-## D-004 — 2026-08-18 — One Master File
-`PAPYR_US_MASTER.md`를 모든 구현 세션 시작점/종료점으로 사용.
+## D-005 — Ledger-only SHA does not reset executable evidence
+A MASTER-only commit records state but does not mutate executable product behavior. Exact-tree workflow evidence must be renewed when product/runtime/config/dependency/README behavior changes, not merely because the ledger recorded the result.
 
 ---
 
 # 12. Latest Checkpoint
 
-> [!info] CURRENT
+> [!info] CURRENT  
 > **Date:** 2026-08-18 KST  
-> **Phase:** Phase 1 — Baseline Closure  
-> **Main before current ledger commit:** `6eaebf1e303c669743771c80580075c6685e86e8`  
-> **Truthfulness PR:** #43 — MERGED
+> **Phase:** Phase 2 — Product Closure  
+> **Main before this ledger commit:** `7810da0bd20f29b10f9044b9f97da7a94dbafa74`  
+> **Active gap:** GAP-005 / Issue #31  
+> **Active PR:** #44 — draft
 
 ## Current Objective
 
-Obtain direct workflow evidence for the current `main` ledger tree. If green, close Phase 1 and move to Phase 2 with Issue #31 / GJ-05 as the first bounded product-verification target.
+Verify PR #44 exact candidate and close only the Tasks team-filter/query/cache boundary if evidence is green.
 
-## Current Blocker
+## Current Candidate
 
-No known product-code blocker remains in Phase 1. Closure is held only for direct current-main verification rather than inferring GREEN from the already-green PR candidate plus documentation-only ledger changes.
+- Branch: `fix/tasks-team-filter`
+- PR: #44
+- SHA: `a471f31a015f6642924b4fd9594bf9ed83ed34f3`
+- Changed files: 1
+- Runtime/backend schema changes: none
 
-## Verified Facts
+## Current Verification
 
-- Phase 0 is closed: MASTER exists on `main`.
-- Secure retrieval integration is closed through merged PR #40.
-- PR #43 candidate SHA: `fc60659648d541dbc5abded4d4bb6086a436d822`.
-- Exact PR #43 candidate workflows completed successfully:
-  - CI run #119: PASS
-  - 7-Layer Test Architecture run #108: PASS
-  - Firebat Deployment Gate run #74: PASS
-- PR #43 was merged using the exact expected head SHA.
-- PR #43 merge commit on `main`: `6eaebf1e303c669743771c80580075c6685e86e8`.
-- GAP-003 is closed: README now states the bounded PostgreSQL FTS + page ACL + optional AI re-ranking contract and defers unsupported vector/RAG claims.
-- Issue #31 remains open and is a bounded Phase 2 frontend/API integration defect: hard-coded team selector, ineffective task query scope, and cache-key semantics.
-- CI install previously reported 51 dependency findings: 4 low / 17 moderate / 27 high / 3 critical. This remains tracked under GAP-007 and is not yet triaged for reachability.
+At ledger update time:
 
-## Next Work — STRICT ORDER
+- CI #123: IN PROGRESS
+- 7-Layer #112: IN PROGRESS
+- Firebat #78: IN PROGRESS
 
-1. [x] MASTER merged to `main` / Phase 0 closed
-2. [x] #27 / #40 topology narrowed to #40 as final candidate path
-3. [x] PR #40 TypeScript compatibility blocker fixed
-4. [x] `5ab0917...` required workflows GREEN
-5. [x] Synchronize final retrieval candidate with current `main`
-6. [x] Confirm all required workflows on `fa518f2...`
-7. [x] Merge secure retrieval stack to `main` exactly once
-8. [x] Supersede/close #27 as duplicate integration path
-9. [x] Implement README AI/Search claim correction on PR #43
-10. [x] Confirm CI / 7-Layer / Firebat on `fc60659...`
-11. [x] Merge PR #43 and record accepted main SHA
-12. [ ] Confirm direct current-main workflow evidence after this ledger update
-13. [ ] If green, close Phase 1 and start Phase 2 with Issue #31 reproduction/fix
+No PASS claim yet.
+
+## Exact Next Work
+
+1. Inspect all three workflow results for `a471f31...`.
+2. If any fail, inspect the first failing job/step and make only the smallest safe fix.
+3. If all green, inspect PR diff once more against Issue #31 constraints.
+4. Add deterministic team-filter test/browser evidence if existing workflows do not directly prove request/cache behavior.
+5. Merge only after required evidence; then update this MASTER and decide GAP-005/GJ-05 state.
+6. Do not broaden into task-form redesign unless it is proven to block the frozen GJ-05 acceptance path.
 
 ## DO NOT START
 
-- [ ] pgvector
-- [ ] Embeddings
-- [ ] Full RAG
-- [ ] Citations
-- [ ] New AI features
-- [ ] Large UI redesign
-- [ ] Kubernetes / scale work
-- [ ] Unrelated backlog
-
-## Phase 1 Closure
-
-> `main` GREEN + truthful + P0 integration blocker 없음.
-
-현재 Phase 1은 **NOT CLOSED** pending direct workflow evidence for the current main ledger tree.
+- pgvector / embeddings / full RAG / citations
+- new AI features
+- large UI redesign
+- Kubernetes / scale work
+- unrelated backlog
 
 ---
 
-# 13. Session Checkpoints
+# 13. Current Iteration Evidence
 
-## 2026-08-18 — Retrieval verification iteration 2
+## 2026-08-18 — Product closure iteration 7
 
 ### Gap
-`GAP-002` / `GAP-001`
+`GAP-005` / `GJ-05`
 
 ### Goal
-Remove the next exact-tree blocker on PR #40 and keep the authoritative state ledger current.
+Resolve the known Tasks team-filter scope/cache defect without changing backend authorization or unrelated task features.
 
 ### What Changed
-- Inspected PR #40 workflows for commit `9db02717bd868e5dc3dc093870c337afb1dd0aed`.
-- Confirmed TypeScript/static compatibility fix is effective.
-- Isolated the only 7-Layer failure to `tests/unit/retrieval-fallback.test.ts`.
-- Corrected contradictory fixture scoring on PR #40 commit `5ab0917105ce77649b1f94907afab1e3b7c70653` without changing production retrieval logic.
-- Updated this root MASTER on `main` with current evidence and next action.
+
+- Reproduced Issue #31 directly from current `main` source.
+- Identified hard-coded filter options and ineffective `selectedTeam` request/cache state.
+- Created `fix/tasks-team-filter` from exact current main `7810da0...`.
+- Updated only `client/src/pages/tasks.tsx`.
+- Opened draft PR #44.
+- Added D-005 ledger-only evidence rule and closed Phase 1 to remove the prior self-referential verification loop.
 
 ### Actually Executed
-- GitHub workflow inspection for `9db0271...`.
-- 7-Layer job/step inspection.
-- Full failed Layer 1 job log inspection.
-- Source inspection of `tests/unit/retrieval-fallback.test.ts` and `server/services/retrieval.ts`.
-- Branch commit `5ab0917...` pushed through GitHub contents API.
-- GitHub automatically started CI / 7-Layer / Firebat workflows for the new candidate.
+
+- Read root MASTER from `main` before work.
+- Read Issue #31 contract and maintainer comments.
+- Inspected current Tasks page and existing `/api/teams` usage.
+- Confirmed backend scope had already been maintainer-verified: explicit `teamId` stays behind existing membership enforcement; absent `teamId` aggregates only accessible teams.
+- Created branch and committed candidate `a471f31a015f6642924b4fd9594bf9ed83ed34f3`.
+- Opened PR #44 against `main`.
+- Queried GitHub Actions for the exact candidate; CI / 7-Layer / Firebat are running.
+- Updated this authoritative MASTER on `main`.
 
 ### PASS Evidence
-For `9db0271...`:
-- CI workflow: PASS
-- Firebat Deployment Gate: PASS
-- 7-Layer Layer 0 Static Gate: PASS
-- Layer 2 Domain Invariants: PASS
-- Layer 3 Contract Tests: PASS
 
-### Failed / Pending Evidence
-For `9db0271...`:
-- Layer 1 Unit Tests: FAIL — 91 PASS / 1 FAIL.
-- Layer 4 / 5 / 6 and sequential smoke: SKIPPED due Layer 1 dependency.
+- Issue reproduced from source.
+- Change boundary is one frontend file.
+- Branch starts from exact current main.
+- Backend authorization path is unchanged.
+- PR candidate exists and workflows started.
 
-For `5ab0917...` at iteration-2 ledger time:
-- CI: IN PROGRESS.
-- 7-Layer: IN PROGRESS.
-- Firebat Deployment Gate: IN PROGRESS.
+### Pending / Not Verified
 
-### Not Verified
-- At iteration-2 close, no claim was made that `5ab0917...` was green.
-- No retrieval merge to `main`.
-- No README claim correction yet.
-- No dependency reachability triage yet.
+- CI #123 final result pending.
+- 7-Layer #112 final result pending.
+- Firebat #78 final result pending.
+- Browser/E2E interaction proof for switching team filter not yet captured.
+- PR #44 not merged.
+- GAP-005 not CLOSED.
+- GJ-05 not PASS.
 
 ### Residual Risks
-- PR #40 remained draft and not release evidence until all required exact-tree gates completed.
-- Dependency audit findings remained unclassified.
+
+- The new `/api/teams` query could expose a type/response-shape mismatch not caught until CI/runtime validation.
+- Task create/edit form still has pre-existing hard-coded team choices; intentionally outside this bounded filter PR unless it blocks acceptance.
+- Dependency findings remain untriaged under GAP-007.
 
 ### Decision
+
 - [ ] PASS
 - [x] PARTIAL
 - [ ] FAIL
 - [ ] BLOCKED
 
 ### Repository State
-- Main before ledger commit: `7a40af50fad3a2b800a067ab23c07a680f272671`
-- Branch: `fix/retrieval-final-review-gaps`
-- PR: `#40`
-- Candidate SHA: `5ab0917105ce77649b1f94907afab1e3b7c70653`
+
+- Main before ledger update: `7810da0bd20f29b10f9044b9f97da7a94dbafa74`
+- Branch: `fix/tasks-team-filter`
+- PR: #44
+- Candidate: `a471f31a015f6642924b4fd9594bf9ed83ed34f3`
 
 ### Next
-1. Inspect all workflow results for `5ab0917...`.
-2. If any fail, fix only the first blocking boundary and re-run.
-3. If green, proceed to single-path retrieval integration and README truthfulness work.
 
----
-
-## 2026-08-18 — Retrieval verification iteration 3
-
-### Gap
-`GAP-002` / `GAP-001`
-
-### Goal
-Convert the now-green retrieval candidate into a candidate synchronized with current `main`, without merging an unverified tree.
-
-### What Changed
-- Confirmed all three required workflows on `5ab0917105ce77649b1f94907afab1e3b7c70653` are GREEN.
-- Compared the original PR base with current `main` and confirmed the two main-side commits change only `PAPYR_US_MASTER.md`.
-- Built a merge tree that preserves the fully verified retrieval candidate and current `main` ledger.
-- Created merge candidate `fa518f24b14fb33729b87af5545e349cb1521dd0` with parents `5ab0917...` and `5eb9116...`.
-- Fast-forwarded branch `fix/retrieval-final-review-gaps` to `fa518f2...`.
-- Updated this root MASTER on `main` with the exact candidate state and pending validation.
-
-### Actually Executed
-- Fetched PR #40 current state and candidate SHA.
-- Queried GitHub Actions runs for `5ab0917...`.
-- Compared `f34966a...` vs `main` and `main` vs `5ab0917...`.
-- Created Git tree `a1a857fdb76092c5295c0ab24226695e30ba06f7` from the verified retrieval tree plus current MASTER blob.
-- Created merge commit `fa518f24b14fb33729b87af5545e349cb1521dd0`.
-- Updated PR #40 branch ref without force.
-- Confirmed new CI / 7-Layer / Firebat runs started for `fa518f2...`.
-
-### PASS Evidence
-For `5ab0917...`:
-- CI run #113: PASS
-- 7-Layer Test Architecture run #102: PASS
-- Firebat Deployment Gate run #68: PASS
-
-Repository topology evidence:
-- Current `main` was only 2 documentation commits ahead of PR's original base.
-- Only `PAPYR_US_MASTER.md` changed on the main side.
-- Branch ref update to `fa518f2...` succeeded without force.
-
-### Failed / Pending Evidence
-For `fa518f2...` at ledger-update time:
-- CI run #115: IN PROGRESS
-- 7-Layer Test Architecture run #104: IN PROGRESS
-- Firebat Deployment Gate run #70: IN PROGRESS
-
-### Not Verified
-- `fa518f2...` is not yet accepted as the final green tree.
-- PR #40 has not been merged.
-- PR #27 has not yet been superseded/closed.
-- README AI/Search claims are not yet corrected.
-- Dependency audit findings are not yet reachability-triaged.
-
-### Residual Risks
-- The base-synchronized merge candidate could reveal an integration-only failure despite the product-code candidate being green.
-- The hourly ledger update advances `main` documentation after candidate sync; this does not alter product code, but final integration must still preserve the authoritative MASTER without duplicate retrieval merges.
-- Dependency audit findings remain unclassified.
-
-### Decision
-- [ ] PASS
-- [x] PARTIAL
-- [ ] FAIL
-- [ ] BLOCKED
-
-### Repository State
-- Main before ledger commit: `5eb9116e772d4aad511f2532dba193d424549c28`
-- Branch: `fix/retrieval-final-review-gaps`
-- PR: `#40`
-- Previously verified candidate: `5ab0917105ce77649b1f94907afab1e3b7c70653`
-- Current synchronized candidate: `fa518f24b14fb33729b87af5545e349cb1521dd0`
-
-### Next
-1. Confirm all workflow results for `fa518f2...`.
-2. If any fail, inspect and fix only the first blocking boundary.
-3. If all green, merge #40 exactly once, supersede #27, then correct README AI/Search claims.
-
----
-
-## 2026-08-18 — Retrieval integration iteration 4
-
-### Gap
-`GAP-001` / `GAP-002` / handoff to `GAP-003`
-
-### Goal
-Accept and integrate the exact verified retrieval tree once, eliminate duplicate PR topology, and leave `main` with the next P0 truthfulness action recorded.
-
-### What Changed
-- Confirmed all required workflows on synchronized candidate `fa518f24b14fb33729b87af5545e349cb1521dd0` are GREEN.
-- Marked PR #40 ready for review after verification completed.
-- Merged PR #40 into `main` exactly once as `9aa941c3f098f0190cf4d374736140b60a9715bc`.
-- Closed/superseded PR #27 after final stack integration.
-- Inspected merged `README.md` and confirmed GAP-003 remains real and material.
-- Updated this root MASTER on `main` with integration evidence and exact next action.
-
-### Actually Executed
-- GitHub Actions workflow lookup for `fa518f2...`.
-- Confirmed:
-  - CI run #115 success
-  - 7-Layer Test Architecture run #104 success
-  - Firebat Deployment Gate run #70 success
-- Attempted guarded merge with expected head SHA; GitHub rejected while PR remained draft.
-- Marked PR #40 ready for review.
-- Re-ran guarded merge using exact expected head SHA; merge succeeded.
-- Closed PR #27 to remove duplicate integration path.
-- Fetched merged `main` branch SHA and README content.
-- Updated authoritative MASTER on `main`.
-
-### PASS Evidence
-- `fa518f2...`: CI PASS / 7-Layer PASS / Firebat PASS.
-- PR #40 merge result: success.
-- `main` merge commit: `9aa941c3f098f0190cf4d374736140b60a9715bc`.
-- PR #27 state after supersede action: closed.
-
-### Not Verified
-- README truthfulness correction has not yet been implemented or verified.
-- Golden Journeys remain product-level OPEN work.
-- Dependency findings remain untriaged for production reachability.
-- No public sanitized demo exists yet.
-
-### Residual Risks
-- README currently overstates AI/search capabilities relative to verified v1.0 retrieval.
-- 51 dependency audit findings remain classification work under GAP-007.
-- Phase 1 is not closed until README claims are corrected and the resulting mainline state is recorded.
-
-### Decision
-- [x] PASS — GAP-001 / GAP-002
-- [x] PARTIAL — Phase 1 overall
-- [ ] FAIL
-- [ ] BLOCKED
-
-### Repository State
-- Main before ledger commit: `9aa941c3f098f0190cf4d374736140b60a9715bc`
-- Merged PR: `#40`
-- Merged candidate: `fa518f24b14fb33729b87af5545e349cb1521dd0`
-- Superseded PR: `#27`
-
-### Next
-1. Create the smallest documentation-only README correction for GAP-003.
-2. Remove/replace unsupported RAG, semantic/vector, embeddings, and multi-source search claims with the verified bounded PostgreSQL FTS + page ACL + optional AI re-ranking contract.
-3. Run documentation-relevant checks/workflows on that exact tree.
-4. Merge only after reviewable evidence; then update this MASTER and evaluate Phase 1 closure.
-
----
-
-## 2026-08-18 — README truthfulness iteration 5
-
-### Gap
-`GAP-003`
-
-### Goal
-Replace unsupported README AI/search claims with the verified v1.0 retrieval boundary and put the exact documentation-only candidate through repository verification.
-
-### What Changed
-- Created branch `docs/readme-truthful-ai-search` from current `main` `b755fa1d60b426eec2dd7f0d765717116d0d6b13`.
-- Updated `README.md` only.
-- Replaced RAG/semantic/vector/embeddings/multi-source search framing with:
-  - authenticated team scope
-  - PostgreSQL FTS
-  - page-level ACL
-  - bounded top-k page candidates
-  - optional candidate-only AI re-ranking
-- Explicitly documented that embeddings, pgvector, hybrid/vector retrieval, generated citations, and task/file indexing are deferred beyond v1.0.
-- Opened PR #43.
-- Updated this root MASTER on `main` before treating the iteration as complete.
-
-### Actually Executed
-- Fetched current `main` and authoritative MASTER.
-- Fetched and inspected `README.md` on `main`.
-- Created branch `docs/readme-truthful-ai-search` from exact main SHA.
-- Updated README commit: `fc60659648d541dbc5abded4d4bb6086a436d822`.
-- Compared base → candidate: one changed file (`README.md`), 60 additions / 114 deletions.
-- Re-read README from the branch after commit.
-- Searched the branch README for literal `RAG pipeline`; zero matches.
-- Opened PR #43 against `main`.
-- Queried workflow runs for the exact candidate SHA.
-
-### PASS Evidence
-- Branch creation from exact main SHA succeeded.
-- README persisted on branch at `fc60659648d541dbc5abded4d4bb6086a436d822`.
-- Public README no longer contains the previous literal `RAG pipeline` claim on the candidate tree.
-- PR #43 is documentation-only and targets `main`.
-
-### Pending Evidence
-At this ledger update:
-- CI run #119: IN PROGRESS
-- 7-Layer Test Architecture run #108: IN PROGRESS
-- Firebat Deployment Gate run #74: IN PROGRESS
-
-### Not Verified
-- PR #43 exact tree is not yet GREEN.
-- README correction is not yet merged to `main`.
-- GAP-003 is not CLOSED.
-- Phase 1 is not CLOSED.
-- Dependency findings remain untriaged for reachability.
-
-### Residual Risks
-- Repository workflows could still expose a non-document integration or policy failure on the candidate.
-- Other README claims outside GAP-003 may still need later proof-packaging cleanup; this iteration intentionally did not broaden into a full client-facing README redesign.
-- 51 dependency audit findings remain a separate P0 under GAP-007.
-
-### Decision
-- [ ] PASS
-- [x] PARTIAL
-- [ ] FAIL
-- [ ] BLOCKED
-
-### Repository State
-- Main before ledger commit: `b755fa1d60b426eec2dd7f0d765717116d0d6b13`
-- Branch: `docs/readme-truthful-ai-search`
-- PR: `#43`
-- Candidate SHA: `fc60659648d541dbc5abded4d4bb6086a436d822`
-
-### Next
-1. Confirm CI / 7-Layer / Firebat results for `fc60659...`.
-2. If any fail, inspect and fix only the first blocking boundary.
-3. If all green, merge PR #43 with expected head SHA.
-4. Update MASTER with the accepted main SHA and evaluate Phase 1 closure.
-
----
-
-## 2026-08-18 — README truthfulness merge iteration 6
-
-### Gap
-`GAP-003` / Phase 1 closure verification
-
-### Goal
-Accept the verified README truthfulness correction into `main`, close GAP-003, and require direct mainline evidence before closing Phase 1.
-
-### What Changed
-- Confirmed all three required workflows on PR #43 candidate `fc60659648d541dbc5abded4d4bb6086a436d822` are GREEN.
-- Merged PR #43 with exact expected head SHA as `6eaebf1e303c669743771c80580075c6685e86e8`.
-- Closed GAP-003 in this MASTER.
-- Kept Phase 1 open until direct current-main workflow evidence exists.
-- Inspected Issue #31 and recorded it as the first bounded Phase 2 product target after closure.
-
-### Actually Executed
-- Read `PAPYR_US_MASTER.md` from `main` before work.
-- Inspected PR #43 metadata and exact candidate SHA.
-- Queried commit workflow runs for `fc60659648d541dbc5abded4d4bb6086a436d822`.
-- Verified CI #119 / 7-Layer #108 / Firebat #74 all completed successfully.
-- Merged PR #43 guarded by exact head SHA.
-- Queried current merge commit status; no direct status checks were attached to the merge commit at inspection time.
-- Read Issue #31 target/constraints/done-evidence contract.
-- Updated this authoritative root MASTER on `main`.
-
-### PASS Evidence
-- PR #43 exact candidate:
-  - CI run #119: PASS
-  - 7-Layer Test Architecture run #108: PASS
-  - Firebat Deployment Gate run #74: PASS
-- Guarded PR merge succeeded.
-- Merge commit: `6eaebf1e303c669743771c80580075c6685e86e8`.
-- README truthfulness boundary is now present on `main`.
-
-### Not Verified
-- Direct workflow evidence on the resulting current `main` ledger commit is pending.
-- Phase 1 is therefore not marked CLOSED yet.
-- Issue #31 has been inspected but not yet changed or browser-verified.
-- Golden Journeys remain open.
-- Dependency findings remain untriaged for production reachability.
-
-### Residual Risks
-- No product-code risk is known from the README-only merge, but the closure contract requires current-main GREEN evidence rather than inference.
-- Issue #31 remains a known user-visible GJ-05 blocker once Phase 2 begins.
-- 51 dependency audit findings remain classification work under GAP-007.
-
-### Decision
-- [x] PASS — GAP-003
-- [x] PARTIAL — Phase 1 overall
-- [ ] FAIL
-- [ ] BLOCKED
-
-### Repository State
-- Main before ledger commit: `6eaebf1e303c669743771c80580075c6685e86e8`
-- Merged PR: `#43`
-- Verified candidate: `fc60659648d541dbc5abded4d4bb6086a436d822`
-- Phase 2 first target after closure: Issue `#31`
-
-### Next
-1. Confirm workflows on the current main ledger commit produced by this update.
-2. If GREEN, close Phase 1 and move MASTER to Phase 2.
-3. Reproduce Issue #31 against current code and fix only its team-filter/query/cache semantics.
+1. Inspect exact candidate workflows.
+2. Fix first blocker only if a workflow fails.
+3. Add direct request/cache behavior evidence if green workflows do not cover it.
+4. Merge only after evidence; then update MASTER.
 
 ---
 
 # 14. Obsidian Operating Rule
-
-이 노트는 **계획 노트가 아니라 프로젝트 상태 원장**이다.
-
-작업할 때:
 
 ```text
 PAPYR_US_MASTER
@@ -1234,24 +740,13 @@ Human Review
 MASTER 업데이트
 ```
 
-### 상태 정의
+State vocabulary:
 
-**DONE ENOUGH TO USE**
-- 실제 핵심 flow가 동작
-- blocking defect 없음
-- 기본 운영 가능
+- **DONE ENOUGH TO USE** — 핵심 flow 동작 + blocking defect 없음 + 기본 운영 가능
+- **DONE ENOUGH TO SHOW** — 사용 가능 + Evidence 존재 + 공개 설명 가능
+- **NOT YET DONE** — 구현만 존재 / 검증 없음 / PR에만 존재 / blocker 존재
 
-**DONE ENOUGH TO SHOW**
-- 사용 가능
-- Evidence 존재
-- Public demo/README에서 과장 없이 설명 가능
-
-**NOT YET DONE**
-- 구현만 존재
-- 검증 없음
-- PR/branch에만 있음
-- 문서 claim과 구현 불일치
-- known blocker 존재
+Detailed historical iteration evidence remains recoverable from this file's Git history; this MASTER keeps current authoritative state and accepted evidence compact enough for repeated execution.
 
 ---
 
