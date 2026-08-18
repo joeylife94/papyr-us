@@ -15,7 +15,8 @@ A **team collaboration wiki** built with React and Express.js, featuring real-ti
 ## 📌 TL;DR (For Hiring Managers)
 
 - **Real-time collaboration** via Socket.IO + Yjs CRDT for conflict-free concurrent editing
-- **AI integration** using GPT-4o: RAG pipeline, semantic search, document summarization, task extraction, smart tagging, and related content discovery
+- **Secure team search** using team-scoped PostgreSQL FTS, page-level authorization, bounded top-k retrieval, and optional GPT-4o candidate re-ranking
+- **Optional AI assistance** for editor/content workflows where configured; AI is not required for core wiki/search operation
 - **Team-isolated workspace architecture** with team-based data separation and RBAC (Role-Based Access Control)
 - **Security-focused design**: JWT authentication, bcrypt hashing, rate limiting, Helmet middleware, input validation, and SQL injection prevention
 - **Full-stack TypeScript** codebase (~33,000 lines) with unit/smoke/E2E test suites, Docker containerization, and CI/CD pipeline
@@ -25,20 +26,21 @@ This project serves as a comprehensive portfolio piece demonstrating system desi
 
 ### Feature Status
 
-| Feature                       | Status              | Notes                                                                                                                                                                                                                              |
-| ----------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Wiki Pages CRUD               | ✅ Stable           | Create, edit, delete, search, tags                                                                                                                                                                                                 |
-| Block Editor (core)           | ✅ Stable           | Paragraph, heading, code, image, table, callout, etc.                                                                                                                                                                              |
-| Team Workspaces               | ✅ Stable           | Team isolation, member management                                                                                                                                                                                                  |
-| Authentication (JWT)          | ✅ Stable           | Login, register, RBAC                                                                                                                                                                                                              |
-| Templates                     | ✅ Stable           | Template categories, template-based page creation                                                                                                                                                                                  |
-| Calendar & Tasks              | ✅ Stable           | Team-scoped events and task management                                                                                                                                                                                             |
-| Real-time Collaboration (Yjs) | ✅ Production Ready | Core editing works; cursor/presence in progress                                                                                                                                                                                    |
-| AI Search & Copilot           | ✅ Stable           | Requires OpenAI API key; search/summarize/RAG; inline text actions (summarize/rewrite/taskify via selection toolbar); AI writing assistant (7 commands); task extraction; related-pages discovery                                  |
-| Automation Workflows          | ✅ Stable           | Create/manage UI: webhook, Slack webhook, send_email, run_ai_summary selectable; no edit UI (create/toggle/delete only)                                                                                                            |
-| Synced Blocks                 | ✅ Production Ready | Basic rendering; limited block type support                                                                                                                                                                                        |
+| Feature                       | Status              | Notes |
+| ----------------------------- | ------------------- | ----- |
+| Wiki Pages CRUD               | ✅ Stable           | Create, edit, delete, search, tags |
+| Block Editor (core)           | ✅ Stable           | Paragraph, heading, code, image, table, callout, etc. |
+| Team Workspaces               | ✅ Stable           | Team isolation, member management |
+| Authentication (JWT)          | ✅ Stable           | Login, register, RBAC |
+| Templates                     | ✅ Stable           | Template categories, template-based page creation |
+| Calendar & Tasks              | ✅ Stable           | Team-scoped events and task management |
+| Real-time Collaboration (Yjs) | ✅ Production Ready | Core editing works; cursor/presence in progress |
+| Search / Optional AI Re-ranking | ✅ Verified retrieval foundation | Core search is team-scoped PostgreSQL FTS with page ACL enforcement. Optional AI may re-rank only bounded authorized page candidates. No embeddings/vector RAG; tasks/files are not part of this retrieval path. |
+| AI Editor Assistance          | ⚠️ Optional         | Inline summarize/rewrite/taskify and writing-assistant paths require a configured OpenAI provider; individual user-visible AI paths are verified separately from core search. |
+| Automation Workflows          | ✅ Stable           | Create/manage UI: webhook, Slack webhook, send_email, run_ai_summary selectable; no edit UI (create/toggle/delete only) |
+| Synced Blocks                 | ✅ Production Ready | Basic rendering; limited block type support |
 | Email Automation              | ✅ Stable           | SMTP outbound via nodemailer when `EMAIL_HOST`/`EMAIL_USER`/`EMAIL_PASS` are set. Fails fast with explicit error when SMTP is not configured — no silent fallbacks. Includes exponential backoff retry (3 attempts, 10 s timeout). |
-| Database Views (Notion-style) | ✅ Production Ready | Schema/rows exist; UI partially implemented                                                                                                                                                                                        |
+| Database Views (Notion-style) | ✅ Production Ready | Schema/rows exist; UI partially implemented |
 
 ---
 
@@ -63,14 +65,15 @@ This project serves as a comprehensive portfolio piece demonstrating system desi
 - **Real-time notifications** for comments, tasks, and mentions
 - **Comment notification system** with @mentions, replies, and reactions ⭐ **NEW**
 
-### 🤖 AI Integration (GPT-4o)
+### 🤖 AI Integration (GPT-4o, Optional)
 
-- **Inline AI editing** — select text in the editor to get a floating toolbar with Summarize, Rewrite, and Taskify actions (`POST /api/ai/inline`); this is the active AI editing path
-- **Smart search** with natural language queries and RAG pipeline
-- **AI Copilot** — sliding sidebar chat interface for document Q&A
-- **Related pages** discovery via semantic similarity
-- **Task extraction** from meeting notes
-- **AI Writing Assistant** — 7-command assistant (`POST /api/ai/assist`); production-ready with full editor toolbar support
+- **Secure page retrieval** — authenticated team scope → PostgreSQL FTS → page-level authorization → bounded top-k results
+- **Optional AI re-ranking** — GPT-4o may reorder bounded authorized page candidates; it cannot introduce additional documents
+- **Core search remains available without an OpenAI key**
+- **Inline AI editing** — Summarize, Rewrite, and Taskify actions exist as optional provider-backed editor assistance
+- **AI Writing Assistant** — separate provider-backed writing-assistance path
+
+> **Current search boundary:** Papyr.us v1.0 search is lexical PostgreSQL FTS over authorized team wiki pages. Embeddings, pgvector, hybrid/vector retrieval, generated citations, and task/file indexing are deferred beyond v1.0.
 
 ### ⚡ Real-time Collaboration
 
@@ -129,7 +132,7 @@ This project serves as a comprehensive portfolio piece demonstrating system desi
         ┌───────▼──────┐      ┌───────▼──────┐
         │  PostgreSQL  │      │   OpenAI     │
         │  + Drizzle   │      │   GPT-4o     │
-        │  + FTS       │      │   API        │
+        │  + FTS       │      │  (Optional)  │
         └──────────────┘      └──────────────┘
 ```
 
@@ -163,12 +166,13 @@ This project serves as a comprehensive portfolio piece demonstrating system desi
 - **Full-Text Search (FTS)**: Postgres native search with ranking
 - Migration system for schema versioning
 
-**5. AI Integration**
+**5. Search / Optional AI Layer**
 
-- **OpenAI GPT-4o**: Natural language processing
-- Smart search with semantic understanding
-- Content generation and summarization
-- RAG (Retrieval-Augmented Generation) pipeline for context-aware responses
+- **PostgreSQL FTS** is the core retrieval mechanism
+- Retrieval is scoped to authenticated teams and filtered by page-level authorization
+- Result sets and snippets are bounded before any downstream AI use
+- **OpenAI GPT-4o is optional** and may re-rank authorized candidates or power separate editor-assistance features
+- Embeddings/vector retrieval are not part of the v1.0 search architecture
 
 ### Data Flow
 
@@ -233,103 +237,45 @@ Express.js 4.21.2
 - **PostgreSQL backup** automation with S3 support
 - **Microservices-ready** architecture (service registry, API gateway, circuit breaker)
 
-## 🤖 AI-Powered Features
+## 🤖 AI-Powered Features — Current v1.0 Boundary
 
-Papyr.us integrates **GPT-4o** throughout the platform to enhance productivity and collaboration:
+Papyr.us keeps AI **optional**. Core team wiki and search behavior does not require an external AI provider.
 
-### What AI Does in Papyr.us
+### Secure Search
 
-#### 🔍 Smart Search with Semantic Understanding
-
-- **Natural Language Queries**: Search using plain language (e.g., "pages about deployment")
-- **Relevance Ranking**: AI ranks results based on semantic meaning, not just keywords
-- **Multi-source Search**: Searches across pages, files, tasks, and calendar events
-- **Auto-suggestions**: Real-time query suggestions as you type
-
-```typescript
-// Example: Smart search with AI ranking
-const results = await smartSearch('how to deploy to production', documents);
-// Returns: Deployment guides, Docker configs, CI/CD workflows
+```text
+User query
+  -> authenticated team scope
+  -> bounded PostgreSQL full-text retrieval
+  -> page-level authorization
+  -> bounded ranked page candidates
+  -> optional AI re-ranking
 ```
 
-#### 📝 Document Summarization & Analysis
+- PostgreSQL FTS is the authoritative retrieval layer for v1.0.
+- Search returns authorized **wiki pages only** on this path.
+- Page ACL is enforced before candidates may reach optional AI re-ranking.
+- AI re-ranking is candidate-only: the model cannot add pages outside the authorized bounded set.
+- Without an OpenAI key, core FTS search still works.
+- Current lexical limits are documented; PostgreSQL `simple` search is not presented as semantic/vector search.
 
-- **Automatic Summaries**: Generate concise summaries of long documents
-- **Key Points Extraction**: Extract main takeaways from meeting notes
-- **Reading Time Estimation**: Calculate reading time based on content length
+### Optional AI Assistance
 
-#### 💬 Wiki Context-based Q&A (RAG Pipeline)
+The repository also contains separate provider-backed assistance paths such as inline summarize/rewrite/task extraction and writing assistance. These features are not part of the core retrieval requirement and should be considered enabled/proven only when their configured runtime path has been independently verified.
 
-- **Context-aware Answers**: Ask questions about your workspace content
-- **Page-specific Assistance**: Get help based on current page context
-- **Related Content Discovery**: Find relevant pages and documents automatically
+### Explicitly Deferred Search Capabilities
 
-```typescript
-// RAG pipeline: Question answering with workspace context
-const answer = await chatWithCopilot(messages, { pageTitle, pageContent, recentPages });
-```
+The following are **not v1.0 claims**:
 
-#### ✍️ Content Generation
+- embeddings
+- pgvector
+- hybrid lexical/vector retrieval
+- document chunking
+- generated citation pipeline
+- vector/semantic RAG
+- task/file indexing in secure search
 
-- **Section Writing**: Generate well-structured markdown sections
-- **Template Expansion**: Expand outlines into full content
-- **Improvement Suggestions**: AI suggests ways to enhance documentation
-
-#### 🏷️ Tag & Task Recommendations
-
-- **Smart Tagging**: Auto-suggest relevant tags based on content
-- **Task Extraction**: Identify action items from meeting notes and discussions
-- **Priority Scoring**: Recommend task priorities based on content analysis
-
-```typescript
-// Extract tasks from meeting notes
-const tasks = await extractTasks(meetingContent);
-// Returns: [{title, description, priority, estimatedHours}, ...]
-```
-
-#### 🔗 Related Pages Discovery
-
-- **Semantic Linking**: Find related pages based on topic similarity
-- **Knowledge Graph**: Build connections between related content
-- **Navigation Suggestions**: Recommend next pages to read
-
-### AI Integration Architecture
-
-```
-┌─────────────────────────────────────────────────────┐
-│                  User Query                         │
-└────────────────────┬────────────────────────────────┘
-                     │
-            ┌────────▼────────┐
-            │  AI Service     │
-            │  (GPT-4o API)   │
-            └────────┬────────┘
-                     │
-        ┌────────────┴────────────┐
-        │                         │
-   ┌────▼─────┐           ┌──────▼──────┐
-   │ Embeddings│           │  Chat       │
-   │ (Search)  │           │  Completion │
-   └────┬─────┘           └──────┬──────┘
-        │                         │
-   ┌────▼─────────────────────────▼────┐
-   │    Workspace Context (RAG)        │
-   │  • Pages  • Files  • Tasks        │
-   └────────────────┬──────────────────┘
-                    │
-            ┌───────▼────────┐
-            │   PostgreSQL   │
-            │   Full-Text    │
-            │   Search (FTS) │
-            └────────────────┘
-```
-
-**Key Benefits:**
-
-- 🚀 **Significantly Faster Search**: Find relevant content instantly
-- 💡 **Smarter Insights**: Discover connections between documents
-- ⏱️ **Time Savings**: Auto-generate summaries and content
-- 🎯 **Better Organization**: AI-powered tagging and recommendations
+This boundary is intentional: the v1.0 proof target prioritizes bounded retrieval, authorization, operational evidence, and truthful claims over feature breadth.
 
 ---
 
@@ -827,7 +773,7 @@ Comprehensive documentation is available in the `docs/` directory:
 
 1. **🎨 Modern UX** - Responsive design with dark mode
 2. **⚡ Real-time** - Socket.IO + Yjs CRDT for live collaboration
-3. **🤖 AI Integration** - Optional GPT-4o for search & content features
+3. **🤖 Optional AI** - Bounded re-ranking over authorized search candidates plus separate content-assistance paths
 4. **🔒 Security** - JWT auth, RBAC, rate limiting, Helmet
 5. **🧪 Tested** - Smoke, unit, and E2E test suites
 6. **📦 Type-Safe** - Full TypeScript with Zod validation
