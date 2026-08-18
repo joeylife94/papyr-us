@@ -207,7 +207,7 @@ AI 실패가 기본 제품을 깨뜨리면 안 된다.
 |---|---|
 | Repository | `joeylife94/papyr-us` |
 | Default branch | `main` |
-| Current main SHA before this ledger update | `9aa941c3f098f0190cf4d374736140b60a9715bc` |
+| Current main SHA before this ledger update | `b755fa1d60b426eec2dd7f0d765717116d0d6b13` |
 | Working maturity | `v0.8` — internal label |
 | Product state | Engineering-rich / product-proof closure incomplete |
 | Public repository | Yes |
@@ -283,17 +283,13 @@ Merge result:
 
 ## 4.5 Truthfulness Gap
 
-README의 현재 AI claim은 verified implementation보다 강하다.
+README AI/Search correction is now implemented on PR #43 but is not yet accepted into `main`.
 
-현재 v1.0에서 허용되는 표현:
+Target v1.0 wording:
 
 > Team-scoped PostgreSQL full-text retrieval with page-level authorization and optional bounded AI re-ranking.
 
-아래 표현은 실제 구현 전까지 사용 금지:
-
-- Complete RAG Pipeline
-- Full Semantic Search
-- Vector RAG
+PR #43 removes or scopes unsupported public claims around complete RAG, semantic/vector search, embeddings, and broad multi-source search. GAP-003 remains open until the exact PR tree passes required workflows and the correction is merged.
 
 ## 4.6 Proof Packaging Gap
 
@@ -510,7 +506,7 @@ Deploy
 |---|---|---|---|---|---|
 | GAP-001 | Retrieval integration | PR #40 final superset merged once to `main` | One reviewed merge path on `main` | P0 | CLOSED |
 | GAP-002 | PR #40 verification | `fa518f2...` CI / 7-Layer / Firebat GREEN before merge | Required downstream GREEN on final candidate | P0 | CLOSED |
-| GAP-003 | AI claims | README overclaim | Verified claim only | P0 | OPEN |
+| GAP-003 | AI claims | PR #43 correction implemented; workflows running | Verified claim only on `main` | P0 | IN PROGRESS |
 | GAP-004 | Golden Journeys | 기능은 있으나 product contract evidence 미완료 | GJ-01..08 complete | P0 | OPEN |
 | GAP-005 | Tasks team filter | Issue #31 | Truthful team/query/cache semantics | P0 | VERIFY/FIX |
 | GAP-006 | Public demo | Private runtime only | Sanitized public demo | P0 | OPEN |
@@ -791,34 +787,33 @@ Embeddings / pgvector / chunking / citation은 deferred.
 > [!info] CURRENT
 > **Date:** 2026-08-18 KST  
 > **Phase:** Phase 1 — Baseline Closure  
-> **Main before current ledger commit:** `9aa941c3f098f0190cf4d374736140b60a9715bc`  
-> **Integrated retrieval merge:** PR #40 / `9aa941c3f098f0190cf4d374736140b60a9715bc`
+> **Main before current ledger commit:** `b755fa1d60b426eec2dd7f0d765717116d0d6b13`  
+> **Active truthfulness PR:** #43 / `fc60659648d541dbc5abded4d4bb6086a436d822`
 
 ## Current Objective
 
-Correct README AI/Search claims so the public project description matches the verified retrieval architecture on `main`.
+Verify PR #43 on its exact tree, merge only if required workflows are green, then record the accepted main SHA and decide whether Phase 1 can close.
 
 ## Current Blocker
 
-`GAP-003` is now the immediate Phase 1 blocker: README still claims RAG/semantic/vector-style behavior and broader multi-source AI search than the verified v1.0 retrieval implementation supports.
+`GAP-003` is implemented but not closed. PR #43 CI / 7-Layer / Firebat workflows are currently running, so the README correction is not yet accepted into `main`.
 
 ## Verified Facts
 
 - Phase 0 is closed: MASTER exists on `main`.
-- `fa518f24b14fb33729b87af5545e349cb1521dd0` exact-tree workflows:
-  - CI run #115: PASS
-  - 7-Layer Test Architecture run #104: PASS
-  - Firebat Deployment Gate run #70: PASS
-- PR #40 was marked ready only after the exact-tree workflows were confirmed green.
-- PR #40 merged successfully into `main` as `9aa941c3f098f0190cf4d374736140b60a9715bc`.
-- PR #27 was closed/superseded after final stack integration, preventing a duplicate retrieval merge path.
-- README inspection on merged `main` still shows materially stronger claims than evidence supports, including:
-  - `RAG pipeline`
-  - `semantic search` / `semantic understanding`
-  - multi-source search across pages/files/tasks/calendar
-  - embeddings/search architecture
-  - workspace-context RAG framing
-- CI install currently reports 51 dependency findings: 4 low / 17 moderate / 27 high / 3 critical. This remains tracked under GAP-007 and is not yet triaged for reachability.
+- Secure retrieval integration is closed through merged PR #40.
+- PR #43 branch: `docs/readme-truthful-ai-search`.
+- PR #43 candidate SHA: `fc60659648d541dbc5abded4d4bb6086a436d822`.
+- README was re-read from that exact branch after commit.
+- Previous literal `RAG pipeline` wording is absent from the branch README.
+- The branch now describes the verified boundary as team-scoped PostgreSQL FTS + page ACL + bounded candidates + optional AI re-ranking.
+- It explicitly states embeddings, pgvector, hybrid/vector retrieval, generated citations, and task/file indexing are not v1.0 search claims.
+- PR #43 diff is documentation-only: `README.md`, 60 additions / 114 deletions.
+- Workflows at this ledger update:
+  - CI run #119: IN PROGRESS
+  - 7-Layer Test Architecture run #108: IN PROGRESS
+  - Firebat Deployment Gate run #74: IN PROGRESS
+- CI install previously reported 51 dependency findings: 4 low / 17 moderate / 27 high / 3 critical. This remains tracked under GAP-007 and is not yet triaged for reachability.
 
 ## Next Work — STRICT ORDER
 
@@ -830,9 +825,10 @@ Correct README AI/Search claims so the public project description matches the ve
 6. [x] Confirm all required workflows on `fa518f2...`
 7. [x] Merge secure retrieval stack to `main` exactly once
 8. [x] Supersede/close #27 as duplicate integration path
-9. [ ] README AI/Search claim correction
-10. [ ] Verify documentation-only correction and record final Phase 1 SHA / evidence / residual risk
-11. [ ] Close Phase 1 only if `main` is GREEN + truthful + no P0 integration blocker
+9. [x] Implement README AI/Search claim correction on PR #43
+10. [ ] Confirm CI / 7-Layer / Firebat on `fc60659...`
+11. [ ] If green, merge PR #43 and record accepted main SHA
+12. [ ] Close Phase 1 only if `main` is GREEN + truthful + no P0 integration blocker
 
 ## DO NOT START
 
@@ -849,7 +845,7 @@ Correct README AI/Search claims so the public project description matches the ve
 
 > `main` GREEN + truthful + P0 integration blocker 없음.
 
-현재 Phase 1은 **NOT CLOSED** because README truthfulness remains open.
+현재 Phase 1은 **NOT CLOSED** because PR #43 verification is still in progress.
 
 ---
 
@@ -1062,6 +1058,82 @@ Accept and integrate the exact verified retrieval tree once, eliminate duplicate
 2. Remove/replace unsupported RAG, semantic/vector, embeddings, and multi-source search claims with the verified bounded PostgreSQL FTS + page ACL + optional AI re-ranking contract.
 3. Run documentation-relevant checks/workflows on that exact tree.
 4. Merge only after reviewable evidence; then update this MASTER and evaluate Phase 1 closure.
+
+---
+
+## 2026-08-18 — README truthfulness iteration 5
+
+### Gap
+`GAP-003`
+
+### Goal
+Replace unsupported README AI/search claims with the verified v1.0 retrieval boundary and put the exact documentation-only candidate through repository verification.
+
+### What Changed
+- Created branch `docs/readme-truthful-ai-search` from current `main` `b755fa1d60b426eec2dd7f0d765717116d0d6b13`.
+- Updated `README.md` only.
+- Replaced RAG/semantic/vector/embeddings/multi-source search framing with:
+  - authenticated team scope
+  - PostgreSQL FTS
+  - page-level ACL
+  - bounded top-k page candidates
+  - optional candidate-only AI re-ranking
+- Explicitly documented that embeddings, pgvector, hybrid/vector retrieval, generated citations, and task/file indexing are deferred beyond v1.0.
+- Opened PR #43.
+- Updated this root MASTER on `main` before treating the iteration as complete.
+
+### Actually Executed
+- Fetched current `main` and authoritative MASTER.
+- Fetched and inspected `README.md` on `main`.
+- Created branch `docs/readme-truthful-ai-search` from exact main SHA.
+- Updated README commit: `fc60659648d541dbc5abded4d4bb6086a436d822`.
+- Compared base → candidate: one changed file (`README.md`), 60 additions / 114 deletions.
+- Re-read README from the branch after commit.
+- Searched the branch README for literal `RAG pipeline`; zero matches.
+- Opened PR #43 against `main`.
+- Queried workflow runs for the exact candidate SHA.
+
+### PASS Evidence
+- Branch creation from exact main SHA succeeded.
+- README persisted on branch at `fc60659648d541dbc5abded4d4bb6086a436d822`.
+- Public README no longer contains the previous literal `RAG pipeline` claim on the candidate tree.
+- PR #43 is documentation-only and targets `main`.
+
+### Pending Evidence
+At this ledger update:
+- CI run #119: IN PROGRESS
+- 7-Layer Test Architecture run #108: IN PROGRESS
+- Firebat Deployment Gate run #74: IN PROGRESS
+
+### Not Verified
+- PR #43 exact tree is not yet GREEN.
+- README correction is not yet merged to `main`.
+- GAP-003 is not CLOSED.
+- Phase 1 is not CLOSED.
+- Dependency findings remain untriaged for reachability.
+
+### Residual Risks
+- Repository workflows could still expose a non-document integration or policy failure on the candidate.
+- Other README claims outside GAP-003 may still need later proof-packaging cleanup; this iteration intentionally did not broaden into a full client-facing README redesign.
+- 51 dependency audit findings remain a separate P0 under GAP-007.
+
+### Decision
+- [ ] PASS
+- [x] PARTIAL
+- [ ] FAIL
+- [ ] BLOCKED
+
+### Repository State
+- Main before ledger commit: `b755fa1d60b426eec2dd7f0d765717116d0d6b13`
+- Branch: `docs/readme-truthful-ai-search`
+- PR: `#43`
+- Candidate SHA: `fc60659648d541dbc5abded4d4bb6086a436d822`
+
+### Next
+1. Confirm CI / 7-Layer / Firebat results for `fc60659...`.
+2. If any fail, inspect and fix only the first blocking boundary.
+3. If all green, merge PR #43 with expected head SHA.
+4. Update MASTER with the accepted main SHA and evaluate Phase 1 closure.
 
 ---
 
