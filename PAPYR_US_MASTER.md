@@ -163,7 +163,7 @@ Current:
 - list/filter/query/cache defect CLOSED
 - **task create/edit form scope remains the current blocker:** `TaskForm` still defaults to `team1` and renders hard-coded Team Alpha/Beta choices
 - PR #45 defines the replacement scope contract and unit tests; production UI is not wired yet
-- exact candidate `e634f93727feb1a72232315e372546ff8f399695`: CI #127 PASS, Firebat #82 PASS, 7-Layer #116 still running
+- exact helper candidate `e634f93727feb1a72232315e372546ff8f399695`: CI #127 PASS, Firebat #82 PASS, 7-Layer #116 still IN PROGRESS as of this checkpoint
 - overall GJ-05 OPEN
 
 ## GJ-06 — Secure Search
@@ -281,7 +281,7 @@ A skipped required gate is not PASS.
 > [!info] CURRENT  
 > **Date:** 2026-08-19 KST  
 > **Phase:** Phase 2 — Product Closure  
-> **Main at iteration start:** `a5aa56baa2384bff0567214e7f8fd7aa8fc7f150`  
+> **Main at iteration start:** `0ae6a62efc73c62af55c708047bdd59d276dc73c`  
 > **Highest active gap:** GAP-004 / GJ-05 Tasks + Calendar proof  
 > **Active branch:** `fix/tasks-form-team-scope`  
 > **Active PR:** #45 draft  
@@ -290,17 +290,18 @@ A skipped required gate is not PASS.
 ## What Changed
 
 - Re-read `main` MASTER and re-inspected PR #45 exact head.
-- Confirmed PR #45 remains draft and helper-only; no product UI wiring was merged.
-- Advanced verification state: CI #127 and Firebat #82 are now GREEN; 7-Layer #116 is still running.
-- No product code was changed while exact candidate verification remains incomplete.
+- Re-checked all candidate workflows; CI and Firebat remain GREEN while 7-Layer #116 is still running.
+- Inspected the exact branch helper and production `tasks.tsx` again. The helper contract is present, but `TaskForm` is still not wired and still exposes synthetic `team1/team2` production behavior.
+- No product code was merged while a required exact-candidate gate remains incomplete.
 
 ## Actually Executed
 
 - Read `PAPYR_US_MASTER.md` from `main`.
-- Confirmed iteration-start main SHA `a5aa56baa2384bff0567214e7f8fd7aa8fc7f150`.
+- Confirmed iteration-start `main` SHA `0ae6a62efc73c62af55c708047bdd59d276dc73c`.
 - Read PR #45 metadata and exact head `e634f93727feb1a72232315e372546ff8f399695`.
-- Inspected current `TaskForm`, confirming `team1` plus Team Alpha/Beta remain active production behavior on the branch because the helper is not yet wired.
-- Queried candidate workflows twice to avoid treating an in-progress gate as PASS.
+- Read `client/src/lib/task-team-scope.ts` on the PR branch.
+- Read `client/src/pages/tasks.tsx` on the PR branch and reconfirmed the hard-coded `team1`, `Team Alpha`, and `Team Beta` form behavior.
+- Queried exact-candidate workflow status again.
 
 ## Checks / Current Evidence
 
@@ -324,10 +325,11 @@ No merge performed. No task-form closure or GJ-05 PASS claim made.
 - In the all-teams Tasks view, create can still submit synthetic `team1` until TaskForm is wired.
 - Scoped routes may override create payload, but the visible selector remains misleading and edit semantics are not yet enforced by UI.
 - PR #45 must remain draft and unmerged until product wiring plus exact-tree verification are complete.
+- The current gating blocker is incomplete 7-Layer #116; it is not a product failure yet and must not be misreported as one.
 
 ## Repo / PR State
 
-- `main` at iteration start: `a5aa56baa2384bff0567214e7f8fd7aa8fc7f150`
+- `main` at iteration start: `0ae6a62efc73c62af55c708047bdd59d276dc73c`
 - active branch: `fix/tasks-form-team-scope`
 - PR #45: OPEN / DRAFT
 - PR head: `e634f93727feb1a72232315e372546ff8f399695`
