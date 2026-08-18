@@ -100,24 +100,18 @@ query
 # 2. Accepted Baseline Evidence
 
 ## Secure Retrieval — CLOSED
-
 - PR #40 candidate `fa518f24b14fb33729b87af5545e349cb1521dd0`
 - CI #115 PASS / 7-Layer #104 PASS / Firebat #70 PASS
-- merged once to `main` as `9aa941c3f098f0190cf4d374736140b60a9715bc`
+- merged to `main` as `9aa941c3f098f0190cf4d374736140b60a9715bc`
 - PR #27 superseded/closed
 
 ## README Search/AI Truthfulness — CLOSED
-
-Accepted public wording:
-
-> Team-scoped PostgreSQL full-text retrieval with page-level authorization and optional bounded AI re-ranking.
-
+Accepted wording: **Team-scoped PostgreSQL full-text retrieval with page-level authorization and optional bounded AI re-ranking.**
 - PR #43 candidate `fc60659648d541dbc5abded4d4bb6086a436d822`
 - CI #119 PASS / 7-Layer #108 PASS / Firebat #74 PASS
 - merged `6eaebf1e303c669743771c80580075c6685e86e8`
 
 ## Tasks Team Filter / Issue #31 — CLOSED
-
 - PR #44 candidate `a471f31a015f6642924b4fd9594bf9ed83ed34f3`
 - accessible teams from `/api/teams`
 - one `effectiveTeamId` drives task/member request scope and query keys
@@ -127,7 +121,7 @@ Accepted public wording:
 - merged `9e1972c8360d12236fc48263256813906d32a698`
 - Issue #31 closed
 
-Decision: `GAP-005 CLOSED`; overall `GJ-05` remains OPEN until complete Tasks + Calendar user journey has direct executable proof.
+Decision: `GAP-005 CLOSED`; overall `GJ-05` remains OPEN until complete Tasks + Calendar executable proof exists.
 
 ---
 
@@ -149,7 +143,6 @@ Decision: `GAP-005 CLOSED`; overall `GJ-05` remains OPEN until complete Tasks + 
 `create task/event -> assign/scope -> update status/time -> view correct team data`
 
 Acceptance:
-
 - real accessible teams displayed
 - team selection changes effective request/query scope
 - `all` returns only backend-authorized data
@@ -159,11 +152,10 @@ Acceptance:
 - calendar create/update/view path works
 
 Current:
-
 - list/filter/query/cache defect CLOSED
-- **task create/edit form scope remains the current blocker:** `TaskForm` still defaults to `team1` and renders hard-coded Team Alpha/Beta choices
-- PR #45 defines the replacement scope contract and unit tests; production UI is not wired yet
-- exact helper candidate `e634f93727feb1a72232315e372546ff8f399695`: CI #127 PASS, Firebat #82 PASS, 7-Layer #116 still IN PROGRESS as of this checkpoint
+- task create/edit form scope remains the current blocker: `TaskForm` still defaults to `team1` and renders Team Alpha/Beta synthetic choices
+- PR #45 contains the replacement scope helper contract and unit tests; production UI is not wired yet
+- exact helper candidate `e634f93727feb1a72232315e372546ff8f399695`: CI #127 PASS, Firebat #82 PASS, 7-Layer #116 still IN PROGRESS at the latest check
 - overall GJ-05 OPEN
 
 ## GJ-06 — Secure Search
@@ -216,7 +208,6 @@ Phase 2 fixes are allowed only for Golden Journey breaks, authorization failures
 # 6. Quality Gates
 
 Required by final release boundary:
-
 - TypeScript / ESLint / secret scan
 - unit / domain / contract / smoke
 - real PostgreSQL integration where relevant
@@ -281,7 +272,7 @@ A skipped required gate is not PASS.
 > [!info] CURRENT  
 > **Date:** 2026-08-19 KST  
 > **Phase:** Phase 2 — Product Closure  
-> **Main at iteration start:** `0ae6a62efc73c62af55c708047bdd59d276dc73c`  
+> **Main at iteration start:** `31b1fc80c3bd4c3574216447fbb1ca6871c740a3`  
 > **Highest active gap:** GAP-004 / GJ-05 Tasks + Calendar proof  
 > **Active branch:** `fix/tasks-form-team-scope`  
 > **Active PR:** #45 draft  
@@ -289,24 +280,23 @@ A skipped required gate is not PASS.
 
 ## What Changed
 
-- Re-read `main` MASTER and re-inspected PR #45 exact head.
-- Re-checked all candidate workflows; CI and Firebat remain GREEN while 7-Layer #116 is still running.
-- Inspected the exact branch helper and production `tasks.tsx` again. The helper contract is present, but `TaskForm` is still not wired and still exposes synthetic `team1/team2` production behavior.
-- No product code was merged while a required exact-candidate gate remains incomplete.
+- Re-read the authoritative MASTER from `main` and confirmed the iteration-start `main` SHA.
+- Re-queried exact candidate workflows for PR #45.
+- CI #127 and Firebat #82 remain GREEN; 7-Layer #116 remains IN PROGRESS.
+- No product code was changed or merged while the required candidate gate is incomplete.
+- The production blocker remains unchanged: `TaskForm` still exposes synthetic `team1/team2` semantics and is not wired to accessible/effective teams.
 
 ## Actually Executed
 
 - Read `PAPYR_US_MASTER.md` from `main`.
-- Confirmed iteration-start `main` SHA `0ae6a62efc73c62af55c708047bdd59d276dc73c`.
-- Read PR #45 metadata and exact head `e634f93727feb1a72232315e372546ff8f399695`.
-- Read `client/src/lib/task-team-scope.ts` on the PR branch.
-- Read `client/src/pages/tasks.tsx` on the PR branch and reconfirmed the hard-coded `team1`, `Team Alpha`, and `Team Beta` form behavior.
-- Queried exact-candidate workflow status again.
+- Confirmed `main` head `31b1fc80c3bd4c3574216447fbb1ca6871c740a3` at iteration start.
+- Queried workflow runs for candidate `e634f93727feb1a72232315e372546ff8f399695`.
+- Attempted deeper workflow-job inspection; the available GitHub connector does not expose that jobs endpoint through its approved fetch surface, so no unsupported inference was made.
+- Updated this authoritative ledger on `main` with the exact observed state.
 
 ## Checks / Current Evidence
 
 For candidate `e634f93727feb1a72232315e372546ff8f399695`:
-
 - CI #127 — **PASS**
 - Firebat #82 — **PASS**
 - 7-Layer #116 — **IN PROGRESS**
@@ -316,7 +306,7 @@ No merge performed. No task-form closure or GJ-05 PASS claim made.
 ## Not Verified
 
 - Full 7-Layer completion for the helper candidate.
-- `tasks.tsx` production wiring to `resolveTaskFormTeamId` / accessible teams.
+- `tasks.tsx` production wiring to the tested task-team scope helper / accessible teams.
 - Browser/Playwright proof for task create/edit with real team IDs.
 - Calendar create/update/view part of GJ-05.
 
@@ -324,12 +314,12 @@ No merge performed. No task-form closure or GJ-05 PASS claim made.
 
 - In the all-teams Tasks view, create can still submit synthetic `team1` until TaskForm is wired.
 - Scoped routes may override create payload, but the visible selector remains misleading and edit semantics are not yet enforced by UI.
-- PR #45 must remain draft and unmerged until product wiring plus exact-tree verification are complete.
-- The current gating blocker is incomplete 7-Layer #116; it is not a product failure yet and must not be misreported as one.
+- PR #45 remains draft/unmerged until product wiring plus exact-tree verification are complete.
+- The immediate gate is still 7-Layer #116 being incomplete; this is not evidence of product failure.
 
 ## Repo / PR State
 
-- `main` at iteration start: `0ae6a62efc73c62af55c708047bdd59d276dc73c`
+- `main` at iteration start: `31b1fc80c3bd4c3574216447fbb1ca6871c740a3`
 - active branch: `fix/tasks-form-team-scope`
 - PR #45: OPEN / DRAFT
 - PR head: `e634f93727feb1a72232315e372546ff8f399695`
