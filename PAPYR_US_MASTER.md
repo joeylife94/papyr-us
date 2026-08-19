@@ -4,18 +4,18 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.14"
+version: "0.15"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
 current_phase: "Phase 2 — Product Closure"
 priority: "P0"
 last_updated: "2026-08-20"
 repository: "joeylife94/papyr-us"
-baseline_main_sha: "37a1af97fe171774bda8b8b5c8364ea32e5fa0ac"
+baseline_main_sha: "23770c284f400c4f769a8a4490c2bca17a0919ea"
 ---
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.14**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.15**  
 > This root file is the single project-state / closure ledger. Read it before every iteration and update it on `main` before the iteration ends.
 
 ## 0. Authority / Rules
@@ -57,13 +57,14 @@ Deferred v1.1+: embeddings/pgvector/hybrid retrieval, full RAG/citation UI, task
 - Authentication/team-entry page scope + browser proof: PR #48, candidate `5de7d3710d2c8457e941c346acb03fef5051ce09`, CI `32242535498` / Firebat `32242535520` / 7-Layer `32242535668` PASS, merged `3fe021aa0ea99eadd8d2daaad281e410bb47c481`; **GJ-01 CLOSED**.
 - Document lifecycle browser proof: PR #49, candidate `4bbb05e36ad25d127dc3d7ce751ae4835e927c66`, CI `32247882254` / 7-Layer `32247882238` / Firebat `32247882276` PASS, merged `6c6945cfab5aa6eb238146f4846589a7ba3e33bb`; **GJ-02 CLOSED**.
 - Authorization boundary browser/API proof: Issue #50 + PR #51, candidate `8e2b908fa8f849fa416c88630797fb915f1e6a95`, CI `32258403178` / 7-Layer `32258403282` / Firebat `32258403173` PASS, merged `37a1af97fe171774bda8b8b5c8364ea32e5fa0ac`; **GJ-03 CLOSED**.
+- Version recovery browser proof: Issue #52 + PR #53, candidate `b2f5fbf0f2560225e7739b5dea17081ff0b5539f`, CI `32281737644` / 7-Layer `32281738458` / Firebat `32281737443` PASS, merged `23770c284f400c4f769a8a4490c2bca17a0919ea`; Issue #52 completed; **GJ-04 CLOSED**.
 
 ## 3. Golden Journeys
 
 - **GJ-01 Authentication and Team Entry** — **CLOSED** via PR #48.
 - **GJ-02 Document Lifecycle** — `Create -> edit -> save -> reopen -> update -> delete/restore` — **CLOSED** via PR #49.
 - **GJ-03 Authorization Boundary** — authorized succeeds; unauthorized cross-team/page/search fails closed — **CLOSED** via Issue #50 / PR #51.
-- **GJ-04 Version Recovery** — edit -> history -> prior version -> restore -> durable restored state — **OPEN / ACTIVE**, Issue #52 / draft PR #53 under exact-head verification.
+- **GJ-04 Version Recovery** — edit -> history -> prior version -> restore -> durable restored state — **CLOSED** via Issue #52 / PR #53.
 - **GJ-05 Tasks and Calendar** — **CLOSED** via PRs #44–#47.
 - **GJ-06 Secure Search** — implementation accepted; explicit journey-level evidence mapping still **OPEN**.
 - **GJ-07 Optional AI Assistance** — **OPEN if publicly shown**.
@@ -105,7 +106,7 @@ Phase 2 fixes are limited to Golden Journey breaks, authorization failures, data
 
 Required by release boundary: TypeScript/ESLint/secret scan; unit/domain/contract/smoke; real PostgreSQL where relevant; production build; Playwright E2E; visual/a11y proof surfaces; Firebat deployment gate; public-demo smoke; dependency security triage; backup/restore drill. A skipped required gate is not PASS.
 
-Product exit status: GJ-01, GJ-02, GJ-03, and GJ-05 closed; GJ-04/06/07/08 open. README Search/AI truthfulness closed. Final executable tree, dependency disposition, backup/restore, public demo, proof package remain open.
+Product exit status: GJ-01, GJ-02, GJ-03, GJ-04, and GJ-05 closed; GJ-06/07/08 open. README Search/AI truthfulness closed. Final executable tree, dependency disposition, backup/restore, public demo, and proof package remain open.
 
 ## 7. Decision Log
 
@@ -122,84 +123,77 @@ Product exit status: GJ-01, GJ-02, GJ-03, and GJ-05 closed; GJ-04/06/07/08 open.
 
 > **Date:** 2026-08-20 KST  
 > **Phase:** Phase 2 — Product Closure  
-> **Accepted product baseline:** `37a1af97fe171774bda8b8b5c8364ea32e5fa0ac`  
-> **Current main before this ledger-only update:** `0339da29f3c4edbab1f19df93866f612ab7a8ee2`  
+> **Accepted product baseline:** `23770c284f400c4f769a8a4490c2bca17a0919ea`  
+> **Current main before this ledger-only update:** `23770c284f400c4f769a8a4490c2bca17a0919ea`  
 > **Highest active gap:** GAP-004  
-> **Active journey:** GJ-04 Version Recovery  
-> **Active Issue:** #52  
-> **Active implementation PR:** #53 (draft)  
-> **Exact candidate head:** `b2f5fbf0f2560225e7739b5dea17081ff0b5539f`
+> **Active journey:** none; next closure evaluation target is GJ-06 Secure Search  
+> **Active Issue:** none  
+> **Active implementation PR:** none
 
 ### Changed
 
 - Re-read CURRENT MASTER and CURRENT PR #53 before acting.
-- Confirmed prior candidate `775b0edfe395cba4a467cf495dd43ffc9a1ba654` remained the PR head and its required CI + Firebat runs were GREEN while 7-Layer run `32270585035` had completed RED after retry.
-- Current MASTER already recorded that the initial 7-Layer failure was Playwright `chromium --with-deps` installation timeout in All-Layers + Layer 6, while Layer 5 E2E including GJ-04 passed against PostgreSQL.
-- Applied only a CI/tooling reliability correction inside Issue #52: Playwright install step timeout `10 -> 20` minutes for Layer 5, Layer 6, and All-Layers.
-- Advanced PR #53 to exact head `b2f5fbf0f2560225e7739b5dea17081ff0b5539f`.
+- Discarded the historical RED handoff because current PR #53 had advanced to exact head `b2f5fbf0f2560225e7739b5dea17081ff0b5539f`, passed all required gates, and had already merged.
+- Reconciled GJ-04 as CLOSED using exact-head executable evidence and the resulting merge SHA.
+- Closed stale duplicate MASTER proposal PRs #41 and #42 as superseded by the authoritative root MASTER already on `main`; neither was merged.
 
 ### Actually Executed
 
-- Fetched current main MASTER, PR #53 metadata, exact head, workflow summary, and `.github/workflows/test.yml` at the exact candidate.
-- Reconfirmed PR #53 remained OPEN / DRAFT / UNMERGED before modification.
-- Reconfirmed 7-Layer run `32270585035` ended `failure` on run attempt 2; CI `32270585094` and Firebat `32270585051` remained successful for the old head.
-- Updated `.github/workflows/test.yml` on branch `test/issue-52-gj04-version-recovery` with a bounded timeout-only repair; no version-history product code was changed.
-- Re-fetched PR #53 and confirmed new exact head `b2f5fbf0f2560225e7739b5dea17081ff0b5539f` with two changed files total: GJ-04 proof + workflow timeout repair.
-- Confirmed new exact-head workflows started: CI `32281737644`, 7-Layer `32281738458`, Firebat `32281737443`.
+- Fetched current PR #53 metadata and confirmed CLOSED / MERGED, head `b2f5fbf0...`, merge commit `23770c284f400c4f769a8a4490c2bca17a0919ea`.
+- Fetched exact-head workflow runs: CI `32281737644`, 7-Layer `32281738458`, Firebat `32281737443`.
+- Confirmed all three completed successfully for the same exact head `b2f5fbf0...`.
+- Checked PR #53 review submissions and inline review threads; both were empty.
+- Fetched Issue #52 and confirmed `closed`, state reason `completed`.
+- Fetched `main` and confirmed current product merge SHA `23770c284f400c4f769a8a4490c2bca17a0919ea` before this ledger-only commit.
+- Closed superseded PR #41 and PR #42 without merge.
 - Updated this MASTER on `main`.
 
 ### Checks / Current Evidence
 
-Old candidate `775b0edfe395cba4a467cf495dd43ffc9a1ba654`:
-- CI `32270585094` — **PASS**
-- Firebat `32270585051` — **PASS**
-- 7-Layer `32270585035` — **FAILURE** after retry
-- GJ-04 Layer 5 browser proof on the original 7-Layer execution — **PASS**
-
-Current candidate `b2f5fbf0f2560225e7739b5dea17081ff0b5539f`:
-- CI `32281737644` — **IN PROGRESS**
-- 7-Layer `32281738458` — **IN PROGRESS**
-- Firebat `32281737443` — **IN PROGRESS**
-- Scope — `tests/gj04-version-recovery.spec.ts` + `.github/workflows/test.yml` timeout-only correction
+PR #53 exact candidate `b2f5fbf0f2560225e7739b5dea17081ff0b5539f`:
+- CI `32281737644` — **PASS**
+- 7-Layer `32281738458` — **PASS**
+- Firebat `32281737443` — **PASS**
+- Scope — `tests/gj04-version-recovery.spec.ts` + Playwright install timeout reliability adjustment
 - Production versioning code — unchanged
-- PR state — draft / open / unmerged
-- Issue #52 — open
+- Reviews — none
+- Review threads — none
+- Merge — `23770c284f400c4f769a8a4490c2bca17a0919ea`
+- Issue #52 — **CLOSED / COMPLETED**
+- GJ-04 — **CLOSED**
 
 ### Not Verified
 
-- The three required workflows are not yet GREEN for `b2f5fbf0...`; this exact head is not accepted.
-- The exact failing retry job log for attempt 2 was not freshly retrievable through the available connector in this iteration; the timeout repair is grounded in the current MASTER's already-recorded job/log evidence plus the unchanged run completing RED while GJ-04 Layer 5 itself had passed.
-- Review submissions/threads have not yet been acceptance-checked because required gates are still running.
-- GJ-04 remains OPEN; PR #53 must not merge until exact-head gates are GREEN and review/scope state is clean.
+- GJ-06 explicit journey-level evidence mapping has not yet been reconciled against the current accepted tree.
+- GJ-07 remains conditional: only required if optional AI assistance is publicly shown in v1.0 proof/demo surfaces.
+- Phase 3 operational/security gates and later public-demo/proof packaging remain open.
 
 ### Residual Risks / Blockers
 
-- Current blocker is completion of CI `32281737644`, 7-Layer `32281738458`, and Firebat `32281737443` for `b2f5fbf0...`.
-- If 7-Layer fails again, inspect the first concrete failing job/step before any further correction. Do not alter version-recovery product code unless executed evidence reproduces a product defect.
-- PR #53 currently reports mergeability false while checks are freshly running; re-evaluate after GitHub recomputes mergeability/current base state.
-- Dependency audit warnings remain outside Issue #52 and are tracked separately by GAP-007.
+- GAP-004 remains open until remaining in-scope Golden Journey evidence is closed.
+- Historical open PR #19 is unrelated password-reset work and is not part of the current Golden Journey acceptance path; do not broaden into it unless the MASTER later makes it in-scope.
+- Dependency security reachability remains GAP-007 and must not be mixed into Phase 2 GJ-06 work unless an executed search proof exposes a direct security defect.
 
 ### Repo / Issue / PR State
 
-- accepted product baseline: `37a1af97fe171774bda8b8b5c8364ea32e5fa0ac`
-- pre-ledger main: `0339da29f3c4edbab1f19df93866f612ab7a8ee2`
-- Issue #52: OPEN / active GJ-04 work item
-- branch: `test/issue-52-gj04-version-recovery`
-- PR #53: OPEN / DRAFT / UNMERGED
-- PR #53 exact head: `b2f5fbf0f2560225e7739b5dea17081ff0b5539f`
+- accepted product baseline: `23770c284f400c4f769a8a4490c2bca17a0919ea`
+- Issue #52: CLOSED / COMPLETED
+- PR #53: MERGED
+- stale duplicate MASTER PRs #41 / #42: CLOSED / NOT MERGED
+- active implementation Issue: none
+- active implementation PR: none
 - GJ-01: CLOSED
 - GJ-02: CLOSED
 - GJ-03: CLOSED
-- GJ-04: OPEN / ACTIVE
+- GJ-04: CLOSED
 - GJ-05: CLOSED
 - GJ-06: OPEN
 - GJ-07: OPEN if publicly shown
 
 ### Exact Next Action
 
-1. Re-read CURRENT MASTER and CURRENT PR #53; discard this checkpoint if the head changes.
-2. Inspect exact-head results for CI `32281737644`, 7-Layer `32281738458`, and Firebat `32281737443`.
-3. If any gate is RED, inspect the first concrete failing job/step/log and make only the smallest Issue #52-scoped correction justified by executed evidence.
-4. If all gates are GREEN, inspect review submissions/threads and confirm scope remains bounded.
-5. If clean, mark PR #53 ready and merge with expected-head guard `b2f5fbf0f2560225e7739b5dea17081ff0b5539f`.
-6. Confirm Issue #52 closes, then reconcile this MASTER with the resulting accepted main SHA and mark GJ-04 CLOSED before selecting GJ-06.
+1. Re-read CURRENT MASTER/main before any new work.
+2. Inventory current accepted secure-search evidence on `23770c284...`, especially deterministic browser/API proof for authenticated team scope -> page ACL -> PostgreSQL FTS -> bounded results and unauthorized exclusion.
+3. Map existing executable evidence to GJ-06. If it fully proves the journey, close GJ-06 in this MASTER without manufacturing a new work item.
+4. Only if a concrete journey evidence gap remains, create exactly one bounded GJ-06 Issue with Goal / Scope / Acceptance Criteria / Verification / Non-goals / Evidence Required, then linked branch/PR.
+5. Do not begin GJ-07 or Phase 3 until GJ-06 closure evaluation is reconciled here.
