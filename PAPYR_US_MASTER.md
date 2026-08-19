@@ -4,7 +4,7 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.9"
+version: "0.10"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
 current_phase: "Phase 2 — Product Closure"
 priority: "P0"
@@ -15,7 +15,7 @@ baseline_main_sha: "6c6945cfab5aa6eb238146f4846589a7ba3e33bb"
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.9**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.10**  
 > This root file is the single project-state / closure ledger. Read it before every iteration and update it on `main` before the iteration ends.
 
 ## 0. Authority / Rules
@@ -122,77 +122,85 @@ Product exit status: GJ-01, GJ-02, and GJ-05 closed; GJ-03/04/06/07/08 open. REA
 > **Date:** 2026-08-19 KST  
 > **Phase:** Phase 2 — Product Closure  
 > **Accepted product baseline:** `6c6945cfab5aa6eb238146f4846589a7ba3e33bb`  
+> **Current main:** `631c30ecda99d6d5e586b3256cbdea17c181f140` before this ledger-only update  
 > **Highest active gap:** GAP-004  
 > **Active journey:** GJ-03 Authorization Boundary  
-> **Active PR:** none; PR #49 merged
+> **Active Issue:** #50  
+> **Active PR:** #51 draft, exact head `8e2b908fa8f849fa416c88630797fb915f1e6a95`
 
 ### Changed
 
-- Re-fetched CURRENT PR #49 and confirmed exact head remained `4bbb05e36ad25d127dc3d7ce751ae4835e927c66`.
-- Verified all required exact-head workflows GREEN.
-- Confirmed PR #49 changed only `tests/gj02-document-lifecycle.spec.ts`; no production code or deferred scope changes.
-- Confirmed no review submissions or unresolved review threads.
-- Marked PR #49 ready and merged with expected-head guard.
-- Accepted merge SHA on `main`: `6c6945cfab5aa6eb238146f4846589a7ba3e33bb`; **GJ-02 CLOSED**.
-- Advanced the MASTER-authorized next Phase 2 target to **GJ-03 Authorization Boundary**.
+- Inspected CURRENT repository state: only stale/unrelated historical PRs #42/#41/#19 were open; no relevant GJ-03 implementation PR existed.
+- Searched open Issues and confirmed no Issue exactly represented the active GJ-03 bounded gap.
+- Inventoried existing authorization evidence before implementation.
+- Created bounded Issue #50 with required Goal / Scope / Acceptance Criteria / Verification / Non-goals / Evidence Required sections.
+- Created Issue-linked branch `test/issue-50-gj03-authorization-boundary`.
+- Added one new deterministic proof file: `tests/gj03-authorization-boundary.spec.ts`; no production authorization code changed.
+- Opened draft PR #51 with `Closes #50` and exact candidate head `8e2b908fa8f849fa416c88630797fb915f1e6a95`.
 
 ### Actually Executed
 
-- Read current root MASTER from `main`.
-- Fetched CURRENT PR #49 metadata and exact head.
-- Fetched exact-head workflow runs for `4bbb05e36...`.
-- Inspected PR #49 patch, review submissions, and review threads.
-- Marked PR #49 ready for review.
-- Merged PR #49 using expected-head guard `4bbb05e36ad25d127dc3d7ce751ae4835e927c66`.
-- Updated this root MASTER on `main` with accepted evidence and next action.
+- Read CURRENT root MASTER from `main`.
+- Inspected CURRENT open PRs and open Issues.
+- Read `server/tests/security.test.ts`: existing route/unit evidence already covers cross-team page read/delete/version denial, real `checkPagePermission` fallback logic, and `/api/ai/search` auth/team-scope denial.
+- Read `tests/integration-layer4/retrieval-fts.test.ts`: existing real-Postgres retrieval evidence already proves requested-team isolation and no cross-team result leakage at the storage/query layer.
+- Created Issue #50 before branch/commit/test implementation.
+- Created branch and committed the GJ-03 Playwright/API proof.
+- Opened draft PR #51.
+- Fetched exact-head workflow state for `8e2b908f...`.
 
 ### Checks / Current Evidence
 
-Accepted PR #49 candidate `4bbb05e36ad25d127dc3d7ce751ae4835e927c66`:
-- CI run `32247882254` — **PASS**
-- 7-Layer Test Architecture run `32247882238` — **PASS**
-- Firebat Deployment Gate run `32247882276` — **PASS**
-- Reviews — none
-- Unresolved review threads — none
-- Scope — one Playwright lifecycle proof file only
-- Merge — **PASS**, main `6c6945cfab5aa6eb238146f4846589a7ba3e33bb`
+Supporting pre-existing evidence:
+- `server/tests/security.test.ts` — route/unit authorization coverage for team pages and secure AI search.
+- `tests/integration-layer4/retrieval-fts.test.ts` — real PostgreSQL team-scoped FTS isolation.
 
-GJ-02 executable journey now proves:
-- browser create
-- reopen persisted document
-- browser edit/update
-- persisted update survives reload
-- browser soft delete
-- deleted page becomes unavailable and appears in trash
-- authenticated restore
-- restored page reopens with the last persisted update intact
+PR #51 exact candidate `8e2b908fa8f849fa416c88630797fb915f1e6a95`:
+- CI run `32258403178` — **QUEUED**
+- 7-Layer Test Architecture run `32258403282` — **QUEUED**
+- Firebat Deployment Gate run `32258403173` — **QUEUED**
+- PR status — draft / open / unmerged
+- Scope — one new Playwright/API GJ-03 proof file; no production code change
+
+Candidate proof is designed to execute:
+- User A creates Team A and a Team A page with a unique search token.
+- User B creates Team B and has no Team A membership.
+- User A read/update/persist succeeds.
+- User A secure search returns the protected page.
+- User B direct read fails closed.
+- User B mutation fails closed and cannot alter persisted state.
+- User B explicit Team A search is rejected.
+- User B own-scope search cannot return/leak Team A page or token.
 
 ### Not Verified
 
-- GJ-03 cross-team/page/search authorization journey is not yet mapped to deterministic executable evidence.
-- GJ-04 / GJ-06 / GJ-07 remain unclosed.
-- Phase 3 operational/security exit evidence is not yet in scope for this phase.
+- The new PR #51 test has not yet completed exact-head CI / 7-Layer / Firebat execution.
+- No GJ-03 closure is claimed.
+- No production authorization defect has been demonstrated; therefore no production authorization code change is justified.
+- GJ-04 / GJ-06 / GJ-07 remain untouched.
 
 ### Residual Risks / Blockers
 
-- Existing authorization tests may be fragmented across API/unit/search suites; implementation presence alone must not be treated as GJ-03 closure.
-- If current tests do not cover an authenticated principal attempting cross-team page read/mutation and cross-team search, add only the smallest deterministic proof needed.
-- Do not change authorization production code unless executable evidence identifies a concrete fail-open defect.
+- The candidate may reveal an endpoint-contract mismatch or a concrete fail-open defect only when the real PostgreSQL-backed Playwright path executes.
+- If a required workflow fails, inspect the first concrete failure and repair only that defect within Issue #50 / PR #51.
+- Do not create another implementation Issue or begin another Golden Journey while Issue #50 / PR #51 remains active.
 
-### Repo / PR State
+### Repo / Issue / PR State
 
-- accepted product `main`: `6c6945cfab5aa6eb238146f4846589a7ba3e33bb` plus this ledger-only MASTER commit
+- accepted product baseline: `6c6945cfab5aa6eb238146f4846589a7ba3e33bb`
+- current product tree before candidate: unchanged from accepted baseline; intervening `main` change is ledger-only
+- Issue #50: OPEN / ACTIVE
+- PR #51: OPEN / DRAFT / UNMERGED
+- PR #51 exact head: `8e2b908fa8f849fa416c88630797fb915f1e6a95`
 - GJ-01: CLOSED
 - GJ-02: CLOSED
+- GJ-03: OPEN / ACTIVE
 - GJ-05: CLOSED
-- PR #49: MERGED
-- active implementation PR: none
-- next active journey: GJ-03 Authorization Boundary
 
 ### Exact Next Action
 
-1. Re-read CURRENT `main` and this MASTER.
-2. Inventory existing deterministic authorization evidence for cross-team page read/mutation and secure search.
-3. Map evidence to GJ-03 contract: authorized succeeds; unauthorized cross-team/page/search fails closed.
-4. If evidence is incomplete, create one narrowly scoped GJ-03 proof branch/PR; change production authorization only if the executable proof exposes a concrete defect.
-5. Require CURRENT exact-head CI / 7-Layer / Firebat GREEN before merge or GJ-03 closure.
+1. Re-fetch CURRENT PR #51 and exact head; do not trust this historical SHA if it moved.
+2. Inspect exact-head CI / 7-Layer / Firebat results.
+3. If any gate is RED/CANCELLED/TIMED_OUT/ACTION_REQUIRED or stale IN_PROGRESS, inspect the first concrete failure and apply only the smallest Issue #50-authorized fix.
+4. If all three exact-head gates are GREEN, inspect PR scope/reviews/threads; then complete the bounded PR lifecycle with expected-head guard.
+5. After merge and Issue #50 closure, reconcile this MASTER on `main` with accepted merge SHA, evidence, remaining risks, and closure decision for GJ-03 before creating any next Issue.
