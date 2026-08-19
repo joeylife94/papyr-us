@@ -127,42 +127,47 @@ Product exit status: GJ-01/02/03/04/06/07/08 open; GJ-05 closed. README Search/A
 ### Changed
 
 - Re-read `main` MASTER and PR #48.
-- Verified production-wiring candidate `a38cae7cb4d546605c27567c56cf5a9a711a4d6e`: **CI #158 PASS / 7-Layer #147 PASS / Firebat #113 PASS**.
-- Added deterministic Playwright proof `tests/gj01-auth-team-entry.spec.ts` on PR #48.
-- New candidate: `8ae64429ae495e3e5a6014b89e70da4c7b78ddb3`.
-- Proof covers UI register -> UI login -> authenticated workspace -> real accessible team -> team route -> team-scoped PageEditor -> browser page create -> persisted authoritative team ID.
+- Re-checked proof candidate `8ae64429ae495e3e5a6014b89e70da4c7b78ddb3`: CI #160 PASS, Firebat #115 PASS, 7-Layer #149 still IN PROGRESS at inspection time.
+- Inspected actual routing and sidebar team-entry surfaces.
+- Found the new GJ-01 Playwright proof navigated directly to non-existent `/teams/:teamName`, which neither matches the router nor proves user-facing team selection.
+- Corrected the proof to refresh the authenticated workspace, select the newly accessible team through the real sidebar button, click `팀 페이지`, assert `/teams/:teamName/pages`, then continue team-scoped page creation/persistence verification.
+- New exact candidate: `82a8576c23b4fa11f1393abfdf94709b997bdbec`.
+- Updated PR #48 title/body to reflect the current production fix and actual browser acceptance path.
 
 ### Actually Executed
 
-- Read current MASTER, PR #48 metadata, existing auth tests, task-team browser proof pattern, `home.tsx`, and `page-editor.tsx`.
-- Re-checked exact workflows for `a38cae7...` and confirmed all three gates PASS.
-- Added `tests/gj01-auth-team-entry.spec.ts` to `fix/gj01-page-team-scope`.
-- Queried workflows for `8ae64429...`.
+- Read current MASTER and PR #48 metadata.
+- Queried exact workflow state for `8ae64429...`.
+- Read `client/src/App.tsx`, `client/src/pages/home.tsx`, `client/src/components/layout/sidebar.tsx`, and `tests/gj01-auth-team-entry.spec.ts` on the PR head.
+- Verified router exposes `/teams/:teamName/pages`, while the sidebar provides the actual accessible-team selection surface.
+- Updated `tests/gj01-auth-team-entry.spec.ts` on `fix/gj01-page-team-scope`.
+- Queried workflows for `82a8576...`; no runs had materialized at the first immediate query.
 - Updated this root MASTER on `main` in the same iteration.
 
 ### Checks / Current Evidence
 
-PR #48 production-wiring candidate `a38cae7...`:
-- CI #158 — **PASS**
-- 7-Layer #147 — **PASS**
-- Firebat #113 — **PASS**
+PR #48 prior browser-proof candidate `8ae64429...`:
+- CI #160 — **PASS**
+- Firebat #115 — **PASS**
+- 7-Layer #149 — **IN PROGRESS** when superseded by the corrected proof candidate
 
-PR #48 browser-proof candidate `8ae64429ae495e3e5a6014b89e70da4c7b78ddb3`:
-- CI #160 — **IN PROGRESS**
-- 7-Layer #149 — **IN PROGRESS**
-- Firebat #115 — **IN PROGRESS**
+PR #48 current candidate `82a8576c23b4fa11f1393abfdf94709b997bdbec`:
+- CI — **NOT YET MATERIALIZED at first query**
+- 7-Layer — **NOT YET MATERIALIZED at first query**
+- Firebat — **NOT YET MATERIALIZED at first query**
 
 ### Not Verified
 
-- `8ae64429...` is not yet GREEN.
+- `82a8576...` is not yet GREEN and must pass all three gates on its exact tree.
 - PR #48 remains draft/unmerged.
-- GJ-01 remains OPEN until exact-head browser proof passes and the candidate is accepted.
+- GJ-01 remains OPEN until the corrected exact-head browser proof passes and the candidate is accepted.
 - GJ-02 / GJ-03 / GJ-04 / GJ-06 / GJ-07 remain unclosed.
 
 ### Residual Risks / Blockers
 
-- The new browser test creates the team through the authenticated API after UI auth, then proves browser team entry and team-scoped content persistence. If the intended GJ-01 contract requires a dedicated UI team-creation surface, that surface must be separately proven before closure.
-- The PageEditor route-to-team-ID production fix exists only on PR #48 until merge.
+- Team creation in the GJ-01 proof remains authenticated API fixture/setup; the user-facing journey now proves actual team selection through the sidebar and scoped content creation. The normal sidebar explicitly directs team creation to the admin page when no teams exist, so adding a second normal-user team-create UX would broaden scope unless MASTER is deliberately changed.
+- The PageEditor route-to-authoritative-team-ID production fix exists only on PR #48 until merge.
+- Exact-head workflows for `82a8576...` must complete before any merge/closure claim.
 - No unrelated Phase 2 expansion is allowed.
 
 ### Repo / PR State
@@ -170,13 +175,14 @@ PR #48 browser-proof candidate `8ae64429ae495e3e5a6014b89e70da4c7b78ddb3`:
 - accepted product `main`: `1094ae156f4660b32f4886a1fd8743b459e55cd2`
 - active branch: `fix/gj01-page-team-scope`
 - PR #48: DRAFT / OPEN / UNMERGED
-- verified product-wiring candidate: `a38cae7cb4d546605c27567c56cf5a9a711a4d6e`
-- current proof candidate: `8ae64429ae495e3e5a6014b89e70da4c7b78ddb3`
+- verified production-wiring candidate: `a38cae7cb4d546605c27567c56cf5a9a711a4d6e`
+- superseded browser-proof candidate: `8ae64429ae495e3e5a6014b89e70da4c7b78ddb3`
+- current proof candidate: `82a8576c23b4fa11f1393abfdf94709b997bdbec`
 
 ### Exact Next Action
 
-1. Re-check CI #160 / 7-Layer #149 / Firebat #115 for `8ae64429...`.
+1. Re-check CI / 7-Layer / Firebat for `82a8576...`.
 2. If any fails, inspect the first failure and make the smallest safe correction.
-3. If all GREEN, verify whether an actual UI team-creation/select surface exists and is required by GJ-01 wording; add only the missing browser step if needed.
-4. Mark PR #48 ready and merge only after exact-head GREEN and complete GJ-01 evidence.
-5. Update this MASTER on `main` with accepted merge SHA and GJ-01 closure status.
+3. If all GREEN, treat API team creation as fixture/setup and the sidebar selection as the required user-facing `create/select team` branch for GJ-01; do not add a new normal-user team-creation surface.
+4. Mark PR #48 ready and merge only after exact-head GREEN.
+5. Update this MASTER on `main` with the accepted merge SHA and GJ-01 closure status; then advance to the next Phase 2 Golden Journey.
