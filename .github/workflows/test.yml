@@ -150,6 +150,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Install Playwright browsers (chromium only)
+        timeout-minutes: 10
         run: npx playwright install chromium --with-deps
       - name: Run Schema Migrations
         run: npx drizzle-kit push --config drizzle.config.ts
@@ -189,6 +190,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Install Playwright browsers (chromium only)
+        timeout-minutes: 10
         run: npx playwright install chromium --with-deps
       - name: Run Schema Migrations
         run: npx drizzle-kit push --config drizzle.config.ts
@@ -235,6 +237,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Install Playwright browsers (chromium only)
+        timeout-minutes: 10
         run: npx playwright install chromium --with-deps
       - name: Run Schema Migrations
         run: npx drizzle-kit push --config drizzle.config.ts
