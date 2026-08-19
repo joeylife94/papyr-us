@@ -4,7 +4,7 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.18"
+version: "0.19"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
 current_phase: "Phase 2 — Product Closure"
 priority: "P0"
@@ -15,7 +15,7 @@ baseline_main_sha: "23770c284f400c4f769a8a4490c2bca17a0919ea"
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.18**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.19**  
 > This root file is the single project-state / closure ledger. Read it before every iteration and update it on `main` before the iteration ends.
 
 ## 0. Authority / Rules
@@ -127,7 +127,7 @@ Product exit status: GJ-01 through GJ-06 closed. GJ-07 is active because optiona
 > **Date:** 2026-08-20 KST  
 > **Phase:** Phase 2 — Product Closure  
 > **Accepted product baseline:** `23770c284f400c4f769a8a4490c2bca17a0919ea`  
-> **Current main before this ledger-only update:** `cbfa2c0cb6a79eb14f8aaa8d365b212b54e9ccba`  
+> **Current main before this ledger-only update:** `2d075dc9e5f422b3bfb1c8d32a86c36600b8d41f`  
 > **Highest active gap:** GAP-004 / GJ-07 Optional AI Assistance  
 > **Active journey:** GJ-07  
 > **Active Issue:** #54  
@@ -137,52 +137,49 @@ Product exit status: GJ-01 through GJ-06 closed. GJ-07 is active because optiona
 
 ### Changed
 
-- Added visible destructive toast behavior for inline AI API/provider failure while leaving selected editor text unchanged.
-- Added deterministic Playwright proof `tests/gj07-inline-ai-assistance.spec.ts` for the public inline AI success/failure journey.
-- Opened bounded draft PR #55 with `Closes #54`; no new Issue was created.
+- No product code change this iteration.
+- Retried only the failed Layer 5 E2E job for exact candidate `badc019b...` after confirming the prior failure was a GitHub-hosted runner / Ubuntu mirror timeout during Playwright dependency installation.
 
 ### Actually Executed
 
-- Re-read current MASTER/main first and confirmed historical #53 handoff is obsolete; GJ-04/GJ-06 are already CLOSED and GJ-07 is current.
-- Re-fetched Issue #54; it remains OPEN with the required Goal / Scope / Acceptance Criteria / Verification / Non-goals / Evidence Required contract.
-- Searched open PRs and confirmed no relevant GJ-07 PR existed before this iteration; unrelated password-reset PR #19 remains outside scope.
-- Updated `client/src/components/blocks/inline-formatting-toolbar.tsx` on the Issue #54 branch to call the existing `useToast` system on AI failure.
-- Created deterministic Playwright coverage that authenticates, opens a real editor, intercepts `/api/ai/inline`, verifies `{ action, text }`, verifies selected-range-only replacement on success, then verifies visible failure + text preservation on a 503 response.
-- Opened draft PR #55 from `test/issue-54-gj07-inline-ai-proof` to `main`.
-- Re-fetched CURRENT exact-head workflow state for `badc019b...`.
+- Re-read current MASTER/main and discarded the obsolete historical #53 handoff; GJ-07 / Issue #54 / PR #55 are current.
+- Re-fetched PR #55 and confirmed CURRENT head remains `badc019bad2f70dad4d23689b9ba5b4e21c047c4`, draft/open/unmerged.
+- Re-fetched exact-head workflow state: CI `32298943286` SUCCESS; Firebat `32298943329` SUCCESS; 7-Layer `32298943272` FAILURE.
+- Inspected 7-Layer jobs. Layer 0/1/2/3/4 and All Layers sequential smoke were SUCCESS. Layer 5 E2E failed before migrations/tests because `Install Playwright browsers (chromium only)` timed out; Layer 6 was skipped downstream.
+- Inspected Layer 5 job log `96217703411`: `npx playwright install chromium --with-deps` spent the 20-minute step budget downloading Ubuntu font packages from the Azure mirror and ended with `The action 'Install Playwright browsers (chromium only)' has timed out after 20 minutes.`
+- Because the failure is infrastructure/tooling and the same exact workflow run's All Layers sequential smoke already passed, no Issue #54 product change was justified.
+- Re-ran only failed Layer 5 job `96217703411`; the 7-Layer run is now IN PROGRESS on the same exact candidate.
 
 ### Checks / Current Evidence
 
 GJ-07 Optional AI Assistance candidate `badc019bad2f70dad4d23689b9ba5b4e21c047c4`:
-- Publicly shown/claimed — **YES**.
-- Server inline AI route contract — **existing deterministic mocked-service coverage present**; not newly changed.
-- User-visible editor success journey — **IMPLEMENTED AS EXECUTABLE PLAYWRIGHT PROOF, NOT YET ACCEPTED**.
-- User-visible provider/API failure behavior — **IMPLEMENTED: visible destructive toast + original text preserved, NOT YET ACCEPTED**.
-- CI run `32298943286` — **IN PROGRESS**.
-- 7-Layer run `32298943272` — **IN PROGRESS**.
-- Firebat run `32298943329` — **IN PROGRESS**.
+- CI run `32298943286` — **SUCCESS**.
+- Firebat run `32298943329` — **SUCCESS**.
+- 7-Layer run `32298943272` initial attempt — **FAILURE caused by Playwright OS dependency download timeout, before Layer 5 E2E execution**.
+- Same initial 7-Layer run: Layer 0/1/2/3/4 — **SUCCESS**; All Layers sequential smoke — **SUCCESS**.
+- Failed Layer 5 job `96217703411` — **RE-RUN REQUESTED / 7-Layer currently IN PROGRESS**.
 - PR #55 — **DRAFT / OPEN / UNMERGED**.
 - GJ-07 — **OPEN**.
 
 ### Not Verified
 
-- Exact-head completion of CI / 7-Layer / Firebat for `badc019b...`.
-- Whether the new Playwright proof exposes an editor/toolbar timing or selector defect under CI runtime.
-- Review submission / unresolved review-thread state for PR #55 after checks finish.
-- Live OpenAI model quality; intentionally out of scope for deterministic CI acceptance.
+- Completion result of the Layer 5 retry and resulting overall 7-Layer conclusion.
+- Review submission / unresolved review-thread state for PR #55 after all exact-head gates are GREEN.
+- Live OpenAI model quality; intentionally out of deterministic CI scope.
 - Phase 3 dependency-security disposition and operational recovery.
 - Public sanitized demo and proof packaging.
 
 ### Residual Risks / Blockers
 
-- The active blocker is exact-head execution evidence, not implementation presence.
-- If the new Playwright proof fails, fix only the first concrete Issue #54-scoped browser/interaction defect; do not create another Issue.
+- Current blocker is exact-head 7-Layer completion, specifically whether the transient Ubuntu mirror download succeeds on retry.
+- If retry reaches Playwright and exposes a concrete Issue #54 browser/interaction failure, fix only that first bounded defect.
+- If retry fails again only on dependency download timeout, treat it as CI/tooling evidence and make the smallest workflow-side reliability correction only if executed evidence justifies it; do not create another Issue.
 - PR #19 remains unrelated and must not be mixed into GJ-07.
 - Dependency security reachability remains GAP-007 and is outside Issue #54 unless executed evidence exposes a direct GJ-07 defect.
 
 ### Repo / Issue / PR State
 
-- current main before ledger update: `cbfa2c0cb6a79eb14f8aaa8d365b212b54e9ccba`
+- current main before ledger update: `2d075dc9e5f422b3bfb1c8d32a86c36600b8d41f`
 - accepted product baseline: `23770c284f400c4f769a8a4490c2bca17a0919ea`
 - GJ-01: CLOSED
 - GJ-02: CLOSED
@@ -198,8 +195,9 @@ GJ-07 Optional AI Assistance candidate `badc019bad2f70dad4d23689b9ba5b4e21c047c4
 
 ### Exact Next Action
 
-1. Re-read current MASTER/main and CURRENT PR #55/head; if the head moved, discard this candidate state and evaluate the new exact head.
-2. Check exact-head CI / 7-Layer / Firebat for `badc019b...`.
-3. If any gate is RED, inspect the first concrete failing job/step/log and make only the smallest Issue #54-scoped correction; do not create a new Issue.
-4. If all three gates are GREEN, inspect review submissions and unresolved review threads, confirm the PR remains bounded, mark ready if draft is the only mechanical blocker, merge with expected-head guard, ensure Issue #54 closes, then reconcile this MASTER on `main` with accepted SHA and closure evidence.
-5. Re-evaluate GJ-07 and Phase 2 closure only after merge and MASTER reconciliation.
+1. Re-read current MASTER/main and CURRENT PR #55/head; if the head moved, discard this retry state and evaluate the new exact head.
+2. Re-check 7-Layer run `32298943272` after the Layer 5 retry.
+3. If the retry reaches E2E and fails on a concrete GJ-07 interaction/assertion, inspect that first failure and make only the smallest Issue #54-scoped correction.
+4. If the retry fails again only on Playwright dependency download timeout, inspect the retry log and apply the smallest CI/tooling reliability change justified by that repeated evidence; do not create another Issue.
+5. If CI / 7-Layer / Firebat are all GREEN, inspect review submissions and unresolved review threads, confirm scope remains bounded, mark PR #55 ready if draft is the only mechanical blocker, merge with expected-head guard, ensure Issue #54 closes, then reconcile this MASTER on `main` with accepted SHA and closure evidence.
+6. Re-evaluate GJ-07 and Phase 2 closure only after merge and MASTER reconciliation.
