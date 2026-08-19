@@ -126,49 +126,40 @@ Product exit status: GJ-01/02/03/04/06/07/08 open; GJ-05 closed. README Search/A
 
 ### Changed
 
-- Re-read `main` MASTER and PR #48.
-- Re-checked proof candidate `8ae64429ae495e3e5a6014b89e70da4c7b78ddb3`: CI #160 PASS, Firebat #115 PASS, 7-Layer #149 still IN PROGRESS at inspection time.
-- Inspected actual routing and sidebar team-entry surfaces.
-- Found the new GJ-01 Playwright proof navigated directly to non-existent `/teams/:teamName`, which neither matches the router nor proves user-facing team selection.
-- Corrected the proof to refresh the authenticated workspace, select the newly accessible team through the real sidebar button, click `팀 페이지`, assert `/teams/:teamName/pages`, then continue team-scoped page creation/persistence verification.
-- New exact candidate: `82a8576c23b4fa11f1393abfdf94709b997bdbec`.
-- Updated PR #48 title/body to reflect the current production fix and actual browser acceptance path.
+- Re-read `main` MASTER and PR #48 before acting.
+- Re-checked current exact candidate `82a8576c23b4fa11f1393abfdf94709b997bdbec`.
+- CI #162 and Firebat #117 are now GREEN; 7-Layer #151 remains IN PROGRESS.
+- Confirmed the 7-Layer workflow run itself is still active on the exact candidate and has not produced a failure conclusion, so no speculative code change or unsafe merge was performed.
+- Kept PR #48 draft/unmerged and kept GJ-01 OPEN pending the final exact-tree gate.
 
 ### Actually Executed
 
-- Read current MASTER and PR #48 metadata.
-- Queried exact workflow state for `8ae64429...`.
-- Read `client/src/App.tsx`, `client/src/pages/home.tsx`, `client/src/components/layout/sidebar.tsx`, and `tests/gj01-auth-team-entry.spec.ts` on the PR head.
-- Verified router exposes `/teams/:teamName/pages`, while the sidebar provides the actual accessible-team selection surface.
-- Updated `tests/gj01-auth-team-entry.spec.ts` on `fix/gj01-page-team-scope`.
-- Queried workflows twice for `82a8576...`; the second query confirmed all three exact-head workflows had started.
-- Updated PR #48 metadata and this root MASTER on `main` in the same iteration.
+- Read current root `PAPYR_US_MASTER.md` on `main`.
+- Read PR #48 metadata and confirmed head SHA `82a8576c23b4fa11f1393abfdf94709b997bdbec`.
+- Queried workflow results for the exact head multiple times.
+- Inspected 7-Layer run #151 metadata directly and confirmed it remains `in_progress` on the expected PR/head rather than failed/cancelled/superseded.
+- Updated this root MASTER on `main` in the same iteration.
 
 ### Checks / Current Evidence
 
-PR #48 prior browser-proof candidate `8ae64429...`:
-- CI #160 — **PASS**
-- Firebat #115 — **PASS**
-- 7-Layer #149 — **IN PROGRESS** when superseded by the corrected proof candidate
-
 PR #48 current candidate `82a8576c23b4fa11f1393abfdf94709b997bdbec`:
-- CI #162 — **IN PROGRESS**
+- CI #162 — **PASS**
+- Firebat #117 — **PASS**
 - 7-Layer #151 — **IN PROGRESS**
-- Firebat #117 — **IN PROGRESS**
 
 ### Not Verified
 
-- `82a8576...` is not yet GREEN and must pass all three gates on its exact tree.
+- 7-Layer #151 has not completed; exact-head three-gate acceptance is therefore incomplete.
 - PR #48 remains draft/unmerged.
-- GJ-01 remains OPEN until the corrected exact-head browser proof passes and the candidate is accepted.
+- GJ-01 remains OPEN until the corrected browser proof passes 7-Layer and the exact candidate is accepted on `main`.
 - GJ-02 / GJ-03 / GJ-04 / GJ-06 / GJ-07 remain unclosed.
 
 ### Residual Risks / Blockers
 
-- Team creation in the GJ-01 proof remains authenticated API fixture/setup; the user-facing journey now proves actual team selection through the sidebar and scoped content creation. The normal sidebar explicitly directs team creation to the admin page when no teams exist, so adding a second normal-user team-create UX would broaden scope unless MASTER is deliberately changed.
+- The sole current acceptance blocker is completion of 7-Layer #151 for `82a8576...`; there is no confirmed code failure to fix yet.
+- Team creation in the GJ-01 proof remains authenticated API fixture/setup; the user-facing journey proves actual accessible-team selection through the sidebar and scoped content creation. Adding a second normal-user team-creation surface would broaden scope and is not justified by the MASTER.
 - The PageEditor route-to-authoritative-team-ID production fix exists only on PR #48 until merge.
-- Exact-head workflows for `82a8576...` must complete before any merge/closure claim.
-- No unrelated Phase 2 expansion is allowed.
+- No merge is permitted while one required exact-tree gate is incomplete.
 
 ### Repo / PR State
 
@@ -176,13 +167,13 @@ PR #48 current candidate `82a8576c23b4fa11f1393abfdf94709b997bdbec`:
 - active branch: `fix/gj01-page-team-scope`
 - PR #48: DRAFT / OPEN / UNMERGED
 - verified production-wiring candidate: `a38cae7cb4d546605c27567c56cf5a9a711a4d6e`
-- superseded browser-proof candidate: `8ae64429ae495e3e5a6014b89e70da4c7b78ddb3`
 - current proof candidate: `82a8576c23b4fa11f1393abfdf94709b997bdbec`
+- current exact-head gates: CI PASS / Firebat PASS / 7-Layer IN PROGRESS
 
 ### Exact Next Action
 
-1. Re-check CI #162 / 7-Layer #151 / Firebat #117 for `82a8576...`.
-2. If any fails, inspect the first failure and make the smallest safe correction.
-3. If all GREEN, treat API team creation as fixture/setup and the sidebar selection as the required user-facing `create/select team` branch for GJ-01; do not add a new normal-user team-creation surface.
-4. Mark PR #48 ready and merge only after exact-head GREEN.
-5. Update this MASTER on `main` with the accepted merge SHA and GJ-01 closure status; then advance to the next Phase 2 Golden Journey.
+1. Re-check 7-Layer #151 for exact head `82a8576...`.
+2. If it fails, inspect the first concrete failure and make only the smallest safe correction on PR #48.
+3. If it passes, mark PR #48 ready and merge with expected head SHA `82a8576c23b4fa11f1393abfdf94709b997bdbec`.
+4. Update this MASTER on `main` with the accepted merge SHA and close GJ-01 only if the exact browser/API evidence is fully GREEN.
+5. Then advance to GJ-02 Document Lifecycle without broadening scope.
