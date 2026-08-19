@@ -6,13 +6,13 @@ aliases:
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.4"
+version: "0.5"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
 current_phase: "Phase 2 — Product Closure"
 priority: "P0"
 last_updated: "2026-08-19"
 repository: "joeylife94/papyr-us"
-baseline_main_sha: "1a8309d95accfe206cce402c405fd9705b1fdd47"
+baseline_main_sha: "f4c48c64215f5102cc69ecc538f0892e3eb6a452"
 tags:
   - project/papyr-us
   - freelancers/production
@@ -22,7 +22,7 @@ tags:
 
 # PAPYR.US MASTER
 
-> **Status:** AUTHORITATIVE PROJECT CONTRACT — v0.4  
+> **Status:** AUTHORITATIVE PROJECT CONTRACT — v0.5  
 > **Last updated:** 2026-08-19 KST  
 > **Target:** Papyr.us v1.0 — Small-team Production Ready + Wishket Proof Ready
 
@@ -121,7 +121,15 @@ Accepted wording: **Team-scoped PostgreSQL full-text retrieval with page-level a
 - merged `9e1972c8360d12236fc48263256813906d32a698`
 - Issue #31 closed
 
-Decision: `GAP-005 CLOSED`; overall `GJ-05` remains OPEN until complete Tasks + Calendar executable proof exists.
+## Task Form Real-Team Scope + Browser Proof — CLOSED
+- PR #45 candidate `7182e5b87bebae4f74ba966e92f74217cfb1ce95`
+- CI #146 PASS / 7-Layer #135 PASS / Firebat #101 PASS
+- dedicated Playwright proof `tests/task-team-scope.spec.ts` executed inside 7-Layer Layer 5 with PostgreSQL
+- proof covers two real accessible teams, real team-ID task creation, cross-team assignee exclusion, task edit/update, and persisted team scope
+- PR #45 marked ready only after exact-head GREEN
+- merged to `main` as `f4c48c64215f5102cc69ecc538f0892e3eb6a452`
+
+Decision: task portion of `GJ-05` is accepted. Overall `GJ-05` remains OPEN until Calendar create/update/view executable proof passes.
 
 ---
 
@@ -147,21 +155,21 @@ Acceptance:
 - team selection changes effective request/query scope
 - `all` returns only backend-authorized data
 - cache cannot reuse wrong-team state
-- route `teamName` is authoritative
+- route team identity resolves to an authoritative accessible team ID
 - task create/update path works with real accessible team IDs
 - task assignee options cannot cross the selected task team boundary
-- calendar create/update/view path works
+- calendar create/update/view path works using the resolved real team ID
 
 Current:
-- list/filter/query/cache defect CLOSED
-- PR #45 helper contract GREEN on `fc9213d3a48dd623483e545a35218e1f6a0e38d1`: CI #134 PASS / 7-Layer #123 PASS / Firebat #89 PASS
-- preparatory real-team `TaskForm` GREEN on `203ffc2561c7cb746315bec341c09792b440ba87`: CI #136 PASS / 7-Layer #125 PASS / Firebat #91 PASS
-- wired production candidate `3ea1ea59a68753fbe48d2efe968100c5429d25e9` GREEN: CI #138 PASS / 7-Layer #127 PASS / Firebat #93 PASS
-- assignee-scope contract candidate `6a92734580c1d1b439907506220e2c8d99f046b0` GREEN: CI #141 PASS / 7-Layer #130 PASS / Firebat #96 PASS
-- production assignee-filter candidate `b625a3668e6b4c064abdbef8b4067dd1bcbfe332` GREEN: CI #144 PASS / 7-Layer #133 PASS / Firebat #99 PASS
-- PR #45 current head `7182e5b87bebae4f74ba966e92f74217cfb1ce95` adds a dedicated Playwright GJ-05 task lifecycle proof using two real accessible teams and team-scoped assignee assertions
-- direct task create/update proof is now encoded in `tests/task-team-scope.spec.ts`; exact-head Layer 5 execution is pending
-- Calendar create/update/view proof remains required
+- Tasks list/filter/query/cache defect CLOSED
+- Task form synthetic-team defect CLOSED
+- Task assignee cross-team defect CLOSED
+- Task create/update browser proof CLOSED on PR #45
+- first Calendar blocker identified: sidebar route `/teams/:teamName/calendar` previously forwarded the team name directly as `CalendarPage.teamId`, while Calendar queries `/api/calendar/:teamId`
+- PR #46 draft head `09b63042f784c0284f3db7ea0e6436b3c16ce430` resolves numeric/team-name routes against accessible `/api/teams`, passes only the real team ID, and fails closed when inaccessible
+- PR #46 also adds unit coverage for route resolution
+- PR #46 exact-head CI #149 / 7-Layer #138 / Firebat #104 are queued at latest check
+- Calendar create/update/view Playwright proof remains required after route-scope fix is accepted
 - overall GJ-05 OPEN
 
 ## GJ-06 — Secure Search
@@ -183,7 +191,7 @@ Current:
 | GAP-002 | Retrieval verification | P0 | CLOSED |
 | GAP-003 | AI/Search claims | P0 | CLOSED |
 | GAP-004 | Golden Journey evidence | P0 | OPEN |
-| GAP-005 | Tasks list team filter | P0 | CLOSED |
+| GAP-005 | Tasks list/team/form scope | P0 | CLOSED |
 | GAP-006 | Public sanitized demo | P0 | OPEN |
 | GAP-007 | Dependency security reachability triage | P0 | OPEN |
 | GAP-008 | Backup/restore drill | P1 | OPEN |
@@ -271,9 +279,10 @@ A skipped required gate is not PASS.
 - **D-006:** bounded defect closure does not equal containing Golden Journey closure.
 - **D-007:** GJ-05 task-form team semantics must use actual accessible/effective team scope; synthetic `team1/team2` values are not valid production behavior.
 - **D-008:** scoped task forms treat effective route/filter team as authoritative; all-team edit may preserve an existing team only while that team remains accessible.
-- **D-009:** team changes in task forms clear the prior assignee until team-scoped member filtering is proven, preventing stale assignment from being silently carried across teams.
-- **D-010:** all-teams `/api/members` is an authorized union across the user's teams; task-form assignee candidates must therefore be narrowed again to the form's selected task team before selection/submission.
-- **D-011:** PR #45 merge requires a dedicated Playwright proof that creates and updates a task through the wired TaskForm using a real accessible team ID and confirms cross-team assignees are not selectable.
+- **D-009:** team changes in task forms clear the prior assignee so stale assignment cannot silently cross teams.
+- **D-010:** all-teams `/api/members` is an authorized union across the user's teams; task-form assignees are narrowed again to the selected task team.
+- **D-011:** PR #45 required dedicated Playwright proof with real team IDs and cross-team assignee exclusion before merge; that gate passed on `7182e5b...`.
+- **D-012:** Calendar route labels/names are not API team identifiers. `/calendar/:teamId` and `/teams/:teamName/calendar` must resolve through accessible teams to one real team ID before Calendar data access.
 
 ---
 
@@ -282,75 +291,80 @@ A skipped required gate is not PASS.
 > [!info] CURRENT  
 > **Date:** 2026-08-19 KST  
 > **Phase:** Phase 2 — Product Closure  
-> **Main at iteration start:** `1a8309d95accfe206cce402c405fd9705b1fdd47`  
-> **Highest active gap:** GAP-004 / GJ-05 Tasks + Calendar proof  
-> **Active branch:** `fix/tasks-form-team-scope`  
-> **Active PR:** #45 draft  
-> **Candidate head:** `7182e5b87bebae4f74ba966e92f74217cfb1ce95`
+> **Main product baseline:** `f4c48c64215f5102cc69ecc538f0892e3eb6a452`  
+> **Highest active gap:** GAP-004 / GJ-05 Calendar proof  
+> **Active branch:** `fix/calendar-team-route-scope`  
+> **Active PR:** #46 draft  
+> **Candidate head:** `09b63042f784c0284f3db7ea0e6436b3c16ce430`
 
 ## What Changed
 
 - Re-read this MASTER from `main` and confirmed Phase 2 / GJ-05 remains the highest-priority path.
-- Re-checked PR #45 candidate `b625a3668e6b4c064abdbef8b4067dd1bcbfe332` and confirmed CI #144 / 7-Layer #133 / Firebat #99 all PASS.
-- Confirmed the 7-Layer workflow executes `npm run test:e2e` in Layer 5 against PostgreSQL, so a dedicated Playwright test in `tests/` provides executable browser evidence rather than documentation-only evidence.
-- Added `tests/task-team-scope.spec.ts` on PR #45. The test registers a fresh user, creates two real accessible teams and distinct members, opens `/tasks`, creates a task through the production TaskForm under Team B, proves Team A's member is not offered as an assignee, updates the created task through the edit TaskForm, and verifies persisted Team B scope via the API.
-- Advanced PR #45 head to `7182e5b87bebae4f74ba966e92f74217cfb1ce95`.
-- Did not merge or claim task-lifecycle/GJ-05 closure because the new exact-head workflows are still pending.
+- Re-checked PR #45 exact candidate `7182e5b87bebae4f74ba966e92f74217cfb1ce95` and confirmed CI #146 / 7-Layer #135 / Firebat #101 all PASS.
+- Marked PR #45 ready only after GREEN; GitHub then reported it mergeable.
+- Merged PR #45 using expected head SHA; accepted `main` merge SHA `f4c48c64215f5102cc69ecc538f0892e3eb6a452`.
+- Inspected the Calendar route/UI path and found the next concrete GJ-05 blocker: the team sidebar navigates by team name, but `CalendarPageWrapper` passed that name directly as the Calendar team ID.
+- Created `fix/calendar-team-route-scope` from accepted main.
+- Added `client/src/lib/calendar-team-scope.ts` and unit coverage in `tests/unit/calendar-team-scope.test.ts`.
+- Updated `CalendarPageWrapper` to fetch accessible `/api/teams`, resolve either numeric route ID or team name to one accessible real team ID, and fail closed when resolution fails.
+- Opened draft PR #46 with exact candidate `09b63042f784c0284f3db7ea0e6436b3c16ce430`.
 
 ## Actually Executed
 
 - Read `PAPYR_US_MASTER.md` from `main`.
 - Read PR #45 metadata and exact head.
-- Queried workflows for `b625a366...` and confirmed CI #144 / 7-Layer #133 / Firebat #99 PASS.
-- Read `tests/example.spec.ts`, `tests/team-collaboration.spec.ts`, `tests/e2e-helpers.ts`, `client/src/pages/tasks.tsx`, `client/src/components/tasks/TaskForm.tsx`, and `client/src/App.tsx` to reuse existing authentication, seed, routing, and UI contracts.
-- Read `.github/workflows/test.yml` and confirmed Layer 5 runs Playwright E2E with PostgreSQL.
-- Added `tests/task-team-scope.spec.ts` to `fix/tasks-form-team-scope`.
-- Queried fresh workflows for `7182e5b...`; CI #146 / 7-Layer #135 / Firebat #101 were queued at the latest check.
+- Queried workflow runs for `7182e5b...`: CI #146 PASS / 7-Layer #135 PASS / Firebat #101 PASS.
+- Compared `main` and PR #45; product files were isolated from intervening MASTER-only commits.
+- Marked PR #45 ready, verified GitHub mergeability, and merged with exact expected head SHA.
+- Read `client/src/pages/calendar.tsx`, `client/src/components/CalendarPageWrapper.tsx`, `client/src/App.tsx`, `client/src/components/layout/sidebar.tsx`, `server/routes.ts`, and `server/tests/calendar.test.ts`.
+- Confirmed sidebar route uses `/teams/${team.name}/calendar`, wrapper accepted `teamName`, and Calendar data path uses `/api/calendar/${teamId}`.
+- Created PR #46 implementation and unit contract described above.
+- Queried fresh workflows for `09b63042...`: CI #149 / 7-Layer #138 / Firebat #104 were QUEUED at latest check.
 - Updated this authoritative ledger on `main`.
 
 ## Checks / Current Evidence
 
-Production assignee-filter candidate `b625a3668e6b4c064abdbef8b4067dd1bcbfe332`:
-- CI #144 — **PASS**
-- 7-Layer #133 — **PASS**
-- Firebat #99 — **PASS**
+Accepted task browser-proof candidate `7182e5b87bebae4f74ba966e92f74217cfb1ce95`:
+- CI #146 — **PASS**
+- 7-Layer #135 — **PASS**
+- Firebat #101 — **PASS**
+- merged main SHA — `f4c48c64215f5102cc69ecc538f0892e3eb6a452`
 
-Current browser-proof candidate `7182e5b87bebae4f74ba966e92f74217cfb1ce95`:
-- CI #146 — **QUEUED** at latest check
-- 7-Layer #135 — **QUEUED** at latest check
-- Firebat #101 — **QUEUED** at latest check
+Current Calendar route-scope candidate `09b63042f784c0284f3db7ea0e6436b3c16ce430`:
+- CI #149 — **QUEUED** at latest check
+- 7-Layer #138 — **QUEUED** at latest check
+- Firebat #104 — **QUEUED** at latest check
 
-No merge performed. No task-lifecycle or GJ-05 closure claim made.
+No PR #46 merge performed. No Calendar lifecycle or overall GJ-05 closure claim made.
 
 ## Not Verified
 
-- Final workflow completion for `7182e5b87bebae4f74ba966e92f74217cfb1ce95`.
-- Passing Layer 5 execution of the new `tests/task-team-scope.spec.ts` proof.
-- Calendar create/update/view part of GJ-05.
+- Exact-head workflow completion for PR #46 candidate `09b63042...`.
+- Browser-level Calendar create/update/view lifecycle after real-team route resolution.
+- Calendar behavior for both `/calendar/:teamId` and `/teams/:teamName/calendar` under Playwright.
 
 ## Residual Risks / Blockers
 
-- PR #45 remains draft/unmerged until the new exact-head CI / 7-Layer / Firebat checks are GREEN.
-- The new test is executable evidence only after Layer 5 actually passes; authored test code alone is not accepted proof.
-- If the new Playwright test exposes selector, persistence, or team-scope behavior defects, only the first concrete blocker should be fixed next.
-- Calendar proof is absent, so GJ-05 cannot close even after the task-form path is accepted.
+- PR #46 remains draft/unmerged until exact-head CI / 7-Layer / Firebat are GREEN.
+- Unit route resolution does not replace browser lifecycle evidence.
+- `CalendarPage` itself may expose additional lifecycle or selector defects once the route is correctly scoped; only the first concrete failure should be fixed next.
+- Overall GJ-05 remains OPEN until Calendar create/update/view passes with executable evidence.
 
 ## Repo / PR State
 
-- `main` at iteration start: `1a8309d95accfe206cce402c405fd9705b1fdd47`
-- PR #45: OPEN / DRAFT / UNMERGED
-- branch: `fix/tasks-form-team-scope`
-- prior GREEN production candidate: `b625a3668e6b4c064abdbef8b4067dd1bcbfe332`
-- current candidate: `7182e5b87bebae4f74ba966e92f74217cfb1ce95`
-- new proof file: `tests/task-team-scope.spec.ts`
-- no unsafe merge performed
+- accepted product `main`: `f4c48c64215f5102cc69ecc538f0892e3eb6a452`
+- PR #45: MERGED
+- PR #45 accepted candidate: `7182e5b87bebae4f74ba966e92f74217cfb1ce95`
+- PR #46: OPEN / DRAFT / UNMERGED
+- branch: `fix/calendar-team-route-scope`
+- current candidate: `09b63042f784c0284f3db7ea0e6436b3c16ce430`
 
 ## Exact Next Action
 
-1. Re-check CI #146 / 7-Layer #135 / Firebat #101 for `7182e5b...`.
-2. If 7-Layer fails, inspect the first failing Layer 5 task-scope proof and apply only the smallest safe fix.
-3. If all three workflows are GREEN, accept the real-team task create/update + assignee-narrowing proof, mark PR #45 ready, and merge it using the exact verified head SHA.
-4. Update this MASTER with the accepted merge SHA and keep overall GJ-05 OPEN.
-5. Continue GJ-05 with the smallest Calendar create/update/view proof slice.
+1. Re-check CI #149 / 7-Layer #138 / Firebat #104 for `09b63042...`.
+2. If any check fails, inspect and fix only the first concrete blocker.
+3. If all three are GREEN, mark PR #46 ready and merge using the exact verified head SHA.
+4. Add the smallest dedicated Playwright Calendar proof using a real accessible team: create event -> view it -> edit title/time -> verify persisted update and correct team scope.
+5. Keep GJ-05 OPEN until that browser proof passes; then update this MASTER with exact candidate/workflow/merge evidence.
 
 ---
