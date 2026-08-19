@@ -12,7 +12,7 @@ current_phase: "Phase 2 — Product Closure"
 priority: "P0"
 last_updated: "2026-08-19"
 repository: "joeylife94/papyr-us"
-baseline_main_sha: "640c0e6e995bbf93d598ee1726de81f726dbc94c"
+baseline_main_sha: "92f5bded9bb365560d50288ea4143aca1ef1d24a"
 tags:
   - project/papyr-us
   - freelancers/production
@@ -157,8 +157,8 @@ Current:
 - PR #45 helper contract GREEN on `fc9213d3a48dd623483e545a35218e1f6a0e38d1`: CI #134 PASS / 7-Layer #123 PASS / Firebat #89 PASS
 - preparatory real-team `TaskForm` GREEN on `203ffc2561c7cb746315bec341c09792b440ba87`: CI #136 PASS / 7-Layer #125 PASS / Firebat #91 PASS
 - wired production candidate `3ea1ea59a68753fbe48d2efe968100c5429d25e9` GREEN: CI #138 PASS / 7-Layer #127 PASS / Firebat #93 PASS
-- PR #45 current head `6a92734580c1d1b439907506220e2c8d99f046b0` adds an explicit `membersForTaskTeam` assignee-scope contract and unit coverage; fresh exact-head workflows are running
-- `membersForTaskTeam` is not yet wired into `TaskForm`, so the all-teams assignee blocker remains OPEN
+- assignee-scope contract candidate `6a92734580c1d1b439907506220e2c8d99f046b0` GREEN: CI #141 PASS / 7-Layer #130 PASS / Firebat #96 PASS
+- PR #45 current head `b625a3668e6b4c064abdbef8b4067dd1bcbfe332` wires `membersForTaskTeam` into production `TaskForm`; fresh exact-head workflows are running
 - direct task create/update browser evidence with real team IDs remains required
 - Calendar create/update/view proof remains required
 - overall GJ-05 OPEN
@@ -280,93 +280,77 @@ A skipped required gate is not PASS.
 > [!info] CURRENT  
 > **Date:** 2026-08-19 KST  
 > **Phase:** Phase 2 — Product Closure  
-> **Main at iteration start:** `640c0e6e995bbf93d598ee1726de81f726dbc94c`  
+> **Main at iteration start:** `92f5bded9bb365560d50288ea4143aca1ef1d24a`  
 > **Highest active gap:** GAP-004 / GJ-05 Tasks + Calendar proof  
 > **Active branch:** `fix/tasks-form-team-scope`  
 > **Active PR:** #45 draft  
-> **Candidate head:** `6a92734580c1d1b439907506220e2c8d99f046b0`
+> **Candidate head:** `b625a3668e6b4c064abdbef8b4067dd1bcbfe332`
 
 ## What Changed
 
 - Re-read this MASTER from `main` and confirmed Phase 2 / GJ-05 remains the highest-priority path.
-- Re-checked PR #45 candidate `3ea1ea59a68753fbe48d2efe968100c5429d25e9` and confirmed CI #138 / 7-Layer #127 / Firebat #93 all PASS.
-- Inspected backend member semantics: all-teams `/api/members` intentionally returns the authorized union of members from all user teams.
-- Identified that passing that union directly to `TaskForm` can expose cross-team assignee choices when the form selects one team.
-- Added `TaskFormMemberOption` and pure `membersForTaskTeam` contract in `client/src/lib/task-team-scope.ts`.
-- Added unit coverage proving numeric/string team ID normalization, cross-team exclusion, null-team exclusion, and empty-team fail-closed behavior.
-- Advanced PR #45 head to `6a92734580c1d1b439907506220e2c8d99f046b0` and updated its description.
-- Did not wire the helper into production form yet because fresh exact-head checks are still running; no merge or GJ-05 closure claim made.
+- Re-checked PR #45 exact candidate `6a92734580c1d1b439907506220e2c8d99f046b0` and confirmed CI #141 / 7-Layer #130 / Firebat #96 all PASS.
+- Wired `membersForTaskTeam` into the production `TaskForm`, so assignee choices now derive from the form's currently selected real team rather than the all-teams authorized union.
+- Hardened member metadata typing so missing/null `teamId` fails closed and is never offered as an assignee.
+- Preserved the existing behavior that changing team clears the prior assignee, preventing stale cross-team assignment carryover.
+- Advanced PR #45 head to `b625a3668e6b4c064abdbef8b4067dd1bcbfe332`.
+- Did not merge or claim GJ-05 closure because fresh exact-head workflows and direct task lifecycle evidence are still pending.
 
 ## Actually Executed
 
 - Read `PAPYR_US_MASTER.md` from `main`.
 - Read PR #45 metadata and exact head.
-- Queried workflows for `3ea1ea59...` and confirmed all three PASS.
-- Read active `tasks.tsx`, `TaskForm.tsx`, task-team scope helper, unit tests, backend routes, and member schema.
-- Confirmed backend all-team member aggregation behavior.
-- Updated `client/src/lib/task-team-scope.ts` on `fix/tasks-form-team-scope`.
-- Updated `tests/unit/task-team-scope.test.ts` on `fix/tasks-form-team-scope`.
-- Updated PR #45 body.
-- Queried workflows for current candidate `6a927345...`.
+- Queried workflows for `6a927345...` and confirmed CI #141 / 7-Layer #130 / Firebat #96 PASS.
+- Read active `TaskForm.tsx`, `task-team-scope.ts`, and `tasks.tsx`.
+- Updated `client/src/lib/task-team-scope.ts` on `fix/tasks-form-team-scope` to fail closed on absent member team metadata.
+- Updated `client/src/components/tasks/TaskForm.tsx` on `fix/tasks-form-team-scope` to render only `membersForTaskTeam(members, formData.teamId)`.
+- Queried workflows for current candidate `b625a366...`.
 - Updated this authoritative ledger on `main`.
 
 ## Checks / Current Evidence
 
-Wired production candidate `3ea1ea59a68753fbe48d2efe968100c5429d25e9`:
-- CI #138 — **PASS**
-- 7-Layer #127 — **PASS**
-- Firebat #93 — **PASS**
+Assignee-scope contract candidate `6a92734580c1d1b439907506220e2c8d99f046b0`:
+- CI #141 — **PASS**
+- 7-Layer #130 — **PASS**
+- Firebat #96 — **PASS**
 
-Current assignee-contract candidate `6a92734580c1d1b439907506220e2c8d99f046b0`:
-- CI #141 — **IN PROGRESS** at latest check
-- 7-Layer #130 — **IN PROGRESS** at latest check
-- Firebat #96 — **IN PROGRESS** at latest check
+Current production-wiring candidate `b625a3668e6b4c064abdbef8b4067dd1bcbfe332`:
+- CI #144 — **IN PROGRESS** at latest check
+- 7-Layer #133 — **IN PROGRESS** at latest check
+- Firebat #99 — **PENDING** at latest check
 
 No merge performed. No GJ-05 closure claim made.
 
 ## Not Verified
 
-- Final workflow completion for `6a92734580c1d1b439907506220e2c8d99f046b0`.
-- Production `TaskForm` wiring of `membersForTaskTeam`.
+- Final workflow completion for `b625a3668e6b4c064abdbef8b4067dd1bcbfe332`.
 - Browser/Playwright task create using a real accessible team ID.
 - Browser/Playwright task edit/update through the newly wired form.
+- Existing assigned task behavior when an assignee is no longer valid for the selected team has not yet been browser-proven.
 - Calendar create/update/view part of GJ-05.
 
 ## Residual Risks / Blockers
 
-- PR #45 remains draft/unmerged until exact-head checks are GREEN, assignee narrowing is wired, and direct task create/update evidence exists.
-- Current production `TaskForm` still receives the authorized all-team member union in all-teams mode; until `membersForTaskTeam` is wired, a cross-team assignee can remain visible/selectable.
+- PR #45 remains draft/unmerged until exact-head checks are GREEN and direct task create/update evidence exists.
+- The production assignee filter is now wired, but the current exact tree is not accepted until its workflows complete successfully.
+- Direct browser/E2E evidence is still required to prove real-team task create/update and assignment behavior.
 - Calendar proof is absent, so GJ-05 cannot close even after the task-form path is accepted.
 
 ## Repo / PR State
 
-- `main` at iteration start: `640c0e6e995bbf93d598ee1726de81f726dbc94c`
+- `main` at iteration start: `92f5bded9bb365560d50288ea4143aca1ef1d24a`
 - PR #45: OPEN / DRAFT / UNMERGED
 - branch: `fix/tasks-form-team-scope`
-- prior fully GREEN wired candidate: `3ea1ea59a68753fbe48d2efe968100c5429d25e9`
-- current candidate: `6a92734580c1d1b439907506220e2c8d99f046b0`
+- prior GREEN assignee-contract candidate: `6a92734580c1d1b439907506220e2c8d99f046b0`
+- current candidate: `b625a3668e6b4c064abdbef8b4067dd1bcbfe332`
 - no unsafe merge performed
 
 ## Exact Next Action
 
-1. Re-check CI #141 / 7-Layer #130 / Firebat #96 for `6a927345...`.
-2. If GREEN, wire `membersForTaskTeam` into `TaskForm` and ensure an existing assignee is cleared/fails closed when not in the selected team.
-3. Run fresh exact-head workflows.
-4. Add or execute the smallest deterministic task create/update proof using real accessible team IDs.
-5. Merge #45 only after exact-head GREEN plus direct task lifecycle evidence.
-6. Then continue GJ-05 with Calendar create/update/view proof.
+1. Re-check CI #144 / 7-Layer #133 / Firebat #99 for `b625a366...`.
+2. If GREEN, add or execute the smallest deterministic task create/update proof using real accessible team IDs, including selected-team assignee narrowing.
+3. If the direct proof exposes a defect, fix only that first blocker and rerun exact-head workflows.
+4. Merge #45 only after exact-head GREEN plus direct task lifecycle evidence.
+5. Then continue GJ-05 with Calendar create/update/view proof.
 
 ---
-
-# 10. Strict Next Work Order
-
-1. **GAP-004 / GJ-05 task form closure**
-2. **GJ-05 Calendar executable proof**
-3. **remaining GJ-01..07 evidence gaps discovered by exact-tree testing**
-4. **GAP-007 dependency security reachability triage**
-5. **GAP-008 / GJ-08 backup-restore and operational recovery**
-6. **GAP-006 sanitized public demo**
-7. **GAP-010/011/012 proof packaging**
-8. Phase 6 freeze
-
-Do not start deferred vector RAG, task/file indexing, Korean morphology, autonomous agent expansion, Kubernetes/HA, billing, native mobile, or enterprise SAML completeness during v1.0 closure.
