@@ -4,7 +4,7 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.21"
+version: "0.22"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
 current_phase: "Phase 3 — Operational & Security Readiness"
 priority: "P0"
@@ -15,7 +15,7 @@ baseline_main_sha: "06acd4438199df1185426f322b96585accb0ecc6"
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.21**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.22**  
 > This root file is the single project-state / closure ledger. Read it before every iteration and update it on `main` before the iteration ends.
 
 ## 0. Authority / Rules
@@ -70,7 +70,7 @@ Deferred v1.1+: embeddings/pgvector/hybrid retrieval, full RAG/citation UI, task
 - **GJ-05 Tasks and Calendar** — **CLOSED** via PRs #44–#47.
 - **GJ-06 Secure Search** — authenticated team scope -> page ACL -> real PostgreSQL FTS -> bounded top-k -> unauthorized exclusion — **CLOSED** by accepted Layer 4 + GJ-03 executable evidence mapping.
 - **GJ-07 Optional AI Assistance** — **CLOSED** via Issue #54 / PR #55.
-- **GJ-08 Operational Recovery** — deploy -> health/version -> durable data -> recreate -> backup -> restore — **OPEN / ACTIVE via Issue #56**.
+- **GJ-08 Operational Recovery** — deploy -> health/version -> durable data -> recreate -> backup -> restore — **OPEN / ACTIVE via Issue #56 / PR #57 candidate**.
 
 ## 4. Gap Matrix
 
@@ -83,7 +83,7 @@ Deferred v1.1+: embeddings/pgvector/hybrid retrieval, full RAG/citation UI, task
 | GAP-005 | Tasks list/team/form scope | P0 | CLOSED |
 | GAP-006 | Public sanitized demo | P0 | OPEN |
 | GAP-007 | Dependency security reachability triage | P0 | OPEN |
-| GAP-008 | Backup/restore drill | P1 | ACTIVE — Issue #56 / GJ-08 |
+| GAP-008 | Backup/restore drill | P1 | ACTIVE — Issue #56 / PR #57 |
 | GAP-009 | Historical root audit presentation | P1 | OPEN |
 | GAP-010 | Screenshot/GIF proof set | P1 | OPEN |
 | GAP-011 | Reviewer-first demo narrative | P1 | OPEN |
@@ -128,76 +128,80 @@ Product exit status: GJ-01 through GJ-07 closed. GJ-08 and operational/security/
 > **Date:** 2026-08-20 KST  
 > **Phase:** Phase 3 — Operational & Security Readiness  
 > **Accepted product baseline:** `06acd4438199df1185426f322b96585accb0ecc6`  
-> **Current main before this ledger-only update:** `2c030900183b80dc9d27f53c34605e285c31787d`  
+> **Current main before this ledger-only update:** `0c6a434117b6057243a1b85d054bb0074039bcaa`  
 > **Highest active work item:** GJ-08 / GAP-008 operational recovery evidence  
 > **Active journey:** GJ-08 Operational Recovery  
 > **Active Issue:** #56 — GJ-08 Operational Recovery acceptance proof  
 > **Active branch:** `test/issue-56-gj08-operational-recovery`  
-> **Active implementation PR:** none yet
+> **Active implementation PR:** #57 — draft  
+> **CURRENT exact candidate:** `d4a43fc7de30436b6e52d26527cc7fa59cf599a3`
 
 ### Changed
 
-- Inventoried the accepted Phase 3 operational surface before creating new work.
-- Created bounded Issue #56 for GJ-08 Operational Recovery and a linked branch from current `main`.
-- Mapped existing deploy/health/version/persistence/backup/restore building blocks without treating implementation presence as acceptance evidence.
+- Added `scripts/recovery-firebat.mjs` as the bounded Firebat-specific recovery harness.
+- Added one Firebat Deployment Gate hook to execute the GJ-08 recovery drill and assert that a non-empty PostgreSQL backup artifact was created.
+- Created draft PR #57 with `Closes #56`; diff remains limited to the recovery harness and Firebat workflow hook.
 
 ### Actually Executed
 
-- Re-read current MASTER on `main` and observed that PR #55 was already merged and Phase 2 already closed; the supervisor handoff was stale relative to current repository state.
-- Re-fetched current open PRs. PR #19 is the only open PR and remains explicitly unrelated to Phase 3 under this MASTER, so it was not modified.
-- Inspected `compose.firebat.yml`: accepted Firebat runtime uses named PostgreSQL/Redis/uploads/logs volumes and hardened container settings.
-- Inspected `scripts/deploy-firebat.sh`: deploys only from clean/up-to-date `main`, builds the candidate revision, migrates schema, starts db/redis/app, then executes the Firebat healthcheck.
-- Inspected `scripts/healthcheck-firebat.sh`: executes `/health` and `/version`, requiring healthy database/redis/uploads and a version response.
-- Inspected `scripts/smoke-firebat.mjs`: existing smoke already exercises health/version/auth/login/WebSocket but does not prove recreate + backup + destructive restore.
-- Inspected `scripts/backup.sh`: backup and restore implementations exist, but the script loads `.env` by default while the accepted Firebat deployment uses `.env.firebat`; no accepted exact-tree recovery drill currently bridges that boundary.
-- Inspected `docker-compose.yml`: a separate legacy/local backup profile exists, but it is not the accepted Firebat deployment boundary.
-- Searched current repository tests and confirmed there is no GJ-08 operational recovery acceptance spec/script comparable to GJ-01..07.
-- Created Issue #56 with required Goal / Scope / Acceptance Criteria / Verification / Non-goals / Evidence Required sections.
-- Created branch `test/issue-56-gj08-operational-recovery` from current `main` SHA `2c030900183b80dc9d27f53c34605e285c31787d`.
+- Re-read the authoritative MASTER on current `main` and re-fetched Issue #56 before acting.
+- Confirmed no existing Issue #56-linked PR existed; did not create another Issue.
+- Re-inspected `scripts/backup.sh`, `compose.firebat.yml`, `.github/workflows/firebat.yml`, `scripts/smoke-firebat.mjs`, and existing page API proof to determine the minimum accepted recovery boundary.
+- Implemented a deterministic wrapper that requires `.env.firebat`, a localhost Firebat base URL, explicit `FIREBAT_RECOVERY_ALLOW_DESTRUCTIVE=1`, and the expected named PostgreSQL volume `firebat-papyr-us-postgres` before any destructive restore can run.
+- The harness creates a team and page through authenticated application APIs, verifies the original page state, force-recreates db/redis/app without deleting volumes, and verifies the API-created page survives.
+- The harness creates a custom-format PostgreSQL backup by executing `pg_dump` inside the Firebat DB container, verifies the artifact is non-empty, mutates the page through the application API, stops the app, restores the full database with `pg_restore --clean --if-exists`, restarts the app, and verifies the original page state is restored.
+- The harness then force-recreates the app once more and performs a fresh authenticated read to prove the restored database state remains durable after a new runtime instance.
+- Compared branch to current `main`: exactly two changed files, no unrelated PR #19 or dependency/public-demo work.
+- Created draft PR #57 from `test/issue-56-gj08-operational-recovery` to `main` with `Closes #56`.
+- Fetched exact-head workflow state for `d4a43fc7de30436b6e52d26527cc7fa59cf599a3`.
 
 ### Checks / Current Evidence
 
-Existing accepted sub-boundaries:
-- Firebat deploy path — **IMPLEMENTED**, not yet accepted as the full GJ-08 lifecycle.
-- `/health` + `/version` check — **IMPLEMENTED / previously exercised by Firebat gate**, but not yet combined with recovery evidence on an Issue #56 candidate.
-- Named persistence volumes — **IMPLEMENTED**, recreate durability not yet directly proven for GJ-08.
-- PostgreSQL backup + restore logic — **IMPLEMENTED**, but current general script is not automatically aligned with `.env.firebat` and has no accepted destructive restore drill.
-- Full `deploy -> health/version -> durable data -> recreate -> backup -> destructive restore -> durable restored state` — **NOT VERIFIED**.
-- Issue #56 — **OPEN**.
-- PR for Issue #56 — **NOT CREATED**.
+- Branch diff scope — **VERIFIED BOUNDED**: 2 commits / 2 files (`scripts/recovery-firebat.mjs`, `.github/workflows/firebat.yml`).
+- Destructive-target guard — **IMPLEMENTED**, not yet accepted until exact-head Firebat execution proves it.
+- API-created durable marker + recreate persistence — **IMPLEMENTED**, execution pending.
+- Firebat PostgreSQL backup artifact — **IMPLEMENTED**, execution pending.
+- Destructive mutation + full restore + fresh post-restore read — **IMPLEMENTED**, execution pending.
+- PR #57 exact candidate: `d4a43fc7de30436b6e52d26527cc7fa59cf599a3`.
+- CI run `32313529680` — **QUEUED**.
+- 7-Layer run `32313529649` — **QUEUED**.
+- Firebat Deployment Gate run `32313529690` — **QUEUED**.
+- GJ-08 — **OPEN**; implementation presence is not PASS.
 
 ### Not Verified
 
-- Persistence of application-created state after Firebat container recreation.
-- Backup creation from the accepted `.env.firebat`/Firebat PostgreSQL boundary.
-- Destructive restore against disposable Firebat state and durable post-restore read.
-- Exact-head CI / 7-Layer / Firebat gates for an Issue #56 candidate.
+- Whether the recovery harness completes successfully on GitHub's exact PR head.
+- Whether full `pg_restore --clean` on the disposable Firebat database exposes schema/connection/order issues.
+- Whether the exact candidate passes CI / 7-Layer / Firebat gates.
+- Review submissions / unresolved review threads for PR #57 after workflows execute.
+- GJ-08 closure and Issue #56 closure.
 - Dependency security reachability disposition for GAP-007.
 - Public sanitized demo and proof packaging.
 
 ### Residual Risks / Blockers
 
-- GJ-08 remains OPEN until executed recovery evidence exists; file/tooling presence is not PASS.
-- Backup/restore tooling currently spans two environment conventions (`.env` vs `.env.firebat`), so the candidate must remove ambiguity or provide a deterministic wrapper rather than relying on manual operator state.
-- The destructive restore drill must be constrained to disposable local/CI Firebat state and must not target arbitrary production databases.
-- Dependency security reachability remains P0 but must not spawn a second active implementation Issue while Issue #56 is active.
-- PR #19 remains unrelated and must not be mixed into Issue #56.
+- PR #57 must remain unmerged while any exact-head required gate is non-GREEN.
+- Full-database restore may expose a concrete PostgreSQL restore-order or active-connection failure; if so, fix only that first Issue #56-scoped failure.
+- The destructive drill is intentionally gated to local `.env.firebat` + expected named volume + explicit opt-in; do not weaken these guards to make CI pass.
+- GAP-007 and public-demo/proof work remain blocked by the one-active-implementation-Issue rule while Issue #56 is open.
+- PR #19 remains unrelated and unchanged.
 
 ### Repo / Issue / PR State
 
-- current main before ledger update: `2c030900183b80dc9d27f53c34605e285c31787d`
+- current main before ledger update: `0c6a434117b6057243a1b85d054bb0074039bcaa`
 - accepted product baseline: `06acd4438199df1185426f322b96585accb0ecc6`
 - GJ-01..GJ-07: CLOSED
 - GJ-08: OPEN / ACTIVE
 - Issue #56: OPEN
 - active branch: `test/issue-56-gj08-operational-recovery`
-- active implementation PR: none
+- active implementation PR: #57 draft
+- CURRENT exact PR head: `d4a43fc7de30436b6e52d26527cc7fa59cf599a3`
 - unrelated open PR #19: unchanged
 
 ### Exact Next Action
 
-1. On `test/issue-56-gj08-operational-recovery`, implement the smallest Firebat-specific recovery harness/wrapper needed to eliminate `.env` vs `.env.firebat` ambiguity.
-2. The harness must use disposable Firebat state and prove: deploy/health/version -> create durable application state -> recreate containers without deleting named volumes -> verify persistence -> create PostgreSQL backup -> deliberately change/remove that state -> restore backup -> verify restored durable state after a fresh read/restart.
-3. Add only the minimum workflow hook needed to execute this proof; do not broaden into public-demo or dependency-security work.
-4. Create a draft PR with `Closes #56`, then evaluate the CURRENT exact head through CI / 7-Layer / Firebat gates and the new recovery proof.
-5. If the proof exposes a concrete product/tooling defect, fix only the first Issue #56-scoped blocker; otherwise merge only after exact-head executed evidence is GREEN and review/thread scope is clear.
+1. Re-fetch PR #57 and confirm the CURRENT exact head before interpreting any workflow result.
+2. Inspect CI `32313529680`, 7-Layer `32313529649`, and Firebat `32313529690` for that exact head.
+3. If any gate is RED/CANCELLED/TIMED_OUT, inspect the first concrete failure and apply only the smallest Issue #56-scoped correction; do not weaken the destructive-target guards.
+4. If all exact-head gates are GREEN, inspect review submissions/threads and final diff scope, then mark PR #57 ready and merge only with an expected-head guard.
+5. After merge, ensure Issue #56 closes via `Closes #56`, reconcile this MASTER on `main` with executed recovery evidence and merge SHA, and only then evaluate GJ-08 / Phase 3 closure before selecting any GAP-007 work.
