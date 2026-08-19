@@ -37,7 +37,7 @@ async function createTeam(request: APIRequestContext, name: string, displayName:
 }
 
 test.describe('GJ-01 authentication and team entry', () => {
-  test('registers, logs in, enters a real team workspace, and creates team-scoped content', async ({
+  test('registers, logs in, selects a real team workspace, and creates team-scoped content', async ({
     page,
   }) => {
     const stamp = Date.now();
@@ -51,7 +51,14 @@ test.describe('GJ-01 authentication and team entry', () => {
     const authRequest = await createAuthenticatedApiContext(email, password);
     const team = await createTeam(authRequest, `gj01-team-${stamp}`, `GJ01 Team ${stamp}`);
 
-    await page.goto(`/teams/${team.name}`, { waitUntil: 'domcontentloaded' });
+    // Refresh the authenticated workspace so the sidebar fetches the newly accessible team,
+    // then enter it through the actual user-facing team selector rather than a synthetic route.
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    const teamButton = page.getByRole('button', { name: new RegExp(team.displayName) });
+    await expect(teamButton).toBeVisible({ timeout: 15000 });
+    await teamButton.click();
+    await page.getByRole('link', { name: '팀 페이지' }).click();
+    await expect(page).toHaveURL(`/teams/${team.name}/pages`, { timeout: 15000 });
     await expect(page.getByRole('heading', { name: `${team.name} 팀 문서` })).toBeVisible();
 
     await page.getByRole('button', { name: '새 문서 작성' }).click();
