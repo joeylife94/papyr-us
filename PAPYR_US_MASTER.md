@@ -141,8 +141,8 @@ Product exit status: GJ-01/02/03/04/06/07/08 open; GJ-05 closed. README Search/A
 - Read `client/src/App.tsx`, `client/src/pages/home.tsx`, `client/src/components/layout/sidebar.tsx`, and `tests/gj01-auth-team-entry.spec.ts` on the PR head.
 - Verified router exposes `/teams/:teamName/pages`, while the sidebar provides the actual accessible-team selection surface.
 - Updated `tests/gj01-auth-team-entry.spec.ts` on `fix/gj01-page-team-scope`.
-- Queried workflows for `82a8576...`; no runs had materialized at the first immediate query.
-- Updated this root MASTER on `main` in the same iteration.
+- Queried workflows twice for `82a8576...`; the second query confirmed all three exact-head workflows had started.
+- Updated PR #48 metadata and this root MASTER on `main` in the same iteration.
 
 ### Checks / Current Evidence
 
@@ -152,9 +152,9 @@ PR #48 prior browser-proof candidate `8ae64429...`:
 - 7-Layer #149 — **IN PROGRESS** when superseded by the corrected proof candidate
 
 PR #48 current candidate `82a8576c23b4fa11f1393abfdf94709b997bdbec`:
-- CI — **NOT YET MATERIALIZED at first query**
-- 7-Layer — **NOT YET MATERIALIZED at first query**
-- Firebat — **NOT YET MATERIALIZED at first query**
+- CI #162 — **IN PROGRESS**
+- 7-Layer #151 — **IN PROGRESS**
+- Firebat #117 — **IN PROGRESS**
 
 ### Not Verified
 
@@ -181,7 +181,7 @@ PR #48 current candidate `82a8576c23b4fa11f1393abfdf94709b997bdbec`:
 
 ### Exact Next Action
 
-1. Re-check CI / 7-Layer / Firebat for `82a8576...`.
+1. Re-check CI #162 / 7-Layer #151 / Firebat #117 for `82a8576...`.
 2. If any fails, inspect the first failure and make the smallest safe correction.
 3. If all GREEN, treat API team creation as fixture/setup and the sidebar selection as the required user-facing `create/select team` branch for GJ-01; do not add a new normal-user team-creation surface.
 4. Mark PR #48 ready and merge only after exact-head GREEN.
