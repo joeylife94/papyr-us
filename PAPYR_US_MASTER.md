@@ -4,7 +4,7 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.17"
+version: "0.18"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
 current_phase: "Phase 2 — Product Closure"
 priority: "P0"
@@ -15,7 +15,7 @@ baseline_main_sha: "23770c284f400c4f769a8a4490c2bca17a0919ea"
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.17**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.18**  
 > This root file is the single project-state / closure ledger. Read it before every iteration and update it on `main` before the iteration ends.
 
 ## 0. Authority / Rules
@@ -68,7 +68,7 @@ Deferred v1.1+: embeddings/pgvector/hybrid retrieval, full RAG/citation UI, task
 - **GJ-04 Version Recovery** — edit -> history -> prior version -> restore -> durable restored state — **CLOSED** via Issue #52 / PR #53.
 - **GJ-05 Tasks and Calendar** — **CLOSED** via PRs #44–#47.
 - **GJ-06 Secure Search** — authenticated team scope -> page ACL -> real PostgreSQL FTS -> bounded top-k -> unauthorized exclusion — **CLOSED** by accepted Layer 4 + GJ-03 executable evidence mapping.
-- **GJ-07 Optional AI Assistance** — **OPEN / ACTIVE via Issue #54**; public README/docs expose inline AI assistance, so deterministic user-visible success/failure proof is required.
+- **GJ-07 Optional AI Assistance** — **OPEN / ACTIVE via Issue #54 and draft PR #55**; exact-head candidate under verification.
 - **GJ-08 Operational Recovery** — deploy -> health/version -> durable data -> recreate -> backup -> restore — **OPEN / Phase 3**.
 
 ## 4. Gap Matrix
@@ -127,60 +127,62 @@ Product exit status: GJ-01 through GJ-06 closed. GJ-07 is active because optiona
 > **Date:** 2026-08-20 KST  
 > **Phase:** Phase 2 — Product Closure  
 > **Accepted product baseline:** `23770c284f400c4f769a8a4490c2bca17a0919ea`  
-> **Current main before this ledger-only update:** `3b6aeccd71646c587a5a0a670c7a4fe71c3f3fb9`  
+> **Current main before this ledger-only update:** `cbfa2c0cb6a79eb14f8aaa8d365b212b54e9ccba`  
 > **Highest active gap:** GAP-004 / GJ-07 Optional AI Assistance  
 > **Active journey:** GJ-07  
 > **Active Issue:** #54  
 > **Active implementation branch:** `test/issue-54-gj07-inline-ai-proof`  
-> **Active implementation PR:** none yet
+> **Active implementation PR:** #55 draft  
+> **Exact candidate under verification:** `badc019bad2f70dad4d23689b9ba5b4e21c047c4`
 
 ### Changed
 
-- Re-read current MASTER/main and discarded the historical #53 handoff because the repository has advanced: GJ-04 and GJ-06 are already CLOSED.
-- Inspected current public README and `docs/ai-features-guide.md`; both expose optional AI assistance as a v1.0/public capability, so GJ-07 is not N/A.
-- Inventoried current AI executable evidence before creating work: server `ai.test.ts` covers `/api/ai/inline` success/validation with the AI service mocked, but no deterministic user-visible editor journey proof was found.
-- Found a concrete GJ-07 failure-UX defect: `InlineFormattingToolbar.handleAIAction` catches provider/API failures and silently does nothing, leaving the user without an error indication.
-- Created bounded Issue #54 and linked branch `test/issue-54-gj07-inline-ai-proof`; no PR yet.
+- Added visible destructive toast behavior for inline AI API/provider failure while leaving selected editor text unchanged.
+- Added deterministic Playwright proof `tests/gj07-inline-ai-assistance.spec.ts` for the public inline AI success/failure journey.
+- Opened bounded draft PR #55 with `Closes #54`; no new Issue was created.
 
 ### Actually Executed
 
-- Fetched current `README.md`; confirmed it publicly advertises optional GPT-4o re-ranking and inline AI editor assistance.
-- Fetched current `docs/ai-features-guide.md`; confirmed it documents inline Summarize/Rewrite/Taskify and AI Writing Assistant as user-facing capabilities.
-- Fetched `server/tests/ai.test.ts`; confirmed deterministic server coverage exists for valid inline summarize plus invalid/missing action validation, using a mocked AI service.
-- Fetched `client/src/components/blocks/inline-formatting-toolbar.tsx`; confirmed success replaces selected textarea text, while failures are silently swallowed.
-- Created Issue #54 with Goal / Scope / Acceptance Criteria / Verification / Non-goals / Evidence Required.
-- Created the Issue #54 implementation branch from current main.
-- Updated this MASTER on main.
+- Re-read current MASTER/main first and confirmed historical #53 handoff is obsolete; GJ-04/GJ-06 are already CLOSED and GJ-07 is current.
+- Re-fetched Issue #54; it remains OPEN with the required Goal / Scope / Acceptance Criteria / Verification / Non-goals / Evidence Required contract.
+- Searched open PRs and confirmed no relevant GJ-07 PR existed before this iteration; unrelated password-reset PR #19 remains outside scope.
+- Updated `client/src/components/blocks/inline-formatting-toolbar.tsx` on the Issue #54 branch to call the existing `useToast` system on AI failure.
+- Created deterministic Playwright coverage that authenticates, opens a real editor, intercepts `/api/ai/inline`, verifies `{ action, text }`, verifies selected-range-only replacement on success, then verifies visible failure + text preservation on a 503 response.
+- Opened draft PR #55 from `test/issue-54-gj07-inline-ai-proof` to `main`.
+- Re-fetched CURRENT exact-head workflow state for `badc019b...`.
 
 ### Checks / Current Evidence
 
-GJ-07 Optional AI Assistance:
+GJ-07 Optional AI Assistance candidate `badc019bad2f70dad4d23689b9ba5b4e21c047c4`:
 - Publicly shown/claimed — **YES**.
-- Server inline AI route contract — **PARTIAL PASS by existing deterministic mocked-service tests**; not sufficient alone for GJ closure.
-- User-visible editor success journey — **NOT VERIFIED**.
-- User-visible provider/API failure behavior — **KNOWN DEFECT: silent failure**.
-- Live OpenAI model quality — **OUT OF SCOPE / not required for deterministic CI acceptance**.
-- Exact-head CI / 7-Layer / Firebat candidate — **NOT STARTED; no implementation candidate yet**.
+- Server inline AI route contract — **existing deterministic mocked-service coverage present**; not newly changed.
+- User-visible editor success journey — **IMPLEMENTED AS EXECUTABLE PLAYWRIGHT PROOF, NOT YET ACCEPTED**.
+- User-visible provider/API failure behavior — **IMPLEMENTED: visible destructive toast + original text preserved, NOT YET ACCEPTED**.
+- CI run `32298943286` — **IN PROGRESS**.
+- 7-Layer run `32298943272` — **IN PROGRESS**.
+- Firebat run `32298943329` — **IN PROGRESS**.
+- PR #55 — **DRAFT / OPEN / UNMERGED**.
 - GJ-07 — **OPEN**.
 
 ### Not Verified
 
-- Browser/editor proof that selected text is replaced only within the selection after a successful inline AI response.
-- Browser/editor proof that a failed provider/API request preserves original text and visibly informs the user.
-- Exact-head repository gates for the future Issue #54 candidate.
+- Exact-head completion of CI / 7-Layer / Firebat for `badc019b...`.
+- Whether the new Playwright proof exposes an editor/toolbar timing or selector defect under CI runtime.
+- Review submission / unresolved review-thread state for PR #55 after checks finish.
+- Live OpenAI model quality; intentionally out of scope for deterministic CI acceptance.
 - Phase 3 dependency-security disposition and operational recovery.
 - Public sanitized demo and proof packaging.
 
 ### Residual Risks / Blockers
 
-- Current public AI documentation is stronger than current accepted user-visible executable evidence.
-- Silent AI failure is a direct user-visible blocker and must be corrected within Issue #54 before GJ-07 closure.
-- Historical open PR #19 is unrelated password-reset work and is outside the current GJ-07 acceptance path.
-- Dependency security reachability remains GAP-007 and must not be mixed into Issue #54 unless executed evidence exposes a direct GJ-07 defect.
+- The active blocker is exact-head execution evidence, not implementation presence.
+- If the new Playwright proof fails, fix only the first concrete Issue #54-scoped browser/interaction defect; do not create another Issue.
+- PR #19 remains unrelated and must not be mixed into GJ-07.
+- Dependency security reachability remains GAP-007 and is outside Issue #54 unless executed evidence exposes a direct GJ-07 defect.
 
 ### Repo / Issue / PR State
 
-- current main before ledger update: `3b6aeccd71646c587a5a0a670c7a4fe71c3f3fb9`
+- current main before ledger update: `cbfa2c0cb6a79eb14f8aaa8d365b212b54e9ccba`
 - accepted product baseline: `23770c284f400c4f769a8a4490c2bca17a0919ea`
 - GJ-01: CLOSED
 - GJ-02: CLOSED
@@ -191,12 +193,13 @@ GJ-07 Optional AI Assistance:
 - GJ-07: OPEN / ACTIVE
 - Issue #54: OPEN
 - branch: `test/issue-54-gj07-inline-ai-proof`
-- active implementation PR: none
+- PR #55: DRAFT / OPEN / UNMERGED
+- exact candidate: `badc019bad2f70dad4d23689b9ba5b4e21c047c4`
 
 ### Exact Next Action
 
-1. Re-read current MASTER/main and Issue #54 state.
-2. On `test/issue-54-gj07-inline-ai-proof`, make the smallest failure-UX correction so inline AI API/provider failure is visible while preserving original selection.
-3. Add deterministic user-visible proof for inline AI success and failure without requiring a live external OpenAI call; preserve existing server route contract coverage.
-4. Open one draft PR with `Closes #54` and run exact-head CI / 7-Layer / Firebat.
-5. If any gate fails, inspect the first concrete failure and correct only Issue #54 scope; if all gates are GREEN and review state is clean, merge with expected-head guard, close Issue #54, reconcile this MASTER, and evaluate GJ-07 / Phase 2 closure.
+1. Re-read current MASTER/main and CURRENT PR #55/head; if the head moved, discard this candidate state and evaluate the new exact head.
+2. Check exact-head CI / 7-Layer / Firebat for `badc019b...`.
+3. If any gate is RED, inspect the first concrete failing job/step/log and make only the smallest Issue #54-scoped correction; do not create a new Issue.
+4. If all three gates are GREEN, inspect review submissions and unresolved review threads, confirm the PR remains bounded, mark ready if draft is the only mechanical blocker, merge with expected-head guard, ensure Issue #54 closes, then reconcile this MASTER on `main` with accepted SHA and closure evidence.
+5. Re-evaluate GJ-07 and Phase 2 closure only after merge and MASTER reconciliation.
