@@ -13,6 +13,7 @@ import {
 import { Textarea } from '../ui/textarea';
 import {
   isTaskTeamSelectionLocked,
+  membersForTaskTeam,
   resolveTaskFormTeamId,
   type TaskTeamOption,
 } from '../../lib/task-team-scope';
@@ -32,6 +33,7 @@ export interface TaskFormTask {
 export interface TaskFormMember {
   id: number;
   name: string;
+  teamId?: number | string | null;
 }
 
 interface TaskFormProps {
@@ -86,6 +88,8 @@ export function TaskForm({
         },
       ].filter((team) => Boolean(team.id))
     : teams;
+
+  const selectableMembers = membersForTaskTeam(members, formData.teamId);
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -187,7 +191,7 @@ export function TaskForm({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="unassigned">미배정</SelectItem>
-              {members.map((member) => (
+              {selectableMembers.map((member) => (
                 <SelectItem key={member.id} value={String(member.id)}>
                   {member.name}
                 </SelectItem>
