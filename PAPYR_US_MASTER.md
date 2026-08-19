@@ -4,7 +4,7 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.12"
+version: "0.13"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
 current_phase: "Phase 2 — Product Closure"
 priority: "P0"
@@ -15,7 +15,7 @@ baseline_main_sha: "37a1af97fe171774bda8b8b5c8364ea32e5fa0ac"
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.12**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.13**  
 > This root file is the single project-state / closure ledger. Read it before every iteration and update it on `main` before the iteration ends.
 
 ## 0. Authority / Rules
@@ -123,7 +123,7 @@ Product exit status: GJ-01, GJ-02, GJ-03, and GJ-05 closed; GJ-04/06/07/08 open.
 > **Date:** 2026-08-20 KST  
 > **Phase:** Phase 2 — Product Closure  
 > **Accepted product baseline:** `37a1af97fe171774bda8b8b5c8364ea32e5fa0ac`  
-> **Current main before this ledger-only update:** `07c44932f2d174a9019f93f0502389ecda2cf326`  
+> **Current main before this ledger-only update:** `21b9a3c7f1ed633311339a92c00f1ab62d97aea4`  
 > **Highest active gap:** GAP-004  
 > **Active journey:** GJ-04 Version Recovery  
 > **Active Issue:** #52  
@@ -132,60 +132,54 @@ Product exit status: GJ-01, GJ-02, GJ-03, and GJ-05 closed; GJ-04/06/07/08 open.
 
 ### Changed
 
-- Re-read CURRENT root MASTER and CURRENT PR/Issue state; confirmed no relevant active implementation PR or Issue existed for GJ-04.
-- Inventoried the existing version-history UI/service plus accepted GJ-02 browser lifecycle pattern.
-- Confirmed implementation exists for history/read/restore, but no dedicated deterministic GJ-04 journey proof exists on `main`.
-- Created bounded Issue #52 before any branch or implementation.
-- Created issue-linked branch `test/issue-52-gj04-version-recovery`.
-- Added `tests/gj04-version-recovery.spec.ts` only; no production code change.
-- Opened draft PR #53 with `Closes #52` and evidence sections.
+- Re-read CURRENT MASTER and PR #53; current head remains `775b0edf...` with one test-only changed file.
+- Inspected exact-head workflow results after the initial run completed.
+- Confirmed CI and Firebat passed; 7-Layer failed outside the GJ-04 proof itself because Playwright browser dependency installation timed out in two jobs.
+- Confirmed Layer 5 E2E, including the new GJ-04 Playwright proof, passed on the same run.
+- Re-ran only the failed jobs for 7-Layer run `32270585035`; no product/test code change was made.
 
 ### Actually Executed
 
-- Read `PAPYR_US_MASTER.md` from CURRENT `main`.
-- Searched CURRENT open PRs and Issues and rejected unrelated/stale work as the active surface.
-- Read `client/src/components/page-history.tsx` and `server/services/version-history.ts`.
-- Read accepted `tests/gj02-document-lifecycle.spec.ts` to reuse established authenticated browser setup.
-- Created Issue #52 with Goal / Scope / Acceptance Criteria / Verification / Non-goals / Evidence Required.
-- Created branch, committed one Playwright proof file, and opened draft PR #53.
-- Queried workflow runs for exact head `775b0edf...`.
-- Updated this MASTER on `main` after recording the active candidate.
+- Fetched current `main` and PR #53 state.
+- Fetched exact-head workflow runs for `775b0edf...`.
+- Inspected 7-Layer jobs and logs.
+- Observed `npx playwright install chromium --with-deps` timing out after 10 minutes while Ubuntu package mirrors were retrying; this was infrastructure/tooling failure, not a reproduced version-recovery defect.
+- Triggered `rerun failed jobs` for 7-Layer run `32270585035`.
+- Re-fetched the retry job state and confirmed Layer 0/1/2/3/4/5 were GREEN while All-Layers and Layer 6 were still running.
+- Updated this MASTER on `main`.
 
 ### Checks / Current Evidence
 
 PR #53 exact candidate `775b0edfe395cba4a467cf495dd43ffc9a1ba654`:
-- CI run `32270585094` — **IN PROGRESS**
-- 7-Layer Test Architecture run `32270585035` — **IN PROGRESS**
-- Firebat Deployment Gate run `32270585051` — **IN PROGRESS**
+- CI run `32270585094` — **PASS**
+- Firebat Deployment Gate run `32270585051` — **PASS**
+- 7-Layer Test Architecture run `32270585035` initial attempt — **FAILURE** due Playwright install timeout in All-Layers + Layer 6
+- 7-Layer retry — **IN PROGRESS**
+- Retry Layer 0 / 1 / 2 / 3 / 4 / 5 — **PASS**
+- Retry All-Layers / Layer 6 — **IN PROGRESS**
+- Original Layer 5 E2E — **PASS**, so the new GJ-04 executable proof itself has passed against the workflow PostgreSQL runtime
 - Scope — `tests/gj04-version-recovery.spec.ts` only
 - Production versioning code — unchanged
 - PR state — draft / open / unmerged
 - Issue #52 — open
 
-Candidate proof contract:
-- establish an original page state through the browser editor
-- edit to a distinct newer state and verify persistence
-- open the real version-history UI and identify the prior state
-- restore the prior version through the existing UI recovery action
-- fresh-navigate and API-read to prove restored state durability
-
 ### Not Verified
 
-- The exact-head workflows are not yet complete; GJ-04 is not accepted.
-- The new Playwright proof has not yet run to completion against the workflow PostgreSQL runtime.
-- Static inventory suggests the version-history UI and backend service may expose differently named fields; this is not yet a proven defect and production code must not change unless executable evidence reproduces it.
+- The 7-Layer retry has not completed; exact-head acceptance is therefore not GREEN yet.
+- Review submissions/threads have not yet been acceptance-checked for merge because required gates are not all GREEN.
+- GJ-04 is not closed and PR #53 is not mergeable by policy until the retry completes successfully.
 - GJ-06 and later journeys remain untouched while #52/#53 are active.
 
 ### Residual Risks / Blockers
 
-- Current blocker is exact-head executable verification for PR #53.
-- If 7-Layer/Playwright fails, inspect the first concrete GJ-04 failure and make only the smallest justified repair inside Issue #52.
-- Do not infer a production defect from static shape differences alone.
+- Current blocker is completion of the failed-job retry for 7-Layer run `32270585035`.
+- If Playwright install times out again, treat it as CI/tooling reliability evidence and make only the smallest justified workflow repair; do not modify version-recovery product code without a reproduced product failure.
+- Dependency audit warnings remain outside Issue #52 and are tracked separately by GAP-007.
 
 ### Repo / Issue / PR State
 
 - accepted product baseline: `37a1af97fe171774bda8b8b5c8364ea32e5fa0ac`
-- current pre-ledger main: `07c44932f2d174a9019f93f0502389ecda2cf326`
+- pre-ledger main: `21b9a3c7f1ed633311339a92c00f1ab62d97aea4`
 - Issue #52: OPEN / active GJ-04 work item
 - branch: `test/issue-52-gj04-version-recovery`
 - PR #53: OPEN / DRAFT / UNMERGED
@@ -201,8 +195,8 @@ Candidate proof contract:
 ### Exact Next Action
 
 1. Re-read CURRENT MASTER and CURRENT PR #53 exact head; CURRENT state overrides this checkpoint.
-2. Fetch exact-head CI / 7-Layer / Firebat results for `775b0edfe395cba4a467cf495dd43ffc9a1ba654`.
-3. If any gate is RED/CANCELLED/TIMED_OUT/stale, inspect the first concrete failure and repair only what Issue #52 justifies.
-4. If all three gates are GREEN, inspect review submissions/threads and confirm scope remains bounded.
-5. Only with exact-head gates GREEN + no unresolved blocker, mark PR ready and merge with expected-head guard.
-6. Confirm Issue #52 closes, reconcile accepted main SHA and GJ-04 closure in this MASTER before starting GJ-06 or any other journey.
+2. Inspect completion of the 7-Layer failed-job retry for run `32270585035`.
+3. If retry is GREEN, inspect review submissions/threads and confirm scope remains exactly test-only and bounded to Issue #52.
+4. If all required exact-head gates are GREEN with no unresolved blocker, mark PR #53 ready and merge with expected-head guard `775b0edf...`.
+5. Confirm Issue #52 auto-closes; record resulting accepted main SHA and mark GJ-04 CLOSED in this MASTER before starting GJ-06.
+6. If retry fails again specifically in browser installation, repair only that workflow/tooling boundary inside the active work item and re-verify; do not alter version-recovery product code without executable product-failure evidence.
