@@ -150,7 +150,7 @@ Accepted wording: **Team-scoped PostgreSQL full-text retrieval with page-level a
 ## GJ-01 — Authentication and Team Entry
 `Register/Login -> workspace -> create/select team -> team-scoped content`
 
-Status: **OPEN** — next evidence target.
+Status: **OPEN** — active evidence target.
 
 ## GJ-02 — Document Lifecycle
 `Create -> edit -> save -> reopen -> update -> delete/restore`
@@ -307,6 +307,7 @@ A skipped required gate is not PASS.
 - **D-012:** Calendar route labels/names are not API team identifiers; resolve through accessible teams before data access.
 - **D-013:** Calendar GJ-05 closure requires executable browser create -> view -> edit/update -> persisted correct-team evidence.
 - **D-014:** PR #47 exact-head GREEN satisfies D-013; GJ-05 is CLOSED at accepted main product SHA `1094ae156f4660b32f4886a1fd8743b459e55cd2`.
+- **D-015:** Team-scoped page creation must resolve route team identity against accessible `/api/teams` and must fail closed rather than POST a route label as `teamId`.
 
 ---
 
@@ -322,35 +323,35 @@ A skipped required gate is not PASS.
 
 ## What Changed
 
-- Re-read this MASTER from `main`; GJ-01 is the next product-closure target.
-- Inspected existing auth/browser and API integration coverage. Registration and login already have executable Playwright/API coverage, but the full team-entry journey is not proven end-to-end.
-- Inspected `Sidebar` team navigation and `PageEditor` team-scoped page creation.
-- Found a concrete GJ-01 blocker: `/teams/:teamName/create` currently sends the human-readable route `teamName` directly as `teamId` in `POST /api/pages` instead of resolving an authoritative accessible team ID.
-- Created branch `fix/gj01-page-team-scope` from current main ledger SHA `7a24d1262bf98daf85521ef7e21655e989aa338b`.
-- Added `client/src/lib/page-team-scope.ts` with fail-closed route-name -> accessible team-ID resolution.
-- Added `tests/unit/page-team-scope.test.ts` covering accessible match, numeric normalization, inaccessible route, and no-route behavior.
-- Opened draft PR #48. Exact candidate head is `9fb0e9762401eee1f4bc84f143e75383f2e1f20d`.
+- Re-read this MASTER from `main` and re-checked PR #48 exact candidate `9fb0e9762401eee1f4bc84f143e75383f2e1f20d`.
+- Confirmed the contract-only candidate is fully GREEN: CI #156 PASS / 7-Layer #145 PASS / Firebat #111 PASS.
+- Advanced PR #48 with the smallest production wiring change at candidate `a38cae7cb4d546605c27567c56cf5a9a711a4d6e`.
+- `PageEditor` now loads accessible `/api/teams`, resolves the team route name through `resolvePageTeamId`, sends only the resolved authoritative team ID on team-scoped page creation, and fails closed when the route cannot be resolved.
+- Removed two unused imports touched by this file while keeping the change bounded to the GJ-01 blocker.
 
 ## Actually Executed
 
 - Read `PAPYR_US_MASTER.md` from `main`.
-- Listed current open PRs and confirmed no active GJ-01 implementation PR existed.
-- Read `tests/example.spec.ts`, `tests/api-integration.spec.ts`, `client/src/App.tsx`, `client/src/components/layout/sidebar.tsx`, `client/src/pages/page-editor.tsx`, and existing Calendar team-scope resolver/test patterns.
-- Created branch `fix/gj01-page-team-scope`.
-- Added the page-team scope helper and four Vitest contract cases.
-- Opened draft PR #48.
-- Queried exact-head workflow runs for `9fb0e976...`.
+- Read PR #48 metadata and exact-head workflow state.
+- Verified `9fb0e976...`: CI #156 PASS / 7-Layer #145 PASS / Firebat #111 PASS.
+- Read `client/src/pages/page-editor.tsx`, `client/src/lib/page-team-scope.ts`, and the accepted Calendar team-scope wrapper pattern.
+- Updated `client/src/pages/page-editor.tsx` on `fix/gj01-page-team-scope`.
+- Queried workflows for new candidate `a38cae7cb4d546605c27567c56cf5a9a711a4d6e`.
 - Updated this authoritative ledger on `main`.
 
 ## Checks / Current Evidence
 
-PR #48 candidate `9fb0e9762401eee1f4bc84f143e75383f2e1f20d`:
-- CI #156 — **QUEUED**
-- 7-Layer #145 — **IN PROGRESS**
-- Firebat #111 — **IN PROGRESS**
-- unit contract exists but no PASS is claimed until the workflow completes.
+PR #48 prior contract candidate `9fb0e9762401eee1f4bc84f143e75383f2e1f20d`:
+- CI #156 — **PASS**
+- 7-Layer #145 — **PASS**
+- Firebat #111 — **PASS**
 
-Existing evidence relevant to GJ-01:
+PR #48 current production-wiring candidate `a38cae7cb4d546605c27567c56cf5a9a711a4d6e`:
+- CI #158 — **IN PROGRESS**
+- 7-Layer #147 — **IN PROGRESS**
+- Firebat #113 — **IN PROGRESS**
+
+Existing GJ-01 supporting evidence:
 - UI registration — present in `tests/example.spec.ts`
 - UI login — present in `tests/example.spec.ts`
 - API register -> login -> authenticated `/api/auth/me` — present in `tests/api-integration.spec.ts`
@@ -359,34 +360,34 @@ Existing evidence relevant to GJ-01:
 
 ## Not Verified
 
-- PR #48 exact candidate is not yet GREEN.
-- Production `PageEditor` is not yet wired to `resolvePageTeamId`; current user-visible bug remains on `main` and on this candidate.
-- No browser proof yet verifies team selection plus team-scoped page creation with the real team ID.
+- The new production-wiring candidate `a38cae7...` is not yet GREEN.
+- No direct Playwright evidence yet proves the full GJ-01 browser journey with persisted authoritative team ID.
+- PR #48 remains draft / unmerged.
 - GJ-01 remains OPEN.
 - GJ-02 / GJ-03 / GJ-04 / GJ-06 / GJ-07 remain unclosed.
 
 ## Residual Risks / Blockers
 
-- `PageEditor` currently conflates route team name with database/API team ID for page creation. This can break or mis-scope team page creation depending on backend coercion/validation.
-- Do not close GJ-01 from isolated auth/API tests. The route-to-authoritative-team boundary must be fixed and exercised through the browser journey.
-- PR #48 is intentionally limited to the scope contract first; production wiring follows only after exact-head checks establish a clean base.
+- The user-visible route-to-team-ID defect is fixed only on PR #48 until exact-head gates pass and the PR is accepted.
+- The route resolver currently matches accessible team name exactly; browser proof must demonstrate the actual navigation path and persisted team scope.
+- Do not close GJ-01 from unit/CI evidence alone; the end-to-end team-entry page creation path still needs browser evidence.
 - No unrelated Phase 2 feature expansion.
 
 ## Repo / PR State
 
 - accepted product `main`: `1094ae156f4660b32f4886a1fd8743b459e55cd2`
-- main ledger before this iteration: `7a24d1262bf98daf85521ef7e21655e989aa338b`
 - active branch: `fix/gj01-page-team-scope`
 - PR #48: DRAFT / OPEN / UNMERGED
-- PR #48 candidate: `9fb0e9762401eee1f4bc84f143e75383f2e1f20d`
+- prior verified PR #48 candidate: `9fb0e9762401eee1f4bc84f143e75383f2e1f20d`
+- current PR #48 candidate: `a38cae7cb4d546605c27567c56cf5a9a711a4d6e`
 
 ## Exact Next Action
 
-1. Re-check CI #156 / 7-Layer #145 / Firebat #111 for `9fb0e976...`.
+1. Re-check CI #158 / 7-Layer #147 / Firebat #113 for `a38cae7...`.
 2. If any gate fails, inspect the first failure and apply the smallest safe correction.
-3. If GREEN, wire `PageEditor` to accessible `/api/teams` + `resolvePageTeamId`; fail closed when a team route cannot be resolved and never POST route names as `teamId`.
-4. Add the smallest deterministic Playwright GJ-01 proof: UI register/login -> workspace -> real accessible team visible/selectable -> team-scoped page create -> persisted real team ID.
-5. Run exact-head three-gate verification and close GJ-01 only after browser evidence passes.
+3. If GREEN, add the smallest deterministic Playwright GJ-01 proof: UI register/login -> workspace -> real accessible team visible/selectable -> `/teams/:teamName/create` -> page create -> persisted authoritative team ID.
+4. Run exact-head three-gate verification for the proof candidate.
+5. Merge PR #48 only after exact-head GREEN and close GJ-01 only when the browser journey passes.
 6. Update this MASTER on `main` with the result before ending the iteration.
 
 ---
