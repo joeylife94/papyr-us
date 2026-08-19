@@ -4,7 +4,7 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.16"
+version: "0.17"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
 current_phase: "Phase 2 — Product Closure"
 priority: "P0"
@@ -15,7 +15,7 @@ baseline_main_sha: "23770c284f400c4f769a8a4490c2bca17a0919ea"
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.16**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.17**  
 > This root file is the single project-state / closure ledger. Read it before every iteration and update it on `main` before the iteration ends.
 
 ## 0. Authority / Rules
@@ -58,7 +58,7 @@ Deferred v1.1+: embeddings/pgvector/hybrid retrieval, full RAG/citation UI, task
 - Document lifecycle browser proof: PR #49, candidate `4bbb05e36ad25d127dc3d7ce751ae4835e927c66`, CI `32247882254` / 7-Layer `32247882238` / Firebat `32247882276` PASS, merged `6c6945cfab5aa6eb238146f4846589a7ba3e33bb`; **GJ-02 CLOSED**.
 - Authorization boundary browser/API proof: Issue #50 + PR #51, candidate `8e2b908fa8f849fa416c88630797fb915f1e6a95`, CI `32258403178` / 7-Layer `32258403282` / Firebat `32258403173` PASS, merged `37a1af97fe171774bda8b8b5c8364ea32e5fa0ac`; **GJ-03 CLOSED**.
 - Version recovery browser proof: Issue #52 + PR #53, candidate `b2f5fbf0f2560225e7739b5dea17081ff0b5539f`, CI `32281737644` / 7-Layer `32281738458` / Firebat `32281737443` PASS, merged `23770c284f400c4f769a8a4490c2bca17a0919ea`; Issue #52 completed; **GJ-04 CLOSED**.
-- Secure Search journey: accepted real-Postgres Layer 4 `tests/integration-layer4/retrieval-fts.test.ts` proves team isolation, soft-delete/team-less exclusion, FTS ranking, and DB-level top-k; accepted `tests/gj03-authorization-boundary.spec.ts` proves authenticated same-team search plus cross-team explicit/default search fail-closed. Both are exercised by the 7-Layer workflow, which passed on current accepted PR #53 candidate `b2f5fbf0...`; **GJ-06 CLOSED** without a new work item.
+- Secure Search journey: accepted real-Postgres Layer 4 `tests/integration-layer4/retrieval-fts.test.ts` proves team isolation, soft-delete/team-less exclusion, FTS ranking, and DB-level top-k; accepted `tests/gj03-authorization-boundary.spec.ts` proves authenticated same-team search plus cross-team explicit/default search fail-closed. Both are exercised by the 7-Layer workflow, which passed on accepted PR #53 candidate `b2f5fbf0...`; **GJ-06 CLOSED** without a new work item.
 
 ## 3. Golden Journeys
 
@@ -68,7 +68,7 @@ Deferred v1.1+: embeddings/pgvector/hybrid retrieval, full RAG/citation UI, task
 - **GJ-04 Version Recovery** — edit -> history -> prior version -> restore -> durable restored state — **CLOSED** via Issue #52 / PR #53.
 - **GJ-05 Tasks and Calendar** — **CLOSED** via PRs #44–#47.
 - **GJ-06 Secure Search** — authenticated team scope -> page ACL -> real PostgreSQL FTS -> bounded top-k -> unauthorized exclusion — **CLOSED** by accepted Layer 4 + GJ-03 executable evidence mapping.
-- **GJ-07 Optional AI Assistance** — **OPEN if publicly shown**.
+- **GJ-07 Optional AI Assistance** — **OPEN / ACTIVE via Issue #54**; public README/docs expose inline AI assistance, so deterministic user-visible success/failure proof is required.
 - **GJ-08 Operational Recovery** — deploy -> health/version -> durable data -> recreate -> backup -> restore — **OPEN / Phase 3**.
 
 ## 4. Gap Matrix
@@ -78,7 +78,7 @@ Deferred v1.1+: embeddings/pgvector/hybrid retrieval, full RAG/citation UI, task
 | GAP-001 | Retrieval integration | P0 | CLOSED |
 | GAP-002 | Retrieval verification | P0 | CLOSED |
 | GAP-003 | AI/Search claims | P0 | CLOSED |
-| GAP-004 | Golden Journey evidence | P0 | OPEN — only conditional GJ-07 remains in Phase 2 |
+| GAP-004 | Golden Journey evidence | P0 | OPEN — GJ-07 active |
 | GAP-005 | Tasks list/team/form scope | P0 | CLOSED |
 | GAP-006 | Public sanitized demo | P0 | OPEN |
 | GAP-007 | Dependency security reachability triage | P0 | OPEN |
@@ -95,7 +95,7 @@ Deferred v1.1+: embeddings/pgvector/hybrid retrieval, full RAG/citation UI, task
 
 - Phase 0 Authority Baseline — **CLOSED**
 - Phase 1 Baseline Closure — **CLOSED**
-- Phase 2 Product Closure — **ACTIVE**; GJ-01..06 closed, decide conditional GJ-07 based on public proof surface
+- Phase 2 Product Closure — **ACTIVE**; GJ-01..06 closed, GJ-07 active because optional AI assistance is publicly shown
 - Phase 3 Operational & Security Readiness — GJ-08 + dependency triage
 - Phase 4 Public Demo
 - Phase 5 Proof Packaging
@@ -107,7 +107,7 @@ Phase 2 fixes are limited to Golden Journey breaks, authorization failures, data
 
 Required by release boundary: TypeScript/ESLint/secret scan; unit/domain/contract/smoke; real PostgreSQL where relevant; production build; Playwright E2E; visual/a11y proof surfaces; Firebat deployment gate; public-demo smoke; dependency security triage; backup/restore drill. A skipped required gate is not PASS.
 
-Product exit status: GJ-01 through GJ-06 closed. GJ-07 is conditional on whether optional AI assistance is publicly shown. GJ-08 and operational/security/public-demo/proof-package gates remain open. README Search/AI truthfulness is closed.
+Product exit status: GJ-01 through GJ-06 closed. GJ-07 is active because optional AI assistance is publicly shown. GJ-08 and operational/security/public-demo/proof-package gates remain open. README Search/AI truthfulness is closed.
 
 ## 7. Decision Log
 
@@ -120,62 +120,67 @@ Product exit status: GJ-01 through GJ-06 closed. GJ-07 is conditional on whether
 - D-007 team-scoped mutations must use authoritative accessible team IDs; route labels/names are not API team identifiers.
 - D-008 GJ closure requires deterministic browser/API evidence, not implementation presence alone.
 - D-009 do not manufacture a new Issue when current accepted executable evidence already fully proves a Golden Journey; map the evidence explicitly in this ledger instead.
+- D-010 optional AI becomes a required proof journey when public v1.0 surfaces claim or expose it; deterministic CI may mock the external provider but must exercise the user-visible and server contracts.
 
 ## 8. Latest Checkpoint
 
 > **Date:** 2026-08-20 KST  
 > **Phase:** Phase 2 — Product Closure  
 > **Accepted product baseline:** `23770c284f400c4f769a8a4490c2bca17a0919ea`  
-> **Current main before this ledger-only update:** `7ed7daa7f11ecc0ccbe0c996d47972dedc8544fb`  
-> **Highest active gap:** GAP-004 conditional GJ-07 decision, then GAP-007 / Phase 3  
-> **Active journey:** none  
-> **Active Issue:** none  
-> **Active implementation PR:** none
+> **Current main before this ledger-only update:** `3b6aeccd71646c587a5a0a670c7a4fe71c3f3fb9`  
+> **Highest active gap:** GAP-004 / GJ-07 Optional AI Assistance  
+> **Active journey:** GJ-07  
+> **Active Issue:** #54  
+> **Active implementation branch:** `test/issue-54-gj07-inline-ai-proof`  
+> **Active implementation PR:** none yet
 
 ### Changed
 
-- Reconciled PR #53 / Issue #52 as completed and GJ-04 CLOSED on the prior ledger commit.
-- Closed stale duplicate MASTER PRs #41 and #42 as superseded, without merge.
-- Inventoried CURRENT accepted GJ-06 search evidence before creating any new work item.
-- Determined that existing executable evidence fully proves the frozen GJ-06 contract, so no new Issue/branch/PR was created.
-- Marked GJ-06 Secure Search CLOSED by explicit evidence mapping.
+- Re-read current MASTER/main and discarded the historical #53 handoff because the repository has advanced: GJ-04 and GJ-06 are already CLOSED.
+- Inspected current public README and `docs/ai-features-guide.md`; both expose optional AI assistance as a v1.0/public capability, so GJ-07 is not N/A.
+- Inventoried current AI executable evidence before creating work: server `ai.test.ts` covers `/api/ai/inline` success/validation with the AI service mocked, but no deterministic user-visible editor journey proof was found.
+- Found a concrete GJ-07 failure-UX defect: `InlineFormattingToolbar.handleAIAction` catches provider/API failures and silently does nothing, leaving the user without an error indication.
+- Created bounded Issue #54 and linked branch `test/issue-54-gj07-inline-ai-proof`; no PR yet.
 
 ### Actually Executed
 
-- Fetched `tests/gj03-authorization-boundary.spec.ts` from current `main` and confirmed it creates two authenticated users/teams, performs authorized same-team search, rejects explicit cross-team search with 403, and proves default search does not leak the other team's page/token.
-- Fetched `tests/integration-layer4/retrieval-fts.test.ts` from current `main` and confirmed it runs against real PostgreSQL, checks team isolation, soft-deleted/team-less exclusion, FTS ranking/snippets, empty team fail-closed, and database-level top-k.
-- Fetched `.github/workflows/test.yml` from current `main` and confirmed Layer 4 runs `npm run test:integration` against PostgreSQL and Layer 5 runs the E2E suite against PostgreSQL.
-- Reused exact accepted #53 7-Layer run `32281738458` PASS on candidate `b2f5fbf0...` as current-tree execution evidence for those suites.
-- Updated this MASTER on `main`.
+- Fetched current `README.md`; confirmed it publicly advertises optional GPT-4o re-ranking and inline AI editor assistance.
+- Fetched current `docs/ai-features-guide.md`; confirmed it documents inline Summarize/Rewrite/Taskify and AI Writing Assistant as user-facing capabilities.
+- Fetched `server/tests/ai.test.ts`; confirmed deterministic server coverage exists for valid inline summarize plus invalid/missing action validation, using a mocked AI service.
+- Fetched `client/src/components/blocks/inline-formatting-toolbar.tsx`; confirmed success replaces selected textarea text, while failures are silently swallowed.
+- Created Issue #54 with Goal / Scope / Acceptance Criteria / Verification / Non-goals / Evidence Required.
+- Created the Issue #54 implementation branch from current main.
+- Updated this MASTER on main.
 
 ### Checks / Current Evidence
 
-GJ-06 Secure Search:
-- Authentication/team scope — **PASS** via GJ-03 executable proof.
-- Authorized same-team search — **PASS** via GJ-03 executable proof.
-- Unauthorized explicit cross-team search — **PASS / 403** via GJ-03 executable proof.
-- Unauthorized default search non-leakage — **PASS** via GJ-03 executable proof.
-- Real PostgreSQL FTS — **PASS** via Layer 4 retrieval integration proof.
-- Team isolation at retrieval SQL boundary — **PASS** via Layer 4.
-- Soft-delete and team-less exclusion — **PASS** via Layer 4.
-- Database-level top-k bound — **PASS** via Layer 4.
-- Exact accepted candidate execution — 7-Layer `32281738458` **PASS** on `b2f5fbf0...`.
-- GJ-06 — **CLOSED**.
+GJ-07 Optional AI Assistance:
+- Publicly shown/claimed — **YES**.
+- Server inline AI route contract — **PARTIAL PASS by existing deterministic mocked-service tests**; not sufficient alone for GJ closure.
+- User-visible editor success journey — **NOT VERIFIED**.
+- User-visible provider/API failure behavior — **KNOWN DEFECT: silent failure**.
+- Live OpenAI model quality — **OUT OF SCOPE / not required for deterministic CI acceptance**.
+- Exact-head CI / 7-Layer / Firebat candidate — **NOT STARTED; no implementation candidate yet**.
+- GJ-07 — **OPEN**.
 
 ### Not Verified
 
-- Whether optional AI assistance is part of the intended public v1.0 demo/proof surface; this determines whether GJ-07 must be proven or may be treated as not-applicable for v1.0 closure.
-- Phase 3 dependency-security disposition and operational recovery remain unverified.
-- Public sanitized demo and proof packaging remain open.
+- Browser/editor proof that selected text is replaced only within the selection after a successful inline AI response.
+- Browser/editor proof that a failed provider/API request preserves original text and visibly informs the user.
+- Exact-head repository gates for the future Issue #54 candidate.
+- Phase 3 dependency-security disposition and operational recovery.
+- Public sanitized demo and proof packaging.
 
 ### Residual Risks / Blockers
 
-- Phase 2 cannot be declared closed until the conditional GJ-07 decision is reconciled against actual public README/demo/proof surfaces.
-- Historical open PR #19 is unrelated password-reset work and is not part of the current Golden Journey acceptance path.
-- Dependency security reachability remains GAP-007 and should be handled in Phase 3, not mixed into GJ-07 unless executed evidence exposes a direct defect.
+- Current public AI documentation is stronger than current accepted user-visible executable evidence.
+- Silent AI failure is a direct user-visible blocker and must be corrected within Issue #54 before GJ-07 closure.
+- Historical open PR #19 is unrelated password-reset work and is outside the current GJ-07 acceptance path.
+- Dependency security reachability remains GAP-007 and must not be mixed into Issue #54 unless executed evidence exposes a direct GJ-07 defect.
 
 ### Repo / Issue / PR State
 
+- current main before ledger update: `3b6aeccd71646c587a5a0a670c7a4fe71c3f3fb9`
 - accepted product baseline: `23770c284f400c4f769a8a4490c2bca17a0919ea`
 - GJ-01: CLOSED
 - GJ-02: CLOSED
@@ -183,17 +188,15 @@ GJ-06 Secure Search:
 - GJ-04: CLOSED
 - GJ-05: CLOSED
 - GJ-06: CLOSED
-- GJ-07: CONDITIONAL / OPEN if publicly shown
-- Issue #52: CLOSED / COMPLETED
-- PR #53: MERGED
-- PRs #41 / #42: CLOSED / NOT MERGED / superseded
-- active implementation Issue: none
+- GJ-07: OPEN / ACTIVE
+- Issue #54: OPEN
+- branch: `test/issue-54-gj07-inline-ai-proof`
 - active implementation PR: none
 
 ### Exact Next Action
 
-1. Re-read CURRENT MASTER/main.
-2. Inspect current README and intended public demo/proof surfaces for optional AI assistance claims or visible AI interactions.
-3. If optional AI is not publicly shown/claimed for v1.0, record GJ-07 as N/A for v1.0 and close Phase 2 without a new work item.
-4. If optional AI is publicly shown/claimed, inventory existing executable AI-assistance evidence first; only if a concrete journey gap remains create exactly one bounded GJ-07 Issue.
-5. After Phase 2 closure, move to Phase 3 with GAP-007 dependency-security reachability triage and GJ-08 operational recovery in MASTER priority order.
+1. Re-read current MASTER/main and Issue #54 state.
+2. On `test/issue-54-gj07-inline-ai-proof`, make the smallest failure-UX correction so inline AI API/provider failure is visible while preserving original selection.
+3. Add deterministic user-visible proof for inline AI success and failure without requiring a live external OpenAI call; preserve existing server route contract coverage.
+4. Open one draft PR with `Closes #54` and run exact-head CI / 7-Layer / Firebat.
+5. If any gate fails, inspect the first concrete failure and correct only Issue #54 scope; if all gates are GREEN and review state is clean, merge with expected-head guard, close Issue #54, reconcile this MASTER, and evaluate GJ-07 / Phase 2 closure.
