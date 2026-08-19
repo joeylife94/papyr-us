@@ -15,6 +15,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { useFeatureFlags } from '@/features/FeatureFlagsContext';
 import { http } from '@/lib/http';
+import { useToast } from '@/hooks/use-toast';
 
 interface InlineFormatAction {
   icon: React.ReactNode;
@@ -107,6 +108,7 @@ export function InlineFormattingToolbar({ containerRef, onFormat }: InlineFormat
   const toolbarRef = useRef<HTMLDivElement>(null);
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { flags } = useFeatureFlags();
+  const { toast } = useToast();
   const showAI = flags.FEATURE_AI_SEARCH;
 
   const checkSelection = useCallback(() => {
@@ -286,7 +288,11 @@ export function InlineFormattingToolbar({ containerRef, onFormat }: InlineFormat
       activeTextarea.dispatchEvent(nativeInputEvent);
       activeTextarea.focus();
     } catch {
-      // Silently fail — the user still has their original selection
+      toast({
+        title: 'AI action failed',
+        description: 'Your original text was preserved. Please try again.',
+        variant: 'destructive',
+      });
     } finally {
       setAiLoading(null);
     }
