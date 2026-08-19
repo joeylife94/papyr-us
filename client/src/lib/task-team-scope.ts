@@ -6,7 +6,7 @@ export interface TaskTeamOption {
 export interface TaskFormMemberOption {
   id: number;
   name: string;
-  teamId: number | string | null;
+  teamId?: number | string | null;
 }
 
 /**
@@ -40,6 +40,7 @@ export function resolveTaskFormTeamId(
  * Only members belonging to the task form's selected team are valid assignee
  * options. This is especially important in the all-teams view where the
  * members endpoint legitimately returns the union of the user's teams.
+ * Missing/null team metadata fails closed and is never offered as an assignee.
  */
 export function membersForTaskTeam<T extends TaskFormMemberOption>(
   members: T[],
@@ -48,7 +49,7 @@ export function membersForTaskTeam<T extends TaskFormMemberOption>(
   if (!teamId) return [];
   const normalizedTeamId = String(teamId);
   return members.filter(
-    (member) => member.teamId !== null && String(member.teamId) === normalizedTeamId
+    (member) => member.teamId != null && String(member.teamId) === normalizedTeamId
   );
 }
 
