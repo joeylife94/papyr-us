@@ -4,7 +4,7 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.15"
+version: "0.16"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
 current_phase: "Phase 2 — Product Closure"
 priority: "P0"
@@ -15,7 +15,7 @@ baseline_main_sha: "23770c284f400c4f769a8a4490c2bca17a0919ea"
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.15**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.16**  
 > This root file is the single project-state / closure ledger. Read it before every iteration and update it on `main` before the iteration ends.
 
 ## 0. Authority / Rules
@@ -58,6 +58,7 @@ Deferred v1.1+: embeddings/pgvector/hybrid retrieval, full RAG/citation UI, task
 - Document lifecycle browser proof: PR #49, candidate `4bbb05e36ad25d127dc3d7ce751ae4835e927c66`, CI `32247882254` / 7-Layer `32247882238` / Firebat `32247882276` PASS, merged `6c6945cfab5aa6eb238146f4846589a7ba3e33bb`; **GJ-02 CLOSED**.
 - Authorization boundary browser/API proof: Issue #50 + PR #51, candidate `8e2b908fa8f849fa416c88630797fb915f1e6a95`, CI `32258403178` / 7-Layer `32258403282` / Firebat `32258403173` PASS, merged `37a1af97fe171774bda8b8b5c8364ea32e5fa0ac`; **GJ-03 CLOSED**.
 - Version recovery browser proof: Issue #52 + PR #53, candidate `b2f5fbf0f2560225e7739b5dea17081ff0b5539f`, CI `32281737644` / 7-Layer `32281738458` / Firebat `32281737443` PASS, merged `23770c284f400c4f769a8a4490c2bca17a0919ea`; Issue #52 completed; **GJ-04 CLOSED**.
+- Secure Search journey: accepted real-Postgres Layer 4 `tests/integration-layer4/retrieval-fts.test.ts` proves team isolation, soft-delete/team-less exclusion, FTS ranking, and DB-level top-k; accepted `tests/gj03-authorization-boundary.spec.ts` proves authenticated same-team search plus cross-team explicit/default search fail-closed. Both are exercised by the 7-Layer workflow, which passed on current accepted PR #53 candidate `b2f5fbf0...`; **GJ-06 CLOSED** without a new work item.
 
 ## 3. Golden Journeys
 
@@ -66,7 +67,7 @@ Deferred v1.1+: embeddings/pgvector/hybrid retrieval, full RAG/citation UI, task
 - **GJ-03 Authorization Boundary** — authorized succeeds; unauthorized cross-team/page/search fails closed — **CLOSED** via Issue #50 / PR #51.
 - **GJ-04 Version Recovery** — edit -> history -> prior version -> restore -> durable restored state — **CLOSED** via Issue #52 / PR #53.
 - **GJ-05 Tasks and Calendar** — **CLOSED** via PRs #44–#47.
-- **GJ-06 Secure Search** — implementation accepted; explicit journey-level evidence mapping still **OPEN**.
+- **GJ-06 Secure Search** — authenticated team scope -> page ACL -> real PostgreSQL FTS -> bounded top-k -> unauthorized exclusion — **CLOSED** by accepted Layer 4 + GJ-03 executable evidence mapping.
 - **GJ-07 Optional AI Assistance** — **OPEN if publicly shown**.
 - **GJ-08 Operational Recovery** — deploy -> health/version -> durable data -> recreate -> backup -> restore — **OPEN / Phase 3**.
 
@@ -77,7 +78,7 @@ Deferred v1.1+: embeddings/pgvector/hybrid retrieval, full RAG/citation UI, task
 | GAP-001 | Retrieval integration | P0 | CLOSED |
 | GAP-002 | Retrieval verification | P0 | CLOSED |
 | GAP-003 | AI/Search claims | P0 | CLOSED |
-| GAP-004 | Golden Journey evidence | P0 | OPEN |
+| GAP-004 | Golden Journey evidence | P0 | OPEN — only conditional GJ-07 remains in Phase 2 |
 | GAP-005 | Tasks list/team/form scope | P0 | CLOSED |
 | GAP-006 | Public sanitized demo | P0 | OPEN |
 | GAP-007 | Dependency security reachability triage | P0 | OPEN |
@@ -94,7 +95,7 @@ Deferred v1.1+: embeddings/pgvector/hybrid retrieval, full RAG/citation UI, task
 
 - Phase 0 Authority Baseline — **CLOSED**
 - Phase 1 Baseline Closure — **CLOSED**
-- Phase 2 Product Closure — **ACTIVE**; close GJ-01..07 with UI/API evidence
+- Phase 2 Product Closure — **ACTIVE**; GJ-01..06 closed, decide conditional GJ-07 based on public proof surface
 - Phase 3 Operational & Security Readiness — GJ-08 + dependency triage
 - Phase 4 Public Demo
 - Phase 5 Proof Packaging
@@ -106,7 +107,7 @@ Phase 2 fixes are limited to Golden Journey breaks, authorization failures, data
 
 Required by release boundary: TypeScript/ESLint/secret scan; unit/domain/contract/smoke; real PostgreSQL where relevant; production build; Playwright E2E; visual/a11y proof surfaces; Firebat deployment gate; public-demo smoke; dependency security triage; backup/restore drill. A skipped required gate is not PASS.
 
-Product exit status: GJ-01, GJ-02, GJ-03, GJ-04, and GJ-05 closed; GJ-06/07/08 open. README Search/AI truthfulness closed. Final executable tree, dependency disposition, backup/restore, public demo, and proof package remain open.
+Product exit status: GJ-01 through GJ-06 closed. GJ-07 is conditional on whether optional AI assistance is publicly shown. GJ-08 and operational/security/public-demo/proof-package gates remain open. README Search/AI truthfulness is closed.
 
 ## 7. Decision Log
 
@@ -118,82 +119,81 @@ Product exit status: GJ-01, GJ-02, GJ-03, GJ-04, and GJ-05 closed; GJ-06/07/08 o
 - D-006 bounded defect closure does not equal containing Golden Journey closure.
 - D-007 team-scoped mutations must use authoritative accessible team IDs; route labels/names are not API team identifiers.
 - D-008 GJ closure requires deterministic browser/API evidence, not implementation presence alone.
+- D-009 do not manufacture a new Issue when current accepted executable evidence already fully proves a Golden Journey; map the evidence explicitly in this ledger instead.
 
 ## 8. Latest Checkpoint
 
 > **Date:** 2026-08-20 KST  
 > **Phase:** Phase 2 — Product Closure  
 > **Accepted product baseline:** `23770c284f400c4f769a8a4490c2bca17a0919ea`  
-> **Current main before this ledger-only update:** `23770c284f400c4f769a8a4490c2bca17a0919ea`  
-> **Highest active gap:** GAP-004  
-> **Active journey:** none; next closure evaluation target is GJ-06 Secure Search  
+> **Current main before this ledger-only update:** `7ed7daa7f11ecc0ccbe0c996d47972dedc8544fb`  
+> **Highest active gap:** GAP-004 conditional GJ-07 decision, then GAP-007 / Phase 3  
+> **Active journey:** none  
 > **Active Issue:** none  
 > **Active implementation PR:** none
 
 ### Changed
 
-- Re-read CURRENT MASTER and CURRENT PR #53 before acting.
-- Discarded the historical RED handoff because current PR #53 had advanced to exact head `b2f5fbf0f2560225e7739b5dea17081ff0b5539f`, passed all required gates, and had already merged.
-- Reconciled GJ-04 as CLOSED using exact-head executable evidence and the resulting merge SHA.
-- Closed stale duplicate MASTER proposal PRs #41 and #42 as superseded by the authoritative root MASTER already on `main`; neither was merged.
+- Reconciled PR #53 / Issue #52 as completed and GJ-04 CLOSED on the prior ledger commit.
+- Closed stale duplicate MASTER PRs #41 and #42 as superseded, without merge.
+- Inventoried CURRENT accepted GJ-06 search evidence before creating any new work item.
+- Determined that existing executable evidence fully proves the frozen GJ-06 contract, so no new Issue/branch/PR was created.
+- Marked GJ-06 Secure Search CLOSED by explicit evidence mapping.
 
 ### Actually Executed
 
-- Fetched current PR #53 metadata and confirmed CLOSED / MERGED, head `b2f5fbf0...`, merge commit `23770c284f400c4f769a8a4490c2bca17a0919ea`.
-- Fetched exact-head workflow runs: CI `32281737644`, 7-Layer `32281738458`, Firebat `32281737443`.
-- Confirmed all three completed successfully for the same exact head `b2f5fbf0...`.
-- Checked PR #53 review submissions and inline review threads; both were empty.
-- Fetched Issue #52 and confirmed `closed`, state reason `completed`.
-- Fetched `main` and confirmed current product merge SHA `23770c284f400c4f769a8a4490c2bca17a0919ea` before this ledger-only commit.
-- Closed superseded PR #41 and PR #42 without merge.
+- Fetched `tests/gj03-authorization-boundary.spec.ts` from current `main` and confirmed it creates two authenticated users/teams, performs authorized same-team search, rejects explicit cross-team search with 403, and proves default search does not leak the other team's page/token.
+- Fetched `tests/integration-layer4/retrieval-fts.test.ts` from current `main` and confirmed it runs against real PostgreSQL, checks team isolation, soft-deleted/team-less exclusion, FTS ranking/snippets, empty team fail-closed, and database-level top-k.
+- Fetched `.github/workflows/test.yml` from current `main` and confirmed Layer 4 runs `npm run test:integration` against PostgreSQL and Layer 5 runs the E2E suite against PostgreSQL.
+- Reused exact accepted #53 7-Layer run `32281738458` PASS on candidate `b2f5fbf0...` as current-tree execution evidence for those suites.
 - Updated this MASTER on `main`.
 
 ### Checks / Current Evidence
 
-PR #53 exact candidate `b2f5fbf0f2560225e7739b5dea17081ff0b5539f`:
-- CI `32281737644` — **PASS**
-- 7-Layer `32281738458` — **PASS**
-- Firebat `32281737443` — **PASS**
-- Scope — `tests/gj04-version-recovery.spec.ts` + Playwright install timeout reliability adjustment
-- Production versioning code — unchanged
-- Reviews — none
-- Review threads — none
-- Merge — `23770c284f400c4f769a8a4490c2bca17a0919ea`
-- Issue #52 — **CLOSED / COMPLETED**
-- GJ-04 — **CLOSED**
+GJ-06 Secure Search:
+- Authentication/team scope — **PASS** via GJ-03 executable proof.
+- Authorized same-team search — **PASS** via GJ-03 executable proof.
+- Unauthorized explicit cross-team search — **PASS / 403** via GJ-03 executable proof.
+- Unauthorized default search non-leakage — **PASS** via GJ-03 executable proof.
+- Real PostgreSQL FTS — **PASS** via Layer 4 retrieval integration proof.
+- Team isolation at retrieval SQL boundary — **PASS** via Layer 4.
+- Soft-delete and team-less exclusion — **PASS** via Layer 4.
+- Database-level top-k bound — **PASS** via Layer 4.
+- Exact accepted candidate execution — 7-Layer `32281738458` **PASS** on `b2f5fbf0...`.
+- GJ-06 — **CLOSED**.
 
 ### Not Verified
 
-- GJ-06 explicit journey-level evidence mapping has not yet been reconciled against the current accepted tree.
-- GJ-07 remains conditional: only required if optional AI assistance is publicly shown in v1.0 proof/demo surfaces.
-- Phase 3 operational/security gates and later public-demo/proof packaging remain open.
+- Whether optional AI assistance is part of the intended public v1.0 demo/proof surface; this determines whether GJ-07 must be proven or may be treated as not-applicable for v1.0 closure.
+- Phase 3 dependency-security disposition and operational recovery remain unverified.
+- Public sanitized demo and proof packaging remain open.
 
 ### Residual Risks / Blockers
 
-- GAP-004 remains open until remaining in-scope Golden Journey evidence is closed.
-- Historical open PR #19 is unrelated password-reset work and is not part of the current Golden Journey acceptance path; do not broaden into it unless the MASTER later makes it in-scope.
-- Dependency security reachability remains GAP-007 and must not be mixed into Phase 2 GJ-06 work unless an executed search proof exposes a direct security defect.
+- Phase 2 cannot be declared closed until the conditional GJ-07 decision is reconciled against actual public README/demo/proof surfaces.
+- Historical open PR #19 is unrelated password-reset work and is not part of the current Golden Journey acceptance path.
+- Dependency security reachability remains GAP-007 and should be handled in Phase 3, not mixed into GJ-07 unless executed evidence exposes a direct defect.
 
 ### Repo / Issue / PR State
 
 - accepted product baseline: `23770c284f400c4f769a8a4490c2bca17a0919ea`
-- Issue #52: CLOSED / COMPLETED
-- PR #53: MERGED
-- stale duplicate MASTER PRs #41 / #42: CLOSED / NOT MERGED
-- active implementation Issue: none
-- active implementation PR: none
 - GJ-01: CLOSED
 - GJ-02: CLOSED
 - GJ-03: CLOSED
 - GJ-04: CLOSED
 - GJ-05: CLOSED
-- GJ-06: OPEN
-- GJ-07: OPEN if publicly shown
+- GJ-06: CLOSED
+- GJ-07: CONDITIONAL / OPEN if publicly shown
+- Issue #52: CLOSED / COMPLETED
+- PR #53: MERGED
+- PRs #41 / #42: CLOSED / NOT MERGED / superseded
+- active implementation Issue: none
+- active implementation PR: none
 
 ### Exact Next Action
 
-1. Re-read CURRENT MASTER/main before any new work.
-2. Inventory current accepted secure-search evidence on `23770c284...`, especially deterministic browser/API proof for authenticated team scope -> page ACL -> PostgreSQL FTS -> bounded results and unauthorized exclusion.
-3. Map existing executable evidence to GJ-06. If it fully proves the journey, close GJ-06 in this MASTER without manufacturing a new work item.
-4. Only if a concrete journey evidence gap remains, create exactly one bounded GJ-06 Issue with Goal / Scope / Acceptance Criteria / Verification / Non-goals / Evidence Required, then linked branch/PR.
-5. Do not begin GJ-07 or Phase 3 until GJ-06 closure evaluation is reconciled here.
+1. Re-read CURRENT MASTER/main.
+2. Inspect current README and intended public demo/proof surfaces for optional AI assistance claims or visible AI interactions.
+3. If optional AI is not publicly shown/claimed for v1.0, record GJ-07 as N/A for v1.0 and close Phase 2 without a new work item.
+4. If optional AI is publicly shown/claimed, inventory existing executable AI-assistance evidence first; only if a concrete journey gap remains create exactly one bounded GJ-07 Issue.
+5. After Phase 2 closure, move to Phase 3 with GAP-007 dependency-security reachability triage and GJ-08 operational recovery in MASTER priority order.
