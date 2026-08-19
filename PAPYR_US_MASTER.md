@@ -126,54 +126,64 @@ Product exit status: GJ-01/02/03/04/06/07/08 open; GJ-05 closed. README Search/A
 
 ### Changed
 
-- Re-read `main` MASTER and PR #48 before acting.
-- Re-checked current exact candidate `82a8576c23b4fa11f1393abfdf94709b997bdbec`.
-- CI #162 and Firebat #117 are now GREEN; 7-Layer #151 remains IN PROGRESS.
-- Confirmed the 7-Layer workflow run itself is still active on the exact candidate and has not produced a failure conclusion, so no speculative code change or unsafe merge was performed.
-- Kept PR #48 draft/unmerged and kept GJ-01 OPEN pending the final exact-tree gate.
+- Re-read `main` MASTER and inspected PR #48 before acting.
+- Diagnosed 7-Layer run `32232658359` for exact head `82a8576c23b4fa11f1393abfdf94709b997bdbec` as stale/stuck rather than meaningfully progressing.
+- Concrete evidence: Layer 0/1/2/3/4 completed GREEN, while both `Layer 5 · E2E Tests` job `96006382769` and `All Layers · Sequential Smoke Run` job `96006092852` remained stuck in `Install Playwright browsers (chromium only)` for hours; downstream migration/test steps never started.
+- Attempted safe job rerun; GitHub rejected it because the containing workflow run was still active.
+- Applied a workflow-only bounded lifecycle repair on PR #48: added `timeout-minutes: 10` to each Playwright browser-install step in `.github/workflows/test.yml`, preventing future indefinite hangs without changing product behavior.
+- PR #48 head advanced to `5de7d3710d2c8457e941c346acb03fef5051ce09`; new exact-head CI/7-Layer/Firebat workflows were triggered.
 
 ### Actually Executed
 
 - Read current root `PAPYR_US_MASTER.md` on `main`.
-- Read PR #48 metadata and confirmed head SHA `82a8576c23b4fa11f1393abfdf94709b997bdbec`.
-- Queried workflow results for the exact head multiple times.
-- Inspected 7-Layer run #151 metadata directly and confirmed it remains `in_progress` on the expected PR/head rather than failed/cancelled/superseded.
+- Read current PR #48 metadata and exact head.
+- Inspected 7-Layer run/job/step metadata for run `32232658359`.
+- Verified the stale point was Playwright installation in two independent jobs, not an application test failure.
+- Attempted `rerun_workflow_job` for the stuck Layer 5 job; received GitHub 403 because the workflow run is already running.
+- Updated `.github/workflows/test.yml` on `fix/gj01-page-team-scope` with 10-minute step timeouts for Playwright browser installation in Layer 5, Layer 6, and the all-layers sequential job.
+- Confirmed new PR #48 head `5de7d3710d2c8457e941c346acb03fef5051ce09` and new workflow runs were created.
 - Updated this root MASTER on `main` in the same iteration.
 
 ### Checks / Current Evidence
 
-PR #48 current candidate `82a8576c23b4fa11f1393abfdf94709b997bdbec`:
-- CI #162 — **PASS**
-- Firebat #117 — **PASS**
-- 7-Layer #151 — **IN PROGRESS**
+Previous candidate `82a8576c23b4fa11f1393abfdf94709b997bdbec`:
+- CI run `32232658323` — **PASS**
+- Firebat run `32232658334` — **PASS**
+- 7-Layer run `32232658359` — **STALE / IN PROGRESS**, concretely hung at Playwright browser installation in Layer 5 and All-Layers jobs; not accepted.
+
+Current candidate `5de7d3710d2c8457e941c346acb03fef5051ce09`:
+- CI run `32242535498` — **QUEUED**
+- Firebat run `32242535520` — **IN PROGRESS**
+- 7-Layer run `32242535668` — **IN PROGRESS**
 
 ### Not Verified
 
-- 7-Layer #151 has not completed; exact-head three-gate acceptance is therefore incomplete.
+- The new exact head `5de7d371...` has not completed all required gates.
+- The timeout repair has not yet demonstrated that the Playwright install either completes or fails boundedly on the fresh run.
 - PR #48 remains draft/unmerged.
-- GJ-01 remains OPEN until the corrected browser proof passes 7-Layer and the exact candidate is accepted on `main`.
+- GJ-01 remains OPEN until the new exact head completes all required gates GREEN and is accepted on `main`.
 - GJ-02 / GJ-03 / GJ-04 / GJ-06 / GJ-07 remain unclosed.
 
 ### Residual Risks / Blockers
 
-- The sole current acceptance blocker is completion of 7-Layer #151 for `82a8576...`; there is no confirmed code failure to fix yet.
-- Team creation in the GJ-01 proof remains authenticated API fixture/setup; the user-facing journey proves actual accessible-team selection through the sidebar and scoped content creation. Adding a second normal-user team-creation surface would broaden scope and is not justified by the MASTER.
-- The PageEditor route-to-authoritative-team-ID production fix exists only on PR #48 until merge.
-- No merge is permitted while one required exact-tree gate is incomplete.
+- The prior 7-Layer run remains an infrastructure lifecycle anomaly and must not be counted as PASS.
+- If the fresh 7-Layer run reaches the same install step and times out, inspect that bounded failure before changing anything else; do not alter product code for a CI-download problem.
+- The PageEditor route-to-authoritative-team-ID production fix and GJ-01 browser proof remain only on PR #48 until merge.
+- No merge is permitted while any required exact-head gate is non-green.
 
 ### Repo / PR State
 
 - accepted product `main`: `1094ae156f4660b32f4886a1fd8743b459e55cd2`
 - active branch: `fix/gj01-page-team-scope`
-- PR #48: DRAFT / OPEN / UNMERGED
-- verified production-wiring candidate: `a38cae7cb4d546605c27567c56cf5a9a711a4d6e`
-- current proof candidate: `82a8576c23b4fa11f1393abfdf94709b997bdbec`
-- current exact-head gates: CI PASS / Firebat PASS / 7-Layer IN PROGRESS
+- PR #48: DRAFT / OPEN / UNMERGED / mergeable
+- prior proof candidate: `82a8576c23b4fa11f1393abfdf94709b997bdbec` — rejected for acceptance due stale 7-Layer lifecycle
+- current candidate: `5de7d3710d2c8457e941c346acb03fef5051ce09`
+- current exact-head gates: CI QUEUED / Firebat IN PROGRESS / 7-Layer IN PROGRESS
 
 ### Exact Next Action
 
-1. Re-check 7-Layer #151 for exact head `82a8576...`.
-2. If it fails, inspect the first concrete failure and make only the smallest safe correction on PR #48.
-3. If it passes, mark PR #48 ready and merge with expected head SHA `82a8576c23b4fa11f1393abfdf94709b997bdbec`.
-4. Update this MASTER on `main` with the accepted merge SHA and close GJ-01 only if the exact browser/API evidence is fully GREEN.
-5. Then advance to GJ-02 Document Lifecycle without broadening scope.
+1. Re-check the fresh exact-head workflows for `5de7d371...`.
+2. Inspect 7-Layer run `32242535668` job/step progress, specifically whether Playwright installation completes within the new 10-minute bound.
+3. If a bounded failure occurs, repair only the first concrete CI/tooling failure it reports.
+4. If CI, 7-Layer, and Firebat all complete GREEN and there is no review/security/human-decision blocker, mark PR #48 ready and merge using exact head `5de7d3710d2c8457e941c346acb03fef5051ce09`.
+5. Update this MASTER on `main` with the accepted merge SHA and close GJ-01 only after that exact-head evidence is fully GREEN; then advance to GJ-02 Document Lifecycle.
