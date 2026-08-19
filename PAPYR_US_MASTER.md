@@ -4,18 +4,18 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.8"
+version: "0.9"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
 current_phase: "Phase 2 — Product Closure"
 priority: "P0"
 last_updated: "2026-08-19"
 repository: "joeylife94/papyr-us"
-baseline_main_sha: "3fe021aa0ea99eadd8d2daaad281e410bb47c481"
+baseline_main_sha: "6c6945cfab5aa6eb238146f4846589a7ba3e33bb"
 ---
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.8**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.9**  
 > This root file is the single project-state / closure ledger. Read it before every iteration and update it on `main` before the iteration ends.
 
 ## 0. Authority / Rules
@@ -55,12 +55,13 @@ Deferred v1.1+: embeddings/pgvector/hybrid retrieval, full RAG/citation UI, task
 - Calendar route real-team scope: PR #46, candidate `09b63042...`, three gates PASS, merged `fef11a81...`.
 - Calendar lifecycle browser proof: PR #47, candidate `7d7eddb8...`, CI #152 / 7-Layer #141 / Firebat #107 PASS, merged `1094ae156f4660b32f4886a1fd8743b459e55cd2`; **GJ-05 CLOSED**.
 - Authentication/team-entry page scope + browser proof: PR #48, candidate `5de7d3710d2c8457e941c346acb03fef5051ce09`, CI run `32242535498` / Firebat run `32242535520` / 7-Layer run `32242535668` PASS, merged `3fe021aa0ea99eadd8d2daaad281e410bb47c481`; **GJ-01 CLOSED**.
+- Document lifecycle browser proof: PR #49, candidate `4bbb05e36ad25d127dc3d7ce751ae4835e927c66`, CI run `32247882254` / 7-Layer run `32247882238` / Firebat run `32247882276` PASS, merged `6c6945cfab5aa6eb238146f4846589a7ba3e33bb`; **GJ-02 CLOSED**.
 
 ## 3. Golden Journeys
 
 - **GJ-01 Authentication and Team Entry** — **CLOSED** via PR #48.
-- **GJ-02 Document Lifecycle** — `Create -> edit -> save -> reopen -> update -> delete/restore` — **OPEN / ACTIVE**.
-- **GJ-03 Authorization Boundary** — authorized succeeds; unauthorized cross-team/page/search fails closed — **OPEN**.
+- **GJ-02 Document Lifecycle** — `Create -> edit -> save -> reopen -> update -> delete/restore` — **CLOSED** via PR #49.
+- **GJ-03 Authorization Boundary** — authorized succeeds; unauthorized cross-team/page/search fails closed — **OPEN / ACTIVE**.
 - **GJ-04 Version Recovery** — edit -> history -> prior version -> restore -> durable restored state — **OPEN**.
 - **GJ-05 Tasks and Calendar** — **CLOSED** via PRs #44–#47.
 - **GJ-06 Secure Search** — implementation accepted; explicit journey-level evidence mapping still **OPEN**.
@@ -103,7 +104,7 @@ Phase 2 fixes are limited to Golden Journey breaks, authorization failures, data
 
 Required by release boundary: TypeScript/ESLint/secret scan; unit/domain/contract/smoke; real PostgreSQL where relevant; production build; Playwright E2E; visual/a11y proof surfaces; Firebat deployment gate; public-demo smoke; dependency security triage; backup/restore drill. A skipped required gate is not PASS.
 
-Product exit status: GJ-01 and GJ-05 closed; GJ-02/03/04/06/07/08 open. README Search/AI truthfulness closed. Final executable tree, dependency disposition, backup/restore, public demo, proof package remain open.
+Product exit status: GJ-01, GJ-02, and GJ-05 closed; GJ-03/04/06/07/08 open. README Search/AI truthfulness closed. Final executable tree, dependency disposition, backup/restore, public demo, proof package remain open.
 
 ## 7. Decision Log
 
@@ -120,75 +121,78 @@ Product exit status: GJ-01 and GJ-05 closed; GJ-02/03/04/06/07/08 open. README S
 
 > **Date:** 2026-08-19 KST  
 > **Phase:** Phase 2 — Product Closure  
-> **Accepted product baseline:** `3fe021aa0ea99eadd8d2daaad281e410bb47c481`  
+> **Accepted product baseline:** `6c6945cfab5aa6eb238146f4846589a7ba3e33bb`  
 > **Highest active gap:** GAP-004  
-> **Active journey:** GJ-02 Document Lifecycle  
-> **Active PR:** #49 `test/gj02-document-lifecycle` — draft / open / unmerged
+> **Active journey:** GJ-03 Authorization Boundary  
+> **Active PR:** none; PR #49 merged
 
 ### Changed
 
-- Reconciled PR #48 to CURRENT exact head `5de7d3710d2c8457e941c346acb03fef5051ce09` and verified all three required exact-head workflows GREEN.
-- Confirmed PR #48 remained bounded to GJ-01 plus the Playwright-install timeout lifecycle repair; no review submissions or unresolved review threads existed.
-- Marked PR #48 ready, re-fetched CURRENT head, and merged with expected-head guard.
-- Accepted merge SHA on `main`: `3fe021aa0ea99eadd8d2daaad281e410bb47c481`; **GJ-01 CLOSED**.
-- Inspected existing GJ-02 evidence. `tests/example.spec.ts` has separate page create, update, and UI delete cases, while the API contract exposes soft-delete trash restore via `POST /api/trash/:id/restore`; no single deterministic create-to-restore lifecycle proof was found.
-- Created branch `test/gj02-document-lifecycle` and draft PR #49.
-- Added one Playwright journey covering browser create -> reopen -> browser edit/update -> API persistence check -> browser soft delete -> trash presence -> authenticated restore -> reopened restored state.
+- Re-fetched CURRENT PR #49 and confirmed exact head remained `4bbb05e36ad25d127dc3d7ce751ae4835e927c66`.
+- Verified all required exact-head workflows GREEN.
+- Confirmed PR #49 changed only `tests/gj02-document-lifecycle.spec.ts`; no production code or deferred scope changes.
+- Confirmed no review submissions or unresolved review threads.
+- Marked PR #49 ready and merged with expected-head guard.
+- Accepted merge SHA on `main`: `6c6945cfab5aa6eb238146f4846589a7ba3e33bb`; **GJ-02 CLOSED**.
+- Advanced the MASTER-authorized next Phase 2 target to **GJ-03 Authorization Boundary**.
 
 ### Actually Executed
 
-- Read current root MASTER and CURRENT PR #48 metadata.
-- Fetched exact-head workflow runs for `5de7d371...`: CI `32242535498`, Firebat `32242535520`, 7-Layer `32242535668`.
-- Listed PR #48 changed files, review submissions, and review threads.
-- Updated MASTER with current GREEN evidence before lifecycle action.
-- Marked PR #48 ready for review.
-- Re-fetched PR #48 head and confirmed it remained `5de7d3710d2c8457e941c346acb03fef5051ce09` and mergeable.
-- Merged PR #48 using expected-head guard; resulting main SHA `3fe021aa0ea99eadd8d2daaad281e410bb47c481`.
-- Inspected `tests/example.spec.ts`, test inventory, and page/trash API reference for GJ-02 coverage.
-- Created `tests/gj02-document-lifecycle.spec.ts` on new bounded branch and opened draft PR #49.
-- Triggered exact-head required workflows for PR #49 candidate `4bbb05e36ad25d127dc3d7ce751ae4835e927c66`.
-- Updated this root MASTER on `main` with the iteration result.
+- Read current root MASTER from `main`.
+- Fetched CURRENT PR #49 metadata and exact head.
+- Fetched exact-head workflow runs for `4bbb05e36...`.
+- Inspected PR #49 patch, review submissions, and review threads.
+- Marked PR #49 ready for review.
+- Merged PR #49 using expected-head guard `4bbb05e36ad25d127dc3d7ce751ae4835e927c66`.
+- Updated this root MASTER on `main` with accepted evidence and next action.
 
 ### Checks / Current Evidence
 
-Accepted PR #48 candidate `5de7d3710d2c8457e941c346acb03fef5051ce09`:
-- CI run `32242535498` — **PASS**
-- Firebat Deployment Gate run `32242535520` — **PASS**
-- 7-Layer Test Architecture run `32242535668` — **PASS**
-- Reviews / unresolved threads — none
-- Merge — **PASS**, main `3fe021aa0ea99eadd8d2daaad281e410bb47c481`
+Accepted PR #49 candidate `4bbb05e36ad25d127dc3d7ce751ae4835e927c66`:
+- CI run `32247882254` — **PASS**
+- 7-Layer Test Architecture run `32247882238` — **PASS**
+- Firebat Deployment Gate run `32247882276` — **PASS**
+- Reviews — none
+- Unresolved review threads — none
+- Scope — one Playwright lifecycle proof file only
+- Merge — **PASS**, main `6c6945cfab5aa6eb238146f4846589a7ba3e33bb`
 
-Current PR #49 candidate `4bbb05e36ad25d127dc3d7ce751ae4835e927c66`:
-- CI run `32247882254` — **QUEUED**
-- 7-Layer Test Architecture run `32247882238` — **QUEUED**
-- Firebat Deployment Gate run `32247882276` — **QUEUED**
+GJ-02 executable journey now proves:
+- browser create
+- reopen persisted document
+- browser edit/update
+- persisted update survives reload
+- browser soft delete
+- deleted page becomes unavailable and appears in trash
+- authenticated restore
+- restored page reopens with the last persisted update intact
 
 ### Not Verified
 
-- PR #49 exact head has not completed required gates.
-- The new GJ-02 lifecycle proof has not yet demonstrated whether the current product's soft-delete/trash restore response shapes and browser selectors satisfy the deterministic journey.
-- GJ-02 remains OPEN until the exact candidate is GREEN and accepted on `main`.
-- GJ-03 / GJ-04 / GJ-06 / GJ-07 remain unclosed.
+- GJ-03 cross-team/page/search authorization journey is not yet mapped to deterministic executable evidence.
+- GJ-04 / GJ-06 / GJ-07 remain unclosed.
+- Phase 3 operational/security exit evidence is not yet in scope for this phase.
 
 ### Residual Risks / Blockers
 
-- PR #49 may reveal a concrete mismatch in trash response shape, delete response handling, or lifecycle UI behavior; do not alter production code unless executable evidence identifies a product defect.
-- Existing older wiki E2E tests are fragmented and include helper fallbacks; they are supporting evidence but not sufficient alone for GJ-02 closure.
-- No current blocker justifies expanding into GJ-03 or later journeys before PR #49 is resolved.
+- Existing authorization tests may be fragmented across API/unit/search suites; implementation presence alone must not be treated as GJ-03 closure.
+- If current tests do not cover an authenticated principal attempting cross-team page read/mutation and cross-team search, add only the smallest deterministic proof needed.
+- Do not change authorization production code unless executable evidence identifies a concrete fail-open defect.
 
 ### Repo / PR State
 
-- accepted product `main`: `3fe021aa0ea99eadd8d2daaad281e410bb47c481` plus ledger-only MASTER commit(s)
+- accepted product `main`: `6c6945cfab5aa6eb238146f4846589a7ba3e33bb` plus this ledger-only MASTER commit
 - GJ-01: CLOSED
-- active branch: `test/gj02-document-lifecycle`
-- PR #49: DRAFT / OPEN / UNMERGED
-- CURRENT candidate: `4bbb05e36ad25d127dc3d7ce751ae4835e927c66`
-- CURRENT exact-head gates: CI QUEUED / 7-Layer QUEUED / Firebat QUEUED
+- GJ-02: CLOSED
+- GJ-05: CLOSED
+- PR #49: MERGED
+- active implementation PR: none
+- next active journey: GJ-03 Authorization Boundary
 
 ### Exact Next Action
 
-1. Re-fetch PR #49 CURRENT head; discard any stale handoff SHA if it moved.
-2. Inspect exact-head CI / 7-Layer / Firebat results.
-3. If a required gate is RED/CANCELLED/TIMED_OUT/stale, inspect the first concrete run/job/step failure and repair only that bounded cause.
-4. If all three gates are GREEN and no review/security/human-decision blocker exists, complete PR #49 lifecycle with expected-head guard.
-5. Close GJ-02 only after the verified lifecycle proof is accepted on `main`; then advance to GJ-03 Authorization Boundary.
+1. Re-read CURRENT `main` and this MASTER.
+2. Inventory existing deterministic authorization evidence for cross-team page read/mutation and secure search.
+3. Map evidence to GJ-03 contract: authorized succeeds; unauthorized cross-team/page/search fails closed.
+4. If evidence is incomplete, create one narrowly scoped GJ-03 proof branch/PR; change production authorization only if the executable proof exposes a concrete defect.
+5. Require CURRENT exact-head CI / 7-Layer / Firebat GREEN before merge or GJ-03 closure.
