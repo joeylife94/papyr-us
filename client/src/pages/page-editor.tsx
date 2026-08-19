@@ -16,7 +16,6 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -26,11 +25,11 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { apiRequest } from '@/lib/queryClient';
 import { WikiPage, InsertWikiPage, Block } from '@shared/schema';
 import { MarkdownRenderer } from '@/components/wiki/markdown-renderer';
 import { BlockEditor } from '@/components/blocks/block-editor';
 import { getUserId, getUserName } from '@/lib/user';
+import { resolvePageTeamId, type PageTeamRef } from '@/lib/page-team-scope';
 
 const pageFormSchema = z.object({
   title: z.string().min(1, 'Title is required'),
@@ -43,13 +42,12 @@ const pageFormSchema = z.object({
 type PageFormData = z.infer<typeof pageFormSchema>;
 
 interface PageEditorProps {
-  pageId?: string; // If provided, we're editing; if not, we're creating
+  pageId?: string;
   initialFolder?: string;
   teamName?: string;
 }
 
 export default function PageEditor({ pageId, initialFolder = 'docs', teamName }: PageEditorProps) {
-  // Extract teamName from URL if not provided as prop
   const currentLocation = window.location;
   const urlTeamName =
     teamName ||
@@ -62,7 +60,6 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Check if we have template data from navigation state
   const routerLocation = useLocation();
   const templateData = (routerLocation.state as any)?.template;
 
@@ -75,6 +72,18 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
     queryKey: ['/api/folders'],
   });
 
+  const {
+    data: teams = [],
+    isLoading: teamsLoading,
+    isError: teamsError,
+  } = useQuery<PageTeamRef[]>({
+    queryKey: ['/api/teams'],
+    enabled: !!urlTeamName,
+  });
+
+  const resolvedTeamId = resolvePageTeamId(urlTeamName, teams);
+  const teamScopeUnavailable = !!urlTeamName && !teamsLoading && (teamsError || !resolvedTeamId);
+
   const form = useForm<PageFormData>({
     resolver: zodResolver(pageFormSchema),
     defaultValues: {
@@ -86,16 +95,13 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
     },
   });
 
-  // Keep the hidden form field 'content' in sync with block contents so validation can pass
   useEffect(() => {
     try {
       const computed = blocks.map((b) => b?.content ?? '').join('\n\n');
-      // Update without marking as dirty to avoid surprising UI, but validate so submit can proceed
       form.setValue('content', computed, { shouldValidate: true, shouldDirty: false });
     } catch {}
   }, [blocks]);
 
-  // Update form when existing page loads or template data is available
   useEffect(() => {
     if (existingPage) {
       form.reset({
@@ -106,7 +112,6 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
         author: existingPage.author,
       });
 
-      // Load blocks if available, otherwise convert content to blocks
       if (
         existingPage.blocks &&
         Array.isArray(existingPage.blocks) &&
@@ -114,7 +119,6 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
       ) {
         setBlocks(existingPage.blocks as Block[]);
       } else {
-        // Convert existing content to blocks
         const defaultBlock: Block = {
           id: `block_${Date.now()}`,
           type: 'paragraph',
@@ -126,7 +130,6 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
         setBlocks([defaultBlock]);
       }
     } else if (templateData) {
-      // Apply template data
       form.reset({
         title: templateData.title || '',
         content: templateData.content || '',
@@ -135,7 +138,6 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
         author: 'User',
       });
 
-      // Convert template content to blocks
       const defaultBlock: Block = {
         id: `block_${Date.now()}`,
         type: 'paragraph',
@@ -150,7 +152,10 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
 
   const createPageMutation = useMutation({
     mutationFn: async (data: InsertWikiPage) => {
-      const pageData = urlTeamName ? { ...data, teamId: urlTeamName } : data;
+      if (urlTeamName && !resolvedTeamId) {
+        throw new Error('Team scope unavailable');
+      }
+      const pageData = resolvedTeamId ? { ...data, teamId: resolvedTeamId } : data;
       const response = await fetch(`/api/pages`, {
         method: 'POST',
         headers: {
@@ -221,11 +226,9 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
       .map((tag) => tag.trim())
       .filter((tag) => tag.length > 0);
 
-    // Convert blocks to content for backward compatibility
     const content = blocks.map((block) => block.content).join('\n\n');
 
     if (pageId) {
-      // Update existing page
       updatePageMutation.mutate({
         title: data.title,
         content,
@@ -235,7 +238,6 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
         author: data.author,
       });
     } else {
-      // Create new page
       createPageMutation.mutate({
         title: data.title,
         slug,
@@ -264,9 +266,23 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
   const currentContent = form.watch('content');
   const isLoading = createPageMutation.isPending || updatePageMutation.isPending;
 
+  if (urlTeamName && teamsLoading) {
+    return <div className="p-6 text-sm text-slate-500">Loading team workspace...</div>;
+  }
+
+  if (teamScopeUnavailable) {
+    return (
+      <div className="p-6" role="alert">
+        <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Team workspace unavailable</h1>
+        <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+          This team is not accessible or could not be resolved.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto p-6 max-w-6xl">
-      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center space-x-4">
           <Button variant="ghost" size="sm" onClick={() => window.history.back()}>
@@ -315,7 +331,6 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Editor Form */}
         <Card className={isPreview ? 'lg:block hidden' : ''}>
           <CardHeader>
             <CardTitle className="flex items-center">
@@ -397,7 +412,7 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
                 <FormField
                   control={form.control}
                   name="content"
-                  render={({ field }) => (
+                  render={() => (
                     <FormItem>
                       <FormLabel>Content (Block Editor)</FormLabel>
                       <FormControl>
@@ -409,7 +424,7 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
                             pageId={pageId ? parseInt(pageId) : undefined}
                             userId={getUserId()}
                             userName={getUserName()}
-                            useYjs={true} // ✨ Enable Yjs CRDT collaboration
+                            useYjs={true}
                           />
                         </div>
                       </FormControl>
@@ -422,7 +437,7 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
                   <Button type="button" variant="outline" onClick={() => window.history.back()}>
                     Cancel
                   </Button>
-                  <Button type="submit" disabled={isLoading}>
+                  <Button type="submit" disabled={isLoading || (!!urlTeamName && !resolvedTeamId)}>
                     <Save className="h-4 w-4 mr-2" />
                     {isLoading
                       ? pageId
@@ -438,7 +453,6 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
           </CardContent>
         </Card>
 
-        {/* Preview */}
         <Card className={!isPreview ? 'lg:block hidden' : ''}>
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
