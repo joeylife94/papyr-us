@@ -4,18 +4,18 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.11"
+version: "0.12"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
 current_phase: "Phase 2 — Product Closure"
 priority: "P0"
-last_updated: "2026-08-19"
+last_updated: "2026-08-20"
 repository: "joeylife94/papyr-us"
 baseline_main_sha: "37a1af97fe171774bda8b8b5c8364ea32e5fa0ac"
 ---
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.11**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.12**  
 > This root file is the single project-state / closure ledger. Read it before every iteration and update it on `main` before the iteration ends.
 
 ## 0. Authority / Rules
@@ -63,7 +63,7 @@ Deferred v1.1+: embeddings/pgvector/hybrid retrieval, full RAG/citation UI, task
 - **GJ-01 Authentication and Team Entry** — **CLOSED** via PR #48.
 - **GJ-02 Document Lifecycle** — `Create -> edit -> save -> reopen -> update -> delete/restore` — **CLOSED** via PR #49.
 - **GJ-03 Authorization Boundary** — authorized succeeds; unauthorized cross-team/page/search fails closed — **CLOSED** via Issue #50 / PR #51.
-- **GJ-04 Version Recovery** — edit -> history -> prior version -> restore -> durable restored state — **OPEN / NEXT**.
+- **GJ-04 Version Recovery** — edit -> history -> prior version -> restore -> durable restored state — **OPEN / ACTIVE**, Issue #52 / draft PR #53 under exact-head verification.
 - **GJ-05 Tasks and Calendar** — **CLOSED** via PRs #44–#47.
 - **GJ-06 Secure Search** — implementation accepted; explicit journey-level evidence mapping still **OPEN**.
 - **GJ-07 Optional AI Assistance** — **OPEN if publicly shown**.
@@ -120,94 +120,89 @@ Product exit status: GJ-01, GJ-02, GJ-03, and GJ-05 closed; GJ-04/06/07/08 open.
 
 ## 8. Latest Checkpoint
 
-> **Date:** 2026-08-19 KST  
+> **Date:** 2026-08-20 KST  
 > **Phase:** Phase 2 — Product Closure  
 > **Accepted product baseline:** `37a1af97fe171774bda8b8b5c8364ea32e5fa0ac`  
-> **Current main before this ledger-only update:** `37a1af97fe171774bda8b8b5c8364ea32e5fa0ac`  
+> **Current main before this ledger-only update:** `07c44932f2d174a9019f93f0502389ecda2cf326`  
 > **Highest active gap:** GAP-004  
-> **Closed this iteration:** GJ-03 Authorization Boundary  
-> **Next journey:** GJ-04 Version Recovery  
-> **Active Issue:** none  
-> **Active implementation PR:** none
+> **Active journey:** GJ-04 Version Recovery  
+> **Active Issue:** #52  
+> **Active implementation PR:** #53 (draft)  
+> **Exact candidate head:** `775b0edfe395cba4a467cf495dd43ffc9a1ba654`
 
 ### Changed
 
-- Re-read CURRENT root MASTER and CURRENT PR/Issue state.
-- Re-fetched PR #51 and confirmed CURRENT exact head remained `8e2b908fa8f849fa416c88630797fb915f1e6a95`.
-- Confirmed exact-head CI / 7-Layer / Firebat workflows all completed successfully.
-- Confirmed PR #51 scope remained one proof file with no production authorization change.
-- Confirmed no review submissions and no unresolved review threads.
-- Marked PR #51 ready and merged it with expected-head guard.
-- Confirmed `Closes #50` auto-closed Issue #50 as completed.
-- Reconciled GJ-03 to CLOSED and advanced the next product-closure target to GJ-04 Version Recovery.
+- Re-read CURRENT root MASTER and CURRENT PR/Issue state; confirmed no relevant active implementation PR or Issue existed for GJ-04.
+- Inventoried the existing version-history UI/service plus accepted GJ-02 browser lifecycle pattern.
+- Confirmed implementation exists for history/read/restore, but no dedicated deterministic GJ-04 journey proof exists on `main`.
+- Created bounded Issue #52 before any branch or implementation.
+- Created issue-linked branch `test/issue-52-gj04-version-recovery`.
+- Added `tests/gj04-version-recovery.spec.ts` only; no production code change.
+- Opened draft PR #53 with `Closes #52` and evidence sections.
 
 ### Actually Executed
 
 - Read `PAPYR_US_MASTER.md` from CURRENT `main`.
-- Read PR #51 metadata and exact head.
-- Fetched exact-head workflow runs for `8e2b908f...`.
-- Inspected PR reviews and review threads.
-- Read Issue #50 before merge and re-read it after merge to confirm closure.
-- Transitioned PR #51 from draft to ready.
-- Merged PR #51 with `expected_head_sha=8e2b908fa8f849fa416c88630797fb915f1e6a95`.
-- Updated this MASTER on `main` after acceptance.
+- Searched CURRENT open PRs and Issues and rejected unrelated/stale work as the active surface.
+- Read `client/src/components/page-history.tsx` and `server/services/version-history.ts`.
+- Read accepted `tests/gj02-document-lifecycle.spec.ts` to reuse established authenticated browser setup.
+- Created Issue #52 with Goal / Scope / Acceptance Criteria / Verification / Non-goals / Evidence Required.
+- Created branch, committed one Playwright proof file, and opened draft PR #53.
+- Queried workflow runs for exact head `775b0edf...`.
+- Updated this MASTER on `main` after recording the active candidate.
 
 ### Checks / Current Evidence
 
-PR #51 exact candidate `8e2b908fa8f849fa416c88630797fb915f1e6a95`:
-- CI run `32258403178` — **PASS**
-- 7-Layer Test Architecture run `32258403282` — **PASS**
-- Firebat Deployment Gate run `32258403173` — **PASS**
-- Reviews — none submitted
-- Unresolved review threads — none
-- Scope — `tests/gj03-authorization-boundary.spec.ts` only; no production auth code change
-- Merge result — **PASS**, main product SHA `37a1af97fe171774bda8b8b5c8364ea32e5fa0ac`
-- Issue #50 — **CLOSED / completed**
+PR #53 exact candidate `775b0edfe395cba4a467cf495dd43ffc9a1ba654`:
+- CI run `32270585094` — **IN PROGRESS**
+- 7-Layer Test Architecture run `32270585035` — **IN PROGRESS**
+- Firebat Deployment Gate run `32270585051` — **IN PROGRESS**
+- Scope — `tests/gj04-version-recovery.spec.ts` only
+- Production versioning code — unchanged
+- PR state — draft / open / unmerged
+- Issue #52 — open
 
-Accepted GJ-03 executable contract:
-- User A same-team page read succeeds.
-- User A same-team page update succeeds and persists.
-- User A secure search returns the protected Team A page.
-- User B cross-team direct page read fails closed.
-- User B cross-team mutation fails closed and does not alter persisted state.
-- User B explicit Team A search is rejected.
-- User B own-team/default search does not return or leak Team A page/token.
+Candidate proof contract:
+- establish an original page state through the browser editor
+- edit to a distinct newer state and verify persistence
+- open the real version-history UI and identify the prior state
+- restore the prior version through the existing UI recovery action
+- fresh-navigate and API-read to prove restored state durability
 
 ### Not Verified
 
-- GJ-04 Version Recovery is not yet inventoried against CURRENT deterministic evidence.
-- GJ-06 Secure Search remains OPEN at journey-level evidence mapping even though secure retrieval implementation and parts of the authorization/search boundary are already accepted.
-- GJ-07 remains OPEN only if optional AI is publicly shown.
-- No new Issue or implementation branch was started for GJ-04 in this iteration.
+- The exact-head workflows are not yet complete; GJ-04 is not accepted.
+- The new Playwright proof has not yet run to completion against the workflow PostgreSQL runtime.
+- Static inventory suggests the version-history UI and backend service may expose differently named fields; this is not yet a proven defect and production code must not change unless executable evidence reproduces it.
+- GJ-06 and later journeys remain untouched while #52/#53 are active.
 
 ### Residual Risks / Blockers
 
-- No blocker remains for GJ-03.
-- GJ-04 may already have partial version-history/restore coverage; creating an implementation Issue before inventory could cause duplicate proof work.
-- Production code for version recovery should change only if executable proof exposes a concrete journey break or durable-state defect.
+- Current blocker is exact-head executable verification for PR #53.
+- If 7-Layer/Playwright fails, inspect the first concrete GJ-04 failure and make only the smallest justified repair inside Issue #52.
+- Do not infer a production defect from static shape differences alone.
 
 ### Repo / Issue / PR State
 
 - accepted product baseline: `37a1af97fe171774bda8b8b5c8364ea32e5fa0ac`
-- Issue #50: CLOSED / completed
-- PR #51: MERGED
-- PR #51 accepted exact head: `8e2b908fa8f849fa416c88630797fb915f1e6a95`
-- PR #51 merge SHA: `37a1af97fe171774bda8b8b5c8364ea32e5fa0ac`
-- active implementation Issue: none
-- active implementation PR: none
+- current pre-ledger main: `07c44932f2d174a9019f93f0502389ecda2cf326`
+- Issue #52: OPEN / active GJ-04 work item
+- branch: `test/issue-52-gj04-version-recovery`
+- PR #53: OPEN / DRAFT / UNMERGED
+- PR #53 exact head: `775b0edfe395cba4a467cf495dd43ffc9a1ba654`
 - GJ-01: CLOSED
 - GJ-02: CLOSED
 - GJ-03: CLOSED
-- GJ-04: OPEN / NEXT
+- GJ-04: OPEN / ACTIVE
 - GJ-05: CLOSED
 - GJ-06: OPEN
 - GJ-07: OPEN if publicly shown
 
 ### Exact Next Action
 
-1. Re-read CURRENT MASTER and CURRENT open PR/Issue state; CURRENT state overrides this checkpoint.
-2. With no relevant active PR, inventory existing deterministic version-history and restore evidence for GJ-04 before implementation.
-3. Map existing evidence against `edit -> history -> prior version -> restore -> durable restored state`.
-4. If the journey is already fully executable and accepted on CURRENT product tree, reconcile closure without filler implementation.
-5. If a real proof/implementation gap remains and no exact active Issue exists, create exactly ONE bounded GJ-04 Issue with Goal / Scope / Acceptance Criteria / Verification / Non-goals / Evidence Required before any new branch, commit, or implementation.
-6. Keep production changes limited to concrete failures exposed by executed GJ-04 proof.
+1. Re-read CURRENT MASTER and CURRENT PR #53 exact head; CURRENT state overrides this checkpoint.
+2. Fetch exact-head CI / 7-Layer / Firebat results for `775b0edfe395cba4a467cf495dd43ffc9a1ba654`.
+3. If any gate is RED/CANCELLED/TIMED_OUT/stale, inspect the first concrete failure and repair only what Issue #52 justifies.
+4. If all three gates are GREEN, inspect review submissions/threads and confirm scope remains bounded.
+5. Only with exact-head gates GREEN + no unresolved blocker, mark PR ready and merge with expected-head guard.
+6. Confirm Issue #52 closes, reconcile accepted main SHA and GJ-04 closure in this MASTER before starting GJ-06 or any other journey.
