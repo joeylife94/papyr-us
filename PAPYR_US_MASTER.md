@@ -4,7 +4,7 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.13"
+version: "0.14"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
 current_phase: "Phase 2 — Product Closure"
 priority: "P0"
@@ -15,7 +15,7 @@ baseline_main_sha: "37a1af97fe171774bda8b8b5c8364ea32e5fa0ac"
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.13**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.14**  
 > This root file is the single project-state / closure ledger. Read it before every iteration and update it on `main` before the iteration ends.
 
 ## 0. Authority / Rules
@@ -54,9 +54,9 @@ Deferred v1.1+: embeddings/pgvector/hybrid retrieval, full RAG/citation UI, task
 - Task form real-team scope + browser proof: PR #45, candidate `7182e5b8...`, CI #146 / 7-Layer #135 / Firebat #101 PASS, merged `f4c48c64...`.
 - Calendar route real-team scope: PR #46, candidate `09b63042...`, three gates PASS, merged `fef11a81...`.
 - Calendar lifecycle browser proof: PR #47, candidate `7d7eddb8...`, CI #152 / 7-Layer #141 / Firebat #107 PASS, merged `1094ae156f4660b32f4886a1fd8743b459e55cd2`; **GJ-05 CLOSED**.
-- Authentication/team-entry page scope + browser proof: PR #48, candidate `5de7d3710d2c8457e941c346acb03fef5051ce09`, CI run `32242535498` / Firebat run `32242535520` / 7-Layer run `32242535668` PASS, merged `3fe021aa0ea99eadd8d2daaad281e410bb47c481`; **GJ-01 CLOSED**.
-- Document lifecycle browser proof: PR #49, candidate `4bbb05e36ad25d127dc3d7ce751ae4835e927c66`, CI run `32247882254` / 7-Layer run `32247882238` / Firebat run `32247882276` PASS, merged `6c6945cfab5aa6eb238146f4846589a7ba3e33bb`; **GJ-02 CLOSED**.
-- Authorization boundary browser/API proof: Issue #50 + PR #51, candidate `8e2b908fa8f849fa416c88630797fb915f1e6a95`, CI run `32258403178` / 7-Layer run `32258403282` / Firebat run `32258403173` PASS, merged `37a1af97fe171774bda8b8b5c8364ea32e5fa0ac`; **GJ-03 CLOSED**.
+- Authentication/team-entry page scope + browser proof: PR #48, candidate `5de7d3710d2c8457e941c346acb03fef5051ce09`, CI `32242535498` / Firebat `32242535520` / 7-Layer `32242535668` PASS, merged `3fe021aa0ea99eadd8d2daaad281e410bb47c481`; **GJ-01 CLOSED**.
+- Document lifecycle browser proof: PR #49, candidate `4bbb05e36ad25d127dc3d7ce751ae4835e927c66`, CI `32247882254` / 7-Layer `32247882238` / Firebat `32247882276` PASS, merged `6c6945cfab5aa6eb238146f4846589a7ba3e33bb`; **GJ-02 CLOSED**.
+- Authorization boundary browser/API proof: Issue #50 + PR #51, candidate `8e2b908fa8f849fa416c88630797fb915f1e6a95`, CI `32258403178` / 7-Layer `32258403282` / Firebat `32258403173` PASS, merged `37a1af97fe171774bda8b8b5c8364ea32e5fa0ac`; **GJ-03 CLOSED**.
 
 ## 3. Golden Journeys
 
@@ -123,67 +123,70 @@ Product exit status: GJ-01, GJ-02, GJ-03, and GJ-05 closed; GJ-04/06/07/08 open.
 > **Date:** 2026-08-20 KST  
 > **Phase:** Phase 2 — Product Closure  
 > **Accepted product baseline:** `37a1af97fe171774bda8b8b5c8364ea32e5fa0ac`  
-> **Current main before this ledger-only update:** `21b9a3c7f1ed633311339a92c00f1ab62d97aea4`  
+> **Current main before this ledger-only update:** `0339da29f3c4edbab1f19df93866f612ab7a8ee2`  
 > **Highest active gap:** GAP-004  
 > **Active journey:** GJ-04 Version Recovery  
 > **Active Issue:** #52  
 > **Active implementation PR:** #53 (draft)  
-> **Exact candidate head:** `775b0edfe395cba4a467cf495dd43ffc9a1ba654`
+> **Exact candidate head:** `b2f5fbf0f2560225e7739b5dea17081ff0b5539f`
 
 ### Changed
 
-- Re-read CURRENT MASTER and PR #53; current head remains `775b0edf...` with one test-only changed file.
-- Inspected exact-head workflow results after the initial run completed.
-- Confirmed CI and Firebat passed; 7-Layer failed outside the GJ-04 proof itself because Playwright browser dependency installation timed out in two jobs.
-- Confirmed Layer 5 E2E, including the new GJ-04 Playwright proof, passed on the same run.
-- Re-ran only the failed jobs for 7-Layer run `32270585035`; no product/test code change was made.
+- Re-read CURRENT MASTER and CURRENT PR #53 before acting.
+- Confirmed prior candidate `775b0edfe395cba4a467cf495dd43ffc9a1ba654` remained the PR head and its required CI + Firebat runs were GREEN while 7-Layer run `32270585035` had completed RED after retry.
+- Current MASTER already recorded that the initial 7-Layer failure was Playwright `chromium --with-deps` installation timeout in All-Layers + Layer 6, while Layer 5 E2E including GJ-04 passed against PostgreSQL.
+- Applied only a CI/tooling reliability correction inside Issue #52: Playwright install step timeout `10 -> 20` minutes for Layer 5, Layer 6, and All-Layers.
+- Advanced PR #53 to exact head `b2f5fbf0f2560225e7739b5dea17081ff0b5539f`.
 
 ### Actually Executed
 
-- Fetched current `main` and PR #53 state.
-- Fetched exact-head workflow runs for `775b0edf...`.
-- Inspected 7-Layer jobs and logs.
-- Observed `npx playwright install chromium --with-deps` timing out after 10 minutes while Ubuntu package mirrors were retrying; this was infrastructure/tooling failure, not a reproduced version-recovery defect.
-- Triggered `rerun failed jobs` for 7-Layer run `32270585035`.
-- Re-fetched the retry job state and confirmed Layer 0/1/2/3/4/5 were GREEN while All-Layers and Layer 6 were still running.
+- Fetched current main MASTER, PR #53 metadata, exact head, workflow summary, and `.github/workflows/test.yml` at the exact candidate.
+- Reconfirmed PR #53 remained OPEN / DRAFT / UNMERGED before modification.
+- Reconfirmed 7-Layer run `32270585035` ended `failure` on run attempt 2; CI `32270585094` and Firebat `32270585051` remained successful for the old head.
+- Updated `.github/workflows/test.yml` on branch `test/issue-52-gj04-version-recovery` with a bounded timeout-only repair; no version-history product code was changed.
+- Re-fetched PR #53 and confirmed new exact head `b2f5fbf0f2560225e7739b5dea17081ff0b5539f` with two changed files total: GJ-04 proof + workflow timeout repair.
+- Confirmed new exact-head workflows started: CI `32281737644`, 7-Layer `32281738458`, Firebat `32281737443`.
 - Updated this MASTER on `main`.
 
 ### Checks / Current Evidence
 
-PR #53 exact candidate `775b0edfe395cba4a467cf495dd43ffc9a1ba654`:
-- CI run `32270585094` — **PASS**
-- Firebat Deployment Gate run `32270585051` — **PASS**
-- 7-Layer Test Architecture run `32270585035` initial attempt — **FAILURE** due Playwright install timeout in All-Layers + Layer 6
-- 7-Layer retry — **IN PROGRESS**
-- Retry Layer 0 / 1 / 2 / 3 / 4 / 5 — **PASS**
-- Retry All-Layers / Layer 6 — **IN PROGRESS**
-- Original Layer 5 E2E — **PASS**, so the new GJ-04 executable proof itself has passed against the workflow PostgreSQL runtime
-- Scope — `tests/gj04-version-recovery.spec.ts` only
+Old candidate `775b0edfe395cba4a467cf495dd43ffc9a1ba654`:
+- CI `32270585094` — **PASS**
+- Firebat `32270585051` — **PASS**
+- 7-Layer `32270585035` — **FAILURE** after retry
+- GJ-04 Layer 5 browser proof on the original 7-Layer execution — **PASS**
+
+Current candidate `b2f5fbf0f2560225e7739b5dea17081ff0b5539f`:
+- CI `32281737644` — **IN PROGRESS**
+- 7-Layer `32281738458` — **IN PROGRESS**
+- Firebat `32281737443` — **IN PROGRESS**
+- Scope — `tests/gj04-version-recovery.spec.ts` + `.github/workflows/test.yml` timeout-only correction
 - Production versioning code — unchanged
 - PR state — draft / open / unmerged
 - Issue #52 — open
 
 ### Not Verified
 
-- The 7-Layer retry has not completed; exact-head acceptance is therefore not GREEN yet.
-- Review submissions/threads have not yet been acceptance-checked for merge because required gates are not all GREEN.
-- GJ-04 is not closed and PR #53 is not mergeable by policy until the retry completes successfully.
-- GJ-06 and later journeys remain untouched while #52/#53 are active.
+- The three required workflows are not yet GREEN for `b2f5fbf0...`; this exact head is not accepted.
+- The exact failing retry job log for attempt 2 was not freshly retrievable through the available connector in this iteration; the timeout repair is grounded in the current MASTER's already-recorded job/log evidence plus the unchanged run completing RED while GJ-04 Layer 5 itself had passed.
+- Review submissions/threads have not yet been acceptance-checked because required gates are still running.
+- GJ-04 remains OPEN; PR #53 must not merge until exact-head gates are GREEN and review/scope state is clean.
 
 ### Residual Risks / Blockers
 
-- Current blocker is completion of the failed-job retry for 7-Layer run `32270585035`.
-- If Playwright install times out again, treat it as CI/tooling reliability evidence and make only the smallest justified workflow repair; do not modify version-recovery product code without a reproduced product failure.
+- Current blocker is completion of CI `32281737644`, 7-Layer `32281738458`, and Firebat `32281737443` for `b2f5fbf0...`.
+- If 7-Layer fails again, inspect the first concrete failing job/step before any further correction. Do not alter version-recovery product code unless executed evidence reproduces a product defect.
+- PR #53 currently reports mergeability false while checks are freshly running; re-evaluate after GitHub recomputes mergeability/current base state.
 - Dependency audit warnings remain outside Issue #52 and are tracked separately by GAP-007.
 
 ### Repo / Issue / PR State
 
 - accepted product baseline: `37a1af97fe171774bda8b8b5c8364ea32e5fa0ac`
-- pre-ledger main: `21b9a3c7f1ed633311339a92c00f1ab62d97aea4`
+- pre-ledger main: `0339da29f3c4edbab1f19df93866f612ab7a8ee2`
 - Issue #52: OPEN / active GJ-04 work item
 - branch: `test/issue-52-gj04-version-recovery`
 - PR #53: OPEN / DRAFT / UNMERGED
-- PR #53 exact head: `775b0edfe395cba4a467cf495dd43ffc9a1ba654`
+- PR #53 exact head: `b2f5fbf0f2560225e7739b5dea17081ff0b5539f`
 - GJ-01: CLOSED
 - GJ-02: CLOSED
 - GJ-03: CLOSED
@@ -194,9 +197,9 @@ PR #53 exact candidate `775b0edfe395cba4a467cf495dd43ffc9a1ba654`:
 
 ### Exact Next Action
 
-1. Re-read CURRENT MASTER and CURRENT PR #53 exact head; CURRENT state overrides this checkpoint.
-2. Inspect completion of the 7-Layer failed-job retry for run `32270585035`.
-3. If retry is GREEN, inspect review submissions/threads and confirm scope remains exactly test-only and bounded to Issue #52.
-4. If all required exact-head gates are GREEN with no unresolved blocker, mark PR #53 ready and merge with expected-head guard `775b0edf...`.
-5. Confirm Issue #52 auto-closes; record resulting accepted main SHA and mark GJ-04 CLOSED in this MASTER before starting GJ-06.
-6. If retry fails again specifically in browser installation, repair only that workflow/tooling boundary inside the active work item and re-verify; do not alter version-recovery product code without executable product-failure evidence.
+1. Re-read CURRENT MASTER and CURRENT PR #53; discard this checkpoint if the head changes.
+2. Inspect exact-head results for CI `32281737644`, 7-Layer `32281738458`, and Firebat `32281737443`.
+3. If any gate is RED, inspect the first concrete failing job/step/log and make only the smallest Issue #52-scoped correction justified by executed evidence.
+4. If all gates are GREEN, inspect review submissions/threads and confirm scope remains bounded.
+5. If clean, mark PR #53 ready and merge with expected-head guard `b2f5fbf0f2560225e7739b5dea17081ff0b5539f`.
+6. Confirm Issue #52 closes, then reconcile this MASTER with the resulting accepted main SHA and mark GJ-04 CLOSED before selecting GJ-06.
