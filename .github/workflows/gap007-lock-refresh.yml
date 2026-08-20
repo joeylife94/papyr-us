@@ -3,17 +3,18 @@ name: GAP-007 Lock Refresh Candidate
 on:
   pull_request:
     branches: [main]
-  workflow_dispatch: {}
 
 jobs:
-  generate-lock:
-    name: Generate npm lock candidate for first blocker
+  generate-and-commit:
+    name: Generate and commit npm lock correction
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -21,23 +22,17 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Generate bounded dependency candidate with npm
+      - name: Generate bounded dependency correction with npm
         shell: bash
         run: |
           set -euo pipefail
-          cp package.json package.before.json
-          cp package-lock.json package-lock.before.json
 
-          # This plugin is loaded only by tailwind.config.ts during build.
           npm install 'tailwindcss-animate@^1.0.7' \
             --save-dev --package-lock-only --ignore-scripts
 
-          # 10.40.0 is the first release in the current Sentry major line whose
-          # registry metadata no longer declares minimatch on @sentry/node.
           npm install '@sentry/node@10.40.0' '@sentry/profiling-node@10.40.0' \
             --save --package-lock-only --ignore-scripts
 
-          git diff -- package.json package-lock.json > dependency-candidate.diff
           npm audit --omit=dev --json > npm-audit-after-refresh.json || true
           npm ls brace-expansion --omit=dev --all --json > brace-ancestry-after-refresh.json 2>&1 || true
 
@@ -45,30 +40,36 @@ jobs:
           const fs = require('fs');
           const lock = require('./package-lock.json');
           const pkgs = lock.packages || {};
-          const rows = Object.entries(pkgs)
-            .filter(([p]) => p.includes('@sentry/') || p.endsWith('/tailwindcss-animate') || p.endsWith('/tailwindcss') || p.endsWith('/sucrase') || p.endsWith('/glob') || p.endsWith('/minimatch') || p.endsWith('/brace-expansion'))
-            .map(([p, v]) => ({ path: p, version: v.version, dev: v.dev === true, dependencies: v.dependencies || {}, peerDependencies: v.peerDependencies || {} }));
-          fs.writeFileSync('dependency-candidate-summary.json', JSON.stringify(rows, null, 2));
-
-          const audit = JSON.parse(fs.readFileSync('npm-audit-after-refresh.json', 'utf8'));
-          const highCritical = Object.values(audit.vulnerabilities || {}).filter(v => ['high','critical'].includes(String(v.severity || '').toLowerCase()));
-          fs.writeFileSync('audit-high-critical-after-refresh.json', JSON.stringify(highCritical, null, 2));
-          console.log(`HIGH/CRITICAL after candidate: ${highCritical.length}`);
-          for (const v of highCritical.slice(0, 12)) console.log(`${v.severity} ${v.name} ${v.range || ''}`);
+          const brace = Object.entries(pkgs).filter(([p]) => p.endsWith('/brace-expansion'));
+          const minimatch = Object.entries(pkgs).filter(([p]) => p.endsWith('/minimatch'));
+          const runtimeBrace = brace.filter(([, v]) => v.dev !== true);
+          const runtimeMinimatch = minimatch.filter(([, v]) => v.dev !== true && String(v.version || '').startsWith('9.'));
+          const ancestry = JSON.parse(fs.readFileSync('brace-ancestry-after-refresh.json', 'utf8'));
+          const prodDeps = ancestry.dependencies || {};
+          if (Object.keys(prodDeps).length !== 0) {
+            throw new Error(`brace-expansion still appears in npm --omit=dev ancestry: ${JSON.stringify(prodDeps)}`);
+          }
+          if (runtimeBrace.length !== 0) {
+            throw new Error(`brace-expansion lock nodes are not dev-only: ${runtimeBrace.map(([p,v]) => `${p}@${v.version}`).join(', ')}`);
+          }
+          if (runtimeMinimatch.length !== 0) {
+            throw new Error(`minimatch 9.x remains runtime-present: ${runtimeMinimatch.map(([p,v]) => `${p}@${v.version}`).join(', ')}`);
+          }
+          console.log('Verified: brace-expansion has no production ancestry and all lock nodes are dev:true.');
           NODE
 
-          test -s dependency-candidate.diff
+          git diff --check -- package.json package-lock.json
+          git diff -- package.json package-lock.json
 
-      - name: Upload npm-generated dependency candidate
-        uses: actions/upload-artifact@v4
-        with:
-          name: gap007-lock-refresh-candidate
-          path: |
-            package.json
-            package-lock.json
-            dependency-candidate.diff
-            dependency-candidate-summary.json
-            npm-audit-after-refresh.json
-            audit-high-critical-after-refresh.json
-            brace-ancestry-after-refresh.json
-          retention-days: 3
+      - name: Commit npm-generated correction and remove generator
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'papyr-us-gap007-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git rm -- .github/workflows/gap007-lock-refresh.yml
+          git add -- package.json package-lock.json
+          git diff --cached --check
+          git status --short
+          git commit -m 'fix: remove first GAP-007 runtime dependency path'
+          git push origin "HEAD:${GITHUB_HEAD_REF}"
