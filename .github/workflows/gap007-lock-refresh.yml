@@ -21,35 +21,54 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Regenerate smallest compatible Sentry lock boundary
+      - name: Generate bounded dependency candidate with npm
         shell: bash
         run: |
           set -euo pipefail
+          cp package.json package.before.json
           cp package-lock.json package-lock.before.json
-          npm view '@sentry/node@^10.38.0' version dependencies.minimatch --json > sentry-registry-boundary.json
-          npm update @sentry/node @sentry/profiling-node --package-lock-only --ignore-scripts
-          git diff -- package-lock.json > package-lock.diff
+
+          # tailwindcss-animate is only loaded by tailwind.config.ts at build time.
+          npm pkg delete dependencies.tailwindcss-animate
+          npm pkg set 'devDependencies.tailwindcss-animate=^1.0.7'
+
+          # 10.40.0 is the first @sentry/node release in the declared ^10.38.0
+          # line whose registry metadata no longer declares minimatch.
+          npm install @sentry/node@10.40.0 @sentry/profiling-node@10.40.0 \
+            --package-lock-only --ignore-scripts --no-save
+
+          git diff -- package.json package-lock.json > dependency-candidate.diff
+          npm audit --omit=dev --json > npm-audit-after-refresh.json || true
+          npm ls brace-expansion --omit=dev --all --json > brace-ancestry-after-refresh.json 2>&1 || true
+
           node <<'NODE'
           const fs = require('fs');
           const lock = require('./package-lock.json');
           const pkgs = lock.packages || {};
           const rows = Object.entries(pkgs)
-            .filter(([p]) => p.includes('@sentry/') || p.endsWith('/minimatch') || p.endsWith('/brace-expansion'))
-            .map(([p, v]) => ({ path: p, version: v.version, dev: v.dev === true, dependencies: v.dependencies || {} }));
-          console.log(JSON.stringify(rows.filter(r => r.path === 'node_modules/@sentry/node' || r.path === 'node_modules/@sentry/profiling-node' || r.path === 'node_modules/minimatch' || r.path === 'node_modules/brace-expansion'), null, 2));
-          fs.writeFileSync('lock-refresh-summary.json', JSON.stringify(rows, null, 2));
-          NODE
-          npm audit --omit=dev --json > npm-audit-after-refresh.json || true
-          test -s package-lock.diff
+            .filter(([p]) => p.includes('@sentry/') || p.endsWith('/tailwindcss-animate') || p.endsWith('/tailwindcss') || p.endsWith('/sucrase') || p.endsWith('/glob') || p.endsWith('/minimatch') || p.endsWith('/brace-expansion'))
+            .map(([p, v]) => ({ path: p, version: v.version, dev: v.dev === true, dependencies: v.dependencies || {}, peerDependencies: v.peerDependencies || {} }));
+          fs.writeFileSync('dependency-candidate-summary.json', JSON.stringify(rows, null, 2));
 
-      - name: Upload npm-generated lock candidate
+          const audit = JSON.parse(fs.readFileSync('npm-audit-after-refresh.json', 'utf8'));
+          const highCritical = Object.values(audit.vulnerabilities || {}).filter(v => ['high','critical'].includes(String(v.severity || '').toLowerCase()));
+          fs.writeFileSync('audit-high-critical-after-refresh.json', JSON.stringify(highCritical, null, 2));
+          console.log(`HIGH/CRITICAL after candidate: ${highCritical.length}`);
+          for (const v of highCritical.slice(0, 10)) console.log(`${v.severity} ${v.name} ${v.range || ''}`);
+          NODE
+
+          test -s dependency-candidate.diff
+
+      - name: Upload npm-generated dependency candidate
         uses: actions/upload-artifact@v4
         with:
           name: gap007-lock-refresh-candidate
           path: |
+            package.json
             package-lock.json
-            package-lock.diff
-            lock-refresh-summary.json
-            sentry-registry-boundary.json
+            dependency-candidate.diff
+            dependency-candidate-summary.json
             npm-audit-after-refresh.json
+            audit-high-critical-after-refresh.json
+            brace-ancestry-after-refresh.json
           retention-days: 3
