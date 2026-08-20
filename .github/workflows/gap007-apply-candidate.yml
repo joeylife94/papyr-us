@@ -85,7 +85,6 @@ jobs:
           };
           fs.writeFileSync('apply-target.json', JSON.stringify(target, null, 2));
           if (!target.package) process.exit(2);
-          if (target.direct && !target.fixVersion) process.exit(3);
           NODE
 
           first=$(node -e "const x=require('./apply-target.json'); process.stdout.write(x.package)")
@@ -95,7 +94,7 @@ jobs:
           cp package.json package.before.json
           cp package-lock.json package-lock.before.json
 
-          if [ "$direct" = 'true' ]; then
+          if [ "$direct" = 'true' ] && [ -n "$fix_version" ]; then
             npm install "${first}@${fix_version}" --package-lock-only --ignore-scripts --save-prefix='^'
           else
             npm update "$first" --package-lock-only --ignore-scripts
@@ -112,8 +111,9 @@ jobs:
           function clone(x) { return JSON.parse(JSON.stringify(x)); }
           const b = clone(before);
           const a = clone(after);
+          let packageJsonExpected = false;
 
-          if (direct) {
+          if (direct && fixVersion) {
             const beforeValue = b.dependencies?.[target];
             const afterValue = a.dependencies?.[target];
             if (!beforeValue || !afterValue) throw new Error('Direct target is not present in dependencies before/after');
@@ -121,17 +121,20 @@ jobs:
             delete a.dependencies[target];
             if (JSON.stringify(b) !== JSON.stringify(a)) throw new Error('package.json candidate changes more than the single target dependency');
             if (afterValue.replace(/^\^/, '') !== fixVersion) throw new Error(`Candidate version ${afterValue} does not match audit fix ${fixVersion}`);
+            packageJsonExpected = true;
           } else if (JSON.stringify(b) !== JSON.stringify(a)) {
-            throw new Error('Transitive candidate unexpectedly changed package.json');
+            throw new Error('Lock-only candidate unexpectedly changed package.json');
           }
 
           const beforeLock = fs.readFileSync('package-lock.before.json', 'utf8');
           const afterLock = fs.readFileSync('package-lock.json', 'utf8');
           if (beforeLock === afterLock) throw new Error('npm candidate did not change package-lock.json');
+          fs.writeFileSync('apply-scope.json', JSON.stringify({ packageJsonExpected }, null, 2));
           NODE
 
+          package_json_expected=$(node -e "const x=require('./apply-scope.json'); process.stdout.write(String(x.packageJsonExpected))")
           changed=$(git diff --name-only -- package.json package-lock.json | sort | tr '\n' ' ')
-          if [ "$direct" = 'true' ]; then
+          if [ "$package_json_expected" = 'true' ]; then
             [ "$changed" = "package-lock.json package.json " ] || { echo "Unexpected changed files: $changed"; exit 4; }
           else
             [ "$changed" = "package-lock.json " ] || { echo "Unexpected changed files: $changed"; exit 5; }
@@ -140,6 +143,7 @@ jobs:
           echo "package=$first" >> "$GITHUB_OUTPUT"
           echo "direct=$direct" >> "$GITHUB_OUTPUT"
           echo "fix_version=$fix_version" >> "$GITHUB_OUTPUT"
+          echo "package_json_expected=$package_json_expected" >> "$GITHUB_OUTPUT"
 
       - name: Commit only npm-generated candidate files
         shell: bash
@@ -149,7 +153,7 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -- package.json package-lock.json
           staged=$(git diff --cached --name-only | sort | tr '\n' ' ')
-          if [ "${{ steps.candidate.outputs.direct }}" = 'true' ]; then
+          if [ "${{ steps.candidate.outputs.package_json_expected }}" = 'true' ]; then
             [ "$staged" = "package-lock.json package.json " ] || { echo "Unsafe staged scope: $staged"; exit 6; }
           else
             [ "$staged" = "package-lock.json " ] || { echo "Unsafe staged scope: $staged"; exit 7; }
