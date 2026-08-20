@@ -16,8 +16,9 @@ COPY . .
 # Build the application
 RUN npm run build
 
-# Clean up dev dependencies - (We keep them for dev commands inside the container)
-# RUN npm ci --only=production && npm cache clean --force
+# Remove build/test-only dependencies from the runtime image.
+# This keeps the frozen v1.0 runtime dependency surface limited to production packages.
+RUN npm prune --omit=dev --legacy-peer-deps && npm cache clean --force
 
 # Expose port
 EXPOSE 5001
