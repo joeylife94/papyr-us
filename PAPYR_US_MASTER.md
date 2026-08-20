@@ -4,7 +4,7 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.32"
+version: "0.33"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
 current_phase: "Phase 3 — Operational & Security Readiness"
 priority: "P0"
@@ -15,7 +15,7 @@ baseline_main_sha: "4d9f77090bd05b1633637ab110b81b0d5f84b773"
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.32**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.33**  
 > This root file is the single project-state / closure ledger. Read it before every iteration and update it on `main` before the iteration ends.
 
 ## 0. Authority / Rules
@@ -139,61 +139,59 @@ For GAP-007 specifically:
 > **Accepted product baseline:** `4d9f77090bd05b1633637ab110b81b0d5f84b773`  
 > **Highest remaining Phase 3 work item:** GAP-007 dependency security reachability triage  
 > **Active implementation Issue / PR:** Issue #58 / draft PR #59  
-> **Current exact candidate:** `d4aee711a3d5ae4a948621aa09c9411dd7d31ce8`
+> **Current exact candidate:** `e3a0bd4cca89a5ba9ed099cde58c784d997152f2`
 
 ### Changed
 
-- Reconciled stale v0.31 workflow state for exact candidate `f5b0ec88d9522d92047092cbace9437615ed2ae7`.
-- Exact-head conclusions for `f5b0ec88...`: Dependency Security Reachability `32343918361` **FAILURE**; CI `32343918349` **SUCCESS**; 7-Layer `32343918304` **SUCCESS**; Firebat `32343918326` **SUCCESS**.
-- Inspected failing security job `96348486592`, step `Summarize runtime image findings and enforce gate`, with uploaded `gap007-security-evidence` artifact ID `9397374213`.
-- Quantified the global npm/npx removal effect versus prior `e17ec546...`: runtime-image HIGH/CRITICAL fell **78 → 60**. Debian findings stayed **22 → 22**; Node findings fell **56 → 38**. Global npm removal therefore eliminated **18** Node runtime-image findings while preserving Firebat behavior on the exact candidate.
-- Production-only npm audit still reports **20 blocking HIGH/CRITICAL findings**, all with non-dev / production-or-unclassified lock evidence; no D-014 waiver is justified.
-- The first remaining runtime boundary selected for correction is the OS layer: the Debian slim candidate still contains **22 HIGH/CRITICAL** findings, all present in the runtime image and currently reported without fixed Debian versions by the scanner.
-- Applied the smallest same-Issue runtime-surface remediation that preserves the existing shell/user operational contract: changed the Node 20 runtime base from `node:20-bookworm-slim` to `node:20-alpine` and replaced Debian package upgrade with `apk upgrade --no-cache`.
-- Did not upgrade application dependencies, force npm audit fixes, change product features, or touch unrelated PR #19.
+- Reconciled stale v0.32 state for exact candidate `d4aee711a3d5ae4a948621aa09c9411dd7d31ce8`.
+- Exact-head conclusions for `d4aee711...`: Dependency Security Reachability `32348929899` **FAILURE**; CI `32348929910` **SUCCESS**; 7-Layer `32348929901` **SUCCESS**; Firebat `32348929909` **SUCCESS**.
+- Alpine runtime remediation materially reduced the runtime-image surface: HIGH/CRITICAL **60 → 38** versus prior `f5b0ec88...`.
+- The entire prior OS layer contribution was removed: **22 Debian OS findings → 0 Alpine OS findings**. Node findings remained **38 → 38**.
+- Production-only `npm audit --omit=dev` remains **20 blocking HIGH/CRITICAL findings**. No D-014 disposition is justified for those non-dev / production-or-unclassified lock nodes.
+- First remaining runtime-present boundary is `brace-expansion@2.0.2`, present at `app/node_modules/brace-expansion`, with fixed 2.x releases listed by Trivy. It is non-dev in the exact lock graph and therefore blocking.
+- Existing evidence did not identify the production parent chain that brings `brace-expansion` into the runtime graph. To avoid blind overrides or broad dependency upgrades, added a single evidence step to capture the first blocking package ancestry via `npm ls <first-blocker> --omit=dev --all --json` and include it in the GAP-007 artifact.
+- No dependency version was force-upgraded; no product feature or unrelated PR #19 work was touched.
 
 ### Actually Executed
 
-- Read current root MASTER on `main` before repository mutations.
-- Re-fetched PR #59 and confirmed CURRENT head remained `f5b0ec88...`, draft/open/unmerged.
-- Re-fetched all exact-head workflows and confirmed dedicated security RED with CI/7-Layer/Firebat GREEN.
-- Fetched the failing security job and decoded the runtime-image and production npm findings.
-- Verified `f5b0ec88...` runtime image contained **60 HIGH/CRITICAL = 22 Debian + 38 Node** findings.
-- Verified `npm audit --omit=dev` still contained **20** blocking production/unclassified HIGH/CRITICAL findings, including direct or runtime dependency boundaries such as drizzle-orm, express, nodemailer, react-router-dom, sharp, socket.io/ws and their transitive packages.
-- Confirmed Firebat's operational checks still require a shell-capable image (`sh`/`cat`) and the `node` runtime user, so a distroless conversion would broaden risk and was not selected.
-- Updated only `Dockerfile` on `security/issue-58-gap007-reachability` to use `node:20-alpine` plus `apk upgrade --no-cache`, retaining production prune, global npm removal, `PORT=5001`, and direct Node startup.
-- New PR #59 exact head: `d4aee711a3d5ae4a948621aa09c9411dd7d31ce8`.
+- Read current root MASTER on `main` before mutations.
+- Re-fetched PR #59 and confirmed CURRENT head `d4aee711...`, draft/open/unmerged.
+- Re-fetched all exact-head workflow conclusions.
+- Inspected failed security job `96363607611`, including the failing runtime-image enforcement step and uploaded evidence artifact `9399299479`.
+- Verified exact Alpine scan result: **38 HIGH/CRITICAL, all Node package findings; zero Alpine OS HIGH/CRITICAL findings**.
+- Verified exact production audit result: **20 blocking HIGH/CRITICAL**.
+- Verified Firebat, CI, and 7-Layer are GREEN on `d4aee711...`, so Alpine/musl did not introduce an accepted runtime/test incompatibility on that candidate.
+- Updated only `.github/workflows/security-reachability.yml` to capture first-blocker production ancestry and upload `first-blocker-ancestry.txt`.
+- New PR #59 exact head: `e3a0bd4cca89a5ba9ed099cde58c784d997152f2`.
 
 ### Checks / Current Verification State
 
-Prior exact candidate `f5b0ec88d9522d92047092cbace9437615ed2ae7`:
-- Dependency Security Reachability `32343918361` — **FAILURE**.
-- CI `32343918349` — **SUCCESS**.
-- 7-Layer Test Architecture `32343918304` — **SUCCESS**.
-- Firebat Deployment Gate `32343918326` — **SUCCESS**.
-- Dedicated runtime evidence: **60** HIGH/CRITICAL = **22 Debian + 38 Node**; prior `e17ec546...` was 78 = 22 Debian + 56 Node.
+Prior exact candidate `d4aee711a3d5ae4a948621aa09c9411dd7d31ce8`:
+- Dependency Security Reachability `32348929899` — **FAILURE**.
+- CI `32348929910` — **SUCCESS**.
+- 7-Layer Test Architecture `32348929901` — **SUCCESS**.
+- Firebat Deployment Gate `32348929909` — **SUCCESS**.
+- Runtime image: **38 HIGH/CRITICAL = 0 OS + 38 Node**.
 - Production npm blockers: **20**.
 
-Current exact candidate `d4aee711a3d5ae4a948621aa09c9411dd7d31ce8`:
-- Dependency Security Reachability `32348929899` — **QUEUED**.
-- CI `32348929910` — **IN PROGRESS**.
-- 7-Layer Test Architecture `32348929901` — **IN PROGRESS**.
-- Firebat Deployment Gate `32348929909` — **IN PROGRESS**.
+Current exact candidate `e3a0bd4cca89a5ba9ed099cde58c784d997152f2`:
+- Dependency Security Reachability `32353935567` — **IN PROGRESS**.
+- CI `32353935555` — **IN PROGRESS**.
+- 7-Layer Test Architecture `32353935465` — **IN PROGRESS**.
+- Firebat Deployment Gate `32353935472` — **IN PROGRESS**.
 - No current gate is treated as PASS until completion on this exact head.
 
 ### Not Verified
 
-- Whether the Alpine base eliminates or materially reduces the 22 Debian runtime-image findings; fresh exact-head Trivy evidence is pending.
-- Whether native/runtime dependencies remain fully compatible with Alpine/musl on this exact candidate; Firebat is authoritative for that boundary and is still executing.
-- The 20 production npm blockers remain unresolved and blocking unless subsequent exact dependency/runtime evidence removes or minimally remediates them.
+- Exact production parent chain for `brace-expansion@2.0.2`; the new ancestry capture is executing on the current candidate.
+- Whether the smallest safe remediation is a parent patch/minor update or another narrower dependency correction; this must be chosen from executed ancestry evidence, not guessed.
+- The remaining 37 runtime Node findings and 19 additional production npm blockers after the first boundary.
 - GAP-007 closure, Issue #58 closure, Phase 3 closure, or any Phase 4 work.
 
 ### Residual Risks / Blockers
 
-- GAP-007 remains RED until the dedicated security gate is GREEN on the CURRENT exact head.
-- D-014 still forbids waiving unknown, non-dev, or runtime-present HIGH/CRITICAL findings.
-- Alpine may expose native-module/build/runtime compatibility issues that did not exist on Debian; no acceptance claim is made until Firebat and the full test gates complete.
-- Application production dependencies still contain concrete HIGH/CRITICAL findings independent of the OS-base remediation.
+- GAP-007 remains RED until dedicated security is GREEN on CURRENT exact head.
+- D-014 forbids waiving `brace-expansion` or any other non-dev/runtime-present HIGH/CRITICAL finding.
 - PR #59 remains draft/open/unmerged. PR #19 remains unrelated and unchanged.
 
 ### Repo / Issue / PR State
@@ -203,14 +201,14 @@ Current exact candidate `d4aee711a3d5ae4a948621aa09c9411dd7d31ce8`:
 - GAP-007: **ACTIVE / OPEN**
 - Issue #58: **OPEN**
 - PR #59: **DRAFT / OPEN / UNMERGED**
-- PR #59 current exact head: `d4aee711a3d5ae4a948621aa09c9411dd7d31ce8`
+- PR #59 current exact head: `e3a0bd4cca89a5ba9ed099cde58c784d997152f2`
 - unrelated PR #19: unchanged
 
 ### Exact Next Action
 
-1. Re-read current MASTER/main and re-fetch PR #59 CURRENT exact head; discard `d4aee711...` handoff if the head advances.
+1. Re-read current MASTER/main and re-fetch PR #59 CURRENT exact head; discard `e3a0bd4...` handoff if the head advances.
 2. Fetch CURRENT exact-head Dependency Security Reachability, CI, 7-Layer, and Firebat conclusions.
-3. If security is RED, inspect the fresh `gap007-security-evidence` artifact and quantify remaining Alpine OS + application Node + production npm HIGH/CRITICAL blockers.
-4. If Firebat or another required gate is RED, inspect the first concrete Alpine/runtime failure and apply only the smallest Issue #58-scoped correction.
-5. Select only the first remaining runtime-present or non-dev HIGH/CRITICAL boundary; do not waive under D-014 and do not use `npm audit fix --force` or broad dependency modernization.
+3. Inspect `first-blocker-ancestry.txt` from the fresh `gap007-security-evidence` artifact and identify the exact production parent(s) introducing `brace-expansion@2.0.2`.
+4. Apply only the smallest compatible parent/dependency correction that removes this first runtime-present blocker; do not use force upgrades or broad modernization.
+5. Re-run all four required gates on the new exact head and continue one blocker boundary at a time.
 6. Only when dedicated security + CI + 7-Layer + Firebat are GREEN and review/security state is clean: mark ready, merge with expected-head guard, confirm Issue #58 closes, reconcile this MASTER with resulting main SHA, and evaluate **Phase 3 closure** before any Phase 4 work.
