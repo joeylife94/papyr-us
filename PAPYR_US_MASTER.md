@@ -4,7 +4,7 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.35"
+version: "0.36"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
 current_phase: "Phase 3 — Operational & Security Readiness"
 priority: "P0"
@@ -15,7 +15,7 @@ baseline_main_sha: "4d9f77090bd05b1633637ab110b81b0d5f84b773"
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.35**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.36**  
 > This root file is the single project-state / closure ledger. Read it before every iteration and update it on `main` before the iteration ends.
 
 ## 0. Authority / Rules
@@ -61,7 +61,7 @@ Product direction:
 - **Everywhere:** responsive web matures into installable/offline-capable app experience first; native packaging is justified by proven product needs rather than treated as a separate early codebase.
 - **AI follows the workspace:** AI/search/automation should amplify trusted workspace data and collaboration after the core workspace experience is strong; AI breadth must not substitute for editor, sync, collaboration, or information-architecture quality.
 
-This North Star is **directional only during the current v1.0 closure**. It does not add requirements to the frozen v1.0 scope, reopen closed Golden Journeys, or authorize feature expansion before Phase 6 v1.0 Freeze. Post-v1 execution should proceed from a known-good v1.0 release rather than continuously expanding the current closure target.
+This North Star is **directional only during the current v1.0 closure**. It does not add requirements to the frozen v1.0 scope, reopen closed Golden Journeys, or authorize feature expansion before Phase 6 v1.0 Freeze.
 
 ## 2. Accepted Baseline Evidence
 
@@ -74,7 +74,7 @@ This North Star is **directional only during the current v1.0 closure**. It does
 - Version recovery proof: Issue #52 + PR #53 merged `23770c284f400c4f769a8a4490c2bca17a0919ea`; **GJ-04 CLOSED**.
 - Secure Search: accepted real-PostgreSQL Layer 4 + GJ-03 authorization evidence; **GJ-06 CLOSED**.
 - Optional AI Assistance: Issue #54 + PR #55 merged `06acd4438199df1185426f322b96585accb0ecc6`; **GJ-07 CLOSED**.
-- Operational Recovery: Issue #56 + PR #57 candidate `76aa0536fb9bbb3f54f44d4b91b42ca51ba986bd`, CI `32321045461` / 7-Layer `32321045506` / Firebat `32321045460` PASS, merged `4d9f77090bd05b1633637ab110b81b0d5f84b773`; **GJ-08 CLOSED / GAP-008 CLOSED**.
+- Operational Recovery: Issue #56 + PR #57 merged `4d9f77090bd05b1633637ab110b81b0d5f84b773`; **GJ-08 CLOSED / GAP-008 CLOSED**.
 
 ## 3. Golden Journeys
 
@@ -155,48 +155,56 @@ For GAP-007 specifically:
 > **Accepted product baseline:** `4d9f77090bd05b1633637ab110b81b0d5f84b773`  
 > **Highest remaining Phase 3 work item:** GAP-007 dependency security reachability triage  
 > **Active implementation Issue / PR:** Issue #58 / draft PR #59  
-> **Current exact candidate:** `d44edd55a50182954235851bfd3e94bd7509074f`
+> **Current exact candidate:** `c39dcc0b194979b8567754c660ac8c22faa393fa`
 
 ### Changed
 
-- The previous tooling HOLD changed materially: GitHub Actions provides an npm-capable checked-out repository plus `contents: write`, allowing package-manager-generated dependency metadata to be safely produced and committed without hand-authoring `package-lock.json`.
-- The first proven blocker path was corrected with npm-generated metadata inside existing Issue #58 / PR #59 only.
-- `@sentry/node` / `@sentry/profiling-node` were advanced minimally to `10.40.0`, the first tested boundary in the current major line where `@sentry/node` no longer declares the vulnerable minimatch path.
-- `tailwindcss-animate`, used only from `tailwind.config.ts` during build, was reclassified from production dependency to devDependency with npm so its Tailwind/Sucrase/Glob/Minimatch chain is represented as `dev: true` in the lock graph.
-- Npm-generated candidate evidence reduced production HIGH/CRITICAL audit findings from **20 to 14**. The former root `brace-expansion@2.0.2` and `minimatch@9.0.5` nodes are now `dev: true`; `npm ls brace-expansion --omit=dev` no longer exposes that vulnerable production path. A separate nested runtime `brace-expansion@5.0.9` under `@fastify/otel` is allowed because it is not the HIGH/CRITICAL audit finding being dispositioned.
-- The temporary lock-generation workflow removed itself from the final PR tree after committing the npm-generated `package.json` / `package-lock.json` correction.
+- Current repository evidence superseded the prior checkpoint: PR #59 was actually at connector-trigger head `346cf5d59e3a57aa092a2b27eecf471c1b0460bd`, not the historical `d44edd55...` checkpoint.
+- On `346cf5d...`, supporting gates were GREEN while Dependency Security was RED.
+- Fresh `gap007-security-evidence` identified the CURRENT first blocker as production `engine.io@6.6.4` via `socket.io@4.8.1 -> engine.io@6.6.4`.
+- The npm-generated candidate was bounded: `npm update engine.io --package-lock-only --ignore-scripts`, exit 0, `package.json` unchanged, lock-only update to `engine.io@6.6.9` with compatible `ws`/debug resolution changes.
+- Added `gap007-apply-candidate` exactly once. Apply run `32374086882` succeeded and pushed bot commit `623784f3766772b216d654c79822ec23beb5548a`.
+- Removed the apply label after the successful push.
+- Exact-head workflows on bot commit `623784f...` were all `ACTION_REQUIRED`, matching known `GITHUB_TOKEN` recursion behavior.
+- Updated `.github/gap007-sync-trigger` on the same PR branch with `candidate_head=623784f...`, producing connector-trigger exact head `c39dcc0b194979b8567754c660ac8c22faa393fa`.
 
 ### Actually Executed
 
-- Read the current root MASTER on `main`, then re-fetched PR #59 and confirmed the starting CURRENT exact head and settled RED security evidence.
-- Re-checked local execution capability: Node/npm/git are installed, but direct GitHub DNS access remains unavailable from the local container.
-- Used GitHub Actions as the trustworthy npm execution path and iterated only within PR #59.
-- Tested minimatch-only and Sentry-only lock refresh candidates as artifacts before committing; rejected candidates that did not remove the production blocker or did not satisfy D-014 lock metadata.
-- Verified `tailwindcss-animate` usage is confined to Tailwind build configuration before reclassifying it as dev-only.
-- Generated the accepted first-blocker correction using npm `--save` / `--save-dev` + `--package-lock-only`; validated the vulnerable root brace/minimatch nodes as `dev: true` and confirmed the production audit no longer reports the old brace-expansion blocker.
-- Committed the npm-generated correction from the Actions checkout, removed the temporary generator workflow, and used a connector sync commit whose final tree is unchanged except for the intended PR changes so required PR workflows execute on the corrected exact tree.
+- Re-read this MASTER on `main` before acting.
+- Re-fetched CURRENT PR #59 metadata, labels/head, exact-head workflows, and downloaded Security artifact `gap007-security-evidence` from run `32371315497`.
+- Inspected `npm-audit-prod-blocking.json`, `first-blocker-ancestry.txt`, candidate metadata, and lock diff before approval.
+- Confirmed candidate eligibility: npm command exit 0; first current production blocker only; no broad modernization; no force audit; no synthetic lock metadata; head unchanged at approval time.
+- Triggered guarded Apply through the PR label, verified Apply SUCCESS, removed the label, confirmed bot-head `ACTION_REQUIRED`, then used the allowed connector sync trigger.
+- Did not stack another dependency candidate after the new validation cycle started.
 
 ### Checks / Current Verification State
 
-CURRENT exact candidate `d44edd55a50182954235851bfd3e94bd7509074f`:
-- Dependency Security Reachability `32370201174` — **IN PROGRESS**.
-- CI `32370200985` — **IN PROGRESS**.
-- 7-Layer Test Architecture `32370200898` — **IN PROGRESS**.
-- Firebat Deployment Gate `32370200858` — **QUEUED** at last observation.
-- Npm-generated pre-commit candidate evidence: production HIGH/CRITICAL findings **20 -> 14**; old root `brace-expansion@2.0.2` / `minimatch@9.0.5` lock nodes are `dev: true`, and the old vulnerable path is absent from `npm --omit=dev` ancestry.
+CURRENT exact candidate `c39dcc0b194979b8567754c660ac8c22faa393fa`:
+- Dependency Security Reachability `32374218567` — **IN PROGRESS**.
+- CI `32374218598` — **IN PROGRESS**.
+- 7-Layer Test Architecture `32374218620` — **IN PROGRESS**.
+- Firebat Deployment Gate `32374218533` — **IN PROGRESS**.
+
+Prior exact head `346cf5d...` before apply:
+- Dependency Security Reachability `32371315497` — **FAILURE**.
+- CI `32371315489` — **SUCCESS**.
+- 7-Layer `32371315494` — **SUCCESS**.
+- Firebat `32371315495` — **SUCCESS**.
+
+Apply:
+- GAP-007 Apply npm Candidate `32374086882` — **SUCCESS**.
 
 ### Not Verified
 
-- The four required gates have not yet settled on `d44edd55...`; no PASS or closure is claimed from in-progress state.
-- Fresh runtime-image Trivy counts for the corrected exact head are not yet accepted until dedicated Security run `32370201174` completes.
-- The remaining **14** production HIGH/CRITICAL audit findings have not yet been triaged beyond the first blocker correction.
-- GAP-007 closure, Issue #58 closure, Phase 3 closure, and Phase 4 work remain unverified/open.
+- The four required validation gates have not settled on `c39dcc0...`; no PASS, merge, Issue closure, GAP closure, or Phase closure is claimed.
+- The post-engine.io production/runtime HIGH/CRITICAL count is not yet accepted until Security `32374218567` completes and its artifact is inspected if RED.
+- `.github/gap007-sync-trigger` remains temporary and must be deleted before final merge, followed by a final exact-head validation cycle.
 
 ### Residual Risks / Blockers
 
-- GAP-007 remains OPEN until dedicated security + CI + 7-Layer + Firebat are GREEN on the CURRENT exact head and remaining findings have bounded D-014 dispositions/remediations.
-- The former tooling blocker is resolved through the npm-capable GitHub Actions checkout path, but dependency corrections must continue to be package-manager generated rather than manually synthesized.
-- PR #59 remains draft/open/unmerged. Issue #58 remains open. PR #19 remains unrelated and unchanged.
+- GAP-007 remains OPEN under D-014 until no runtime-present/non-dev HIGH/CRITICAL blockers remain and all four required gates are GREEN on the same final cleaned head.
+- PR #59 remains draft/open/unmerged; Issue #58 remains open.
+- Phase 4/public demo/proof packaging/PR #19/deferred v1.1 work remains blocked by active #58/#59.
 
 ### Repo / Issue / PR State
 
@@ -205,13 +213,14 @@ CURRENT exact candidate `d44edd55a50182954235851bfd3e94bd7509074f`:
 - GAP-007: **ACTIVE / OPEN**
 - Issue #58: **OPEN**
 - PR #59: **DRAFT / OPEN / UNMERGED**
-- PR #59 current exact head: `d44edd55a50182954235851bfd3e94bd7509074f`
+- PR #59 current exact head: `c39dcc0b194979b8567754c660ac8c22faa393fa`
+- temporary `.github/gap007-sync-trigger`: present on PR branch for validation orchestration only
 - unrelated PR #19: unchanged
 
 ### Exact Next Action
 
-1. Re-fetch PR #59 and the four workflows for CURRENT exact head `d44edd55...`; discard this checkpoint immediately if the branch advances.
-2. If any required gate is RED/CANCELLED/TIMED_OUT, inspect the first concrete failure and apply only the smallest Issue #58 correction.
-3. If dedicated Security is RED from remaining dependency findings, inspect the fresh artifact and advance only the first remaining non-dev/runtime-present HIGH/CRITICAL boundary under D-014, using the npm-capable Actions lock-generation path for any dependency change.
-4. Do not start Phase 4, PR #19, framework migration, or deferred v1.1 scope while Issue #58 / PR #59 is active.
-5. Only when Security + CI + 7-Layer + Firebat are GREEN on the CURRENT exact head and review/security is clean: mark #59 ready, merge with expected-head guard, confirm Issue #58 closes, reconcile this MASTER with accepted main SHA, then evaluate Phase 3 closure.
+1. Re-fetch PR #59 and four workflows for CURRENT head `c39dcc0...`; if any are pending/running, do not trigger another candidate.
+2. If CI/7-Layer/Firebat is RED, inspect that compatibility/runtime failure before any new dependency change.
+3. If supporting gates are GREEN and Security is RED, download the fresh `gap007-security-evidence`, inspect only the CURRENT first production/runtime HIGH/CRITICAL blocker, and approve at most one bounded npm-generated candidate cycle.
+4. If all four gates become GREEN and GAP-007 otherwise satisfies acceptance, delete `.github/gap007-sync-trigger`, require a final exact-head four-gate validation cycle on the cleanup head, then perform clean review/security checks.
+5. Only after final same-head GREEN + clean review/security: mark PR #59 ready, merge with expected-head guard, confirm Issue #58 closes, reconcile this MASTER with accepted `main` SHA, and evaluate Phase 3 closure before Phase 4.
