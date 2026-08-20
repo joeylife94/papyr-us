@@ -1,5 +1,5 @@
-# Use the official Node.js 20 image
-FROM node:20
+# Use the official Node.js 20 slim image to keep the frozen v1.0 runtime OS surface bounded.
+FROM node:20-bookworm-slim
 
 # Set working directory
 WORKDIR /app
