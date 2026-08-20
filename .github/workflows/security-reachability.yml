@@ -100,6 +100,17 @@ jobs:
           fs.writeFileSync('npm-audit-prod-blocking.json', JSON.stringify(blocking, null, 2));
           NODE
 
+      - name: Capture first blocking package ancestry
+        shell: bash
+        run: |
+          first=$(node -e "const f=require('./npm-audit-prod-blocking.json'); process.stdout.write(f[0]?.package || '')")
+          if [ -z "$first" ]; then
+            echo 'No blocking npm package remains.' > first-blocker-ancestry.txt
+            exit 0
+          fi
+          echo "FIRST_BLOCKER=$first" | tee first-blocker-ancestry.txt
+          npm ls "$first" --omit=dev --all --json >> first-blocker-ancestry.txt 2>&1 || true
+
       - name: Build current runtime image
         run: docker build --pull -t papyr-us:gap007 .
 
@@ -179,6 +190,7 @@ jobs:
             npm-audit-prod.json
             npm-audit-prod-high-critical.json
             npm-audit-prod-blocking.json
+            first-blocker-ancestry.txt
             trivy-image.json
             trivy-image-high-critical.json
           retention-days: 14
