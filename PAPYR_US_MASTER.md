@@ -4,18 +4,18 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.38"
+version: "0.39"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
 current_phase: "Phase 3 — Operational & Security Readiness"
 priority: "P0"
-last_updated: "2026-08-20"
+last_updated: "2026-08-21"
 repository: "joeylife94/papyr-us"
 baseline_main_sha: "4d9f77090bd05b1633637ab110b81b0d5f84b773"
 ---
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.38**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.39**  
 > This root file is the single project-state / closure ledger. Read it before every iteration and update it on `main` before the iteration ends.
 
 ## 0. Authority / Rules
@@ -50,24 +50,13 @@ Deferred v1.1+: embeddings/pgvector/hybrid retrieval, full RAG/citation UI, task
 
 ### Post-v1 North Star — Personal-first Multiplayer Workspace
 
-Papyr.us beyond v1.0 is a **personal-first multiplayer workspace**: fast and natural for one person, collaboration-native the moment content is shared, and usable across desktop and mobile form factors without creating a separate product model.
-
-Product direction:
-- **Personal-first:** private pages and spaces are the default personal knowledge workspace, not a reduced team mode.
-- **Multiplayer by sharing:** the same page/workspace model progresses from `private -> shared -> collaborative` without migration or mode switching.
-- **Editor-first product experience:** page interaction should feel like a continuous workspace canvas with autosave, block-native keyboard interaction, fast navigation, and no form/CMS mental model.
-- **Collaboration-native:** Yjs-based concurrent editing, presence, comments, mentions, permissions, reconnect/resync, and durable recovery become normal product behavior rather than an optional demo subsystem.
-- **General workspace data model:** pages, database rows, tasks, files, comments, and people converge into a coherent workspace/search model instead of remaining disconnected feature surfaces.
-- **Everywhere:** responsive web matures into installable/offline-capable app experience first; native packaging is justified by proven product needs rather than treated as a separate early codebase.
-- **AI follows the workspace:** AI/search/automation should amplify trusted workspace data and collaboration after the core workspace experience is strong; AI breadth must not substitute for editor, sync, collaboration, or information-architecture quality.
-
-This North Star is **directional only during the current v1.0 closure**. It does not add requirements to the frozen v1.0 scope, reopen closed Golden Journeys, or authorize feature expansion before Phase 6 v1.0 Freeze.
+Papyr.us beyond v1.0 is a **personal-first multiplayer workspace**. This direction is non-authorizing during v1.0 closure: personal-first workspace, sharing-native collaboration, editor-first UX, Yjs/presence/comments/mentions, coherent workspace data, installable/offline-capable experience, and AI that follows trusted workspace data. It must not expand frozen v1.0 scope before Phase 6 Freeze.
 
 ## 2. Accepted Baseline Evidence
 
 - Secure retrieval: PR #40 merged `9aa941c3...`; exact candidate gates PASS.
 - README Search/AI truthfulness: PR #43 merged `6eaebf1e...`; gates PASS.
-- Tasks/Calendar closure: PRs #44–#47; final accepted calendar lifecycle merge `1094ae156f4660b32f4886a1fd8743b459e55cd2`; **GJ-05 CLOSED**.
+- Tasks/Calendar closure: PRs #44–#47; accepted calendar lifecycle merge `1094ae156f4660b32f4886a1fd8743b459e55cd2`; **GJ-05 CLOSED**.
 - Authentication/team-entry page scope + browser proof: PR #48 merged `3fe021aa0ea99eadd8d2daaad281e410bb47c481`; **GJ-01 CLOSED**.
 - Document lifecycle browser proof: PR #49 merged `6c6945cfab5aa6eb238146f4846589a7ba3e33bb`; **GJ-02 CLOSED**.
 - Authorization boundary proof: Issue #50 + PR #51 merged `37a1af97fe171774bda8b8b5c8364ea32e5fa0ac`; **GJ-03 CLOSED**.
@@ -97,7 +86,7 @@ This North Star is **directional only during the current v1.0 closure**. It does
 | GAP-004 | Golden Journey evidence | P0 | CLOSED — GJ-01..08 closed |
 | GAP-005 | Tasks list/team/form scope | P0 | CLOSED |
 | GAP-006 | Public sanitized demo | P0 | OPEN — Phase 4 |
-| GAP-007 | Dependency security reachability triage | P0 | **ACTIVE — Issue #58 / PR #59** |
+| GAP-007 | Dependency security reachability triage | P0 | **ACTIVE — Issue #58 / draft PR #59** |
 | GAP-008 | Backup/restore drill | P1 | CLOSED — Issue #56 / PR #57 |
 | GAP-009 | Historical root audit presentation | P1 | OPEN — Phase 5 |
 | GAP-010 | Screenshot/GIF proof set | P1 | OPEN — Phase 5 |
@@ -126,9 +115,9 @@ Required by release boundary: TypeScript/ESLint/secret scan; unit/domain/contrac
 For GAP-007 specifically:
 - GREEN legacy CI is insufficient because existing `npm audit` and Trivy steps are advisory / `continue-on-error`.
 - Production-only npm dependency evidence must use `npm audit --omit=dev` or an equivalent exact production graph.
-- Runtime-image evidence must identify HIGH/CRITICAL package/path/severity and distinguish production/runtime reachable findings from dev-only or otherwise bounded non-exploitable findings.
-- A scanner-reported HIGH/CRITICAL may be dispositioned as dev-only only when the exact lock node is marked `dev: true` and the runtime-image gate proves it is absent after pruning; unknown or runtime-present HIGH/CRITICAL remains blocking.
-- Any runtime-reachable HIGH/CRITICAL finding requiring correction must be remediated minimally in the same bounded Issue/PR and re-run through exact-head gates.
+- Runtime-image evidence must identify HIGH/CRITICAL package/path/severity and distinguish production/runtime reachable findings from dev-only findings.
+- A scanner-reported HIGH/CRITICAL may be dispositioned as dev-only only when the exact lock node is `dev: true` and the pruned runtime image proves absence.
+- Unknown, non-dev, or runtime-present HIGH/CRITICAL remains blocking and must be remediated minimally in Issue #58 / PR #59, then re-run through exact-head gates.
 
 ## 7. Decision Log
 
@@ -144,69 +133,74 @@ For GAP-007 specifically:
 - D-010 optional AI becomes a required proof journey when public v1.0 surfaces claim or expose it.
 - D-011 recovery proof must preserve production ACL semantics; harness setup must establish authoritative membership rather than bypass authorization.
 - D-012 recovery acceptance requires destructive-target guards plus executed recreate, backup, mutation, restore, and post-restore durability evidence on the exact candidate.
-- D-013 GAP-007 is reachability/disposition work, not generic dependency modernization; security scanners configured advisory cannot close the gap without explicit exact-candidate evidence.
-- D-014 dev-only audit findings are not silently ignored: exact lock metadata must prove `dev: true`, runtime dev dependencies must be pruned, and the runtime-image scan must independently prove no HIGH/CRITICAL remains.
-- D-015 post-v1 North Star is **Personal-first Multiplayer Workspace**; it is directional until v1.0 Freeze and must not expand or destabilize the current frozen closure scope.
+- D-013 GAP-007 is reachability/disposition work, not generic dependency modernization; advisory scanners cannot close the gap without explicit exact-candidate evidence.
+- D-014 dev-only audit findings are not silently ignored: exact lock metadata must prove `dev: true`, runtime dev dependencies must be pruned, and runtime-image scan must independently prove absence.
+- D-015 post-v1 North Star is **Personal-first Multiplayer Workspace**; directional only until v1.0 Freeze.
 
 ## 8. Latest Checkpoint
 
-> **Date:** 2026-08-20 KST  
+> **Date:** 2026-08-21 KST  
 > **Phase:** Phase 3 — Operational & Security Readiness  
 > **Accepted product baseline:** `4d9f77090bd05b1633637ab110b81b0d5f84b773`  
 > **Highest remaining Phase 3 work item:** GAP-007 dependency security reachability triage  
 > **Active implementation Issue / PR:** Issue #58 / draft PR #59  
-> **Current exact candidate:** `898eedd4af062f71df2b527d01a22afc198448ea`
+> **Current exact candidate:** `e5c30321f3d92a55bc313acc952f559a033d5c48`
 
 ### Changed
 
-- The repaired Apply workflow on exact head `010af11a2f535551fc6d16d0f5c2095b0b9c9375` completed supporting validation: Dependency Security `32380581753` **FAILURE**, CI `32380581771` **SUCCESS**, 7-Layer `32380581766` **SUCCESS**, Firebat `32380581764` **SUCCESS**.
-- Fresh exact-head Security evidence still identified direct production `express@4.21.2` as the first HIGH blocker and regenerated the same bounded lock-only npm candidate to `express@4.22.2`; `package.json` remained unchanged.
-- Added `gap007-apply-candidate` exactly once on the validated `010af11...` head. Repaired Apply run `32381367027` completed **SUCCESS** through exact-head checkout, npm install, blocker capture, candidate generation, guarded scope validation, commit, and push.
-- Apply produced bot commit `32055409764b3fbc33f5ef6bfe30fd4ed1d15b88` with commit message `chore: apply npm-backed GAP-007 fix for express`. The commit is package-lock-only and moves Express plus its compatible transitive lock graph; product source and `package.json` were not changed.
-- Removed `gap007-apply-candidate` immediately after the successful Apply push.
-- Exact-head workflows on bot commit `3205540...` were all `ACTION_REQUIRED`, consistent with `GITHUB_TOKEN` recursion behavior.
-- Updated the existing temporary `.github/gap007-sync-trigger` to `candidate_head=32055409764b3fbc33f5ef6bfe30fd4ed1d15b88`, producing connector-trigger current head `898eedd4af062f71df2b527d01a22afc198448ea`.
+- Settled former current head `898eedd4af062f71df2b527d01a22afc198448ea`: Dependency Security `32381488692` **FAILURE**; CI `32381488802` **SUCCESS**; 7-Layer `32381488559` **SUCCESS**; Firebat `32381488704` **SUCCESS**.
+- Downloaded and inspected `gap007-security-evidence` from Security run `32381488692`.
+- Post-Express exact evidence: production blocking HIGH/CRITICAL entries **11**; runtime-image HIGH/CRITICAL **28**, all Node/lang packages and all HIGH; OS HIGH/CRITICAL **0**.
+- Current first production/runtime blocker is `js-yaml@3.14.1`, ancestry `gray-matter@4.0.3 -> js-yaml@3.14.1`.
+- Security evidence generated an eligible npm-backed lock-only candidate using `npm update js-yaml --package-lock-only --ignore-scripts`: root runtime `js-yaml 3.14.1 -> 3.15.1`; dev-only nested 4.x nodes also refreshed by npm; `package.json` unchanged; npm command exit 0.
+- Added `gap007-apply-candidate` exactly once on unchanged head `898eedd4...`.
+- Apply produced bot commit `e429274aef544891139fc6466c0b20c68d65f411` (`chore: apply npm-backed GAP-007 fix for js-yaml`) with only `package-lock.json` changed.
+- Bot-head Security / CI / 7-Layer / Firebat runs were all `ACTION_REQUIRED`, matching token-recursion behavior; removed the apply label.
+- Updated existing temporary `.github/gap007-sync-trigger` to `candidate_head=e429274aef544891139fc6466c0b20c68d65f411`, producing connector-trigger candidate `e5c30321f3d92a55bc313acc952f559a033d5c48`.
 
 ### Actually Executed
 
-- Re-read the authoritative MASTER before work and reconciled PR #59/current workflow evidence against stale checkpoint data.
-- Downloaded and inspected Security evidence for `c39dcc0...`, diagnosed the direct-package boolean-fix Apply guard failure, and limited the repair to `.github/workflows/gap007-apply-candidate.yml`.
-- Required a fresh four-gate exact-head validation on repaired head `010af11...` before approving the same Express dependency candidate again.
-- Downloaded fresh Security evidence from `32380581753`, confirmed first blocker / npm exit 0 / lock-only scope / unchanged head, then applied the label once.
-- Verified Apply `32381367027` was GREEN at every required stage and verified the resulting bot commit diff is npm-generated package-lock-only Express remediation.
-- Removed the label, confirmed token-recursion `ACTION_REQUIRED`, updated only the existing sync trigger, and started a fresh four-gate connector validation cycle on `898eedd4...`.
-- Did not stack a second dependency blocker/candidate, did not delete the sync trigger, and did not touch Phase 4, PR #19, or deferred work.
+- Re-read this MASTER first; re-fetched PR #59 current head/state/labels and exact-head workflows.
+- Reconciled the stale in-progress checkpoint against settled `898eedd4...` evidence before selecting a candidate.
+- Inspected artifact candidate metadata, ancestry, package diff, package-lock diff, production blocker count, and runtime-image finding count.
+- Enforced one-candidate-per-cycle: only `js-yaml` was approved; no second dependency change was stacked.
+- Verified the bot commit parent is `898eedd4...`, author is `papyr-gap007-bot`, commit message targets `js-yaml`, and commit diff is package-lock-only.
+- Removed the apply label after bot push and triggered fresh connector validation only through the existing sync-trigger file.
+- Did not merge, close Issue #58, delete the sync trigger, start Phase 4, touch PR #19, or begin deferred v1.1 work.
 
 ### Checks / Current Verification State
 
-Validated orchestration head `010af11a2f535551fc6d16d0f5c2095b0b9c9375`:
-- Dependency Security Reachability `32380581753` — **FAILURE**.
-- CI `32380581771` — **SUCCESS**.
-- 7-Layer Test Architecture `32380581766` — **SUCCESS**.
-- Firebat Deployment Gate `32380581764` — **SUCCESS**.
+Former validated head `898eedd4af062f71df2b527d01a22afc198448ea`:
+- Dependency Security Reachability `32381488692` — **FAILURE**.
+- CI `32381488802` — **SUCCESS**.
+- 7-Layer Test Architecture `32381488559` — **SUCCESS**.
+- Firebat Deployment Gate `32381488704` — **SUCCESS**.
 
-Apply:
-- GAP-007 Apply npm Candidate `32381367027` — **SUCCESS**.
-- bot dependency commit: `32055409764b3fbc33f5ef6bfe30fd4ed1d15b88`.
-- bot-head Security / CI / 7-Layer / Firebat — **ACTION_REQUIRED**, so not acceptance evidence.
+Apply/resulting bot head:
+- bot dependency commit: `e429274aef544891139fc6466c0b20c68d65f411`.
+- bot-head Dependency Security `32386542605` — **ACTION_REQUIRED**.
+- bot-head CI `32386542630` — **ACTION_REQUIRED**.
+- bot-head 7-Layer `32386542602` — **ACTION_REQUIRED**.
+- bot-head Firebat `32386542595` — **ACTION_REQUIRED**.
 
-CURRENT connector-trigger exact candidate `898eedd4af062f71df2b527d01a22afc198448ea`:
-- Dependency Security Reachability `32381488692` — **IN PROGRESS**.
-- CI `32381488802` — **IN PROGRESS**.
-- 7-Layer Test Architecture `32381488559` — **IN PROGRESS**.
-- Firebat Deployment Gate `32381488704` — **IN PROGRESS**.
+CURRENT connector-trigger exact candidate `e5c30321f3d92a55bc313acc952f559a033d5c48`:
+- Dependency Security Reachability `32386603759` — **IN PROGRESS**.
+- CI `32386604077` — **IN PROGRESS**.
+- 7-Layer Test Architecture `32386603844` — **IN PROGRESS**.
+- Firebat Deployment Gate `32386603918` — **IN PROGRESS**.
 
 ### Not Verified
 
-- The post-Express production/runtime HIGH/CRITICAL count is not accepted until Security `32381488692` settles and its artifact is inspected if RED.
-- The four required gates have not settled on current connector-trigger head `898eedd4...`; no merge, Issue closure, GAP closure, or Phase closure is claimed.
-- `.github/gap007-sync-trigger` remains temporary and must not be removed until GAP-007 otherwise reaches all-GREEN acceptance, followed by a final cleanup-head four-gate validation.
+- Post-js-yaml production/runtime HIGH/CRITICAL count is not accepted until Security `32386603759` settles and its artifact is inspected if RED.
+- Current connector-trigger candidate has not completed all four required gates; no merge, Issue closure, GAP closure, or Phase closure is claimed.
+- Exact Apply run conclusion was not separately retrievable through the connector in this iteration; the successful final push step is evidenced by the expected bot-authored commit, but acceptance still depends on the fresh connector-trigger four-gate cycle.
+- `.github/gap007-sync-trigger` remains temporary and must not be removed until GAP-007 otherwise reaches all-GREEN acceptance, followed by one final cleanup-head four-gate validation.
 
 ### Residual Risks / Blockers
 
-- GAP-007 remains OPEN under D-014 until no runtime-present/non-dev HIGH/CRITICAL blocker remains and all four required gates are GREEN on the same final cleaned head.
+- GAP-007 remains OPEN under D-014 until no runtime-present/non-dev HIGH/CRITICAL blocker remains and Security + CI + 7-Layer + Firebat are GREEN on one final cleaned head.
 - PR #59 remains draft/open/unmerged; Issue #58 remains open.
-- The Express lock remediation is only a candidate until the current connector-trigger exact tree completes executable validation.
+- `js-yaml` remediation remains a candidate until current exact-head executable validation settles.
 - Phase 4/public demo/proof packaging/PR #19/deferred v1.1 work remains blocked by active #58/#59.
 
 ### Repo / Issue / PR State
@@ -216,15 +210,15 @@ CURRENT connector-trigger exact candidate `898eedd4af062f71df2b527d01a22afc19844
 - GAP-007: **ACTIVE / OPEN**
 - Issue #58: **OPEN**
 - PR #59: **DRAFT / OPEN / UNMERGED**
-- PR #59 current exact head: `898eedd4af062f71df2b527d01a22afc198448ea`
-- `gap007-apply-candidate`: absent after successful Apply cleanup
-- temporary `.github/gap007-sync-trigger`: present; content points to bot SHA `32055409764b3fbc33f5ef6bfe30fd4ed1d15b88`
+- PR #59 current exact head: `e5c30321f3d92a55bc313acc952f559a033d5c48`
+- `gap007-apply-candidate`: absent
+- temporary `.github/gap007-sync-trigger`: present; points to bot SHA `e429274aef544891139fc6466c0b20c68d65f411`
 - unrelated PR #19: unchanged
 
 ### Exact Next Action
 
-1. Re-fetch the four required runs on CURRENT head `898eedd4...`; while any are pending/running, do not trigger another candidate.
+1. Re-fetch all four required runs on CURRENT head `e5c30321...`; while any are pending/running, do not trigger another candidate.
 2. If CI/7-Layer/Firebat is RED, inspect that exact compatibility/runtime failure before any new dependency change.
-3. If supporting CI + 7-Layer + Firebat are GREEN and Security is RED, download/inspect fresh `gap007-security-evidence`, identify only the CURRENT first blocking production/runtime HIGH/CRITICAL, and approve at most one new bounded npm-generated candidate cycle.
-4. If all four gates are GREEN and GAP-007 otherwise satisfies acceptance, delete `.github/gap007-sync-trigger`, require one final exact-head four-gate validation on the cleanup head, then perform review/security checks.
+3. If supporting gates are GREEN and Security is RED, download/inspect fresh `gap007-security-evidence`, quantify remaining production/runtime HIGH/CRITICAL, identify only the new first blocking package, and approve at most one bounded npm-generated candidate cycle.
+4. If all four gates become GREEN and GAP-007 otherwise satisfies acceptance, delete `.github/gap007-sync-trigger` and require one final exact-head four-gate validation on the cleanup head.
 5. Only after final same-head GREEN + clean review/security: mark PR #59 ready, merge with expected-head guard, confirm Issue #58 closes, reconcile this MASTER with accepted `main` SHA, and evaluate Phase 3 closure before Phase 4.
