@@ -1,11 +1,9 @@
-# Use the official Node.js 20 slim image to keep the frozen v1.0 runtime OS surface bounded.
-FROM node:20-bookworm-slim
+# Use the official Node.js 20 Alpine image to minimize the frozen v1.0 runtime OS surface.
+FROM node:20-alpine
 
-# Apply available Debian security updates before installing application dependencies.
-# GAP-007 runtime evidence showed fixable HIGH/CRITICAL OS packages in the base image.
-RUN apt-get update \
-    && apt-get upgrade -y --no-install-recommends \
-    && rm -rf /var/lib/apt/lists/*
+# Apply available Alpine security updates before installing application dependencies.
+# GAP-007 runtime evidence on the Debian slim candidate still showed 22 HIGH/CRITICAL OS findings.
+RUN apk upgrade --no-cache
 
 # Set working directory
 WORKDIR /app
