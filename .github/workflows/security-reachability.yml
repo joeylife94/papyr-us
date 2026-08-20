@@ -1,0 +1,150 @@
+name: Dependency Security Reachability
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  gap007:
+    name: GAP-007 runtime dependency triage
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install exact dependency graph
+        run: npm ci
+
+      - name: Capture production-only npm audit
+        shell: bash
+        run: |
+          set +e
+          npm audit --omit=dev --json > npm-audit-prod.json
+          echo "NPM_AUDIT_EXIT=$?" >> "$GITHUB_ENV"
+          set -e
+
+      - name: Summarize production npm findings
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const audit = JSON.parse(fs.readFileSync('npm-audit-prod.json', 'utf8'));
+          const findings = Object.values(audit.vulnerabilities || {})
+            .filter(v => ['high', 'critical'].includes(String(v.severity || '').toLowerCase()))
+            .map(v => ({
+              package: v.name,
+              severity: String(v.severity || '').toUpperCase(),
+              direct: Boolean(v.isDirect),
+              range: v.range || '',
+              nodes: Array.isArray(v.nodes) ? v.nodes : [],
+              via: Array.isArray(v.via) ? v.via.map(x => typeof x === 'string' ? x : `${x.source || ''}:${x.title || x.name || ''}`) : [],
+              fixAvailable: v.fixAvailable ?? null,
+            }));
+
+          const lines = [
+            '## GAP-007 production npm audit',
+            '',
+            `- npm audit exit: ${process.env.NPM_AUDIT_EXIT || 'unknown'}`,
+            `- HIGH/CRITICAL production findings: ${findings.length}`,
+            '',
+          ];
+          for (const f of findings) {
+            lines.push(`- ${f.severity} **${f.package}** direct=${f.direct} range=\`${f.range}\``);
+            if (f.nodes.length) lines.push(`  - path(s): ${f.nodes.join(', ')}`);
+            if (f.via.length) lines.push(`  - advisory: ${f.via.join(' | ')}`);
+            lines.push(`  - fixAvailable: ${JSON.stringify(f.fixAvailable)}`);
+          }
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join('\n')}\n`);
+          console.log(lines.join('\n'));
+          fs.writeFileSync('npm-audit-prod-high-critical.json', JSON.stringify(findings, null, 2));
+          NODE
+
+      - name: Build current runtime image
+        run: docker build --pull -t papyr-us:gap007 .
+
+      - name: Scan current runtime image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'papyr-us:gap007'
+          format: 'json'
+          output: 'trivy-image.json'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: false
+          exit-code: '0'
+
+      - name: Summarize runtime image findings and enforce gate
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const report = JSON.parse(fs.readFileSync('trivy-image.json', 'utf8'));
+          const findings = [];
+          for (const result of report.Results || []) {
+            for (const v of result.Vulnerabilities || []) {
+              const severity = String(v.Severity || '').toUpperCase();
+              if (!['HIGH', 'CRITICAL'].includes(severity)) continue;
+              findings.push({
+                target: result.Target || '',
+                class: result.Class || '',
+                type: result.Type || '',
+                package: v.PkgName || '',
+                path: v.PkgPath || '',
+                severity,
+                id: v.VulnerabilityID || '',
+                installed: v.InstalledVersion || '',
+                fixed: v.FixedVersion || '',
+                title: v.Title || '',
+              });
+            }
+          }
+          const lines = [
+            '## GAP-007 runtime image Trivy scan',
+            '',
+            `- HIGH/CRITICAL image findings: ${findings.length}`,
+            '',
+          ];
+          for (const f of findings) {
+            lines.push(`- ${f.severity} **${f.package}** ${f.id}`);
+            lines.push(`  - target/type: ${f.target} / ${f.type || f.class}`);
+            if (f.path) lines.push(`  - path: ${f.path}`);
+            lines.push(`  - installed: ${f.installed || 'unknown'}; fixed: ${f.fixed || 'none listed'}`);
+            if (f.title) lines.push(`  - title: ${f.title}`);
+          }
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join('\n')}\n`);
+          console.log(lines.join('\n'));
+          fs.writeFileSync('trivy-image-high-critical.json', JSON.stringify(findings, null, 2));
+          if (findings.length > 0) process.exitCode = 1;
+          NODE
+
+      - name: Enforce production npm gate
+        shell: bash
+        run: |
+          count=$(node -e "console.log(require('./npm-audit-prod-high-critical.json').length)")
+          if [ "$count" -gt 0 ]; then
+            echo "Production dependency graph contains $count HIGH/CRITICAL finding(s)." >&2
+            exit 1
+          fi
+
+      - name: Upload GAP-007 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gap007-security-evidence
+          path: |
+            npm-audit-prod.json
+            npm-audit-prod-high-critical.json
+            trivy-image.json
+            trivy-image-high-critical.json
+          retention-days: 14
