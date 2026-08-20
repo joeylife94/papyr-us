@@ -181,6 +181,16 @@ jobs:
           docker compose --env-file .env.firebat -f compose.firebat.yml exec -T app \
             cat /app/server/uploads/files/firebat-ci-persistence.txt | grep -Fx 'persisted-before-recreate'
 
+      - name: Run bounded operational recovery drill
+        env:
+          FIREBAT_RECOVERY_ALLOW_DESTRUCTIVE: '1'
+        run: node scripts/recovery-firebat.mjs
+
+      - name: Verify recovery backup artifact was created
+        run: |
+          test -s firebat-recovery/papyr-firebat-recovery.dump
+          ls -lh firebat-recovery/papyr-firebat-recovery.dump
+
       - name: Confirm local environment file is ignored
         run: |
           git check-ignore -q .env.firebat
