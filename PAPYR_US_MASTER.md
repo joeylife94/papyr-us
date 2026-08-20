@@ -4,7 +4,7 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.29"
+version: "0.30"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
 current_phase: "Phase 3 — Operational & Security Readiness"
 priority: "P0"
@@ -15,7 +15,7 @@ baseline_main_sha: "4d9f77090bd05b1633637ab110b81b0d5f84b773"
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.29**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.30**  
 > This root file is the single project-state / closure ledger. Read it before every iteration and update it on `main` before the iteration ends.
 
 ## 0. Authority / Rules
@@ -137,80 +137,76 @@ For GAP-007 specifically:
 > **Date:** 2026-08-20 KST  
 > **Phase:** Phase 3 — Operational & Security Readiness  
 > **Accepted product baseline:** `4d9f77090bd05b1633637ab110b81b0d5f84b773`  
-> **Current main before this ledger-only update:** `fd9a1757fd8370cdfa463a619ff5f195c2b02194`  
+> **Current main before this ledger-only update:** `9908465b5a63533bcec63b48da6af6216c3e397b`  
 > **Highest remaining Phase 3 work item:** GAP-007 dependency security reachability triage  
 > **Active implementation Issue / PR:** Issue #58 / draft PR #59  
-> **Current exact candidate:** `fea835da36311b54ce112eb6672067a05119150e`
+> **Current exact candidate:** `e17ec546bca466a9bc672a0114be8a714630bad1`
 
 ### Changed
 
-- Reconciled stale v0.28 workflow state: prior exact candidate `77c9671fa4107631df3e62a85a8240c4b139b5c4` dedicated Dependency Security Reachability run `32332139831` is **FAILURE**, while CI `32332140408`, 7-Layer `32332139919`, and Firebat `32332139837` are **SUCCESS**.
-- Downloaded and inspected the exact failed security artifact rather than inferring from workflow status.
-- The failure is not only the previously discussed dev-only `tar@7.4.3`: production npm classification reports **20 blocking HIGH/CRITICAL package findings** with non-dev lock nodes, and Trivy reports **1112 HIGH/CRITICAL runtime-image findings**: 1056 OS-package findings and 56 Node-package findings, including 76 CRITICAL / 1036 HIGH overall.
-- Therefore D-014 is not satisfied for `77c9671...`; runtime-present and non-dev HIGH/CRITICAL findings remain blocking.
-- Applied the smallest evidence-driven runtime-surface correction first: changed Docker base from full `node:20` to `node:20-bookworm-slim`, preserving Node 20 and the existing build/prune/start contract while removing unnecessary full-image OS surface.
-- No force-upgrade of Prisma/tar, broad dependency modernization, product feature work, public demo, proof packaging, or PR #19 work was performed.
+- Reconciled stale v0.29 state for exact candidate `fea835da36311b54ce112eb6672067a05119150e`: dedicated Dependency Security Reachability run `32335696864` is **FAILURE**, while CI `32335696884`, 7-Layer `32335696860`, and Firebat `32335696863` are **SUCCESS**.
+- Downloaded and inspected the exact `gap007-security-evidence` artifact from run `32335696864`.
+- Quantified the slim-base effect versus prior candidate `77c9671...`: runtime-image HIGH/CRITICAL findings fell from **1112 to 84**. The new 84 consist of **56 Node-package findings + 28 Debian-package findings**, severity **76 HIGH / 8 CRITICAL**.
+- Production npm classification is still **20 blocking HIGH/CRITICAL findings**; the dependency graph did not change, so D-014 remains unsatisfied.
+- The first current runtime-present boundary selected for remediation is the fixable Debian base-package subset. Current evidence explicitly lists fixed versions for packages including `libcap2` and `libgnutls30`.
+- Applied only available Debian security/package updates in the existing Docker runtime image via `apt-get update && apt-get upgrade -y --no-install-recommends`, then removed apt lists.
+- No dependency force-upgrade, broad modernization, feature work, public demo, proof packaging, or PR #19 work was performed.
 
 ### Actually Executed
 
-- Read current root MASTER on `main` first and confirmed current `main` = `fd9a1757fd8370cdfa463a619ff5f195c2b02194`.
-- Re-fetched Issue #58 and PR #59; PR remained draft/open/unmerged and exact head remained `77c9671...` before correction.
-- Re-fetched exact-head workflows: CI / 7-Layer / Firebat SUCCESS; dedicated security FAILURE.
-- Fetched failed run `32332139831` artifact `gap007-security-evidence` and inspected `npm-audit-prod-blocking.json` plus `trivy-image-high-critical.json`.
-- Verified blocking npm findings include non-dev runtime graph nodes such as `drizzle-orm`, `express`, `nodemailer`, `sharp`, `socket.io-parser`, `ws`, and others; these cannot receive a dev-only disposition under D-014.
-- Verified runtime image evidence contains 1112 HIGH/CRITICAL findings, so a clean runtime-image disposition is impossible for the prior candidate.
-- Updated only `Dockerfile` on the existing Issue #58 branch to use `node:20-bookworm-slim`.
-- Re-fetched PR #59; new exact head is `fea835da36311b54ce112eb6672067a05119150e`.
-- Re-fetched new exact-head workflows after the branch advanced.
+- Read current root MASTER on `main` first and confirmed current `main` = `9908465b5a63533bcec63b48da6af6216c3e397b`.
+- Re-fetched PR #59 and confirmed exact head remained `fea835da...` before correction, draft/open/unmerged.
+- Re-fetched exact-head workflows: dedicated security FAILURE; CI / 7-Layer / Firebat SUCCESS.
+- Downloaded artifact `gap007-security-evidence` (`9394603265`) from security run `32335696864` and inspected `npm-audit-prod-blocking.json` and `trivy-image-high-critical.json`.
+- Verified production npm blocker count = 20.
+- Verified Trivy runtime-image blocker count = 84: 28 Debian + 56 Node, 8 CRITICAL + 76 HIGH.
+- Verified example fixable Debian runtime findings include `libcap2` installed `1:2.66-4+deb12u2+b2` with fixed `1:2.66-4+deb12u3`, and `libgnutls30` installed `3.7.9-2+deb12u6` with fixed `3.7.9-2+deb12u7`.
+- Updated only `Dockerfile` on branch `security/issue-58-gap007-reachability` with the bounded OS update step.
+- New PR #59 exact head is `e17ec546bca466a9bc672a0114be8a714630bad1`.
 
 ### Checks / Current Verification State
 
-Prior exact candidate `77c9671fa4107631df3e62a85a8240c4b139b5c4`:
-- Dependency Security Reachability `32332139831` — **FAILURE**.
-- CI `32332140408` — **SUCCESS**.
-- 7-Layer Test Architecture `32332139919` — **SUCCESS**.
-- Firebat Deployment Gate `32332139837` — **SUCCESS**.
-- Dedicated security artifact: 20 blocking production/unclassified npm findings; Trivy 1112 HIGH/CRITICAL runtime-image findings (1056 OS, 56 Node; 76 CRITICAL / 1036 HIGH).
+Prior exact candidate `fea835da36311b54ce112eb6672067a05119150e`:
+- Dependency Security Reachability `32335696864` — **FAILURE**.
+- CI `32335696884` — **SUCCESS**.
+- 7-Layer Test Architecture `32335696860` — **SUCCESS**.
+- Firebat Deployment Gate `32335696863` — **SUCCESS**.
+- Dedicated artifact: npm blocking findings **20**; runtime-image HIGH/CRITICAL **84** = 56 Node + 28 Debian, 76 HIGH + 8 CRITICAL.
 
-Current exact candidate `fea835da36311b54ce112eb6672067a05119150e`:
-- Dependency Security Reachability `32335696864` — **IN PROGRESS**.
-- CI `32335696884` — **IN PROGRESS**.
-- 7-Layer Test Architecture `32335696860` — **IN PROGRESS**.
-- Firebat Deployment Gate `32335696863` — **IN PROGRESS**.
-
-No CURRENT gate is treated as PASS before completion.
+Current exact candidate `e17ec546bca466a9bc672a0114be8a714630bad1`:
+- Exact-head workflows have not yet appeared in the GitHub workflow-run listing at the time of this ledger update.
+- No CURRENT gate is treated as PASS before an exact-head run completes.
 
 ### Not Verified
 
-- Whether the slim base materially reduces all OS HIGH/CRITICAL findings enough to satisfy the blocking runtime-image gate.
-- Whether any runtime-image HIGH/CRITICAL remains on `fea835da...`; if present, it remains blocking.
-- Whether the 20 production/unclassified npm findings remain after the unchanged dependency graph; they are expected to remain until explicitly remediated or bounded by stronger executed reachability evidence.
-- Final CI / 7-Layer / Firebat conclusions for `fea835da...`.
+- How many of the 28 Debian HIGH/CRITICAL findings are removed by the available package upgrades on `e17ec546...`.
+- Whether any Debian finding without a listed fixed version remains runtime-present; if so it remains blocking under the current gate.
+- The 20 production/unclassified npm HIGH/CRITICAL findings remain unresolved and blocking until minimally remediated or supported by stronger bounded executed evidence.
+- Exact-head dedicated security / CI / 7-Layer / Firebat conclusions for `e17ec546...`.
 - GAP-007 closure, Issue #58 closure, Phase 3 closure, or Phase 4 work.
 
 ### Residual Risks / Blockers
 
-- GAP-007 is still RED until the dedicated security gate is GREEN on the CURRENT exact head.
-- D-014 forbids dispositioning non-dev or runtime-present HIGH/CRITICAL findings merely because a previous `tar` node was dev-only.
-- The current slim-base change only reduces unnecessary runtime OS attack surface; it does not claim to remediate the production Node dependency findings.
-- Any current security RED must be reduced to the first concrete remaining finding/boundary before the next smallest same-Issue correction.
+- GAP-007 remains RED because the prior exact candidate has runtime-present HIGH/CRITICAL findings and the new candidate is not yet verified.
+- D-014 still forbids waiving any unknown, non-dev, or runtime-present HIGH/CRITICAL finding.
+- The OS update step only addresses Debian packages for which the configured repository provides newer packages; it does not address the 20 npm blockers.
 - PR #59 remains draft/open/unmerged. PR #19 remains unrelated and unchanged.
 
 ### Repo / Issue / PR State
 
 - accepted product baseline: `4d9f77090bd05b1633637ab110b81b0d5f84b773`
-- current main before this ledger commit: `fd9a1757fd8370cdfa463a619ff5f195c2b02194`
+- current main before this ledger commit: `9908465b5a63533bcec63b48da6af6216c3e397b`
 - GJ-01..GJ-08: **CLOSED**
 - GAP-007: **ACTIVE / OPEN**
 - Issue #58: **OPEN**
 - PR #59: **DRAFT / OPEN / UNMERGED**
-- PR #59 current exact head: `fea835da36311b54ce112eb6672067a05119150e`
+- PR #59 current exact head: `e17ec546bca466a9bc672a0114be8a714630bad1`
 - unrelated PR #19: unchanged
 
 ### Exact Next Action
 
-1. Re-read current MASTER/main and re-fetch PR #59 CURRENT exact head; do not act on `fea835da...` if it advances.
+1. Re-read current MASTER/main and re-fetch PR #59 CURRENT exact head; do not act on `e17ec546...` if it advances.
 2. Fetch CURRENT exact-head Dependency Security Reachability, CI, 7-Layer, and Firebat conclusions.
-3. If security is RED, inspect the fresh artifact/log and identify the first remaining runtime-present or non-dev HIGH/CRITICAL boundary. Do not waive it under D-014 and do not broad-upgrade dependencies.
-4. Apply only the smallest Issue #58-scoped remediation justified by that exact evidence, then re-run exact-head gates.
+3. If security is RED, inspect the fresh artifact and quantify the post-upgrade Debian/Node/npm blocker set.
+4. Select the first remaining runtime-present or non-dev HIGH/CRITICAL boundary and apply only the smallest Issue #58-scoped remediation; do not waive under D-014 and do not use `npm audit fix --force`.
 5. Only when dedicated security + CI + 7-Layer + Firebat are GREEN and review/security state is clean: mark ready, merge with expected-head guard, confirm Issue #58 closes, reconcile this MASTER with resulting main SHA, and evaluate **Phase 3 closure** before any Phase 4 work.
