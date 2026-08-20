@@ -1,0 +1,158 @@
+name: GAP-007 Apply npm Candidate
+
+on:
+  pull_request:
+    branches: [main]
+    types: [labeled]
+
+jobs:
+  apply:
+    name: Apply guarded npm-generated candidate
+    if: >-
+      github.event.label.name == 'gap007-apply-candidate' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'security/issue-58-gap007-reachability'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install exact dependency graph
+        run: npm ci
+
+      - name: Capture current production blockers
+        shell: bash
+        run: |
+          set +e
+          npm audit --omit=dev --json > npm-audit-prod.json
+          set -e
+          node <<'NODE'
+          const fs = require('fs');
+          const audit = JSON.parse(fs.readFileSync('npm-audit-prod.json', 'utf8'));
+          const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+          const packages = lock.packages || {};
+          const findings = Object.values(audit.vulnerabilities || {})
+            .filter(v => ['high', 'critical'].includes(String(v.severity || '').toLowerCase()))
+            .map(v => {
+              const nodes = Array.isArray(v.nodes) ? v.nodes : [];
+              const nodeEvidence = nodes.map(node => ({
+                node,
+                presentInLock: Boolean(packages[node]),
+                dev: packages[node]?.dev === true,
+              }));
+              const devOnly = nodeEvidence.length > 0 && nodeEvidence.every(n => n.presentInLock && n.dev);
+              return {
+                package: v.name,
+                direct: Boolean(v.isDirect),
+                severity: String(v.severity || '').toUpperCase(),
+                fixAvailable: v.fixAvailable ?? null,
+                disposition: devOnly ? 'DEV_ONLY' : 'BLOCK',
+              };
+            });
+          const blocking = findings.filter(f => f.disposition === 'BLOCK');
+          fs.writeFileSync('apply-blocking.json', JSON.stringify(blocking, null, 2));
+          if (!blocking.length) {
+            console.error('No blocking HIGH/CRITICAL npm finding remains; nothing to apply.');
+            process.exit(2);
+          }
+          NODE
+
+      - name: Generate exact npm candidate
+        id: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('fs');
+          const first = require('./apply-blocking.json')[0];
+          const fix = first?.fixAvailable;
+          const target = {
+            package: first?.package || '',
+            direct: Boolean(first?.direct),
+            fixVersion: fix && typeof fix === 'object' ? (fix.version || '') : '',
+            isSemVerMajor: fix && typeof fix === 'object' ? Boolean(fix.isSemVerMajor) : false,
+          };
+          fs.writeFileSync('apply-target.json', JSON.stringify(target, null, 2));
+          if (!target.package) process.exit(2);
+          if (target.direct && !target.fixVersion) process.exit(3);
+          NODE
+
+          first=$(node -e "const x=require('./apply-target.json'); process.stdout.write(x.package)")
+          direct=$(node -e "const x=require('./apply-target.json'); process.stdout.write(String(x.direct))")
+          fix_version=$(node -e "const x=require('./apply-target.json'); process.stdout.write(x.fixVersion || '')")
+
+          cp package.json package.before.json
+          cp package-lock.json package-lock.before.json
+
+          if [ "$direct" = 'true' ]; then
+            npm install "${first}@${fix_version}" --package-lock-only --ignore-scripts --save-prefix='^'
+          else
+            npm update "$first" --package-lock-only --ignore-scripts
+          fi
+
+          FIRST="$first" DIRECT="$direct" FIX_VERSION="$fix_version" node <<'NODE'
+          const fs = require('fs');
+          const before = JSON.parse(fs.readFileSync('package.before.json', 'utf8'));
+          const after = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const target = process.env.FIRST;
+          const direct = process.env.DIRECT === 'true';
+          const fixVersion = process.env.FIX_VERSION || '';
+
+          function clone(x) { return JSON.parse(JSON.stringify(x)); }
+          const b = clone(before);
+          const a = clone(after);
+
+          if (direct) {
+            const beforeValue = b.dependencies?.[target];
+            const afterValue = a.dependencies?.[target];
+            if (!beforeValue || !afterValue) throw new Error('Direct target is not present in dependencies before/after');
+            delete b.dependencies[target];
+            delete a.dependencies[target];
+            if (JSON.stringify(b) !== JSON.stringify(a)) throw new Error('package.json candidate changes more than the single target dependency');
+            if (afterValue.replace(/^\^/, '') !== fixVersion) throw new Error(`Candidate version ${afterValue} does not match audit fix ${fixVersion}`);
+          } else if (JSON.stringify(b) !== JSON.stringify(a)) {
+            throw new Error('Transitive candidate unexpectedly changed package.json');
+          }
+
+          const beforeLock = fs.readFileSync('package-lock.before.json', 'utf8');
+          const afterLock = fs.readFileSync('package-lock.json', 'utf8');
+          if (beforeLock === afterLock) throw new Error('npm candidate did not change package-lock.json');
+          NODE
+
+          changed=$(git diff --name-only -- package.json package-lock.json | sort | tr '\n' ' ')
+          if [ "$direct" = 'true' ]; then
+            [ "$changed" = "package-lock.json package.json " ] || { echo "Unexpected changed files: $changed"; exit 4; }
+          else
+            [ "$changed" = "package-lock.json " ] || { echo "Unexpected changed files: $changed"; exit 5; }
+          fi
+
+          echo "package=$first" >> "$GITHUB_OUTPUT"
+          echo "direct=$direct" >> "$GITHUB_OUTPUT"
+          echo "fix_version=$fix_version" >> "$GITHUB_OUTPUT"
+
+      - name: Commit only npm-generated candidate files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'papyr-gap007-bot'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- package.json package-lock.json
+          staged=$(git diff --cached --name-only | sort | tr '\n' ' ')
+          if [ "${{ steps.candidate.outputs.direct }}" = 'true' ]; then
+            [ "$staged" = "package-lock.json package.json " ] || { echo "Unsafe staged scope: $staged"; exit 6; }
+          else
+            [ "$staged" = "package-lock.json " ] || { echo "Unsafe staged scope: $staged"; exit 7; }
+          fi
+          git commit -m "chore: apply npm-backed GAP-007 fix for ${{ steps.candidate.outputs.package }}"
+          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
