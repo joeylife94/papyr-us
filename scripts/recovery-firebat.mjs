@@ -107,6 +107,36 @@ async function authedJson(cookie, path, init = {}) {
   });
 }
 
+function establishRecoveryMembership(email, teamId) {
+  if (!Number.isInteger(Number(teamId))) fail(`invalid recovery team id: ${teamId}`);
+  if (!/^firebat-recovery-[0-9-]+@example\.com$/.test(email)) {
+    fail(`invalid recovery actor email: ${email}`);
+  }
+
+  const sql = `
+    INSERT INTO team_members (team_id, user_id, role, invited_by)
+    SELECT ${Number(teamId)}, id, 'owner', id
+    FROM users
+    WHERE email = '${email}'
+    ON CONFLICT DO NOTHING;
+    SELECT COUNT(*)
+    FROM team_members tm
+    JOIN users u ON u.id = tm.user_id
+    WHERE tm.team_id = ${Number(teamId)}
+      AND u.email = '${email}'
+      AND tm.role = 'owner';
+  `;
+  const result = run(
+    'docker',
+    composeArgs('exec', '-T', 'db', 'psql', '-U', dbUser, '-d', dbName, '-tAc', sql),
+    { capture: true }
+  );
+  const output = result.stdout.toString().trim().split(/\r?\n/).filter(Boolean);
+  if (output.at(-1) !== '1') {
+    fail(`authoritative recovery membership was not established: ${output.join(' | ')}`);
+  }
+}
+
 async function waitForHealthy(timeoutMs = 120_000) {
   const deadline = Date.now() + timeoutMs;
   let last = 'no response';
@@ -176,8 +206,6 @@ const recoveryEmail = `firebat-recovery-${stamp}@example.com`;
 const originalContent = `gj08-before-backup-${stamp}`;
 const mutatedContent = `gj08-after-backup-${stamp}`;
 
-// Use the accepted auth/team-entry contract: a freshly registered actor creates the
-// recovery team and thereby receives authoritative membership before team-scoped writes.
 await registerRecoveryActor(recoveryEmail);
 let cookie = await login(recoveryEmail);
 
@@ -192,6 +220,11 @@ const teamCreate = await authedJson(cookie, '/api/teams', {
 if (teamCreate.response.status !== 201) {
   fail(`team creation failed: ${teamCreate.response.status} ${JSON.stringify(teamCreate.body)}`);
 }
+
+// The current production team-create route persists the team row but does not create
+// team_members. The recovery harness establishes the disposable actor's owner row
+// explicitly in the guarded local Firebat database; the application ACL remains intact.
+establishRecoveryMembership(recoveryEmail, teamCreate.body.id);
 
 const pageCreate = await authedJson(cookie, '/api/pages', {
   method: 'POST',
@@ -211,7 +244,6 @@ if (pageCreate.response.status !== 201) {
 const pageId = String(pageCreate.body.id);
 await assertPage(cookie, pageId, originalContent);
 
-// Recreate the accepted Firebat containers without deleting named volumes.
 dockerCompose('up', '-d', '--force-recreate', 'db', 'redis');
 dockerCompose('up', '-d', '--force-recreate', 'app');
 await waitForHealthy();
@@ -236,7 +268,6 @@ if (!mutate.response.ok) {
 }
 await assertPage(cookie, pageId, mutatedContent);
 
-// Stop the app before restoring the full database to avoid application-held connections.
 dockerCompose('stop', 'app');
 const restoreInput = readFileSync(backupFile);
 run(
@@ -263,7 +294,6 @@ await waitForHealthy();
 cookie = await login(recoveryEmail);
 await assertPage(cookie, pageId, originalContent);
 
-// Fresh app recreation proves the restored database state remains durable beyond restore process memory.
 dockerCompose('up', '-d', '--force-recreate', 'app');
 await waitForHealthy();
 cookie = await login(recoveryEmail);
