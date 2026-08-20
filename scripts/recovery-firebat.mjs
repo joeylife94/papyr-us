@@ -3,7 +3,6 @@ import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 
 const baseUrl = process.env.FIREBAT_BASE_URL || 'http://127.0.0.1:8801';
-const email = process.env.FIREBAT_SMOKE_EMAIL || 'firebat-ci@example.com';
 const password = process.env.FIREBAT_SMOKE_PASSWORD || 'FirebatSmoke!123';
 const envFile = process.env.FIREBAT_ENV_FILE || '.env.firebat';
 const composeFile = process.env.FIREBAT_COMPOSE_FILE || 'compose.firebat.yml';
@@ -74,7 +73,21 @@ function getCookieHeader(response) {
   return values.map((value) => value.split(';', 1)[0]).join('; ');
 }
 
-async function login() {
+async function registerRecoveryActor(email) {
+  const result = await jsonRequest('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: 'Firebat Recovery CI',
+      email,
+      password,
+    }),
+  });
+  if (result.response.status !== 201) {
+    fail(`recovery actor registration failed: ${result.response.status} ${JSON.stringify(result.body)}`);
+  }
+}
+
+async function login(email) {
   const result = await jsonRequest('/api/auth/login', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
@@ -158,10 +171,15 @@ if (!version.response.ok || !version.body.revision || version.body.revision === 
 }
 await waitForHealthy();
 
-let cookie = await login();
 const stamp = `${Date.now()}-${process.pid}`;
+const recoveryEmail = `firebat-recovery-${stamp}@example.com`;
 const originalContent = `gj08-before-backup-${stamp}`;
 const mutatedContent = `gj08-after-backup-${stamp}`;
+
+// Use the accepted auth/team-entry contract: a freshly registered actor creates the
+// recovery team and thereby receives authoritative membership before team-scoped writes.
+await registerRecoveryActor(recoveryEmail);
+let cookie = await login(recoveryEmail);
 
 const teamCreate = await authedJson(cookie, '/api/teams', {
   method: 'POST',
@@ -197,7 +215,7 @@ await assertPage(cookie, pageId, originalContent);
 dockerCompose('up', '-d', '--force-recreate', 'db', 'redis');
 dockerCompose('up', '-d', '--force-recreate', 'app');
 await waitForHealthy();
-cookie = await login();
+cookie = await login(recoveryEmail);
 await assertPage(cookie, pageId, originalContent);
 
 mkdirSync(evidenceDir, { recursive: true });
@@ -242,13 +260,13 @@ run(
 
 dockerCompose('up', '-d', 'app');
 await waitForHealthy();
-cookie = await login();
+cookie = await login(recoveryEmail);
 await assertPage(cookie, pageId, originalContent);
 
 // Fresh app recreation proves the restored database state remains durable beyond restore process memory.
 dockerCompose('up', '-d', '--force-recreate', 'app');
 await waitForHealthy();
-cookie = await login();
+cookie = await login(recoveryEmail);
 await assertPage(cookie, pageId, originalContent);
 
 console.log(
@@ -257,6 +275,7 @@ console.log(
     revision: version.body.revision,
     pageId,
     teamId: teamCreate.body.id,
+    recoveryActor: recoveryEmail,
     recreatePersistence: 'passed',
     backupFile,
     backupBytes: statSync(backupFile).size,
