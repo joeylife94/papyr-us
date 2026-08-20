@@ -28,14 +28,14 @@ jobs:
           cp package.json package.before.json
           cp package-lock.json package-lock.before.json
 
-          # tailwindcss-animate is only loaded by tailwind.config.ts at build time.
-          npm pkg delete dependencies.tailwindcss-animate
-          npm pkg set 'devDependencies.tailwindcss-animate=^1.0.7'
+          # This plugin is loaded only by tailwind.config.ts during build.
+          npm install 'tailwindcss-animate@^1.0.7' \
+            --save-dev --package-lock-only --ignore-scripts
 
-          # 10.40.0 is the first @sentry/node release in the declared ^10.38.0
-          # line whose registry metadata no longer declares minimatch.
-          npm install @sentry/node@10.40.0 @sentry/profiling-node@10.40.0 \
-            --package-lock-only --ignore-scripts --no-save
+          # 10.40.0 is the first release in the current Sentry major line whose
+          # registry metadata no longer declares minimatch on @sentry/node.
+          npm install '@sentry/node@10.40.0' '@sentry/profiling-node@10.40.0' \
+            --save --package-lock-only --ignore-scripts
 
           git diff -- package.json package-lock.json > dependency-candidate.diff
           npm audit --omit=dev --json > npm-audit-after-refresh.json || true
@@ -54,7 +54,7 @@ jobs:
           const highCritical = Object.values(audit.vulnerabilities || {}).filter(v => ['high','critical'].includes(String(v.severity || '').toLowerCase()));
           fs.writeFileSync('audit-high-critical-after-refresh.json', JSON.stringify(highCritical, null, 2));
           console.log(`HIGH/CRITICAL after candidate: ${highCritical.length}`);
-          for (const v of highCritical.slice(0, 10)) console.log(`${v.severity} ${v.name} ${v.range || ''}`);
+          for (const v of highCritical.slice(0, 12)) console.log(`${v.severity} ${v.name} ${v.range || ''}`);
           NODE
 
           test -s dependency-candidate.diff
