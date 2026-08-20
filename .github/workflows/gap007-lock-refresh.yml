@@ -21,22 +21,25 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Regenerate smallest compatible minimatch lock boundary
+      - name: Regenerate smallest compatible Sentry lock boundary
         shell: bash
         run: |
           set -euo pipefail
           cp package-lock.json package-lock.before.json
-          npm update minimatch --package-lock-only --ignore-scripts
+          npm view '@sentry/node@^10.38.0' version dependencies.minimatch --json > sentry-registry-boundary.json
+          npm update @sentry/node @sentry/profiling-node --package-lock-only --ignore-scripts
           git diff -- package-lock.json > package-lock.diff
           node <<'NODE'
+          const fs = require('fs');
           const lock = require('./package-lock.json');
           const pkgs = lock.packages || {};
           const rows = Object.entries(pkgs)
-            .filter(([p]) => p.endsWith('/minimatch') || p.endsWith('/brace-expansion'))
+            .filter(([p]) => p.includes('@sentry/') || p.endsWith('/minimatch') || p.endsWith('/brace-expansion'))
             .map(([p, v]) => ({ path: p, version: v.version, dev: v.dev === true, dependencies: v.dependencies || {} }));
-          console.log(JSON.stringify(rows, null, 2));
-          require('fs').writeFileSync('lock-refresh-summary.json', JSON.stringify(rows, null, 2));
+          console.log(JSON.stringify(rows.filter(r => r.path === 'node_modules/@sentry/node' || r.path === 'node_modules/@sentry/profiling-node' || r.path === 'node_modules/minimatch' || r.path === 'node_modules/brace-expansion'), null, 2));
+          fs.writeFileSync('lock-refresh-summary.json', JSON.stringify(rows, null, 2));
           NODE
+          npm audit --omit=dev --json > npm-audit-after-refresh.json || true
           test -s package-lock.diff
 
       - name: Upload npm-generated lock candidate
@@ -47,4 +50,6 @@ jobs:
             package-lock.json
             package-lock.diff
             lock-refresh-summary.json
+            sentry-registry-boundary.json
+            npm-audit-after-refresh.json
           retention-days: 3
