@@ -111,51 +111,86 @@ jobs:
           echo "FIRST_BLOCKER=$first" | tee first-blocker-ancestry.txt
           npm ls "$first" --omit=dev --all --json >> first-blocker-ancestry.txt 2>&1 || true
 
-      - name: Generate npm-backed lockfile candidate
+      - name: Generate npm-backed dependency candidate
         shell: bash
         run: |
           set -u
-          first=$(node -e "const f=require('./npm-audit-prod-blocking.json'); process.stdout.write(f[0]?.package || '')")
+          node <<'NODE'
+          const fs = require('fs');
+          const first = require('./npm-audit-prod-blocking.json')[0] || null;
+          const fix = first?.fixAvailable;
+          const target = {
+            package: first?.package || '',
+            direct: Boolean(first?.direct),
+            fixAvailable: fix ?? null,
+            fixVersion: fix && typeof fix === 'object' ? (fix.version || '') : '',
+            isSemVerMajor: fix && typeof fix === 'object' ? Boolean(fix.isSemVerMajor) : false,
+          };
+          fs.writeFileSync('dependency.candidate-target.json', JSON.stringify(target, null, 2));
+          NODE
+
+          first=$(node -e "const x=require('./dependency.candidate-target.json'); process.stdout.write(x.package || '')")
+          direct=$(node -e "const x=require('./dependency.candidate-target.json'); process.stdout.write(String(Boolean(x.direct)))")
+          fix_version=$(node -e "const x=require('./dependency.candidate-target.json'); process.stdout.write(x.fixVersion || '')")
+
+          cp package.json package.original.json
           cp package-lock.json package-lock.original.json
           candidate_exit=0
-          candidate_changed=false
+          generator='none'
 
           if [ -n "$first" ]; then
             set +e
-            npm update "$first" --package-lock-only --ignore-scripts
-            candidate_exit=$?
+            if [ "$direct" = 'true' ] && [ -n "$fix_version" ]; then
+              generator="npm install ${first}@${fix_version} --package-lock-only --ignore-scripts --save-prefix=^"
+              npm install "${first}@${fix_version}" --package-lock-only --ignore-scripts --save-prefix='^'
+              candidate_exit=$?
+            else
+              generator="npm update ${first} --package-lock-only --ignore-scripts"
+              npm update "$first" --package-lock-only --ignore-scripts
+              candidate_exit=$?
+            fi
             set -e
           fi
 
-          if ! cmp -s package-lock.original.json package-lock.json; then
-            candidate_changed=true
-          fi
+          package_changed=false
+          lock_changed=false
+          if ! cmp -s package.original.json package.json; then package_changed=true; fi
+          if ! cmp -s package-lock.original.json package-lock.json; then lock_changed=true; fi
 
+          cp package.json package.candidate.json
           cp package-lock.json package-lock.candidate.json
+          git diff --no-ext-diff -- package.json > package.candidate.diff || true
           git diff --no-ext-diff -- package-lock.json > package-lock.candidate.diff || true
 
-          FIRST_BLOCKER="$first" CANDIDATE_EXIT="$candidate_exit" CANDIDATE_CHANGED="$candidate_changed" node <<'NODE'
+          FIRST_BLOCKER="$first" DIRECT="$direct" FIX_VERSION="$fix_version" CANDIDATE_EXIT="$candidate_exit" PACKAGE_CHANGED="$package_changed" LOCK_CHANGED="$lock_changed" GENERATOR="$generator" node <<'NODE'
           const fs = require('fs');
           const metadata = {
             firstBlocker: process.env.FIRST_BLOCKER || '',
-            npmUpdateExit: Number(process.env.CANDIDATE_EXIT || '0'),
-            candidateChanged: process.env.CANDIDATE_CHANGED === 'true',
-            generator: 'npm update <first-blocker> --package-lock-only --ignore-scripts',
-            packageJsonChanged: false,
+            direct: process.env.DIRECT === 'true',
+            fixVersion: process.env.FIX_VERSION || '',
+            npmCommandExit: Number(process.env.CANDIDATE_EXIT || '0'),
+            packageJsonChanged: process.env.PACKAGE_CHANGED === 'true',
+            packageLockChanged: process.env.LOCK_CHANGED === 'true',
+            generator: process.env.GENERATOR || 'none',
             committed: false,
           };
-          fs.writeFileSync('package-lock.candidate-meta.json', JSON.stringify(metadata, null, 2));
+          fs.writeFileSync('dependency.candidate-meta.json', JSON.stringify(metadata, null, 2));
           const lines = [
-            '## GAP-007 npm-backed lockfile candidate',
+            '## GAP-007 npm-backed dependency candidate',
             '',
             `- first blocker: ${metadata.firstBlocker || 'none'}`,
-            `- npm update exit: ${metadata.npmUpdateExit}`,
-            `- candidate changed: ${metadata.candidateChanged}`,
+            `- direct dependency: ${metadata.direct}`,
+            `- fix version: ${metadata.fixVersion || 'n/a'}`,
+            `- npm command exit: ${metadata.npmCommandExit}`,
+            `- package.json changed: ${metadata.packageJsonChanged}`,
+            `- package-lock.json changed: ${metadata.packageLockChanged}`,
+            `- generator: ${metadata.generator}`,
             '- candidate is evidence only; this workflow does not commit it',
           ];
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join('\n')}\n`);
           NODE
 
+          mv package.original.json package.json
           mv package-lock.original.json package-lock.json
 
       - name: Build current runtime image
@@ -238,9 +273,12 @@ jobs:
             npm-audit-prod-high-critical.json
             npm-audit-prod-blocking.json
             first-blocker-ancestry.txt
+            dependency.candidate-target.json
+            dependency.candidate-meta.json
+            package.candidate.json
+            package.candidate.diff
             package-lock.candidate.json
             package-lock.candidate.diff
-            package-lock.candidate-meta.json
             trivy-image.json
             trivy-image-high-critical.json
           retention-days: 14
