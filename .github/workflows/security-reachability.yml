@@ -111,6 +111,53 @@ jobs:
           echo "FIRST_BLOCKER=$first" | tee first-blocker-ancestry.txt
           npm ls "$first" --omit=dev --all --json >> first-blocker-ancestry.txt 2>&1 || true
 
+      - name: Generate npm-backed lockfile candidate
+        shell: bash
+        run: |
+          set -u
+          first=$(node -e "const f=require('./npm-audit-prod-blocking.json'); process.stdout.write(f[0]?.package || '')")
+          cp package-lock.json package-lock.original.json
+          candidate_exit=0
+          candidate_changed=false
+
+          if [ -n "$first" ]; then
+            set +e
+            npm update "$first" --package-lock-only --ignore-scripts
+            candidate_exit=$?
+            set -e
+          fi
+
+          if ! cmp -s package-lock.original.json package-lock.json; then
+            candidate_changed=true
+          fi
+
+          cp package-lock.json package-lock.candidate.json
+          git diff --no-ext-diff -- package-lock.json > package-lock.candidate.diff || true
+
+          FIRST_BLOCKER="$first" CANDIDATE_EXIT="$candidate_exit" CANDIDATE_CHANGED="$candidate_changed" node <<'NODE'
+          const fs = require('fs');
+          const metadata = {
+            firstBlocker: process.env.FIRST_BLOCKER || '',
+            npmUpdateExit: Number(process.env.CANDIDATE_EXIT || '0'),
+            candidateChanged: process.env.CANDIDATE_CHANGED === 'true',
+            generator: 'npm update <first-blocker> --package-lock-only --ignore-scripts',
+            packageJsonChanged: false,
+            committed: false,
+          };
+          fs.writeFileSync('package-lock.candidate-meta.json', JSON.stringify(metadata, null, 2));
+          const lines = [
+            '## GAP-007 npm-backed lockfile candidate',
+            '',
+            `- first blocker: ${metadata.firstBlocker || 'none'}`,
+            `- npm update exit: ${metadata.npmUpdateExit}`,
+            `- candidate changed: ${metadata.candidateChanged}`,
+            '- candidate is evidence only; this workflow does not commit it',
+          ];
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join('\n')}\n`);
+          NODE
+
+          mv package-lock.original.json package-lock.json
+
       - name: Build current runtime image
         run: docker build --pull -t papyr-us:gap007 .
 
@@ -191,6 +238,9 @@ jobs:
             npm-audit-prod-high-critical.json
             npm-audit-prod-blocking.json
             first-blocker-ancestry.txt
+            package-lock.candidate.json
+            package-lock.candidate.diff
+            package-lock.candidate-meta.json
             trivy-image.json
             trivy-image-high-critical.json
           retention-days: 14
