@@ -35,40 +35,69 @@ jobs:
           echo "NPM_AUDIT_EXIT=$?" >> "$GITHUB_ENV"
           set -e
 
-      - name: Summarize production npm findings
+      - name: Classify production npm findings
         shell: bash
         run: |
           node <<'NODE'
           const fs = require('fs');
           const audit = JSON.parse(fs.readFileSync('npm-audit-prod.json', 'utf8'));
+          const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+          const packages = lock.packages || {};
+
           const findings = Object.values(audit.vulnerabilities || {})
             .filter(v => ['high', 'critical'].includes(String(v.severity || '').toLowerCase()))
-            .map(v => ({
-              package: v.name,
-              severity: String(v.severity || '').toUpperCase(),
-              direct: Boolean(v.isDirect),
-              range: v.range || '',
-              nodes: Array.isArray(v.nodes) ? v.nodes : [],
-              via: Array.isArray(v.via) ? v.via.map(x => typeof x === 'string' ? x : `${x.source || ''}:${x.title || x.name || ''}`) : [],
-              fixAvailable: v.fixAvailable ?? null,
-            }));
+            .map(v => {
+              const nodes = Array.isArray(v.nodes) ? v.nodes : [];
+              const nodeEvidence = nodes.map(node => ({
+                node,
+                presentInLock: Boolean(packages[node]),
+                dev: packages[node]?.dev === true,
+              }));
+              const devOnly = nodeEvidence.length > 0 && nodeEvidence.every(n => n.presentInLock && n.dev);
+              return {
+                package: v.name,
+                severity: String(v.severity || '').toUpperCase(),
+                direct: Boolean(v.isDirect),
+                range: v.range || '',
+                nodes,
+                nodeEvidence,
+                via: Array.isArray(v.via)
+                  ? v.via.map(x => typeof x === 'string' ? x : `${x.source || ''}:${x.title || x.name || ''}`)
+                  : [],
+                fixAvailable: v.fixAvailable ?? null,
+                reachability: devOnly ? 'DEV_ONLY_LOCK_GRAPH' : 'PRODUCTION_OR_UNCLASSIFIED',
+                exploitability: devOnly
+                  ? 'NOT_RUNTIME_REACHABLE_AFTER_RUNTIME_IMAGE_PRUNE'
+                  : 'REQUIRES_RUNTIME_REVIEW',
+                disposition: devOnly
+                  ? 'ACCEPT_DEV_ONLY_AND_VERIFY_ABSENT_FROM_RUNTIME_IMAGE'
+                  : 'BLOCK',
+              };
+            });
 
+          const blocking = findings.filter(f => f.disposition === 'BLOCK');
           const lines = [
             '## GAP-007 production npm audit',
             '',
             `- npm audit exit: ${process.env.NPM_AUDIT_EXIT || 'unknown'}`,
-            `- HIGH/CRITICAL production findings: ${findings.length}`,
+            `- HIGH/CRITICAL findings reported by npm: ${findings.length}`,
+            `- blocking production/unclassified findings: ${blocking.length}`,
             '',
           ];
           for (const f of findings) {
             lines.push(`- ${f.severity} **${f.package}** direct=${f.direct} range=\`${f.range}\``);
             if (f.nodes.length) lines.push(`  - path(s): ${f.nodes.join(', ')}`);
             if (f.via.length) lines.push(`  - advisory: ${f.via.join(' | ')}`);
+            lines.push(`  - reachability: ${f.reachability}`);
+            lines.push(`  - exploitability: ${f.exploitability}`);
+            lines.push(`  - disposition: ${f.disposition}`);
+            lines.push(`  - lock evidence: ${JSON.stringify(f.nodeEvidence)}`);
             lines.push(`  - fixAvailable: ${JSON.stringify(f.fixAvailable)}`);
           }
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join('\n')}\n`);
           console.log(lines.join('\n'));
           fs.writeFileSync('npm-audit-prod-high-critical.json', JSON.stringify(findings, null, 2));
+          fs.writeFileSync('npm-audit-prod-blocking.json', JSON.stringify(blocking, null, 2));
           NODE
 
       - name: Build current runtime image
@@ -106,6 +135,8 @@ jobs:
                 installed: v.InstalledVersion || '',
                 fixed: v.FixedVersion || '',
                 title: v.Title || '',
+                reachability: 'PRESENT_IN_RUNTIME_IMAGE',
+                disposition: 'BLOCK',
               });
             }
           }
@@ -120,6 +151,8 @@ jobs:
             lines.push(`  - target/type: ${f.target} / ${f.type || f.class}`);
             if (f.path) lines.push(`  - path: ${f.path}`);
             lines.push(`  - installed: ${f.installed || 'unknown'}; fixed: ${f.fixed || 'none listed'}`);
+            lines.push(`  - reachability: ${f.reachability}`);
+            lines.push(`  - disposition: ${f.disposition}`);
             if (f.title) lines.push(`  - title: ${f.title}`);
           }
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join('\n')}\n`);
@@ -131,9 +164,9 @@ jobs:
       - name: Enforce production npm gate
         shell: bash
         run: |
-          count=$(node -e "console.log(require('./npm-audit-prod-high-critical.json').length)")
+          count=$(node -e "console.log(require('./npm-audit-prod-blocking.json').length)")
           if [ "$count" -gt 0 ]; then
-            echo "Production dependency graph contains $count HIGH/CRITICAL finding(s)." >&2
+            echo "Production/unclassified dependency graph contains $count HIGH/CRITICAL finding(s)." >&2
             exit 1
           fi
 
@@ -145,6 +178,7 @@ jobs:
           path: |
             npm-audit-prod.json
             npm-audit-prod-high-critical.json
+            npm-audit-prod-blocking.json
             trivy-image.json
             trivy-image-high-critical.json
           retention-days: 14
