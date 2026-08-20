@@ -4,7 +4,7 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.43"
+version: "0.44"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
 current_phase: "Phase 3 — Operational & Security Readiness"
 priority: "P0"
@@ -15,7 +15,7 @@ baseline_main_sha: "4d9f77090bd05b1633637ab110b81b0d5f84b773"
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.43**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.44**  
 > This root file is the single project-state / closure ledger. Read it before every iteration and update it on `main` before the iteration ends.
 
 ## 0. Authority / Rules
@@ -138,56 +138,57 @@ For GAP-007 specifically:
 > **Accepted product baseline:** `4d9f77090bd05b1633637ab110b81b0d5f84b773`  
 > **Highest remaining Phase 3 work item:** GAP-007 dependency security reachability triage  
 > **Active implementation Issue / PR:** Issue #58 / draft PR #59  
-> **Current exact candidate:** `40abdbd9d60136ec152954e5cd4741643ce418a9`
+> **Current exact candidate:** `e0a7d185fcfb9f02f89df52caa6531a53f793ded`
 
 ### Changed
 
-- Reconciled former exact candidate `12fe4cb069fb599bfeeb8bf1777c6cc30b54ca57` to settled evidence: Dependency Security `32403452226` **FAILURE**; CI `32403452207` **SUCCESS**; 7-Layer `32403452192` **SUCCESS**; Firebat `32403452307` **SUCCESS**.
-- Downloaded and inspected fresh `gap007-security-evidence` from Security run `32403452226`.
-- Post-`nodemailer 8.0.11` exact evidence still reports production blocking HIGH/CRITICAL entries **8**; current first blocker remains direct non-dev `nodemailer@8.0.11`. Runtime-image HIGH/CRITICAL artifact contains **24** entries; D-014 still blocks closure.
-- Fresh security evidence generated the next bounded npm-backed candidate for the current first blocker: `nodemailer ^8.0.4 -> ^9.0.5`, lock `8.0.11 -> 9.0.5`, via `npm install nodemailer@9.0.5 --package-lock-only --ignore-scripts --save-prefix=^`; npm exit 0; only `package.json` and `package-lock.json` change.
-- Added `gap007-apply-candidate` exactly once on unchanged head `12fe4cb...`.
-- GAP-007 Apply npm Candidate run `32408915547` completed **SUCCESS**: exact-head checkout, install, blocker capture, candidate generation, guarded scope validation, commit/push all GREEN.
-- Bot commit `76ae591ba41c32fe2fe5a812290f0c3865169a80` is exactly one commit ahead of `12fe4cb...` and changes only `package.json` + `package-lock.json` for the bounded nodemailer candidate.
-- Removed the apply label after successful bot push.
-- Updated existing `.github/gap007-sync-trigger` to `candidate_head=76ae591ba41c32fe2fe5a812290f0c3865169a80`, producing connector-trigger exact candidate `40abdbd9d60136ec152954e5cd4741643ce418a9`.
+- Reconciled former connector-trigger candidate `40abdbd9d60136ec152954e5cd4741643ce418a9` to settled evidence from the current supervisor handoff: Dependency Security `32409025495` **FAILURE**; CI `32409025550` **SUCCESS**; 7-Layer `32409025354` **SUCCESS**; Firebat `32409025375` **SUCCESS**.
+- Re-fetched CURRENT PR #59 and found the branch had already advanced beyond that settled head to bot commit `581642a4a1518e81aa45d440c54c40281d790f49`.
+- Verified bot commit `581642a4...` is exactly one commit ahead of `40abdbd9...`, authored by `papyr-gap007-bot`, and changes only `package-lock.json`: `path-to-regexp 0.1.12 -> 0.1.13`.
+- Verified `gap007-apply-candidate` is absent from CURRENT PR #59.
+- Bot-authored exact-head CI / Security / 7-Layer / Firebat runs all settled `ACTION_REQUIRED`, so they are not executable acceptance evidence and no second blocker candidate was stacked.
+- Updated the existing `.github/gap007-sync-trigger` from the former nodemailer bot SHA to `candidate_head=581642a4a1518e81aa45d440c54c40281d790f49`, producing connector-trigger exact candidate `e0a7d185fcfb9f02f89df52caa6531a53f793ded`.
 
 ### Actually Executed
 
-- Re-read this MASTER first and re-fetched CURRENT PR #59 state/head/labels and exact-head workflows.
-- Reconciled stale IN PROGRESS conclusions before selecting a candidate.
-- Inspected blocker count, runtime-image count, first-blocker ancestry, candidate metadata, package diff, and lock diff from the exact Security artifact.
-- Verified application code uses the standard `nodemailer.createTransport` / `transporter.sendMail` boundary; no unrelated email/product code was changed in this iteration.
-- Enforced one-candidate-per-cycle: only the current first blocker `nodemailer` was applied.
-- Verified successful bot push scope before advancing the sync trigger.
+- Re-read this MASTER first.
+- Re-fetched CURRENT PR #59 state, exact head, draft/open status, labels, and exact-head workflows before acting.
+- Inspected the current bot commit metadata and exact lock-only patch rather than relying on the stale prompt checkpoint.
+- Enforced one-candidate-per-cycle: no new dependency candidate or apply label was added while the path-to-regexp candidate awaits executable validation.
+- Updated only the pre-existing sync trigger to recover executable workflow recursion for the current bot commit.
 - Did not merge, close Issue #58, delete the sync trigger, start Phase 4, touch PR #19, or begin deferred v1.1 work.
 
 ### Checks / Current Verification State
 
-Former exact head `12fe4cb069fb599bfeeb8bf1777c6cc30b54ca57`:
-- Dependency Security Reachability `32403452226` — **FAILURE**.
-- CI `32403452207` — **SUCCESS**.
-- 7-Layer Test Architecture `32403452192` — **SUCCESS**.
-- Firebat Deployment Gate `32403452307` — **SUCCESS**.
-- GAP-007 Apply npm Candidate `32408915547` — **SUCCESS**.
+Former settled connector-trigger head `40abdbd9d60136ec152954e5cd4741643ce418a9`:
+- Dependency Security Reachability `32409025495` — **FAILURE**.
+- CI `32409025550` — **SUCCESS**.
+- 7-Layer Test Architecture `32409025354` — **SUCCESS**.
+- Firebat Deployment Gate `32409025375` — **SUCCESS**.
 
-CURRENT connector-trigger exact candidate `40abdbd9d60136ec152954e5cd4741643ce418a9`:
-- Dependency Security Reachability `32409025495` — **IN PROGRESS**.
-- CI `32409025550` — **IN PROGRESS**.
-- 7-Layer Test Architecture `32409025354` — **IN PROGRESS**.
-- Firebat Deployment Gate `32409025375` — **IN PROGRESS**.
+Bot head `581642a4a1518e81aa45d440c54c40281d790f49`:
+- CI `32414393827` — **ACTION_REQUIRED**.
+- Dependency Security Reachability `32414393175` — **ACTION_REQUIRED**.
+- Firebat Deployment Gate `32414393197` — **ACTION_REQUIRED**.
+- 7-Layer Test Architecture `32414393715` — **ACTION_REQUIRED**.
+
+CURRENT connector-trigger exact candidate `e0a7d185fcfb9f02f89df52caa6531a53f793ded`:
+- Dependency Security Reachability `32414795268` — **QUEUED**.
+- CI `32414795248` — **QUEUED**.
+- 7-Layer Test Architecture `32414795238` — **QUEUED**.
+- Firebat Deployment Gate `32414795281` — **QUEUED**.
 
 ### Not Verified
 
-- Nodemailer 9.0.5 compatibility/security acceptance is not claimed until all four exact-head gates on `40abdbd9...` settle.
-- The post-candidate remaining production/runtime HIGH/CRITICAL set is not accepted until Security `32409025495` settles and its fresh artifact is inspected if RED.
+- `path-to-regexp 0.1.13` security acceptance is not claimed until all four required gates on exact head `e0a7d185...` settle.
+- The fresh post-path-to-regexp production/runtime HIGH/CRITICAL set has not yet been accepted; if Security is RED, its CURRENT-head artifact must be inspected before selecting any next blocker.
 - `.github/gap007-sync-trigger` remains temporary and must be deleted only after GAP-007 otherwise reaches all-GREEN acceptance, followed by one final cleanup-head four-gate validation.
 
 ### Residual Risks / Blockers
 
 - GAP-007 remains OPEN under D-014 until no non-dev/runtime-present HIGH/CRITICAL blocker remains and Security + CI + 7-Layer + Firebat are GREEN on one final cleaned head.
 - PR #59 remains draft/open/unmerged; Issue #58 remains open.
-- Nodemailer remediation crosses a direct dependency major boundary, so CI/7-Layer/Firebat compatibility evidence is mandatory before any further security candidate.
+- The current path-to-regexp correction is lock-only and bounded, but compatibility/security acceptance still requires the fresh exact-head workflow cycle.
 - Phase 4/public demo/proof packaging/PR #19/deferred v1.1 work remains blocked by active #58/#59.
 
 ### Repo / Issue / PR State
@@ -197,15 +198,15 @@ CURRENT connector-trigger exact candidate `40abdbd9d60136ec152954e5cd4741643ce41
 - GAP-007: **ACTIVE / OPEN**
 - Issue #58: **OPEN**
 - PR #59: **DRAFT / OPEN / UNMERGED**
-- PR #59 current exact head: `40abdbd9d60136ec152954e5cd4741643ce418a9`
+- PR #59 current exact head: `e0a7d185fcfb9f02f89df52caa6531a53f793ded`
 - `gap007-apply-candidate`: absent
-- temporary `.github/gap007-sync-trigger`: present; points to bot SHA `76ae591ba41c32fe2fe5a812290f0c3865169a80`
+- temporary `.github/gap007-sync-trigger`: present; points to bot SHA `581642a4a1518e81aa45d440c54c40281d790f49`
 - unrelated PR #19: unchanged
 
 ### Exact Next Action
 
-1. Re-fetch Security + CI + 7-Layer + Firebat on CURRENT head `40abdbd9...`; while any are pending/running, do not trigger another candidate.
-2. If CI/7-Layer/Firebat is RED, inspect that concrete nodemailer-9 compatibility/runtime failure before any dependency change.
-3. If supporting gates are GREEN and Security is RED, inspect fresh `gap007-security-evidence`, quantify remaining production/runtime HIGH/CRITICAL, identify only the new first blocker, and approve at most one bounded npm-generated candidate cycle.
+1. Re-fetch Security + CI + 7-Layer + Firebat on CURRENT head `e0a7d185...`; while any are queued/pending/running, do not trigger another candidate.
+2. If CI/7-Layer/Firebat is RED, inspect that concrete compatibility/runtime failure before any dependency change.
+3. If supporting gates are GREEN and Security is RED, download/inspect the fresh CURRENT `gap007-security-evidence`, quantify current production/runtime HIGH/CRITICAL findings, identify only the current first blocker, and approve at most one bounded npm-generated candidate cycle.
 4. If all four gates become GREEN and GAP-007 otherwise satisfies acceptance, delete `.github/gap007-sync-trigger` and require one final exact-head four-gate validation on the cleanup head.
 5. Only after final same-head GREEN + clean review/security: mark PR #59 ready, merge with expected-head guard, confirm Issue #58 closes, reconcile this MASTER with accepted `main` SHA, and evaluate Phase 3 closure before Phase 4.
