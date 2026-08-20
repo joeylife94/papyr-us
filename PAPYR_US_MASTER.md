@@ -4,7 +4,7 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.31"
+version: "0.32"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
 current_phase: "Phase 3 — Operational & Security Readiness"
 priority: "P0"
@@ -15,7 +15,7 @@ baseline_main_sha: "4d9f77090bd05b1633637ab110b81b0d5f84b773"
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.31**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.32**  
 > This root file is the single project-state / closure ledger. Read it before every iteration and update it on `main` before the iteration ends.
 
 ## 0. Authority / Rules
@@ -139,63 +139,61 @@ For GAP-007 specifically:
 > **Accepted product baseline:** `4d9f77090bd05b1633637ab110b81b0d5f84b773`  
 > **Highest remaining Phase 3 work item:** GAP-007 dependency security reachability triage  
 > **Active implementation Issue / PR:** Issue #58 / draft PR #59  
-> **Current exact candidate:** `f5b0ec88d9522d92047092cbace9437615ed2ae7`
+> **Current exact candidate:** `d4aee711a3d5ae4a948621aa09c9411dd7d31ce8`
 
 ### Changed
 
-- Reconciled stale v0.30 workflow state for exact candidate `e17ec546bca466a9bc672a0114be8a714630bad1`.
-- Exact-head conclusions for `e17ec546...`: Dependency Security Reachability `32339511055` **FAILURE**; CI `32339510957` **SUCCESS**; 7-Layer `32339511123` **SUCCESS**; Firebat `32339511062` **SUCCESS**.
-- Inspected the concrete failing security job `96335595378`, step `Summarize runtime image findings and enforce gate`, plus fresh uploaded evidence artifact `gap007-security-evidence` artifact ID `9395892712`.
-- Quantified the Debian upgrade effect against prior `fea835da...`: runtime-image HIGH/CRITICAL fell from **84 to 78**. Debian findings fell **28 → 22**; Node findings remained **56**. The OS upgrade therefore removed **6** runtime-image findings.
-- Production npm audit remains **20 blocking HIGH/CRITICAL findings**; no D-014 waiver is justified.
-- Fresh runtime evidence shows a substantial subset of the 56 Node findings comes from the base image global npm toolchain under `usr/local/lib/node_modules/npm/...`, including vulnerable `brace-expansion`, `cross-spawn`, `glob`, `ip-address`, `minimatch`, `sigstore`, and `tar` packages.
-- Confirmed the Docker runtime used npm only to launch `npm start`; application start resolves to `cross-env PORT=5001 node dist/server/index.js`.
-- Applied the smallest next runtime-surface remediation: changed the container to launch `node dist/server/index.js` directly, set `PORT=5001`, and remove global npm/npx after build/prune. No application dependency upgrade or feature code was changed.
+- Reconciled stale v0.31 workflow state for exact candidate `f5b0ec88d9522d92047092cbace9437615ed2ae7`.
+- Exact-head conclusions for `f5b0ec88...`: Dependency Security Reachability `32343918361` **FAILURE**; CI `32343918349` **SUCCESS**; 7-Layer `32343918304` **SUCCESS**; Firebat `32343918326` **SUCCESS**.
+- Inspected failing security job `96348486592`, step `Summarize runtime image findings and enforce gate`, with uploaded `gap007-security-evidence` artifact ID `9397374213`.
+- Quantified the global npm/npx removal effect versus prior `e17ec546...`: runtime-image HIGH/CRITICAL fell **78 → 60**. Debian findings stayed **22 → 22**; Node findings fell **56 → 38**. Global npm removal therefore eliminated **18** Node runtime-image findings while preserving Firebat behavior on the exact candidate.
+- Production-only npm audit still reports **20 blocking HIGH/CRITICAL findings**, all with non-dev / production-or-unclassified lock evidence; no D-014 waiver is justified.
+- The first remaining runtime boundary selected for correction is the OS layer: the Debian slim candidate still contains **22 HIGH/CRITICAL** findings, all present in the runtime image and currently reported without fixed Debian versions by the scanner.
+- Applied the smallest same-Issue runtime-surface remediation that preserves the existing shell/user operational contract: changed the Node 20 runtime base from `node:20-bookworm-slim` to `node:20-alpine` and replaced Debian package upgrade with `apk upgrade --no-cache`.
+- Did not upgrade application dependencies, force npm audit fixes, change product features, or touch unrelated PR #19.
 
 ### Actually Executed
 
-- Read current root MASTER on `main` first.
-- Re-fetched PR #59 and confirmed CURRENT head was `e17ec546...`, draft/open/unmerged.
+- Read current root MASTER on `main` before repository mutations.
+- Re-fetched PR #59 and confirmed CURRENT head remained `f5b0ec88...`, draft/open/unmerged.
 - Re-fetched all exact-head workflows and confirmed dedicated security RED with CI/7-Layer/Firebat GREEN.
-- Fetched the failed security job and decoded its full log.
-- Verified runtime image scan count = **78** HIGH/CRITICAL on `e17ec546...`.
-- Counted remaining Debian findings = **22** and Node findings = **56** from the fresh log.
-- Verified `npm audit --omit=dev` still reports **20** blocking production/unclassified HIGH/CRITICAL findings.
-- Verified the OS upgrade actually upgraded 13 Debian packages including `libcap2` and `libgnutls30`.
-- Inspected `Dockerfile` and `package.json` to confirm direct Node startup is equivalent to the current runtime start command without requiring npm in the final image.
-- Updated only `Dockerfile` on `security/issue-58-gap007-reachability` to remove the global npm toolchain after prune and switch CMD to direct Node execution.
-- New PR #59 exact head: `f5b0ec88d9522d92047092cbace9437615ed2ae7`.
+- Fetched the failing security job and decoded the runtime-image and production npm findings.
+- Verified `f5b0ec88...` runtime image contained **60 HIGH/CRITICAL = 22 Debian + 38 Node** findings.
+- Verified `npm audit --omit=dev` still contained **20** blocking production/unclassified HIGH/CRITICAL findings, including direct or runtime dependency boundaries such as drizzle-orm, express, nodemailer, react-router-dom, sharp, socket.io/ws and their transitive packages.
+- Confirmed Firebat's operational checks still require a shell-capable image (`sh`/`cat`) and the `node` runtime user, so a distroless conversion would broaden risk and was not selected.
+- Updated only `Dockerfile` on `security/issue-58-gap007-reachability` to use `node:20-alpine` plus `apk upgrade --no-cache`, retaining production prune, global npm removal, `PORT=5001`, and direct Node startup.
+- New PR #59 exact head: `d4aee711a3d5ae4a948621aa09c9411dd7d31ce8`.
 
 ### Checks / Current Verification State
 
-Prior exact candidate `e17ec546bca466a9bc672a0114be8a714630bad1`:
-- Dependency Security Reachability `32339511055` — **FAILURE**.
-- CI `32339510957` — **SUCCESS**.
-- 7-Layer Test Architecture `32339511123` — **SUCCESS**.
-- Firebat Deployment Gate `32339511062` — **SUCCESS**.
-- Dedicated runtime artifact/log: **78** HIGH/CRITICAL = **22 Debian + 56 Node**; prior `fea835da...` was 84 = 28 Debian + 56 Node.
+Prior exact candidate `f5b0ec88d9522d92047092cbace9437615ed2ae7`:
+- Dependency Security Reachability `32343918361` — **FAILURE**.
+- CI `32343918349` — **SUCCESS**.
+- 7-Layer Test Architecture `32343918304` — **SUCCESS**.
+- Firebat Deployment Gate `32343918326` — **SUCCESS**.
+- Dedicated runtime evidence: **60** HIGH/CRITICAL = **22 Debian + 38 Node**; prior `e17ec546...` was 78 = 22 Debian + 56 Node.
 - Production npm blockers: **20**.
 
-Current exact candidate `f5b0ec88d9522d92047092cbace9437615ed2ae7`:
-- Dependency Security Reachability `32343918361` — **IN PROGRESS**.
-- CI `32343918349` — **IN PROGRESS**.
-- 7-Layer Test Architecture `32343918304` — **IN PROGRESS**.
-- Firebat Deployment Gate `32343918326` — **IN PROGRESS**.
+Current exact candidate `d4aee711a3d5ae4a948621aa09c9411dd7d31ce8`:
+- Dependency Security Reachability `32348929899` — **QUEUED**.
+- CI `32348929910` — **IN PROGRESS**.
+- 7-Layer Test Architecture `32348929901` — **IN PROGRESS**.
+- Firebat Deployment Gate `32348929909` — **IN PROGRESS**.
 - No current gate is treated as PASS until completion on this exact head.
 
 ### Not Verified
 
-- Exact reduction in the 56 Node runtime-image findings after removing global npm/npx on `f5b0ec88...`.
-- Whether direct Node startup preserves all Firebat/runtime behavior on this exact candidate; Firebat is currently executing and remains authoritative for that boundary.
-- The 20 production npm blockers remain unresolved and blocking unless subsequent runtime/dependency evidence removes or minimally remediates them.
+- Whether the Alpine base eliminates or materially reduces the 22 Debian runtime-image findings; fresh exact-head Trivy evidence is pending.
+- Whether native/runtime dependencies remain fully compatible with Alpine/musl on this exact candidate; Firebat is authoritative for that boundary and is still executing.
+- The 20 production npm blockers remain unresolved and blocking unless subsequent exact dependency/runtime evidence removes or minimally remediates them.
 - GAP-007 closure, Issue #58 closure, Phase 3 closure, or any Phase 4 work.
 
 ### Residual Risks / Blockers
 
-- GAP-007 remains RED until the dedicated security gate is GREEN on CURRENT exact head.
+- GAP-007 remains RED until the dedicated security gate is GREEN on the CURRENT exact head.
 - D-014 still forbids waiving unknown, non-dev, or runtime-present HIGH/CRITICAL findings.
-- Remaining Debian findings on `e17ec546...` have no fixed version listed by the current Debian scanner data and remain blocking if still runtime-present.
-- Application production dependencies still contain concrete HIGH/CRITICAL findings independent of global npm removal.
+- Alpine may expose native-module/build/runtime compatibility issues that did not exist on Debian; no acceptance claim is made until Firebat and the full test gates complete.
+- Application production dependencies still contain concrete HIGH/CRITICAL findings independent of the OS-base remediation.
 - PR #59 remains draft/open/unmerged. PR #19 remains unrelated and unchanged.
 
 ### Repo / Issue / PR State
@@ -205,13 +203,14 @@ Current exact candidate `f5b0ec88d9522d92047092cbace9437615ed2ae7`:
 - GAP-007: **ACTIVE / OPEN**
 - Issue #58: **OPEN**
 - PR #59: **DRAFT / OPEN / UNMERGED**
-- PR #59 current exact head: `f5b0ec88d9522d92047092cbace9437615ed2ae7`
+- PR #59 current exact head: `d4aee711a3d5ae4a948621aa09c9411dd7d31ce8`
 - unrelated PR #19: unchanged
 
 ### Exact Next Action
 
-1. Re-read current MASTER/main and re-fetch PR #59 CURRENT exact head; discard `f5b0ec88...` handoff if the head advances.
+1. Re-read current MASTER/main and re-fetch PR #59 CURRENT exact head; discard `d4aee711...` handoff if the head advances.
 2. Fetch CURRENT exact-head Dependency Security Reachability, CI, 7-Layer, and Firebat conclusions.
-3. If security is RED, inspect the fresh `gap007-security-evidence` artifact and quantify remaining Debian/global-npm/app-Node/npm-audit blockers.
-4. Select the first remaining runtime-present or non-dev HIGH/CRITICAL boundary and apply only the smallest Issue #58-scoped remediation; do not waive under D-014 and do not use `npm audit fix --force`.
-5. Only when dedicated security + CI + 7-Layer + Firebat are GREEN and review/security state is clean: mark ready, merge with expected-head guard, confirm Issue #58 closes, reconcile this MASTER with resulting main SHA, and evaluate **Phase 3 closure** before any Phase 4 work.
+3. If security is RED, inspect the fresh `gap007-security-evidence` artifact and quantify remaining Alpine OS + application Node + production npm HIGH/CRITICAL blockers.
+4. If Firebat or another required gate is RED, inspect the first concrete Alpine/runtime failure and apply only the smallest Issue #58-scoped correction.
+5. Select only the first remaining runtime-present or non-dev HIGH/CRITICAL boundary; do not waive under D-014 and do not use `npm audit fix --force` or broad dependency modernization.
+6. Only when dedicated security + CI + 7-Layer + Firebat are GREEN and review/security state is clean: mark ready, merge with expected-head guard, confirm Issue #58 closes, reconcile this MASTER with resulting main SHA, and evaluate **Phase 3 closure** before any Phase 4 work.
