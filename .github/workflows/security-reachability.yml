@@ -137,6 +137,7 @@ jobs:
           cp package-lock.json package-lock.original.json
           candidate_exit=0
           generator='none'
+          remediation_target="$first"
 
           if [ -n "$first" ]; then
             set +e
@@ -150,6 +151,21 @@ jobs:
               candidate_exit=$?
             fi
             set -e
+
+            # react-router is controlled by the direct react-router-dom parent in this tree.
+            # If updating the transitive blocker itself is a no-op, let npm advance only
+            # that direct parent within its already-declared ^7.x range. This preserves
+            # package-manager-generated lock metadata and stays within the current blocker.
+            if [ "$candidate_exit" -eq 0 ] && cmp -s package-lock.original.json package-lock.json && [ "$first" = 'react-router' ]; then
+              if node -e "const p=require('./package.json'); process.exit(p.dependencies?.['react-router-dom'] ? 0 : 1)"; then
+                remediation_target='react-router-dom'
+                generator='npm update react-router-dom --package-lock-only --ignore-scripts (parent-controlled fix for react-router)'
+                set +e
+                npm update react-router-dom --package-lock-only --ignore-scripts
+                candidate_exit=$?
+                set -e
+              fi
+            fi
           fi
 
           package_changed=false
@@ -162,10 +178,11 @@ jobs:
           git diff --no-ext-diff -- package.json > package.candidate.diff || true
           git diff --no-ext-diff -- package-lock.json > package-lock.candidate.diff || true
 
-          FIRST_BLOCKER="$first" DIRECT="$direct" FIX_VERSION="$fix_version" CANDIDATE_EXIT="$candidate_exit" PACKAGE_CHANGED="$package_changed" LOCK_CHANGED="$lock_changed" GENERATOR="$generator" node <<'NODE'
+          FIRST_BLOCKER="$first" REMEDIATION_TARGET="$remediation_target" DIRECT="$direct" FIX_VERSION="$fix_version" CANDIDATE_EXIT="$candidate_exit" PACKAGE_CHANGED="$package_changed" LOCK_CHANGED="$lock_changed" GENERATOR="$generator" node <<'NODE'
           const fs = require('fs');
           const metadata = {
             firstBlocker: process.env.FIRST_BLOCKER || '',
+            remediationTarget: process.env.REMEDIATION_TARGET || process.env.FIRST_BLOCKER || '',
             direct: process.env.DIRECT === 'true',
             fixVersion: process.env.FIX_VERSION || '',
             npmCommandExit: Number(process.env.CANDIDATE_EXIT || '0'),
@@ -179,6 +196,7 @@ jobs:
             '## GAP-007 npm-backed dependency candidate',
             '',
             `- first blocker: ${metadata.firstBlocker || 'none'}`,
+            `- remediation target: ${metadata.remediationTarget || 'none'}`,
             `- direct dependency: ${metadata.direct}`,
             `- fix version: ${metadata.fixVersion || 'n/a'}`,
             `- npm command exit: ${metadata.npmCommandExit}`,
