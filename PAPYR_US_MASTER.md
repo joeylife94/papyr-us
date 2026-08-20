@@ -4,7 +4,7 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.28"
+version: "0.29"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
 current_phase: "Phase 3 — Operational & Security Readiness"
 priority: "P0"
@@ -15,7 +15,7 @@ baseline_main_sha: "4d9f77090bd05b1633637ab110b81b0d5f84b773"
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.28**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.29**  
 > This root file is the single project-state / closure ledger. Read it before every iteration and update it on `main` before the iteration ends.
 
 ## 0. Authority / Rules
@@ -137,81 +137,80 @@ For GAP-007 specifically:
 > **Date:** 2026-08-20 KST  
 > **Phase:** Phase 3 — Operational & Security Readiness  
 > **Accepted product baseline:** `4d9f77090bd05b1633637ab110b81b0d5f84b773`  
-> **Current main before this ledger-only update:** `b1513bd11c78b8d6476f23a46c278e6ae5504119`  
+> **Current main before this ledger-only update:** `fd9a1757fd8370cdfa463a619ff5f195c2b02194`  
 > **Highest remaining Phase 3 work item:** GAP-007 dependency security reachability triage  
 > **Active implementation Issue / PR:** Issue #58 / draft PR #59  
-> **Current exact candidate:** `77c9671fa4107631df3e62a85a8240c4b139b5c4`
+> **Current exact candidate:** `fea835da36311b54ce112eb6672067a05119150e`
 
 ### Changed
 
-- Prior PR #59 candidate `652e542c...` had dedicated Dependency Security Reachability `32328511176` **FAILURE**, while CI `32328511180`, 7-Layer `32328511226`, and Firebat `32328511154` were **SUCCESS**.
-- Classified the reported `tar@7.4.3` HIGH using exact lockfile evidence: `node_modules/tar` is `dev: true`.
-- Confirmed Docker runtime image previously retained devDependencies after build.
-- Added runtime pruning: `npm prune --omit=dev --legacy-peer-deps && npm cache clean --force`.
-- Updated the dedicated GAP-007 workflow to classify HIGH/CRITICAL npm findings against exact lock nodes. Only findings whose every node is present and `dev: true` may receive a dev-only disposition, and only if the independent runtime-image scan is clean. Unknown/non-dev findings remain blocking; every runtime-image HIGH/CRITICAL remains blocking.
-- No dependency force-upgrade, broad modernization, product feature work, public demo, proof packaging, or PR #19 work was performed.
+- Reconciled stale v0.28 workflow state: prior exact candidate `77c9671fa4107631df3e62a85a8240c4b139b5c4` dedicated Dependency Security Reachability run `32332139831` is **FAILURE**, while CI `32332140408`, 7-Layer `32332139919`, and Firebat `32332139837` are **SUCCESS**.
+- Downloaded and inspected the exact failed security artifact rather than inferring from workflow status.
+- The failure is not only the previously discussed dev-only `tar@7.4.3`: production npm classification reports **20 blocking HIGH/CRITICAL package findings** with non-dev lock nodes, and Trivy reports **1112 HIGH/CRITICAL runtime-image findings**: 1056 OS-package findings and 56 Node-package findings, including 76 CRITICAL / 1036 HIGH overall.
+- Therefore D-014 is not satisfied for `77c9671...`; runtime-present and non-dev HIGH/CRITICAL findings remain blocking.
+- Applied the smallest evidence-driven runtime-surface correction first: changed Docker base from full `node:20` to `node:20-bookworm-slim`, preserving Node 20 and the existing build/prune/start contract while removing unnecessary full-image OS surface.
+- No force-upgrade of Prisma/tar, broad dependency modernization, product feature work, public demo, proof packaging, or PR #19 work was performed.
 
 ### Actually Executed
 
-- Read current root MASTER on `main` first.
-- Re-fetched PR #59 state/head and prior exact-head workflows.
-- Inspected `package.json`, `package-lock.json`, PR #59 diff, `.github/workflows/security-reachability.yml`, and `Dockerfile`.
-- Verified `node_modules/tar` = `7.4.3`, `dev: true` in exact lockfile.
-- Committed the bounded Docker runtime-prune correction and explicit lock-backed disposition logic to PR #59.
-- Re-fetched PR #59; current head is `77c9671fa4107631df3e62a85a8240c4b139b5c4`.
-- Re-fetched review state: 0 submitted reviews, 0 review threads.
-- Re-fetched exact-head workflow runs after they appeared.
+- Read current root MASTER on `main` first and confirmed current `main` = `fd9a1757fd8370cdfa463a619ff5f195c2b02194`.
+- Re-fetched Issue #58 and PR #59; PR remained draft/open/unmerged and exact head remained `77c9671...` before correction.
+- Re-fetched exact-head workflows: CI / 7-Layer / Firebat SUCCESS; dedicated security FAILURE.
+- Fetched failed run `32332139831` artifact `gap007-security-evidence` and inspected `npm-audit-prod-blocking.json` plus `trivy-image-high-critical.json`.
+- Verified blocking npm findings include non-dev runtime graph nodes such as `drizzle-orm`, `express`, `nodemailer`, `sharp`, `socket.io-parser`, `ws`, and others; these cannot receive a dev-only disposition under D-014.
+- Verified runtime image evidence contains 1112 HIGH/CRITICAL findings, so a clean runtime-image disposition is impossible for the prior candidate.
+- Updated only `Dockerfile` on the existing Issue #58 branch to use `node:20-bookworm-slim`.
+- Re-fetched PR #59; new exact head is `fea835da36311b54ce112eb6672067a05119150e`.
+- Re-fetched new exact-head workflows after the branch advanced.
 
 ### Checks / Current Verification State
 
-Prior exact candidate `652e542c455bebe0d3f10d57ebfc4a54327f03ad`:
-- Dependency Security Reachability `32328511176` — **FAILURE**.
-- CI `32328511180` — **SUCCESS**.
-- 7-Layer Test Architecture `32328511226` — **SUCCESS**.
-- Firebat Deployment Gate `32328511154` — **SUCCESS**.
+Prior exact candidate `77c9671fa4107631df3e62a85a8240c4b139b5c4`:
+- Dependency Security Reachability `32332139831` — **FAILURE**.
+- CI `32332140408` — **SUCCESS**.
+- 7-Layer Test Architecture `32332139919` — **SUCCESS**.
+- Firebat Deployment Gate `32332139837` — **SUCCESS**.
+- Dedicated security artifact: 20 blocking production/unclassified npm findings; Trivy 1112 HIGH/CRITICAL runtime-image findings (1056 OS, 56 Node; 76 CRITICAL / 1036 HIGH).
 
-Current exact candidate `77c9671fa4107631df3e62a85a8240c4b139b5c4`:
-- Dependency Security Reachability `32332139831` — **IN PROGRESS**.
-- CI `32332140408` — **IN PROGRESS**.
-- 7-Layer Test Architecture `32332139919` — **IN PROGRESS**.
-- Firebat Deployment Gate `32332139837` — **IN PROGRESS**.
-- PR reviews — **0**.
-- PR review threads — **0**.
+Current exact candidate `fea835da36311b54ce112eb6672067a05119150e`:
+- Dependency Security Reachability `32335696864` — **IN PROGRESS**.
+- CI `32335696884` — **IN PROGRESS**.
+- 7-Layer Test Architecture `32335696860` — **IN PROGRESS**.
+- Firebat Deployment Gate `32335696863` — **IN PROGRESS**.
 
 No CURRENT gate is treated as PASS before completion.
 
 ### Not Verified
 
-- Whether `77c9671...` dedicated security evidence finishes GREEN.
-- Whether runtime-image Trivy contains any HIGH/CRITICAL after devDependency pruning.
-- Whether the production-audit classifier emits zero blocking production/unclassified findings.
-- Final CI / 7-Layer / Firebat conclusions for `77c9671...`.
-- Final mergeability after reconciling PR #59 with latest ledger-only `main` if required.
+- Whether the slim base materially reduces all OS HIGH/CRITICAL findings enough to satisfy the blocking runtime-image gate.
+- Whether any runtime-image HIGH/CRITICAL remains on `fea835da...`; if present, it remains blocking.
+- Whether the 20 production/unclassified npm findings remain after the unchanged dependency graph; they are expected to remain until explicitly remediated or bounded by stronger executed reachability evidence.
+- Final CI / 7-Layer / Firebat conclusions for `fea835da...`.
 - GAP-007 closure, Issue #58 closure, Phase 3 closure, or Phase 4 work.
 
 ### Residual Risks / Blockers
 
-- `tar` is bounded as dev-only by lock metadata, but acceptance still requires the CURRENT runtime-image scan to prove it is absent from the deployed image after pruning.
-- Any HIGH/CRITICAL still present in the pruned runtime image, or any npm finding lacking complete `dev: true` lock evidence, remains blocking.
-- Docker runtime contents changed; CURRENT CI/7-Layer/Firebat must all pass.
-- PR #59 currently remains draft/open/unmerged. PR #19 remains unrelated and unchanged.
+- GAP-007 is still RED until the dedicated security gate is GREEN on the CURRENT exact head.
+- D-014 forbids dispositioning non-dev or runtime-present HIGH/CRITICAL findings merely because a previous `tar` node was dev-only.
+- The current slim-base change only reduces unnecessary runtime OS attack surface; it does not claim to remediate the production Node dependency findings.
+- Any current security RED must be reduced to the first concrete remaining finding/boundary before the next smallest same-Issue correction.
+- PR #59 remains draft/open/unmerged. PR #19 remains unrelated and unchanged.
 
 ### Repo / Issue / PR State
 
 - accepted product baseline: `4d9f77090bd05b1633637ab110b81b0d5f84b773`
-- current main before this ledger commit: `b1513bd11c78b8d6476f23a46c278e6ae5504119`
+- current main before this ledger commit: `fd9a1757fd8370cdfa463a619ff5f195c2b02194`
 - GJ-01..GJ-08: **CLOSED**
 - GAP-007: **ACTIVE / OPEN**
 - Issue #58: **OPEN**
 - PR #59: **DRAFT / OPEN / UNMERGED**
-- PR #59 current exact head: `77c9671fa4107631df3e62a85a8240c4b139b5c4`
+- PR #59 current exact head: `fea835da36311b54ce112eb6672067a05119150e`
 - unrelated PR #19: unchanged
 
 ### Exact Next Action
 
-1. Re-read current MASTER/main and re-fetch PR #59 CURRENT exact head; do not act on `77c9671...` if it advances.
+1. Re-read current MASTER/main and re-fetch PR #59 CURRENT exact head; do not act on `fea835da...` if it advances.
 2. Fetch CURRENT exact-head Dependency Security Reachability, CI, 7-Layer, and Firebat conclusions.
-3. If security is RED, inspect the first concrete remaining finding. Keep unknown/non-dev/runtime-present HIGH/CRITICAL blocking; do not broaden dependency modernization.
-4. If all four gates are GREEN, re-check review submissions/threads and final bounded diff.
-5. Reconcile PR #59 with latest `main` only as needed for mergeability; any changed PR head must receive fresh exact-head gates.
-6. Only after dedicated security + CI + 7-Layer + Firebat are GREEN and review/security state is clean: mark ready, merge with expected-head guard, confirm Issue #58 closes, reconcile this MASTER with resulting main SHA, and evaluate **Phase 3 closure** before any Phase 4 work.
+3. If security is RED, inspect the fresh artifact/log and identify the first remaining runtime-present or non-dev HIGH/CRITICAL boundary. Do not waive it under D-014 and do not broad-upgrade dependencies.
+4. Apply only the smallest Issue #58-scoped remediation justified by that exact evidence, then re-run exact-head gates.
+5. Only when dedicated security + CI + 7-Layer + Firebat are GREEN and review/security state is clean: mark ready, merge with expected-head guard, confirm Issue #58 closes, reconcile this MASTER with resulting main SHA, and evaluate **Phase 3 closure** before any Phase 4 work.
