@@ -4,7 +4,7 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.33"
+version: "0.34"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
 current_phase: "Phase 3 — Operational & Security Readiness"
 priority: "P0"
@@ -15,7 +15,7 @@ baseline_main_sha: "4d9f77090bd05b1633637ab110b81b0d5f84b773"
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.33**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.34**  
 > This root file is the single project-state / closure ledger. Read it before every iteration and update it on `main` before the iteration ends.
 
 ## 0. Authority / Rules
@@ -143,56 +143,49 @@ For GAP-007 specifically:
 
 ### Changed
 
-- Reconciled stale v0.32 state for exact candidate `d4aee711a3d5ae4a948621aa09c9411dd7d31ce8`.
-- Exact-head conclusions for `d4aee711...`: Dependency Security Reachability `32348929899` **FAILURE**; CI `32348929910` **SUCCESS**; 7-Layer `32348929901` **SUCCESS**; Firebat `32348929909` **SUCCESS**.
-- Alpine runtime remediation materially reduced the runtime-image surface: HIGH/CRITICAL **60 → 38** versus prior `f5b0ec88...`.
-- The entire prior OS layer contribution was removed: **22 Debian OS findings → 0 Alpine OS findings**. Node findings remained **38 → 38**.
-- Production-only `npm audit --omit=dev` remains **20 blocking HIGH/CRITICAL findings**. No D-014 disposition is justified for those non-dev / production-or-unclassified lock nodes.
-- First remaining runtime-present boundary is `brace-expansion@2.0.2`, present at `app/node_modules/brace-expansion`, with fixed 2.x releases listed by Trivy. It is non-dev in the exact lock graph and therefore blocking.
-- Existing evidence did not identify the production parent chain that brings `brace-expansion` into the runtime graph. To avoid blind overrides or broad dependency upgrades, added a single evidence step to capture the first blocking package ancestry via `npm ls <first-blocker> --omit=dev --all --json` and include it in the GAP-007 artifact.
-- No dependency version was force-upgraded; no product feature or unrelated PR #19 work was touched.
+- Reconciled stale workflow state for CURRENT exact PR #59 head `e3a0bd4cca89a5ba9ed099cde58c784d997152f2`.
+- Dedicated Dependency Security Reachability run `32353935567` is **FAILURE**; supporting CI `32353935555`, 7-Layer `32353935465`, and Firebat `32353935472` are all **SUCCESS** on the same exact head.
+- Fresh `gap007-security-evidence` artifact was inspected. Runtime image remains **38 HIGH/CRITICAL = 0 OS + 38 Node**; production-only npm audit remains **20 blocking HIGH/CRITICAL**.
+- First runtime-present production blocker ancestry is now proven: `papyr-us -> @sentry/node@10.38.0 -> minimatch@9.0.5 -> brace-expansion@2.0.2`.
+- Exact lock metadata shows the Sentry-nested `minimatch@9.0.5` depends on `brace-expansion` via compatible range `^2.0.1`; the nested `brace-expansion@2.0.2` node is not marked dev-only and is runtime-present, so D-014 forbids disposition/waiver.
+- No dependency override, broad Sentry/Prisma upgrade, or manual synthesized lockfile edit was committed. No product feature or unrelated PR #19 work was touched.
 
 ### Actually Executed
 
-- Read current root MASTER on `main` before mutations.
-- Re-fetched PR #59 and confirmed CURRENT head `d4aee711...`, draft/open/unmerged.
-- Re-fetched all exact-head workflow conclusions.
-- Inspected failed security job `96363607611`, including the failing runtime-image enforcement step and uploaded evidence artifact `9399299479`.
-- Verified exact Alpine scan result: **38 HIGH/CRITICAL, all Node package findings; zero Alpine OS HIGH/CRITICAL findings**.
-- Verified exact production audit result: **20 blocking HIGH/CRITICAL**.
-- Verified Firebat, CI, and 7-Layer are GREEN on `d4aee711...`, so Alpine/musl did not introduce an accepted runtime/test incompatibility on that candidate.
-- Updated only `.github/workflows/security-reachability.yml` to capture first-blocker production ancestry and upload `first-blocker-ancestry.txt`.
-- New PR #59 exact head: `e3a0bd4cca89a5ba9ed099cde58c784d997152f2`.
+- Read current root MASTER on `main` before mutation.
+- Re-fetched PR #59 and confirmed CURRENT exact head `e3a0bd4...`, draft/open/unmerged.
+- Re-fetched all four exact-head workflow conclusions.
+- Inspected failed security job `96378945975` and its failing enforcement boundary.
+- Downloaded and inspected artifact `gap007-security-evidence` from security run `32353935567`.
+- Inspected `first-blocker-ancestry.txt`, `production-findings`, runtime summary/counts, and exact package-lock nodes for Sentry-nested `minimatch` / `brace-expansion`.
+- Confirmed the smallest likely correction boundary is the transitive `brace-expansion` node under the existing compatible `minimatch ^2.0.1` range, rather than a broad framework/dependency modernization.
+- Evaluated available GitHub write tooling before mutation. Current connector supports complete-file replacement but no package-lock partial patch or npm-generated lock refresh; the execution container does not have a usable checked-out repository/npm network path. A huge lockfile was therefore not manually synthesized.
+- Updated this root MASTER on `main` with the exact RED evidence, ancestry, tooling limitation, and next action.
 
 ### Checks / Current Verification State
 
-Prior exact candidate `d4aee711a3d5ae4a948621aa09c9411dd7d31ce8`:
-- Dependency Security Reachability `32348929899` — **FAILURE**.
-- CI `32348929910` — **SUCCESS**.
-- 7-Layer Test Architecture `32348929901` — **SUCCESS**.
-- Firebat Deployment Gate `32348929909` — **SUCCESS**.
+CURRENT exact candidate `e3a0bd4cca89a5ba9ed099cde58c784d997152f2`:
+- Dependency Security Reachability `32353935567` — **FAILURE**.
+- CI `32353935555` — **SUCCESS**.
+- 7-Layer Test Architecture `32353935465` — **SUCCESS**.
+- Firebat Deployment Gate `32353935472` — **SUCCESS**.
 - Runtime image: **38 HIGH/CRITICAL = 0 OS + 38 Node**.
 - Production npm blockers: **20**.
-
-Current exact candidate `e3a0bd4cca89a5ba9ed099cde58c784d997152f2`:
-- Dependency Security Reachability `32353935567` — **IN PROGRESS**.
-- CI `32353935555` — **IN PROGRESS**.
-- 7-Layer Test Architecture `32353935465` — **IN PROGRESS**.
-- Firebat Deployment Gate `32353935472` — **IN PROGRESS**.
-- No current gate is treated as PASS until completion on this exact head.
+- First runtime-present production ancestry: **`@sentry/node@10.38.0 -> minimatch@9.0.5 -> brace-expansion@2.0.2`**.
 
 ### Not Verified
 
-- Exact production parent chain for `brace-expansion@2.0.2`; the new ancestry capture is executing on the current candidate.
-- Whether the smallest safe remediation is a parent patch/minor update or another narrower dependency correction; this must be chosen from executed ancestry evidence, not guessed.
-- The remaining 37 runtime Node findings and 19 additional production npm blockers after the first boundary.
-- GAP-007 closure, Issue #58 closure, Phase 3 closure, or any Phase 4 work.
+- No corrected dependency candidate exists yet; therefore no fresh four-gate result exists after the first-blocker dependency correction.
+- A patched transitive lock resolution has not been npm-generated/committed on PR #59 in this iteration.
+- The remaining 37 runtime Node findings and 19 additional production npm blockers remain untriaged after the first blocker boundary.
+- GAP-007 closure, Issue #58 closure, Phase 3 closure, and all Phase 4 work remain unverified/open.
 
 ### Residual Risks / Blockers
 
-- GAP-007 remains RED until dedicated security is GREEN on CURRENT exact head.
-- D-014 forbids waiving `brace-expansion` or any other non-dev/runtime-present HIGH/CRITICAL finding.
-- PR #59 remains draft/open/unmerged. PR #19 remains unrelated and unchanged.
+- GAP-007 remains RED until the dedicated security gate is GREEN on the CURRENT exact head.
+- D-014 forbids waiving `brace-expansion@2.0.2` because it is non-dev/runtime-present.
+- Safe dependency correction currently has a write/tooling blocker in this automation environment: available GitHub writes replace complete files, while the dependency lockfile is large and no npm-backed lock regeneration path is available here. Manually inventing lockfile metadata or introducing an unverified override would violate the exact-tree/evidence standard.
+- PR #59 remains draft/open/unmerged. Issue #58 remains open. PR #19 remains unrelated and unchanged.
 
 ### Repo / Issue / PR State
 
@@ -206,9 +199,9 @@ Current exact candidate `e3a0bd4cca89a5ba9ed099cde58c784d997152f2`:
 
 ### Exact Next Action
 
-1. Re-read current MASTER/main and re-fetch PR #59 CURRENT exact head; discard `e3a0bd4...` handoff if the head advances.
-2. Fetch CURRENT exact-head Dependency Security Reachability, CI, 7-Layer, and Firebat conclusions.
-3. Inspect `first-blocker-ancestry.txt` from the fresh `gap007-security-evidence` artifact and identify the exact production parent(s) introducing `brace-expansion@2.0.2`.
-4. Apply only the smallest compatible parent/dependency correction that removes this first runtime-present blocker; do not use force upgrades or broad modernization.
-5. Re-run all four required gates on the new exact head and continue one blocker boundary at a time.
-6. Only when dedicated security + CI + 7-Layer + Firebat are GREEN and review/security state is clean: mark ready, merge with expected-head guard, confirm Issue #58 closes, reconcile this MASTER with resulting main SHA, and evaluate **Phase 3 closure** before any Phase 4 work.
+1. Re-read current MASTER/main and re-fetch PR #59 CURRENT exact head; discard `e3a0bd4...` handoff immediately if the branch advances.
+2. Generate a **minimal npm-produced lock refresh** for the Sentry-nested `brace-expansion` within `minimatch@9.0.5`'s existing compatible `^2.0.1` range; do not broad-upgrade Sentry/Prisma/tar and do not hand-author unverifiable lock metadata.
+3. Commit only that smallest dependency/lock correction to the existing Issue #58 / PR #59 branch.
+4. Re-run Dependency Security Reachability + CI + 7-Layer + Firebat on the new CURRENT exact head.
+5. If Security remains RED, inspect the fresh artifact and advance only the first remaining non-dev/runtime-present HIGH/CRITICAL boundary under D-014.
+6. Only when all four required gates are GREEN and review/security is clean: mark #59 ready, merge with expected-head guard, confirm Issue #58 closes, reconcile this MASTER with the resulting accepted main SHA, and evaluate **Phase 3 closure** before any Phase 4 work.
