@@ -22,12 +22,17 @@ COPY . .
 # Build the application
 RUN npm run build
 
-# Remove build/test-only dependencies from the runtime image.
-# This keeps the frozen v1.0 runtime dependency surface limited to production packages.
-RUN npm prune --omit=dev --legacy-peer-deps && npm cache clean --force
+# Remove build/test-only dependencies and the package-manager toolchain from the runtime image.
+# The application starts with node directly, so npm/npx are not runtime requirements.
+RUN npm prune --omit=dev --legacy-peer-deps \
+    && npm cache clean --force \
+    && rm -rf /usr/local/lib/node_modules/npm \
+    && rm -f /usr/local/bin/npm /usr/local/bin/npx
+
+ENV PORT=5001
 
 # Expose port
 EXPOSE 5001
 
-# Start the application
-CMD ["npm", "start"]
+# Start the built application without retaining npm in the runtime image.
+CMD ["node", "dist/server/index.js"]
