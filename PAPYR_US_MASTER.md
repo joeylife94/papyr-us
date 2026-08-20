@@ -4,7 +4,7 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.23"
+version: "0.24"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
 current_phase: "Phase 3 — Operational & Security Readiness"
 priority: "P0"
@@ -15,7 +15,7 @@ baseline_main_sha: "06acd4438199df1185426f322b96585accb0ecc6"
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.23**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.24**  
 > This root file is the single project-state / closure ledger. Read it before every iteration and update it on `main` before the iteration ends.
 
 ## 0. Authority / Rules
@@ -130,77 +130,76 @@ Product exit status: GJ-01 through GJ-07 closed. GJ-08 and operational/security/
 > **Date:** 2026-08-20 KST  
 > **Phase:** Phase 3 — Operational & Security Readiness  
 > **Accepted product baseline:** `06acd4438199df1185426f322b96585accb0ecc6`  
-> **Current main before this ledger-only update:** `973acb92a0f2cb63bf50995e35282072b57520c7`  
+> **Current main before this ledger-only update:** `718ebe1ac451a10ad47245d38ae64ce13cb4908f`  
 > **Highest active work item:** GJ-08 / GAP-008 operational recovery evidence  
 > **Active Issue:** #56 — GJ-08 Operational Recovery acceptance proof  
 > **Active branch:** `test/issue-56-gj08-operational-recovery`  
 > **Active implementation PR:** #57 — draft / open / unmerged  
-> **CURRENT exact candidate:** `1593e9e4d279371b6da656479a0e91bb31b4a6cb`
+> **CURRENT exact candidate:** `76aa0536fb9bbb3f54f44d4b91b42ca51ba986bd`
 
 ### Changed
 
-- Kept PR #57 scoped to the existing recovery harness + Firebat workflow hook; no new Issue and no unrelated work.
-- Fixed the first concrete Firebat failure only: the recovery harness no longer reuses the persistent smoke account for team-scoped setup.
-- The harness now freshly registers a unique recovery actor, logs in as that actor, creates the disposable recovery team, and only then creates the team-scoped durable page marker.
-- Preserved all destructive guards: `.env.firebat`, localhost target, explicit `FIREBAT_RECOVERY_ALLOW_DESTRUCTIVE=1`, and expected named PostgreSQL volume.
-- Production team/page ACL semantics were not weakened or modified.
+- Kept all work inside existing Issue #56 / PR #57; no new Issue, GAP-007 work, public-demo work, or unrelated PR #19 change.
+- Corrected the recovery harness setup after executed Firebat evidence proved that `POST /api/teams` creates a team row but does not create the corresponding `team_members` owner row.
+- Added a harness-only `establishRecoveryMembership` step that inserts the disposable recovery actor as owner of the disposable recovery team in the guarded local Firebat PostgreSQL database, then verifies that row exists before attempting the team-scoped page write.
+- Preserved production `requireTeamMembership` / page ACL behavior; no authorization middleware or route semantics were weakened.
+- Preserved destructive guards: `.env.firebat`, localhost-only target, explicit `FIREBAT_RECOVERY_ALLOW_DESTRUCTIVE=1`, and expected `firebat-papyr-us-postgres` named volume.
 
 ### Actually Executed
 
-- Re-read this MASTER from current `main` before acting.
-- Re-fetched PR #57 and confirmed the failed exact head remained `d4a43fc7de30436b6e52d26527cc7fa59cf599a3`.
-- Re-fetched exact-head workflows: CI `32313529680` SUCCESS; 7-Layer `32313529649` SUCCESS; Firebat `32313529690` FAILURE.
-- Confirmed the failure boundary from current supervisor evidence: authenticated `POST /api/teams` returned 201, then team-scoped `POST /api/pages` returned 403 `You are not a member of this team`.
-- Re-inspected accepted GJ-01 browser proof, which demonstrates freshly registered authenticated user -> team creation -> authoritative team-scoped page creation.
-- Re-inspected current page POST contract, which still enforces `requireTeamMembership`; no production ACL bypass was introduced.
-- Updated only `scripts/recovery-firebat.mjs` on the active branch to create a fresh recovery actor before team/page setup.
-- New exact candidate created: `1593e9e4d279371b6da656479a0e91bb31b4a6cb`.
-- Re-fetched workflows for the new exact candidate after they appeared.
+- Re-read this MASTER and current `main` before acting; current main was `718ebe1ac451a10ad47245d38ae64ce13cb4908f`.
+- Re-fetched PR #57 and confirmed CURRENT failed head `1593e9e4d279371b6da656479a0e91bb31b4a6cb`.
+- Re-fetched exact-head workflows for `1593e9e4...`: CI `32317179459` SUCCESS; 7-Layer `32317179464` SUCCESS; Firebat `32317179477` FAILURE.
+- Inspected Firebat job `96272146276` and decoded its log. The first bounded recovery failure was: fresh actor register 201 -> login 200 -> team create 201 -> page create 403 `You are not a member of this team`.
+- Inspected current `server/routes.ts`, `server/storage.ts`, `server/middleware.ts`, and `shared/schema.ts`: team creation persists only the team row, while page writes continue to enforce membership via `team_members`.
+- Updated only `scripts/recovery-firebat.mjs` on the active branch to establish and verify the disposable recovery actor's owner membership in the guarded Firebat database before the page write.
+- Created new exact candidate `76aa0536fb9bbb3f54f44d4b91b42ca51ba986bd` and re-fetched PR #57 to confirm it is the CURRENT head.
+- Re-fetched new exact-head workflows after they appeared.
 
 ### Checks / Current Evidence
 
-- Previous candidate `d4a43fc7...`: CI **PASS**, 7-Layer **PASS**, Firebat **FAIL** at bounded operational recovery drill with team membership 403.
-- Current candidate `1593e9e4...`:
-  - CI run `32317179459` — **IN PROGRESS**.
-  - 7-Layer run `32317179464` — **IN PROGRESS**.
-  - Firebat Deployment Gate run `32317179477` — **IN PROGRESS**.
-- Branch remains Issue #56-scoped; no production authorization code change.
-- GJ-08 remains **OPEN**; current exact-head gates are not yet all GREEN.
+- Previous candidate `1593e9e4...`: CI **PASS**, 7-Layer **PASS**, Firebat **FAIL** at the first team-scoped page write because no authoritative membership row existed.
+- Current candidate `76aa0536...`:
+  - CI run `32321045461` — **IN PROGRESS**.
+  - 7-Layer run `32321045506` — **IN PROGRESS**.
+  - Firebat Deployment Gate run `32321045460` — **IN PROGRESS**.
+- Current PR remains draft / open / unmerged with two changed files total.
+- GJ-08 remains **OPEN**; no current exact-head gate has been promoted to PASS before completion.
 
 ### Not Verified
 
-- Whether fresh recovery actor setup resolves the Firebat 403 on current exact head.
-- Whether the subsequent backup / destructive mutation / full `pg_restore --clean` / restored-state checks all pass.
-- Final exact-head CI / 7-Layer / Firebat result for `1593e9e4...`.
+- Whether the explicit disposable owner membership allows the page creation step to pass on `76aa0536...`.
+- Whether the next recovery stages — recreate persistence, backup artifact, destructive mutation, full `pg_restore --clean`, restored-state read, and fresh post-restore recreate/read — all pass.
+- Final exact-head CI / 7-Layer / Firebat conclusions for `76aa0536...`.
 - Review submissions / unresolved review threads after current workflows complete.
-- GJ-08 closure, Issue #56 closure, and PR #57 merge.
-- GAP-007 dependency security reachability disposition.
-- Public sanitized demo and proof packaging.
+- PR #57 merge, Issue #56 closure, GJ-08 closure, or Phase 3 closure.
+- GAP-007 dependency security reachability disposition and all public-demo/proof-package work.
 
 ### Residual Risks / Blockers
 
+- The direct `team_members` insert is recovery-harness setup only for a disposable local Firebat actor/team; it is not evidence that the user-facing team-create endpoint automatically grants ownership.
 - PR #57 must remain unmerged until all required CURRENT exact-head gates are GREEN and review/security state is clean.
-- If Firebat fails again, inspect only the first concrete Issue #56-scoped failure; do not weaken authorization or destructive-target guards.
-- Full-database restore may still expose an independent PostgreSQL restore-order/connection failure after membership setup is corrected.
-- GAP-007 and public-demo/proof work remain blocked while Issue #56 / PR #57 are active.
+- Full-database restore may expose an independent PostgreSQL restore-order/connection/ownership failure after membership setup is corrected.
+- Any further failure must be handled as the first concrete Issue #56-scoped recovery boundary without weakening ACLs, backup/restore semantics, or destructive-target guards.
+- GAP-007, public demo, screenshots, case study, and proof packaging remain blocked while Issue #56 / PR #57 are active.
 - PR #19 remains unrelated and unchanged.
 
 ### Repo / Issue / PR State
 
-- current main before ledger update: `973acb92a0f2cb63bf50995e35282072b57520c7`
+- current main before ledger update: `718ebe1ac451a10ad47245d38ae64ce13cb4908f`
 - accepted product baseline: `06acd4438199df1185426f322b96585accb0ecc6`
 - GJ-01..GJ-07: CLOSED
 - GJ-08: OPEN / ACTIVE
 - Issue #56: OPEN
 - active branch: `test/issue-56-gj08-operational-recovery`
 - active implementation PR: #57 draft / open / unmerged
-- CURRENT exact PR head: `1593e9e4d279371b6da656479a0e91bb31b4a6cb`
+- CURRENT exact PR head: `76aa0536fb9bbb3f54f44d4b91b42ca51ba986bd`
 - unrelated open PR #19: unchanged
 
 ### Exact Next Action
 
-1. Re-fetch PR #57 and confirm the CURRENT exact head before interpreting any result.
-2. Inspect exact-head CI `32317179459`, 7-Layer `32317179464`, and Firebat `32317179477`.
-3. If any required gate is RED/CANCELLED/TIMED_OUT, inspect the first concrete failure and apply only the smallest Issue #56-scoped correction.
-4. If all exact-head gates are GREEN, inspect review submissions/threads and final diff scope, mark PR #57 ready if draft is the only blocker, and merge only with expected-head guard.
-5. After merge, ensure Issue #56 closes via `Closes #56`, reconcile this MASTER on `main` with the merge SHA and executed recovery evidence, then evaluate GJ-08 / Phase 3 closure before selecting GAP-007.
+1. Re-fetch PR #57 and confirm the CURRENT exact head before interpreting any workflow result.
+2. Inspect exact-head CI `32321045461`, 7-Layer `32321045506`, and Firebat `32321045460` once they complete.
+3. If any required gate is RED/CANCELLED/TIMED_OUT, inspect the first concrete Issue #56-scoped failure and apply only the smallest justified harness/setup/workflow correction.
+4. If all CURRENT exact-head gates are GREEN, inspect review submissions/threads and final diff scope; mark PR #57 ready if draft is the only mechanical blocker and merge only with expected-head guard.
+5. After merge, ensure Issue #56 closes only through accepted `Closes #56`, reconcile this MASTER on `main` with merge SHA and executed recovery evidence, then re-evaluate GJ-08 / Phase 3 closure before selecting GAP-007 or any new work.
