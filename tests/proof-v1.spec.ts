@@ -1,4 +1,5 @@
 import { mkdirSync } from 'node:fs';
+import { Pool } from 'pg';
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import {
   createAuthenticatedApiContext,
@@ -18,6 +19,29 @@ async function createTeam(request: APIRequestContext, name: string, displayName:
   });
   expect(response.status()).toBe(201);
   return response.json();
+}
+
+async function grantProofTeamMembership(email: string, teamId: number) {
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  try {
+    const userResult = await pool.query<{ id: number }>('SELECT id FROM users WHERE email = $1', [email]);
+    expect(userResult.rowCount).toBe(1);
+    const userId = userResult.rows[0].id;
+
+    await pool.query(
+      `INSERT INTO team_members (team_id, user_id, role, invited_by)
+       VALUES ($1, $2, 'owner', $2)`,
+      [teamId, userId]
+    );
+
+    const membershipResult = await pool.query(
+      'SELECT role FROM team_members WHERE team_id = $1 AND user_id = $2',
+      [teamId, userId]
+    );
+    expect(membershipResult.rows).toEqual([{ role: 'owner' }]);
+  } finally {
+    await pool.end();
+  }
 }
 
 test.describe('v1.0 fresh proof package', () => {
@@ -42,6 +66,11 @@ test.describe('v1.0 fresh proof package', () => {
       credentials.password
     );
     const team = await createTeam(authRequest, teamName, teamDisplayName);
+
+    // The authenticated teams collection is membership-scoped. Team creation itself only creates
+    // the team row, so the proof fixture must seed the actor's RBAC membership before asking the
+    // already-authenticated browser to render that team in the accepted GJ-01 sidebar path.
+    await grantProofTeamMembership(credentials.email, team.id);
 
     await page.reload({ waitUntil: 'domcontentloaded' });
     const teamButton = page.getByRole('button', { name: new RegExp(teamDisplayName) });
