@@ -4,7 +4,7 @@ import { expect, request, type APIRequestContext, type Page } from '@playwright/
  * Shared E2E test helpers for authentication.
  */
 
-const DEFAULT_PASSWORD = 'password123';
+const DEFAULT_PASSWORD = 'Password123!';
 
 function getBaseURL(requestContext?: APIRequestContext): string {
   return (
