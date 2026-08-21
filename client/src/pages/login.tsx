@@ -89,6 +89,11 @@ export default function LoginPage() {
           <Button type="submit" className="w-full">
             Login with Email
           </Button>
+          <div className="text-right">
+            <Link to="/forgot-password" className="text-sm text-muted-foreground hover:underline">
+              비밀번호를 잊으셨나요?
+            </Link>
+          </div>
         </form>
 
         <p className="text-sm text-center text-muted-foreground">

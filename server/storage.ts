@@ -55,6 +55,7 @@ import {
   databaseRelations,
   syncedBlocks,
   syncedBlockReferences,
+  passwordResetTokens,
   users,
   calendarEvents,
   directories,
@@ -73,7 +74,7 @@ import {
   teamMembers,
 } from '../shared/schema.js';
 import { drizzle } from 'drizzle-orm/node-postgres';
-import { eq, like, and, sql, desc, asc, isNull, inArray } from 'drizzle-orm';
+import { eq, like, and, sql, desc, asc, isNull, inArray, gt } from 'drizzle-orm';
 import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 import type { RetrievedPageRow } from './services/retrieval.js';
@@ -1728,6 +1729,67 @@ tasks: Number(tasksResult[0].count),
       ...block,
       referenceCount: references.filter((r: any) => r.syncedBlockId === block.id).length,
     }));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Password Reset Tokens
+  // ---------------------------------------------------------------------------
+
+  /** Create a password reset token valid for `ttlMinutes` minutes (default 60). */
+  async createPasswordResetToken(userId: number, token: string, ttlMinutes = 60) {
+    const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000);
+    const [row] = await this.db
+      .insert(passwordResetTokens)
+      .values({ userId, token, expiresAt })
+      .returning();
+    return row;
+  }
+
+  /** Look up a token that has not yet been used and has not expired. */
+  async findValidPasswordResetToken(token: string) {
+    const [row] = await this.db
+      .select()
+      .from(passwordResetTokens)
+      .where(
+        and(
+          eq(passwordResetTokens.token, token),
+          isNull(passwordResetTokens.usedAt),
+          gt(passwordResetTokens.expiresAt, new Date())
+        )
+      );
+    return row ?? null;
+  }
+
+  /** Mark a token as used so it cannot be replayed. */
+  async markPasswordResetTokenUsed(id: number) {
+    await this.db
+      .update(passwordResetTokens)
+      .set({ usedAt: new Date() })
+      .where(eq(passwordResetTokens.id, id));
+  }
+
+  /**
+   * Expire all unused tokens for a user so they cannot be replayed.
+   * Rows are marked with `usedAt = now()` rather than deleted to preserve
+   * the audit trail (when/how many resets were requested per user).
+   * Called both before issuing a new token (dedup) and after a successful reset.
+   */
+  async invalidatePasswordResetTokens(userId: number) {
+    await this.db
+      .update(passwordResetTokens)
+      .set({ usedAt: new Date() })
+      .where(
+        and(eq(passwordResetTokens.userId, userId), isNull(passwordResetTokens.usedAt))
+      );
+  }
+
+  /** Find a user by email (used during forgot-password flow). */
+  async findUserByEmail(email: string) {
+    const [row] = await this.db
+      .select()
+      .from(users)
+      .where(eq(users.email, email.toLowerCase().trim()));
+    return row ?? null;
   }
 }
 

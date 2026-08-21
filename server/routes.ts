@@ -75,6 +75,9 @@ import { aiAssistant } from './services/ai-assistant.js';
 import { triggerWorkflows, initWorkflowService, executeWorkflow } from './services/workflow.js';
 import logger from './services/logger.js';
 import { ExternalIntegrationError } from './services/resilience.js';
+import { sendEmail } from './services/email.js';
+import { logAuditEvent, AuditEventType } from './services/audit-log.js';
+import { randomBytes } from 'crypto';
 import path from 'path';
 import { existsSync, appendFileSync } from 'fs';
 import type { Request } from 'express';
@@ -460,6 +463,135 @@ export async function registerRoutes(
         sameSite: 'lax',
       })
       .json({ message: 'Logged out successfully' });
+  });
+
+  // Forgot password — request a reset link (rate-limited via rate-limiter middleware registered in rate-limiter.ts)
+  app.post('/api/auth/forgot-password', rlAuth, async (req, res) => {
+    try {
+      const { email } = req.body;
+      if (!email || typeof email !== 'string') {
+        return res.status(400).json({ message: 'Email is required' });
+      }
+
+      const user = await storage.findUserByEmail(email);
+
+      // Always respond with success to prevent email enumeration
+      if (!user) {
+        return res.json({ message: 'If that email is registered, a reset link has been sent.' });
+      }
+
+      // Invalidate any existing tokens before creating a new one
+      await storage.invalidatePasswordResetTokens(user.id);
+
+      // 32 random bytes (256 bits of entropy) — sufficient to make brute-force
+      // or guessing attacks computationally infeasible within the 60-minute window.
+      const token = randomBytes(32).toString('hex');
+      await storage.createPasswordResetToken(user.id, token, 60); // 60 min TTL
+
+      const appUrl = process.env.APP_URL || `http://localhost:${process.env.PORT || 5001}`;
+      const resetUrl = `${appUrl}/reset-password?token=${token}`;
+      // Escape all HTML special characters before embedding in email HTML
+      const resetUrlEscaped = resetUrl
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#x27;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+      await sendEmail({
+        to: user.email,
+        subject: 'Papyr.us — 비밀번호 재설정',
+        text: `비밀번호를 재설정하려면 아래 링크를 클릭하세요 (1시간 내 유효):\n\n${resetUrl}\n\n본인이 요청하지 않은 경우 이 이메일을 무시하세요.`,
+        html: `<p>비밀번호를 재설정하려면 아래 링크를 클릭하세요 (1시간 내 유효):</p><p><a href="${resetUrlEscaped}">${resetUrlEscaped}</a></p><p>본인이 요청하지 않은 경우 이 이메일을 무시하세요.</p>`,
+      });
+
+      logAuditEvent({
+        pool: storage.pool,
+        eventType: AuditEventType.AUTH_PASSWORD_RESET_REQUEST,
+        userId: user.id,
+        userEmail: user.email,
+        ipAddress: req.ip ?? null,
+        userAgent: req.headers['user-agent'] ?? null,
+      });
+
+      logger.info('[Auth] Password reset requested', { userId: user.id });
+      return res.json({ message: 'If that email is registered, a reset link has been sent.' });
+    } catch (error) {
+      logger.error('[Auth] forgot-password error', {
+        error: error instanceof Error ? error.message : 'Unknown',
+      });
+      return res.status(500).json({ message: 'Server error' });
+    }
+  });
+
+  // Reset password — consume the token and set a new password
+  app.post('/api/auth/reset-password', rlAuth, async (req, res) => {
+    try {
+      const { token, password } = req.body;
+      if (!token || typeof token !== 'string') {
+        return res.status(400).json({ message: 'Token is required' });
+      }
+      if (!password || typeof password !== 'string') {
+        return res.status(400).json({ message: 'Password is required' });
+      }
+
+      // Password strength validation (same rules as register)
+      if (
+        password.length < 8 ||
+        password.length > 128 ||
+        !/[a-zA-Z]/.test(password) ||
+        !/[0-9]/.test(password) ||
+        !/[!@#$%^&*(),.?":{}|<>]/.test(password)
+      ) {
+        return res.status(400).json({
+          message:
+            'Password must be 8-128 characters and include letters, numbers, and a special character.',
+        });
+      }
+
+      const resetToken = await storage.findValidPasswordResetToken(token);
+      if (!resetToken) {
+        return res.status(400).json({ message: 'Invalid or expired reset token' });
+      }
+
+      const hashedPassword = await bcrypt.hash(password, 12);
+      await storage.db
+        .update(users)
+        .set({ hashedPassword, updatedAt: new Date() })
+        .where(eq(users.id, resetToken.userId));
+
+      // Mark token used and expire all remaining tokens for this user
+      await storage.markPasswordResetTokenUsed(resetToken.id);
+      await storage.invalidatePasswordResetTokens(resetToken.userId);
+
+      // Invalidate existing auth sessions so any previously-issued tokens cannot be reused
+      res.clearCookie('accessToken', {
+        httpOnly: true,
+        secure: config.isProduction,
+        sameSite: 'lax',
+      });
+      res.clearCookie('refreshToken', {
+        httpOnly: true,
+        secure: config.isProduction,
+        sameSite: 'lax',
+      });
+
+      logAuditEvent({
+        pool: storage.pool,
+        eventType: AuditEventType.AUTH_PASSWORD_RESET_COMPLETE,
+        userId: resetToken.userId,
+        ipAddress: req.ip ?? null,
+        userAgent: req.headers['user-agent'] ?? null,
+      });
+
+      logger.info('[Auth] Password reset completed', { userId: resetToken.userId });
+      return res.json({ message: 'Password has been reset successfully. You can now log in.' });
+    } catch (error) {
+      logger.error('[Auth] reset-password error', {
+        error: error instanceof Error ? error.message : 'Unknown',
+      });
+      return res.status(500).json({ message: 'Server error' });
+    }
   });
 
   // Passport automatically handles OAuth2 state/nonce validation. SameSite=Lax is required for cross-site top-level redirects.
