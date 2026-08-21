@@ -53,7 +53,7 @@ jobs:
         run: npm run db:push -- --force
 
       - name: Generate fresh v1.0 browser proof
-        run: npx playwright test tests/proof-v1.spec.ts --config=playwright.layer5.config.ts --project=chromium --reporter=dot
+        run: npx playwright test tests/proof-v1.spec.ts --project=chromium --reporter=dot
 
       - name: Verify and checksum proof assets
         run: |
