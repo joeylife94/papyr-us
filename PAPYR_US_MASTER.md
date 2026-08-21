@@ -4,18 +4,18 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.66"
+version: "0.67"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
 current_phase: "Phase 4 — Proof Packaging (active)"
 priority: "P1"
-last_updated: "2026-08-21"
+last_updated: "2026-08-22"
 repository: "joeylife94/papyr-us"
 baseline_main_sha: "00b67207029f269f5b4857caf4705fc43a7d2462"
 ---
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.66**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.67**  
 > Current repository / Issue / PR / workflow evidence overrides historical checkpoints.
 
 ## 0. Authority / Scope
@@ -32,7 +32,7 @@ baseline_main_sha: "00b67207029f269f5b4857caf4705fc43a7d2462"
 - GAP-001..005 — CLOSED.
 - GAP-007 — CLOSED.
 - GAP-008 — CLOSED.
-- GAP-006 — **ACTIVE / Phase 4 via Issue #61**.
+- GAP-006 — **ACTIVE / Phase 4 via Issue #61 and draft PR #62**.
 - GAP-009..012 — OPEN / Phase 5.
 - GAP-013..015 — DEFERRED.
 - Phase 0–3 — CLOSED.
@@ -125,42 +125,50 @@ Final cleanup head `cb1d6f58b7ec3387630ed2218b1ebe3d42796ae8`:
 
 ## 4. Phase 4 / GAP-006 Proof Packaging — Active
 
-> **Date:** 2026-08-21 KST  
+> **Date:** 2026-08-22 KST  
 > **Issue:** #61 — OPEN  
 > **Branch:** `docs/issue-61-gap006-proof-packaging`  
-> **PR:** not created yet
+> **PR:** #62 — DRAFT / OPEN  
+> **Current exact candidate:** `a885098220aac922edcc4d1f55cf442cb22ed2cd`
 
 ### Changed
 
-- Evaluated current repository proof surfaces after Phase 3 closure.
-- Created one bounded Issue #61 for GAP-006 proof packaging.
-- Created branch `docs/issue-61-gap006-proof-packaging` from current `main` ledger SHA `e25a47056176d491d4eabb4e4d9610dca4b6302e`.
-- Fixed Phase 4 scope to evidence packaging only: accepted-v1.0 evidence manifest/index plus the minimum fresh user-visible proof assets; no product expansion, no public deployment requirement, no Phase 5 work, no PR #19 work.
+- Added `docs/proof/V1_PROOF_INDEX.md` as the single current v1.0 proof-package index anchored to accepted product baseline `00b67207029f269f5b4857caf4705fc43a7d2462`.
+- Mapped GJ-01..GJ-08 plus Phase 3 Security / CI / 7-Layer / Firebat and the truthful search/AI boundary to accepted repository evidence.
+- Explicitly marked April 2026 screenshots, archived screenshot guidance, and stale Playwright output as historical/context-only unless freshly revalidated.
+- Added `tests/proof-v1.spec.ts`, which uses synthetic-only data to capture two representative user-visible current-tree screenshots: team pages and a newly created team-scoped document.
+- Added `.github/workflows/v1-proof.yml`, which executes the proof against PostgreSQL, checks both PNGs exist, writes SHA256/provenance metadata, and uploads `proof-artifacts/` on successful exact-head execution.
+- Opened linked draft PR #62 with `Closes #61`.
 
 ### Actually Executed
 
-- Read the current root MASTER on `main` before Phase 4 work.
-- Re-fetched PR #59 and confirmed it is merged, not draft, with merged product SHA `00b67207029f269f5b4857caf4705fc43a7d2462`; therefore the historical active-GAP-007 handoff was discarded.
-- Re-fetched `main` and confirmed ledger SHA `e25a47056176d491d4eabb4e4d9610dca4b6302e` before this MASTER update.
-- Searched for an existing GAP-006 Issue and found none.
-- Inventoried repository proof surfaces. Current tree contains an April 2026 screenshot set under `artifacts/20260409`, an archived screenshot guide, committed Playwright output/report artifacts, and Layer-6 visual snapshots, but no current v1.0 proof-package index anchored to the accepted August 2026 tree.
-- Created Issue #61 with explicit acceptance/non-goal/evidence criteria.
-- Created the linked branch from the current accepted ledger head.
+- Read current root MASTER on `main` first and discarded the stale active-GAP-007 handoff because repository state shows PR #59 merged and Issue #58/Phase 3 closed.
+- Re-fetched Issue #61 and confirmed it remains OPEN with the bounded proof-packaging acceptance criteria.
+- Inventoried current accepted tests and proof surfaces, including `tests/gj01-auth-team-entry.spec.ts`, `tests/gj02-document-lifecycle.spec.ts`, `tests/gj03-authorization-boundary.spec.ts`, `tests/gj04-version-recovery.spec.ts`, `tests/task-team-scope.spec.ts`, `tests/calendar-team-scope.spec.ts`, `tests/gj07-inline-ai-assistance.spec.ts`, and Firebat recovery evidence.
+- Verified PR #47 changed `tests/calendar-team-scope.spec.ts`, so the GJ-05 calendar lifecycle mapping uses the actual accepted path rather than an invented filename.
+- Inspected current CI/7-Layer workflows and confirmed ordinary successful E2E runs do not retain screenshots; therefore a bounded success-artifact workflow was justified for GAP-006.
+- Created the proof index, proof test, and proof workflow as three commits on the existing Issue #61 branch.
+- Compared branch to main: exactly 3 files added, 3 commits ahead, no product/dependency/schema files changed.
+- Opened draft PR #62 at exact head `a885098220aac922edcc4d1f55cf442cb22ed2cd`.
+- Re-fetched exact-head workflows after PR creation.
 
 ### Checks / Evidence
 
-- PR #59: merged; merge SHA `00b67207029f269f5b4857caf4705fc43a7d2462`.
-- Issue #58: already closed/completed per authoritative MASTER and repository state.
-- Existing GAP-006 Issue search before creation: none.
-- Issue #61: OPEN.
-- Proof assets found in repository: historical `artifacts/20260409/*`; archived `docs/archive/SCREENSHOT_GUIDE.md`; current Layer-6 visual snapshots under `tests/visual/...`.
-- No fresh Phase 4 executable proof suite or proof-package PR has been run yet.
+Current exact head `a885098220aac922edcc4d1f55cf442cb22ed2cd`:
+- v1.0 Proof Package `32498099166` — **IN PROGRESS**.
+- CI `32498099100` — **IN PROGRESS**.
+- 7-Layer Test Architecture `32498098870` — **IN PROGRESS**.
+- Firebat Deployment Gate `32498098999` — **IN PROGRESS**.
+- Dependency Security Reachability `32498098823` — **IN PROGRESS**.
+- PR #62: DRAFT / OPEN / UNMERGED.
+- Branch diff: `.github/workflows/v1-proof.yml`, `docs/proof/V1_PROOF_INDEX.md`, `tests/proof-v1.spec.ts` only.
 
 ### Not Verified / Remaining Risks
 
-- Existing April screenshots and committed historical Playwright outputs are not accepted as current v1.0 closure proof without revalidation.
-- No fresh screenshots or proof manifest has been generated yet.
-- No exact-head Phase 4 PR workflows have been executed because no proof-package implementation commit/PR exists yet.
+- No current-head gate is GREEN yet; all observed required/relevant workflows are still running.
+- Fresh screenshots have not yet been inspected because the v1.0 Proof Package workflow has not completed and no successful artifact exists yet.
+- Screenshot synthetic-data/no-secret expectations are encoded in the test/workflow but are not accepted until the generated artifact is inspected.
+- PR #62 review/thread state has not yet been used as acceptance evidence.
 - GAP-006 and Phase 4 remain OPEN/ACTIVE.
 - GAP-009..012 remain Phase 5 work; GAP-013..015 remain deferred.
 - PR #19 remains untouched.
@@ -168,18 +176,17 @@ Final cleanup head `cb1d6f58b7ec3387630ed2218b1ebe3d42796ae8`:
 ### Repo State
 
 - Accepted product baseline: `00b67207029f269f5b4857caf4705fc43a7d2462`.
-- `main` immediately before this ledger write: `e25a47056176d491d4eabb4e4d9610dca4b6302e`.
 - Issue #61: OPEN / ACTIVE.
-- Branch: `docs/issue-61-gap006-proof-packaging` created from `e25a470...`.
-- PR: none yet.
+- Branch: `docs/issue-61-gap006-proof-packaging`.
+- PR #62: DRAFT / OPEN / UNMERGED.
+- Candidate head: `a885098220aac922edcc4d1f55cf442cb22ed2cd`.
 - Phase 4: ACTIVE.
 
 ### Exact Next Action
 
-1. Re-read this MASTER and re-fetch Issue #61 / branch before mutation.
-2. On `docs/issue-61-gap006-proof-packaging`, create one authoritative v1.0 proof index/manifest anchored to accepted product SHA `00b67207029f269f5b4857caf4705fc43a7d2462`.
-3. Map GJ-01..GJ-08 plus Security / 7-Layer / Firebat / truthful search-AI boundary to exact accepted tests, PR/merge SHAs, workflow runs/artifacts where evidence exists; never invent missing PASS.
-4. Mark April 2026 screenshots, archived screenshot guide, and stale committed Playwright outputs historical/context-only unless freshly revalidated.
-5. Add only the minimum deterministic fresh screenshot/proof generation needed for representative user-visible v1.0 flows; do not broaden into product development unless proof execution exposes a concrete reproducibility defect.
-6. Open one linked draft PR with `Closes #61`, run exact-head required gates, then merge only on executed GREEN evidence and clean review state.
-7. After merge, reconcile this MASTER on `main`, close GAP-006/Phase 4 only if its acceptance criteria are actually satisfied, then evaluate Phase 5.
+1. Re-fetch PR #62 and confirm its CURRENT exact head has not advanced.
+2. Wait for v1.0 Proof Package + CI + 7-Layer + Firebat + relevant Security to settle on that same head.
+3. If any check is RED, inspect the first concrete GAP-006/proof reproducibility failure and make only the smallest Issue #61-scoped correction; do not broaden into product work unless proof execution demonstrates a product defect.
+4. If the proof workflow is GREEN, download and inspect its fresh artifact: require both PNGs, SHA256/provenance files, synthetic-only content, and no secrets/PII.
+5. Re-fetch PR reviews and unresolved threads; do not merge on dirty review/security state.
+6. Only after exact-head evidence is GREEN and artifact inspection passes: mark PR #62 ready if draft is the only blocker, merge with expected-head guard, confirm Issue #61 closes, then reconcile this MASTER on `main` and evaluate Phase 4 closure before Phase 5.
