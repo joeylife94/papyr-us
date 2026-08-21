@@ -1,34 +1,12 @@
 import { mkdirSync } from 'node:fs';
-import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
-import { createAuthenticatedApiContext } from './e2e-helpers';
+import { test, expect, type APIRequestContext } from '@playwright/test';
+import {
+  createAuthenticatedApiContext,
+  loginPageWithCookies,
+  registerTestUser,
+} from './e2e-helpers';
 
 const PROOF_DIR = 'proof-artifacts';
-
-async function registerThroughUi(page: Page, name: string, email: string, password: string) {
-  await page.goto('/register');
-  await page.getByLabel('Name').fill(name);
-  await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password').fill(password);
-
-  const responsePromise = page.waitForResponse(
-    (response) => response.url().includes('/api/auth/register') && response.status() === 201
-  );
-  await page.getByRole('button', { name: 'Register' }).click();
-  await responsePromise;
-  await expect(page).toHaveURL('/login');
-}
-
-async function loginThroughUi(page: Page, email: string, password: string) {
-  await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password').fill(password);
-
-  const responsePromise = page.waitForResponse(
-    (response) => response.url().includes('/api/auth/login') && response.status() === 200
-  );
-  await page.getByRole('button', { name: 'Login with Email' }).click();
-  await responsePromise;
-  await expect(page).toHaveURL('/', { timeout: 20000 });
-}
 
 async function createTeam(request: APIRequestContext, name: string, displayName: string) {
   const response = await request.post('/api/teams', {
@@ -43,21 +21,26 @@ async function createTeam(request: APIRequestContext, name: string, displayName:
 }
 
 test.describe('v1.0 fresh proof package', () => {
-  test('captures synthetic team workspace and created document proof', async ({ page }) => {
+  test('captures synthetic team workspace and created document proof', async ({ page, request }) => {
     mkdirSync(PROOF_DIR, { recursive: true });
 
     const stamp = Date.now();
-    const email = `proof-v1-${stamp}@example.com`;
-    const password = 'password123';
-    const userName = `Proof User ${stamp}`;
+    const credentials = await registerTestUser(request, `proof-v1-${stamp}`);
     const teamName = `proof-team-${stamp}`;
     const teamDisplayName = `Proof Team ${stamp}`;
     const pageTitle = `Papyr v1 Proof ${stamp}`;
 
-    await registerThroughUi(page, userName, email, password);
-    await loginThroughUi(page, email, password);
+    // GAP-006 packages representative user-visible proof; GJ-01 already owns UI register/login proof.
+    // Seed a fresh synthetic actor through the accepted API helper, then authenticate the browser
+    // with the same session contract so proof generation is not coupled to duplicate auth coverage.
+    await loginPageWithCookies(page, credentials.email, credentials.password);
+    await page.goto('/');
+    await expect(page).toHaveURL('/', { timeout: 20000 });
 
-    const authRequest = await createAuthenticatedApiContext(email, password);
+    const authRequest = await createAuthenticatedApiContext(
+      credentials.email,
+      credentials.password
+    );
     const team = await createTeam(authRequest, teamName, teamDisplayName);
 
     await page.reload({ waitUntil: 'domcontentloaded' });
