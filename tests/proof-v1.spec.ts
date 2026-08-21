@@ -78,7 +78,9 @@ test.describe('v1.0 fresh proof package', () => {
     await teamButton.click();
     await page.getByRole('link', { name: '팀 페이지' }).click();
     await expect(page).toHaveURL(`/teams/${teamName}/pages`, { timeout: 15000 });
-    await expect(page.getByRole('heading', { name: `${teamName} 팀 문서` })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: `${teamName} 팀 문서`, level: 1, exact: true })
+    ).toBeVisible();
 
     await page.screenshot({
       path: `${PROOF_DIR}/01-team-pages.png`,
