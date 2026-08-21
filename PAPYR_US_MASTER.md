@@ -4,7 +4,7 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.74"
+version: "0.75"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
 current_phase: "Phase 4 — Proof Packaging (active)"
 priority: "P1"
@@ -15,7 +15,7 @@ baseline_main_sha: "00b67207029f269f5b4857caf4705fc43a7d2462"
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.74**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.75**  
 > Current repository / Issue / PR / workflow evidence overrides historical checkpoints.
 
 ## 0. Authority / Scope
@@ -53,10 +53,10 @@ baseline_main_sha: "00b67207029f269f5b4857caf4705fc43a7d2462"
 
 ### Changed
 
-- Reconciled exact head `880f97da030e1f038d9f2e8ec8bbeb2a4831a6a6` to its settled workflow results: Proof Package failed while Security / CI / 7-Layer / Firebat all passed.
-- The proof reached the accepted team-pages route. The failure was Playwright strict-mode ambiguity: the accessible name `<team> 팀 문서` matched the page `h1`, section `h2`, and potentially the empty-state `h3`.
-- Inspected the accepted `Home` DOM: the intended page-level semantic state is the `h1`; the repeated `h2` is a section title and the conditional `h3` is empty-state copy.
-- Applied the smallest Issue #61-scoped correction in `tests/proof-v1.spec.ts`: the team-pages assertion now targets `getByRole('heading', { name, level: 1, exact: true })`.
+- Reconciled exact head `880f97da030e1f038d9f2e8ec8bbeb2a4831a6a6` to settled results: Proof Package failed; Security / CI / 7-Layer / Firebat all passed.
+- The proof reached the accepted team-pages route. Failure was Playwright strict-mode ambiguity because `<team> 팀 문서` matched page `h1`, section `h2`, and potentially empty-state `h3`.
+- Inspected accepted `Home` DOM and selected the unique page-level semantic heading rather than changing product UI.
+- Updated only `tests/proof-v1.spec.ts`: team-pages assertion now uses `getByRole('heading', { name, level: 1, exact: true })`.
 - No production UI, auth/team/page semantics, dependency, schema, search, AI, public deployment, Phase 5, or PR #19 work changed.
 
 ### Actually Executed
@@ -68,6 +68,7 @@ baseline_main_sha: "00b67207029f269f5b4857caf4705fc43a7d2462"
 - Inspected `tests/proof-v1.spec.ts`, accepted GJ-01 selector usage, and `client/src/pages/home.tsx` heading structure.
 - Updated only `tests/proof-v1.spec.ts` on the existing Issue #61 branch.
 - PR #62 advanced to exact head `3fcba5fe1987449d14fba045ffa50e0cd3147f9e`.
+- Re-fetched current-head workflow runs and confirmed a fresh same-head five-gate cycle is actually executing.
 
 ### Checks / Evidence
 
@@ -80,12 +81,16 @@ Settled exact head `880f97da030e1f038d9f2e8ec8bbeb2a4831a6a6`:
 - Firebat Deployment Gate `32523753641` — **SUCCESS**.
 
 Current exact head `3fcba5fe1987449d14fba045ffa50e0cd3147f9e`:
-- A fresh same-head five-gate cycle is required.
-- At the time of this ledger write, no current-head workflow runs had yet been observed via the PR commit workflow query; no PASS is inferred.
+- v1.0 Proof Package `32528465975` — **IN PROGRESS**.
+- Dependency Security Reachability `32528465767` — **IN PROGRESS**.
+- CI `32528465772` — **IN PROGRESS**.
+- 7-Layer Test Architecture `32528465773` — **IN PROGRESS**.
+- Firebat Deployment Gate `32528465796` — **IN PROGRESS**.
+- No PASS is inferred before completion.
 
 ### Not Verified / Remaining Risks
 
-- The locator correction is not accepted until Proof Package + Security + CI + 7-Layer + Firebat execute on the same current head and settle GREEN.
+- The locator correction is not accepted until all five workflows settle GREEN on `3fcba5fe...`.
 - Fresh proof screenshots are not yet accepted or inspected.
 - Required artifact contents remain unverified: `01-team-pages.png`, `02-created-page.png`, `SHA256SUMS`, `PROVENANCE.txt`, synthetic-only content, no secrets/PII.
 - Final PR review submissions, unresolved review threads, and bounded final diff remain acceptance checks.
@@ -102,7 +107,7 @@ Current exact head `3fcba5fe1987449d14fba045ffa50e0cd3147f9e`:
 
 ### Exact Next Action
 
-1. Re-fetch PR #62/current head and require v1.0 Proof Package + Security + CI + 7-Layer + Firebat to execute and settle on the same current head.
+1. Re-fetch PR #62/current head and require v1.0 Proof Package + Security + CI + 7-Layer + Firebat to settle on the same current head.
 2. Any RED/CANCELLED/TIMED_OUT/ACTION_REQUIRED gate: inspect the first concrete Issue #61 failure and make only the smallest same-Issue correction.
 3. If all five are GREEN, download and inspect the fresh proof artifact; require `01-team-pages.png`, `02-created-page.png`, `SHA256SUMS`, `PROVENANCE.txt`, synthetic-only content, and no secrets/PII.
 4. Re-fetch PR reviews/threads and verify the final diff remains bounded.
