@@ -4,7 +4,7 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.49"
+version: "0.50"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
 current_phase: "Phase 3 — Operational & Security Readiness"
 priority: "P0"
@@ -15,7 +15,7 @@ baseline_main_sha: "4d9f77090bd05b1633637ab110b81b0d5f84b773"
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.49**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.50**  
 > Root single source of truth. Current repository / Issue / PR / workflow evidence overrides historical checkpoints.
 
 ## 0. Authority / Rules
@@ -101,45 +101,53 @@ D-015 post-v1 North Star remains directional until Freeze.
 > **Phase:** Phase 3 — Operational & Security Readiness  
 > **Accepted product baseline:** `4d9f77090bd05b1633637ab110b81b0d5f84b773`  
 > **Active Issue / PR:** Issue #58 / draft PR #59  
-> **Current exact candidate:** `edb08c9b5795cf398458936c27d85af8585dd216`
+> **Current exact candidate:** `0a619fbd0787397618d377c2c3d94fcb6ec5ca76`
 
 ### Changed
 
-- Reconciled CURRENT PR #59 exact head `edb08c9b5795cf398458936c27d85af8585dd216` to settled workflow evidence.
-- Security `32428533039` is **FAILURE**; CI `32428533056`, 7-Layer `32428533037`, and Firebat `32428533136` are **SUCCESS**.
-- Preserved the current single-blocker cycle: no new dependency candidate has been stacked and the PR remains draft/open/unmerged.
-- The guarded Apply workflow on the current head contains the parent-controlled `react-router -> react-router-dom` fallback added in the prior iteration; execution still requires fresh CURRENT-head security artifact confirmation.
+- Reconciled CURRENT PR #59 beyond the prior `edb08c9b...` checkpoint: the guarded Apply workflow executed and pushed bot commit `fd1ac4e83b87250e875d9ae35dc20e778c8d817e`.
+- The npm-generated bot commit changed only `package-lock.json`, advancing `react-router-dom` / `react-router` from `7.8.2` to `7.18.2` plus compatible lock transitive entries.
+- Removed `gap007-apply-candidate` after the bot push.
+- Bot-head Security / CI / 7-Layer / Firebat were all `ACTION_REQUIRED`, so the existing `.github/gap007-sync-trigger` was updated to `candidate_head=fd1ac4e83b87250e875d9ae35dc20e778c8d817e`.
+- The connector-authored sync commit created new exact candidate `0a619fbd0787397618d377c2c3d94fcb6ec5ca76`; no second dependency candidate was stacked.
 
 ### Actually Executed
 
 - Re-read root MASTER from `main` first.
-- Re-fetched CURRENT PR #59 and confirmed head `edb08c9b5795cf398458936c27d85af8585dd216`, draft/open/unmerged.
-- Re-fetched all workflow runs associated with that exact head.
-- Confirmed all four required runs are fully settled before dependency remediation.
-- Updated only this authoritative MASTER on `main` to replace stale QUEUED conclusions with exact settled results.
-- Did not add `gap007-apply-candidate`, merge PR #59, close Issue #58, delete the sync trigger, touch PR #19, or start Phase 4/deferred work before fresh artifact inspection.
+- Re-fetched CURRENT PR #59 and discovered head had advanced from the stale handoff to bot commit `fd1ac4e83b87250e875d9ae35dc20e778c8d817e`.
+- Inspected the bot commit and verified parent `edb08c9b5795cf398458936c27d85af8585dd216`, bot author, commit message `chore: apply npm-backed GAP-007 fix for react-router`, and lock-only diff.
+- Verified the bot-head four workflows were all `ACTION_REQUIRED` rather than executable acceptance evidence.
+- Confirmed `gap007-apply-candidate` was still present, then removed it.
+- Updated the existing sync trigger on the PR branch to the exact bot SHA, creating connector-authored head `0a619fbd0787397618d377c2c3d94fcb6ec5ca76`.
+- Re-fetched workflow runs for the new exact head and confirmed all four required validations were newly queued.
+- Did not merge PR #59, close Issue #58, delete the sync trigger, touch PR #19, or start Phase 4/deferred work.
 
 ### Checks / Current Verification State
 
-CURRENT head `edb08c9b5795cf398458936c27d85af8585dd216`:
-- Dependency Security Reachability `32428533039` — **FAILURE**.
-- CI `32428533056` — **SUCCESS**.
-- 7-Layer `32428533037` — **SUCCESS**.
-- Firebat `32428533136` — **SUCCESS**.
+Bot head `fd1ac4e83b87250e875d9ae35dc20e778c8d817e`:
+- Dependency Security Reachability `32432599562` — **ACTION_REQUIRED**.
+- CI `32432599653` — **ACTION_REQUIRED**.
+- 7-Layer `32432599622` — **ACTION_REQUIRED**.
+- Firebat `32432599556` — **ACTION_REQUIRED**.
+
+CURRENT executable head `0a619fbd0787397618d377c2c3d94fcb6ec5ca76`:
+- Dependency Security Reachability `32432817727` — **QUEUED**.
+- CI `32432817661` — **QUEUED**.
+- 7-Layer `32432817807` — **QUEUED**.
+- Firebat `32432817712` — **QUEUED**.
 
 ### Not Verified
 
-- Fresh CURRENT-head `gap007-security-evidence` has not yet been inspected in this checkpoint.
-- The current head must still prove that the first blocker is `react-router`, npm candidate generation exits 0, and the candidate remains a bounded npm-generated parent-controlled `react-router-dom` diff before apply is authorized.
-- The aligned Apply workflow has not yet been executed on this current head.
-- `.github/gap007-sync-trigger` remains temporary; do not delete until GAP-007 otherwise reaches all-GREEN acceptance and cleanup validation is due.
+- The four required gates on CURRENT exact head `0a619fbd...` are not yet settled.
+- The post-react-router fresh security artifact has not yet been inspected; the next production/runtime blocker is unknown until Security settles.
+- No additional npm candidate is authorized while any current-head required gate is pending/running.
+- `.github/gap007-sync-trigger` remains temporary and must stay until GAP-007 otherwise reaches all-GREEN acceptance and cleanup validation is due.
 
 ### Residual Risks / Blockers
 
 - GAP-007 remains OPEN under D-014.
 - PR #59 remains draft/open/unmerged; Issue #58 remains open.
-- Security is the sole RED required gate on the current exact head.
-- Historical `react-router` evidence is not sufficient by itself; fresh current-head artifact evidence is required before one-shot apply.
+- `react-router` remediation is applied but not yet accepted because exact-head executable verification is pending.
 - Later production blockers must not be stacked into this active cycle.
 
 ### Repo / Issue / PR State
@@ -149,15 +157,15 @@ CURRENT head `edb08c9b5795cf398458936c27d85af8585dd216`:
 - GAP-007: ACTIVE / OPEN
 - Issue #58: OPEN
 - PR #59: DRAFT / OPEN / UNMERGED
-- PR #59 current head: `edb08c9b5795cf398458936c27d85af8585dd216`
-- `gap007-apply-candidate`: not authorized until fresh artifact inspection
-- `.github/gap007-sync-trigger`: present; do not delete
+- PR #59 current head: `0a619fbd0787397618d377c2c3d94fcb6ec5ca76`
+- `gap007-apply-candidate`: ABSENT after bot push
+- `.github/gap007-sync-trigger`: PRESENT, now points to `fd1ac4e83b87250e875d9ae35dc20e778c8d817e`
 - PR #19: unchanged
 
 ### Exact Next Action
 
-1. Inspect fresh `gap007-security-evidence` from Security run `32428533039` on exact head `edb08c9b5795cf398458936c27d85af8585dd216`.
-2. Require the current first blocker still be `react-router`, npm exit 0, bounded npm-generated parent-controlled `react-router-dom` package/lock candidate evidence, no broad modernization, and unchanged PR head.
-3. If the candidate is no-op/ineligible, do not label; make only the smallest Issue #58-scoped workflow correction justified by evidence.
-4. If eligible, confirm `gap007-apply-candidate` is absent, add it exactly once, inspect Apply SUCCESS and exact pushed bot commit, remove the label, and use the existing sync trigger only if bot-authored follow-up gates are ACTION_REQUIRED.
-5. Repeat one blocker per fully settled cycle. Final all-GREEN → delete sync trigger → final cleanup-head four-gate validation → ready/merge #59 with expected-head guard → confirm #58 closure → reconcile MASTER → evaluate Phase 3 closure before Phase 4.
+1. Wait for Security `32432817727`, CI `32432817661`, 7-Layer `32432817807`, and Firebat `32432817712` on exact head `0a619fbd0787397618d377c2c3d94fcb6ec5ca76` to fully settle.
+2. Do not trigger or stack another candidate while any required gate is pending/running.
+3. If CI / 7-Layer / Firebat is RED, inspect that concrete compatibility/runtime failure before dependency remediation.
+4. If supporting gates are GREEN and Security is RED, inspect the fresh current-head `gap007-security-evidence`; select only the current first runtime/non-dev HIGH/CRITICAL blocker and require a bounded npm-generated candidate before one-shot apply.
+5. If all four gates become GREEN and GAP-007 otherwise holds, delete `.github/gap007-sync-trigger` and require one final cleanup-head same-head four-gate validation before ready/merge #59, Issue #58 closure, MASTER reconciliation, and Phase 3 closure evaluation.
