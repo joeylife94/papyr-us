@@ -4,7 +4,7 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.55"
+version: "0.56"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
 current_phase: "Phase 3 — Operational & Security Readiness"
 priority: "P0"
@@ -15,7 +15,7 @@ baseline_main_sha: "4d9f77090bd05b1633637ab110b81b0d5f84b773"
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.55**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.56**  
 > Root single source of truth. Current repository / Issue / PR / workflow evidence overrides historical checkpoints.
 
 ## 0. Authority / Rules
@@ -106,21 +106,20 @@ D-015 post-v1 North Star remains directional until Freeze.
 ### Changed
 
 - Reconciled CURRENT exact head `7358e98d4daf2c45edd28e5a029aee3bda0ca491` to settled evidence: Dependency Security Reachability `32446949236` = **FAILURE**; CI `32446949252` = **SUCCESS**; 7-Layer `32446949241` = **SUCCESS**; Firebat `32446949250` = **SUCCESS**.
-- Downloaded and inspected fresh CURRENT `gap007-security-evidence` artifact `9434414584` from Security run `32446949236`.
-- Fresh evidence still proves first production blocker exactly **`ws`** with two non-dev/runtime-present `ws@8.17.1` copies: `socket.io-client -> engine.io-client -> ws` and `@socket.io/redis-adapter -> socket.io-adapter -> ws`.
-- Fresh npm candidate metadata still proves the direct `ws` update path is a no-op and the parent-controlled fallback is eligible: `firstBlocker=ws`, `remediationTarget=socket.io-client + @socket.io/redis-adapter`, npm exit 0, `package.json` unchanged, `package-lock.json` changed.
-- Fresh bounded lock diff advances `socket.io-client 4.8.1 -> 4.8.3` plus compatible transitive lock entries only; no force, synthetic metadata, or broad modernization.
-- Reconfirmed runtime-image `multer` HIGH findings remain separately blocking under D-014 and must wait until the `ws` cycle fully settles.
+- Fresh CURRENT Security artifact `9434414584` still proves first production blocker exactly **`ws`** and proves the bounded parent-controlled candidate eligible: direct update no-op; fallback `socket.io-client + @socket.io/redis-adapter`; npm exit 0; `package.json` unchanged; `package-lock.json` changed.
+- Fresh ancestry still shows the two non-dev/runtime-present `ws@8.17.1` copies under `engine.io-client` and `socket.io-adapter`; D-014 therefore still blocks.
+- Reconfirmed the current guarded Apply workflow reproduces the same evidence-backed `ws` fallback and lock-only scope guard.
+- Added `gap007-apply-candidate` exactly once after a final head/label stability recheck.
 
 ### Actually Executed
 
-- Re-read root MASTER on `main` before acting and re-fetched CURRENT PR #59.
-- Re-fetched exact-head workflow conclusions and verified all four required gates are settled on `7358e98d...`.
-- Confirmed PR #59 remains draft/open/unmerged and exact head remains `7358e98d...`.
-- Confirmed PR labels are empty, so `gap007-apply-candidate` is absent before any apply trigger.
-- Inspected fresh artifact candidate metadata, ancestry, blocking finding, package diff, and lock diff.
-- Reconfirmed the guarded Apply workflow on current head includes the same `ws -> socket.io-client + @socket.io/redis-adapter` no-op fallback and lock-only scope guard.
-- Did not touch Phase 4, PR #19, deferred work, or merge/close Issue #58.
+- Re-read root MASTER on `main` first and re-fetched PR #59, its exact-head four-gate state, labels, and fresh Security artifact.
+- Verified PR #59 remained at exact head `7358e98d...`, draft/open/unmerged, with no apply label before mutation.
+- Downloaded artifact `9434414584` and inspected `dependency.candidate-meta.json`, `dependency.candidate-target.json`, ancestry, npm blocking findings, package diff, and package-lock diff.
+- Verified fresh metadata: `firstBlocker=ws`, `remediationTarget=socket.io-client + @socket.io/redis-adapter`, `npmCommandExit=0`, `packageJsonChanged=false`, `packageLockChanged=true`.
+- Added `gap007-apply-candidate` exactly once to trigger the guarded npm candidate workflow.
+- Re-fetched PR after the trigger: head remains `7358e98d...`; no bot commit/push is visible yet, so no label removal or sync-trigger update was performed.
+- Did not process `multer`, merge PR #59, close Issue #58, touch PR #19, or start Phase 4/deferred work.
 
 ### Checks / Current Verification State
 
@@ -133,26 +132,31 @@ CURRENT exact head `7358e98d4daf2c45edd28e5a029aee3bda0ca491`:
 Fresh Security artifact `9434414584`:
 - first blocker — **`ws`**.
 - vulnerable nodes — `node_modules/engine.io-client/node_modules/ws`, `node_modules/socket.io-adapter/node_modules/ws`.
-- lock disposition — both present, `dev:false`, therefore **BLOCK** under D-014.
-- candidate generator — `npm update socket.io-client @socket.io/redis-adapter --package-lock-only --ignore-scripts` after direct `ws` no-op.
-- npm command exit — `0`.
-- package.json changed — `false`.
-- package-lock.json changed — `true`.
-- remediation target — `socket.io-client + @socket.io/redis-adapter`.
+- lock state — both `dev:false`, therefore **BLOCK**.
+- bounded remediation target — `socket.io-client + @socket.io/redis-adapter`.
+- candidate generator exit — `0`.
+- `package.json` changed — `false`.
+- `package-lock.json` changed — `true`.
+
+Apply trigger state:
+- `gap007-apply-candidate` — **PRESENT / added exactly once this iteration**.
+- PR head after trigger recheck — still `7358e98d...`.
+- bot dependency commit — **not yet observed**.
 
 ### Not Verified
 
-- The guarded Apply workflow has not yet been executed against CURRENT exact head `7358e98d...` in this checkpoint.
-- No bot dependency commit or post-apply exact-head four-gate evidence exists yet for this `ws` candidate.
-- Runtime-image `multer` HIGH findings are not remediated and remain the next blocker only after `ws` fully settles.
+- `GAP-007 Apply npm Candidate` has not yet produced an observable bot commit/push in this checkpoint.
+- Exact apply-run SUCCESS evidence for checkout/install/blocker capture/candidate generation/scope validation/commit/push is not yet available.
+- No post-apply exact-head Security + CI + 7-Layer + Firebat validation exists yet.
+- Runtime-image `multer` HIGH findings remain untouched and may become the next blocker only after `ws` fully settles.
 - `.github/gap007-sync-trigger` remains temporary and must stay until GAP-007 otherwise reaches all-GREEN acceptance and cleanup validation is due.
 
 ### Residual Risks / Blockers
 
 - GAP-007 remains OPEN under D-014.
 - PR #59 remains draft/open/unmerged; Issue #58 remains open.
-- `ws` remains the current blocking production finding until the evidence-backed npm candidate is applied and exact-head revalidated.
-- Runtime-image `multer` HIGH findings remain separately blocking after the `ws` cycle.
+- `ws` remains blocking until the guarded candidate is committed and revalidated.
+- `multer` remains separately runtime-present and blocking after the `ws` cycle.
 
 ### Repo / Issue / PR State
 
@@ -162,16 +166,15 @@ Fresh Security artifact `9434414584`:
 - Issue #58: OPEN
 - PR #59: DRAFT / OPEN / UNMERGED
 - PR #59 current head: `7358e98d4daf2c45edd28e5a029aee3bda0ca491`
-- `gap007-apply-candidate`: ABSENT at evidence recheck
+- `gap007-apply-candidate`: PRESENT
 - `.github/gap007-sync-trigger`: PRESENT
 - PR #19: unchanged
 
 ### Exact Next Action
 
-1. Re-fetch PR #59 immediately before mutation and require exact head still `7358e98d4daf2c45edd28e5a029aee3bda0ca491` with `gap007-apply-candidate` absent.
-2. Add `gap007-apply-candidate` exactly once.
-3. Inspect `GAP-007 Apply npm Candidate`; SUCCESS must prove exact-head checkout, npm install, blocker capture, the evidence-backed `ws` parent fallback, guarded lock-only scope validation, commit, and push.
-4. Remove the apply label after bot push.
-5. If the bot-authored head cannot run normal validation because token-recursion jobs are ACTION_REQUIRED/no executable follow-up, update existing `.github/gap007-sync-trigger` with `candidate_head=<BOT_COMMIT_SHA>` and require Security + CI + 7-Layer + Firebat on that connector-triggered exact head.
-6. Do not process `multer` until the full post-apply `ws` validation cycle settles.
-7. Final cleanup/merge remains gated on same-head four-gate GREEN, sync-trigger deletion, and one final cleanup-head four-gate validation.
+1. Inspect the label-triggered `GAP-007 Apply npm Candidate` result without stacking another candidate.
+2. Require Apply SUCCESS to prove exact-head checkout, npm install, blocker capture, the `ws` parent fallback, guarded lock-only scope validation, commit, and push.
+3. After bot push, remove `gap007-apply-candidate` immediately.
+4. If bot-authored head yields only ACTION_REQUIRED/no executable validation, update existing `.github/gap007-sync-trigger` with `candidate_head=<BOT_COMMIT_SHA>` and require all four gates on the connector-triggered exact head.
+5. Do not process `multer` until the full post-apply `ws` validation cycle settles.
+6. Final cleanup/merge remains gated on same-head four-gate GREEN, sync-trigger deletion, and one final cleanup-head four-gate validation.
