@@ -91,10 +91,9 @@ test.describe('v1.0 fresh proof package', () => {
     await expect(page).toHaveURL(new RegExp(`/teams/${teamName}/create`));
     await page.getByLabel('Title').fill(pageTitle);
 
-    const addParagraph = page.getByRole('button', { name: /paragraph/i });
-    if (await addParagraph.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await addParagraph.click();
-    }
+    const addParagraph = page.getByRole('button', { name: '단락', exact: true });
+    await expect(addParagraph).toBeVisible({ timeout: 10000 });
+    await addParagraph.click();
 
     const textarea = page.locator('textarea').first();
     await expect(textarea).toBeVisible({ timeout: 10000 });
