@@ -4,7 +4,7 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.78"
+version: "0.79"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
 current_phase: "Phase 4 — Proof Packaging (active)"
 priority: "P1"
@@ -15,7 +15,7 @@ baseline_main_sha: "00b67207029f269f5b4857caf4705fc43a7d2462"
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.78**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.79**  
 > Current repository / Issue / PR / workflow evidence overrides historical checkpoints.
 
 ## 0. Authority / Scope
@@ -43,36 +43,46 @@ baseline_main_sha: "00b67207029f269f5b4857caf4705fc43a7d2462"
 > **Issue:** #61 — OPEN  
 > **Branch:** `docs/issue-61-gap006-proof-packaging`  
 > **PR:** #62 — DRAFT / OPEN / UNMERGED  
-> **Current exact candidate:** `33f3975d2c2b5898f33dfe8e36a1e72556b70af8`
+> **Current exact candidate:** `5762fb2ee06d41fa4ad1ffe1d823f5da187b1fd9`
 
 ### Changed
-- Reconciled CURRENT exact-head workflow state after run completion.
-- The prior `단락`/textarea correction did execute: the current proof reached paragraph creation and textarea fill successfully.
-- Diagnosed the new first concrete failure at page creation: the harness waits only for a `POST /api/pages` response with status `201`, and both attempts timed out at that filtered wait after clicking `Create Page`.
-- No production auth/team/page semantics, dependency, schema, search, AI, public deployment, Phase 5, or PR #19 change is justified by the current evidence.
+- Reconciled exact head `33f3975d2c2b5898f33dfe8e36a1e72556b70af8`: Proof Package failed; Security / CI / 7-Layer / Firebat succeeded.
+- Verified the previous `단락`/textarea correction worked; the current first failure moved to page-create response observation.
+- Updated only `tests/proof-v1.spec.ts` so the harness observes the first actual `POST /api/pages` response regardless of status, then asserts status `201` separately.
+- This prevents a non-201 response from being hidden behind a 120-second filtered wait timeout and keeps the correction diagnostic/bounded to Issue #61.
+- No production auth/team/page semantics, dependency, schema, search, AI, public deployment, Phase 5, or PR #19 changes were made.
 
 ### Actually Executed
-- Read this root MASTER on `main` first.
+- Read root MASTER on `main` first.
 - Re-fetched Issue #61: OPEN with unchanged bounded acceptance criteria.
-- Re-fetched PR #62: DRAFT / OPEN / UNMERGED at exact head `33f3975d2c2b5898f33dfe8e36a1e72556b70af8`.
-- Re-fetched Proof Package run `32532831218`, job `96928112815`, and full job logs.
-- Confirmed setup, dependency install, Chromium install, schema sync, auth/team setup, team-pages navigation, `단락` click, textarea visibility, and textarea fill all executed before the current failure.
-- Confirmed both initial attempt and retry failed at `page.waitForResponse` around `POST /api/pages` with the predicate requiring status `201`.
+- Re-fetched PR #62 at exact head `33f3975d...`, DRAFT / OPEN / UNMERGED.
+- Re-fetched Proof Package run `32532831218`, job `96928112815`, and full logs.
+- Confirmed both initial attempt and retry reached paragraph creation and textarea fill, then timed out at the status-filtered `POST /api/pages` wait.
+- Updated `tests/proof-v1.spec.ts` on the existing Issue #61 branch.
+- PR #62 advanced to exact head `5762fb2ee06d41fa4ad1ffe1d823f5da187b1fd9`.
+- Re-fetched the new exact-head workflow cycle.
 
 ### Checks / Evidence
-Current exact head `33f3975d2c2b5898f33dfe8e36a1e72556b70af8`:
+Settled exact head `33f3975d2c2b5898f33dfe8e36a1e72556b70af8`:
 - v1.0 Proof Package `32532831218` — **FAILURE**.
-  - First concrete failure: `page.waitForResponse` timed out at `tests/proof-v1.spec.ts:102` while filtering for `/api/pages`, method `POST`, status `201`.
+  - First concrete failure: `page.waitForResponse` timed out at `tests/proof-v1.spec.ts:102` because the predicate required status `201`.
   - Previous missing-textarea failure did **not** recur.
-  - Asset checksum verification and upload were skipped.
 - Dependency Security Reachability `32532831215` — **SUCCESS**.
 - CI `32532831214` — **SUCCESS**.
 - 7-Layer Test Architecture `32532831209` — **SUCCESS**.
 - Firebat Deployment Gate `32532831211` — **SUCCESS**.
 
+Current exact head `5762fb2ee06d41fa4ad1ffe1d823f5da187b1fd9`:
+- v1.0 Proof Package `32536970325` — **IN PROGRESS**.
+- Dependency Security Reachability `32536970359` — **IN PROGRESS**.
+- CI `32536970380` — **IN PROGRESS**.
+- 7-Layer Test Architecture `32536970331` — **IN PROGRESS**.
+- Firebat Deployment Gate `32536970354` — **IN PROGRESS**.
+- No PASS is inferred before completion.
+
 ### Not Verified / Remaining Risks
-- The actual page-create response status/body is not yet observed because the current wait predicate discards non-201 responses and turns them into a 120s timeout.
-- It is not yet proven whether the failure is a harness expectation mismatch or a concrete page-create rejection.
+- The actual page-create response status/body on the new candidate is not yet known.
+- The diagnostic correction is not accepted until the new exact-head cycle settles.
 - Fresh proof screenshots remain unaccepted/uninspected.
 - Required artifact contents remain unverified: `01-team-pages.png`, `02-created-page.png`, `SHA256SUMS`, `PROVENANCE.txt`, synthetic-only content, no secrets/PII.
 - Final PR reviews/threads, mergeability after main ledger divergence, and bounded final diff remain acceptance checks.
@@ -82,12 +92,12 @@ Current exact head `33f3975d2c2b5898f33dfe8e36a1e72556b70af8`:
 - Accepted product baseline: `00b67207029f269f5b4857caf4705fc43a7d2462`.
 - Issue #61: OPEN / ACTIVE.
 - PR #62: DRAFT / OPEN / UNMERGED.
-- Current candidate: `33f3975d2c2b5898f33dfe8e36a1e72556b70af8`.
+- Current candidate: `5762fb2ee06d41fa4ad1ffe1d823f5da187b1fd9`.
 - Phase 4: ACTIVE.
 
 ### Exact Next Action
-1. Make only the smallest Issue #61 proof-harness correction: observe the first actual `POST /api/pages` response regardless of status, then assert `201` separately so the next run exposes a real response/status instead of a filtered timeout.
-2. Require a new exact-head Proof Package + Security + CI + 7-Layer + Firebat cycle.
-3. Any RED/CANCELLED/TIMED_OUT/ACTION_REQUIRED gate: inspect first concrete current evidence and make only the smallest same-Issue correction.
+1. Re-fetch all five workflows for `5762fb2e...` and require them to settle on that same exact head.
+2. If Proof Package is RED, inspect the first concrete response/status or next failure exposed by the new harness and make only the smallest Issue #61 correction.
+3. Any other RED/CANCELLED/TIMED_OUT/ACTION_REQUIRED gate: inspect first concrete current evidence; do not merge.
 4. If all five are GREEN, inspect the fresh artifact and require `01-team-pages.png`, `02-created-page.png`, `SHA256SUMS`, `PROVENANCE.txt`, synthetic-only content, and no secrets/PII.
-5. Re-fetch PR reviews/threads and final bounded diff. Only then mark ready, merge with expected-head guard, close Issue #61, reconcile MASTER on `main`, and evaluate Phase 4 closure before any Phase 5 work.
+5. Re-fetch PR reviews/threads and final bounded diff. Only after clean same-head acceptance: mark ready, merge with expected-head guard, confirm Issue #61 closure, reconcile MASTER on `main`, then evaluate Phase 4 closure before any Phase 5 work.
