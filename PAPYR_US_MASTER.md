@@ -4,7 +4,7 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.51"
+version: "0.52"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
 current_phase: "Phase 3 — Operational & Security Readiness"
 priority: "P0"
@@ -15,7 +15,7 @@ baseline_main_sha: "4d9f77090bd05b1633637ab110b81b0d5f84b773"
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.51**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.52**  
 > Root single source of truth. Current repository / Issue / PR / workflow evidence overrides historical checkpoints.
 
 ## 0. Authority / Rules
@@ -101,62 +101,63 @@ D-015 post-v1 North Star remains directional until Freeze.
 > **Phase:** Phase 3 — Operational & Security Readiness  
 > **Accepted product baseline:** `4d9f77090bd05b1633637ab110b81b0d5f84b773`  
 > **Active Issue / PR:** Issue #58 / draft PR #59  
-> **Current exact candidate:** `50faab831df26b3341338da4242ae60f05ad1503`
+> **Current exact candidate:** `030761abcf262b2498d14fd045bec3366e9bea22`
 
 ### Changed
 
-- Reconciled settled executable head `0a619fbd0787397618d377c2c3d94fcb6ec5ca76`: Security `32432817727` = FAILURE; CI `32432817661` = SUCCESS; 7-Layer `32432817807` = SUCCESS; Firebat `32432817712` = SUCCESS.
-- Inspected exact `gap007-security-evidence`: production HIGH/CRITICAL blockers are now **3**: direct `sharp@0.33.5`, transitive `socket.io-parser`, and transitive `ws`; current first blocker is `sharp@0.33.5`.
-- Verified first-blocker ancestry is direct application dependency `sharp@0.33.5`; D-014 therefore blocks waiver.
-- Verified npm-generated eligible candidate metadata: `sharp 0.33.5 -> 0.35.3`, command `npm install sharp@0.35.3 --package-lock-only --ignore-scripts --save-prefix=^`, exit 0, bounded changes to `package.json` plus npm-generated `package-lock.json` sharp/libvips graph.
-- Added `gap007-apply-candidate` exactly once. Apply run `32436133639` completed SUCCESS and pushed bot commit `4b73ad1a857aa6d4bdaf7abdcf2f48604c89e8bc` with parent exactly `0a619fbd...` and message `chore: apply npm-backed GAP-007 fix for sharp`.
+- Reconciled settled executable head `50faab831df26b3341338da4242ae60f05ad1503`: Security `32436204109` = FAILURE; CI `32436204115` = SUCCESS; 7-Layer `32436204112` = SUCCESS; Firebat `32436204123` = SUCCESS.
+- Inspected exact `gap007-security-evidence` from Security run `32436204109`: production HIGH/CRITICAL blockers are now **2** (`socket.io-parser`, `ws`); pruned runtime image has **12 HIGH / 0 CRITICAL** findings = `multer` 8, `socket.io-parser` 2, `ws` 2.
+- Current first blocker is transitive/non-dev `socket.io-parser@4.2.4`, with production ancestry through both `socket.io-client@4.8.1` and `socket.io@4.8.1`.
+- Verified npm-generated eligible candidate metadata: `npm update socket.io-parser --package-lock-only --ignore-scripts`, exit 0, `package.json` unchanged, `package-lock.json` changed.
+- Added `gap007-apply-candidate` exactly once after unchanged-head and eligibility checks held.
+- Guarded Apply pushed bot commit `da18e28935b7fd7dc281dd087f2c15bcb3384cf1` with parent exactly `50faab83...`; diff is lock-only and advances `socket.io-parser 4.2.4 -> 4.2.7` plus its compatible nested `debug` resolution.
 - Removed `gap007-apply-candidate` after bot push.
-- Updated existing `.github/gap007-sync-trigger` to `candidate_head=4b73ad1a857aa6d4bdaf7abdcf2f48604c89e8bc`, creating connector-authored executable head `50faab831df26b3341338da4242ae60f05ad1503`.
+- Updated only the existing `.github/gap007-sync-trigger` to `candidate_head=da18e28935b7fd7dc281dd087f2c15bcb3384cf1`, creating connector-authored executable head `030761abcf262b2498d14fd045bec3366e9bea22`.
 
 ### Actually Executed
 
-- Re-read root MASTER on `main` first and re-fetched CURRENT PR #59/head/labels.
-- Re-fetched all four exact-head workflows for `0a619fbd...` and confirmed only Security was RED.
-- Downloaded and inspected exact Security artifact `gap007-security-evidence` from run `32432817727`.
-- Quantified current blockers and inspected `dependency.candidate-meta.json`, `dependency.candidate-target.json`, `first-blocker-ancestry.txt`, `package.candidate.diff`, and npm-generated lock diff.
-- Triggered guarded Apply once only after candidate eligibility and unchanged-head checks held.
-- Verified every Apply step succeeded: exact-head checkout, Node setup, exact dependency install, blocker capture, npm candidate generation, guarded commit/push.
-- Verified bot commit author/message/parent and that its file changes are the expected npm-generated `package.json` / `package-lock.json` sharp candidate.
-- Removed apply label and advanced only the existing sync trigger; no second dependency candidate was stacked.
-- Re-fetched the connector-triggered exact head and confirmed Security / CI / 7-Layer / Firebat all started on `50faab831df26b3341338da4242ae60f05ad1503`.
+- Re-read root MASTER on `main` first; re-fetched CURRENT PR #59 and confirmed head `50faab83...` before artifact inspection.
+- Re-fetched all four exact-head workflows and confirmed only the dedicated Security gate was RED.
+- Downloaded and inspected exact artifact `gap007-security-evidence` from run `32436204109`.
+- Inspected `npm-audit-prod-blocking.json`, `trivy-image-high-critical.json`, `dependency.candidate-target.json`, `dependency.candidate-meta.json`, `first-blocker-ancestry.txt`, and npm-generated candidate diffs.
+- Triggered one guarded Apply cycle only; no second blocker candidate was stacked.
+- Verified the bot commit author/message/parent and exact lock-only socket.io-parser diff.
+- Removed the apply label and advanced only the existing sync trigger.
+- Re-fetched PR #59 and confirmed current head is `030761ab...`; Security / CI / 7-Layer / Firebat have started on that exact head.
 - Did not merge PR #59, close Issue #58, delete the sync trigger, touch PR #19, or start Phase 4/deferred work.
 
 ### Checks / Current Verification State
 
-Settled source head `0a619fbd0787397618d377c2c3d94fcb6ec5ca76`:
-- Dependency Security Reachability `32432817727` — **FAILURE**.
-- CI `32432817661` — **SUCCESS**.
-- 7-Layer `32432817807` — **SUCCESS**.
-- Firebat `32432817712` — **SUCCESS**.
+Settled source head `50faab831df26b3341338da4242ae60f05ad1503`:
+- Dependency Security Reachability `32436204109` — **FAILURE**.
+- CI `32436204115` — **SUCCESS**.
+- 7-Layer `32436204112` — **SUCCESS**.
+- Firebat `32436204123` — **SUCCESS**.
 
-Apply run on source head:
-- GAP-007 Apply npm Candidate `32436133639` — **SUCCESS**.
-- Bot commit: `4b73ad1a857aa6d4bdaf7abdcf2f48604c89e8bc`.
+Apply result on source head:
+- Bot commit: `da18e28935b7fd7dc281dd087f2c15bcb3384cf1`.
+- Parent: `50faab831df26b3341338da4242ae60f05ad1503`.
+- Candidate: `socket.io-parser 4.2.4 -> 4.2.7`, npm-generated lock-only diff.
 
-CURRENT executable head `50faab831df26b3341338da4242ae60f05ad1503`:
-- Dependency Security Reachability `32436204109` — **IN PROGRESS**.
-- CI `32436204115` — **IN PROGRESS**.
-- 7-Layer `32436204112` — **IN PROGRESS**.
-- Firebat `32436204123` — **IN PROGRESS**.
+CURRENT executable head `030761abcf262b2498d14fd045bec3366e9bea22`:
+- Dependency Security Reachability `32439799076` — **IN PROGRESS**.
+- CI `32439799139` — **QUEUED**.
+- 7-Layer `32439799071` — **IN PROGRESS**.
+- Firebat `32439799134` — **IN PROGRESS**.
 
 ### Not Verified
 
-- The four required gates on CURRENT exact head `50faab83...` are not yet settled.
-- `sharp@0.35.3` compatibility and security acceptance are not PASS until current exact-head CI / 7-Layer / Firebat / Security settle.
-- The next blocker after sharp must be determined only from a fresh Security artifact after this cycle settles; historical `socket.io-parser` / `ws` ordering is not authorization to stack another candidate.
+- The four required gates on CURRENT exact head `030761ab...` are not settled.
+- `socket.io-parser@4.2.7` compatibility/security acceptance is not PASS until same-head Security / CI / 7-Layer / Firebat settle.
+- The next blocker must be selected only from a fresh Security artifact after this validation cycle settles; historical `ws` presence does not authorize stacking another candidate now.
 - `.github/gap007-sync-trigger` remains temporary and must stay until GAP-007 otherwise reaches all-GREEN acceptance and cleanup validation is due.
 
 ### Residual Risks / Blockers
 
 - GAP-007 remains OPEN under D-014.
 - PR #59 remains draft/open/unmerged; Issue #58 remains open.
-- `sharp` remediation is applied but not yet accepted by current-head executable verification.
-- No additional blocker candidate may be applied while any current-head required gate is pending/running.
+- Current candidate has not yet passed executable validation.
+- Runtime image still had 12 HIGH findings on the prior settled head, including `multer` findings not represented in the production npm blocking list; final acceptance still requires the dedicated gate to clear according to the contract.
 
 ### Repo / Issue / PR State
 
@@ -165,15 +166,15 @@ CURRENT executable head `50faab831df26b3341338da4242ae60f05ad1503`:
 - GAP-007: ACTIVE / OPEN
 - Issue #58: OPEN
 - PR #59: DRAFT / OPEN / UNMERGED
-- PR #59 current head: `50faab831df26b3341338da4242ae60f05ad1503`
+- PR #59 current head: `030761abcf262b2498d14fd045bec3366e9bea22`
 - `gap007-apply-candidate`: ABSENT
-- `.github/gap007-sync-trigger`: PRESENT, points to `4b73ad1a857aa6d4bdaf7abdcf2f48604c89e8bc`
+- `.github/gap007-sync-trigger`: PRESENT, points to `da18e28935b7fd7dc281dd087f2c15bcb3384cf1`
 - PR #19: unchanged
 
 ### Exact Next Action
 
-1. Wait for Security `32436204109`, CI `32436204115`, 7-Layer `32436204112`, and Firebat `32436204123` on exact head `50faab831df26b3341338da4242ae60f05ad1503` to fully settle.
+1. Wait for Security `32439799076`, CI `32439799139`, 7-Layer `32439799071`, and Firebat `32439799134` on exact head `030761abcf262b2498d14fd045bec3366e9bea22` to fully settle.
 2. Do not trigger or stack another dependency candidate while any required gate is pending/running.
-3. If CI / 7-Layer / Firebat is RED, inspect that concrete sharp/runtime compatibility failure before any further dependency remediation.
-4. If supporting gates are GREEN and Security is RED, inspect the fresh current-head `gap007-security-evidence`, quantify the remaining production/runtime HIGH/CRITICAL findings, and select only the new current first blocker for the next bounded npm-generated cycle.
+3. If CI / 7-Layer / Firebat is RED, inspect that concrete socket.io-parser compatibility/runtime failure before any further dependency remediation.
+4. If supporting gates are GREEN and Security is RED, inspect the fresh current-head security artifact, re-quantify production/runtime HIGH/CRITICAL findings, and process only the new current first blocker.
 5. If all four gates are GREEN and GAP-007 otherwise holds, delete `.github/gap007-sync-trigger`, then require one final cleanup-head same-head Security + CI + 7-Layer + Firebat validation before ready/merge #59, Issue #58 closure, MASTER reconciliation, and Phase 3 closure evaluation.
