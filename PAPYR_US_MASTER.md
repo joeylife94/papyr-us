@@ -105,11 +105,12 @@ D-015 post-v1 North Star remains directional until Freeze.
 
 ### Changed
 
-- Reconciled stale MASTER checkpoint `7358e98d...` to the current successful Apply bot commit `8dfcb56bf40af70ae5e537ebe369dbea674a875f`.
+- Reconciled stale MASTER checkpoint `7358e98d...` to the successful Apply bot commit `8dfcb56bf40af70ae5e537ebe369dbea674a875f`.
 - Recorded the four bot-authored PR-triggered workflow runs on `8dfcb56b...` as **ACTION_REQUIRED / NOT EXECUTED / NOT PASS**: Security `32450595786`, CI `32450595827`, 7-Layer `32450595884`, Firebat `32450595826`.
 - Removed `gap007-apply-candidate` after the successful bot push; Apply must not be triggered again for this `ws` cycle.
 - Updated the existing `.github/gap007-sync-trigger` to `candidate_head=8dfcb56bf40af70ae5e537ebe369dbea674a875f` using the connector-authored GitHub write path.
 - The connector-authored sync update advanced PR #59 to exact head `ae77c26ccf70ef3c3da047b5b8f8c02257f34202`; this is now the only executable-validation candidate for the current `ws` remediation cycle.
+- Confirmed all four required workflows are now actually executing on `ae77c26c...`.
 
 ### Actually Executed
 
@@ -119,8 +120,8 @@ D-015 post-v1 North Star remains directional until Freeze.
 - Removed `gap007-apply-candidate` from PR #59.
 - Re-fetched `.github/gap007-sync-trigger` on `security/issue-58-gap007-reachability` and replaced the previous candidate SHA with `8dfcb56bf40af70ae5e537ebe369dbea674a875f`.
 - Verified the sync-trigger write created connector-authored PR head `ae77c26ccf70ef3c3da047b5b8f8c02257f34202`.
-- Queried workflow runs for `ae77c26c...`; none were visible at the first immediate post-push check, so no gate was treated as started or PASS without evidence.
-- Did not process `multer`, create another Issue, merge PR #59, close Issue #58, touch PR #19, or start Phase 4/deferred work.
+- Re-fetched exact-head workflow runs and confirmed Security `32454269388`, CI `32454269336`, 7-Layer `32454269395`, and Firebat `32454269384` are all `IN PROGRESS` on that same head.
+- Did not process another blocker, create another Issue, merge PR #59, close Issue #58, touch PR #19, or start Phase 4/deferred work.
 
 ### Checks / Current Verification State
 
@@ -131,25 +132,25 @@ Bot-authored head `8dfcb56bf40af70ae5e537ebe369dbea674a875f`:
 - Firebat `32450595826` — **ACTION_REQUIRED / NOT EXECUTED / NOT PASS**.
 
 Connector-triggered current head `ae77c26ccf70ef3c3da047b5b8f8c02257f34202`:
-- Security — **not yet observed at immediate post-push check**.
-- CI — **not yet observed at immediate post-push check**.
-- 7-Layer — **not yet observed at immediate post-push check**.
-- Firebat — **not yet observed at immediate post-push check**.
+- Dependency Security Reachability `32454269388` — **IN PROGRESS**.
+- CI `32454269336` — **IN PROGRESS**.
+- 7-Layer `32454269395` — **IN PROGRESS**.
+- Firebat `32454269384` — **IN PROGRESS**.
 
 ### Not Verified
 
 - No completed executable Security + CI + 7-Layer + Firebat evidence exists yet for `ae77c26c...`.
 - `ws` clearance is not yet proven on an executable connector-triggered head.
 - Fresh post-`ws` security artifact has not yet been inspected.
-- `multer` must not be processed until this full `ws` validation cycle settles.
+- No next blocker may be processed until this full `ws` validation cycle settles.
 - `.github/gap007-sync-trigger` remains temporary and must stay until GAP-007 otherwise reaches all-GREEN acceptance and cleanup validation is due.
 
 ### Residual Risks / Blockers
 
 - GAP-007 remains OPEN under D-014.
 - PR #59 remains draft/open/unmerged; Issue #58 remains open.
-- Current blocker is verification of the applied `ws` remediation on connector-authored exact head `ae77c26c...`.
-- If `ws` clears, the next blocker must be chosen from fresh Security evidence only; historical `multer` evidence is not sufficient by itself.
+- Current blocker is completion of the four executable validation gates on exact head `ae77c26c...`.
+- If `ws` clears, the next blocker must be chosen from fresh Security evidence only; historical blocker order is not sufficient.
 
 ### Repo / Issue / PR State
 
@@ -167,7 +168,7 @@ Connector-triggered current head `ae77c26ccf70ef3c3da047b5b8f8c02257f34202`:
 ### Exact Next Action
 
 1. Re-fetch CURRENT PR #59 and require exact head `ae77c26ccf70ef3c3da047b5b8f8c02257f34202` unless a newer repository head exists.
-2. Wait for/inspect Security + CI + 7-Layer + Firebat on that same exact connector-triggered head; do not process another blocker while any gate is pending/running or absent immediately after trigger.
+2. Wait for Security + CI + 7-Layer + Firebat on that same exact connector-triggered head to fully settle; do not process another blocker while any gate is pending/running.
 3. If all supporting gates are GREEN and Security is RED, inspect the fresh Security artifact only after the full cycle settles.
 4. If `ws` remains, diagnose only `ws`. If `ws` clears, select exactly one current first D-014 blocker from fresh evidence; do not rely on historical blocker order.
 5. Final cleanup/merge remains gated on same-head four-gate GREEN, sync-trigger deletion, then one final cleanup-head same-head four-gate validation.
