@@ -1,0 +1,370 @@
+name: Dependency Security Reachability
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  gap007:
+    name: GAP-007 runtime dependency triage
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install exact dependency graph
+        run: npm ci
+
+      - name: Capture production-only npm audit
+        shell: bash
+        run: |
+          set +e
+          npm audit --omit=dev --json > npm-audit-prod.json
+          echo "NPM_AUDIT_EXIT=$?" >> "$GITHUB_ENV"
+          set -e
+
+      - name: Classify production npm findings
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const audit = JSON.parse(fs.readFileSync('npm-audit-prod.json', 'utf8'));
+          const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+          const packages = lock.packages || {};
+
+          const findings = Object.values(audit.vulnerabilities || {})
+            .filter(v => ['high', 'critical'].includes(String(v.severity || '').toLowerCase()))
+            .map(v => {
+              const nodes = Array.isArray(v.nodes) ? v.nodes : [];
+              const nodeEvidence = nodes.map(node => ({
+                node,
+                presentInLock: Boolean(packages[node]),
+                dev: packages[node]?.dev === true,
+              }));
+              const devOnly = nodeEvidence.length > 0 && nodeEvidence.every(n => n.presentInLock && n.dev);
+              return {
+                package: v.name,
+                severity: String(v.severity || '').toUpperCase(),
+                direct: Boolean(v.isDirect),
+                range: v.range || '',
+                nodes,
+                nodeEvidence,
+                via: Array.isArray(v.via)
+                  ? v.via.map(x => typeof x === 'string' ? x : `${x.source || ''}:${x.title || x.name || ''}`)
+                  : [],
+                fixAvailable: v.fixAvailable ?? null,
+                reachability: devOnly ? 'DEV_ONLY_LOCK_GRAPH' : 'PRODUCTION_OR_UNCLASSIFIED',
+                exploitability: devOnly
+                  ? 'NOT_RUNTIME_REACHABLE_AFTER_RUNTIME_IMAGE_PRUNE'
+                  : 'REQUIRES_RUNTIME_REVIEW',
+                disposition: devOnly
+                  ? 'ACCEPT_DEV_ONLY_AND_VERIFY_ABSENT_FROM_RUNTIME_IMAGE'
+                  : 'BLOCK',
+              };
+            });
+
+          const blocking = findings.filter(f => f.disposition === 'BLOCK');
+          const lines = [
+            '## GAP-007 production npm audit',
+            '',
+            `- npm audit exit: ${process.env.NPM_AUDIT_EXIT || 'unknown'}`,
+            `- HIGH/CRITICAL findings reported by npm: ${findings.length}`,
+            `- blocking production/unclassified findings: ${blocking.length}`,
+            '',
+          ];
+          for (const f of findings) {
+            lines.push(`- ${f.severity} **${f.package}** direct=${f.direct} range=\`${f.range}\``);
+            if (f.nodes.length) lines.push(`  - path(s): ${f.nodes.join(', ')}`);
+            if (f.via.length) lines.push(`  - advisory: ${f.via.join(' | ')}`);
+            lines.push(`  - reachability: ${f.reachability}`);
+            lines.push(`  - disposition: ${f.disposition}`);
+            lines.push(`  - lock evidence: ${JSON.stringify(f.nodeEvidence)}`);
+            lines.push(`  - fixAvailable: ${JSON.stringify(f.fixAvailable)}`);
+          }
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join('\n')}\n`);
+          fs.writeFileSync('npm-audit-prod-high-critical.json', JSON.stringify(findings, null, 2));
+          fs.writeFileSync('npm-audit-prod-blocking.json', JSON.stringify(blocking, null, 2));
+          NODE
+
+      - name: Build current runtime image
+        run: docker build --pull -t papyr-us:gap007 .
+
+      - name: Scan current runtime image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'papyr-us:gap007'
+          format: 'json'
+          output: 'trivy-image.json'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: false
+          exit-code: '0'
+
+      - name: Summarize runtime image findings
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const report = JSON.parse(fs.readFileSync('trivy-image.json', 'utf8'));
+          const findings = [];
+          for (const result of report.Results || []) {
+            for (const v of result.Vulnerabilities || []) {
+              const severity = String(v.Severity || '').toUpperCase();
+              if (!['HIGH', 'CRITICAL'].includes(severity)) continue;
+              findings.push({
+                target: result.Target || '',
+                class: result.Class || '',
+                type: result.Type || '',
+                package: v.PkgName || '',
+                path: v.PkgPath || '',
+                severity,
+                id: v.VulnerabilityID || '',
+                installed: v.InstalledVersion || '',
+                fixed: v.FixedVersion || '',
+                title: v.Title || '',
+                reachability: 'PRESENT_IN_RUNTIME_IMAGE',
+                disposition: 'BLOCK',
+              });
+            }
+          }
+          const lines = [
+            '## GAP-007 runtime image Trivy scan',
+            '',
+            `- HIGH/CRITICAL image findings: ${findings.length}`,
+            '',
+          ];
+          for (const f of findings) {
+            lines.push(`- ${f.severity} **${f.package}** ${f.id}`);
+            lines.push(`  - target/type: ${f.target} / ${f.type || f.class}`);
+            if (f.path) lines.push(`  - path: ${f.path}`);
+            lines.push(`  - installed: ${f.installed || 'unknown'}; fixed: ${f.fixed || 'none listed'}`);
+            lines.push(`  - reachability: ${f.reachability}`);
+            lines.push(`  - disposition: ${f.disposition}`);
+            if (f.title) lines.push(`  - title: ${f.title}`);
+          }
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join('\n')}\n`);
+          fs.writeFileSync('trivy-image-high-critical.json', JSON.stringify(findings, null, 2));
+          NODE
+
+      - name: Select current first D-014 blocker
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const npmBlocking = require('./npm-audit-prod-blocking.json');
+          const runtime = require('./trivy-image-high-critical.json');
+          const pkg = require('./package.json');
+
+          function stableVersions(value) {
+            return String(value || '')
+              .split(',')
+              .map(x => x.trim())
+              .filter(x => /^\d+\.\d+\.\d+$/.test(x));
+          }
+          function compare(a, b) {
+            const aa = a.split('.').map(Number), bb = b.split('.').map(Number);
+            for (let i = 0; i < 3; i++) if (aa[i] !== bb[i]) return aa[i] - bb[i];
+            return 0;
+          }
+
+          let target;
+          if (npmBlocking.length) {
+            const first = npmBlocking[0];
+            const fix = first.fixAvailable;
+            target = {
+              source: 'NPM_AUDIT',
+              package: first.package,
+              direct: Boolean(first.direct),
+              fixAvailable: fix ?? null,
+              fixVersion: fix && typeof fix === 'object' ? (fix.version || '') : '',
+              isSemVerMajor: fix && typeof fix === 'object' ? Boolean(fix.isSemVerMajor) : false,
+            };
+          } else if (runtime.length) {
+            const firstPackage = runtime[0].package;
+            const samePackage = runtime.filter(f => f.package === firstPackage);
+            const fixes = samePackage.flatMap(f => stableVersions(f.fixed)).sort(compare);
+            const fixVersion = fixes.at(-1) || '';
+            target = {
+              source: 'TRIVY_RUNTIME_IMAGE',
+              package: firstPackage,
+              direct: Boolean(pkg.dependencies?.[firstPackage]),
+              fixAvailable: fixVersion ? { version: fixVersion } : null,
+              fixVersion,
+              isSemVerMajor: false,
+              runtimeFindingCount: samePackage.length,
+              installedVersions: [...new Set(samePackage.map(f => f.installed).filter(Boolean))],
+            };
+          } else {
+            target = {
+              source: 'NONE', package: '', direct: false, fixAvailable: null,
+              fixVersion: '', isSemVerMajor: false,
+            };
+          }
+          fs.writeFileSync('dependency.candidate-target.json', JSON.stringify(target, null, 2));
+          NODE
+
+      - name: Capture first blocking package ancestry
+        shell: bash
+        run: |
+          first=$(node -e "const x=require('./dependency.candidate-target.json'); process.stdout.write(x.package || '')")
+          if [ -z "$first" ]; then
+            echo 'No blocking HIGH/CRITICAL package remains.' > first-blocker-ancestry.txt
+            exit 0
+          fi
+          echo "FIRST_BLOCKER=$first" | tee first-blocker-ancestry.txt
+          npm ls "$first" --omit=dev --all --json >> first-blocker-ancestry.txt 2>&1 || true
+
+      - name: Generate npm-backed dependency candidate
+        shell: bash
+        run: |
+          set -u
+          first=$(node -e "const x=require('./dependency.candidate-target.json'); process.stdout.write(x.package || '')")
+          direct=$(node -e "const x=require('./dependency.candidate-target.json'); process.stdout.write(String(Boolean(x.direct)))")
+          fix_version=$(node -e "const x=require('./dependency.candidate-target.json'); process.stdout.write(x.fixVersion || '')")
+          source=$(node -e "const x=require('./dependency.candidate-target.json'); process.stdout.write(x.source || '')")
+
+          cp package.json package.original.json
+          cp package-lock.json package-lock.original.json
+          candidate_exit=0
+          generator='none'
+          remediation_target="$first"
+
+          if [ -n "$first" ]; then
+            set +e
+            if [ "$direct" = 'true' ] && [ -n "$fix_version" ]; then
+              generator="npm install ${first}@${fix_version} --package-lock-only --ignore-scripts --save-prefix=^"
+              npm install "${first}@${fix_version}" --package-lock-only --ignore-scripts --save-prefix='^'
+              candidate_exit=$?
+            else
+              generator="npm update ${first} --package-lock-only --ignore-scripts"
+              npm update "$first" --package-lock-only --ignore-scripts
+              candidate_exit=$?
+            fi
+            set -e
+
+            if [ "$candidate_exit" -eq 0 ] && cmp -s package-lock.original.json package-lock.json && [ "$first" = 'react-router' ]; then
+              if node -e "const p=require('./package.json'); process.exit(p.dependencies?.['react-router-dom'] ? 0 : 1)"; then
+                remediation_target='react-router-dom'
+                generator='npm update react-router-dom --package-lock-only --ignore-scripts (parent-controlled fix for react-router)'
+                set +e
+                npm update react-router-dom --package-lock-only --ignore-scripts
+                candidate_exit=$?
+                set -e
+              fi
+            fi
+
+            if [ "$candidate_exit" -eq 0 ] && cmp -s package-lock.original.json package-lock.json && [ "$first" = 'ws' ]; then
+              if node -e "const p=require('./package.json'); process.exit(p.dependencies?.['socket.io-client'] && p.dependencies?.['@socket.io/redis-adapter'] ? 0 : 1)"; then
+                remediation_target='socket.io-client + @socket.io/redis-adapter'
+                generator='npm update socket.io-client @socket.io/redis-adapter --package-lock-only --ignore-scripts (parent-controlled fix for ws)'
+                set +e
+                npm update socket.io-client @socket.io/redis-adapter --package-lock-only --ignore-scripts
+                candidate_exit=$?
+                set -e
+              fi
+            fi
+
+            if [ "$candidate_exit" -eq 0 ] && cmp -s package-lock.original.json package-lock.json && [ "$first" = 'ws' ]; then
+              remediation_target='engine.io-client + socket.io-adapter'
+              generator='npm update engine.io-client socket.io-adapter --package-lock-only --ignore-scripts (nested-parent fix for ws)'
+              set +e
+              npm update engine.io-client socket.io-adapter --package-lock-only --ignore-scripts
+              candidate_exit=$?
+              set -e
+            fi
+          fi
+
+          package_changed=false
+          lock_changed=false
+          if ! cmp -s package.original.json package.json; then package_changed=true; fi
+          if ! cmp -s package-lock.original.json package-lock.json; then lock_changed=true; fi
+
+          cp package.json package.candidate.json
+          cp package-lock.json package-lock.candidate.json
+          git diff --no-ext-diff -- package.json > package.candidate.diff || true
+          git diff --no-ext-diff -- package-lock.json > package-lock.candidate.diff || true
+
+          FIRST_BLOCKER="$first" SOURCE="$source" REMEDIATION_TARGET="$remediation_target" DIRECT="$direct" FIX_VERSION="$fix_version" CANDIDATE_EXIT="$candidate_exit" PACKAGE_CHANGED="$package_changed" LOCK_CHANGED="$lock_changed" GENERATOR="$generator" node <<'NODE'
+          const fs = require('fs');
+          const metadata = {
+            firstBlocker: process.env.FIRST_BLOCKER || '',
+            source: process.env.SOURCE || '',
+            remediationTarget: process.env.REMEDIATION_TARGET || process.env.FIRST_BLOCKER || '',
+            direct: process.env.DIRECT === 'true',
+            fixVersion: process.env.FIX_VERSION || '',
+            npmCommandExit: Number(process.env.CANDIDATE_EXIT || '0'),
+            packageJsonChanged: process.env.PACKAGE_CHANGED === 'true',
+            packageLockChanged: process.env.LOCK_CHANGED === 'true',
+            generator: process.env.GENERATOR || 'none',
+            committed: false,
+          };
+          fs.writeFileSync('dependency.candidate-meta.json', JSON.stringify(metadata, null, 2));
+          const lines = [
+            '## GAP-007 npm-backed dependency candidate',
+            '',
+            `- first blocker: ${metadata.firstBlocker || 'none'}`,
+            `- source: ${metadata.source || 'none'}`,
+            `- remediation target: ${metadata.remediationTarget || 'none'}`,
+            `- direct dependency: ${metadata.direct}`,
+            `- fix version: ${metadata.fixVersion || 'n/a'}`,
+            `- npm command exit: ${metadata.npmCommandExit}`,
+            `- package.json changed: ${metadata.packageJsonChanged}`,
+            `- package-lock.json changed: ${metadata.packageLockChanged}`,
+            `- generator: ${metadata.generator}`,
+            '- candidate is evidence only; this workflow does not commit it',
+          ];
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join('\n')}\n`);
+          NODE
+
+          mv package.original.json package.json
+          mv package-lock.original.json package-lock.json
+
+      - name: Enforce runtime image gate
+        shell: bash
+        run: |
+          count=$(node -e "console.log(require('./trivy-image-high-critical.json').length)")
+          if [ "$count" -gt 0 ]; then
+            echo "Runtime image contains $count HIGH/CRITICAL finding(s)." >&2
+            exit 1
+          fi
+
+      - name: Enforce production npm gate
+        shell: bash
+        if: always()
+        run: |
+          count=$(node -e "console.log(require('./npm-audit-prod-blocking.json').length)")
+          if [ "$count" -gt 0 ]; then
+            echo "Production/unclassified dependency graph contains $count HIGH/CRITICAL finding(s)." >&2
+            exit 1
+          fi
+
+      - name: Upload GAP-007 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gap007-security-evidence
+          path: |
+            npm-audit-prod.json
+            npm-audit-prod-high-critical.json
+            npm-audit-prod-blocking.json
+            first-blocker-ancestry.txt
+            dependency.candidate-target.json
+            dependency.candidate-meta.json
+            package.candidate.json
+            package.candidate.diff
+            package-lock.candidate.json
+            package-lock.candidate.diff
+            trivy-image.json
+            trivy-image-high-critical.json
+          retention-days: 14

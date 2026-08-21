@@ -1,5 +1,9 @@
-# Use the official Node.js 20 image
-FROM node:20
+# Use the official Node.js 20 Alpine image to minimize the frozen v1.0 runtime OS surface.
+FROM node:20-alpine
+
+# Apply available Alpine security updates before installing application dependencies.
+# GAP-007 runtime evidence on the Debian slim candidate still showed 22 HIGH/CRITICAL OS findings.
+RUN apk upgrade --no-cache
 
 # Set working directory
 WORKDIR /app
@@ -16,11 +20,17 @@ COPY . .
 # Build the application
 RUN npm run build
 
-# Clean up dev dependencies - (We keep them for dev commands inside the container)
-# RUN npm ci --only=production && npm cache clean --force
+# Remove build/test-only dependencies and the package-manager toolchain from the runtime image.
+# The application starts with node directly, so npm/npx are not runtime requirements.
+RUN npm prune --omit=dev --legacy-peer-deps \
+    && npm cache clean --force \
+    && rm -rf /usr/local/lib/node_modules/npm \
+    && rm -f /usr/local/bin/npm /usr/local/bin/npx
+
+ENV PORT=5001
 
 # Expose port
 EXPOSE 5001
 
-# Start the application
-CMD ["npm", "start"]
+# Start the built application without retaining npm in the runtime image.
+CMD ["node", "dist/server/index.js"]

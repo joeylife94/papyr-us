@@ -1,0 +1,248 @@
+name: GAP-007 Apply npm Candidate
+
+on:
+  pull_request:
+    branches: [main]
+    types: [labeled]
+
+jobs:
+  apply:
+    name: Apply guarded npm-generated candidate
+    if: >-
+      github.event.label.name == 'gap007-apply-candidate' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'security/issue-58-gap007-reachability'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install exact dependency graph
+        run: npm ci
+
+      - name: Capture current production npm blockers
+        shell: bash
+        run: |
+          set +e
+          npm audit --omit=dev --json > npm-audit-prod.json
+          set -e
+          node <<'NODE'
+          const fs = require('fs');
+          const audit = JSON.parse(fs.readFileSync('npm-audit-prod.json', 'utf8'));
+          const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+          const packages = lock.packages || {};
+          const findings = Object.values(audit.vulnerabilities || {})
+            .filter(v => ['high', 'critical'].includes(String(v.severity || '').toLowerCase()))
+            .map(v => {
+              const nodes = Array.isArray(v.nodes) ? v.nodes : [];
+              const nodeEvidence = nodes.map(node => ({
+                node,
+                presentInLock: Boolean(packages[node]),
+                dev: packages[node]?.dev === true,
+              }));
+              const devOnly = nodeEvidence.length > 0 && nodeEvidence.every(n => n.presentInLock && n.dev);
+              return {
+                package: v.name,
+                direct: Boolean(v.isDirect),
+                severity: String(v.severity || '').toUpperCase(),
+                fixAvailable: v.fixAvailable ?? null,
+                disposition: devOnly ? 'DEV_ONLY' : 'BLOCK',
+              };
+            });
+          fs.writeFileSync('apply-blocking.json', JSON.stringify(findings.filter(f => f.disposition === 'BLOCK'), null, 2));
+          NODE
+
+      - name: Build current runtime image
+        run: docker build --pull -t papyr-us:gap007-apply .
+
+      - name: Scan current runtime image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'papyr-us:gap007-apply'
+          format: 'json'
+          output: 'apply-trivy-image.json'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: false
+          exit-code: '0'
+
+      - name: Select exact first blocker
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const npmBlocking = require('./apply-blocking.json');
+          const report = JSON.parse(fs.readFileSync('apply-trivy-image.json', 'utf8'));
+          const pkg = require('./package.json');
+          const runtime = [];
+          for (const result of report.Results || []) {
+            for (const v of result.Vulnerabilities || []) {
+              const severity = String(v.Severity || '').toUpperCase();
+              if (!['HIGH', 'CRITICAL'].includes(severity)) continue;
+              runtime.push({
+                package: v.PkgName || '',
+                installed: v.InstalledVersion || '',
+                fixed: v.FixedVersion || '',
+                severity,
+              });
+            }
+          }
+          function stableVersions(value) {
+            return String(value || '').split(',').map(x => x.trim()).filter(x => /^\d+\.\d+\.\d+$/.test(x));
+          }
+          function compare(a, b) {
+            const aa = a.split('.').map(Number), bb = b.split('.').map(Number);
+            for (let i = 0; i < 3; i++) if (aa[i] !== bb[i]) return aa[i] - bb[i];
+            return 0;
+          }
+          let target;
+          if (npmBlocking.length) {
+            const first = npmBlocking[0];
+            const fix = first.fixAvailable;
+            target = {
+              source: 'NPM_AUDIT',
+              package: first.package,
+              direct: Boolean(first.direct),
+              fixVersion: fix && typeof fix === 'object' ? (fix.version || '') : '',
+            };
+          } else if (runtime.length) {
+            const firstPackage = runtime[0].package;
+            const samePackage = runtime.filter(f => f.package === firstPackage);
+            const fixes = samePackage.flatMap(f => stableVersions(f.fixed)).sort(compare);
+            target = {
+              source: 'TRIVY_RUNTIME_IMAGE',
+              package: firstPackage,
+              direct: Boolean(pkg.dependencies?.[firstPackage]),
+              fixVersion: fixes.at(-1) || '',
+              runtimeFindingCount: samePackage.length,
+              installedVersions: [...new Set(samePackage.map(f => f.installed).filter(Boolean))],
+            };
+          } else {
+            target = { source: 'NONE', package: '', direct: false, fixVersion: '' };
+          }
+          fs.writeFileSync('apply-target.json', JSON.stringify(target, null, 2));
+          if (!target.package) {
+            console.error('No blocking HIGH/CRITICAL package remains; nothing to apply.');
+            process.exit(2);
+          }
+          NODE
+
+      - name: Generate exact npm candidate
+        id: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          first=$(node -e "const x=require('./apply-target.json'); process.stdout.write(x.package)")
+          direct=$(node -e "const x=require('./apply-target.json'); process.stdout.write(String(x.direct))")
+          fix_version=$(node -e "const x=require('./apply-target.json'); process.stdout.write(x.fixVersion || '')")
+
+          cp package.json package.before.json
+          cp package-lock.json package-lock.before.json
+          remediation_target="$first"
+
+          if [ "$direct" = 'true' ] && [ -n "$fix_version" ]; then
+            npm install "${first}@${fix_version}" --package-lock-only --ignore-scripts --save-prefix='^'
+          else
+            npm update "$first" --package-lock-only --ignore-scripts
+          fi
+
+          if cmp -s package-lock.before.json package-lock.json && [ "$first" = 'react-router' ]; then
+            if node -e "const p=require('./package.json'); process.exit(p.dependencies?.['react-router-dom'] ? 0 : 1)"; then
+              remediation_target='react-router-dom'
+              npm update react-router-dom --package-lock-only --ignore-scripts
+            fi
+          fi
+
+          if cmp -s package-lock.before.json package-lock.json && [ "$first" = 'ws' ]; then
+            if node -e "const p=require('./package.json'); process.exit(p.dependencies?.['socket.io-client'] && p.dependencies?.['@socket.io/redis-adapter'] ? 0 : 1)"; then
+              remediation_target='socket.io-client + @socket.io/redis-adapter'
+              npm update socket.io-client @socket.io/redis-adapter --package-lock-only --ignore-scripts
+            fi
+          fi
+
+          if cmp -s package-lock.before.json package-lock.json && [ "$first" = 'ws' ]; then
+            remediation_target='engine.io-client + socket.io-adapter'
+            npm update engine.io-client socket.io-adapter --package-lock-only --ignore-scripts
+          fi
+
+          FIRST="$first" REMEDIATION_TARGET="$remediation_target" DIRECT="$direct" FIX_VERSION="$fix_version" node <<'NODE'
+          const fs = require('fs');
+          const before = JSON.parse(fs.readFileSync('package.before.json', 'utf8'));
+          const after = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const target = process.env.FIRST;
+          const remediationTarget = process.env.REMEDIATION_TARGET || target;
+          const direct = process.env.DIRECT === 'true';
+          const fixVersion = process.env.FIX_VERSION || '';
+          const b = JSON.parse(JSON.stringify(before));
+          const a = JSON.parse(JSON.stringify(after));
+          let packageJsonExpected = false;
+
+          if (direct && fixVersion) {
+            const beforeValue = b.dependencies?.[target];
+            const afterValue = a.dependencies?.[target];
+            if (!beforeValue || !afterValue) throw new Error('Direct target is not present in dependencies before/after');
+            delete b.dependencies[target];
+            delete a.dependencies[target];
+            if (JSON.stringify(b) !== JSON.stringify(a)) throw new Error('package.json candidate changes more than the single target dependency');
+            if (afterValue.replace(/^\^/, '') !== fixVersion) throw new Error(`Candidate version ${afterValue} does not match selected fix ${fixVersion}`);
+            packageJsonExpected = true;
+          } else if (JSON.stringify(b) !== JSON.stringify(a)) {
+            throw new Error('Lock-only candidate unexpectedly changed package.json');
+          }
+
+          if (target === 'react-router' && remediationTarget !== 'react-router-dom') {
+            throw new Error('react-router no-op fallback did not resolve through react-router-dom');
+          }
+          if (target === 'ws' && ![
+            'socket.io-client + @socket.io/redis-adapter',
+            'engine.io-client + socket.io-adapter',
+          ].includes(remediationTarget)) {
+            throw new Error('ws no-op fallback did not resolve through an evidence-backed Socket.IO parent chain');
+          }
+
+          const beforeLock = fs.readFileSync('package-lock.before.json', 'utf8');
+          const afterLock = fs.readFileSync('package-lock.json', 'utf8');
+          if (beforeLock === afterLock) throw new Error('npm candidate did not change package-lock.json');
+          fs.writeFileSync('apply-scope.json', JSON.stringify({ packageJsonExpected, remediationTarget }, null, 2));
+          NODE
+
+          package_json_expected=$(node -e "const x=require('./apply-scope.json'); process.stdout.write(String(x.packageJsonExpected))")
+          remediation_target=$(node -e "const x=require('./apply-scope.json'); process.stdout.write(x.remediationTarget || '')")
+          changed=$(git diff --name-only -- package.json package-lock.json | sort | tr '\n' ' ')
+          if [ "$package_json_expected" = 'true' ]; then
+            [ "$changed" = "package-lock.json package.json " ] || { echo "Unexpected changed files: $changed"; exit 4; }
+          else
+            [ "$changed" = "package-lock.json " ] || { echo "Unexpected changed files: $changed"; exit 5; }
+          fi
+
+          echo "package=$first" >> "$GITHUB_OUTPUT"
+          echo "remediation_target=$remediation_target" >> "$GITHUB_OUTPUT"
+          echo "direct=$direct" >> "$GITHUB_OUTPUT"
+          echo "fix_version=$fix_version" >> "$GITHUB_OUTPUT"
+          echo "package_json_expected=$package_json_expected" >> "$GITHUB_OUTPUT"
+
+      - name: Commit only npm-generated candidate files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'papyr-gap007-bot'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- package.json package-lock.json
+          staged=$(git diff --cached --name-only | sort | tr '\n' ' ')
+          if [ "${{ steps.candidate.outputs.package_json_expected }}" = 'true' ]; then
+            [ "$staged" = "package-lock.json package.json " ] || { echo "Unsafe staged scope: $staged"; exit 6; }
+          else
+            [ "$staged" = "package-lock.json " ] || { echo "Unsafe staged scope: $staged"; exit 7; }
+          fi
+          git commit -m "chore: apply npm-backed GAP-007 fix for ${{ steps.candidate.outputs.package }}"
+          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
