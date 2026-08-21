@@ -89,148 +89,14 @@ jobs:
             if (f.nodes.length) lines.push(`  - path(s): ${f.nodes.join(', ')}`);
             if (f.via.length) lines.push(`  - advisory: ${f.via.join(' | ')}`);
             lines.push(`  - reachability: ${f.reachability}`);
-            lines.push(`  - exploitability: ${f.exploitability}`);
             lines.push(`  - disposition: ${f.disposition}`);
             lines.push(`  - lock evidence: ${JSON.stringify(f.nodeEvidence)}`);
             lines.push(`  - fixAvailable: ${JSON.stringify(f.fixAvailable)}`);
           }
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join('\n')}\n`);
-          console.log(lines.join('\n'));
           fs.writeFileSync('npm-audit-prod-high-critical.json', JSON.stringify(findings, null, 2));
           fs.writeFileSync('npm-audit-prod-blocking.json', JSON.stringify(blocking, null, 2));
           NODE
-
-      - name: Capture first blocking package ancestry
-        shell: bash
-        run: |
-          first=$(node -e "const f=require('./npm-audit-prod-blocking.json'); process.stdout.write(f[0]?.package || '')")
-          if [ -z "$first" ]; then
-            echo 'No blocking npm package remains.' > first-blocker-ancestry.txt
-            exit 0
-          fi
-          echo "FIRST_BLOCKER=$first" | tee first-blocker-ancestry.txt
-          npm ls "$first" --omit=dev --all --json >> first-blocker-ancestry.txt 2>&1 || true
-
-      - name: Generate npm-backed dependency candidate
-        shell: bash
-        run: |
-          set -u
-          node <<'NODE'
-          const fs = require('fs');
-          const first = require('./npm-audit-prod-blocking.json')[0] || null;
-          const fix = first?.fixAvailable;
-          const target = {
-            package: first?.package || '',
-            direct: Boolean(first?.direct),
-            fixAvailable: fix ?? null,
-            fixVersion: fix && typeof fix === 'object' ? (fix.version || '') : '',
-            isSemVerMajor: fix && typeof fix === 'object' ? Boolean(fix.isSemVerMajor) : false,
-          };
-          fs.writeFileSync('dependency.candidate-target.json', JSON.stringify(target, null, 2));
-          NODE
-
-          first=$(node -e "const x=require('./dependency.candidate-target.json'); process.stdout.write(x.package || '')")
-          direct=$(node -e "const x=require('./dependency.candidate-target.json'); process.stdout.write(String(Boolean(x.direct)))")
-          fix_version=$(node -e "const x=require('./dependency.candidate-target.json'); process.stdout.write(x.fixVersion || '')")
-
-          cp package.json package.original.json
-          cp package-lock.json package-lock.original.json
-          candidate_exit=0
-          generator='none'
-          remediation_target="$first"
-
-          if [ -n "$first" ]; then
-            set +e
-            if [ "$direct" = 'true' ] && [ -n "$fix_version" ]; then
-              generator="npm install ${first}@${fix_version} --package-lock-only --ignore-scripts --save-prefix=^"
-              npm install "${first}@${fix_version}" --package-lock-only --ignore-scripts --save-prefix='^'
-              candidate_exit=$?
-            else
-              generator="npm update ${first} --package-lock-only --ignore-scripts"
-              npm update "$first" --package-lock-only --ignore-scripts
-              candidate_exit=$?
-            fi
-            set -e
-
-            if [ "$candidate_exit" -eq 0 ] && cmp -s package-lock.original.json package-lock.json && [ "$first" = 'react-router' ]; then
-              if node -e "const p=require('./package.json'); process.exit(p.dependencies?.['react-router-dom'] ? 0 : 1)"; then
-                remediation_target='react-router-dom'
-                generator='npm update react-router-dom --package-lock-only --ignore-scripts (parent-controlled fix for react-router)'
-                set +e
-                npm update react-router-dom --package-lock-only --ignore-scripts
-                candidate_exit=$?
-                set -e
-              fi
-            fi
-
-            if [ "$candidate_exit" -eq 0 ] && cmp -s package-lock.original.json package-lock.json && [ "$first" = 'ws' ]; then
-              if node -e "const p=require('./package.json'); process.exit(p.dependencies?.['socket.io-client'] && p.dependencies?.['@socket.io/redis-adapter'] ? 0 : 1)"; then
-                remediation_target='socket.io-client + @socket.io/redis-adapter'
-                generator='npm update socket.io-client @socket.io/redis-adapter --package-lock-only --ignore-scripts (parent-controlled fix for ws)'
-                set +e
-                npm update socket.io-client @socket.io/redis-adapter --package-lock-only --ignore-scripts
-                candidate_exit=$?
-                set -e
-              fi
-            fi
-
-            # After the direct Socket.IO parents have reached their current declared-range
-            # versions, ws can still remain nested under engine.io-client/socket.io-adapter.
-            # If the parent refresh is also a no-op, let npm refresh only those two
-            # transitive parents within the ranges already declared by socket.io-client
-            # and @socket.io/redis-adapter. This remains bounded to the same ws blocker.
-            if [ "$candidate_exit" -eq 0 ] && cmp -s package-lock.original.json package-lock.json && [ "$first" = 'ws' ]; then
-              remediation_target='engine.io-client + socket.io-adapter'
-              generator='npm update engine.io-client socket.io-adapter --package-lock-only --ignore-scripts (nested-parent fix for ws)'
-              set +e
-              npm update engine.io-client socket.io-adapter --package-lock-only --ignore-scripts
-              candidate_exit=$?
-              set -e
-            fi
-          fi
-
-          package_changed=false
-          lock_changed=false
-          if ! cmp -s package.original.json package.json; then package_changed=true; fi
-          if ! cmp -s package-lock.original.json package-lock.json; then lock_changed=true; fi
-
-          cp package.json package.candidate.json
-          cp package-lock.json package-lock.candidate.json
-          git diff --no-ext-diff -- package.json > package.candidate.diff || true
-          git diff --no-ext-diff -- package-lock.json > package-lock.candidate.diff || true
-
-          FIRST_BLOCKER="$first" REMEDIATION_TARGET="$remediation_target" DIRECT="$direct" FIX_VERSION="$fix_version" CANDIDATE_EXIT="$candidate_exit" PACKAGE_CHANGED="$package_changed" LOCK_CHANGED="$lock_changed" GENERATOR="$generator" node <<'NODE'
-          const fs = require('fs');
-          const metadata = {
-            firstBlocker: process.env.FIRST_BLOCKER || '',
-            remediationTarget: process.env.REMEDIATION_TARGET || process.env.FIRST_BLOCKER || '',
-            direct: process.env.DIRECT === 'true',
-            fixVersion: process.env.FIX_VERSION || '',
-            npmCommandExit: Number(process.env.CANDIDATE_EXIT || '0'),
-            packageJsonChanged: process.env.PACKAGE_CHANGED === 'true',
-            packageLockChanged: process.env.LOCK_CHANGED === 'true',
-            generator: process.env.GENERATOR || 'none',
-            committed: false,
-          };
-          fs.writeFileSync('dependency.candidate-meta.json', JSON.stringify(metadata, null, 2));
-          const lines = [
-            '## GAP-007 npm-backed dependency candidate',
-            '',
-            `- first blocker: ${metadata.firstBlocker || 'none'}`,
-            `- remediation target: ${metadata.remediationTarget || 'none'}`,
-            `- direct dependency: ${metadata.direct}`,
-            `- fix version: ${metadata.fixVersion || 'n/a'}`,
-            `- npm command exit: ${metadata.npmCommandExit}`,
-            `- package.json changed: ${metadata.packageJsonChanged}`,
-            `- package-lock.json changed: ${metadata.packageLockChanged}`,
-            `- generator: ${metadata.generator}`,
-            '- candidate is evidence only; this workflow does not commit it',
-          ];
-          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join('\n')}\n`);
-          NODE
-
-          mv package.original.json package.json
-          mv package-lock.original.json package-lock.json
 
       - name: Build current runtime image
         run: docker build --pull -t papyr-us:gap007 .
@@ -245,7 +111,7 @@ jobs:
           ignore-unfixed: false
           exit-code: '0'
 
-      - name: Summarize runtime image findings and enforce gate
+      - name: Summarize runtime image findings
         shell: bash
         run: |
           node <<'NODE'
@@ -288,13 +154,194 @@ jobs:
             if (f.title) lines.push(`  - title: ${f.title}`);
           }
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join('\n')}\n`);
-          console.log(lines.join('\n'));
           fs.writeFileSync('trivy-image-high-critical.json', JSON.stringify(findings, null, 2));
-          if (findings.length > 0) process.exitCode = 1;
           NODE
+
+      - name: Select current first D-014 blocker
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const npmBlocking = require('./npm-audit-prod-blocking.json');
+          const runtime = require('./trivy-image-high-critical.json');
+          const pkg = require('./package.json');
+
+          function stableVersions(value) {
+            return String(value || '')
+              .split(',')
+              .map(x => x.trim())
+              .filter(x => /^\d+\.\d+\.\d+$/.test(x));
+          }
+          function compare(a, b) {
+            const aa = a.split('.').map(Number), bb = b.split('.').map(Number);
+            for (let i = 0; i < 3; i++) if (aa[i] !== bb[i]) return aa[i] - bb[i];
+            return 0;
+          }
+
+          let target;
+          if (npmBlocking.length) {
+            const first = npmBlocking[0];
+            const fix = first.fixAvailable;
+            target = {
+              source: 'NPM_AUDIT',
+              package: first.package,
+              direct: Boolean(first.direct),
+              fixAvailable: fix ?? null,
+              fixVersion: fix && typeof fix === 'object' ? (fix.version || '') : '',
+              isSemVerMajor: fix && typeof fix === 'object' ? Boolean(fix.isSemVerMajor) : false,
+            };
+          } else if (runtime.length) {
+            const firstPackage = runtime[0].package;
+            const samePackage = runtime.filter(f => f.package === firstPackage);
+            const fixes = samePackage.flatMap(f => stableVersions(f.fixed)).sort(compare);
+            const fixVersion = fixes.at(-1) || '';
+            target = {
+              source: 'TRIVY_RUNTIME_IMAGE',
+              package: firstPackage,
+              direct: Boolean(pkg.dependencies?.[firstPackage]),
+              fixAvailable: fixVersion ? { version: fixVersion } : null,
+              fixVersion,
+              isSemVerMajor: false,
+              runtimeFindingCount: samePackage.length,
+              installedVersions: [...new Set(samePackage.map(f => f.installed).filter(Boolean))],
+            };
+          } else {
+            target = {
+              source: 'NONE', package: '', direct: false, fixAvailable: null,
+              fixVersion: '', isSemVerMajor: false,
+            };
+          }
+          fs.writeFileSync('dependency.candidate-target.json', JSON.stringify(target, null, 2));
+          NODE
+
+      - name: Capture first blocking package ancestry
+        shell: bash
+        run: |
+          first=$(node -e "const x=require('./dependency.candidate-target.json'); process.stdout.write(x.package || '')")
+          if [ -z "$first" ]; then
+            echo 'No blocking HIGH/CRITICAL package remains.' > first-blocker-ancestry.txt
+            exit 0
+          fi
+          echo "FIRST_BLOCKER=$first" | tee first-blocker-ancestry.txt
+          npm ls "$first" --omit=dev --all --json >> first-blocker-ancestry.txt 2>&1 || true
+
+      - name: Generate npm-backed dependency candidate
+        shell: bash
+        run: |
+          set -u
+          first=$(node -e "const x=require('./dependency.candidate-target.json'); process.stdout.write(x.package || '')")
+          direct=$(node -e "const x=require('./dependency.candidate-target.json'); process.stdout.write(String(Boolean(x.direct)))")
+          fix_version=$(node -e "const x=require('./dependency.candidate-target.json'); process.stdout.write(x.fixVersion || '')")
+          source=$(node -e "const x=require('./dependency.candidate-target.json'); process.stdout.write(x.source || '')")
+
+          cp package.json package.original.json
+          cp package-lock.json package-lock.original.json
+          candidate_exit=0
+          generator='none'
+          remediation_target="$first"
+
+          if [ -n "$first" ]; then
+            set +e
+            if [ "$direct" = 'true' ] && [ -n "$fix_version" ]; then
+              generator="npm install ${first}@${fix_version} --package-lock-only --ignore-scripts --save-prefix=^"
+              npm install "${first}@${fix_version}" --package-lock-only --ignore-scripts --save-prefix='^'
+              candidate_exit=$?
+            else
+              generator="npm update ${first} --package-lock-only --ignore-scripts"
+              npm update "$first" --package-lock-only --ignore-scripts
+              candidate_exit=$?
+            fi
+            set -e
+
+            if [ "$candidate_exit" -eq 0 ] && cmp -s package-lock.original.json package-lock.json && [ "$first" = 'react-router' ]; then
+              if node -e "const p=require('./package.json'); process.exit(p.dependencies?.['react-router-dom'] ? 0 : 1)"; then
+                remediation_target='react-router-dom'
+                generator='npm update react-router-dom --package-lock-only --ignore-scripts (parent-controlled fix for react-router)'
+                set +e
+                npm update react-router-dom --package-lock-only --ignore-scripts
+                candidate_exit=$?
+                set -e
+              fi
+            fi
+
+            if [ "$candidate_exit" -eq 0 ] && cmp -s package-lock.original.json package-lock.json && [ "$first" = 'ws' ]; then
+              if node -e "const p=require('./package.json'); process.exit(p.dependencies?.['socket.io-client'] && p.dependencies?.['@socket.io/redis-adapter'] ? 0 : 1)"; then
+                remediation_target='socket.io-client + @socket.io/redis-adapter'
+                generator='npm update socket.io-client @socket.io/redis-adapter --package-lock-only --ignore-scripts (parent-controlled fix for ws)'
+                set +e
+                npm update socket.io-client @socket.io/redis-adapter --package-lock-only --ignore-scripts
+                candidate_exit=$?
+                set -e
+              fi
+            fi
+
+            if [ "$candidate_exit" -eq 0 ] && cmp -s package-lock.original.json package-lock.json && [ "$first" = 'ws' ]; then
+              remediation_target='engine.io-client + socket.io-adapter'
+              generator='npm update engine.io-client socket.io-adapter --package-lock-only --ignore-scripts (nested-parent fix for ws)'
+              set +e
+              npm update engine.io-client socket.io-adapter --package-lock-only --ignore-scripts
+              candidate_exit=$?
+              set -e
+            fi
+          fi
+
+          package_changed=false
+          lock_changed=false
+          if ! cmp -s package.original.json package.json; then package_changed=true; fi
+          if ! cmp -s package-lock.original.json package-lock.json; then lock_changed=true; fi
+
+          cp package.json package.candidate.json
+          cp package-lock.json package-lock.candidate.json
+          git diff --no-ext-diff -- package.json > package.candidate.diff || true
+          git diff --no-ext-diff -- package-lock.json > package-lock.candidate.diff || true
+
+          FIRST_BLOCKER="$first" SOURCE="$source" REMEDIATION_TARGET="$remediation_target" DIRECT="$direct" FIX_VERSION="$fix_version" CANDIDATE_EXIT="$candidate_exit" PACKAGE_CHANGED="$package_changed" LOCK_CHANGED="$lock_changed" GENERATOR="$generator" node <<'NODE'
+          const fs = require('fs');
+          const metadata = {
+            firstBlocker: process.env.FIRST_BLOCKER || '',
+            source: process.env.SOURCE || '',
+            remediationTarget: process.env.REMEDIATION_TARGET || process.env.FIRST_BLOCKER || '',
+            direct: process.env.DIRECT === 'true',
+            fixVersion: process.env.FIX_VERSION || '',
+            npmCommandExit: Number(process.env.CANDIDATE_EXIT || '0'),
+            packageJsonChanged: process.env.PACKAGE_CHANGED === 'true',
+            packageLockChanged: process.env.LOCK_CHANGED === 'true',
+            generator: process.env.GENERATOR || 'none',
+            committed: false,
+          };
+          fs.writeFileSync('dependency.candidate-meta.json', JSON.stringify(metadata, null, 2));
+          const lines = [
+            '## GAP-007 npm-backed dependency candidate',
+            '',
+            `- first blocker: ${metadata.firstBlocker || 'none'}`,
+            `- source: ${metadata.source || 'none'}`,
+            `- remediation target: ${metadata.remediationTarget || 'none'}`,
+            `- direct dependency: ${metadata.direct}`,
+            `- fix version: ${metadata.fixVersion || 'n/a'}`,
+            `- npm command exit: ${metadata.npmCommandExit}`,
+            `- package.json changed: ${metadata.packageJsonChanged}`,
+            `- package-lock.json changed: ${metadata.packageLockChanged}`,
+            `- generator: ${metadata.generator}`,
+            '- candidate is evidence only; this workflow does not commit it',
+          ];
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join('\n')}\n`);
+          NODE
+
+          mv package.original.json package.json
+          mv package-lock.original.json package-lock.json
+
+      - name: Enforce runtime image gate
+        shell: bash
+        run: |
+          count=$(node -e "console.log(require('./trivy-image-high-critical.json').length)")
+          if [ "$count" -gt 0 ]; then
+            echo "Runtime image contains $count HIGH/CRITICAL finding(s)." >&2
+            exit 1
+          fi
 
       - name: Enforce production npm gate
         shell: bash
+        if: always()
         run: |
           count=$(node -e "console.log(require('./npm-audit-prod-blocking.json').length)")
           if [ "$count" -gt 0 ]; then
