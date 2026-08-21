@@ -4,9 +4,9 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.65"
+version: "0.66"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
-current_phase: "Phase 4 — Proof Packaging (ready, not started)"
+current_phase: "Phase 4 — Proof Packaging (active)"
 priority: "P1"
 last_updated: "2026-08-21"
 repository: "joeylife94/papyr-us"
@@ -15,7 +15,7 @@ baseline_main_sha: "00b67207029f269f5b4857caf4705fc43a7d2462"
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.65**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.66**  
 > Current repository / Issue / PR / workflow evidence overrides historical checkpoints.
 
 ## 0. Authority / Scope
@@ -30,13 +30,13 @@ baseline_main_sha: "00b67207029f269f5b4857caf4705fc43a7d2462"
 
 - GJ-01..GJ-08 — CLOSED.
 - GAP-001..005 — CLOSED.
-- GAP-007 — **CLOSED**.
+- GAP-007 — CLOSED.
 - GAP-008 — CLOSED.
-- GAP-006 — OPEN / Phase 4.
+- GAP-006 — **ACTIVE / Phase 4 via Issue #61**.
 - GAP-009..012 — OPEN / Phase 5.
 - GAP-013..015 — DEFERRED.
-- Phase 0–3 — **CLOSED**.
-- Phase 4 — READY / NOT STARTED.
+- Phase 0–3 — CLOSED.
+- Phase 4 — **ACTIVE**.
 
 ## 2. GAP-007 Closure Contract
 
@@ -123,27 +123,63 @@ Final cleanup head `cb1d6f58b7ec3387630ed2218b1ebe3d42796ae8`:
 - Temporary sync-trigger machinery is absent from the accepted cleanup tree.
 - Issue #58 and PR #59 lifecycle is complete.
 
+## 4. Phase 4 / GAP-006 Proof Packaging — Active
+
+> **Date:** 2026-08-21 KST  
+> **Issue:** #61 — OPEN  
+> **Branch:** `docs/issue-61-gap006-proof-packaging`  
+> **PR:** not created yet
+
+### Changed
+
+- Evaluated current repository proof surfaces after Phase 3 closure.
+- Created one bounded Issue #61 for GAP-006 proof packaging.
+- Created branch `docs/issue-61-gap006-proof-packaging` from current `main` ledger SHA `e25a47056176d491d4eabb4e4d9610dca4b6302e`.
+- Fixed Phase 4 scope to evidence packaging only: accepted-v1.0 evidence manifest/index plus the minimum fresh user-visible proof assets; no product expansion, no public deployment requirement, no Phase 5 work, no PR #19 work.
+
+### Actually Executed
+
+- Read the current root MASTER on `main` before Phase 4 work.
+- Re-fetched PR #59 and confirmed it is merged, not draft, with merged product SHA `00b67207029f269f5b4857caf4705fc43a7d2462`; therefore the historical active-GAP-007 handoff was discarded.
+- Re-fetched `main` and confirmed ledger SHA `e25a47056176d491d4eabb4e4d9610dca4b6302e` before this MASTER update.
+- Searched for an existing GAP-006 Issue and found none.
+- Inventoried repository proof surfaces. Current tree contains an April 2026 screenshot set under `artifacts/20260409`, an archived screenshot guide, committed Playwright output/report artifacts, and Layer-6 visual snapshots, but no current v1.0 proof-package index anchored to the accepted August 2026 tree.
+- Created Issue #61 with explicit acceptance/non-goal/evidence criteria.
+- Created the linked branch from the current accepted ledger head.
+
+### Checks / Evidence
+
+- PR #59: merged; merge SHA `00b67207029f269f5b4857caf4705fc43a7d2462`.
+- Issue #58: already closed/completed per authoritative MASTER and repository state.
+- Existing GAP-006 Issue search before creation: none.
+- Issue #61: OPEN.
+- Proof assets found in repository: historical `artifacts/20260409/*`; archived `docs/archive/SCREENSHOT_GUIDE.md`; current Layer-6 visual snapshots under `tests/visual/...`.
+- No fresh Phase 4 executable proof suite or proof-package PR has been run yet.
+
 ### Not Verified / Remaining Risks
 
-- No new Phase 4 proof/public-demo work was started in this iteration.
-- GAP-006 remains OPEN and must be evaluated against its own Phase 4 contract before implementation.
+- Existing April screenshots and committed historical Playwright outputs are not accepted as current v1.0 closure proof without revalidation.
+- No fresh screenshots or proof manifest has been generated yet.
+- No exact-head Phase 4 PR workflows have been executed because no proof-package implementation commit/PR exists yet.
+- GAP-006 and Phase 4 remain OPEN/ACTIVE.
 - GAP-009..012 remain Phase 5 work; GAP-013..015 remain deferred.
-- PR #19 was not touched.
+- PR #19 remains untouched.
 
 ### Repo State
 
-- `main` accepted product SHA before this MASTER-only reconciliation: `00b67207029f269f5b4857caf4705fc43a7d2462`.
-- Issue #58: CLOSED / COMPLETED.
-- PR #59: MERGED.
-- GAP-007: CLOSED.
-- Phase 3: CLOSED.
-- Phase 4: READY / NOT STARTED.
-- PR #19: unchanged.
+- Accepted product baseline: `00b67207029f269f5b4857caf4705fc43a7d2462`.
+- `main` immediately before this ledger write: `e25a47056176d491d4eabb4e4d9610dca4b6302e`.
+- Issue #61: OPEN / ACTIVE.
+- Branch: `docs/issue-61-gap006-proof-packaging` created from `e25a470...`.
+- PR: none yet.
+- Phase 4: ACTIVE.
 
 ### Exact Next Action
 
-1. On the next iteration, read this MASTER and re-fetch current repository/PR state before any work.
-2. Evaluate only Phase 4 / GAP-006 against the authoritative v1.0 proof-packaging contract.
-3. Do not reuse the now-closed GAP-007 sync/apply machinery as active state.
-4. Preserve scope freeze and do not enter deferred v1.1 work.
-5. If Phase 4 requires implementation/proof work, use one bounded Issue and the normal Issue → branch → PR → exact-head evidence → merge → MASTER reconciliation lifecycle.
+1. Re-read this MASTER and re-fetch Issue #61 / branch before mutation.
+2. On `docs/issue-61-gap006-proof-packaging`, create one authoritative v1.0 proof index/manifest anchored to accepted product SHA `00b67207029f269f5b4857caf4705fc43a7d2462`.
+3. Map GJ-01..GJ-08 plus Security / 7-Layer / Firebat / truthful search-AI boundary to exact accepted tests, PR/merge SHAs, workflow runs/artifacts where evidence exists; never invent missing PASS.
+4. Mark April 2026 screenshots, archived screenshot guide, and stale committed Playwright outputs historical/context-only unless freshly revalidated.
+5. Add only the minimum deterministic fresh screenshot/proof generation needed for representative user-visible v1.0 flows; do not broaden into product development unless proof execution exposes a concrete reproducibility defect.
+6. Open one linked draft PR with `Closes #61`, run exact-head required gates, then merge only on executed GREEN evidence and clean review state.
+7. After merge, reconcile this MASTER on `main`, close GAP-006/Phase 4 only if its acceptance criteria are actually satisfied, then evaluate Phase 5.
