@@ -31,7 +31,7 @@ jobs:
       - name: Install exact dependency graph
         run: npm ci
 
-      - name: Capture current production blockers
+      - name: Capture current production npm blockers
         shell: bash
         run: |
           set +e
@@ -60,10 +60,79 @@ jobs:
                 disposition: devOnly ? 'DEV_ONLY' : 'BLOCK',
               };
             });
-          const blocking = findings.filter(f => f.disposition === 'BLOCK');
-          fs.writeFileSync('apply-blocking.json', JSON.stringify(blocking, null, 2));
-          if (!blocking.length) {
-            console.error('No blocking HIGH/CRITICAL npm finding remains; nothing to apply.');
+          fs.writeFileSync('apply-blocking.json', JSON.stringify(findings.filter(f => f.disposition === 'BLOCK'), null, 2));
+          NODE
+
+      - name: Build current runtime image
+        run: docker build --pull -t papyr-us:gap007-apply .
+
+      - name: Scan current runtime image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'papyr-us:gap007-apply'
+          format: 'json'
+          output: 'apply-trivy-image.json'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: false
+          exit-code: '0'
+
+      - name: Select exact first blocker
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const npmBlocking = require('./apply-blocking.json');
+          const report = JSON.parse(fs.readFileSync('apply-trivy-image.json', 'utf8'));
+          const pkg = require('./package.json');
+          const runtime = [];
+          for (const result of report.Results || []) {
+            for (const v of result.Vulnerabilities || []) {
+              const severity = String(v.Severity || '').toUpperCase();
+              if (!['HIGH', 'CRITICAL'].includes(severity)) continue;
+              runtime.push({
+                package: v.PkgName || '',
+                installed: v.InstalledVersion || '',
+                fixed: v.FixedVersion || '',
+                severity,
+              });
+            }
+          }
+          function stableVersions(value) {
+            return String(value || '').split(',').map(x => x.trim()).filter(x => /^\d+\.\d+\.\d+$/.test(x));
+          }
+          function compare(a, b) {
+            const aa = a.split('.').map(Number), bb = b.split('.').map(Number);
+            for (let i = 0; i < 3; i++) if (aa[i] !== bb[i]) return aa[i] - bb[i];
+            return 0;
+          }
+          let target;
+          if (npmBlocking.length) {
+            const first = npmBlocking[0];
+            const fix = first.fixAvailable;
+            target = {
+              source: 'NPM_AUDIT',
+              package: first.package,
+              direct: Boolean(first.direct),
+              fixVersion: fix && typeof fix === 'object' ? (fix.version || '') : '',
+            };
+          } else if (runtime.length) {
+            const firstPackage = runtime[0].package;
+            const samePackage = runtime.filter(f => f.package === firstPackage);
+            const fixes = samePackage.flatMap(f => stableVersions(f.fixed)).sort(compare);
+            target = {
+              source: 'TRIVY_RUNTIME_IMAGE',
+              package: firstPackage,
+              direct: Boolean(pkg.dependencies?.[firstPackage]),
+              fixVersion: fixes.at(-1) || '',
+              runtimeFindingCount: samePackage.length,
+              installedVersions: [...new Set(samePackage.map(f => f.installed).filter(Boolean))],
+            };
+          } else {
+            target = { source: 'NONE', package: '', direct: false, fixVersion: '' };
+          }
+          fs.writeFileSync('apply-target.json', JSON.stringify(target, null, 2));
+          if (!target.package) {
+            console.error('No blocking HIGH/CRITICAL package remains; nothing to apply.');
             process.exit(2);
           }
           NODE
@@ -73,20 +142,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node <<'NODE'
-          const fs = require('fs');
-          const first = require('./apply-blocking.json')[0];
-          const fix = first?.fixAvailable;
-          const target = {
-            package: first?.package || '',
-            direct: Boolean(first?.direct),
-            fixVersion: fix && typeof fix === 'object' ? (fix.version || '') : '',
-            isSemVerMajor: fix && typeof fix === 'object' ? Boolean(fix.isSemVerMajor) : false,
-          };
-          fs.writeFileSync('apply-target.json', JSON.stringify(target, null, 2));
-          if (!target.package) process.exit(2);
-          NODE
-
           first=$(node -e "const x=require('./apply-target.json'); process.stdout.write(x.package)")
           direct=$(node -e "const x=require('./apply-target.json'); process.stdout.write(String(x.direct))")
           fix_version=$(node -e "const x=require('./apply-target.json'); process.stdout.write(x.fixVersion || '')")
@@ -101,8 +156,6 @@ jobs:
             npm update "$first" --package-lock-only --ignore-scripts
           fi
 
-          # Keep the guarded apply path identical to the evidence generator for the
-          # react-router parent-controlled case.
           if cmp -s package-lock.before.json package-lock.json && [ "$first" = 'react-router' ]; then
             if node -e "const p=require('./package.json'); process.exit(p.dependencies?.['react-router-dom'] ? 0 : 1)"; then
               remediation_target='react-router-dom'
@@ -110,9 +163,6 @@ jobs:
             fi
           fi
 
-          # Keep the guarded apply path identical to the fresh Security evidence for
-          # ws. First try the two declared Socket.IO parents. If that is still a no-op,
-          # refresh only the two nested parents that own the vulnerable ws copies.
           if cmp -s package-lock.before.json package-lock.json && [ "$first" = 'ws' ]; then
             if node -e "const p=require('./package.json'); process.exit(p.dependencies?.['socket.io-client'] && p.dependencies?.['@socket.io/redis-adapter'] ? 0 : 1)"; then
               remediation_target='socket.io-client + @socket.io/redis-adapter'
@@ -133,10 +183,8 @@ jobs:
           const remediationTarget = process.env.REMEDIATION_TARGET || target;
           const direct = process.env.DIRECT === 'true';
           const fixVersion = process.env.FIX_VERSION || '';
-
-          function clone(x) { return JSON.parse(JSON.stringify(x)); }
-          const b = clone(before);
-          const a = clone(after);
+          const b = JSON.parse(JSON.stringify(before));
+          const a = JSON.parse(JSON.stringify(after));
           let packageJsonExpected = false;
 
           if (direct && fixVersion) {
@@ -146,7 +194,7 @@ jobs:
             delete b.dependencies[target];
             delete a.dependencies[target];
             if (JSON.stringify(b) !== JSON.stringify(a)) throw new Error('package.json candidate changes more than the single target dependency');
-            if (afterValue.replace(/^\^/, '') !== fixVersion) throw new Error(`Candidate version ${afterValue} does not match audit fix ${fixVersion}`);
+            if (afterValue.replace(/^\^/, '') !== fixVersion) throw new Error(`Candidate version ${afterValue} does not match selected fix ${fixVersion}`);
             packageJsonExpected = true;
           } else if (JSON.stringify(b) !== JSON.stringify(a)) {
             throw new Error('Lock-only candidate unexpectedly changed package.json');
