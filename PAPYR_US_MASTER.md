@@ -4,7 +4,7 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.57"
+version: "0.58"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
 current_phase: "Phase 3 — Operational & Security Readiness"
 priority: "P0"
@@ -15,7 +15,7 @@ baseline_main_sha: "4d9f77090bd05b1633637ab110b81b0d5f84b773"
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.57**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.58**  
 > Root single source of truth. Current repository / Issue / PR / workflow evidence overrides historical checkpoints.
 
 ## 0. Authority / Rules
@@ -101,56 +101,68 @@ D-015 post-v1 North Star remains directional until Freeze.
 > **Phase:** Phase 3 — Operational & Security Readiness  
 > **Accepted product baseline:** `4d9f77090bd05b1633637ab110b81b0d5f84b773`  
 > **Active Issue / PR:** Issue #58 / draft PR #59  
-> **Current exact candidate under validation:** `ae77c26ccf70ef3c3da047b5b8f8c02257f34202`
+> **Current exact candidate under validation:** `70c8e3ef25392cab6f2266da4438d95759ea30b4`
 
 ### Changed
 
-- Reconciled stale MASTER checkpoint `7358e98d...` to the successful Apply bot commit `8dfcb56bf40af70ae5e537ebe369dbea674a875f`.
-- Recorded the four bot-authored PR-triggered workflow runs on `8dfcb56b...` as **ACTION_REQUIRED / NOT EXECUTED / NOT PASS**: Security `32450595786`, CI `32450595827`, 7-Layer `32450595884`, Firebat `32450595826`.
-- Removed `gap007-apply-candidate` after the successful bot push; Apply must not be triggered again for this `ws` cycle.
-- Updated the existing `.github/gap007-sync-trigger` to `candidate_head=8dfcb56bf40af70ae5e537ebe369dbea674a875f` using the connector-authored GitHub write path.
-- The connector-authored sync update advanced PR #59 to exact head `ae77c26ccf70ef3c3da047b5b8f8c02257f34202`; this is now the only executable-validation candidate for the current `ws` remediation cycle.
-- Confirmed all four required workflows are now actually executing on `ae77c26c...`.
+- Reconciled connector-triggered head `ae77c26ccf70ef3c3da047b5b8f8c02257f34202` from stale IN PROGRESS state to settled evidence: Security `32454269388` **FAILURE**, CI `32454269336` **SUCCESS**, 7-Layer `32454269395` **SUCCESS**, Firebat `32454269384` **SUCCESS**.
+- Inspected fresh `gap007-security-evidence` from Security run `32454269388`.
+- Confirmed `ws` did **not** clear after bot commit `8dfcb56bf40af70ae5e537ebe369dbea674a875f`; it remains the sole production HIGH/CRITICAL npm blocker.
+- Quantified fresh runtime-image HIGH/CRITICAL findings: **10 HIGH / 0 CRITICAL**, all Node packages: `multer` 8 and `ws` 2. Historical `multer` is not selected because `ws` remains the current first blocker.
+- Confirmed vulnerable `ws@8.17.1` remains non-dev/runtime-present at `engine.io-client -> ws` and `socket.io-adapter -> ws`, while top-level `ws@8.21.3` is patched.
+- Confirmed the current npm candidate generator is ineligible/no-op for `ws`: `npm update socket.io-client @socket.io/redis-adapter --package-lock-only --ignore-scripts` exited 0 but changed neither package file nor lock file.
+- Applied the smallest Issue #58-scoped workflow correction only: when the direct Socket.IO-parent refresh is also a no-op, the Security generator now tries `npm update engine.io-client socket.io-adapter --package-lock-only --ignore-scripts` so npm can refresh only the two nested parents already permitted by their existing parent ranges.
+- The workflow-only commit advanced PR #59 to exact head `70c8e3ef25392cab6f2266da4438d95759ea30b4`; a fresh four-gate cycle is required before any Apply action.
 
 ### Actually Executed
 
-- Re-read root MASTER on `main` first.
-- Re-fetched PR #59 and confirmed bot-authored head `8dfcb56bf40af70ae5e537ebe369dbea674a875f`, draft/open/unmerged.
-- Fetched exact-head workflow runs for `8dfcb56b...` and confirmed all four completed `action_required`, therefore no PASS evidence exists on that bot-authored head.
-- Removed `gap007-apply-candidate` from PR #59.
-- Re-fetched `.github/gap007-sync-trigger` on `security/issue-58-gap007-reachability` and replaced the previous candidate SHA with `8dfcb56bf40af70ae5e537ebe369dbea674a875f`.
-- Verified the sync-trigger write created connector-authored PR head `ae77c26ccf70ef3c3da047b5b8f8c02257f34202`.
-- Re-fetched exact-head workflow runs and confirmed Security `32454269388`, CI `32454269336`, 7-Layer `32454269395`, and Firebat `32454269384` are all `IN PROGRESS` on that same head.
-- Did not process another blocker, create another Issue, merge PR #59, close Issue #58, touch PR #19, or start Phase 4/deferred work.
+- Re-read root MASTER on `main` first and re-fetched CURRENT PR #59.
+- Verified PR #59 was still draft/open/unmerged at exact head `ae77c26c...` before mutation.
+- Downloaded and inspected artifact `gap007-security-evidence` from exact Security run `32454269388`.
+- Read `npm-audit-prod-blocking.json`, `first-blocker-ancestry.txt`, `dependency.candidate-meta.json`, lock candidate evidence, and `trivy-image-high-critical.json`.
+- Verified current production blocker count = **1**, package = `ws`, disposition = BLOCK under D-014.
+- Verified runtime-image HIGH/CRITICAL count = **10**, consisting of `ws` 2 + `multer` 8; OS HIGH/CRITICAL = 0.
+- Verified candidate metadata: firstBlocker=`ws`, remediationTarget=`socket.io-client + @socket.io/redis-adapter`, npm exit 0, packageJsonChanged=false, packageLockChanged=false.
+- Verified current lock ancestry: `socket.io-client@4.8.3 -> engine.io-client@6.6.3 -> ws@8.17.1` and `@socket.io/redis-adapter@8.3.0 -> socket.io-adapter@2.5.5 -> ws@8.17.1`.
+- Updated only `.github/workflows/security-reachability.yml` on the existing Issue #58 branch; no dependency package/lock mutation was applied.
+- Re-fetched PR #59 and confirmed new exact head `70c8e3ef25392cab6f2266da4438d95759ea30b4`.
+- Confirmed a fresh exact-head four-gate cycle started: Security `32458682230`, CI `32458682232`, 7-Layer `32458682157`, Firebat `32458682217`.
+- Did not add `gap007-apply-candidate`, did not process `multer`, did not merge PR #59, close Issue #58, touch PR #19, or start Phase 4/deferred work.
 
 ### Checks / Current Verification State
 
-Bot-authored head `8dfcb56bf40af70ae5e537ebe369dbea674a875f`:
-- Dependency Security Reachability `32450595786` — **ACTION_REQUIRED / NOT EXECUTED / NOT PASS**.
-- CI `32450595827` — **ACTION_REQUIRED / NOT EXECUTED / NOT PASS**.
-- 7-Layer `32450595884` — **ACTION_REQUIRED / NOT EXECUTED / NOT PASS**.
-- Firebat `32450595826` — **ACTION_REQUIRED / NOT EXECUTED / NOT PASS**.
+Settled connector head `ae77c26ccf70ef3c3da047b5b8f8c02257f34202`:
+- Dependency Security Reachability `32454269388` — **FAILURE**.
+- CI `32454269336` — **SUCCESS**.
+- 7-Layer `32454269395` — **SUCCESS**.
+- Firebat `32454269384` — **SUCCESS**.
 
-Connector-triggered current head `ae77c26ccf70ef3c3da047b5b8f8c02257f34202`:
-- Dependency Security Reachability `32454269388` — **IN PROGRESS**.
-- CI `32454269336` — **IN PROGRESS**.
-- 7-Layer `32454269395` — **IN PROGRESS**.
-- Firebat `32454269384` — **IN PROGRESS**.
+Fresh Security evidence on `ae77c26c...`:
+- production HIGH/CRITICAL blockers: **1** (`ws`, HIGH, non-dev/runtime-present).
+- runtime-image HIGH/CRITICAL: **10 HIGH / 0 CRITICAL** = `ws` 2 + `multer` 8.
+- `ws` vulnerable nodes: `node_modules/engine.io-client/node_modules/ws@8.17.1`, `node_modules/socket.io-adapter/node_modules/ws@8.17.1`.
+- current parent-refresh candidate: **ineligible/no-op**; npm exit 0 but package/lock diff = 0.
+
+Current workflow-only head `70c8e3ef25392cab6f2266da4438d95759ea30b4`:
+- Dependency Security Reachability `32458682230` — **QUEUED**.
+- CI `32458682232` — **QUEUED**.
+- 7-Layer `32458682157` — **QUEUED**.
+- Firebat `32458682217` — **QUEUED**.
 
 ### Not Verified
 
-- No completed executable Security + CI + 7-Layer + Firebat evidence exists yet for `ae77c26c...`.
-- `ws` clearance is not yet proven on an executable connector-triggered head.
-- Fresh post-`ws` security artifact has not yet been inspected.
-- No next blocker may be processed until this full `ws` validation cycle settles.
+- The nested-parent `engine.io-client + socket.io-adapter` npm-generated candidate has not yet been produced or proven eligible on `70c8e3ef...`.
+- No Apply action is authorized until the current workflow-only head fully settles with supporting gates GREEN and fresh Security evidence proves a bounded eligible `ws` candidate.
+- `ws` clearance remains unverified.
+- `multer` remains runtime-present but must not be processed while `ws` is still the current first blocker.
 - `.github/gap007-sync-trigger` remains temporary and must stay until GAP-007 otherwise reaches all-GREEN acceptance and cleanup validation is due.
 
 ### Residual Risks / Blockers
 
 - GAP-007 remains OPEN under D-014.
 - PR #59 remains draft/open/unmerged; Issue #58 remains open.
-- Current blocker is completion of the four executable validation gates on exact head `ae77c26c...`.
-- If `ws` clears, the next blocker must be chosen from fresh Security evidence only; historical blocker order is not sufficient.
+- Current blocker is completion of the four-gate cycle on workflow-only head `70c8e3ef...` and inspection of its fresh npm-generated `ws` candidate evidence.
+- If the nested-parent candidate is also no-op/ineligible, only another minimal Issue #58-scoped workflow correction justified by that fresh evidence is allowed.
 
 ### Repo / Issue / PR State
 
@@ -159,16 +171,18 @@ Connector-triggered current head `ae77c26ccf70ef3c3da047b5b8f8c02257f34202`:
 - GAP-007: ACTIVE / OPEN
 - Issue #58: OPEN
 - PR #59: DRAFT / OPEN / UNMERGED
-- PR #59 current head: `ae77c26ccf70ef3c3da047b5b8f8c02257f34202`
-- successful Apply bot commit: `8dfcb56bf40af70ae5e537ebe369dbea674a875f`
-- `gap007-apply-candidate`: REMOVED
-- `.github/gap007-sync-trigger`: PRESENT / points to bot SHA `8dfcb56b...`
+- PR #59 current head: `70c8e3ef25392cab6f2266da4438d95759ea30b4`
+- prior successful Apply bot commit: `8dfcb56bf40af70ae5e537ebe369dbea674a875f`
+- `gap007-apply-candidate`: REMOVED / NOT RE-TRIGGERED
+- `.github/gap007-sync-trigger`: PRESENT
 - PR #19: unchanged
 
 ### Exact Next Action
 
-1. Re-fetch CURRENT PR #59 and require exact head `ae77c26ccf70ef3c3da047b5b8f8c02257f34202` unless a newer repository head exists.
-2. Wait for Security + CI + 7-Layer + Firebat on that same exact connector-triggered head to fully settle; do not process another blocker while any gate is pending/running.
-3. If all supporting gates are GREEN and Security is RED, inspect the fresh Security artifact only after the full cycle settles.
-4. If `ws` remains, diagnose only `ws`. If `ws` clears, select exactly one current first D-014 blocker from fresh evidence; do not rely on historical blocker order.
-5. Final cleanup/merge remains gated on same-head four-gate GREEN, sync-trigger deletion, then one final cleanup-head same-head four-gate validation.
+1. Re-fetch CURRENT PR #59 and require exact head `70c8e3ef25392cab6f2266da4438d95759ea30b4` unless newer repository evidence exists.
+2. Wait for Security + CI + 7-Layer + Firebat on that same workflow-only head to fully settle; do not apply or process another blocker while any gate is pending/running.
+3. If supporting gates are GREEN and Security is RED, inspect fresh `gap007-security-evidence` and require first blocker=`ws` before continuing this cycle.
+4. Accept a `ws` candidate only if npm exit=0 and the new `engine.io-client + socket.io-adapter` fallback produces a bounded npm-generated package/lock diff. If it is still no-op/ineligible, make only the smallest evidence-justified Issue #58 workflow correction and require another settled four-gate cycle.
+5. If the candidate is eligible, align guarded Apply to that exact remediation if needed, require any Apply-workflow-only head to settle first, then add `gap007-apply-candidate` exactly once.
+6. Do not process `multer` until the `ws` cycle is completely validated and cleared.
+7. Final cleanup/merge remains gated on same-head four-gate GREEN, sync-trigger deletion, then one final cleanup-head same-head four-gate validation.
