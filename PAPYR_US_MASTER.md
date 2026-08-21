@@ -4,7 +4,7 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.62"
+version: "0.63"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
 current_phase: "Phase 3 — Operational & Security Readiness"
 priority: "P0"
@@ -15,7 +15,7 @@ baseline_main_sha: "4d9f77090bd05b1633637ab110b81b0d5f84b773"
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.62**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.63**  
 > Current repository / Issue / PR / workflow evidence overrides historical checkpoints.
 
 ## 0. Authority / Scope
@@ -52,39 +52,50 @@ baseline_main_sha: "4d9f77090bd05b1633637ab110b81b0d5f84b773"
 > **Date:** 2026-08-21 KST  
 > **Accepted product baseline:** `4d9f77090bd05b1633637ab110b81b0d5f84b773`  
 > **Active Issue / PR:** Issue #58 / draft PR #59  
-> **Current executable candidate:** `6d34973730902232cdac5bbf120c09c9ca55bdd5`
+> **Last fully settled executable candidate:** `6d34973730902232cdac5bbf120c09c9ca55bdd5`  
+> **Current workflow-only candidate:** `1f2062e4218d33ee4cd444c0df55f665a9b6dd68`
 
 ### Changed
 
-- Reconciled stale IN-PROGRESS workflow state on exact head `6d349737...` to: Security `32468090109` FAILURE, CI `32468090364` SUCCESS, 7-Layer `32468090225` FAILURE, Firebat `32468090169` SUCCESS.
-- Diagnosed the first concrete 7-Layer failure before touching any new dependency candidate.
-- The only failing 7-Layer job was `All Layers · Sequential Smoke Run`; its sequential integration stage failed while starting test infrastructure because the container registry returned HTTP 502 for the Redis image manifest.
-- Independent exact-head Layer 4 Integration, Layer 5 E2E, Layer 6 Visual/A11y, and Layers 0–3 all passed. This does not indicate a ws compatibility regression.
-- Re-ran only the failed All-Layers job; retry job `96742082091` is currently QUEUED.
+- Reconciled 7-Layer run `32468090225` to **SUCCESS** after the failed-job retry recovered the transient Redis registry HTTP 502. No product/test correction was made for that recovered infrastructure failure.
+- Re-inspected fresh `gap007-security-evidence` from exact-head Security run `32468090109`.
+- Proved the prior `ws` blocker cleared: production `npm audit --omit=dev` now has **0 HIGH/CRITICAL blockers** and the runtime-image HIGH/CRITICAL evidence no longer contains `ws`.
+- Identified exactly one current first D-014 blocker package from fresh runtime evidence: **`multer@1.4.5-lts.2`**, present in the pruned runtime image with HIGH findings.
+- The prior Security candidate generator only handled npm-audit blockers, so with npm HIGH/CRITICAL at zero it emitted no candidate despite runtime-image blockers.
+- Applied one Issue #58-scoped workflow-only correction on PR #59: Security now selects the current first blocker from npm audit first, otherwise from fresh Trivy runtime evidence, and generates one npm-backed candidate without committing it. Runtime findings are enforced only after candidate evidence is generated.
 
 ### Actually Executed
 
-- Read this root MASTER first.
-- Re-fetched PR #59 and confirmed exact head `6d349737...`, draft/open/unmerged.
-- Re-fetched exact-head workflow runs, enumerated 7-Layer jobs, and inspected the failing job log.
-- Re-ran only the failed All-Layers job.
-- Did not inspect/select a next dependency blocker, re-trigger the consumed ws Apply, merge #59, close #58, touch PR #19, or start later-phase work.
+- Read the root MASTER on `main` first.
+- Re-fetched PR #59 and confirmed source head `6d349737...`, draft/open/unmerged, apply label absent.
+- Re-fetched exact-head workflow runs: Security FAILURE / CI SUCCESS / 7-Layer SUCCESS / Firebat SUCCESS.
+- Downloaded and inspected `gap007-security-evidence` artifact `9441491947` from Security run `32468090109`.
+- Verified `npm-audit-prod-blocking.json` is empty and `first-blocker-ancestry.txt` states no blocking npm package remains.
+- Verified runtime Trivy evidence contains `multer@1.4.5-lts.2` HIGH findings and no `ws` findings.
+- Updated only `.github/workflows/security-reachability.yml` on PR #59; no dependency, product, Apply label, merge, Issue close, PR #19, or later-phase change was made.
 
 ### Checks
 
-Exact head `6d34973730902232cdac5bbf120c09c9ca55bdd5`:
-- Security `32468090109` — FAILURE.
-- CI `32468090364` — SUCCESS.
-- 7-Layer `32468090225` — initial FAILURE from registry HTTP 502 in All-Layers integration startup.
-- Firebat `32468090169` — SUCCESS.
-- 7-Layer retry job `96742082091` — QUEUED.
-- Independent Layer 0/1/2/3/4/5/6 jobs — SUCCESS.
+Settled exact head `6d34973730902232cdac5bbf120c09c9ca55bdd5`:
+- Security `32468090109` — **FAILURE**.
+- CI `32468090364` — **SUCCESS**.
+- 7-Layer `32468090225` — **SUCCESS after retry**; original RED was transient Redis registry HTTP 502.
+- Firebat `32468090169` — **SUCCESS**.
+- Fresh Security artifact:
+  - production npm HIGH/CRITICAL blockers: **0**;
+  - prior `ws`: **CLEARED**;
+  - current first D-014 blocker package: **multer**;
+  - runtime-installed version: **1.4.5-lts.2**;
+  - disposition: **BLOCK / PRESENT_IN_RUNTIME_IMAGE**.
+
+Current workflow-only PR head `1f2062e4218d33ee4cd444c0df55f665a9b6dd68`:
+- Security / CI / 7-Layer / Firebat must settle before candidate eligibility is accepted or Apply is aligned/executed.
 
 ### Not Verified / Risks
 
-- 7-Layer supporting-gate GREEN is not restored until retry completes.
-- Fresh post-apply Security evidence from `32468090109` must not be used to select the next blocker until 7-Layer is GREEN.
-- `ws` clearance is not yet accepted; historical `multer` is not assumed next.
+- The new workflow-only head has not yet completed its four-gate cycle.
+- `multer` candidate eligibility is not accepted until the new exact-head Security artifact proves npm exit 0, target=`multer`, bounded npm-generated package/lock diff, and fresh runtime evidence still names `multer` as first blocker.
+- No Apply workflow change or apply-label execution has been performed for `multer`.
 - `.github/gap007-sync-trigger` remains temporary and present.
 - GAP-007, Issue #58, PR #59, and Phase 3 remain OPEN/ACTIVE.
 
@@ -92,16 +103,18 @@ Exact head `6d34973730902232cdac5bbf120c09c9ca55bdd5`:
 
 - Issue #58: OPEN.
 - PR #59: DRAFT / OPEN / UNMERGED.
-- Apply bot commit: `ea9307fab5626c232ac661c4dddfc99a5ab67826`.
-- Current executable head: `6d34973730902232cdac5bbf120c09c9ca55bdd5`.
+- Last executable head: `6d34973730902232cdac5bbf120c09c9ca55bdd5`.
+- Current PR workflow-only head: `1f2062e4218d33ee4cd444c0df55f665a9b6dd68`.
 - apply label: ABSENT.
 - sync trigger: PRESENT.
 - PR #19: unchanged.
 
 ### Exact Next Action
 
-1. Wait for All-Layers retry job `96742082091` to settle.
-2. If retry is GREEN, classify the original 7-Layer failure as transient/unrelated, then inspect fresh Security evidence from `32468090109` to prove whether `ws` cleared and identify exactly one current first D-014 blocker.
-3. If retry fails for a real product/test reason, make only the smallest Issue #58-scoped correction and require a new exact-head four-gate cycle.
-4. Do not stack another dependency candidate while a supporting gate is pending/RED.
-5. Only after all four gates are GREEN and GAP-007 otherwise holds: remove the temporary sync trigger and run final cleanup-head same-head validation before merge/closure.
+1. Re-fetch CURRENT PR #59 head and require Security + CI + 7-Layer + Firebat to settle on the workflow-only head.
+2. If any supporting gate is RED, diagnose that first and do not select/apply another dependency candidate.
+3. If supporting gates are GREEN and Security is RED, inspect that exact-head `gap007-security-evidence`.
+4. Accept `multer` candidate eligibility only if fresh evidence proves: first blocker=`multer`, npm exit 0, bounded npm-generated package/lock diff, and no broad/synthetic mutation.
+5. If eligible, align the guarded Apply workflow to the same Trivy-backed first-blocker selection/remediation, require that workflow-only head to settle, then add `gap007-apply-candidate` exactly once.
+6. Do not stack another blocker until the resulting exact-head four-gate validation fully settles.
+7. Only after all four gates are GREEN and GAP-007 otherwise holds: delete `.github/gap007-sync-trigger` and require final cleanup-head same-head four-gate validation before merge/Issue close/Phase 3 closure.
