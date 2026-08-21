@@ -111,13 +111,18 @@ jobs:
           fi
 
           # Keep the guarded apply path identical to the fresh Security evidence for
-          # ws: only after direct ws update is a no-op may npm refresh the two existing
-          # declared parent chains that own the vulnerable nested ws copies.
+          # ws. First try the two declared Socket.IO parents. If that is still a no-op,
+          # refresh only the two nested parents that own the vulnerable ws copies.
           if cmp -s package-lock.before.json package-lock.json && [ "$first" = 'ws' ]; then
             if node -e "const p=require('./package.json'); process.exit(p.dependencies?.['socket.io-client'] && p.dependencies?.['@socket.io/redis-adapter'] ? 0 : 1)"; then
               remediation_target='socket.io-client + @socket.io/redis-adapter'
               npm update socket.io-client @socket.io/redis-adapter --package-lock-only --ignore-scripts
             fi
+          fi
+
+          if cmp -s package-lock.before.json package-lock.json && [ "$first" = 'ws' ]; then
+            remediation_target='engine.io-client + socket.io-adapter'
+            npm update engine.io-client socket.io-adapter --package-lock-only --ignore-scripts
           fi
 
           FIRST="$first" REMEDIATION_TARGET="$remediation_target" DIRECT="$direct" FIX_VERSION="$fix_version" node <<'NODE'
@@ -150,8 +155,11 @@ jobs:
           if (target === 'react-router' && remediationTarget !== 'react-router-dom') {
             throw new Error('react-router no-op fallback did not resolve through react-router-dom');
           }
-          if (target === 'ws' && remediationTarget !== 'socket.io-client + @socket.io/redis-adapter') {
-            throw new Error('ws no-op fallback did not resolve through the evidence-backed socket.io parent chains');
+          if (target === 'ws' && ![
+            'socket.io-client + @socket.io/redis-adapter',
+            'engine.io-client + socket.io-adapter',
+          ].includes(remediationTarget)) {
+            throw new Error('ws no-op fallback did not resolve through an evidence-backed Socket.IO parent chain');
           }
 
           const beforeLock = fs.readFileSync('package-lock.before.json', 'utf8');
