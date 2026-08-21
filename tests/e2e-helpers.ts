@@ -45,7 +45,7 @@ export async function createAuthenticatedApiContext(
   password: string,
   baseURL?: string
 ): Promise<APIRequestContext> {
-  const authContext = await request.newContext({ baseURL: baseURL || process.env.BASE_URL });
+  const authContext = await request.newContext({ baseURL: baseURL || getBaseURL() });
   const resp = await authContext.post('/api/auth/login', {
     data: { email, password },
   });
