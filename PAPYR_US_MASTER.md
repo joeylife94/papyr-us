@@ -4,7 +4,7 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.75"
+version: "0.76"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
 current_phase: "Phase 4 — Proof Packaging (active)"
 priority: "P1"
@@ -15,7 +15,7 @@ baseline_main_sha: "00b67207029f269f5b4857caf4705fc43a7d2462"
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.75**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.76**  
 > Current repository / Issue / PR / workflow evidence overrides historical checkpoints.
 
 ## 0. Authority / Scope
@@ -49,48 +49,50 @@ baseline_main_sha: "00b67207029f269f5b4857caf4705fc43a7d2462"
 > **Issue:** #61 — OPEN  
 > **Branch:** `docs/issue-61-gap006-proof-packaging`  
 > **PR:** #62 — DRAFT / OPEN / UNMERGED  
-> **Current exact candidate:** `3fcba5fe1987449d14fba045ffa50e0cd3147f9e`
+> **Current exact candidate:** `33f3975d2c2b5898f33dfe8e36a1e72556b70af8`
 
 ### Changed
 
-- Reconciled exact head `880f97da030e1f038d9f2e8ec8bbeb2a4831a6a6` to settled results: Proof Package failed; Security / CI / 7-Layer / Firebat all passed.
-- The proof reached the accepted team-pages route. Failure was Playwright strict-mode ambiguity because `<team> 팀 문서` matched page `h1`, section `h2`, and potentially empty-state `h3`.
-- Inspected accepted `Home` DOM and selected the unique page-level semantic heading rather than changing product UI.
-- Updated only `tests/proof-v1.spec.ts`: team-pages assertion now uses `getByRole('heading', { name, level: 1, exact: true })`.
+- Reconciled previous candidate `3fcba5fe1987449d14fba045ffa50e0cd3147f9e` to settled conclusions: Proof Package failed; Security / CI / 7-Layer / Firebat all passed.
+- Inspected current Proof Package run `32528465975`; the first executed failure is not the previous team-pages heading ambiguity.
+- Current failure occurs after entering team-scoped page creation: proof waits for `textarea`, but no paragraph block exists.
+- Root cause: the empty BlockEditor exposes the paragraph-add control with accessible name `단락`; the proof harness searched `/paragraph/i`, so it never clicked the control and never created the paragraph textarea.
+- Updated only `tests/proof-v1.spec.ts` to require and click the current `단락` control explicitly before filling the textarea.
 - No production UI, auth/team/page semantics, dependency, schema, search, AI, public deployment, Phase 5, or PR #19 work changed.
 
 ### Actually Executed
 
 - Read this root MASTER on `main` first.
 - Re-fetched Issue #61: OPEN with unchanged bounded acceptance criteria.
-- Re-fetched PR #62 and confirmed head `880f97da...`, DRAFT / OPEN / UNMERGED before the correction.
-- Re-fetched exact-head workflows for `880f97da...` and confirmed settled conclusions.
-- Inspected `tests/proof-v1.spec.ts`, accepted GJ-01 selector usage, and `client/src/pages/home.tsx` heading structure.
+- Re-fetched PR #62 and confirmed previous exact head `3fcba5fe...`, DRAFT / OPEN / UNMERGED.
+- Re-fetched exact-head workflows for `3fcba5fe...` and confirmed settled results.
+- Inspected Proof Package job `96915480877` and full logs for run `32528465975`.
+- Verified the concrete failure at `tests/proof-v1.spec.ts:100`: `locator('textarea').first()` timed out because no textarea existed.
+- Inspected current `BlockEditor` and `ParagraphBlock` contracts: empty editor paragraph button is named `단락`; `ParagraphBlock` renders a textarea after block creation.
 - Updated only `tests/proof-v1.spec.ts` on the existing Issue #61 branch.
-- PR #62 advanced to exact head `3fcba5fe1987449d14fba045ffa50e0cd3147f9e`.
-- Re-fetched current-head workflow runs and confirmed a fresh same-head five-gate cycle is actually executing.
+- PR #62 advanced to exact head `33f3975d2c2b5898f33dfe8e36a1e72556b70af8`.
+- Re-fetched current-head workflow runs immediately after the commit; no PR workflow run was yet observable, so no execution result is inferred.
 
 ### Checks / Evidence
 
-Settled exact head `880f97da030e1f038d9f2e8ec8bbeb2a4831a6a6`:
-- v1.0 Proof Package `32523753661` — **FAILURE**.
-  - Concrete failure: strict-mode ambiguity at the team-pages heading assertion after successful route entry.
-- Dependency Security Reachability `32523753600` — **SUCCESS**.
-- CI `32523753636` — **SUCCESS**.
-- 7-Layer Test Architecture `32523753710` — **SUCCESS**.
-- Firebat Deployment Gate `32523753641` — **SUCCESS**.
+Settled exact head `3fcba5fe1987449d14fba045ffa50e0cd3147f9e`:
+- v1.0 Proof Package `32528465975` — **FAILURE**.
+  - First concrete failure: `locator('textarea').first()` timed out at `tests/proof-v1.spec.ts:100`.
+  - The run had already passed checkout, dependency install, Chromium install, DB schema sync, authentication/team setup, team-pages route, and previous level-1 heading assertion.
+  - `Verify and checksum proof assets` and artifact upload were skipped because proof generation failed.
+- Dependency Security Reachability `32528465767` — **SUCCESS**.
+- CI `32528465772` — **SUCCESS**.
+- 7-Layer Test Architecture `32528465773` — **SUCCESS**.
+- Firebat Deployment Gate `32528465796` — **SUCCESS**.
 
-Current exact head `3fcba5fe1987449d14fba045ffa50e0cd3147f9e`:
-- v1.0 Proof Package `32528465975` — **IN PROGRESS**.
-- Dependency Security Reachability `32528465767` — **IN PROGRESS**.
-- CI `32528465772` — **IN PROGRESS**.
-- 7-Layer Test Architecture `32528465773` — **IN PROGRESS**.
-- Firebat Deployment Gate `32528465796` — **IN PROGRESS**.
-- No PASS is inferred before completion.
+Current exact head `33f3975d2c2b5898f33dfe8e36a1e72556b70af8`:
+- Fresh five-gate cycle — **NOT YET OBSERVED at reconciliation time**.
+- No PASS is inferred before actual execution and settlement.
 
 ### Not Verified / Remaining Risks
 
-- The locator correction is not accepted until all five workflows settle GREEN on `3fcba5fe...`.
+- The `단락` control correction is not accepted until a fresh same-head Proof Package run executes successfully.
+- All five relevant gates must execute and settle on the same current head before acceptance.
 - Fresh proof screenshots are not yet accepted or inspected.
 - Required artifact contents remain unverified: `01-team-pages.png`, `02-created-page.png`, `SHA256SUMS`, `PROVENANCE.txt`, synthetic-only content, no secrets/PII.
 - Final PR review submissions, unresolved review threads, and bounded final diff remain acceptance checks.
@@ -102,12 +104,12 @@ Current exact head `3fcba5fe1987449d14fba045ffa50e0cd3147f9e`:
 - Accepted product baseline: `00b67207029f269f5b4857caf4705fc43a7d2462`.
 - Issue #61: OPEN / ACTIVE.
 - PR #62: DRAFT / OPEN / UNMERGED.
-- Current candidate: `3fcba5fe1987449d14fba045ffa50e0cd3147f9e`.
+- Current candidate: `33f3975d2c2b5898f33dfe8e36a1e72556b70af8`.
 - Phase 4: ACTIVE.
 
 ### Exact Next Action
 
-1. Re-fetch PR #62/current head and require v1.0 Proof Package + Security + CI + 7-Layer + Firebat to settle on the same current head.
+1. Re-fetch PR #62/current head and require a fresh v1.0 Proof Package + Security + CI + 7-Layer + Firebat cycle on the same current head.
 2. Any RED/CANCELLED/TIMED_OUT/ACTION_REQUIRED gate: inspect the first concrete Issue #61 failure and make only the smallest same-Issue correction.
 3. If all five are GREEN, download and inspect the fresh proof artifact; require `01-team-pages.png`, `02-created-page.png`, `SHA256SUMS`, `PROVENANCE.txt`, synthetic-only content, and no secrets/PII.
 4. Re-fetch PR reviews/threads and verify the final diff remains bounded.
