@@ -4,7 +4,7 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.68"
+version: "0.69"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
 current_phase: "Phase 4 — Proof Packaging (active)"
 priority: "P1"
@@ -15,7 +15,7 @@ baseline_main_sha: "00b67207029f269f5b4857caf4705fc43a7d2462"
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.68**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.69**  
 > Current repository / Issue / PR / workflow evidence overrides historical checkpoints.
 
 ## 0. Authority / Scope
@@ -73,7 +73,9 @@ Accepted only after production `npm audit --omit=dev` blockers reached zero, pru
 - Read `playwright.layer5.config.ts` and confirmed `testDir: tests/layer5`.
 - Read root `playwright.config.ts` and confirmed `testDir: ./tests`, Chromium project, root webServer, and auth-write test environment are appropriate for `tests/proof-v1.spec.ts`.
 - Updated only `.github/workflows/v1-proof.yml` on the existing Issue #61 branch.
-- New PR #62 exact head is `6355c6a110719be2930239db87588283ddf35c8b`.
+- Re-fetched PR #62 after the fix; current exact head is `6355c6a110719be2930239db87588283ddf35c8b`.
+- Re-fetched current exact-head workflows and confirmed all five required/relevant runs are now executing.
+- Inspected proof run `32502921747`; checkout/setup began successfully and the job is currently executing the exact dependency install before browser/schema/proof steps.
 
 ### Checks / Evidence
 
@@ -85,12 +87,16 @@ Settled prior exact head `a885098220aac922edcc4d1f55cf442cb22ed2cd`:
 - Firebat Deployment Gate `32498098999` — **SUCCESS**.
 
 Current exact head `6355c6a110719be2930239db87588283ddf35c8b`:
-- Fresh required/relevant runs had not yet appeared when this ledger entry was written.
+- v1.0 Proof Package `32502921747` — **IN PROGRESS**.
+- Dependency Security Reachability `32502921547` — **IN PROGRESS**.
+- CI `32502921475` — **IN PROGRESS**.
+- 7-Layer Test Architecture `32502921349` — **IN PROGRESS**.
+- Firebat Deployment Gate `32502921644` — **IN PROGRESS**.
 - PR #62 remains DRAFT / OPEN / UNMERGED.
 
 ### Not Verified / Remaining Risks
 
-- The workflow correction is not accepted until the current exact head executes the proof workflow successfully.
+- The workflow correction is not accepted until all five current exact-head runs settle and the proof workflow succeeds.
 - Fresh proof screenshots have not yet been generated and inspected.
 - Required artifact contents are still unverified: both PNGs, SHA256SUMS, PROVENANCE.txt, synthetic-only data, and no secrets/PII.
 - PR #62 review submissions and unresolved threads have not yet been used as final acceptance evidence.
@@ -110,7 +116,7 @@ Current exact head `6355c6a110719be2930239db87588283ddf35c8b`:
 ### Exact Next Action
 
 1. Re-fetch PR #62 and ensure current head is still `6355c6a110719be2930239db87588283ddf35c8b` or reconcile to any newer repository state.
-2. Require v1.0 Proof Package + CI + 7-Layer + Firebat + Dependency Security Reachability to execute and settle on the same current head.
+2. Wait for v1.0 Proof Package + CI + 7-Layer + Firebat + Dependency Security Reachability to settle on that same current head.
 3. If any gate is RED, inspect the first concrete GAP-006/proof reproducibility failure and make only the smallest Issue #61-scoped correction.
 4. If the proof workflow is GREEN, fetch its artifact and inspect both PNGs plus `SHA256SUMS` and `PROVENANCE.txt`; require synthetic-only content and no secrets/PII.
 5. Re-fetch review submissions and unresolved review threads.
