@@ -152,10 +152,6 @@ jobs:
             fi
             set -e
 
-            # react-router is controlled by the direct react-router-dom parent in this tree.
-            # If updating the transitive blocker itself is a no-op, let npm advance only
-            # that direct parent within its already-declared ^7.x range. This preserves
-            # package-manager-generated lock metadata and stays within the current blocker.
             if [ "$candidate_exit" -eq 0 ] && cmp -s package-lock.original.json package-lock.json && [ "$first" = 'react-router' ]; then
               if node -e "const p=require('./package.json'); process.exit(p.dependencies?.['react-router-dom'] ? 0 : 1)"; then
                 remediation_target='react-router-dom'
@@ -167,11 +163,6 @@ jobs:
               fi
             fi
 
-            # The remaining ws blocker is nested under two direct Socket.IO parents.
-            # A direct `npm update ws` is a no-op because those parents own the nested
-            # resolutions. If that exact no-op occurs, let npm refresh only the two
-            # direct parent chains already present in package.json; this remains bounded
-            # to the current ws blocker and preserves package-manager-generated lock data.
             if [ "$candidate_exit" -eq 0 ] && cmp -s package-lock.original.json package-lock.json && [ "$first" = 'ws' ]; then
               if node -e "const p=require('./package.json'); process.exit(p.dependencies?.['socket.io-client'] && p.dependencies?.['@socket.io/redis-adapter'] ? 0 : 1)"; then
                 remediation_target='socket.io-client + @socket.io/redis-adapter'
@@ -181,6 +172,20 @@ jobs:
                 candidate_exit=$?
                 set -e
               fi
+            fi
+
+            # After the direct Socket.IO parents have reached their current declared-range
+            # versions, ws can still remain nested under engine.io-client/socket.io-adapter.
+            # If the parent refresh is also a no-op, let npm refresh only those two
+            # transitive parents within the ranges already declared by socket.io-client
+            # and @socket.io/redis-adapter. This remains bounded to the same ws blocker.
+            if [ "$candidate_exit" -eq 0 ] && cmp -s package-lock.original.json package-lock.json && [ "$first" = 'ws' ]; then
+              remediation_target='engine.io-client + socket.io-adapter'
+              generator='npm update engine.io-client socket.io-adapter --package-lock-only --ignore-scripts (nested-parent fix for ws)'
+              set +e
+              npm update engine.io-client socket.io-adapter --package-lock-only --ignore-scripts
+              candidate_exit=$?
+              set -e
             fi
           fi
 
