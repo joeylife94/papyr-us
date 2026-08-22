@@ -99,16 +99,20 @@ test.describe('v1.0 fresh proof package', () => {
     await expect(textarea).toBeVisible({ timeout: 10000 });
     await textarea.fill('Synthetic proof content for the accepted Papyr.us v1.0 browser path.');
 
-    // Observe the actual create response first. Filtering on status here hides a real 4xx/5xx
-    // behind a 120s wait timeout and prevents Issue #61 from recording the concrete failure.
+    // Observe the actual create response first. If the endpoint rejects the fixture, preserve the
+    // response body in the assertion so the next correction is driven by current executed evidence.
     const createResponsePromise = page.waitForResponse(
       (response) =>
         response.url().includes('/api/pages') && response.request().method() === 'POST'
     );
     await page.getByRole('button', { name: 'Create Page' }).click();
     const createResponse = await createResponsePromise;
-    expect(createResponse.status()).toBe(201);
-    const createdPage = await createResponse.json();
+    const createResponseBody = await createResponse.text();
+    expect(
+      createResponse.status(),
+      `POST /api/pages returned ${createResponse.status()}: ${createResponseBody}`
+    ).toBe(201);
+    const createdPage = JSON.parse(createResponseBody);
 
     expect(String(createdPage.teamId)).toBe(String(team.id));
     await expect(page).toHaveURL(`/page/${createdPage.slug}`, { timeout: 15000 });
