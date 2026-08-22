@@ -62,6 +62,7 @@ baseline_main_sha: "00b67207029f269f5b4857caf4705fc43a7d2462"
 - Verified HTTP status was 400 on both attempts; no old wait-timeout diagnosis was reused.
 - Updated only `tests/proof-v1.spec.ts` on the existing Issue #61 branch to expose response-body diagnostics.
 - PR #62 advanced to exact head `81d73b2ebcb8e08beaadc753210866b96a50feae`.
+- Re-fetched the fresh exact-head workflow cycle for that SHA.
 
 ### Checks / Evidence
 Settled exact head `5762fb2ee06d41fa4ad1ffe1d823f5da187b1fd9`:
@@ -75,11 +76,16 @@ Settled exact head `5762fb2ee06d41fa4ad1ffe1d823f5da187b1fd9`:
 - Firebat Deployment Gate `32536970354` — **SUCCESS**.
 
 Current exact head `81d73b2ebcb8e08beaadc753210866b96a50feae`:
-- New workflow cycle has not yet been accepted; no PASS is inferred until exact-head runs are observed and settled.
+- v1.0 Proof Package `32540308363` — **IN PROGRESS**.
+- Dependency Security Reachability `32540308346` — **IN PROGRESS**.
+- CI `32540308349` — **IN PROGRESS**.
+- 7-Layer Test Architecture `32540308370` — **IN PROGRESS**.
+- Firebat Deployment Gate `32540308338` — **IN PROGRESS**.
+- No PASS is inferred before completion.
 
 ### Not Verified / Remaining Risks
 - The HTTP 400 response body is not yet known from executed evidence; the current harness change exists specifically to expose it.
-- The new exact-head diagnostic correction is not accepted until a fresh exact-head cycle executes.
+- The new exact-head diagnostic correction is not accepted until the current five-gate cycle settles.
 - Fresh proof screenshots remain unaccepted/uninspected.
 - Required artifact contents remain unverified: `01-team-pages.png`, `02-created-page.png`, `SHA256SUMS`, `PROVENANCE.txt`, synthetic-only content, no secrets/PII.
 - Final PR reviews/threads, mergeability after main ledger divergence, and bounded final diff remain acceptance checks.
@@ -93,7 +99,7 @@ Current exact head `81d73b2ebcb8e08beaadc753210866b96a50feae`:
 - Phase 4: ACTIVE.
 
 ### Exact Next Action
-1. Re-fetch PR #62 and require a new exact-head five-gate cycle for `81d73b2e...`.
+1. Require all five workflows for `81d73b2e...` to settle on that same exact head.
 2. If Proof Package is RED, inspect the newly exposed `POST /api/pages` response body and make only the smallest Issue #61 proof-fixture/harness correction justified by that current evidence.
 3. Any other RED/CANCELLED/TIMED_OUT/ACTION_REQUIRED gate: inspect first concrete current evidence; do not merge.
 4. If all five are GREEN, inspect the fresh artifact and require `01-team-pages.png`, `02-created-page.png`, `SHA256SUMS`, `PROVENANCE.txt`, synthetic-only content, and no secrets/PII.
