@@ -4,7 +4,7 @@ import { expect, request, type APIRequestContext, type Page } from '@playwright/
  * Shared E2E test helpers for authentication.
  */
 
-const DEFAULT_PASSWORD = 'password123';
+const DEFAULT_PASSWORD = 'Password123!';
 
 function getBaseURL(requestContext?: APIRequestContext): string {
   return (
@@ -45,7 +45,7 @@ export async function createAuthenticatedApiContext(
   password: string,
   baseURL?: string
 ): Promise<APIRequestContext> {
-  const authContext = await request.newContext({ baseURL: baseURL || process.env.BASE_URL });
+  const authContext = await request.newContext({ baseURL: baseURL || getBaseURL() });
   const resp = await authContext.post('/api/auth/login', {
     data: { email, password },
   });
