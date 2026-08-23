@@ -4,92 +4,118 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.83"
+version: "0.84"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
-current_phase: "v1.0 Proof Candidate — Human Review"
+current_phase: "v1.0 Proof — FREEZE"
 priority: "P1"
-last_updated: "2026-08-22"
+last_updated: "2026-08-23"
 repository: "joeylife94/papyr-us"
 accepted_product_main_sha: "3b91e18f477e8187c4aa8c21708b6f8cf7b2f2d4"
+accepted_proof_main_sha: "1cb04799a8a1924f7697d12d64f0999dcd591fcc"
 ---
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.83**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.84**  
 > Current repository / executable evidence overrides historical checkpoints.  
-> Product implementation, security closure, Golden Journeys, and Phase 4 Proof Packaging are complete. Final v1.0 acceptance is now a Human Review gate.
+> Product implementation, security closure, Golden Journeys, Phase 4 Proof Packaging, buyer-facing claim reconciliation, and final Human Review are complete for the bounded v1.0 Proof target.
 
 ## 0. Current State
 
-**Overall:** `IMPLEMENTATION / PROOF CANDIDATE READY — HUMAN REVIEW REQUIRED`
+**Overall:** `PAPYR.US PROOF v1.0 CLOSED / FREEZE — HUMAN REVIEW PASSED`
 
 - GJ-01..GJ-08 — **CLOSED**.
 - GAP-001..008 — **CLOSED**.
 - Phase 0–4 — **CLOSED**.
-- Phase 5 / GAP-009..012 — **DEFER pending Human Review**. Do not start automatically.
+- Human Review truthfulness gap — **CLOSED** through Issue #63 / PR #64.
+- Phase 5 / GAP-009..012 — **DEFERRED**. Do not start without a new concrete Sales/Proof Requirement.
 - GAP-013..015 and other v1.1 expansion — **DEFERRED**.
 - Public production deployment — **NOT REQUIRED / NOT CLAIMED**.
+- Automatic v1.0 development — **FREEZE**.
 
-Closure rule: do not create another Issue merely because Phase 5 labels exist. Human Review must first decide whether any remaining gap is actually required for the stated v1.0 Proof target. If current evidence is sufficient, prefer `FREEZE`.
+Reopen rule: only a new paid-delivery requirement, required Proof gap, buyer objection, or explicit product decision may reopen bounded work. Do not revive deferred Phase 5 merely because it exists in historical planning.
 
 ## 1. Accepted Product / Proof Baseline
 
-Accepted main merge:
-
-`3b91e18f477e8187c4aa8c21708b6f8cf7b2f2d4`
-
-This is PR #62 squash merge and includes the final bounded GAP-006 proof package plus the concrete page-team numeric-ID compatibility correction exposed by executed browser proof.
-
-### Work-item closure
+### Product / Phase 4 acceptance
 
 - Issue #61 — `GAP-006: package v1.0 proof evidence` — **CLOSED / COMPLETED**.
 - PR #62 — `docs: package current v1.0 proof evidence` — **MERGED**.
-- Final PR head before merge: `37cef9e3ab8ec1085815b338235f240461f22499`.
-- Merge SHA: `3b91e18f477e8187c4aa8c21708b6f8cf7b2f2d4`.
+- Final PR #62 head: `37cef9e3ab8ec1085815b338235f240461f22499`.
+- Product / Phase 4 merge SHA: `3b91e18f477e8187c4aa8c21708b6f8cf7b2f2d4`.
 
-## 2. Final GAP-006 Acceptance Evidence
+PR #62 includes the final bounded GAP-006 proof package and the concrete page-team numeric-ID compatibility correction exposed by executed browser proof.
 
-All required workflows completed GREEN on the same final PR head `37cef9e3ab8ec1085815b338235f240461f22499`:
+### Human Review claim-reconciliation acceptance
 
-- `v1.0 Proof Package` run `32543737366` — **SUCCESS**.
-- `Dependency Security Reachability` run `32543737396` — **SUCCESS**.
-- `CI` run `32543737424` — **SUCCESS**.
-- `7-Layer Test Architecture` run `32543737388` — **SUCCESS**.
+Human Review found one buyer-facing truthfulness gap: the public README / Proof Index contained stale or broader claims than the accepted evidence boundary.
+
+That gap was closed through:
+
+- Issue #63 — `Proof review: reconcile buyer-facing docs to accepted v1.0 evidence boundary` — **CLOSED / COMPLETED**;
+- PR #64 — `docs: reconcile buyer-facing v1.0 proof claims` — **MERGED**;
+- final PR #64 head: `fac8af654772080fa20212d460f3df0b5f8d4b50`;
+- docs-only merge SHA: `1cb04799a8a1924f7697d12d64f0999dcd591fcc`.
+
+PR #64 changed only `README.md` and `docs/proof/V1_PROOF_INDEX.md` and removed/downgraded unsupported production-ready, enterprise, SSO/OIDC, monitoring/backup, microservices-ready, vector-RAG, broad AI-autonomy, and feature-completeness claims.
+
+## 2. Final Phase 4 Acceptance Evidence
+
+All required workflows completed GREEN on the same accepted PR #62 head `37cef9e3ab8ec1085815b338235f240461f22499`:
+
+- `v1.0 Proof Package` run `32543737366` — **SUCCESS**;
+- `Dependency Security Reachability` run `32543737396` — **SUCCESS**;
+- `CI` run `32543737424` — **SUCCESS**;
+- `7-Layer Test Architecture` run `32543737388` — **SUCCESS**;
 - `Firebat Deployment Gate` run `32543737372` — **SUCCESS**.
 
 7-Layer evidence included successful Static, Unit, Domain Invariant, Contract, Integration, E2E, Sequential Smoke, and Visual/A11y execution; Layer 6 Visual/A11y executed **8 passed** on the final candidate cycle.
 
 ### Proof artifact
 
-Workflow artifact:
+Accepted artifact:
 
-- artifact id: `9467845872`
-- artifact name: `v1-proof-37cef9e3ab8ec1085815b338235f240461f22499`
-- artifact digest: `sha256:2925608d940eedcd7119365880dcfb9d9a4fc95e4750bfbcf0817510eb002147`
+- artifact id: `9467845872`;
+- artifact name: `v1-proof-37cef9e3ab8ec1085815b338235f240461f22499`;
+- digest: `sha256:2925608d940eedcd7119365880dcfb9d9a4fc95e4750bfbcf0817510eb002147`.
 
 Required inventory independently inspected:
 
-- `01-team-pages.png`
-- `02-created-page.png`
-- `SHA256SUMS`
-- `PROVENANCE.txt`
+- `01-team-pages.png`;
+- `02-created-page.png`;
+- `SHA256SUMS`;
+- `PROVENANCE.txt`.
 
-Verification:
+Verified:
 
 - both PNGs are non-empty and their actual SHA256 values match `SHA256SUMS`;
 - screenshots visibly use synthetic `proof-team-<timestamp>` / `Papyr v1 Proof <timestamp>` data;
 - no customer data, credentials, tokens, real email addresses, or visible PII were found in the inspected proof screens;
-- provenance records:
-  - `candidate_head=37cef9e3ab8ec1085815b338235f240461f22499`
-  - `workflow_sha=df50dcd953239941f914edc1b103f9f0d1169dbc`
-  - `base_sha=1d508e17b7105651da829f84067ee1b6bb09a14a`
-  - `data_class=synthetic-only`.
+- provenance records the accepted PR head and `data_class=synthetic-only`.
 
-The proof workflow was corrected before acceptance so `candidate_head` refers to the real PR head rather than GitHub's pull-request merge SHA.
+## 3. Human Review / PR #64 Acceptance Evidence
 
-## 3. Proof-Exposed Product Correction
+Final buyer-facing reconciliation head: `fac8af654772080fa20212d460f3df0b5f8d4b50`.
 
-The first successful closure attempt was blocked by executed evidence:
+All repository workflows triggered for that exact head completed GREEN:
+
+- `7-Layer Test Architecture` run `32544267899` — **SUCCESS**;
+- `v1.0 Proof Package` run `32544267886` — **SUCCESS**;
+- `Dependency Security Reachability` run `32544267873` — **SUCCESS**;
+- `CI` run `32544267894` — **SUCCESS**;
+- `Firebat Deployment Gate` run `32544267889` — **SUCCESS**.
+
+Additional acceptance checks:
+
+- PR #64 was mergeable at acceptance;
+- no PR conversation comments / unresolved threads were present;
+- Issue #63 acceptance criteria were documentation-only and satisfied;
+- PR #64 was squash-merged with expected-head guard;
+- Issue #63 auto-closed as completed.
+
+## 4. Proof-Exposed Product Correction
+
+Executed proof previously exposed:
 
 `POST /api/pages` → HTTP `400` → Zod `teamId`: expected `number`, received `string`.
 
@@ -100,15 +126,15 @@ Root cause:
 
 Accepted bounded fix:
 
-- `resolvePageTeamId` now returns the accessible authoritative numeric ID (`number | ''`) and fails closed for unresolved/invalid IDs;
-- the existing unit contract now verifies numeric normalization;
+- `resolvePageTeamId` returns the accessible authoritative numeric ID (`number | ''`) and fails closed for unresolved/invalid IDs;
+- the unit contract verifies numeric normalization;
 - no authorization weakening, schema redesign, dependency change, search/AI expansion, or public-deployment work was introduced.
 
-The final five-gate GREEN cycle is the acceptance evidence for this correction.
+The final five-gate GREEN Phase 4 cycle is the acceptance evidence for this correction.
 
-## 4. Existing v1.0 Proof Boundary
+## 5. Frozen v1.0 Proof Boundary
 
-The current Proof candidate may rely on the already accepted repository evidence for:
+The frozen Proof may rely on accepted repository evidence for:
 
 - GJ-01 Authentication + Team Entry;
 - GJ-02 Document Lifecycle;
@@ -120,11 +146,11 @@ The current Proof candidate may rely on the already accepted repository evidence
 - GJ-08 Operational Recovery;
 - Phase 3 dependency-security closure;
 - CI / 7-Layer / Firebat operational verification;
-- current Phase 4 fresh synthetic browser proof package.
+- Phase 4 fresh synthetic browser proof package.
 
 `docs/proof/V1_PROOF_INDEX.md` is the buyer/reviewer-oriented evidence map. This MASTER remains the authoritative project-state ledger.
 
-## 5. Truthful Claim Boundary
+## 6. Truthful Claim Boundary
 
 Approved current technical claim boundary includes:
 
@@ -145,48 +171,57 @@ Do **not** claim unless separately verified:
 - embeddings / pgvector / hybrid-vector retrieval as current secure-search behavior;
 - generated citation/RAG production guarantees;
 - broad AI-agent autonomy;
+- production-ready SSO/OIDC, monitoring, S3 backup, microservices, or enterprise infrastructure posture;
 - enterprise HA/SLA/compliance posture;
 - Phase 5 or deferred v1.1 capabilities that were not executed and accepted.
 
-## 6. Changed / Executed / Verified / Not Verified
+## 7. Changed / Actually Executed / Verified / Not Verified
 
 ### Changed
-- Closed GAP-006 proof packaging through Issue #61 / PR #62.
-- Added current `docs/proof/V1_PROOF_INDEX.md` and deterministic fresh proof workflow.
+
+- Closed Phase 4 / GAP-006 through Issue #61 / PR #62.
+- Added and accepted the fresh synthetic v1.0 Proof Package.
 - Corrected the proof-exposed numeric team-ID client contract mismatch.
-- Corrected proof provenance to distinguish real PR head, workflow merge SHA, and base SHA.
+- Human Review identified buyer-facing claim drift.
+- Closed that single review gap through Issue #63 / PR #64 with documentation-only reconciliation.
+- Froze v1.0 after final Acceptance Review.
 
 ### Actually Executed
-- Final same-head Security / CI / 7-Layer / Firebat / Proof Package workflows.
+
+- Phase 4 same-head Security / CI / 7-Layer / Firebat / Proof Package workflows.
 - Fresh browser proof generation against PostgreSQL.
-- Independent artifact inventory, checksum, provenance, and visual content inspection.
-- Expected-head guarded squash merge of PR #62.
-- Issue #61 auto-close confirmed as completed.
+- Independent artifact inventory, checksum, provenance, and visual-content inspection.
+- PR #64 exact-head five-workflow GREEN cycle.
+- Review/thread check for PR #64.
+- Expected-head guarded squash merge of PR #64.
+- Issue #63 auto-close confirmed.
 
 ### Verified
-- Phase 4 / GAP-006 acceptance criteria are satisfied.
-- Required final gates are GREEN on the accepted candidate head.
-- Fresh proof assets are synthetic-only under the inspected package and checksum/provenance evidence is internally consistent.
-- PR #62 final diff remained bounded to proof packaging/test support plus the concrete page-team compatibility correction.
-- No unresolved PR conversation comments were present at acceptance.
+
+- GJ-01..GJ-08 and GAP-001..008 are accepted closed within the documented boundary.
+- Phase 4 proof package is valid and synthetic-only under inspected evidence.
+- Buyer-facing README / Proof Index are now bounded to accepted evidence.
+- No additional v1.0 Proof gap is required for the current Wishket/freelance Proof target.
 
 ### Not Verified / Remaining Risks
-- Final buyer-facing v1.0 acceptance has not yet been performed as Human Review.
+
 - No public production deployment is proven or required by the current Proof scope.
 - Deferred Phase 5 / v1.1 work remains unexecuted and must not be represented as complete.
 - Historical assets remain context-only unless tied to accepted current evidence.
+- Frozen Proof claims do not imply enterprise HA/SLA/compliance, production SSO/OIDC, vector-RAG, broad AI autonomy, or production infrastructure guarantees.
 
-## 7. Closure Evaluation
+## 8. Closure Decision
 
-Automated implementation/proof work has reached the target boundary far enough that starting Phase 5 automatically would be scope expansion without a demonstrated Proof requirement.
+Human Review result:
 
-Therefore:
+`PASS — FREEZE APPROVED`
 
-`IMPLEMENTATION / PROOF CANDIDATE READY — HUMAN REVIEW REQUIRED`
+Final repository state for the bounded v1.0 Proof target:
+
+`PAPYR.US PROOF v1.0 CLOSED / FREEZE — HUMAN REVIEW PASSED`
 
 ### Exact Next Action
 
-1. **STOP automatic Papyr.us v1.0 implementation.**
-2. Human Review the current v1.0 Proof candidate using this MASTER, `docs/proof/V1_PROOF_INDEX.md`, the accepted PR #62 evidence, and the fresh synthetic artifact.
-3. If Human Review finds no required buyer-facing acceptance gap → record `PASS / FREEZE` and do not start Phase 5.
-4. If Human Review identifies one concrete required gap → create exactly one bounded Issue with explicit acceptance/evidence requirements; do not revive the entire Phase 5 list by default.
+`FREEZE / no automatic Papyr.us v1.0 implementation.`
+
+Only reopen when a new concrete paid-delivery requirement, required Proof gap, buyer objection, or explicit product-direction decision justifies a bounded new Issue. Do not automatically start Phase 5 or deferred v1.1 work.
