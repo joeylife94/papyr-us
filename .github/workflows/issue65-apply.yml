@@ -2,8 +2,10 @@ name: Issue 65 Apply
 
 on:
   push:
-    branches: [fix/issue-65-team-creator-owner]
-    paths: ['.github/workflows/issue65-apply.yml']
+    branches:
+      - fix/issue-65-team-creator-owner
+    paths:
+      - .github/workflows/issue65-apply.yml
 
 permissions:
   contents: write
@@ -17,71 +19,23 @@ jobs:
           ref: fix/issue-65-team-creator-owner
           fetch-depth: 0
       - name: Apply bounded Issue 65 source patch
+        shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
           storage_path = Path('server/storage.ts')
           storage = storage_path.read_text()
-          old_storage = """  async createTeam(team: InsertTeam): Promise<Team> {
-    if (team.password) {
-      team.password = await bcrypt.hash(team.password, 10);
-    }
-    const result = await this.db.insert(teams).values(team).returning();
-    return result[0];
-  }
-"""
-          new_storage = """  async createTeam(team: InsertTeam): Promise<Team> {
-    const teamValues = { ...team };
-    if (teamValues.password) {
-      teamValues.password = await bcrypt.hash(teamValues.password, 10);
-    }
-    const result = await this.db.insert(teams).values(teamValues).returning();
-    return result[0];
-  }
-
-  async createTeamWithOwner(team: InsertTeam, creatorUserId: number): Promise<Team> {
-    const teamValues = { ...team };
-    if (teamValues.password) {
-      teamValues.password = await bcrypt.hash(teamValues.password, 10);
-    }
-
-    return this.db.transaction(async (tx: any) => {
-      const teamResult = await tx.insert(teams).values(teamValues).returning();
-      const createdTeam = teamResult[0];
-      await tx.insert(teamMembers).values({
-        teamId: createdTeam.id,
-        userId: creatorUserId,
-        role: 'owner',
-        invitedBy: null,
-      });
-      return createdTeam;
-    });
-  }
-"""
+          old_storage = "  async createTeam(team: InsertTeam): Promise<Team> {\n    if (team.password) {\n      team.password = await bcrypt.hash(team.password, 10);\n    }\n    const result = await this.db.insert(teams).values(team).returning();\n    return result[0];\n  }\n"
+          new_storage = "  async createTeam(team: InsertTeam): Promise<Team> {\n    const teamValues = { ...team };\n    if (teamValues.password) {\n      teamValues.password = await bcrypt.hash(teamValues.password, 10);\n    }\n    const result = await this.db.insert(teams).values(teamValues).returning();\n    return result[0];\n  }\n\n  async createTeamWithOwner(team: InsertTeam, creatorUserId: number): Promise<Team> {\n    const teamValues = { ...team };\n    if (teamValues.password) {\n      teamValues.password = await bcrypt.hash(teamValues.password, 10);\n    }\n\n    return this.db.transaction(async (tx: any) => {\n      const teamResult = await tx.insert(teams).values(teamValues).returning();\n      const createdTeam = teamResult[0];\n      await tx.insert(teamMembers).values({\n        teamId: createdTeam.id,\n        userId: creatorUserId,\n        role: 'owner',\n        invitedBy: null,\n      });\n      return createdTeam;\n    });\n  }\n"
           if old_storage not in storage:
               raise SystemExit('expected createTeam block not found')
           storage_path.write_text(storage.replace(old_storage, new_storage, 1))
 
           routes_path = Path('server/routes.ts')
           routes = routes_path.read_text()
-          old_routes = """    app.post('/api/teams', requireAuthIfEnabled, async (req, res) => {
-      try {
-        const validatedData = insertTeamSchema.parse(req.body);
-        const team = await storage.createTeam(validatedData);
-        res.status(201).json(team);
-      } catch (error) {
-"""
-          new_routes = """    app.post('/api/teams', requireAuthIfEnabled, async (req: AuthRequest, res) => {
-      try {
-        const validatedData = insertTeamSchema.parse(req.body);
-        const creatorUserId = req.user?.id;
-        const team = creatorUserId
-          ? await storage.createTeamWithOwner(validatedData, creatorUserId)
-          : await storage.createTeam(validatedData);
-        res.status(201).json(team);
-      } catch (error) {
-"""
+          old_routes = "    app.post('/api/teams', requireAuthIfEnabled, async (req, res) => {\n      try {\n        const validatedData = insertTeamSchema.parse(req.body);\n        const team = await storage.createTeam(validatedData);\n        res.status(201).json(team);\n      } catch (error) {\n"
+          new_routes = "    app.post('/api/teams', requireAuthIfEnabled, async (req: AuthRequest, res) => {\n      try {\n        const validatedData = insertTeamSchema.parse(req.body);\n        const creatorUserId = req.user?.id;\n        const team = creatorUserId\n          ? await storage.createTeamWithOwner(validatedData, creatorUserId)\n          : await storage.createTeam(validatedData);\n        res.status(201).json(team);\n      } catch (error) {\n"
           if old_routes not in routes:
               raise SystemExit('expected POST /api/teams block not found')
           routes_path.write_text(routes.replace(old_routes, new_routes, 1))
