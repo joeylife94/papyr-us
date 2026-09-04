@@ -4,11 +4,11 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.84"
+version: "0.85"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
-current_phase: "v1.0 Proof — FREEZE"
+current_phase: "Post-v1.0 Progression — Issue #65 ACTIVE"
 priority: "P1"
-last_updated: "2026-08-23"
+last_updated: "2026-09-04"
 repository: "joeylife94/papyr-us"
 accepted_product_main_sha: "3b91e18f477e8187c4aa8c21708b6f8cf7b2f2d4"
 accepted_proof_main_sha: "1cb04799a8a1924f7697d12d64f0999dcd591fcc"
@@ -16,24 +16,43 @@ accepted_proof_main_sha: "1cb04799a8a1924f7697d12d64f0999dcd591fcc"
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.84**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.85**  
 > Current repository / executable evidence overrides historical checkpoints.  
-> Product implementation, security closure, Golden Journeys, Phase 4 Proof Packaging, buyer-facing claim reconciliation, and final Human Review are complete for the bounded v1.0 Proof target.
+> The accepted v1.0 product/proof baseline remains frozen. Post-v1.0 progression may reopen only one bounded use/show/delivery gap at a time without rewriting prior accepted evidence or claims.
 
 ## 0. Current State
 
-**Overall:** `PAPYR.US PROOF v1.0 CLOSED / FREEZE — HUMAN REVIEW PASSED`
+**Accepted v1.0 baseline:** `PAPYR.US PROOF v1.0 CLOSED / FREEZE — HUMAN REVIEW PASSED`
 
-- GJ-01..GJ-08 — **CLOSED**.
-- GAP-001..008 — **CLOSED**.
+**Current progression lane:** `ACTIVE — Issue #65: team creator owner membership`
+
+- GJ-01..GJ-08 — **CLOSED** for the accepted v1.0 proof boundary.
+- GAP-001..008 — **CLOSED** for the accepted v1.0 proof boundary.
 - Phase 0–4 — **CLOSED**.
 - Human Review truthfulness gap — **CLOSED** through Issue #63 / PR #64.
-- Phase 5 / GAP-009..012 — **DEFERRED**. Do not start without a new concrete Sales/Proof Requirement.
-- GAP-013..015 and other v1.1 expansion — **DEFERRED**.
+- Phase 5 / GAP-009..012 — **DEFERRED**. Do not start automatically.
+- GAP-013..015 and other broad v1.1 expansion — **DEFERRED**.
 - Public production deployment — **NOT REQUIRED / NOT CLAIMED**.
-- Automatic v1.0 development — **FREEZE**.
+- v1.0 Proof baseline and buyer-facing claims — **FROZEN / PRESERVE**.
 
-Reopen rule: only a new paid-delivery requirement, required Proof gap, buyer objection, or explicit product decision may reopen bounded work. Do not revive deferred Phase 5 merely because it exists in historical planning.
+### Current bounded progression work
+
+Progression Review on 2026-09-04 found one concrete first-use/delivery gap in current `main`:
+
+- authenticated `POST /api/teams` creates a team row but does not create the creator's `team_members` membership;
+- authenticated `GET /api/teams` only exposes teams returned by the caller's membership set;
+- team-scoped page/task/calendar and other protected resource paths enforce membership;
+- accepted proof/recovery harnesses have historically needed out-of-band membership seeding to cross this boundary.
+
+This means a fresh user can create a team but is not guaranteed to be authorized to use that same workspace immediately. This is a bounded usability/authorization-consistency correction, not Phase 5 feature expansion.
+
+Active work item:
+
+- Issue #65 — `Progression: make team creator an owner member atomically` — **OPEN / ACTIVE**.
+- Branch — `fix/issue-65-team-creator-owner` — created from main `ebd0025967a3e1366c8db7a2054349ef4098e029`.
+- PR — **NOT YET CREATED**.
+
+Scope remains limited to making an authenticated team creator the initial owner member while preserving all existing membership enforcement and the accepted v1.0 Proof/claim boundary.
 
 ## 1. Accepted Product / Proof Baseline
 
@@ -150,6 +169,8 @@ The frozen Proof may rely on accepted repository evidence for:
 
 `docs/proof/V1_PROOF_INDEX.md` is the buyer/reviewer-oriented evidence map. This MASTER remains the authoritative project-state ledger.
 
+Post-v1.0 progression work does **not** retroactively alter or broaden this accepted Proof boundary unless a later explicit proof reconciliation is executed and accepted.
+
 ## 6. Truthful Claim Boundary
 
 Approved current technical claim boundary includes:
@@ -175,53 +196,49 @@ Do **not** claim unless separately verified:
 - enterprise HA/SLA/compliance posture;
 - Phase 5 or deferred v1.1 capabilities that were not executed and accepted.
 
-## 7. Changed / Actually Executed / Verified / Not Verified
+## 7. Current Progression Ledger
 
 ### Changed
 
-- Closed Phase 4 / GAP-006 through Issue #61 / PR #62.
-- Added and accepted the fresh synthetic v1.0 Proof Package.
-- Corrected the proof-exposed numeric team-ID client contract mismatch.
-- Human Review identified buyer-facing claim drift.
-- Closed that single review gap through Issue #63 / PR #64 with documentation-only reconciliation.
-- Froze v1.0 after final Acceptance Review.
+- Performed a fresh Progression Review against current `main`, Issues, PRs, and repository code.
+- Preserved the accepted v1.0 FREEZE baseline and buyer-facing claim boundary.
+- Opened bounded Issue #65 for the team-creator membership consistency gap.
+- Created branch `fix/issue-65-team-creator-owner` from main `ebd0025967a3e1366c8db7a2054349ef4098e029`.
 
 ### Actually Executed
 
-- Phase 4 same-head Security / CI / 7-Layer / Firebat / Proof Package workflows.
-- Fresh browser proof generation against PostgreSQL.
-- Independent artifact inventory, checksum, provenance, and visual-content inspection.
-- PR #64 exact-head five-workflow GREEN cycle.
-- Review/thread check for PR #64.
-- Expected-head guarded squash merge of PR #64.
-- Issue #63 auto-close confirmed.
+- Read current MASTER v0.84 from `main`.
+- Confirmed there were no open Issues or PRs before selecting work.
+- Inspected current `POST /api/teams`, authenticated `GET /api/teams`, membership enforcement, `team_members` schema, and `storage.addTeamMember` capability.
+- Created Issue #65 and its linked branch.
 
 ### Verified
 
-- GJ-01..GJ-08 and GAP-001..008 are accepted closed within the documented boundary.
-- Phase 4 proof package is valid and synthetic-only under inspected evidence.
-- Buyer-facing README / Proof Index are now bounded to accepted evidence.
-- No additional v1.0 Proof gap is required for the current Wishket/freelance Proof target.
+- Current team creation route creates only the team row and returns 201; it does not add the authenticated creator to `team_members`.
+- Current authenticated team listing is membership-scoped.
+- Team-scoped protected resource paths retain membership authorization checks.
+- `storage.addTeamMember` and the `team_members` relation already exist, so the gap can be addressed by reuse rather than introducing a new RBAC model.
 
 ### Not Verified / Remaining Risks
 
-- No public production deployment is proven or required by the current Proof scope.
-- Deferred Phase 5 / v1.1 work remains unexecuted and must not be represented as complete.
-- Historical assets remain context-only unless tied to accepted current evidence.
-- Frozen Proof claims do not imply enterprise HA/SLA/compliance, production SSO/OIDC, vector-RAG, broad AI autonomy, or production infrastructure guarantees.
+- No implementation has been accepted yet for Issue #65.
+- Atomic team + owner-membership persistence has not yet been executed or proven.
+- No exact-head CI / Security / 7-Layer / Firebat evidence exists yet for Issue #65.
+- Cross-user denial and immediate post-create team-scoped write still require executable acceptance evidence.
+- The accepted v1.0 Proof artifacts remain valid historical acceptance evidence; Issue #65 must not silently rewrite their claims.
 
-## 8. Closure Decision
+## 8. Closure / Progression Decision
 
-Human Review result:
+v1.0 Human Review result remains:
 
 `PASS — FREEZE APPROVED`
 
-Final repository state for the bounded v1.0 Proof target:
+Current product progression result:
 
-`PAPYR.US PROOF v1.0 CLOSED / FREEZE — HUMAN REVIEW PASSED`
+`REOPEN ONE BOUNDED GAP — ISSUE #65 ACTIVE`
+
+This is not Phase 5 activation and not a revocation of the v1.0 freeze. It is a single post-v1.0 use/delivery correction selected under the WIP-cap progression policy.
 
 ### Exact Next Action
 
-`FREEZE / no automatic Papyr.us v1.0 implementation.`
-
-Only reopen when a new concrete paid-delivery requirement, required Proof gap, buyer objection, or explicit product-direction decision justifies a bounded new Issue. Do not automatically start Phase 5 or deferred v1.1 work.
+Implement Issue #65 on `fix/issue-65-team-creator-owner` using existing team-membership primitives, with atomic persistence semantics where supported; add executable evidence for creator owner membership, immediate membership-gated write, and cross-user denial; then open one linked draft PR and require exact-head Security / CI / 7-Layer / Firebat GREEN before acceptance.
