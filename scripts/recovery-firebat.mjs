@@ -107,18 +107,13 @@ async function authedJson(cookie, path, init = {}) {
   });
 }
 
-function establishRecoveryMembership(email, teamId) {
+function assertRecoveryMembership(email, teamId) {
   if (!Number.isInteger(Number(teamId))) fail(`invalid recovery team id: ${teamId}`);
   if (!/^firebat-recovery-[0-9-]+@example\.com$/.test(email)) {
     fail(`invalid recovery actor email: ${email}`);
   }
 
   const sql = `
-    INSERT INTO team_members (team_id, user_id, role, invited_by)
-    SELECT ${Number(teamId)}, id, 'owner', id
-    FROM users
-    WHERE email = '${email}'
-    ON CONFLICT DO NOTHING;
     SELECT COUNT(*)
     FROM team_members tm
     JOIN users u ON u.id = tm.user_id
@@ -133,7 +128,7 @@ function establishRecoveryMembership(email, teamId) {
   );
   const output = result.stdout.toString().trim().split(/\r?\n/).filter(Boolean);
   if (output.at(-1) !== '1') {
-    fail(`authoritative recovery membership was not established: ${output.join(' | ')}`);
+    fail(`team creator owner membership was not created atomically: ${output.join(' | ')}`);
   }
 }
 
@@ -221,10 +216,10 @@ if (teamCreate.response.status !== 201) {
   fail(`team creation failed: ${teamCreate.response.status} ${JSON.stringify(teamCreate.body)}`);
 }
 
-// The current production team-create route persists the team row but does not create
-// team_members. The recovery harness establishes the disposable actor's owner row
-// explicitly in the guarded local Firebat database; the application ACL remains intact.
-establishRecoveryMembership(recoveryEmail, teamCreate.body.id);
+// Issue #65 makes authenticated team creation authoritative for the creator's initial
+// owner membership. The recovery harness now verifies that contract rather than seeding
+// team_members out-of-band, so Firebat recovery exercises the same first-use boundary.
+assertRecoveryMembership(recoveryEmail, teamCreate.body.id);
 
 const pageCreate = await authedJson(cookie, '/api/pages', {
   method: 'POST',
