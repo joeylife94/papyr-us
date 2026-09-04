@@ -187,7 +187,11 @@ No existing authorization check may be weakened to satisfy this contract.
 - Re-read `scripts/recovery-firebat.mjs` at the failing exact head and found the stale behavior: after `POST /api/teams`, the harness still inserted the creator owner membership directly into `team_members` before page creation.
 - Updated only that recovery boundary: the harness now queries/asserts the owner membership created by the application and performs no fixture insert.
 - New PR #66 exact head after this correction: `1ce5f22cb2e1f226534a478b6bec4362b9988137`.
-- At ledger write, new exact-head workflow runs had not yet appeared through the connector, so no PASS is inferred for the new head.
+- Fresh exact-head workflows are now running:
+  - Dependency Security Reachability `33829623061` — **IN PROGRESS**;
+  - CI `33829623012` — **IN PROGRESS**;
+  - 7-Layer Test Architecture `33829623024` — **IN PROGRESS**;
+  - Firebat Deployment Gate `33829623014` — **IN PROGRESS**.
 
 ### Verified
 
@@ -201,7 +205,7 @@ No existing authorization check may be weakened to satisfy this contract.
 
 ### Not Verified / Remaining Risks
 
-- Current head `1ce5f22c…` has not yet completed a fresh Security / CI / 7-Layer / Firebat cycle and is **not merge-eligible**.
+- Current head `1ce5f22c…` has not yet completed its fresh Security / CI / 7-Layer / Firebat cycle and is **not merge-eligible**.
 - The exact stderr from the failed recovery command was not present in the uploaded diagnostic artifact; the correction is justified by the stale out-of-band membership fixture found on the exact failing path, but it still requires fresh executable confirmation.
 - The new Issue #65 E2E is not accepted until the current exact head completes the repository gates successfully.
 - Transaction rollback behavior is structurally provided by Drizzle transaction semantics but has not been separately failure-injection-tested in this iteration.
@@ -222,4 +226,4 @@ This is not Phase 5 activation and not a revocation of v1.0 freeze.
 
 ### Exact Next Action
 
-Re-fetch PR #66 CURRENT head `1ce5f22c…` and its fresh exact-head Security / CI / 7-Layer / Firebat workflows. If Firebat or another gate is RED, inspect only the first concrete current failure and make the smallest Issue #65-scoped correction. If all four are GREEN, inspect executable Issue #65 evidence, PR reviews/unresolved threads, and the final four-file bounded diff; only then mark the draft ready, merge with expected-head guard, confirm Issue #65 closure, update this MASTER on `main` with accepted merge SHA/evidence/limitations, and perform the next Progression Review without automatically starting Phase 5.
+Re-fetch PR #66 CURRENT head `1ce5f22c…` and wait for Security `33829623061`, CI `33829623012`, 7-Layer `33829623024`, and Firebat `33829623014` to settle. If any gate is RED, inspect only the first concrete current failure and make the smallest Issue #65-scoped correction. If all four are GREEN, inspect executable Issue #65 evidence, PR reviews/unresolved threads, and the final four-file bounded diff; only then mark the draft ready, merge with expected-head guard, confirm Issue #65 closure, update this MASTER on `main` with accepted merge SHA/evidence/limitations, and perform the next Progression Review without automatically starting Phase 5.
