@@ -4,7 +4,7 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.86"
+version: "0.87"
 target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
 current_phase: "Post-v1.0 Progression — Issue #65 / PR #66 ACTIVE"
 priority: "P1"
@@ -16,7 +16,7 @@ accepted_proof_main_sha: "1cb04799a8a1924f7697d12d64f0999dcd591fcc"
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.86**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.87**  
 > Current repository / Issue / PR / executable evidence overrides historical checkpoints.  
 > The accepted v1.0 product/proof baseline remains frozen. Post-v1.0 progression may reopen only one bounded use/show/delivery gap at a time and must not rewrite prior accepted evidence or claims.
 
@@ -48,7 +48,7 @@ Active work item:
 - Issue #65 — `Progression: make team creator an owner member atomically` — **OPEN / ACTIVE**.
 - Branch — `fix/issue-65-team-creator-owner`.
 - Draft PR #66 — `fix: make team creator initial owner` — **OPEN / UNMERGED**.
-- Current PR #66 exact head — `985b004a2d5256bac1d4bb0cc3614842bf08e0e8`.
+- Current PR #66 exact head — `1ce5f22cb2e1f226534a478b6bec4362b9988137`.
 
 Scope is limited to creator-owner membership creation and executable acceptance evidence. No Phase 5, RBAC redesign, invitations, SSO, billing, public deployment, proof-claim broadening, schema redesign, search expansion, or AI expansion.
 
@@ -143,15 +143,17 @@ No existing authorization check may be weakened to satisfy this contract.
 
 ### Repository / Issue / PR / SHA State
 
-- `main` retained the accepted v1.0 baseline and authoritative MASTER.
+- `main` retains the accepted v1.0 baseline and authoritative MASTER.
 - Issue #65 — OPEN / ACTIVE.
 - Branch — `fix/issue-65-team-creator-owner`.
 - Draft PR #66 — OPEN / UNMERGED.
-- PR #66 exact head at ledger write — `985b004a2d5256bac1d4bb0cc3614842bf08e0e8`.
-- PR #66 changed files are exactly:
+- Previous PR #66 candidate — `985b004a2d5256bac1d4bb0cc3614842bf08e0e8`.
+- Current PR #66 exact head at ledger write — `1ce5f22cb2e1f226534a478b6bec4362b9988137`.
+- PR #66 changed files are now exactly:
   - `server/routes.ts`;
   - `server/storage.ts`;
-  - `tests/team-creator-owner.spec.ts`.
+  - `tests/team-creator-owner.spec.ts`;
+  - `scripts/recovery-firebat.mjs`.
 
 ### Changed
 
@@ -164,39 +166,45 @@ No existing authorization check may be weakened to satisfy this contract.
 - Preserved the existing `createTeam` fallback for configurations where `requireAuthIfEnabled` permits a request without an authenticated user.
 - Did not change `requireTeamMembership`, `getUserTeamRole`, or other authorization enforcement.
 - Added `tests/team-creator-owner.spec.ts` to exercise Issue #65 acceptance against real PostgreSQL state.
-- Removed the temporary branch-only source-application workflow before opening PR #66; it is not part of the PR diff.
+- After the first exact-head cycle exposed a Firebat recovery failure, updated `scripts/recovery-firebat.mjs` so it no longer seeds the recovery actor's `team_members` row out-of-band. It now asserts that authenticated team creation already produced exactly one owner membership, then continues the existing recovery lifecycle.
+- The recovery change is Issue #65-scoped: it converts a stale fixture workaround into executable verification of the new first-use contract; it does not broaden GJ-08 claims or modify production authorization.
 
 ### Actually Executed
 
-- Re-read CURRENT MASTER v0.85 and current Issue/PR state before implementation.
-- Re-inspected `POST /api/teams`, membership-scoped team listing behavior, existing `team_members` persistence, `getUserTeamIds`, `getUserTeamRole`, and `addTeamMember` primitives.
-- Added the acceptance E2E test on the Issue #65 branch.
-- Applied the bounded source patch through a temporary branch-only GitHub Action because the automation container could not clone GitHub directly.
-- Initial temporary workflow attempt failed before jobs due to workflow YAML formatting; no product verification was inferred from that failure.
-- Repaired the application mechanism; `Issue 65 Apply` run `33825911149` completed **SUCCESS**, producing the source patch.
-- Removed the temporary workflow from the candidate tree.
-- Opened draft PR #66 linked with `Closes #65`.
-- Confirmed PR #66 diff is bounded to the three files listed above.
-- Started exact-head PR verification on `985b004a2d5256bac1d4bb0cc3614842bf08e0e8`:
-  - Dependency Security Reachability run `33826070696` — **QUEUED** at ledger write;
-  - CI run `33826070717` — **QUEUED** at ledger write;
-  - 7-Layer Test Architecture run `33826070690` — **QUEUED** at ledger write;
-  - Firebat Deployment Gate run `33826070713` — **QUEUED** at ledger write.
+- Re-read CURRENT MASTER v0.86 and CURRENT PR #66 before taking action.
+- Re-fetched exact-head workflows for `985b004a2d5256bac1d4bb0cc3614842bf08e0e8`.
+- Settled results on that exact head:
+  - Dependency Security Reachability `33826070696` — **SUCCESS**;
+  - CI `33826070717` — **SUCCESS**;
+  - 7-Layer Test Architecture `33826070690` — **SUCCESS**;
+  - Firebat Deployment Gate `33826070713` — **FAILURE**.
+- Inspected Firebat jobs for run `33826070713`:
+  - `application-validation` — **SUCCESS**;
+  - `firebat-compose` — **FAILURE**;
+  - Firebat compose passed build, schema sync, admin seed, app start, health/login/WebSocket, runtime hardening, persistence marker creation, container recreation, and persistence verification;
+  - the first failed step was `Run bounded operational recovery drill`.
+- Downloaded and inspected the Firebat diagnostics artifact `9920159675`; service/container diagnostics did not show an app/db/redis crash boundary.
+- Re-read `scripts/recovery-firebat.mjs` at the failing exact head and found the stale behavior: after `POST /api/teams`, the harness still inserted the creator owner membership directly into `team_members` before page creation.
+- Updated only that recovery boundary: the harness now queries/asserts the owner membership created by the application and performs no fixture insert.
+- New PR #66 exact head after this correction: `1ce5f22cb2e1f226534a478b6bec4362b9988137`.
+- At ledger write, new exact-head workflow runs had not yet appeared through the connector, so no PASS is inferred for the new head.
 
 ### Verified
 
+- Previous exact head `985b004a…` has GREEN Security, CI, and 7-Layer evidence.
+- Its Firebat failure is narrowed to the operational recovery drill; all earlier Firebat application/deployment/persistence steps passed.
 - CURRENT branch source contains atomic transaction-backed team + owner membership creation.
 - CURRENT team route uses that path for authenticated creators while preserving the previous no-user fallback.
 - Existing authorization enforcement remains intact; no membership check was bypassed or weakened.
-- PR #66 scope is three files only and does not touch README, Proof Index, accepted proof artifacts, Phase 5, schema, search, AI, or public deployment.
-- The temporary application workflow is absent from the PR candidate diff.
+- CURRENT recovery harness no longer creates the owner membership it is supposed to verify.
+- The accepted v1.0 proof package, README/Proof Index claim boundary, Phase 5 deferral, search, AI, schema, and public-deployment posture remain untouched.
 
 ### Not Verified / Remaining Risks
 
-- The new Issue #65 E2E has **not yet been accepted as PASS**; it must run successfully through the repository's exact-head executable gates.
-- Exact-head Security / CI / 7-Layer / Firebat are pending and therefore PR #66 is not merge-eligible yet.
+- Current head `1ce5f22c…` has not yet completed a fresh Security / CI / 7-Layer / Firebat cycle and is **not merge-eligible**.
+- The exact stderr from the failed recovery command was not present in the uploaded diagnostic artifact; the correction is justified by the stale out-of-band membership fixture found on the exact failing path, but it still requires fresh executable confirmation.
+- The new Issue #65 E2E is not accepted until the current exact head completes the repository gates successfully.
 - Transaction rollback behavior is structurally provided by Drizzle transaction semantics but has not been separately failure-injection-tested in this iteration.
-- The creator write / outsider denial acceptance assertions remain unaccepted until executable test completion.
 - No review/thread acceptance has been performed yet.
 - The accepted v1.0 proof package remains historical accepted evidence and is not rewritten by Issue #65.
 
@@ -214,4 +222,4 @@ This is not Phase 5 activation and not a revocation of v1.0 freeze.
 
 ### Exact Next Action
 
-Re-fetch PR #66 CURRENT head and wait for all four exact-head gates to settle. If any gate is RED, inspect the first concrete current failure and make only the smallest Issue #65-scoped correction. If all four are GREEN, inspect the executable Issue #65 evidence, PR reviews/unresolved threads, and final bounded diff; only then mark the draft ready, merge with expected-head guard, confirm Issue #65 closure, update this MASTER on `main` with accepted merge SHA/evidence/limitations, and perform the next Progression Review without automatically starting Phase 5.
+Re-fetch PR #66 CURRENT head `1ce5f22c…` and its fresh exact-head Security / CI / 7-Layer / Firebat workflows. If Firebat or another gate is RED, inspect only the first concrete current failure and make the smallest Issue #65-scoped correction. If all four are GREEN, inspect executable Issue #65 evidence, PR reviews/unresolved threads, and the final four-file bounded diff; only then mark the draft ready, merge with expected-head guard, confirm Issue #65 closure, update this MASTER on `main` with accepted merge SHA/evidence/limitations, and perform the next Progression Review without automatically starting Phase 5.
