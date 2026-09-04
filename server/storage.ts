@@ -577,11 +577,31 @@ export class DBStorage {
   }
 
   async createTeam(team: InsertTeam): Promise<Team> {
-    if (team.password) {
-      team.password = await bcrypt.hash(team.password, 10);
+    const teamValues = { ...team };
+    if (teamValues.password) {
+      teamValues.password = await bcrypt.hash(teamValues.password, 10);
     }
-    const result = await this.db.insert(teams).values(team).returning();
+    const result = await this.db.insert(teams).values(teamValues).returning();
     return result[0];
+  }
+
+  async createTeamWithOwner(team: InsertTeam, creatorUserId: number): Promise<Team> {
+    const teamValues = { ...team };
+    if (teamValues.password) {
+      teamValues.password = await bcrypt.hash(teamValues.password, 10);
+    }
+
+    return this.db.transaction(async (tx: any) => {
+      const teamResult = await tx.insert(teams).values(teamValues).returning();
+      const createdTeam = teamResult[0];
+      await tx.insert(teamMembers).values({
+        teamId: createdTeam.id,
+        userId: creatorUserId,
+        role: 'owner',
+        invitedBy: null,
+      });
+      return createdTeam;
+    });
   }
 
   async updateTeam(id: number, team: UpdateTeam): Promise<Team | undefined> {

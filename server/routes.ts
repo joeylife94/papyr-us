@@ -3148,10 +3148,13 @@ export async function registerRoutes(
       }
     });
 
-    app.post('/api/teams', requireAuthIfEnabled, async (req, res) => {
+    app.post('/api/teams', requireAuthIfEnabled, async (req: AuthRequest, res) => {
       try {
         const validatedData = insertTeamSchema.parse(req.body);
-        const team = await storage.createTeam(validatedData);
+        const creatorUserId = req.user?.id;
+        const team = creatorUserId
+          ? await storage.createTeamWithOwner(validatedData, creatorUserId)
+          : await storage.createTeam(validatedData);
         res.status(201).json(team);
       } catch (error) {
         console.error('Error creating team:', error);
