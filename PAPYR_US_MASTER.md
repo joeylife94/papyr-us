@@ -4,22 +4,22 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.89"
-target: "v1.0 — Small-team Production Ready + Wishket Proof Ready"
-current_phase: "Post-v1.0 Progression — D1 selected; Issue #67 D1-01 ACTIVE"
+version: "0.90"
+target: "v1.0 frozen baseline + bounded post-v1.0 progression"
+current_phase: "Post-v1.0 Progression — D1 selected; Issue #69 D1-02 ACTIVE"
 priority: "P1"
 last_updated: "2026-09-07"
 repository: "joeylife94/papyr-us"
 accepted_product_main_sha: "3b91e18f477e8187c4aa8c21708b6f8cf7b2f2d4"
 accepted_proof_main_sha: "1cb04799a8a1924f7697d12d64f0999dcd591fcc"
-latest_progression_merge_sha: "5da41afd2d24a7c20a07ed0348780e1f548efd86"
+latest_progression_merge_sha: "6ff5b00215501e39ca79b38b8dc22650b2678369"
 ---
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.89**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.90**  
 > Current repository / Issue / PR / executable evidence overrides historical checkpoints.  
-> The accepted v1.0 product/proof baseline remains frozen. Post-v1.0 progression may reopen only one bounded use/show/delivery gap at a time and must not rewrite prior accepted evidence or claims.
+> The accepted v1.0 product/proof baseline remains frozen. Post-v1.0 progression may open only one bounded use/show/delivery gap at a time and must not rewrite prior accepted evidence or claims.
 
 ## 0. Current State
 
@@ -27,174 +27,108 @@ latest_progression_merge_sha: "5da41afd2d24a7c20a07ed0348780e1f548efd86"
 
 **Current progression destination:** `D1 — Self-contained Small-team Workspace Handoff`
 
-**Current bounded milestone:** `Issue #67 — D1-01 ACTIVE: reconcile buyer proof with application-owned team creation`
+**Current bounded milestone:** `Issue #69 — D1-02 ACTIVE: existing-user admission + revocation`
 
-- GJ-01..GJ-08 — **CLOSED** for the accepted v1.0 proof boundary.
-- GAP-001..008 — **CLOSED** for the accepted v1.0 proof boundary.
+- GJ-01..GJ-08 — **CLOSED** for accepted v1.0.
+- GAP-001..008 — **CLOSED** for accepted v1.0.
 - Phase 0–4 — **CLOSED**.
-- Human Review truthfulness gap — **CLOSED** through Issue #63 / PR #64.
-- Issue #65 / PR #66 first-use team-creator progression — **ACCEPTED / MERGED / CLOSED**.
-- D1 — **SELECTED BY HUMAN REVIEW on 2026-09-07**.
-- Issue #67 / D1-01 — **ACTIVE**.
-- Phase 5 / GAP-009..012 — **DEFERRED**. Do not start automatically.
-- GAP-013..015 and broad v1.1 expansion — **DEFERRED**.
+- Issue #63 / PR #64 truthfulness reconciliation — **ACCEPTED / CLOSED**.
+- Issue #65 / PR #66 creator-owner progression — **ACCEPTED / CLOSED**.
+- Issue #67 / PR #68 D1-01 buyer-proof reconciliation — **ACCEPTED / MERGED / CLOSED**.
+- Issue #69 / D1-02 — **ACTIVE**.
+- Phase 5 / GAP-009..012, GAP-013..015, broad v1.1 expansion — **DEFERRED**.
 - Public production deployment — **NOT REQUIRED / NOT CLAIMED**.
 - v1.0 Proof baseline and buyer-facing claims — **FROZEN / PRESERVE**.
 
 ## 1. Frozen v1.0 Product / Proof Baseline
 
-Phase 4 proof acceptance remains anchored to:
+The Phase 4 proof acceptance remains historical frozen evidence:
 
 - Issue #61 — CLOSED / COMPLETED;
 - PR #62 — MERGED;
-- product / Phase 4 merge SHA `3b91e18f477e8187c4aa8c21708b6f8cf7b2f2d4`;
+- Phase 4 product merge SHA `3b91e18f477e8187c4aa8c21708b6f8cf7b2f2d4`;
 - accepted proof artifact `v1-proof-37cef9e3ab8ec1085815b338235f240461f22499`, artifact id `9467845872`, digest `sha256:2925608d940eedcd7119365880dcfb9d9a4fc95e4750bfbcf0817510eb002147`;
 - inspected inventory: `01-team-pages.png`, `02-created-page.png`, `SHA256SUMS`, `PROVENANCE.txt`;
-- artifact accepted as synthetic-only with no visible credentials, customer data, real email addresses, or PII.
+- accepted as synthetic-only with no visible credentials, customer data, real email addresses, or PII.
 
-This historical accepted artifact is frozen evidence. D1-01 may add a newer revalidation artifact, but must not rewrite or retroactively replace the accepted v1.0 evidence record.
+Human-review claim reconciliation remains anchored to Issue #63 / PR #64 / docs-only SHA `1cb04799a8a1924f7697d12d64f0999dcd591fcc`. Unsupported production-ready, enterprise, SSO/OIDC, monitoring/backup, microservices-ready, vector-RAG, broad AI-autonomy, and feature-completeness claims remain excluded.
 
-Human Review claim reconciliation remains anchored to:
+## 2. Accepted Progression
 
-- Issue #63 — CLOSED / COMPLETED;
-- PR #64 — MERGED;
-- docs-only merge SHA `1cb04799a8a1924f7697d12d64f0999dcd591fcc`.
+### Issue #65 / PR #66 — creator is initial owner
 
-PR #64 removed or downgraded unsupported production-ready, enterprise, SSO/OIDC, monitoring/backup, microservices-ready, vector-RAG, broad AI-autonomy, and feature-completeness claims. Post-v1.0 progression does not broaden those claims.
+Authenticated `POST /api/teams` now transactionally creates the team and exactly one creator `owner` membership. Accepted executable evidence covered immediate membership-scoped visibility, owner membership, membership-gated write, outsider denial, Security / CI / 7-Layer / Firebat GREEN, and merge SHA `5da41afd2d24a7c20a07ed0348780e1f548efd86`.
 
-## 2. Frozen Proof / Claim Boundary
+### Issue #67 / PR #68 — D1-01 buyer proof reconciliation
 
-Accepted repository evidence may support authenticated small-team workspace flows, team-scoped page/document lifecycle, tested authorization boundaries, version recovery, team-scoped tasks/calendar, authenticated team-scoped PostgreSQL full-text retrieval with page-level authorization boundaries, bounded optional inline AI assistance, Firebat recovery evidence, D-014 dependency-security acceptance, and reproducible synthetic browser proof.
+D1-01 removed direct creator `team_members` SQL seeding from buyer Proof, removed stale commentary, and made fresh Proof rely on supported registration/authentication → `POST /api/teams` → membership-scoped visibility → team page creation. It also widened the buyer-Proof path trigger narrowly across the accepted team-entry boundary.
 
-Do **not** claim without separate verification:
+Final PR #68 exact head `664e8fb533bb1c8ca75eb6ba59a93392bdba6c73` completed Proof Package + Dependency Security + CI + 7-Layer + Firebat GREEN. The fresh artifact was directly inspected: required 4-file inventory present, `SHA256SUMS` self-verification passed for both PNGs, provenance matched the candidate and `data_class=synthetic-only`, and visible content contained no credentials, customer data, real email, or PII. PR #68 merged as `6ff5b00215501e39ca79b38b8dc22650b2678369`; Issue #67 closed completed.
 
-- public production deployment;
-- embeddings / pgvector / hybrid-vector retrieval as current secure-search behavior;
-- generated citation/RAG production guarantees;
-- broad AI-agent autonomy;
-- production-ready SSO/OIDC, monitoring, S3 backup, microservices, or enterprise infrastructure posture;
-- enterprise HA/SLA/compliance posture;
-- deferred Phase 5/v1.1 capabilities.
+This newer D1-01 revalidation supplements the frozen historical v1.0 artifact; it does not replace or rewrite it.
 
-`docs/proof/V1_PROOF_INDEX.md` remains the reviewer-oriented evidence map; this MASTER remains the authoritative project-state ledger.
+## 3. Frozen Proof / Claim Boundary
 
-## 3. Accepted Progression — Issue #65 / PR #66
+Accepted evidence supports authenticated small-team workspace flows, team-scoped page/document lifecycle, tested authorization boundaries, version recovery, team-scoped tasks/calendar, authenticated team-scoped PostgreSQL full-text retrieval with page-level authorization boundaries, bounded optional inline AI assistance, Firebat recovery evidence, D-014 dependency-security acceptance, reproducible synthetic buyer Proof, creator-owned team creation, and D1-01 proof-path reconciliation.
 
-### Why it was reopened
+Do **not** claim without separate verification: public production deployment; embeddings/pgvector/hybrid-vector retrieval as current secure-search behavior; generated-citation/RAG production guarantees; broad AI-agent autonomy; production-ready SSO/OIDC, monitoring, S3 backup, microservices, enterprise infrastructure; HA/SLA/compliance; email invitation infrastructure; organization hierarchy; billing; broad role-management UI; or deferred Phase 5/v1.1 capabilities.
 
-Before Issue #65, authenticated `POST /api/teams` created a team row without creating the creator's `team_members` membership, while membership-scoped listing and protected team resources required that membership. A fresh creator could create a workspace but could not immediately use it without out-of-band seeding.
+## 4. D1 Destination
 
-### Changed
+Human Review selected `D1 — SELF-CONTAINED SMALL-TEAM WORKSPACE HANDOFF` on 2026-09-07.
 
-- Added `DBStorage.createTeamWithOwner(team, creatorUserId)`.
-- Team row + creator `owner` membership are persisted in one Drizzle transaction.
-- Authenticated `POST /api/teams` uses that path when `req.user.id` exists.
-- Existing unauthenticated/dev-mode fallback remains explicit via `createTeam`.
-- Existing authorization checks were not weakened.
-- Added `tests/team-creator-owner.spec.ts` covering creator visibility, one owner membership, immediate membership-gated write, and outsider denial.
-- Updated `scripts/recovery-firebat.mjs` to stop seeding `team_members` and instead assert that application team creation produced the owner membership.
+D1 means a small-team workspace can be handed off and reproduced without direct database seeding or private tribal knowledge. Issue #65 solved application-owned creator membership. D1-01 aligned buyer Proof with that supported product path. Destination Review after D1-01 confirmed the next concrete blocker: no supported owner/admin path exists to admit an already-registered second user into the authorization-bearing `team_members` model and later revoke that access.
 
-### Actually Executed / Verified
+The primary owner/developer remains the final Human Review gate. Optional sub-participant code/review/usability feedback is supplementary only and is never required for scheduled progression or executable proof closure.
 
-Final PR #66 exact head: `1ce5f22cb2e1f226534a478b6bec4362b9988137`.
+## 5. Active Milestone — Issue #69 / D1-02
 
-All required exact-head gates completed GREEN:
+### Objective
 
-- Dependency Security Reachability `33829623061` — **SUCCESS**;
-- CI `33829623012` — **SUCCESS**;
-- 7-Layer Test Architecture `33829623024` — **SUCCESS**;
-- Firebat Deployment Gate `33829623014` — **SUCCESS**.
+Add the smallest supported admission/revocation contract for an already-registered second user using existing `team_members` authorization semantics.
 
-Acceptance evidence in `tests/team-creator-owner.spec.ts` verifies:
+### Required acceptance
 
-1. fresh authenticated creator receives 201 from `POST /api/teams`;
-2. created team appears immediately in membership-scoped `GET /api/teams`;
-3. creator has exactly one `team_members` row with role `owner`;
-4. creator immediately performs a membership-gated team write successfully;
-5. a different authenticated user receives 403 for the same team.
+- owner/admin can admit an existing registered user;
+- default admitted role is `member`;
+- duplicate admission is idempotent or explicit safe conflict without duplicate rows;
+- ordinary member and outsider cannot admit/remove users;
+- admitted user sees the team via membership-scoped APIs and can use an existing member-permitted team resource;
+- revocation removes authorization-bearing membership and later access is denied;
+- bounded removal must not orphan the team by accidentally removing its sole owner;
+- one coherent synthetic two-user executable path proves admission → shared team use → revocation → denial without direct membership seeding;
+- Issue #65 creator-owner invariant stays GREEN;
+- exact candidate must execute Dependency Security + CI + 7-Layer + Firebat and buyer Proof when the touched boundary triggers it;
+- frozen v1.0 and D1-01 evidence remains preserved.
 
-PR review submissions: **0**. Unresolved review threads: **0**. Final diff remained bounded to four Issue #65 files:
+### Changed — current iteration
 
-- `server/routes.ts`;
-- `server/storage.ts`;
-- `tests/team-creator-owner.spec.ts`;
-- `scripts/recovery-firebat.mjs`.
-
-PR #66 was marked ready and merged with expected-head guard. Accepted progression merge SHA: `5da41afd2d24a7c20a07ed0348780e1f548efd86`. Issue #65 auto-closed as **completed**.
-
-### Not Verified / Limitations
-
-- Transaction rollback is provided structurally by the DB transaction but was not separately failure-injection-tested.
-- This progression does not add invitation flows, organization hierarchy, expanded RBAC, SSO, billing, public deployment, or broader proof claims.
-- The accepted v1.0 proof artifact is preserved as historical accepted evidence and was not regenerated for Issue #65.
-
-## 4. D1 Destination — Human Review Decision 2026-09-07
-
-The selected post-v1 destination is:
-
-`D1 — SELF-CONTAINED SMALL-TEAM WORKSPACE HANDOFF`
-
-D1 means making the existing small-team workspace reproducible and usable without direct database seeding or private tribal knowledge. The intended progression is application-owned team creation/membership, then—only after D1-01 acceptance and a fresh Destination Review—a bounded supported second-user admission path if current code still lacks one.
-
-D1 does **not** authorize email invitation infrastructure, organization hierarchy, broad RBAC/role-management expansion, SSO/OIDC, billing, public production, HA/SLA/compliance, collaboration breadth, vector RAG, broad AI autonomy, cosmetic proof redesign, or broad refactors.
-
-The primary owner/developer remains the authoritative Human Review gate. Optional sub-participant contributions or usability feedback are supplementary only and are never required for scheduled implementation or executable proof closure.
-
-## 5. Active Milestone — Issue #67 / D1-01
-
-### Why it is active
-
-Issue #65 made authenticated `POST /api/teams` transactionally create both the team and the creator's `owner` membership. Current buyer-facing `tests/proof-v1.spec.ts`, however, still inserts the creator's `team_members` row directly and contains stale commentary that team creation creates only a team row. The proof workflow is also path-filtered narrowly enough that Issue #65's accepted team-entry implementation changes did not execute the buyer Proof gate.
-
-This is a Proof truth/reproducibility gap, not authorization to broaden the product.
-
-### Required D1-01 acceptance
-
-- Remove direct creator `team_members` SQL seeding from `tests/proof-v1.spec.ts`.
-- Remove stale commentary about authenticated team creation creating only a team row.
-- Fresh synthetic Proof must use supported register/auth → `POST /api/teams` → membership-scoped visibility → team-scoped page create → screenshots.
-- Preserve Issue #65's separate executable invariant: exactly one creator-owner membership and outsider denial.
-- Narrowly expand `v1.0 Proof Package` path triggers so changes to the accepted team-entry/creator-membership implementation or its invariant test cannot silently bypass buyer-proof verification.
-- Require exact-head Proof Package + Dependency Security + CI + 7-Layer + Firebat execution.
-- If Proof becomes GREEN, inspect the fresh artifact for `01-team-pages.png`, `02-created-page.png`, `SHA256SUMS`, and `PROVENANCE.txt`; confirm synthetic-only visible content and no credentials/real PII.
-- Preserve the historical accepted v1.0 artifact as frozen evidence; newer D1-01 revalidation supplements it.
-
-### Changed in current iteration
-
-- MASTER reconciled from idle progression to D1 / Issue #67 ACTIVE on the milestone branch.
+- Re-read CURRENT `main` MASTER and CURRENT Issues/PRs; repository state overrode stale D1-01 handoff.
+- Confirmed Issue #69 is the only open bounded Issue and there is no open PR.
+- Confirmed branch `feat/issue-69-d1-02-team-admission` already exists from current main.
+- Inspected current `team_members` primitives: `getUserTeamIds`, `getUserTeamRole`, `addTeamMember`, creator-owner transaction, membership middleware, and legacy `/api/members` separation.
+- Added `tests/d1-02-team-admission.spec.ts` as the executable D1-02 acceptance contract. It uses synthetic registered identities and supported product APIs; it does not seed membership rows.
 
 ### Actually Executed
 
-- CURRENT `main` MASTER v0.88 read first.
-- Issue #67 fetched and confirmed OPEN.
-- Open PR search returned none before branch creation.
-- Current `tests/proof-v1.spec.ts` and `.github/workflows/v1-proof.yml` inspected; direct SQL creator-membership seeding and narrow proof workflow paths confirmed.
+- CURRENT main SHA `6ff5b00215501e39ca79b38b8dc22650b2678369` fetched.
+- Issue #69 fetched OPEN; open PR list returned none.
+- `server/storage.ts`, `server/routes.ts`, `tests/team-creator-owner.spec.ts`, and `tests/e2e-helpers.ts` inspected.
+- Acceptance test committed on the D1-02 branch as `89f488c82f8fe26e99678f81749d1a79fd8a8b2a` before this ledger update.
 
 ### Verified
 
-- Issue #65 remains accepted and its v1.0 baseline/non-claims remain preserved.
-- D1-01 is a bounded Proof/reproducibility correction with no unresolved product-direction decision.
+- The gap is concrete: legacy `members` CRUD is not the authorization-bearing `team_members` contract; supported second-user admission/revocation is absent on accepted main.
+- Existing `addTeamMember` already provides duplicate-safe `(team_id,user_id)` upsert semantics and can be reused rather than introducing a parallel membership model.
+- D1-02 can remain bounded to API/storage authorization plus one coherent acceptance path; no product-direction decision is required.
 
 ### Not Verified / Remaining Risks
 
-- D1-01 code/test/workflow corrections are not yet implemented or executed at this ledger point.
-- No fresh D1-01 Proof artifact has been generated or inspected yet.
-- Second-user admission is explicitly outside D1-01 and must wait for Destination Review after acceptance.
+- Admission/revocation endpoints are not yet implemented on this branch at this ledger point.
+- The new D1-02 acceptance test has not yet executed and must not be treated as PASS.
+- Exact behavior for sole-owner self-removal must be implemented fail-closed before acceptance.
+- No new buyer-facing claim is authorized by this milestone until exact-head executable evidence is GREEN.
 
-## 6. Progression Decision
+## 6. Exact Next Action
 
-v1.0 Human Review result remains:
-
-`PASS — FREEZE APPROVED`
-
-Accepted bounded progression remains:
-
-`ISSUE #65 ACCEPTED — TEAM CREATOR IS INITIAL OWNER`
-
-Current destination result:
-
-`D1 SELECTED — ISSUE #67 / D1-01 ACTIVE`
-
-### Exact Next Action
-
-On branch `docs/issue-67-d1-01-proof-team-creation`, remove buyer-Proof creator membership SQL seeding and stale commentary, add a membership-scoped visibility assertion using the supported team-creation contract, and narrowly expand the `v1.0 Proof Package` trigger to the accepted team-entry/creator-membership implementation and invariant-test files. Open one draft PR linked with `Closes #67`, then require same-head Proof Package + Dependency Security + CI + 7-Layer + Firebat executable verification before any merge or D1-01 acceptance claim.
+Open one draft PR linked with `Closes #69` from `feat/issue-69-d1-02-team-admission`. Let the new executable acceptance run against the current branch to obtain the first concrete RED boundary. Then implement only the smallest owner/admin admission + revocation API/storage correction needed by that evidence, keeping the same PR. Require exact-head Dependency Security + CI + 7-Layer + Firebat and any triggered buyer Proof, clean review/thread state, merge with expected-head protection, Issue #69 close, and post-merge MASTER reconciliation before D1-02 acceptance or further Destination Review.
