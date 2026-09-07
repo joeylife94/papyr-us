@@ -6,6 +6,9 @@ on:
     paths:
       - 'docs/proof/**'
       - 'tests/proof-v1.spec.ts'
+      - 'tests/team-creator-owner.spec.ts'
+      - 'server/routes.ts'
+      - 'server/storage.ts'
       - '.github/workflows/v1-proof.yml'
   workflow_dispatch: {}
 
@@ -63,7 +66,11 @@ jobs:
         run: |
           test -s proof-artifacts/01-team-pages.png
           test -s proof-artifacts/02-created-page.png
-          sha256sum proof-artifacts/*.png > proof-artifacts/SHA256SUMS
+          (
+            cd proof-artifacts
+            sha256sum *.png > SHA256SUMS
+            sha256sum -c SHA256SUMS
+          )
           printf 'candidate_head=%s\n' "$CANDIDATE_SHA" > proof-artifacts/PROVENANCE.txt
           printf 'workflow_sha=%s\n' "$GITHUB_SHA" >> proof-artifacts/PROVENANCE.txt
           printf 'base_sha=%s\n' "$BASE_SHA" >> proof-artifacts/PROVENANCE.txt
