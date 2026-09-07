@@ -6,6 +6,9 @@ on:
     paths:
       - 'docs/proof/**'
       - 'tests/proof-v1.spec.ts'
+      - 'tests/team-creator-owner.spec.ts'
+      - 'server/routes.ts'
+      - 'server/storage.ts'
       - '.github/workflows/v1-proof.yml'
   workflow_dispatch: {}
 
