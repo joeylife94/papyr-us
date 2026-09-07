@@ -26,24 +26,24 @@ test.describe('Issue #69 D1-02 team admission and revocation', () => {
       const team = await createTeam.json();
       teamId = team.id;
 
-      const targetUser = await pool.query('SELECT id FROM users WHERE email = $1', [member.email]);
-      const outsiderUser = await pool.query('SELECT id FROM users WHERE email = $1', [outsider.email]);
-      expect(targetUser.rowCount).toBe(1);
-      expect(outsiderUser.rowCount).toBe(1);
-      const targetUserId = Number(targetUser.rows[0].id);
-
       const admit = await ownerRequest.post(`/api/teams/${team.id}/memberships`, {
         data: { email: member.email },
       });
       expect(admit.status()).toBe(201);
       const admitted = await admit.json();
-      expect(admitted).toMatchObject({ teamId: team.id, userId: targetUserId, role: 'member' });
+      expect(admitted).toMatchObject({ teamId: team.id, role: 'member' });
+      expect(Number.isInteger(Number(admitted.userId))).toBe(true);
+      const targetUserId = Number(admitted.userId);
 
       const duplicate = await ownerRequest.post(`/api/teams/${team.id}/memberships`, {
         data: { email: member.email },
       });
-      expect([200, 409]).toContain(duplicate.status());
+      expect(duplicate.status()).toBe(200);
+      const duplicateMembership = await duplicate.json();
+      expect(duplicateMembership).toMatchObject({ teamId: team.id, userId: targetUserId, role: 'member' });
 
+      // DB read is evidence-only: the product flow obtains the revocation target ID
+      // from the supported admission response above and never seeds membership state.
       const membershipRows = await pool.query(
         'SELECT role FROM team_members WHERE team_id = $1 AND user_id = $2',
         [team.id, targetUserId]
@@ -80,7 +80,7 @@ test.describe('Issue #69 D1-02 team admission and revocation', () => {
       expect(memberAdmit.status()).toBe(403);
 
       const ownerRemoval = await ownerRequest.delete(`/api/teams/${team.id}/memberships/me`);
-      expect([400, 409]).toContain(ownerRemoval.status());
+      expect(ownerRemoval.status()).toBe(409);
 
       const revoke = await ownerRequest.delete(`/api/teams/${team.id}/memberships/${targetUserId}`);
       expect(revoke.status()).toBe(204);
