@@ -4,9 +4,9 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.91"
+version: "0.92"
 target: "v1.0 frozen baseline + bounded post-v1.0 progression"
-current_phase: "Post-v1.0 Progression — D1 selected; Issue #69 D1-02 ACTIVE"
+current_phase: "Post-v1.0 Progression — D1 selected; Issue #69 / PR #70 D1-02 ACTIVE"
 priority: "P1"
 last_updated: "2026-09-07"
 repository: "joeylife94/papyr-us"
@@ -17,7 +17,7 @@ latest_progression_merge_sha: "6ff5b00215501e39ca79b38b8dc22650b2678369"
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.91**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.92**  
 > Current repository / Issue / PR / executable evidence overrides historical checkpoints.  
 > The accepted v1.0 product/proof baseline remains frozen. Post-v1.0 progression may open only one bounded use/show/delivery gap at a time and must not rewrite prior accepted evidence or claims.
 
@@ -65,7 +65,7 @@ D1-01 removed direct creator `team_members` SQL seeding from buyer Proof, remove
 
 Final PR #68 exact head `664e8fb533bb1c8ca75eb6ba59a93392bdba6c73` completed Proof Package + Dependency Security + CI + 7-Layer + Firebat GREEN. The fresh artifact was directly inspected: required 4-file inventory present, `SHA256SUMS` self-verification passed for both PNGs, provenance matched the candidate and `data_class=synthetic-only`, and visible content contained no credentials, customer data, real email, or PII. PR #68 merged as `6ff5b00215501e39ca79b38b8dc22650b2678369`; Issue #67 closed completed.
 
-This newer D1-01 revalidation supplements the frozen historical v1.0 artifact; it does not replace or rewrite it.
+This D1-01 revalidation supplements the frozen historical v1.0 artifact; it does not replace or rewrite it.
 
 ## 3. Frozen Proof / Claim Boundary
 
@@ -101,37 +101,50 @@ Add the smallest supported admission/revocation contract for an already-register
 - exact candidate must execute Dependency Security + CI + 7-Layer + Firebat and buyer Proof;
 - frozen v1.0 and D1-01 evidence remains preserved.
 
-### Changed — current iteration
+### Changed
 
-- Kept draft PR #70 / Issue #69 as the only active bounded work.
-- Added a bounded application-owned membership route surface for existing registered users: owner/admin admission, idempotent duplicate response, self-removal with sole-owner guard, and owner/admin revocation.
+- Added the bounded D1-02 membership route surface for existing registered users: owner/admin admission, duplicate-safe admission, self-removal with sole-owner guard, and owner/admin revocation.
 - Registered that route surface in the application server.
-- Extended `v1.0 Proof Package` path triggers to the D1-02 boundary and added explicit execution of `tests/d1-02-team-admission.spec.ts` before the frozen buyer screenshot proof.
-- The first executable D1-02 Proof run exposed a current defect in the reused `DBStorage.addTeamMember()` path: fresh `db:push` did not recreate the migration-0009 `(team_id,user_id)` uniqueness needed by its `ON CONFLICT`, producing PostgreSQL `42P10` and a test timeout.
-- Corrected only that admission write boundary: admission now uses a PostgreSQL advisory-lock transaction per `(teamId,userId)`, re-checks membership inside the lock, inserts exactly once, and returns 200 for an existing membership / 201 for a new member. Historical migration uniqueness remains compatible but is no longer required for fresh-proof idempotency.
+- Extended `v1.0 Proof Package` to execute `tests/d1-02-team-admission.spec.ts` and to trigger on the D1-02 route boundary.
+- Replaced the fresh-schema-incompatible `ON CONFLICT(team_id,user_id)` admission dependency with a PostgreSQL advisory-lock transaction that rechecks membership inside the lock and inserts at most once.
+- Current compile correction: explicitly typed the transaction callback boundary because `DBStorage.db` is currently declared `any`, and exact-head CI showed the new callback as the first `tsc` failure.
 
 ### Actually Executed
 
-- PR #70 original contract head `efdc936eca6af656da62214f26515823c4948143`: Dependency Security / CI / 7-Layer / Firebat all GREEN, but D1-02 acceptance was not yet wired into those gates and therefore was not proof.
-- Candidate `75e3bffc771cd12c32ee1be80a194cae55217f0c` executed `v1.0 Proof Package` run `34122803678` with the D1-02 step.
-- In that run PostgreSQL schema synchronization completed successfully, then D1-02 failed during owner admission. Both initial attempt and retry logged `DBStorage.addTeamMember` → PostgreSQL error `42P10: there is no unique or exclusion constraint matching the ON CONFLICT specification`; Playwright timed out because the failed request never completed.
-- On the same exact head, Dependency Security `34122803533`, CI `34122803576`, and Firebat `34122803463` completed GREEN; 7-Layer `34122803487` was still running at the time of this ledger update.
-- Current correction commit before this ledger update: `6eddfd59b5649d272284dc0ddcb6bae2a45f32a0`.
+PR #70 prior exact head `c58ecb0d4176979371244c1d8f97c707dbd59a07` completed as:
+
+- `v1.0 Proof Package` `34123647623` — **SUCCESS**;
+- `Dependency Security Reachability` `34123647688` — **FAILURE**;
+- `CI` `34123647658` — **FAILURE**;
+- `7-Layer Test Architecture` `34123647664` — **FAILURE**;
+- `Firebat Deployment Gate` `34123647649` — **FAILURE**.
+
+CI job inspection identified the first concrete failure at `build → Type check (tsc)`. `server/storage.ts` declares `public db: any`, so the new `storage.db.transaction(async (tx) => ...)` callback parameter had no contextual type under the project type-check boundary. The D1-02 route was corrected only at that compile boundary to `tx: any`; no authorization behavior or product scope changed.
+
+New PR #70 exact candidate after that correction: `eec5e1fc5aa95e4397ebedd882e592eeb31a7e24`.
+
+Fresh same-head workflow cycle started:
+
+- CI `34128554864` — **QUEUED** at ledger write time;
+- Dependency Security Reachability `34128554880` — **IN PROGRESS**;
+- v1.0 Proof Package `34128555017` — **IN PROGRESS**;
+- Firebat Deployment Gate `34128554872` — **IN PROGRESS**;
+- 7-Layer Test Architecture `34128554866` — **IN PROGRESS**.
 
 ### Verified
 
-- D1-02 is now exercised by the buyer Proof workflow rather than inferred from code existence.
-- The first RED is a concrete fresh-schema/idempotency mismatch, not an authorization-policy ambiguity.
-- The correction remains within D1-02: no invitation tokens/email, organization hierarchy, broad RBAC UI, SSO/OIDC, billing, public production, collaboration expansion, AI expansion, or unrelated refactor was added.
-- PR #70 review submissions and unresolved review threads were both zero before the correction.
+- D1-02 is exercised by the buyer Proof workflow rather than accepted from code existence.
+- The previous fresh-schema `42P10` admission failure was corrected within the same bounded Issue/PR.
+- The newest correction addresses a concrete executable type-check failure only; no invitation tokens/email, organization hierarchy, broad RBAC UI, SSO/OIDC, billing, public production, collaboration expansion, AI expansion, or unrelated refactor was added.
+- The accepted v1.0 and D1-01 proof history remains unchanged.
 
 ### Not Verified / Remaining Risks
 
-- The corrected advisory-lock admission path has not yet completed a fresh exact-head Proof cycle at this ledger point.
-- Full D1-02 admission → shared page use → revocation → denial is therefore still **NOT ACCEPTED**.
-- Fresh buyer screenshot artifact inspection is pending and the frozen v1.0 artifact must remain historical evidence regardless of this revalidation.
+- The new exact head `eec5e1fc...` has not yet settled all five required gates.
+- Full D1-02 admission → shared team use → revocation → denial is therefore still **NOT ACCEPTED** despite the immediately previous Proof workflow being GREEN; the final candidate requires all five same-head gates.
+- Fresh final-candidate buyer artifact inspection remains pending.
 - PR #70 remains draft / unmerged and Issue #69 remains open.
 
 ## 6. Exact Next Action
 
-Use the CURRENT PR #70 head after this ledger commit. Require a fresh exact-head `v1.0 Proof Package` plus Dependency Security + CI + 7-Layer + Firebat cycle. If Proof is RED, inspect and fix only the first current Issue #69 failure. If all five gates are GREEN, download and inspect the fresh Proof artifact (`01-team-pages.png`, `02-created-page.png`, `SHA256SUMS`, `PROVENANCE.txt`) for checksum/provenance, synthetic-only visible data, and no credentials/real PII; then re-fetch reviews/threads and final bounded diff. Only after same-head acceptance may PR #70 be readied/merged with expected-head protection, Issue #69 closed, main MASTER reconciled, and D1 Destination Review performed.
+Re-fetch PR #70 and settle the five workflows on exact head `eec5e1fc5aa95e4397ebedd882e592eeb31a7e24`. If any gate is RED, inspect only the first current concrete failure and correct that boundary within Issue #69. If all five are GREEN, download and inspect the fresh Proof artifact (`01-team-pages.png`, `02-created-page.png`, `SHA256SUMS`, `PROVENANCE.txt`) for checksum/provenance, synthetic-only visible data, and no credentials/real PII; then re-fetch reviews/threads and final bounded diff. Only after same-head acceptance may PR #70 be readied/merged with expected-head protection, Issue #69 closed, main MASTER reconciled, and D1 Destination Review performed.
