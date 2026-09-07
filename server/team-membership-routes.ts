@@ -28,7 +28,7 @@ async function ownerCount(storage: DBStorage, teamId: number): Promise<number> {
 }
 
 async function admitRegisteredMember(storage: DBStorage, teamId: number, userId: number) {
-  return storage.db.transaction(async (tx) => {
+  return storage.db.transaction(async (tx: any) => {
     // Serialize admission attempts for the same team/user pair. Migration 0009
     // carries the DB uniqueness invariant; this lock also keeps fresh db:push
     // environments duplicate-safe when that historical migration is not replayed.
