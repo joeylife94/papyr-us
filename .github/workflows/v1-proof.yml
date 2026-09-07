@@ -7,8 +7,11 @@ on:
       - 'docs/proof/**'
       - 'tests/proof-v1.spec.ts'
       - 'tests/team-creator-owner.spec.ts'
+      - 'tests/d1-02-team-admission.spec.ts'
       - 'server/routes.ts'
       - 'server/storage.ts'
+      - 'server/index.ts'
+      - 'server/team-membership-routes.ts'
       - '.github/workflows/v1-proof.yml'
   workflow_dispatch: {}
 
@@ -58,6 +61,9 @@ jobs:
 
       - name: Synchronize PostgreSQL schema
         run: npm run db:push -- --force
+
+      - name: Verify D1 small-team handoff acceptance
+        run: npx playwright test tests/d1-02-team-admission.spec.ts --project=chromium --reporter=dot
 
       - name: Generate fresh v1.0 browser proof
         run: npx playwright test tests/proof-v1.spec.ts --project=chromium --reporter=dot
