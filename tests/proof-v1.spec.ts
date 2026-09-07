@@ -1,5 +1,4 @@
 import { mkdirSync } from 'node:fs';
-import { Pool } from 'pg';
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import {
   createAuthenticatedApiContext,
@@ -21,29 +20,6 @@ async function createTeam(request: APIRequestContext, name: string, displayName:
   return response.json();
 }
 
-async function grantProofTeamMembership(email: string, teamId: number) {
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-  try {
-    const userResult = await pool.query<{ id: number }>('SELECT id FROM users WHERE email = $1', [email]);
-    expect(userResult.rowCount).toBe(1);
-    const userId = userResult.rows[0].id;
-
-    await pool.query(
-      `INSERT INTO team_members (team_id, user_id, role, invited_by)
-       VALUES ($1, $2, 'owner', $2)`,
-      [teamId, userId]
-    );
-
-    const membershipResult = await pool.query(
-      'SELECT role FROM team_members WHERE team_id = $1 AND user_id = $2',
-      [teamId, userId]
-    );
-    expect(membershipResult.rows).toEqual([{ role: 'owner' }]);
-  } finally {
-    await pool.end();
-  }
-}
-
 test.describe('v1.0 fresh proof package', () => {
   test('captures synthetic team workspace and created document proof', async ({ page, request }) => {
     mkdirSync(PROOF_DIR, { recursive: true });
@@ -55,8 +31,8 @@ test.describe('v1.0 fresh proof package', () => {
     const pageTitle = `Papyr v1 Proof ${stamp}`;
 
     // GAP-006 packages representative user-visible proof; GJ-01 already owns UI register/login proof.
-    // Seed a fresh synthetic actor through the accepted API helper, then authenticate the browser
-    // with the same session contract so proof generation is not coupled to duplicate auth coverage.
+    // Create a fresh synthetic actor through the accepted API helper, then authenticate the browser
+    // with the same session contract so proof generation remains focused on the buyer-visible workspace.
     await loginPageWithCookies(page, credentials.email, credentials.password);
     await page.goto('/');
     await expect(page).toHaveURL('/', { timeout: 20000 });
@@ -67,10 +43,17 @@ test.describe('v1.0 fresh proof package', () => {
     );
     const team = await createTeam(authRequest, teamName, teamDisplayName);
 
-    // The authenticated teams collection is membership-scoped. Team creation itself only creates
-    // the team row, so the proof fixture must seed the actor's RBAC membership before asking the
-    // already-authenticated browser to render that team in the accepted GJ-01 sidebar path.
-    await grantProofTeamMembership(credentials.email, team.id);
+    // Issue #65 established application-owned creator membership. Prove the newly created team is
+    // immediately visible through the membership-scoped collection before rendering the same state.
+    const teamsResponse = await authRequest.get('/api/teams');
+    expect(teamsResponse.status()).toBe(200);
+    const accessibleTeams = await teamsResponse.json();
+    expect(
+      accessibleTeams.some(
+        (accessibleTeam: { id: number | string; name: string }) =>
+          String(accessibleTeam.id) === String(team.id) && accessibleTeam.name === teamName
+      )
+    ).toBe(true);
 
     await page.reload({ waitUntil: 'domcontentloaded' });
     const teamButton = page.getByRole('button', { name: new RegExp(teamDisplayName) });
@@ -99,8 +82,6 @@ test.describe('v1.0 fresh proof package', () => {
     await expect(textarea).toBeVisible({ timeout: 10000 });
     await textarea.fill('Synthetic proof content for the accepted Papyr.us v1.0 browser path.');
 
-    // Observe the actual create response first. If the endpoint rejects the fixture, preserve the
-    // response body in the assertion so the next correction is driven by current executed evidence.
     const createResponsePromise = page.waitForResponse(
       (response) =>
         response.url().includes('/api/pages') && response.request().method() === 'POST'
