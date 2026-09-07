@@ -17,6 +17,7 @@ initSentry();
 import express from 'express';
 import { registerRoutes } from './routes.js';
 import { registerOperationalRoutes } from './operational.js';
+import { registerTeamMembershipRoutes } from './team-membership-routes.js';
 import { serveStaticAssets, serveIndex } from './static.js';
 import {
   log,
@@ -68,6 +69,7 @@ setupSecurity(app);
 (async () => {
   // Register deterministic operational endpoints before the legacy route bundle.
   registerOperationalRoutes(app, storage);
+  registerTeamMembershipRoutes(app, storage);
   serveStaticAssets(app);
   const { httpServer } = await registerRoutes(app, storage);
 
