@@ -1,5 +1,5 @@
 import type { Express } from 'express';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { teamMembers, users } from '../shared/schema.js';
 import { authMiddleware, type AuthRequest } from './middleware.js';
 import type { DBStorage } from './storage.js';
@@ -27,6 +27,29 @@ async function ownerCount(storage: DBStorage, teamId: number): Promise<number> {
   return owners.length;
 }
 
+async function admitRegisteredMember(storage: DBStorage, teamId: number, userId: number) {
+  return storage.db.transaction(async (tx) => {
+    // Serialize admission attempts for the same team/user pair. Migration 0009
+    // carries the DB uniqueness invariant; this lock also keeps fresh db:push
+    // environments duplicate-safe when that historical migration is not replayed.
+    await tx.execute(sql`select pg_advisory_xact_lock(${teamId}, ${userId})`);
+
+    const [existing] = await tx
+      .select({ teamId: teamMembers.teamId, userId: teamMembers.userId, role: teamMembers.role })
+      .from(teamMembers)
+      .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId)));
+
+    if (existing) return { membership: existing, created: false };
+
+    const [created] = await tx
+      .insert(teamMembers)
+      .values({ teamId, userId, role: 'member' })
+      .returning({ teamId: teamMembers.teamId, userId: teamMembers.userId, role: teamMembers.role });
+
+    return { membership: created, created: true };
+  });
+}
+
 export function registerTeamMembershipRoutes(app: Express, storage: DBStorage) {
   app.post(
     '/api/teams/:teamId/memberships',
@@ -50,13 +73,8 @@ export function registerTeamMembershipRoutes(app: Express, storage: DBStorage) {
         .where(eq(users.email, email));
       if (!target) return res.status(404).json({ message: 'Registered user not found' });
 
-      const existingRole = await storage.getUserTeamRole(target.id, teamId);
-      if (existingRole) {
-        return res.status(200).json({ teamId, userId: target.id, role: existingRole });
-      }
-
-      await storage.addTeamMember(teamId, target.id, 'member');
-      return res.status(201).json({ teamId, userId: target.id, role: 'member' });
+      const result = await admitRegisteredMember(storage, teamId, target.id);
+      return res.status(result.created ? 201 : 200).json(result.membership);
     }
   );
 
