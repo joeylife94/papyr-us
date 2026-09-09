@@ -1,0 +1,35 @@
+name: tmp d014 multer lock remediation
+
+on:
+  push:
+    branches:
+      - feat/issue-72-d2-01-invitation-lifecycle
+    paths:
+      - .github/workflows/tmp-d014-multer-lock.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/issue-72-d2-01-invitation-lifecycle
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Apply exact npm-backed candidate
+        run: npm update multer --package-lock-only --ignore-scripts
+      - name: Commit candidate and remove one-shot workflow
+        run: |
+          rm .github/workflows/tmp-d014-multer-lock.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package-lock.json .github/workflows/tmp-d014-multer-lock.yml
+          git diff --cached --exit-code && exit 1 || true
+          git commit -m 'chore(security): refresh multer lock candidate'
+          git push origin HEAD:feat/issue-72-d2-01-invitation-lifecycle
