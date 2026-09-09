@@ -4,11 +4,11 @@ aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
 project: "Papyr.us"
 type: "project-master"
 status: "authoritative-contract"
-version: "0.93"
+version: "0.94"
 target: "v1.0 frozen baseline + bounded post-v1.0 progression"
-current_phase: "D1 destination reached — Human Review next destination"
+current_phase: "D2 active — Invite-driven Small-team Onboarding Pilot"
 priority: "P1"
-last_updated: "2026-09-08"
+last_updated: "2026-09-09"
 repository: "joeylife94/papyr-us"
 accepted_product_main_sha: "3b91e18f477e8187c4aa8c21708b6f8cf7b2f2d4"
 accepted_proof_main_sha: "1cb04799a8a1924f7697d12d64f0999dcd591fcc"
@@ -17,21 +17,23 @@ latest_progression_merge_sha: "14d6af9d049962108def451c7b16cf621ca43c83"
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.93**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.94**  
 > Current repository / Issue / PR / executable evidence overrides historical checkpoints, Scheduled Task prompts, and agent self-report.  
-> The accepted v1.0 product/proof baseline remains frozen. Post-v1.0 progression may open only one bounded use/show/delivery gap at a time and must not rewrite prior accepted evidence or claims.
+> The accepted v1.0 product/proof baseline and D1 destination remain frozen. Post-v1.0 progression may open only one bounded user-journey gap at a time and must not rewrite prior accepted evidence or claims.
 
 ## 0. Current State
 
 **Accepted v1.0 baseline:** `PAPYR.US PROOF v1.0 CLOSED / FREEZE — HUMAN REVIEW PASSED`
 
-**Accepted progression destination:** `D1 — Self-contained Small-team Workspace Handoff`
+**Accepted/frozen destination:** `D1 — Self-contained Small-team Workspace Handoff`
 
-**Current destination state:** `DESTINATION REACHED — SELF-CONTAINED SMALL-TEAM WORKSPACE HANDOFF`
+**Current destination:** `D2 — Invite-driven Small-team Onboarding Pilot`
 
-**Current bounded milestone:** `NONE`
+**Current bounded milestone:** `D2-01 / Issue #72 — app-owned invitation acceptance lifecycle`
 
-**Progression state:** `HUMAN REVIEW — NEXT DESTINATION DECISION`
+**Active PR:** `PR #73 — OPEN / DRAFT / UNMERGED`
+
+**Progression state:** `D2 ACTIVE — EXACT-HEAD ACCEPTANCE REQUIRED`
 
 - GJ-01..GJ-08 — **CLOSED** for accepted v1.0.
 - GAP-001..008 — **CLOSED** for accepted v1.0.
@@ -41,6 +43,8 @@ latest_progression_merge_sha: "14d6af9d049962108def451c7b16cf621ca43c83"
 - Issue #67 / PR #68 D1-01 buyer-proof reconciliation — **ACCEPTED / MERGED / CLOSED**.
 - Issue #69 / PR #70 D1-02 existing-user admission + revocation — **ACCEPTED / MERGED / CLOSED**.
 - D1 — **ACCEPTED / FROZEN**.
+- Human Review decision 2026-09-09 selected D2 and pre-authorized D3 then D4 only after destination-level acceptance/reconciliation.
+- Issue #72 / PR #73 D2-01 invitation lifecycle — **ACTIVE / UNACCEPTED**.
 - Phase 5 / GAP-009..012, GAP-013..015, broad v1.1 expansion — **DEFERRED**.
 - Public production deployment — **NOT REQUIRED / NOT CLAIMED**.
 - v1.0 Proof baseline and buyer-facing claims — **FROZEN / PRESERVE**.
@@ -58,7 +62,7 @@ The Phase 4 proof acceptance remains historical frozen evidence:
 
 Human-review claim reconciliation remains anchored to Issue #63 / PR #64 / docs-only SHA `1cb04799a8a1924f7697d12d64f0999dcd591fcc`. Unsupported production-ready, enterprise, SSO/OIDC, monitoring/backup, microservices-ready, vector-RAG, broad AI-autonomy, and feature-completeness claims remain excluded.
 
-## 2. Accepted Progression
+## 2. Accepted Progression — D1 Frozen
 
 ### Issue #65 / PR #66 — creator is initial owner
 
@@ -139,72 +143,143 @@ The accepted D1-02 executable path proves:
 
 #### Not Verified / Remaining Risks
 
-- no email invitation delivery or invite-token lifecycle;
+- no external email invitation delivery;
 - no organization hierarchy or broad role-management UI;
 - no SSO/OIDC, billing, public production, HA/SLA/compliance;
 - no production identity/RBAC hardening beyond the current bounded authenticated small-team model;
 - no collaboration breadth, vector RAG, generated-citation production guarantees, or broad AI autonomy;
 - no claim that this bounded synthetic acceptance establishes production-scale multi-user behavior.
 
-## 3. Frozen Proof / Claim Boundary
+## 3. D2 — Invite-driven Small-team Onboarding Pilot
 
-Accepted evidence supports authenticated small-team workspace flows, team-scoped page/document lifecycle, tested authorization boundaries, version recovery, team-scoped tasks/calendar, authenticated team-scoped PostgreSQL full-text retrieval with page-level authorization boundaries, bounded optional inline AI assistance, Firebat recovery evidence, D-014 dependency-security acceptance, reproducible synthetic buyer Proof, creator-owned team creation, D1-01 proof-path reconciliation, and the D1-02 existing-user admission/shared-use/revocation path.
+### Human Review decision — 2026-09-09
 
-Do **not** claim without separate verification: public production deployment; embeddings/pgvector/hybrid-vector retrieval as current secure-search behavior; generated-citation/RAG production guarantees; broad AI-agent autonomy; production-ready SSO/OIDC, monitoring, S3 backup, microservices, enterprise infrastructure; HA/SLA/compliance; email invitation infrastructure; organization hierarchy; billing; broad role-management UI; or deferred Phase 5/v1.1 capabilities.
+Human Review explicitly authorized D2 as the current destination, with D3 `Authenticated Realtime Collaboration Pilot` and D4 `Collaborative Review & Handoff Pilot` pre-authorized only after the preceding destination is reached and reconciled. D5+ and materially broader boundaries remain Human Review gated.
 
-## 4. D1 Destination Review
+D1 remains accepted/frozen. D2 must reuse the existing D1 authorization-bearing membership primitive rather than reopen role/membership permutations.
+
+### D2-01 / Issue #72 / PR #73 — app-owned invitation acceptance lifecycle
+
+**Status:** `ACTIVE / OPEN / DRAFT / UNMERGED`
+
+**Destination objective:** support one coherent app-owned onboarding path:
+
+`owner → invite unregistered email → recipient register/authenticate → invited identity accepts → exactly one member membership → shared team use → replay/wrong/invalid/cancelled/expired fail closed → owner revokes → subsequent access denied`
+
+External SMTP/SendGrid/SES delivery is not required. A repository-owned copy/share invite link/token is sufficient.
+
+#### Changed so far
+
+- added a coherent synthetic D2-01 executable acceptance contract in `tests/d2-01-invitation-onboarding.spec.ts`;
+- added bounded invitation routes and registered them in the application server;
+- invitation creation is owner/admin scoped and records team, inviter, invited email, status and expiry;
+- acceptance token generation uses a random secret while persistence stores a SHA-256 digest rather than a reusable raw secret;
+- invited authenticated identity can accept and acceptance reuses the existing D1 duplicate-safe admission primitive with default `member` role;
+- replay/consumed, wrong identity, invalid, cancelled and expired invite paths are bounded/fail closed in the current implementation contract;
+- existing D1 direct admission/revocation remains present;
+- buyer Proof workflow was extended narrowly to execute D2-01 acceptance and trigger on the invitation boundary;
+- current security-gate drift exposed `gray-matter → js-yaml 3.15.1` as the first current HIGH blocker; the repository's npm-backed candidate generation proved a lock-only remediation and that candidate was applied to the same PR branch without broad dependency churn.
+
+#### Actually Executed so far
+
+On PR #73 exact head `2c6b81f764af9b44e3083d398d2f2a3842d67c24`:
+
+- `v1.0 Proof Package` run `34329040934` — **SUCCESS**;
+- `CI` run `34329041115` — **SUCCESS**;
+- `7-Layer Test Architecture` run `34329040972` — **SUCCESS**;
+- `Firebat Deployment Gate` run `34329041008` — **SUCCESS**;
+- `Dependency Security Reachability` run `34329041046` — **FAILURE**.
+
+The security evidence artifact `gap007-security-evidence`, artifact id `10095038028`, digest `sha256:c78d8305ff41ffe69a68e4c111db4dc433d0c08683ce29069f21cbaeff277a27`, identified the first blocker as production `gray-matter → js-yaml 3.15.1`. Its generated candidate changed only `package-lock.json`, advancing that dependency through the supported npm resolver. Additional current HIGH findings remain unaccepted until exact-head security reruns classify them.
+
+A one-shot guarded branch workflow applied only that npm-generated `js-yaml` lock candidate and deleted itself; run `34335081972` completed **SUCCESS**. This helper is not part of the intended final PR file set.
+
+#### Verified
+
+- D1 frozen baseline remains preserved;
+- Issue #72 is the sole D2-01 acceptance contract;
+- PR #73 is the active bounded implementation PR;
+- the coherent D2 acceptance path has executed GREEN at exact head `2c6b81f...` through the buyer Proof workflow;
+- CI / 7-Layer / Firebat were GREEN on the same head;
+- first current security blocker and its npm-backed lock-only correction were independently identified/applied.
+
+#### Not Verified
+
+- the post-security-correction exact head has not yet completed all five required gates;
+- no D2-01 exact head is accepted until Dependency Security is GREEN together with Proof / CI / 7-Layer / Firebat;
+- the final fresh buyer Proof artifact for the accepted candidate has not yet been inspected for checksums/provenance/synthetic-only content;
+- PR review/thread/final-diff acceptance and merge have not occurred;
+- D2 destination is **NOT YET REACHED**.
+
+#### Remaining Risks
+
+- newly published dependency advisories may continue to expose unrelated runtime dependency blockers; correct only the first concrete current blocker at a time and keep dependency scope evidence-backed;
+- invitation lifecycle is a bounded pilot, not proof of production-scale identity, security, delivery, or enterprise onboarding;
+- external email delivery, role permutations, invite analytics/resend breadth, organization hierarchy, broad RBAC, SSO/OIDC, billing, public production/HA/SLA/compliance remain outside D2-01.
+
+#### Exact Next Action
+
+Run the five required gates on the new exact PR head after MASTER reconciliation and the first security candidate. If RED, inspect the first concrete current failure and make only the smallest same-gap correction. If all GREEN, inspect the fresh Proof artifact and final review/thread/diff before merge.
+
+## 4. Frozen Proof / Claim Boundary
+
+Accepted evidence supports authenticated small-team workspace flows, team-scoped page/document lifecycle, tested authorization boundaries, version recovery, team-scoped tasks/calendar, authenticated team-scoped PostgreSQL full-text retrieval with page-level authorization boundaries, bounded optional inline AI assistance, Firebat recovery evidence, D-014 dependency-security acceptance at the previously accepted heads, reproducible synthetic buyer Proof, creator-owned team creation, D1-01 proof-path reconciliation, and the D1-02 existing-user admission/shared-use/revocation path.
+
+Do **not** claim without separate verification: public production deployment; embeddings/pgvector/hybrid-vector retrieval as current secure-search behavior; generated-citation/RAG production guarantees; broad AI-agent autonomy; production-ready SSO/OIDC, monitoring, S3 backup, microservices, enterprise infrastructure; HA/SLA/compliance; external email invitation infrastructure; organization hierarchy; billing; broad role-management UI; or deferred Phase 5/v1.1 capabilities.
+
+D2 invitation code is not accepted evidence until the Issue #72 / PR #73 exact-head lifecycle completes.
+
+## 5. D1 Destination Review — Frozen
 
 ### `DESTINATION REACHED — SELF-CONTAINED SMALL-TEAM WORKSPACE HANDOFF`
 
 D1 is reached for the bounded product definition selected by Human Review on 2026-09-07.
 
-The accepted repository evidence now supports one coherent self-contained small-team handoff without direct database membership seeding or private tribal knowledge:
+The accepted repository evidence supports:
 
 `register/authenticate owner → application-owned team creation + owner membership → admit existing registered member → membership-scoped shared team use → revoke member → subsequent access denied → buyer-facing synthetic Proof`
 
 Issue #65 established application-owned creator membership. D1-01 reconciled buyer Proof to that supported path. D1-02 closed the demonstrated second-user admission/revocation blocker and executed the coherent two-user acceptance path on the exact accepted head.
 
-No demonstrated blocker currently justifies another automatic D1 milestone. Opening invitation-email/token work, organization hierarchy, broader RBAC UI permutations, collaboration breadth, or another membership proof variant merely to continue progression would exceed the selected bounded D1 destination or create low-leverage micro-loop work.
+D1 remains frozen; D2 must not reopen D1 permutations merely to create activity.
 
-## 5. Next Destination Gate
+## 6. Destination Continuation Gate
 
-### `HUMAN REVIEW — NEXT DESTINATION DECISION`
+### Current: `D2 ACTIVE`
 
-The next meaningful progression requires selecting a materially broader product or delivery boundary. Examples include invitation lifecycle/product onboarding, stronger identity/RBAC/SSO, operational deployment/backup/monitoring maturity, or another explicit buyer requirement. None is automatically authorized by D1 acceptance.
+After D2-01 acceptance, perform a D2 Destination Review before creating another Issue. D2 is reached when the supported flow `owner → invite → recipient register/auth → accept → shared workspace` is reproducible and buyer-demonstrable without private DB seeding or private tribal knowledge.
 
-Do not open a new Issue or reactivate automatic Papyr.us development until a human explicitly selects the farther destination or a concrete paid-delivery / Proof requirement creates a bounded gap.
+Do not automatically add SMTP/provider delivery, multiple invitation roles, resend permutations, invitation analytics, or many expiry/cancellation variants. Add another D2 milestone only if the coherent destination-level run exposes the first concrete blocker.
 
-## 6. Closure Ledger
+If D2 is reached, reconcile this MASTER and automatically select pre-authorized D3. If D3 is reached, reconcile and automatically select pre-authorized D4. After D4, return to Human Review for D5+.
+
+## 7. Current Cycle Ledger
 
 ### Changed
 
-- reconciled PR #70 and Issue #69 from stale `ACTIVE / DRAFT / UNMERGED` state to `ACCEPTED / MERGED / CLOSED`;
-- recorded final exact-head workflow evidence and buyer Proof artifact inspection;
-- cleared the active milestone;
-- recorded D1 as `DESTINATION REACHED`;
-- returned progression to Human Review.
+- reconciled the post-D1 Human Review decision into the Issue/PR branch rather than direct-pushing a completion claim to `main`;
+- recorded D2 as current and D2-01 / Issue #72 / PR #73 as ACTIVE;
+- preserved the frozen v1.0 and D1 accepted evidence/non-claims;
+- recorded the current exact-head D2 Proof GREEN evidence and current security RED/correction without promoting D2-01 to PASS.
 
 ### Actually Executed
 
-- current `main` state, Issue #69, PR #70, exact-head workflow runs, review state, final changed-file set, and Proof artifact were re-fetched after the builder had disabled;
-- the Proof artifact was downloaded and its inventory/checksums/provenance were independently inspected;
-- both committed Proof screenshots in the artifact were visually inspected for public-safe synthetic content.
+- current `main` MASTER, Issue #72, PR #73, changed-file set and exact-head workflow runs were re-fetched;
+- security run `34329041046` evidence artifact was downloaded and inspected;
+- the first blocker was confirmed as `gray-matter → js-yaml 3.15.1`;
+- its npm-backed lock-only candidate scope was inspected;
+- guarded one-shot run `34335081972` applied that candidate and removed its helper workflow.
 
 ### Verified
 
-- PR #70 final exact head: `1d9910c1f3cc788cd850313c0f7dad8d05885c8a`;
-- all five required same-head gates: **SUCCESS**;
-- PR #70: **MERGED**;
-- Issue #69: **CLOSED / completed**;
-- resulting merge main SHA: `14d6af9d049962108def451c7b16cf621ca43c83`;
-- D1 bounded destination: **REACHED**.
+- D2 buyer Proof / CI / 7-Layer / Firebat were GREEN at exact head `2c6b81f764af9b44e3083d398d2f2a3842d67c24`;
+- first security blocker remediation is applied on the active PR branch;
+- D2 remains ACTIVE, not accepted.
 
 ### Not Verified
 
-All explicit non-claims and deferred boundaries above remain unverified and must not be promoted to PASS.
+The current post-correction exact head has not yet completed all required workflows and artifact review. D2-01 and D2 remain unaccepted.
 
 ### Exact Next Action
 
-`HUMAN REVIEW — NEXT DESTINATION DECISION`
-
-Keep the Papyr.us scheduled builder disabled until a farther destination or concrete delivery/proof requirement is explicitly selected.
+`Observe the fresh exact-head five-gate cycle; correct only the first concrete RED, or proceed to artifact/review/merge acceptance if all required gates are GREEN.`
