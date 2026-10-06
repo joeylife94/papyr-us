@@ -231,8 +231,8 @@ export default function WikiPageView() {
       <CollaboratorCursors cursors={cursors} />
 
       {/* Content Area */}
-      <div className="flex-1 max-w-4xl">
-        <article className="px-6 py-8" ref={contentRef}>
+      <div className="min-w-0 flex-1">
+        <article className="mx-auto max-w-3xl px-1 py-4 md:px-6 md:py-8" ref={contentRef}>
           {/* Collaboration Status Bar */}
           {isConnected && sessionUsers.length > 0 && (
             <div className="mb-6 flex items-center justify-between">
@@ -242,7 +242,7 @@ export default function WikiPageView() {
           )}
 
           {/* Breadcrumb */}
-          <nav className="mb-6">
+          <nav className="mb-7">
             <ol className="flex items-center space-x-2 text-sm text-slate-500 dark:text-slate-400">
               <li>
                 <a href="/" className="hover:text-primary transition-colors">
@@ -261,11 +261,10 @@ export default function WikiPageView() {
           </nav>
 
           {/* Page Header */}
-          <header className="mb-8">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center space-x-3">
-                <h1 className="text-3xl font-bold text-slate-900 dark:text-white">{page.title}</h1>
-                <div className="flex space-x-2">
+          <header className="mb-10 border-b border-border pb-7">
+            <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <div className="mb-3 flex flex-wrap items-center gap-2">
                   <Badge variant="secondary" className="capitalize">
                     {page.folder}
                   </Badge>
@@ -275,8 +274,25 @@ export default function WikiPageView() {
                     </Badge>
                   ))}
                 </div>
+                <h1 className="text-3xl font-semibold tracking-tight text-foreground md:text-4xl">
+                  {page.title}
+                </h1>
+                <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
+                  <span className="flex items-center gap-1.5">
+                    <Calendar className="h-3.5 w-3.5" />
+                    Updated {formatDistanceToNow(new Date(page.updatedAt), { addSuffix: true })}
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <Clock className="h-3.5 w-3.5" />
+                    {readingTime} min read
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <User className="h-3.5 w-3.5" />
+                    {page.author}
+                  </span>
+                </div>
               </div>
-              <div className="flex items-center space-x-2">
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
                 <Button
                   variant={showAICopilot ? 'default' : 'outline'}
                   size="sm"
@@ -287,16 +303,18 @@ export default function WikiPageView() {
                   className="gap-2"
                 >
                   <Sparkles className="h-4 w-4" />
-                  AI 코파일럿
+                  AI assistant
                 </Button>
                 <PageHistory pageId={page.id} currentTitle={page.title} />
                 <Button
-                  variant="ghost"
-                  size="icon"
+                  variant="default"
+                  size="sm"
                   onClick={() => navigate(`/edit/${page.id}`)}
                   title="Edit Page"
+                  className="gap-2"
                 >
                   <Edit className="h-4 w-4" />
+                  Edit
                 </Button>
                 <Button variant="ghost" size="icon" onClick={handleShare} title="Share Page">
                   <Share className="h-4 w-4" />
@@ -306,31 +324,13 @@ export default function WikiPageView() {
                 </Button>
               </div>
             </div>
-            <div className="flex items-center space-x-4 text-sm text-slate-500 dark:text-slate-400">
-              <span className="flex items-center space-x-1">
-                <Calendar className="h-3 w-3" />
-                <span>
-                  Last updated: {formatDistanceToNow(new Date(page.updatedAt), { addSuffix: true })}
-                </span>
-              </span>
-              <span>•</span>
-              <span className="flex items-center space-x-1">
-                <Clock className="h-3 w-3" />
-                <span>{readingTime} min read</span>
-              </span>
-              <span>•</span>
-              <div className="flex items-center space-x-1">
-                <User className="h-3 w-3" />
-                <span>{page.author}</span>
-              </div>
-            </div>
           </header>
 
           {/* Content */}
           <MarkdownRenderer content={page.content} />
 
           {/* Page Footer */}
-          <footer className="mt-12 pt-8 border-t border-slate-200 dark:border-slate-700">
+          <footer className="mt-14 border-t border-border pt-7">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-4">
                 <span className="text-sm text-slate-500 dark:text-slate-400">

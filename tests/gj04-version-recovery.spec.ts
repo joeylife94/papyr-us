@@ -63,7 +63,7 @@ test('GJ-04: edit, inspect history, restore prior version, and persist restored 
   await expect(page.getByRole('heading', { name: updatedTitle })).toBeVisible();
 
   // The recovery surface must expose the prior version through the real history UI.
-  await page.getByRole('button', { name: /버전 기록/ }).click();
+  await page.getByRole('button', { name: /History/ }).click();
   await expect(page.getByText(originalTitle, { exact: true })).toBeVisible();
 
   // Restore the prior version through the existing UI recovery action.
@@ -75,7 +75,7 @@ test('GJ-04: edit, inspect history, restore prior version, and persist restored 
       response.request().method() === 'POST' &&
       response.ok()
   );
-  await page.getByRole('button', { name: '복원' }).first().click();
+  await page.getByRole('button', { name: 'Restore' }).first().click();
   await restoreResponsePromise;
 
   // Reopen from fresh navigation and verify the restored state is durable, not just cached UI state.

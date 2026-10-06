@@ -243,12 +243,12 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
       {/* Sidebar */}
       <aside
         className={cn(
-          'fixed left-0 top-16 bottom-0 w-[85vw] max-w-sm lg:w-80 bg-gradient-to-b from-white to-slate-50/50 dark:from-slate-900 dark:to-slate-950/50 border-r border-slate-200/60 dark:border-slate-700/60 overflow-y-auto transform transition-all duration-300 z-30 backdrop-blur-sm',
+          'fixed bottom-0 left-0 top-16 z-30 w-[85vw] max-w-sm overflow-y-auto border-r border-border bg-background transition-transform duration-200 lg:w-72',
           'lg:translate-x-0',
           isOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
-        <div className="p-4">
+        <div className="space-y-6 p-4">
           {/* Mobile Close Button */}
           <div className="flex justify-end mb-4 lg:hidden">
             <Button variant="ghost" size="mobile" onClick={onClose} className="h-10 w-10">
@@ -257,78 +257,99 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
           </div>
 
           {/* Quick Actions */}
-          <div className="mb-6">
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">
-              Quick Actions
-            </h3>
-            <div className="space-y-2">
-              <Link to="/dashboard">
-                <Button variant="outline" className="w-full justify-start">
-                  <Activity className="h-4 w-4 mr-2 text-purple-500" />
-                  스터디 대시보드
-                </Button>
-              </Link>
+          <div>
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Documents
+              </h3>
               <Link to="/create">
-                <Button className="w-full justify-start">
+                <Button size="sm" className="h-8 gap-1.5 px-2.5">
                   <Plus className="h-4 w-4 mr-2" />
-                  Create New Page
+                  New
                 </Button>
               </Link>
-              {flags.FEATURE_TEMPLATES ? (
-                <Link to="/templates">
-                  <Button variant="outline" className="w-full justify-start">
-                    <BookOpen className="h-4 w-4 mr-2 text-blue-500" />
-                    템플릿 갤러리
-                  </Button>
-                </Link>
-              ) : null}
-              <Link to="/database">
-                <Button variant="outline" className="w-full justify-start">
-                  <Database className="h-4 w-4 mr-2 text-indigo-500" />
-                  데이터베이스 뷰
-                </Button>
-              </Link>
-              {showCollaborationTest ? (
-                <Link to="/collaboration-test">
-                  <Button variant="outline" className="w-full justify-start">
-                    <Users className="h-4 w-4 mr-2 text-green-500" />
-                    실시간 협업 테스트
-                  </Button>
-                </Link>
-              ) : null}
-              {showAiSearch ? (
-                <Link to="/ai-search">
-                  <Button variant="outline" className="w-full justify-start">
-                    <Sparkles className="h-4 w-4 mr-2 text-purple-500" />
-                    AI 검색
-                  </Button>
-                </Link>
-              ) : null}
-              {showKnowledgeGraph ? (
-                <Link to="/knowledge-graph">
-                  <Button variant="outline" className="w-full justify-start">
-                    <Network className="h-4 w-4 mr-2 text-cyan-500" />
-                    지식 그래프
-                  </Button>
-                </Link>
-              ) : null}
-              {flags.FEATURE_AUTOMATION ? (
-                <Link to="/automation">
-                  <Button variant="outline" className="w-full justify-start">
-                    <Zap className="h-4 w-4 mr-2 text-amber-500" />
-                    자동화
-                  </Button>
-                </Link>
-              ) : null}
             </div>
+            <div className="space-y-1">
+              <Link to="/">
+                <Button variant="ghost" className="h-9 w-full justify-start text-sm">
+                  <Book className="mr-2 h-4 w-4 text-primary" />
+                  All documents
+                </Button>
+              </Link>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Advanced tools
+            </h3>
+            <details className="group">
+              <summary className="cursor-pointer list-none rounded-md px-2 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground">
+                Show workspace tools
+              </summary>
+              <div className="mt-1 space-y-1 border-l border-border pl-2">
+                <Link to="/dashboard">
+                  <Button variant="ghost" className="h-9 w-full justify-start text-sm">
+                    <Activity className="h-4 w-4 mr-2" />
+                    Dashboard
+                  </Button>
+                </Link>
+                {flags.FEATURE_TEMPLATES ? (
+                  <Link to="/templates">
+                    <Button variant="ghost" className="h-9 w-full justify-start text-sm">
+                      <BookOpen className="h-4 w-4 mr-2" />
+                      Templates
+                    </Button>
+                  </Link>
+                ) : null}
+                <Link to="/database">
+                  <Button variant="ghost" className="h-9 w-full justify-start text-sm">
+                    <Database className="h-4 w-4 mr-2" />
+                    Database
+                  </Button>
+                </Link>
+                {showCollaborationTest ? (
+                  <Link to="/collaboration-test">
+                    <Button variant="ghost" className="h-9 w-full justify-start text-sm">
+                      <Users className="h-4 w-4 mr-2" />
+                      Collaboration test
+                    </Button>
+                  </Link>
+                ) : null}
+                {showAiSearch ? (
+                  <Link to="/ai-search">
+                    <Button variant="ghost" className="h-9 w-full justify-start text-sm">
+                      <Sparkles className="h-4 w-4 mr-2" />
+                      AI search
+                    </Button>
+                  </Link>
+                ) : null}
+                {showKnowledgeGraph ? (
+                  <Link to="/knowledge-graph">
+                    <Button variant="ghost" className="h-9 w-full justify-start text-sm">
+                      <Network className="h-4 w-4 mr-2" />
+                      Knowledge graph
+                    </Button>
+                  </Link>
+                ) : null}
+                {flags.FEATURE_AUTOMATION ? (
+                  <Link to="/automation">
+                    <Button variant="ghost" className="h-9 w-full justify-start text-sm">
+                      <Zap className="h-4 w-4 mr-2" />
+                      Automation
+                    </Button>
+                  </Link>
+                ) : null}
+              </div>
+            </details>
           </div>
 
           {/* Teams Section */}
           {showTeams ? (
-            <div className="mb-6">
-              <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 flex items-center">
-                <Users className="h-4 w-4 text-emerald-500 mr-2" />
-                Teams
+            <div>
+              <h3 className="mb-3 flex items-center text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <Users className="mr-2 h-4 w-4" />
+                Workspaces
                 {teamsLoading && <span className="ml-2 text-xs text-slate-400">(로딩 중...)</span>}
               </h3>
 
@@ -370,10 +391,10 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                       <div key={team.id} className="group">
                         <Button
                           variant="ghost"
-                          className="w-full justify-start p-3 h-auto rounded-xl hover:bg-gradient-to-r hover:from-primary/5 hover:to-primary/10 transition-all duration-200"
+                          className="h-10 w-full justify-start rounded-md px-2 text-sm hover:bg-muted"
                           onClick={() => handleTeamClick(team)}
                         >
-                          <Icon className={cn('h-5 w-5 mr-3', iconColor)} />
+                          <Icon className={cn('mr-2 h-4 w-4', iconColor)} />
                           <span className="flex-1 text-left font-medium">{team.displayName}</span>
                           {expandedSections[`team-${team.id}`] ? (
                             <ChevronDown className="h-4 w-4 text-slate-400 group-hover:text-primary transition-colors" />
@@ -383,38 +404,38 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                         </Button>
 
                         {expandedSections[`team-${team.id}`] && (
-                          <div className="ml-8 mt-3 space-y-2">
+                          <div className="ml-4 mt-1 space-y-1 border-l border-border pl-2">
                             <Link to={`/teams/${team.name}/members`}>
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="w-full justify-start h-9 text-xs rounded-lg hover:bg-gradient-to-r hover:from-emerald-50 hover:to-emerald-100 dark:hover:from-emerald-900/20 dark:hover:to-emerald-800/20 transition-all"
+                                className="h-8 w-full justify-start text-xs"
                                 onClick={onClose}
                               >
                                 <Users className="h-4 w-4 mr-2 text-emerald-500" />
-                                팀원 관리
+                                Members
                               </Button>
                             </Link>
                             <Link to={`/teams/${team.name}/tasks`}>
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="w-full justify-start h-9 text-xs rounded-lg hover:bg-gradient-to-r hover:from-orange-50 hover:to-orange-100 dark:hover:from-orange-900/20 dark:hover:to-orange-800/20 transition-all"
+                                className="h-8 w-full justify-start text-xs"
                                 onClick={onClose}
                               >
                                 <CheckSquare className="h-4 w-4 mr-2 text-orange-500" />
-                                과제 트래커
+                                Tasks
                               </Button>
                             </Link>
                             <Link to={`/teams/${team.name}/files`}>
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="w-full justify-start h-9 text-xs rounded-lg hover:bg-gradient-to-r hover:from-blue-50 hover:to-blue-100 dark:hover:from-blue-900/20 dark:hover:to-blue-800/20 transition-all"
+                                className="h-8 w-full justify-start text-xs"
                                 onClick={onClose}
                               >
                                 <File className="h-4 w-4 mr-2 text-blue-500" />
-                                파일 관리
+                                Files
                               </Button>
                             </Link>
                             {flags.FEATURE_CALENDAR ? (
@@ -422,10 +443,11 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  className="w-full justify-start h-9 text-xs rounded-lg hover:bg-gradient-to-r hover:from-purple-50 hover:to-purple-100 dark:hover:from-purple-900/20 dark:hover:to-purple-800/20 transition-all"
+                                  className="h-8 w-full justify-start text-xs"
                                   onClick={onClose}
                                 >
-                                  <Calendar className="h-4 w-4 mr-2 text-purple-500" />팀 캘린더
+                                  <Calendar className="h-4 w-4 mr-2 text-purple-500" />
+                                  Calendar
                                 </Button>
                               </Link>
                             ) : null}
@@ -433,20 +455,22 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="w-full justify-start h-9 text-xs rounded-lg hover:bg-gradient-to-r hover:from-green-50 hover:to-green-100 dark:hover:from-green-900/20 dark:hover:to-green-800/20 transition-all"
+                                className="h-8 w-full justify-start text-xs"
                                 onClick={onClose}
                               >
-                                <Plus className="h-4 w-4 mr-2 text-green-500" />팀 페이지
+                                <Book className="h-4 w-4 mr-2 text-green-500" />
+                                Documents
                               </Button>
                             </Link>
                             <Link to={`/teams/${team.name}/database`}>
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="w-full justify-start h-9 text-xs rounded-lg hover:bg-gradient-to-r hover:from-indigo-50 hover:to-indigo-100 dark:hover:from-indigo-900/20 dark:hover:to-indigo-800/20 transition-all"
+                                className="h-8 w-full justify-start text-xs"
                                 onClick={onClose}
                               >
-                                <Database className="h-4 w-4 mr-2 text-indigo-500" />팀 데이터
+                                <Database className="h-4 w-4 mr-2 text-indigo-500" />
+                                Data
                               </Button>
                             </Link>
                           </div>

@@ -57,13 +57,13 @@ test.describe('GJ-01 authentication and team entry', () => {
     const teamButton = page.getByRole('button', { name: new RegExp(team.displayName) });
     await expect(teamButton).toBeVisible({ timeout: 15000 });
     await teamButton.click();
-    await page.getByRole('link', { name: '팀 페이지' }).click();
+    await page.getByRole('link', { name: 'Documents' }).click();
     await expect(page).toHaveURL(`/teams/${team.name}/pages`, { timeout: 15000 });
-    await expect(page.getByRole('heading', { name: `${team.name} 팀 문서` })).toBeVisible();
+    await expect(page.getByRole('heading', { name: `${team.name} documents` })).toBeVisible();
 
-    await page.getByRole('button', { name: '새 문서 작성' }).click();
+    await page.getByRole('link', { name: 'New document' }).click();
     await expect(page).toHaveURL(new RegExp(`/teams/${team.name}/create`));
-    await expect(page.getByRole('heading', { name: `${team.name} 팀 새 문서 작성` })).toBeVisible();
+    await expect(page.getByRole('heading', { name: `New ${team.name} document` })).toBeVisible();
 
     const title = `GJ01 Team Page ${stamp}`;
     await page.getByLabel('Title').fill(title);

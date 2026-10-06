@@ -1,10 +1,9 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Book, Clock, User } from 'lucide-react';
+import { BookOpen, ChevronRight, Clock, FileText, Plus, User } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import type { WikiPage } from '@shared/schema';
 
@@ -68,183 +67,149 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
       : []
   ) as WikiPage[];
 
+  const createPath = teamName ? `/teams/${teamName}/create` : '/create';
+  const workspaceTitle = teamName ? `${teamName} documents` : 'Documents';
+
   return (
-    <div className="space-y-8">
-      {/* Hero Section */}
-      <div className="text-center space-y-4 py-12">
-        <h1 className="text-4xl font-bold text-slate-900 dark:text-white">
-          {teamName ? `${teamName} 팀 문서` : 'Welcome to Papyr.us'}
-        </h1>
-        <p className="text-xl text-slate-600 dark:text-slate-400 max-w-2xl mx-auto">
-          {teamName
-            ? `${teamName} 팀의 문서들을 관리하고 공유하세요.`
-            : 'Your modern wiki and documentation platform. Organize knowledge, collaborate with AI, and build comprehensive documentation.'}
-        </p>
-      </div>
-
-      {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Pages</CardTitle>
-            <Book className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalCount}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Documentation</CardTitle>
-            <Book className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {flatPages.filter((p: WikiPage) => p.folder === 'docs').length || 0}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Ideas</CardTitle>
-            <Book className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {flatPages.filter((p: WikiPage) => p.folder === 'ideas').length || 0}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Recent Pages */}
-      <div>
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-semibold text-slate-900 dark:text-white">
-            {teamName ? `${teamName} 팀 문서` : 'Recent Pages'}
-          </h2>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <label className="text-sm text-slate-600 dark:text-slate-400">정렬</label>
-              <select
-                className="text-sm border rounded-md px-2 py-1 bg-white dark:bg-slate-900"
-                value={effectiveSort}
-                onChange={(e) => setSort(e.target.value as 'updated' | 'rank')}
-                disabled={!!searchQuery}
-                title={searchQuery ? '검색 시 자동으로 관련도순 정렬됩니다' : '정렬 방식 선택'}
-              >
-                <option value="updated">최신순</option>
-                <option value="rank">관련도순</option>
-              </select>
-            </div>
-            {teamName && (
-              <Link to={`/teams/${teamName}/create`}>
-                <button className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors">
-                  새 문서 작성
-                </button>
-              </Link>
-            )}
-          </div>
+    <section className="mx-auto max-w-6xl space-y-7">
+      <header className="flex flex-col gap-5 border-b border-border pb-6 sm:flex-row sm:items-end sm:justify-between">
+        <div className="space-y-1">
+          <p className="text-sm font-medium text-muted-foreground">
+            {teamName ? 'Team workspace' : 'Knowledge workspace'}
+          </p>
+          <h1 className="text-3xl font-semibold tracking-tight text-foreground">
+            {workspaceTitle}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {totalCount === 1 ? '1 document' : `${totalCount} documents`} · most recently updated
+            first
+          </p>
         </div>
+        <Link
+          to={createPath}
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Plus className="h-4 w-4" />
+          New document
+        </Link>
+      </header>
 
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="text-base font-semibold text-foreground">
+          {searchQuery ? `Search results for “${searchQuery}”` : 'All documents'}
+        </h2>
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          Sort
+          <select
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            value={effectiveSort}
+            onChange={(e) => setSort(e.target.value as 'updated' | 'rank')}
+            disabled={!!searchQuery}
+            title={searchQuery ? 'Search results are sorted by relevance' : 'Select sort order'}
+          >
+            <option value="updated">Last updated</option>
+            <option value="rank">Relevance</option>
+          </select>
+        </label>
+      </div>
+
+      <div className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
         {isLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="divide-y divide-border">
             {Array.from({ length: 6 }).map((_, i) => (
-              <Card key={i}>
-                <CardHeader>
-                  <Skeleton className="h-4 w-3/4" />
-                  <Skeleton className="h-3 w-1/2" />
-                </CardHeader>
-                <CardContent>
-                  <Skeleton className="h-20 w-full" />
-                </CardContent>
-              </Card>
+              <div key={i} className="flex items-center gap-4 px-5 py-4">
+                <Skeleton className="h-9 w-9 rounded-md" />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <Skeleton className="h-4 w-2/5" />
+                  <Skeleton className="h-3 w-3/5" />
+                </div>
+                <Skeleton className="h-3 w-24" />
+              </div>
             ))}
           </div>
         ) : error ? (
-          <div className="text-center py-12">
-            <div className="text-red-500 mb-4">
-              <Book className="h-12 w-12 mx-auto mb-2" />
-              <p className="text-lg font-medium">데이터를 불러오는데 실패했습니다</p>
-              <p className="text-sm text-slate-600 dark:text-slate-400">
-                잠시 후 다시 시도해주세요.
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {flatPages.map((page: WikiPage) => (
-              <Link key={page.id} to={`/page/${page.slug}`}>
-                <Card className="group hover:shadow-lg transition-all duration-200 border-l-4 border-l-primary/20 hover:border-l-primary cursor-pointer">
-                  <CardHeader>
-                    <CardTitle className="text-lg line-clamp-2">
-                      {renderHighlighted(page.title, searchQuery)}
-                    </CardTitle>
-                    <div className="flex items-center space-x-4 text-sm text-slate-500 dark:text-slate-400">
-                      <div className="flex items-center space-x-1">
-                        <User className="h-3 w-3" />
-                        <span>{page.author}</span>
-                      </div>
-                      <div className="flex items-center space-x-1">
-                        <Clock className="h-3 w-3" />
-                        <span>
-                          {formatDistanceToNow(new Date(page.updatedAt), { addSuffix: true })}
-                        </span>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      <p className="text-sm text-slate-600 dark:text-slate-400 line-clamp-3">
-                        {renderHighlighted(page.content.substring(0, 150), searchQuery)}...
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        <Badge variant="secondary" className="capitalize">
-                          {page.folder}
-                        </Badge>
-                        {page.tags.slice(0, 2).map((tag: string) => (
-                          <Badge key={tag} variant="outline">
-                            {tag}
-                          </Badge>
-                        ))}
-                        {page.tags.length > 2 && (
-                          <Badge variant="outline">+{page.tags.length - 2} more</Badge>
-                        )}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
-          </div>
-        )}
-        {flatPages.length === 0 && !isLoading && !error && (
-          <div className="text-center py-12">
-            <Book className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-slate-900 dark:text-white mb-2">
-              {teamName ? `${teamName} 팀 문서가 없습니다` : 'No pages yet'}
-            </h3>
-            <p className="text-slate-600 dark:text-slate-400">
-              {teamName
-                ? '새 문서를 작성하여 팀의 지식을 공유해보세요.'
-                : 'Start by creating your first wiki page using the sidebar navigation.'}
+          <div className="flex flex-col items-center px-6 py-14 text-center">
+            <BookOpen className="mb-3 h-8 w-8 text-destructive" />
+            <h3 className="font-medium text-foreground">Documents could not be loaded</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Refresh the page or try again in a moment.
             </p>
           </div>
-        )}
-
-        {flatPages.length > 0 && hasNextPage && (
-          <div className="flex justify-center mt-8">
-            <button
-              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50"
-              onClick={() => fetchNextPage()}
-              disabled={isFetchingNextPage}
-            >
-              {isFetchingNextPage ? '로딩 중…' : '더 보기'}
-            </button>
+        ) : flatPages.length === 0 ? (
+          <div className="flex flex-col items-center px-6 py-14 text-center">
+            <FileText className="mb-3 h-9 w-9 text-muted-foreground" />
+            <h3 className="font-medium text-foreground">No documents yet</h3>
+            <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+              Start with a document that gives your team a shared place for decisions and notes.
+            </p>
+            <Link to={createPath} className="mt-5 text-sm font-medium text-primary hover:underline">
+              Create the first document
+            </Link>
+          </div>
+        ) : (
+          <div className="divide-y divide-border">
+            {flatPages.map((page: WikiPage) => {
+              const tags = page.tags ?? [];
+              return (
+                <Link
+                  key={page.id}
+                  to={`/page/${page.slug}`}
+                  className="group flex items-center gap-3 px-4 py-4 transition-colors hover:bg-muted/60 sm:gap-4 sm:px-5"
+                >
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                    <FileText className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <h3 className="truncate font-medium text-foreground group-hover:text-primary">
+                        {renderHighlighted(page.title, searchQuery)}
+                      </h3>
+                      <Badge
+                        variant="secondary"
+                        className="hidden shrink-0 capitalize sm:inline-flex"
+                      >
+                        {page.folder}
+                      </Badge>
+                    </div>
+                    <p className="mt-1 line-clamp-1 text-sm text-muted-foreground">
+                      {renderHighlighted(page.content.substring(0, 180), searchQuery)}
+                    </p>
+                    <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <User className="h-3 w-3" />
+                        {page.author}
+                      </span>
+                      {tags.slice(0, 2).map((tag: string) => (
+                        <span key={tag} className="hidden sm:inline">
+                          #{tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="hidden shrink-0 items-center gap-2 text-right text-xs text-muted-foreground md:flex">
+                    <Clock className="h-3.5 w-3.5" />
+                    {formatDistanceToNow(new Date(page.updatedAt), { addSuffix: true })}
+                  </div>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
+                </Link>
+              );
+            })}
           </div>
         )}
       </div>
-    </div>
+
+      {flatPages.length > 0 && hasNextPage && (
+        <div className="flex justify-center">
+          <button
+            className="h-10 rounded-md border border-input bg-background px-4 text-sm font-medium shadow-sm transition-colors hover:bg-muted disabled:opacity-50"
+            onClick={() => fetchNextPage()}
+            disabled={isFetchingNextPage}
+          >
+            {isFetchingNextPage ? 'Loading…' : 'Load more documents'}
+          </button>
+        </div>
+      )}
+    </section>
   );
 }
 

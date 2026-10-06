@@ -63,14 +63,14 @@ export function PageHistory({ pageId, currentTitle }: PageHistoryProps) {
       queryClient.invalidateQueries({ queryKey: [`/api/pages/${pageId}`] });
       queryClient.invalidateQueries({ queryKey: ['/api/pages'] });
       toast({
-        title: '버전 복원 완료',
-        description: '선택한 버전으로 페이지가 복원되었습니다.',
+        title: 'Version restored',
+        description: 'The document now matches the selected version.',
       });
     },
     onError: () => {
       toast({
-        title: '복원 실패',
-        description: '버전 복원에 실패했습니다. 다시 시도해주세요.',
+        title: 'Restore failed',
+        description: 'The version could not be restored. Try again.',
         variant: 'destructive',
       });
     },
@@ -82,7 +82,7 @@ export function PageHistory({ pageId, currentTitle }: PageHistoryProps) {
         <SheetTrigger asChild>
           <Button variant="outline" size="sm" className="gap-2">
             <History className="h-4 w-4" />
-            버전 기록
+            History
             {versions.length > 0 && (
               <Badge variant="secondary" className="text-xs ml-1">
                 {versions.length}
@@ -90,16 +90,18 @@ export function PageHistory({ pageId, currentTitle }: PageHistoryProps) {
             )}
           </Button>
         </SheetTrigger>
-        <SheetContent className="w-[400px] sm:w-[540px]">
+        <SheetContent className="w-full border-l border-border bg-background p-0 sm:w-[460px]">
           <SheetHeader>
-            <SheetTitle className="flex items-center gap-2">
-              <History className="h-5 w-5" />
-              버전 기록
-            </SheetTitle>
-            <p className="text-sm text-muted-foreground">{currentTitle}</p>
+            <div className="border-b border-border px-6 py-6">
+              <SheetTitle className="flex items-center gap-2">
+                <History className="h-5 w-5" />
+                Version history
+              </SheetTitle>
+              <p className="mt-1 truncate text-sm text-muted-foreground">{currentTitle}</p>
+            </div>
           </SheetHeader>
 
-          <ScrollArea className="h-[calc(100vh-120px)] mt-4">
+          <ScrollArea className="h-[calc(100vh-126px)] px-6 py-5">
             {isLoading ? (
               <div className="flex items-center justify-center h-32">
                 <div className="animate-spin rounded-full h-6 w-6 border-2 border-primary border-t-transparent" />
@@ -115,16 +117,14 @@ export function PageHistory({ pageId, currentTitle }: PageHistoryProps) {
             ) : (
               <div className="space-y-2">
                 {/* Current version */}
-                <div className="p-3 rounded-lg bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800">
+                <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <FileText className="h-4 w-4 text-green-600" />
-                      <span className="text-sm font-medium text-green-700 dark:text-green-400">
-                        현재 버전
-                      </span>
+                      <span className="text-sm font-medium text-foreground">Current version</span>
                     </div>
-                    <Badge variant="outline" className="text-xs text-green-600 border-green-300">
-                      최신
+                    <Badge variant="outline" className="border-primary/30 text-xs text-primary">
+                      Current
                     </Badge>
                   </div>
                 </div>
@@ -133,7 +133,7 @@ export function PageHistory({ pageId, currentTitle }: PageHistoryProps) {
                 {versions.map((version) => (
                   <div
                     key={version.id}
-                    className="p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                    className="rounded-lg border border-border p-4 transition-colors hover:bg-muted/60"
                   >
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
@@ -172,21 +172,21 @@ export function PageHistory({ pageId, currentTitle }: PageHistoryProps) {
                         }}
                       >
                         <Eye className="h-3 w-3 mr-1" />
-                        미리보기
+                        Preview
                       </Button>
                       <Button
                         variant="ghost"
                         size="sm"
                         className="h-7 text-xs text-blue-600 hover:text-blue-700"
                         onClick={() => {
-                          if (confirm(`v${version.versionNumber}으로 복원하시겠습니까?`)) {
+                          if (confirm(`Restore version ${version.versionNumber}?`)) {
                             restoreMutation.mutate(version.id);
                           }
                         }}
                         disabled={restoreMutation.isPending}
                       >
                         <RotateCcw className="h-3 w-3 mr-1" />
-                        복원
+                        Restore
                       </Button>
                     </div>
                   </div>
@@ -203,7 +203,7 @@ export function PageHistory({ pageId, currentTitle }: PageHistoryProps) {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Eye className="h-5 w-5" />
-              버전 {selectedVersion?.versionNumber} 미리보기
+              Version {selectedVersion?.versionNumber} preview
             </DialogTitle>
           </DialogHeader>
           {viewVersionQuery.isLoading ? (
@@ -233,7 +233,7 @@ export function PageHistory({ pageId, currentTitle }: PageHistoryProps) {
                   onClick={() => {
                     if (
                       selectedVersion &&
-                      confirm(`v${selectedVersion.versionNumber}으로 복원하시겠습니까?`)
+                      confirm(`Restore version ${selectedVersion.versionNumber}?`)
                     ) {
                       restoreMutation.mutate(selectedVersion.id);
                       setPreviewOpen(false);
@@ -241,12 +241,13 @@ export function PageHistory({ pageId, currentTitle }: PageHistoryProps) {
                   }}
                   disabled={restoreMutation.isPending}
                 >
-                  <RotateCcw className="h-4 w-4 mr-2" />이 버전으로 복원
+                  <RotateCcw className="h-4 w-4 mr-2" />
+                  Restore this version
                 </Button>
               </div>
             </div>
           ) : (
-            <p className="text-muted-foreground">버전을 불러올 수 없습니다.</p>
+            <p className="text-muted-foreground">This version could not be loaded.</p>
           )}
         </DialogContent>
       </Dialog>

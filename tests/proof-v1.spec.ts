@@ -21,7 +21,10 @@ async function createTeam(request: APIRequestContext, name: string, displayName:
 }
 
 test.describe('v1.0 fresh proof package', () => {
-  test('captures synthetic team workspace and created document proof', async ({ page, request }) => {
+  test('captures synthetic team workspace and created document proof', async ({
+    page,
+    request,
+  }) => {
     mkdirSync(PROOF_DIR, { recursive: true });
 
     const stamp = Date.now();
@@ -59,10 +62,10 @@ test.describe('v1.0 fresh proof package', () => {
     const teamButton = page.getByRole('button', { name: new RegExp(teamDisplayName) });
     await expect(teamButton).toBeVisible({ timeout: 15000 });
     await teamButton.click();
-    await page.getByRole('link', { name: '팀 페이지' }).click();
+    await page.getByRole('link', { name: 'Documents' }).click();
     await expect(page).toHaveURL(`/teams/${teamName}/pages`, { timeout: 15000 });
     await expect(
-      page.getByRole('heading', { name: `${teamName} 팀 문서`, level: 1, exact: true })
+      page.getByRole('heading', { name: `${teamName} documents`, level: 1, exact: true })
     ).toBeVisible();
 
     await page.screenshot({
@@ -70,7 +73,7 @@ test.describe('v1.0 fresh proof package', () => {
       fullPage: true,
     });
 
-    await page.getByRole('button', { name: '새 문서 작성' }).click();
+    await page.getByRole('link', { name: 'New document' }).click();
     await expect(page).toHaveURL(new RegExp(`/teams/${teamName}/create`));
     await page.getByLabel('Title').fill(pageTitle);
 
@@ -83,8 +86,7 @@ test.describe('v1.0 fresh proof package', () => {
     await textarea.fill('Synthetic proof content for the accepted Papyr.us v1.0 browser path.');
 
     const createResponsePromise = page.waitForResponse(
-      (response) =>
-        response.url().includes('/api/pages') && response.request().method() === 'POST'
+      (response) => response.url().includes('/api/pages') && response.request().method() === 'POST'
     );
     await page.getByRole('button', { name: 'Create Page' }).click();
     const createResponse = await createResponsePromise;

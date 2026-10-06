@@ -273,7 +273,9 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
   if (teamScopeUnavailable) {
     return (
       <div className="p-6" role="alert">
-        <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Team workspace unavailable</h1>
+        <h1 className="text-xl font-semibold text-slate-900 dark:text-white">
+          Team workspace unavailable
+        </h1>
         <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
           This team is not accessible or could not be resolved.
         </p>
@@ -282,30 +284,30 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
   }
 
   return (
-    <div className="container mx-auto p-6 max-w-6xl">
-      <div className="flex items-center justify-between mb-6">
+    <div className="mx-auto max-w-5xl px-1 py-4 md:px-6 md:py-8">
+      <div className="mb-8 flex flex-col gap-4 border-b border-border pb-6 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center space-x-4">
           <Button variant="ghost" size="sm" onClick={() => window.history.back()}>
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back
           </Button>
           <div>
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
               {pageId
                 ? urlTeamName
-                  ? `${urlTeamName} 팀 문서 수정`
+                  ? `Edit ${urlTeamName} document`
                   : 'Edit Page'
                 : urlTeamName
-                  ? `${urlTeamName} 팀 새 문서 작성`
+                  ? `New ${urlTeamName} document`
                   : 'Create New Page'}
             </h1>
-            <p className="text-slate-600 dark:text-slate-400">
+            <p className="mt-1 text-sm text-muted-foreground">
               {pageId
                 ? urlTeamName
-                  ? '팀 문서를 수정합니다'
+                  ? 'Changes are saved when you update the document.'
                   : 'Update your existing page'
                 : urlTeamName
-                  ? '팀에 새로운 문서를 추가합니다'
+                  ? 'Write a shared document for this workspace.'
                   : 'Add a new page to your wiki'}
             </p>
           </div>
@@ -330,25 +332,23 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card className={isPreview ? 'lg:block hidden' : ''}>
-          <CardHeader>
-            <CardTitle className="flex items-center">
-              <Plus className="h-5 w-5 mr-2" />
-              Page Details
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+      <div className="space-y-6">
+        <Card className={isPreview ? 'hidden' : ''}>
+          <CardContent className="p-5 md:p-7">
             <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-5 lg:grid-cols-3">
                 <FormField
                   control={form.control}
                   name="title"
                   render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="lg:col-span-3">
                       <FormLabel>Title</FormLabel>
                       <FormControl>
-                        <Input placeholder="Page title..." {...field} />
+                        <Input
+                          className="h-12 border-0 border-b border-border px-0 text-2xl font-semibold shadow-none focus-visible:ring-0"
+                          placeholder="Untitled document"
+                          {...field}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -359,7 +359,7 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
                   control={form.control}
                   name="folder"
                   render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="order-3">
                       <FormLabel>Folder</FormLabel>
                       <Select onValueChange={field.onChange} defaultValue={field.value}>
                         <FormControl>
@@ -384,7 +384,7 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
                   control={form.control}
                   name="tags"
                   render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="order-3">
                       <FormLabel>Tags</FormLabel>
                       <FormControl>
                         <Input placeholder="tag1, tag2, tag3..." {...field} />
@@ -399,7 +399,7 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
                   control={form.control}
                   name="author"
                   render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="order-3">
                       <FormLabel>Author</FormLabel>
                       <FormControl>
                         <Input placeholder="Your name..." {...field} />
@@ -413,10 +413,10 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
                   control={form.control}
                   name="content"
                   render={() => (
-                    <FormItem>
-                      <FormLabel>Content (Block Editor)</FormLabel>
+                    <FormItem className="order-2 lg:col-span-3">
+                      <FormLabel className="sr-only">Content</FormLabel>
                       <FormControl>
-                        <div className="border rounded-md">
+                        <div className="overflow-hidden rounded-md border border-border bg-background">
                           <BlockEditor
                             blocks={blocks}
                             onChange={setBlocks}
@@ -433,7 +433,7 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
                   )}
                 />
 
-                <div className="flex justify-end space-x-2">
+                <div className="order-4 flex justify-end space-x-2 border-t border-border pt-5 lg:col-span-3">
                   <Button type="button" variant="outline" onClick={() => window.history.back()}>
                     Cancel
                   </Button>
@@ -453,7 +453,7 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
           </CardContent>
         </Card>
 
-        <Card className={!isPreview ? 'lg:block hidden' : ''}>
+        <Card className={!isPreview ? 'hidden' : ''}>
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
               <span className="flex items-center">

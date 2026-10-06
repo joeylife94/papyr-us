@@ -14,16 +14,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import {
-  Moon,
-  Sun,
-  Settings,
-  Menu,
-  Search,
-  ScrollText,
-  LogOut,
-  User as UserIcon,
-} from 'lucide-react';
+import { Moon, Sun, Settings, Menu, Search, ScrollText, LogOut } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useMemberByEmail } from '@/hooks/useMember';
 import { useFeatureFlags } from '@/features/FeatureFlagsContext';
@@ -61,11 +52,11 @@ export function Header({ onToggleSidebar, searchQuery, onSearchChange }: HeaderP
   };
 
   return (
-    <header className="fixed top-0 left-0 right-0 bg-gradient-to-r from-white/90 via-white/95 to-slate-50/90 dark:from-slate-900/90 dark:via-slate-900/95 dark:to-slate-950/90 backdrop-blur-md border-b border-slate-200/60 dark:border-slate-700/60 z-40 shadow-sm">
+    <header className="fixed top-0 left-0 right-0 z-40 border-b border-border bg-background/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/85">
       <a href="#main-content" className="skip-link">
         Skip to main content
       </a>
-      <div className="flex items-center justify-between px-4 h-16">
+      <div className="flex h-16 items-center justify-between px-4 md:px-6">
         <div className="flex items-center space-x-3">
           <Button variant="ghost" size="icon" className="lg:hidden" onClick={onToggleSidebar}>
             <Menu className="h-5 w-5" />
@@ -74,19 +65,15 @@ export function Header({ onToggleSidebar, searchQuery, onSearchChange }: HeaderP
             to="/"
             className="flex items-center space-x-2 hover:opacity-80 transition-opacity cursor-pointer"
           >
-            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary">
               <ScrollText className="h-4 w-4 text-white" />
             </div>
             <h1 className="text-xl font-bold text-slate-900 dark:text-white">Papyr.us</h1>
           </Link>
         </div>
 
-        <div className="flex-1 max-w-md mx-8 hidden md:block">
-          <SearchBar
-            value={searchQuery}
-            onChange={onSearchChange}
-            placeholder="Search documentation..."
-          />
+        <div className="mx-8 hidden max-w-xl flex-1 md:block">
+          <SearchBar value={searchQuery} onChange={onSearchChange} placeholder="Search documents" />
         </div>
 
         <div className="flex items-center space-x-2 md:space-x-1">
@@ -157,11 +144,7 @@ export function Header({ onToggleSidebar, searchQuery, onSearchChange }: HeaderP
 
       {showMobileSearch && (
         <div className="md:hidden px-4 pb-4">
-          <SearchBar
-            value={searchQuery}
-            onChange={onSearchChange}
-            placeholder="Search documentation..."
-          />
+          <SearchBar value={searchQuery} onChange={onSearchChange} placeholder="Search documents" />
         </div>
       )}
     </header>
