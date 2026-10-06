@@ -178,6 +178,9 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
     return pathname === `/page/${slug}`;
   };
 
+  const isRouteActive = (route: string) => pathname === route || pathname.startsWith(`${route}/`);
+  const currentWorkspace = teams.find((team) => isRouteActive(`/teams/${team.name}`));
+
   // Search filtering helpers
   const hasMatchingEvents = (events: any[], query: string) => {
     if (!query.trim()) return true;
@@ -271,7 +274,14 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
             </div>
             <div className="space-y-1">
               <Link to="/">
-                <Button variant="ghost" className="h-9 w-full justify-start text-sm">
+                <Button
+                  variant="ghost"
+                  className={cn(
+                    'h-9 w-full justify-start text-sm',
+                    pathname === '/' && 'bg-primary/10 font-medium text-primary hover:bg-primary/10'
+                  )}
+                  aria-current={pathname === '/' ? 'page' : undefined}
+                >
                   <Book className="mr-2 h-4 w-4 text-primary" />
                   All documents
                 </Button>
@@ -353,6 +363,15 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                 {teamsLoading && <span className="ml-2 text-xs text-slate-400">(로딩 중...)</span>}
               </h3>
 
+              {currentWorkspace ? (
+                <p className="mb-3 truncate rounded-md bg-muted px-2 py-1.5 text-xs text-muted-foreground">
+                  Current workspace:{' '}
+                  <span className="font-medium text-foreground">
+                    {currentWorkspace.displayName}
+                  </span>
+                </p>
+              ) : null}
+
               {teamsError && (
                 <div className="text-xs text-red-500 mb-2">팀 목록을 불러오는데 실패했습니다.</div>
               )}
@@ -391,8 +410,13 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                       <div key={team.id} className="group">
                         <Button
                           variant="ghost"
-                          className="h-10 w-full justify-start rounded-md px-2 text-sm hover:bg-muted"
+                          className={cn(
+                            'h-10 w-full justify-start rounded-md px-2 text-sm hover:bg-muted',
+                            isRouteActive(`/teams/${team.name}`) &&
+                              'bg-primary/10 font-medium text-primary hover:bg-primary/10'
+                          )}
                           onClick={() => handleTeamClick(team)}
+                          aria-current={isRouteActive(`/teams/${team.name}`) ? 'page' : undefined}
                         >
                           <Icon className={cn('mr-2 h-4 w-4', iconColor)} />
                           <span className="flex-1 text-left font-medium">{team.displayName}</span>
@@ -409,7 +433,11 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-8 w-full justify-start text-xs"
+                                className={cn(
+                                  'h-8 w-full justify-start text-xs',
+                                  isRouteActive(`/teams/${team.name}/pages`) &&
+                                    'bg-primary/10 text-primary hover:bg-primary/10'
+                                )}
                                 onClick={onClose}
                               >
                                 <Users className="h-4 w-4 mr-2 text-emerald-500" />
