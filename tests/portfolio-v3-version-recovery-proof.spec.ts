@@ -1,49 +1,81 @@
 import { mkdirSync } from 'node:fs';
-import { test, expect } from '@playwright/test';
-import { loginPageWithCookies } from './e2e-helpers';
+import { test, expect, type APIRequestContext } from '@playwright/test';
+import {
+  createAuthenticatedApiContext,
+  loginPageWithCookies,
+  registerTestUser,
+} from './e2e-helpers';
 
-const PASSWORD = 'Password123!';
 const PROOF_DIR = 'proof-artifacts';
 
-test('Portfolio V3: capture version-recovery boundary from accepted GJ-04 path', async ({
+async function createTeam(request: APIRequestContext, name: string, displayName: string) {
+  const response = await request.post('/api/teams', {
+    data: {
+      name,
+      displayName,
+      description: 'Synthetic Portfolio V3 recovery proof workspace',
+    },
+  });
+  expect(response.status()).toBe(201);
+  return response.json();
+}
+
+test('Portfolio V3: capture version-recovery boundary on current team workflow', async ({
   page,
   request,
 }) => {
   mkdirSync(PROOF_DIR, { recursive: true });
 
   const stamp = Date.now();
-  const email = `portfolio-v3-gj04-${stamp}@example.com`;
+  const credentials = await registerTestUser(request, `portfolio-v3-recovery-${stamp}`);
+  const teamName = `recovery-team-${stamp}`;
+  const teamDisplayName = `Recovery Team ${stamp}`;
   const originalTitle = `Recovery Original ${stamp}`;
   const updatedTitle = `Recovery Updated ${stamp}`;
 
-  const register = await request.post('/api/auth/register', {
-    data: { name: 'Portfolio V3 Recovery User', email, password: PASSWORD },
-  });
-  expect(register.status()).toBe(201);
+  await loginPageWithCookies(page, credentials.email, credentials.password);
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
 
-  const login = await request.post('/api/auth/login', {
-    data: { email, password: PASSWORD },
-  });
-  expect(login.status()).toBe(200);
+  const authRequest = await createAuthenticatedApiContext(
+    credentials.email,
+    credentials.password
+  );
+  const team = await createTeam(authRequest, teamName, teamDisplayName);
 
-  await loginPageWithCookies(page, email, PASSWORD);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  const teamButton = page.getByRole('button', { name: new RegExp(teamDisplayName) });
+  await expect(teamButton).toBeVisible({ timeout: 15000 });
+  await teamButton.click();
+  await page.getByRole('link', { name: '팀 페이지' }).click();
+  await expect(page).toHaveURL(`/teams/${teamName}/pages`, { timeout: 15000 });
 
-  await page.goto('/create');
-  await expect(page.getByRole('heading', { name: 'Create New Page' })).toBeVisible();
+  await page.getByRole('button', { name: '새 문서 작성' }).click();
+  await expect(page).toHaveURL(new RegExp(`/teams/${teamName}/create`));
   await page.getByLabel('Title').fill(originalTitle);
+
+  const addParagraph = page.getByRole('button', { name: '단락', exact: true });
+  await expect(addParagraph).toBeVisible({ timeout: 10000 });
+  await addParagraph.click();
+  const textarea = page.locator('textarea').first();
+  await expect(textarea).toBeVisible({ timeout: 10000 });
+  await textarea.fill('Synthetic recovery proof content for Portfolio V3.');
 
   const createResponsePromise = page.waitForResponse(
     (response) =>
       response.url().includes('/api/pages') &&
-      response.request().method() === 'POST' &&
-      response.status() === 201
+      response.request().method() === 'POST'
   );
   await page.getByRole('button', { name: 'Create Page' }).click();
   const createResponse = await createResponsePromise;
+  expect(createResponse.status()).toBe(201);
   const created = await createResponse.json();
 
   const pageId = String(created.id);
   const slug = String(created.slug);
+  expect(String(created.teamId)).toBe(String(team.id));
+
+  await expect(page).toHaveURL(`/page/${slug}`, { timeout: 15000 });
+  await expect(page.getByRole('heading', { name: originalTitle })).toBeVisible();
 
   await page.locator('button[title="Edit Page"]').click();
   await expect(page.getByRole('heading', { name: 'Edit Page' })).toBeVisible();
@@ -59,7 +91,7 @@ test('Portfolio V3: capture version-recovery boundary from accepted GJ-04 path',
   await updateResponsePromise;
 
   await expect(page.getByRole('heading', { name: updatedTitle })).toBeVisible();
-  await page.reload({ waitUntil: 'networkidle' });
+  await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: updatedTitle })).toBeVisible();
 
   await page.getByRole('button', { name: /버전 기록/ }).click();
@@ -81,11 +113,10 @@ test('Portfolio V3: capture version-recovery boundary from accepted GJ-04 path',
   await page.getByRole('button', { name: '복원' }).first().click();
   await restoreResponsePromise;
 
-  await page.goto('/');
-  await page.goto(`/page/${slug}`, { waitUntil: 'networkidle' });
+  await page.goto(`/page/${slug}`, { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: originalTitle })).toBeVisible();
 
-  const restored = await request.get(`/api/pages/${pageId}`);
+  const restored = await authRequest.get(`/api/pages/${pageId}`);
   expect(restored.status()).toBe(200);
   expect((await restored.json()).title).toBe(originalTitle);
 
@@ -93,4 +124,8 @@ test('Portfolio V3: capture version-recovery boundary from accepted GJ-04 path',
     path: `${PROOF_DIR}/04-version-recovery-after.png`,
     fullPage: true,
   });
+
+  await authRequest.delete(`/api/pages/${pageId}`).catch(() => {});
+  await authRequest.delete(`/api/teams/${team.id}`).catch(() => {});
+  await authRequest.dispose();
 });
