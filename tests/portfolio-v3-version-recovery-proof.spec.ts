@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { test, expect } from '@playwright/test';
 import { loginPageWithCookies } from './e2e-helpers';
 
-const PASSWORD = 'password123';
+const PASSWORD = 'Password123!';
 const PROOF_DIR = 'proof-artifacts';
 
 test('Portfolio V3: capture version-recovery boundary from accepted GJ-04 path', async ({
