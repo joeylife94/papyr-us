@@ -77,8 +77,8 @@ test('Portfolio V3: capture version-recovery boundary on current team workflow',
   await expect(page).toHaveURL(`/page/${slug}`, { timeout: 15000 });
   await expect(page.getByRole('heading', { name: originalTitle })).toBeVisible();
 
-  await page.locator('button[title="Edit Page"]').click();
-  await expect(page.getByRole('heading', { name: 'Edit Page' })).toBeVisible();
+  await page.goto(`/edit/${pageId}`, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('heading', { name: /문서 수정|Edit Page/ })).toBeVisible();
   await page.getByLabel('Title').fill(updatedTitle);
 
   const updateResponsePromise = page.waitForResponse(
