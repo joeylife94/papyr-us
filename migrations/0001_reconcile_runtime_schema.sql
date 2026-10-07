@@ -192,4 +192,17 @@ ALTER TABLE "team_members" ADD CONSTRAINT "team_members_user_id_users_id_fk" FOR
 ALTER TABLE "team_members" ADD CONSTRAINT "team_members_invited_by_users_id_fk" FOREIGN KEY ("invited_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workflow_runs" ADD CONSTRAINT "workflow_runs_workflow_id_workflows_id_fk" FOREIGN KEY ("workflow_id") REFERENCES "public"."workflows"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workflows" ADD CONSTRAINT "workflows_team_id_teams_id_fk" FOREIGN KEY ("team_id") REFERENCES "public"."teams"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "comments" ADD CONSTRAINT "comments_author_user_id_users_id_fk" FOREIGN KEY ("author_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;
+ALTER TABLE "comments" ADD CONSTRAINT "comments_author_user_id_users_id_fk" FOREIGN KEY ("author_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+-- Runtime full-text search is maintained outside the Drizzle schema because
+-- PostgreSQL's tsvector and trigger definitions are not represented there.
+ALTER TABLE wiki_pages ADD COLUMN IF NOT EXISTS search_vector tsvector;--> statement-breakpoint
+UPDATE wiki_pages SET search_vector = setweight(to_tsvector('simple', coalesce(title, '')), 'A') || setweight(to_tsvector('simple', coalesce(content, '')), 'B') || setweight(to_tsvector('simple', coalesce(array_to_string(tags, ' '), '')), 'C');--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS idx_wiki_pages_search_vector ON wiki_pages USING GIN (search_vector);--> statement-breakpoint
+CREATE OR REPLACE FUNCTION wiki_pages_search_vector_update() RETURNS trigger AS $$
+BEGIN
+  NEW.search_vector := setweight(to_tsvector('simple', coalesce(NEW.title, '')), 'A') || setweight(to_tsvector('simple', coalesce(NEW.content, '')), 'B') || setweight(to_tsvector('simple', coalesce(array_to_string(NEW.tags, ' '), '')), 'C');
+  RETURN NEW;
+END
+$$ LANGUAGE plpgsql;--> statement-breakpoint
+DROP TRIGGER IF EXISTS trg_wiki_pages_search_vector ON wiki_pages;--> statement-breakpoint
+CREATE TRIGGER trg_wiki_pages_search_vector BEFORE INSERT OR UPDATE OF title, content, tags ON wiki_pages FOR EACH ROW EXECUTE FUNCTION wiki_pages_search_vector_update();
