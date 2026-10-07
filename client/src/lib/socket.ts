@@ -321,7 +321,11 @@ export function useCollaboration(
   // Handle session users
   useEffect(() => {
     if (!enabled) {
-      setCollaborationState((prev) => ({ ...prev, users: [], typingUsers: [] }));
+      setCollaborationState((prev) =>
+        prev.users.length > 0 || prev.typingUsers.length > 0
+          ? { ...prev, users: [], typingUsers: [] }
+          : prev
+      );
       return;
     }
 

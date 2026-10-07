@@ -42,7 +42,7 @@ test.describe('GJ-01 authentication and team entry', () => {
   }) => {
     const stamp = Date.now();
     const email = `gj01-${stamp}@example.com`;
-    const password = 'password123';
+    const password = 'Password123!';
     const userName = `GJ01 User ${stamp}`;
 
     await registerThroughUi(page, userName, email, password);
@@ -57,7 +57,7 @@ test.describe('GJ-01 authentication and team entry', () => {
     const teamButton = page.getByRole('button', { name: new RegExp(team.displayName) });
     await expect(teamButton).toBeVisible({ timeout: 15000 });
     await teamButton.click();
-    await page.getByRole('link', { name: 'Documents' }).click();
+    await page.getByRole('link', { name: 'Documents', exact: true }).click();
     await expect(page).toHaveURL(`/teams/${team.name}/pages`, { timeout: 15000 });
     await expect(page.getByRole('heading', { name: `${team.name} documents` })).toBeVisible();
 
@@ -83,6 +83,12 @@ test.describe('GJ-01 authentication and team entry', () => {
         response.request().method() === 'POST' &&
         response.status() === 201
     );
+    const readerResponsePromise = page.waitForResponse(
+      (response) =>
+        response.url().includes('/api/pages/slug/') &&
+        response.request().method() === 'GET' &&
+        response.status() === 200
+    );
     await page.getByRole('button', { name: 'Create Page' }).click();
     const createResponse = await createResponsePromise;
     const createdPage = await createResponse.json();
@@ -90,6 +96,7 @@ test.describe('GJ-01 authentication and team entry', () => {
     expect(String(createdPage.teamId)).toBe(String(team.id));
     expect(createdPage.title).toBe(title);
     await expect(page).toHaveURL(`/page/${createdPage.slug}`, { timeout: 15000 });
+    await readerResponsePromise;
     await expect(page.getByRole('heading', { name: title })).toBeVisible();
 
     const pagesResponse = await authRequest.get(`/api/pages?teamId=${team.id}`);

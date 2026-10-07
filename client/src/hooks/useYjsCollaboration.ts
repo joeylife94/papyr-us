@@ -80,8 +80,12 @@ export function useYjsCollaboration({
   // Initialize Yjs document
   useEffect(() => {
     if (!enabled || !pageId) {
-      // If disabled, ensure we look disconnected.
-      setState({ isConnected: false, userCount: 0, isSynced: false, users: [] });
+      // Avoid a render loop when callers provide unstable callbacks while collaboration is disabled.
+      setState((current) =>
+        current.isConnected || current.userCount !== 0 || current.isSynced || current.users.length !== 0
+          ? { isConnected: false, userCount: 0, isSynced: false, users: [] }
+          : current
+      );
       return;
     }
 

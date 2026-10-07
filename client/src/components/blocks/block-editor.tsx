@@ -94,6 +94,18 @@ export function BlockEditor({
     setSlashMenu((prev) => ({ ...prev, isOpen: false, filter: '' }));
   }, []);
 
+  const handleYjsUsersChange = useCallback((users: unknown[]) => {
+    console.log('[Yjs] Users changed:', users);
+  }, []);
+
+  const handleYjsUserCountChange = useCallback((count: number) => {
+    console.log('[Yjs] User count changed:', count);
+  }, []);
+
+  const handleYjsError = useCallback((error: string) => {
+    console.error('[Yjs] Collaboration error:', error);
+  }, []);
+
   const handleSlashSelect = useCallback(
     (type: BlockType) => {
       const blockIndex = blocks.findIndex((b) => b.id === slashMenu.blockId);
@@ -132,15 +144,9 @@ export function BlockEditor({
     userName,
     enabled: collaborationEnabled && useYjs,
     onBlocksChange: onChange,
-    onUsersChange: (users) => {
-      console.log('[Yjs] Users changed:', users);
-    },
-    onUserCountChange: (count) => {
-      console.log('[Yjs] User count changed:', count);
-    },
-    onError: (error) => {
-      console.error('[Yjs] Collaboration error:', error);
-    },
+    onUsersChange: handleYjsUsersChange,
+    onUserCountChange: handleYjsUserCountChange,
+    onError: handleYjsError,
   });
 
   // Legacy Socket.IO collaboration (old, timestamp-based conflict resolution)
@@ -510,9 +516,9 @@ export function BlockEditor({
                   <span className="text-sm text-gray-600">
                     {yjsCollaboration.isConnected
                       ? yjsCollaboration.isSynced
-                        ? '🟢 Yjs 동기화됨'
-                        : '🟡 Yjs 연결 중...'
-                      : '🔴 Yjs 연결 끊김'}
+                        ? 'Yjs synced'
+                        : 'Connecting to Yjs…'
+                      : 'Yjs disconnected'}
                   </span>
                 </>
               ) : (
@@ -524,7 +530,7 @@ export function BlockEditor({
                     <WifiOff className="h-4 w-4 text-red-500" />
                   )}
                   <span className="text-sm text-gray-600">
-                    {collaboration.isConnected ? '실시간 연결됨' : '연결 끊김'}
+                    {collaboration.isConnected ? 'Live connection active' : 'Connection lost'}
                   </span>
                 </>
               )}
@@ -536,7 +542,7 @@ export function BlockEditor({
                   <div className="flex items-center space-x-1">
                     <Users className="h-4 w-4 text-blue-500" />
                     <span className="text-sm text-gray-600">
-                      {yjsCollaboration.userCount}명 참여 중
+                      {yjsCollaboration.userCount} active
                     </span>
                   </div>
                 )
@@ -545,7 +551,7 @@ export function BlockEditor({
                   <div className="flex items-center space-x-1">
                     <Users className="h-4 w-4 text-blue-500" />
                     <span className="text-sm text-gray-600">
-                      {collaboration.users.length}명 참여 중
+                      {collaboration.users.length} active
                     </span>
                   </div>
                 )}
@@ -576,7 +582,7 @@ export function BlockEditor({
 
             {!useYjs && collaboration.typingUsers.length > 0 && (
               <Badge variant="outline" className="text-xs text-blue-600">
-                {collaboration.typingUsers.length}명 입력 중...
+                {collaboration.typingUsers.length} typing…
               </Badge>
             )}
           </div>
@@ -586,7 +592,7 @@ export function BlockEditor({
         <div className="flex items-center justify-center h-64 border-2 border-dashed border-gray-300 rounded-lg hover:border-gray-400 transition-colors">
           <div className="text-center space-y-4">
             <Plus className="h-8 w-8 mx-auto text-gray-400" />
-            <p className="text-gray-500">첫 번째 블록을 추가하세요</p>
+            <p className="text-gray-500">Add your first block</p>
             <div className="flex flex-wrap justify-center gap-2">
               {(
                 [
@@ -611,16 +617,16 @@ export function BlockEditor({
                 >
                   {getBlockTypeIcon(type)}
                   <span>
-                    {type === 'paragraph' && '단락'}
-                    {type === 'heading1' && '제목'}
-                    {type === 'checkbox' && '체크박스'}
+                    {type === 'paragraph' && 'Paragraph'}
+                    {type === 'heading1' && 'Heading'}
+                    {type === 'checkbox' && 'Checkbox'}
                     {type === 'callout' && 'Callout'}
-                    {type === 'image' && '이미지'}
+                    {type === 'image' && 'Image'}
                     {type === 'embed' && 'Embed'}
-                    {type === 'table' && '테이블'}
-                    {type === 'code' && '코드'}
-                    {type === 'math' && '수식'}
-                    {type === 'quote' && '인용'}
+                    {type === 'table' && 'Table'}
+                    {type === 'code' && 'Code'}
+                    {type === 'math' && 'Equation'}
+                    {type === 'quote' && 'Quote'}
                   </span>
                 </Button>
               ))}
@@ -641,45 +647,45 @@ export function BlockEditor({
                   className="opacity-60 hover:opacity-100 transition-opacity"
                 >
                   <Plus className="h-4 w-4 mr-2" />
-                  블록 추가
+                  Add block
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="center">
                 <DropdownMenuItem onClick={() => addBlock(blocks.length, 'paragraph')}>
                   <AlignLeft className="h-4 w-4 mr-2" />
-                  단락
+                  Paragraph
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => addBlock(blocks.length, 'heading1')}>
                   <Type className="h-4 w-4 mr-2" />
-                  제목 1
+                  Heading 1
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => addBlock(blocks.length, 'heading2')}>
                   <Type className="h-4 w-4 mr-2" />
-                  제목 2
+                  Heading 2
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => addBlock(blocks.length, 'heading3')}>
                   <Type className="h-4 w-4 mr-2" />
-                  제목 3
+                  Heading 3
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => addBlock(blocks.length, 'checkbox')}>
                   <CheckSquare className="h-4 w-4 mr-2" />
-                  체크박스
+                  Checkbox
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => addBlock(blocks.length, 'image')}>
                   <ImageIcon className="h-4 w-4 mr-2" />
-                  이미지
+                  Image
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => addBlock(blocks.length, 'table')}>
                   <TableIcon className="h-4 w-4 mr-2" />
-                  테이블
+                  Table
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => addBlock(blocks.length, 'code')}>
                   <Code className="h-4 w-4 mr-2" />
-                  코드
+                  Code
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => addBlock(blocks.length, 'quote')}>
                   <Quote className="h-4 w-4 mr-2" />
-                  인용
+                  Quote
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => addBlock(blocks.length, 'callout')}>
                   <Lightbulb className="h-4 w-4 mr-2" />
@@ -691,7 +697,7 @@ export function BlockEditor({
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => addBlock(blocks.length, 'math')}>
                   <Sigma className="h-4 w-4 mr-2" />
-                  수식
+                  Equation
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
