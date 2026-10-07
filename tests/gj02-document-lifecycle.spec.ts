@@ -25,6 +25,8 @@ test('GJ-02: create, reopen, update, delete, restore document lifecycle', async 
   await page.goto('/create');
   await expect(page.getByRole('heading', { name: 'Create New Page' })).toBeVisible();
   await page.getByLabel('Title').fill(originalTitle);
+  await page.getByRole('button', { name: 'Paragraph', exact: true }).click();
+  await page.locator('textarea').first().fill('GJ-02 browser lifecycle content.');
 
   const createResponsePromise = page.waitForResponse(
     (response) => response.url().includes('/api/pages') && response.request().method() === 'POST' && response.status() === 201

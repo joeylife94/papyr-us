@@ -28,6 +28,8 @@ test('GJ-04: edit, inspect history, restore prior version, and persist restored 
   await page.goto('/create');
   await expect(page.getByRole('heading', { name: 'Create New Page' })).toBeVisible();
   await page.getByLabel('Title').fill(originalTitle);
+  await page.getByRole('button', { name: 'Paragraph', exact: true }).click();
+  await page.locator('textarea').first().fill('GJ-04 browser recovery content.');
 
   const createResponsePromise = page.waitForResponse(
     (response) =>
