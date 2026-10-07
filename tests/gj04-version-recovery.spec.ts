@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { loginPageWithCookies } from './e2e-helpers';
 
-const PASSWORD = 'password123';
+const PASSWORD = 'Password123!';
 
 test('GJ-04: edit, inspect history, restore prior version, and persist restored state', async ({
   page,

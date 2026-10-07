@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { loginPageWithCookies } from './e2e-helpers';
 
-const PASSWORD = 'password123';
+const PASSWORD = 'Password123!';
 
 test('GJ-02: create, reopen, update, delete, restore document lifecycle', async ({ page, request }) => {
   const stamp = Date.now();

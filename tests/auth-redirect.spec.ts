@@ -58,7 +58,7 @@ test('401 -> redirects to /login with redirect param when accessing protected ro
   page,
 }) => {
   const email = `e2e-401-${Date.now()}@example.com`;
-  const password = 'password123';
+  const password = 'Password123!';
 
   await registerUser(page, 'E2E401', email, password);
   // Ensure logged-out state AND disable the E2E ProtectedRoute bypass

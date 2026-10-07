@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { loginPageWithCookies } from './e2e-helpers';
 
-const PASSWORD = 'password123';
+const PASSWORD = 'Password123!';
 
 test('GJ-07: inline AI replaces only selection and preserves text on visible failure', async ({
   page,

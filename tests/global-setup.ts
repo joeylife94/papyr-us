@@ -95,7 +95,7 @@ async function globalSetup(config: FullConfig) {
   ]);
   console.log('[global-setup] Infrastructure is healthy. Proceeding with auth setup.');
   const e2eEmail = process.env.E2E_EMAIL || 'test@example.com';
-  const e2ePassword = process.env.E2E_PASSWORD || 'password123';
+  const e2ePassword = process.env.E2E_PASSWORD || 'Password123!';
   const forceRegen = process.env.E2E_FORCE_REGENERATE === '1';
 
   // Helper: read auth cookies from an existing storage state file

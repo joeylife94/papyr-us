@@ -20,7 +20,7 @@ import { test, expect, type APIRequestContext } from '@playwright/test';
 /** Register a new user and return credentials. */
 async function registerUser(request: APIRequestContext, prefix = 'api') {
   const email = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@example.com`;
-  const password = 'password123';
+  const password = 'Password123!';
   const resp = await request.post('/api/auth/register', {
     data: { name: `${prefix} User`, email, password },
   });

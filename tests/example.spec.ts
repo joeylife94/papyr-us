@@ -180,13 +180,13 @@ async function createPage(
 test.describe('Authentication', () => {
   test('성공적인 회원가입', async ({ page }) => {
     const uniqueEmail = `testuser-${Date.now()}@example.com`;
-    await registerUser(page, 'New Test User', uniqueEmail, 'password123');
+    await registerUser(page, 'New Test User', uniqueEmail, 'Password123!');
   });
 
   test('성공적인 로그인', async ({ page }) => {
     // 1. Register a new user via UI first.
     const uniqueEmail = `testuser-${Date.now()}@example.com`;
-    const password = 'password123';
+    const password = 'Password123!';
     await registerUser(page, 'Login Test User', uniqueEmail, password);
 
     // 2. Now, log in with the new user's credentials.
@@ -197,7 +197,7 @@ test.describe('Authentication', () => {
   test('성공적인 로그아웃', async ({ page }) => {
     // 1. Register and log in a new user.
     const uniqueEmail = `testuser-${Date.now()}@example.com`;
-    const password = 'password123';
+    const password = 'Password123!';
     await registerUser(page, 'Logout Test User', uniqueEmail, password);
     await login(page, uniqueEmail, password);
 
@@ -220,7 +220,7 @@ test.describe('Authentication', () => {
   test('TC-AUTH-004: 테마 변경', async ({ page }) => {
     // Ensure an authenticated session so the homepage renders the expected content
     const uniqueEmail = `theme-user-${Date.now()}@example.com`;
-    const password = 'password123';
+    const password = 'Password123!';
     // Register and login the user first
     await registerUser(page, 'Theme Test User', uniqueEmail, password);
     await login(page, uniqueEmail, password);
@@ -246,7 +246,7 @@ test.describe('Authentication', () => {
 // == Wiki Page Management Tests ==
 test.describe('Wiki Page Management', () => {
   const testUserEmail = `wiki-user-${Date.now()}@example.com`;
-  const testUserPassword = 'password123';
+  const testUserPassword = 'Password123!';
 
   test.beforeAll(async ({ browser }) => {
     const page = await browser.newPage();
@@ -475,7 +475,7 @@ test.describe('Wiki Page Management', () => {
 // == Productivity & Collaboration Tests ==
 test.describe('Productivity & Collaboration', () => {
   const testUserEmail = `prod-user-${Date.now()}@example.com`;
-  const testUserPassword = 'password123';
+  const testUserPassword = 'Password123!';
 
   test.beforeAll(async ({ request }) => {
     // Create the test user via the API to avoid flaky UI registration in beforeAll.
@@ -593,7 +593,7 @@ test.describe('Productivity & Collaboration', () => {
 test.describe('Admin Features', () => {
   const adminPassword = 'test-admin-password'; // As defined in original test
   const testUserEmail = `admin-user-${Date.now()}@example.com`;
-  const testUserPassword = 'password123';
+  const testUserPassword = 'Password123!';
 
   async function adminLogin(page: Page) {
     // 1. First, log in as a regular user to be able to access the /admin route
