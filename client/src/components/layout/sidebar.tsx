@@ -360,7 +360,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
               <h3 className="mb-3 flex items-center text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 <Users className="mr-2 h-4 w-4" />
                 Workspaces
-                {teamsLoading && <span className="ml-2 text-xs text-slate-400">(로딩 중...)</span>}
+                {teamsLoading && <span className="ml-2 text-xs text-slate-400">(Loading…)</span>}
               </h3>
 
               {currentWorkspace ? (
@@ -373,7 +373,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
               ) : null}
 
               {teamsError && (
-                <div className="text-xs text-red-500 mb-2">팀 목록을 불러오는데 실패했습니다.</div>
+                <div className="mb-2 text-xs text-red-500">Unable to load workspaces.</div>
               )}
 
               {teamsLoading ? (
@@ -511,7 +511,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
 
               {!teamsLoading && teams.length === 0 && (
                 <div className="text-xs text-slate-400 italic p-3 bg-slate-50 dark:bg-slate-800/30 rounded-lg">
-                  팀이 없습니다. 관리자 페이지에서 팀을 추가하세요.
+                  No workspaces yet. Add one from the admin page.
                 </div>
               )}
             </div>

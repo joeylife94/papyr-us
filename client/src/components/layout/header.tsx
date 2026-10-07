@@ -56,31 +56,39 @@ export function Header({ onToggleSidebar, searchQuery, onSearchChange }: HeaderP
       <a href="#main-content" className="skip-link">
         Skip to main content
       </a>
-      <div className="flex h-16 items-center justify-between px-4 md:px-6">
-        <div className="flex items-center space-x-3">
-          <Button variant="ghost" size="icon" className="lg:hidden" onClick={onToggleSidebar}>
+      <div className="flex h-16 min-w-0 items-center gap-2 px-3 sm:px-4 md:px-6">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0 lg:hidden"
+            onClick={onToggleSidebar}
+            aria-label="Open navigation"
+          >
             <Menu className="h-5 w-5" />
           </Button>
           <Link
             to="/"
-            className="flex items-center space-x-2 hover:opacity-80 transition-opacity cursor-pointer"
+            className="flex min-w-0 items-center gap-2 transition-opacity hover:opacity-80"
           >
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary">
               <ScrollText className="h-4 w-4 text-white" />
             </div>
-            <h1 className="text-xl font-bold text-slate-900 dark:text-white">Papyr.us</h1>
+            <h1 className="truncate text-base font-bold text-slate-900 sm:text-xl dark:text-white">
+              Papyr.us
+            </h1>
           </Link>
         </div>
 
-        <div className="mx-8 hidden max-w-xl flex-1 md:block">
+        <div className="mx-2 hidden max-w-xl flex-1 md:block lg:mx-8">
           <SearchBar value={searchQuery} onChange={onSearchChange} placeholder="Search documents" />
         </div>
 
-        <div className="flex items-center space-x-2 md:space-x-1">
+        <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2 md:gap-1">
           <Button
             variant="ghost"
             size="mobile"
-            className="md:hidden"
+            className="size-10 md:hidden"
             onClick={() => setShowMobileSearch(!showMobileSearch)}
             aria-label="Toggle search"
           >
@@ -90,7 +98,7 @@ export function Header({ onToggleSidebar, searchQuery, onSearchChange }: HeaderP
           <Button
             variant="ghost"
             size="mobile"
-            className="md:size-icon"
+            className="size-10 md:size-icon"
             onClick={toggleTheme}
             aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
           >
@@ -143,7 +151,7 @@ export function Header({ onToggleSidebar, searchQuery, onSearchChange }: HeaderP
       </div>
 
       {showMobileSearch && (
-        <div className="md:hidden px-4 pb-4">
+        <div className="px-3 pb-4 md:hidden">
           <SearchBar value={searchQuery} onChange={onSearchChange} placeholder="Search documents" />
         </div>
       )}

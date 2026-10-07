@@ -227,16 +227,16 @@ export function NotificationBell({ recipientId }: NotificationBellProps) {
     const now = new Date();
     const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
 
-    if (diffInMinutes < 1) return '방금 전';
-    if (diffInMinutes < 60) return `${diffInMinutes}분 전`;
+    if (diffInMinutes < 1) return 'just now';
+    if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
 
     const diffInHours = Math.floor(diffInMinutes / 60);
-    if (diffInHours < 24) return `${diffInHours}시간 전`;
+    if (diffInHours < 24) return `${diffInHours}h ago`;
 
     const diffInDays = Math.floor(diffInHours / 24);
-    if (diffInDays < 7) return `${diffInDays}일 전`;
+    if (diffInDays < 7) return `${diffInDays}d ago`;
 
-    return date.toLocaleDateString('ko-KR');
+    return date.toLocaleDateString('en-US');
   };
 
   const unreadNotifications = notifications.filter((n) => !n.isRead);
@@ -260,17 +260,17 @@ export function NotificationBell({ recipientId }: NotificationBellProps) {
 
       <DropdownMenuContent align="end" className="w-80">
         <div className="flex items-center justify-between p-4 border-b">
-          <h3 className="font-semibold">알림</h3>
+          <h3 className="font-semibold">Notifications</h3>
           {recipientId && unreadCount.count > 0 && (
             <Button variant="ghost" size="sm" onClick={handleMarkAllAsRead} className="text-xs">
-              모두 읽음 처리
+              Mark all as read
             </Button>
           )}
         </div>
 
         <ScrollArea className="h-96">
           {notifications.length === 0 ? (
-            <div className="p-4 text-center text-muted-foreground">알림이 없습니다</div>
+            <div className="p-4 text-center text-muted-foreground">You have no notifications</div>
           ) : (
             <div className="p-2">
               {/* Unread notifications */}

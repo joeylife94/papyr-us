@@ -109,9 +109,9 @@ export function PageHistory({ pageId, currentTitle }: PageHistoryProps) {
             ) : versions.length === 0 ? (
               <div className="text-center py-12">
                 <History className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <p className="text-muted-foreground">아직 버전 기록이 없습니다</p>
+                <p className="text-muted-foreground">No version history yet</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  페이지를 수정하면 자동으로 버전이 저장됩니다
+                  Versions are saved automatically when you update this document.
                 </p>
               </div>
             ) : (
