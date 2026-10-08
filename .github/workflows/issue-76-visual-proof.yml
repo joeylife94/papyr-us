@@ -1,0 +1,75 @@
+name: Issue 76 UI Visual Proof
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/**'
+      - 'tests/issue-76-visual-proof.spec.ts'
+      - '.github/workflows/issue-76-visual-proof.yml'
+  workflow_dispatch: {}
+
+env:
+  NODE_VERSION: '20'
+  DATABASE_URL: postgresql://papyrus_user:papyrus_password_2024@localhost:5432/papyrus_db
+  E2E_USE_STORAGE_STATE: '0'
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  visual-proof:
+    name: Capture synthetic Issue 76 browser screenshots
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: papyrus_user
+          POSTGRES_PASSWORD: papyrus_password_2024
+          POSTGRES_DB: papyrus_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U papyrus_user -d papyrus_db"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install exact dependencies
+        run: npm ci
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium --with-deps
+      - name: Synchronize PostgreSQL schema
+        run: npm run db:push -- --force
+      - name: Capture and verify current UI
+        run: npx playwright test tests/issue-76-visual-proof.spec.ts --project=chromium --reporter=dot
+      - name: Verify screenshots and provenance
+        if: success()
+        run: |
+          test -s issue-76-proof/01-workspace-empty-desktop.png
+          test -s issue-76-proof/02-workspace-populated-desktop.png
+          test -s issue-76-proof/03-document-reader-desktop.png
+          test -s issue-76-proof/04-document-reader-dark.png
+          test -s issue-76-proof/05-mobile-navigation.png
+          ( cd issue-76-proof && sha256sum *.png > SHA256SUMS && sha256sum -c SHA256SUMS )
+          printf 'candidate_head=%s\ngenerated_by=Issue 76 UI Visual Proof\ndata_class=synthetic-only\n' "$CANDIDATE_SHA" > issue-76-proof/PROVENANCE.txt
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue-76-ui-proof-${{ env.CANDIDATE_SHA }}
+          path: |
+            issue-76-proof/
+            test-results/
+          if-no-files-found: warn
+          retention-days: 14
