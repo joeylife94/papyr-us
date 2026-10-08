@@ -226,13 +226,13 @@ export default function WikiPageView() {
   }
 
   return (
-    <div className="flex relative">
+    <div className="relative flex w-full min-w-0">
       {/* Collaborator Cursors Overlay */}
       <CollaboratorCursors cursors={cursors} />
 
       {/* Content Area */}
-      <div className="flex-1 max-w-4xl">
-        <article className="px-6 py-8" ref={contentRef}>
+      <div className="min-w-0 w-full max-w-4xl flex-1">
+        <article className="min-w-0 px-2 py-5 sm:px-6 sm:py-8" ref={contentRef}>
           {/* Collaboration Status Bar */}
           {isConnected && sessionUsers.length > 0 && (
             <div className="mb-6 flex items-center justify-between">
@@ -243,7 +243,7 @@ export default function WikiPageView() {
 
           {/* Breadcrumb */}
           <nav className="mb-6">
-            <ol className="flex items-center space-x-2 text-sm text-slate-500 dark:text-slate-400">
+            <ol className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-500 dark:text-slate-400">
               <li>
                 <a href="/" className="hover:text-primary transition-colors">
                   Home
@@ -256,16 +256,16 @@ export default function WikiPageView() {
                 </a>
               </li>
               <li>/</li>
-              <li className="text-slate-700 dark:text-slate-300">{page.title}</li>
+              <li className="min-w-0 break-words text-slate-700 dark:text-slate-300">{page.title}</li>
             </ol>
           </nav>
 
           {/* Page Header */}
           <header className="mb-8">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center space-x-3">
-                <h1 className="text-3xl font-bold text-slate-900 dark:text-white">{page.title}</h1>
-                <div className="flex space-x-2">
+            <div className="mb-4 flex min-w-0 flex-col items-start gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+                <h1 className="min-w-0 break-words text-2xl font-semibold tracking-tight text-slate-900 dark:text-white sm:text-3xl">{page.title}</h1>
+                <div className="flex min-w-0 flex-wrap gap-2">
                   <Badge variant="secondary" className="capitalize">
                     {page.folder}
                   </Badge>
@@ -276,7 +276,7 @@ export default function WikiPageView() {
                   ))}
                 </div>
               </div>
-              <div className="flex items-center space-x-2">
+              <div className="flex max-w-full flex-wrap items-center gap-2">
                 <Button
                   variant={showAICopilot ? 'default' : 'outline'}
                   size="sm"
@@ -306,7 +306,7 @@ export default function WikiPageView() {
                 </Button>
               </div>
             </div>
-            <div className="flex items-center space-x-4 text-sm text-slate-500 dark:text-slate-400">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-slate-500 dark:text-slate-400 sm:text-sm">
               <span className="flex items-center space-x-1">
                 <Calendar className="h-3 w-3" />
                 <span>
@@ -327,11 +327,13 @@ export default function WikiPageView() {
           </header>
 
           {/* Content */}
-          <MarkdownRenderer content={page.content} />
+          <div className="min-w-0 max-w-full overflow-x-auto">
+            <MarkdownRenderer content={page.content} />
+          </div>
 
           {/* Page Footer */}
-          <footer className="mt-12 pt-8 border-t border-slate-200 dark:border-slate-700">
-            <div className="flex items-center justify-between">
+          <footer className="mt-12 border-t border-slate-200 pt-6 dark:border-slate-700">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center space-x-4">
                 <span className="text-sm text-slate-500 dark:text-slate-400">
                   Was this helpful?
@@ -345,7 +347,7 @@ export default function WikiPageView() {
                   </Button>
                 </div>
               </div>
-              <div className="flex items-center space-x-4 text-sm text-slate-500 dark:text-slate-400">
+              <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
                 <Button variant="ghost" size="sm">
                   Report Issue
                 </Button>
