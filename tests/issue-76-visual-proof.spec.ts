@@ -45,7 +45,7 @@ test('Issue 76: capture genuine workspace, reader, dark mode, and mobile navigat
   const createdResponse = await authRequest.post('/api/pages', {
     data: {
       title: pageTitle,
-      content: '# Operations Handbook\n\nGuidelines for a small team to share decisions and recover prior documents.\n\n## Weekly rhythm\n\n- Review tasks\n- Document decisions',
+      content: 'Guidelines for a small team to share decisions and recover prior documents.\n\n## Weekly rhythm\n\n- Review tasks\n- Document decisions',
       slug: `operations-handbook-${stamp}`,
       folder: 'docs',
       author: credentials.name,
@@ -73,6 +73,11 @@ test('Issue 76: capture genuine workspace, reader, dark mode, and mobile navigat
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: '메뉴 열기' }).click();
   await expect(page.getByRole('navigation', { name: '주요 메뉴' })).toBeVisible();
+  const mobileDimensions = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    viewportWidth: window.innerWidth,
+  }));
+  expect(mobileDimensions.scrollWidth, 'Reader must not overflow the mobile viewport horizontally').toBeLessThanOrEqual(mobileDimensions.viewportWidth + 1);
   await page.screenshot({ path: `${PROOF_DIR}/05-mobile-navigation.png`, fullPage: true });
 
   await authRequest.dispose();
