@@ -322,12 +322,6 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                   스터디 대시보드
                 </Button>
               </Link>
-              <Link to="/create">
-                <Button className="w-full justify-start">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Create New Page
-                </Button>
-              </Link>
               {flags.FEATURE_TEMPLATES ? (
                 <Link to="/templates">
                   <Button variant="outline" className="w-full justify-start">
