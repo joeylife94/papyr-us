@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Book, Clock, User } from 'lucide-react';
+import { Book, Clock, Plus, User } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import type { WikiPage } from '@shared/schema';
 
@@ -70,63 +70,44 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
 
   return (
     <div className="space-y-8">
-      {/* Hero Section */}
-      <div className="text-center space-y-4 py-12">
-        <h1 className="text-4xl font-bold text-slate-900 dark:text-white">
-          {teamName ? `${teamName} 팀 문서` : 'Welcome to Papyr.us'}
-        </h1>
-        <p className="text-xl text-slate-600 dark:text-slate-400 max-w-2xl mx-auto">
-          {teamName
-            ? `${teamName} 팀의 문서들을 관리하고 공유하세요.`
-            : 'Your modern wiki and documentation platform. Organize knowledge, collaborate with AI, and build comprehensive documentation.'}
-        </p>
-      </div>
-
-      {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Pages</CardTitle>
-            <Book className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalCount}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Documentation</CardTitle>
-            <Book className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {flatPages.filter((p: WikiPage) => p.folder === 'docs').length || 0}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Ideas</CardTitle>
-            <Book className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {flatPages.filter((p: WikiPage) => p.folder === 'ideas').length || 0}
-            </div>
-          </CardContent>
-        </Card>
+      {/* Workspace heading: documents are the primary action, not dashboard statistics. */}
+      <div className="flex flex-col gap-4 border-b border-slate-200 pb-6 dark:border-slate-800 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0 space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            워크스페이스 / 문서
+          </p>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+            {teamName ? `${teamName} 팀 문서` : '내 문서'}
+          </h1>
+          <p className="text-sm text-slate-600 dark:text-slate-400">
+            {teamName ? '팀의 문서를 확인하고 함께 작업하세요.' : '최근 문서를 확인하거나 새 문서를 작성하세요.'}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-3">
+          {!isLoading && !error && (
+            <span className="text-sm tabular-nums text-slate-500 dark:text-slate-400">총 {totalCount}개</span>
+          )}
+          <Link
+            to={teamName ? `/teams/${teamName}/create` : '/create'}
+            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <Plus className="h-4 w-4" />
+            새 문서 작성
+          </Link>
+        </div>
       </div>
 
       {/* Recent Pages */}
       <div>
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-semibold text-slate-900 dark:text-white">
-            {teamName ? `${teamName} 팀 문서` : 'Recent Pages'}
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+            {teamName ? '문서 목록' : '최근 문서'}
           </h2>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
-              <label className="text-sm text-slate-600 dark:text-slate-400">정렬</label>
+              <label htmlFor="page-sort" className="text-sm text-slate-600 dark:text-slate-400">정렬</label>
               <select
+                id="page-sort"
                 className="text-sm border rounded-md px-2 py-1 bg-white dark:bg-slate-900"
                 value={effectiveSort}
                 onChange={(e) => setSort(e.target.value as 'updated' | 'rank')}
@@ -137,18 +118,11 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
                 <option value="rank">관련도순</option>
               </select>
             </div>
-            {teamName && (
-              <Link to={`/teams/${teamName}/create`}>
-                <button className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors">
-                  새 문서 작성
-                </button>
-              </Link>
-            )}
           </div>
         </div>
 
         {isLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             {Array.from({ length: 6 }).map((_, i) => (
               <Card key={i}>
                 <CardHeader>
@@ -172,10 +146,10 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             {flatPages.map((page: WikiPage) => (
               <Link key={page.id} to={`/page/${page.slug}`}>
-                <Card className="group hover:shadow-lg transition-all duration-200 border-l-4 border-l-primary/20 hover:border-l-primary cursor-pointer">
+                <Card className="group h-full border border-slate-200 dark:border-slate-800 transition-colors duration-150 hover:border-primary/50 hover:bg-slate-50/70 dark:hover:bg-slate-900/70">
                   <CardHeader>
                     <CardTitle className="text-lg line-clamp-2">
                       {renderHighlighted(page.title, searchQuery)}
@@ -208,7 +182,7 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
                           </Badge>
                         ))}
                         {page.tags.length > 2 && (
-                          <Badge variant="outline">+{page.tags.length - 2} more</Badge>
+                          <Badge variant="outline">+{page.tags.length - 2}개 더</Badge>
                         )}
                       </div>
                     </div>
@@ -219,15 +193,15 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
           </div>
         )}
         {flatPages.length === 0 && !isLoading && !error && (
-          <div className="text-center py-12">
-            <Book className="h-12 w-12 text-slate-400 mx-auto mb-4" />
+          <div className="rounded-xl border border-dashed border-slate-200 px-4 py-12 text-center dark:border-slate-700">
+            <Book className="h-10 w-10 text-slate-400 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-slate-900 dark:text-white mb-2">
-              {teamName ? `${teamName} 팀 문서가 없습니다` : 'No pages yet'}
+              {teamName ? `${teamName} 팀 문서가 없습니다` : '아직 문서가 없습니다'}
             </h3>
             <p className="text-slate-600 dark:text-slate-400">
               {teamName
                 ? '새 문서를 작성하여 팀의 지식을 공유해보세요.'
-                : 'Start by creating your first wiki page using the sidebar navigation.'}
+                : '새 문서를 작성해 작업을 시작해 보세요.'}
             </p>
           </div>
         )}
