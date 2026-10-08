@@ -70,7 +70,7 @@ export function Header({ onToggleSidebar, searchQuery, onSearchChange }: HeaderP
       </a>
       <div className="flex items-center justify-between px-4 h-16">
         <div className="flex items-center space-x-3">
-          <Button variant="ghost" size="icon" className="lg:hidden" onClick={onToggleSidebar}>
+          <Button variant="ghost" size="icon" className="lg:hidden" onClick={onToggleSidebar} aria-label="메뉴 열기">
             <Menu className="h-5 w-5" />
           </Button>
           <Link
