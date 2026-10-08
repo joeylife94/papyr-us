@@ -1,4 +1,4 @@
-import { Routes, Route, Outlet, useParams } from 'react-router-dom';
+import { Routes, Route, Outlet, useParams, useLocation } from 'react-router-dom';
 import React, { useState, Suspense } from 'react';
 import { queryClient } from './lib/queryClient';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -77,6 +77,8 @@ const HomeWrapper = () => {
 };
 
 function AppLayout() {
+  const { pathname } = useLocation();
+  const isDocumentRoute = /^\/(page|edit|create)(\/|$)/.test(pathname) || /^\/teams\/[^/]+\/create$/.test(pathname);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -84,7 +86,7 @@ function AppLayout() {
   const closeSidebar = () => setIsSidebarOpen(false);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-950">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
       <Header
         onToggleSidebar={toggleSidebar}
         searchQuery={searchQuery}
@@ -100,8 +102,8 @@ function AppLayout() {
           onSearchChange={setSearchQuery}
         />
 
-        <main id="main-content" className="flex-1 lg:ml-80">
-          <div className="max-w-7xl mx-auto px-4 md:px-6 lg:px-8">
+        <main id="main-content" className="min-w-0 flex-1 lg:ml-72">
+          <div className={`mx-auto w-full px-4 py-6 md:px-8 md:py-8 ${isDocumentRoute ? 'max-w-[1180px]' : 'max-w-[1480px]'}`}>
             <Suspense fallback={<div>Loading page...</div>}>
               <Outlet />
             </Suspense>
