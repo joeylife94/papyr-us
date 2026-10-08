@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
-import { List, Download, Printer, History } from 'lucide-react';
+import { List } from 'lucide-react';
 
 interface Heading {
   id: string;
@@ -55,7 +54,7 @@ export function TableOfContents({ headings, className }: TableOfContentsProps) {
   if (headings.length === 0) return null;
 
   return (
-    <aside className={cn('hidden xl:block w-64 ml-8', className)}>
+    <aside className={cn('hidden xl:block w-48 shrink-0 ml-4 2xl:w-56 2xl:ml-6', className)}>
       <div className="sticky top-24 p-4">
         <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-4 flex items-center">
           <List className="h-4 w-4 text-primary mr-2" />
@@ -82,36 +81,7 @@ export function TableOfContents({ headings, className }: TableOfContentsProps) {
           ))}
         </nav>
 
-        {/* Quick Actions */}
-        <div className="mt-8 p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
-          <h4 className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-3 uppercase tracking-wider">
-            Quick Actions
-          </h4>
-          <div className="space-y-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start h-auto p-1 text-sm"
-              onClick={() => window.print()}
-            >
-              <Download className="h-3 w-3 mr-2" />
-              Export as PDF
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start h-auto p-1 text-sm"
-              onClick={() => window.print()}
-            >
-              <Printer className="h-3 w-3 mr-2" />
-              Print Page
-            </Button>
-            <Button variant="ghost" size="sm" className="w-full justify-start h-auto p-1 text-sm">
-              <History className="h-3 w-3 mr-2" />
-              View History
-            </Button>
-          </div>
-        </div>
+
       </div>
     </aside>
   );
