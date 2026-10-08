@@ -61,7 +61,7 @@ test('Issue 76: capture genuine workspace, reader, dark mode, and mobile navigat
   await page.screenshot({ path: `${PROOF_DIR}/02-workspace-populated-desktop.png`, fullPage: true });
 
   await page.goto(`/page/${created.slug}`);
-  await expect(page.getByRole('heading', { name: pageTitle, level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: pageTitle, level: 1 }).first()).toBeVisible();
   await page.screenshot({ path: `${PROOF_DIR}/03-document-reader-desktop.png`, fullPage: true });
 
   const toDark = page.getByRole('button', { name: 'Switch to dark mode' });
