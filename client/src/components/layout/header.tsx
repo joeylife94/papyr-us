@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/hooks/use-theme';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { SearchBar } from '@/components/wiki/search-bar';
 import { NotificationBell } from '@/components/ui/notification-bell';
@@ -38,6 +38,9 @@ export function Header({ onToggleSidebar, searchQuery, onSearchChange }: HeaderP
   const { theme, toggleTheme } = useTheme();
   const { isAuthenticated, user, logout } = useAuth();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const teamSegment = pathname.match(/^\/teams\/([^/]+)(?:\/|$)/)?.[1];
+  const activeTeamName = teamSegment ? decodeURIComponent(teamSegment) : null;
   const [showMobileSearch, setShowMobileSearch] = useState(false);
   const { flags } = useFeatureFlags();
   const enableNotifications = flags.FEATURE_NOTIFICATIONS && flags.FEATURE_TEAMS;
@@ -61,7 +64,7 @@ export function Header({ onToggleSidebar, searchQuery, onSearchChange }: HeaderP
   };
 
   return (
-    <header className="fixed top-0 left-0 right-0 bg-gradient-to-r from-white/90 via-white/95 to-slate-50/90 dark:from-slate-900/90 dark:via-slate-900/95 dark:to-slate-950/90 backdrop-blur-md border-b border-slate-200/60 dark:border-slate-700/60 z-40 shadow-sm">
+    <header className="fixed top-0 left-0 right-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 z-40">
       <a href="#main-content" className="skip-link">
         Skip to main content
       </a>
@@ -79,6 +82,11 @@ export function Header({ onToggleSidebar, searchQuery, onSearchChange }: HeaderP
             </div>
             <h1 className="text-xl font-bold text-slate-900 dark:text-white">Papyr.us</h1>
           </Link>
+          {activeTeamName && (
+            <div className="hidden sm:flex min-w-0 items-center gap-2 border-l border-slate-200 pl-3 dark:border-slate-700" aria-label="현재 워크스페이스">
+              <span className="truncate text-sm font-medium text-slate-600 dark:text-slate-300">{activeTeamName}</span>
+            </div>
+          )}
         </div>
 
         <div className="flex-1 max-w-md mx-8 hidden md:block">
