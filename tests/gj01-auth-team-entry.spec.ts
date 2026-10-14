@@ -42,7 +42,7 @@ test.describe('GJ-01 authentication and team entry', () => {
   }) => {
     const stamp = Date.now();
     const email = `gj01-${stamp}@example.com`;
-    const password = 'password123';
+    const password = 'Password123!';
     const userName = `GJ01 User ${stamp}`;
 
     await registerThroughUi(page, userName, email, password);
@@ -59,7 +59,9 @@ test.describe('GJ-01 authentication and team entry', () => {
     await teamButton.click();
     await page.getByRole('link', { name: '팀 페이지' }).click();
     await expect(page).toHaveURL(`/teams/${team.name}/pages`, { timeout: 15000 });
-    await expect(page.getByRole('heading', { name: `${team.name} 팀 문서` })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: `${team.name} 팀 문서`, level: 1, exact: true })
+    ).toBeVisible();
 
     await page.getByRole('button', { name: '새 문서 작성' }).click();
     await expect(page).toHaveURL(new RegExp(`/teams/${team.name}/create`));
@@ -68,10 +70,9 @@ test.describe('GJ-01 authentication and team entry', () => {
     const title = `GJ01 Team Page ${stamp}`;
     await page.getByLabel('Title').fill(title);
 
-    const addParagraph = page.getByRole('button', { name: /paragraph/i });
-    if (await addParagraph.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await addParagraph.click();
-    }
+    const addParagraph = page.getByRole('button', { name: '단락', exact: true });
+    await expect(addParagraph).toBeVisible({ timeout: 10000 });
+    await addParagraph.click();
 
     const textarea = page.locator('textarea').first();
     await expect(textarea).toBeVisible({ timeout: 10000 });

@@ -16,7 +16,9 @@ function resultPages(body: any): any[] {
   return [];
 }
 
-test('GJ-03: authorized page/search succeeds and cross-team access fails closed', async ({ request }) => {
+test('GJ-03: authorized page/search succeeds and cross-team access fails closed', async ({
+  request,
+}) => {
   const stamp = Date.now();
   const uniqueToken = `gj03boundary${stamp}`;
   const title = `GJ03 Protected ${stamp}`;
@@ -104,7 +106,11 @@ test('GJ-03: authorized page/search succeeds and cross-team access fails closed'
         (candidate: any) => String(candidate.pageId ?? candidate.id) === pageId
       )
     ).toBe(false);
-    expect(JSON.stringify(crossTeamSearchBody)).not.toContain(uniqueToken);
+    // The response echoes User B's own `query` input; that echo is not Team A data. Every
+    // other part of the response (results, snippets, counts) must stay free of the token.
+    const { query: echoedQuery, ...crossTeamSearchData } = crossTeamSearchBody;
+    expect(echoedQuery).toBe(uniqueToken);
+    expect(JSON.stringify(crossTeamSearchData)).not.toContain(uniqueToken);
 
     await requestA.delete(`/api/pages/${pageId}`).catch(() => {});
     await requestA.delete(`/api/teams/${teamA.id}`).catch(() => {});

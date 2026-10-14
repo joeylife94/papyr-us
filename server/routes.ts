@@ -89,6 +89,14 @@ interface MulterRequest extends Request {
   files?: any[];
 }
 
+// JSON cannot carry a Date, so the task form sends `dueDate` as a date string, or ''
+// when the field is left empty. Map '' to "no due date" and parse strings so the
+// timestamp schema sees a Date; unparseable strings still fail schema validation.
+function normalizeTaskDueDate(body: Record<string, unknown>): Record<string, unknown> {
+  if (!body || typeof body.dueDate !== 'string') return body;
+  return { ...body, dueDate: body.dueDate === '' ? null : new Date(body.dueDate) };
+}
+
 export async function registerRoutes(
   app: Express,
   storage: DBStorage
@@ -2484,7 +2492,7 @@ export async function registerRoutes(
     requireTeamMembership,
     async (req: AuthRequest, res) => {
       try {
-        const taskData = insertTaskSchema.parse(req.body);
+        const taskData = insertTaskSchema.parse(normalizeTaskDueDate(req.body));
         const task = await storage.createTask(taskData);
 
         // Trigger workflows for task_created event
@@ -2539,7 +2547,7 @@ export async function registerRoutes(
         }
       }
 
-      const updateData = updateTaskSchema.parse(req.body);
+      const updateData = updateTaskSchema.parse(normalizeTaskDueDate(req.body));
 
       const task = await storage.updateTask(id, updateData);
 

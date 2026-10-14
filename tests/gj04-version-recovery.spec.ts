@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { loginPageWithCookies } from './e2e-helpers';
 
-const PASSWORD = 'password123';
+const PASSWORD = 'Password123!';
 
 test('GJ-04: edit, inspect history, restore prior version, and persist restored state', async ({
   page,
@@ -28,6 +28,9 @@ test('GJ-04: edit, inspect history, restore prior version, and persist restored 
   await page.goto('/create');
   await expect(page.getByRole('heading', { name: 'Create New Page' })).toBeVisible();
   await page.getByLabel('Title').fill(originalTitle);
+  // The editor requires body content, so the document is created with a paragraph block.
+  await page.getByRole('button', { name: '단락', exact: true }).click();
+  await page.locator('textarea').first().fill(`GJ-04 recovery content ${stamp}`);
 
   const createResponsePromise = page.waitForResponse(
     (response) =>

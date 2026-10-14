@@ -80,8 +80,15 @@ export function useYjsCollaboration({
   // Initialize Yjs document
   useEffect(() => {
     if (!enabled || !pageId) {
-      // If disabled, ensure we look disconnected.
-      setState({ isConnected: false, userCount: 0, isSynced: false, users: [] });
+      // If disabled, ensure we look disconnected. Keep the previous state when it already
+      // is: this effect re-runs whenever the caller passes new callback identities, and a
+      // fresh state object on every run re-renders the editor in an endless loop that
+      // starves router transitions.
+      setState((prev) =>
+        !prev.isConnected && prev.userCount === 0 && !prev.isSynced && prev.users.length === 0
+          ? prev
+          : { isConnected: false, userCount: 0, isSynced: false, users: [] }
+      );
       return;
     }
 
