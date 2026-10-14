@@ -6,6 +6,7 @@ import { config } from '../config.js';
 import logger from './logger.js';
 import { isRedisEnabled, getRedisClient, getSubscriberClient } from './redis.js';
 import { createAdapter } from '@socket.io/redis-adapter';
+import { onPageAccessChanged } from './page-access-events.js';
 
 type SaveReason = 'debounce' | 'interval' | 'ttl' | 'eviction';
 
@@ -508,6 +509,46 @@ export function buildSocketCorsOptions(): {
   return { origin: corsOrigin, methods: ['GET', 'POST'], credentials };
 }
 
+/**
+ * Re-checks the page access of every /collab socket of a user, as a fresh join-document would.
+ * A socket that lost read access leaves its page session and room, so it stops sending and
+ * receiving changes, and gets ACCESS_REVOKED; otherwise its edit right is recomputed.
+ */
+export async function revalidateCollabUserAccess(
+  namespace: ReturnType<SocketIOServer['of']>,
+  storage: Pick<DBStorage, 'checkPagePermission' | 'getUserPagePermission'>,
+  collaborationManager: Pick<CollaborationManager, 'leaveSession'>,
+  userId: number
+): Promise<void> {
+  for (const socket of namespace.sockets.values()) {
+    const data = socket.data as any;
+    const pageId = data.pageId as number | undefined;
+    if (data.userIdNum !== userId || !pageId) continue;
+
+    const canRead = await storage.checkPagePermission(userId, pageId, 'viewer');
+    if (data.pageId !== pageId) continue; // moved to another page meanwhile
+    if (!canRead) {
+      collaborationManager.leaveSession(socket.id);
+      data.pageId = undefined;
+      data.userPermission = null;
+      data.canEdit = false;
+      const roomName = `page:${pageId}`;
+      socket.leave(roomName);
+      socket.to(roomName).emit('user-left', { userId: String(userId), timestamp: Date.now() });
+      socket.emit('collab:error', {
+        message: 'Your access to this page has been revoked.',
+        code: 'ACCESS_REVOKED',
+      });
+      continue;
+    }
+
+    const userPermission = await storage.getUserPagePermission(userId, pageId);
+    if (data.pageId !== pageId) continue;
+    data.userPermission = userPermission;
+    data.canEdit = userPermission === 'owner' || userPermission === 'editor';
+  }
+}
+
 export async function setupSocketIO(
   server: HTTPServer,
   storage: DBStorage,
@@ -558,6 +599,13 @@ export async function setupSocketIO(
 
   // Setup /collab namespace with optional JWT authentication
   const collabNamespace = io.of('/collab');
+
+  if (enableCollaboration) {
+    // Sessions check page access once at join; check again when a user's access shrinks
+    onPageAccessChanged((userId) =>
+      revalidateCollabUserAccess(collabNamespace, storage, collaborationManager, userId)
+    );
+  }
 
   // Check if authentication is required (can be disabled for testing, always on in production)
   const requireAuth = config.isProduction ? true : legacyCfg.requireAuth;

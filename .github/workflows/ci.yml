@@ -132,6 +132,13 @@ jobs:
       - name: Run team data access control regression
         run: npx playwright test tests/security-folder-pages-access.spec.ts tests/security-team-page-access.spec.ts --project=chromium --reporter=dot
 
+      # Realtime collaboration is off by default, so this run starts its own server with it on:
+      # open realtime sessions must lose access as soon as their user leaves the page's team.
+      - name: Run realtime collaboration access regression
+        env:
+          FEATURE_COLLABORATION: 'true'
+        run: npx playwright test tests/security-collab-access-revocation.spec.ts --project=chromium --reporter=dot
+
       - name: Upload Playwright HTML report
         if: failure()
         uses: actions/upload-artifact@v4
