@@ -91,6 +91,9 @@ export interface PageViewer {
   teamIds: number[];
 }
 
+/** A caller without a session: only public or permission-free team-less pages are readable. */
+export const ANONYMOUS_PAGE_VIEWER: PageViewer = Object.freeze({ teamIds: [] as number[] });
+
 const MAX_SLUG_INSERT_ATTEMPTS = 100;
 
 function isSlugUniqueViolation(error: unknown): boolean {
@@ -391,7 +394,7 @@ export class DBStorage {
 
   /** Who is listing pages: identity plus current team memberships, loaded from the database. */
   async getPageViewer(userId?: number): Promise<PageViewer> {
-    if (!userId) return { teamIds: [] };
+    if (!userId) return ANONYMOUS_PAGE_VIEWER;
     const [user] = await this.db
       .select({ email: users.email })
       .from(users)

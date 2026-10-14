@@ -82,7 +82,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import passport from 'passport';
 import { eq, and, isNull } from 'drizzle-orm';
-import { DBStorage } from './storage.js';
+import { ANONYMOUS_PAGE_VIEWER, DBStorage } from './storage.js';
 import { featureFlags } from './features.js';
 
 interface MulterRequest extends Request {
@@ -635,7 +635,7 @@ export async function registerRoutes(
           teamId: 'null',
         });
         const result = await storage.searchWikiPages(searchParams, {
-          readableBy: await storage.getPageViewer(),
+          readableBy: ANONYMOUS_PAGE_VIEWER,
         });
         const hasMore = result.pages.length === (searchParams.limit || 20);
         const nextCursor = hasMore ? result.pages[result.pages.length - 1]?.id : null;
@@ -2047,7 +2047,7 @@ export async function registerRoutes(
           limit: 1000,
           offset: 0,
         },
-        teamId ? {} : { readableBy: await storage.getPageViewer() }
+        teamId ? {} : { readableBy: ANONYMOUS_PAGE_VIEWER }
       );
 
       // Build tree structure
