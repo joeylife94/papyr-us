@@ -212,7 +212,9 @@ export function BlockEditor({
         children: [],
       };
 
-      if (useYjs && yjsCollaboration.isConnected) {
+      // Route edits through Yjs only once the shared document has synced; before that the
+      // Y.Array can be shorter than the local blocks and index-based edits would be dropped.
+      if (useYjs && yjsCollaboration.isSynced) {
         // Yjs CRDT: Conflict-free insertion
         yjsCollaboration.insertBlock(index, newBlock);
       } else {
@@ -246,7 +248,7 @@ export function BlockEditor({
   // 블록 삭제 함수
   const deleteBlock = useCallback(
     (blockId: string) => {
-      if (useYjs && yjsCollaboration.isConnected) {
+      if (useYjs && yjsCollaboration.isSynced) {
         // Yjs CRDT: Find index and delete
         const index = blocks.findIndex((b) => b.id === blockId);
         if (index !== -1) {
@@ -277,7 +279,7 @@ export function BlockEditor({
   // 블록 업데이트 함수
   const updateBlock = useCallback(
     (blockId: string, updates: Partial<Block>) => {
-      if (useYjs && yjsCollaboration.isConnected) {
+      if (useYjs && yjsCollaboration.isSynced) {
         // Yjs CRDT: Find index and update
         const index = blocks.findIndex((b) => b.id === blockId);
         if (index !== -1) {

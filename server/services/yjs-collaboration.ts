@@ -220,7 +220,7 @@ export class YjsCollaborationManager {
 
     // Load persisted state before attaching update listeners.
     const page = await this.storage.getWikiPage(pageId);
-    if (page && page.blocks && Array.isArray(page.blocks)) {
+    if (page && page.blocks && Array.isArray(page.blocks) && page.blocks.length > 0) {
       const yblocks = ydoc.getArray('blocks');
       yblocks.delete(0, yblocks.length);
       yblocks.push(page.blocks as any[]);
@@ -229,6 +229,20 @@ export class YjsCollaborationManager {
         pageId,
         blockCount: (page.blocks as any[]).length,
       });
+    } else if (page && page.content) {
+      // Pages saved without blocks (API- or template-created) open in the editor as one
+      // paragraph holding the content. Seed the same block here, once per document, so
+      // collaborators edit a shared block instead of an empty array that drops their edits.
+      ydoc.getArray('blocks').push([
+        {
+          id: `block_seed_${pageId}`,
+          type: 'paragraph',
+          content: page.content,
+          properties: {},
+          order: 0,
+          children: [],
+        },
+      ]);
     }
 
     const state: DocState = {
@@ -355,7 +369,8 @@ export class YjsCollaborationManager {
   }
 
   leaveDocument(socket: Socket): void {
-    const documentId = this.socketDocuments.get(socket.id) ?? (socket.data.documentId as string | undefined);
+    const documentId =
+      this.socketDocuments.get(socket.id) ?? (socket.data.documentId as string | undefined);
     if (!documentId) return;
 
     this.detachSocketFromDocument(socket, documentId);
@@ -661,13 +676,22 @@ export function setupYjsCollaboration(io: SocketIOServer, storage: DBStorage) {
         }
 
         // Apply update to Yjs document
-        if (typeof update !== 'string' || update.length > Math.ceil((cfg.maxUpdateBytes * 4) / 3) + 4) {
-          socket.emit('yjs:error', { message: 'Update payload too large', code: 'PAYLOAD_TOO_LARGE' });
+        if (
+          typeof update !== 'string' ||
+          update.length > Math.ceil((cfg.maxUpdateBytes * 4) / 3) + 4
+        ) {
+          socket.emit('yjs:error', {
+            message: 'Update payload too large',
+            code: 'PAYLOAD_TOO_LARGE',
+          });
           return;
         }
         const updateBuffer = Buffer.from(update, 'base64');
         if (updateBuffer.byteLength > cfg.maxUpdateBytes) {
-          socket.emit('yjs:error', { message: 'Update payload too large', code: 'PAYLOAD_TOO_LARGE' });
+          socket.emit('yjs:error', {
+            message: 'Update payload too large',
+            code: 'PAYLOAD_TOO_LARGE',
+          });
           return;
         }
         Y.applyUpdate(doc.ydoc, updateBuffer, socket.id); // Use socket.id as origin
