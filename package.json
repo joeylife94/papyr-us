@@ -10,6 +10,8 @@
     "start": "cross-env PORT=5001 node dist/server/index.js",
     "check": "tsc",
     "db:push": "drizzle-kit push",
+    "db:fts:prepare": "node scripts/apply-fts-schema.mjs --allow-remote --before-push",
+    "db:fts": "node scripts/apply-fts-schema.mjs --allow-remote",
     "db:migrate": "drizzle-kit migrate",
     "db:generate": "drizzle-kit generate",
     "db:seed": "node --loader ts-node/esm server/migrate-data.js",

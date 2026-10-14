@@ -12,7 +12,9 @@ RUN npm run build
 
 FROM dependencies AS migrate
 COPY . .
-CMD ["npm", "run", "db:push", "--", "--force"]
+# wiki_pages.search_vector is not declared in shared/schema.ts, so db:push treats it as
+# drift; remove the derived FTS objects first and re-create them afterwards.
+CMD ["sh", "-c", "npm run db:fts:prepare && npm run db:push -- --force && npm run db:fts"]
 
 FROM migrate AS seed
 CMD ["node", "scripts/seed-firebat.mjs"]

@@ -107,7 +107,12 @@ jobs:
             echo "DATABASE_URL not configured, skipping migrations"
             exit 0
           fi
+          # wiki_pages.search_vector is not declared in shared/schema.ts, so db:push sees it as
+          # drift: it hits the data-loss prompt, aborts and exits 0 without applying anything.
+          # Remove the derived FTS objects first and re-create them afterwards.
+          npm run db:fts:prepare
           npm run db:push
+          npm run db:fts
 
   # ==================== Post-Deploy Verification ====================
   verify:
