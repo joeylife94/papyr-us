@@ -216,8 +216,12 @@ export class DBStorage {
     return result.length > 0;
   }
 
+  /** Hard delete, only for a page that is already in the trash (soft-deleted). */
   async permanentlyDeleteWikiPage(id: number): Promise<boolean> {
-    const result = await this.db.delete(wikiPages).where(eq(wikiPages.id, id)).returning();
+    const result = await this.db
+      .delete(wikiPages)
+      .where(and(eq(wikiPages.id, id), sql`${wikiPages.deletedAt} IS NOT NULL`))
+      .returning();
     return result.length > 0;
   }
 
@@ -1508,12 +1512,12 @@ export class DBStorage {
   }
 
   /**
-   * Remove a permission from a page
+   * Remove a permission from a page. A permission that belongs to another page is left alone.
    */
-  async removePagePermission(permissionId: number): Promise<boolean> {
+  async removePagePermission(pageId: number, permissionId: number): Promise<boolean> {
     const result = await this.db
       .delete(pagePermissions)
-      .where(eq(pagePermissions.id, permissionId))
+      .where(and(eq(pagePermissions.id, permissionId), eq(pagePermissions.pageId, pageId)))
       .returning();
     return result.length > 0;
   }

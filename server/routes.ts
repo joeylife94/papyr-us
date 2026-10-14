@@ -782,6 +782,25 @@ export async function registerRoutes(
         // Get old page data for comparison and version snapshot
         const oldPage = await storage.getWikiPage(id);
 
+        // Authorship counts as ownership, the team decides who may access the page, and trash
+        // state is the owner's call, so changing any of them needs owner. A page can only move
+        // into a team the caller belongs to.
+        const changesAuthor =
+          updateData.author !== undefined && updateData.author !== oldPage?.author;
+        const changesTeam =
+          updateData.teamId !== undefined && updateData.teamId !== (oldPage?.teamId ?? null);
+        if (changesAuthor || changesTeam || updateData.deletedAt !== undefined) {
+          if (!(await storage.checkPagePermission(req.user?.id, id, 'owner'))) {
+            return res.status(403).json({ message: 'Insufficient permissions: owner required' });
+          }
+        }
+        if (changesTeam && updateData.teamId != null) {
+          const userTeamIds = req.user?.id ? await storage.getUserTeamIds(req.user.id) : [];
+          if (!userTeamIds.includes(Number(updateData.teamId))) {
+            return res.status(403).json({ message: 'You are not a member of the target team' });
+          }
+        }
+
         // Save a version snapshot BEFORE updating (only if content/blocks changed)
         if (oldPage && (updateData.content !== undefined || updateData.blocks !== undefined)) {
           try {
@@ -1032,35 +1051,45 @@ export async function registerRoutes(
     }
   });
 
-  // Restore a page from trash
-  app.post('/api/trash/:id/restore', requireAuthIfEnabled, async (req: AuthRequest, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const restored = await storage.restoreWikiPage(id);
-      if (!restored) {
-        return res.status(404).json({ error: 'Page not found in trash' });
+  // Restore a page from trash (undoes DELETE /api/pages/:id, so it needs the same owner level)
+  app.post(
+    '/api/trash/:id/restore',
+    requireAuthIfEnabled,
+    requirePagePermission('owner'),
+    async (req: AuthRequest, res) => {
+      try {
+        const id = parseInt(req.params.id);
+        const restored = await storage.restoreWikiPage(id);
+        if (!restored) {
+          return res.status(404).json({ error: 'Page not found in trash' });
+        }
+        res.json(restored);
+      } catch (error) {
+        logger.error('Error restoring page:', { error });
+        res.status(500).json({ error: 'Failed to restore page' });
       }
-      res.json(restored);
-    } catch (error) {
-      logger.error('Error restoring page:', { error });
-      res.status(500).json({ error: 'Failed to restore page' });
     }
-  });
+  );
 
-  // Permanently delete a page
-  app.delete('/api/trash/:id', requireAuthIfEnabled, async (req: AuthRequest, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const deleted = await storage.permanentlyDeleteWikiPage(id);
-      if (!deleted) {
-        return res.status(404).json({ error: 'Page not found' });
+  // Permanently delete a trashed page (owner only; pages that are not in the trash are kept)
+  app.delete(
+    '/api/trash/:id',
+    requireAuthIfEnabled,
+    requirePagePermission('owner'),
+    async (req: AuthRequest, res) => {
+      try {
+        const id = parseInt(req.params.id);
+        const deleted = await storage.permanentlyDeleteWikiPage(id);
+        if (!deleted) {
+          return res.status(404).json({ error: 'Page not found' });
+        }
+        res.json({ message: 'Page permanently deleted' });
+      } catch (error) {
+        logger.error('Error permanently deleting page:', { error });
+        res.status(500).json({ error: 'Failed to permanently delete page' });
       }
-      res.json({ message: 'Page permanently deleted' });
-    } catch (error) {
-      logger.error('Error permanently deleting page:', { error });
-      res.status(500).json({ error: 'Failed to permanently delete page' });
     }
-  });
+  );
 
   // Empty entire trash
   app.delete('/api/trash', requireAuthIfEnabled, requireAdmin, async (req: AuthRequest, res) => {
@@ -1127,20 +1156,46 @@ export async function registerRoutes(
 
   // ==================== Bulk Operations API ====================
 
+  // A bulk call needs, on every listed page, the level its single-page route requires (move
+  // and tags: editor, delete: owner). One page falling short rejects the whole call before
+  // anything changes.
+  const parseBulkPageIds = (value: unknown): number[] | null => {
+    if (!Array.isArray(value)) return null;
+    const ids = value.map(Number);
+    return ids.every((id) => Number.isInteger(id) && id > 0) ? Array.from(new Set(ids)) : null;
+  };
+  const bulkDenial = async (
+    userId: number | undefined,
+    pageIds: number[],
+    level: 'owner' | 'editor'
+  ): Promise<{ status: number; error: string } | null> => {
+    for (const pageId of pageIds) {
+      if (!(await storage.checkPagePermission(userId, pageId, level))) {
+        return userId
+          ? { status: 403, error: `Insufficient permissions: ${level} required` }
+          : { status: 401, error: 'Authentication required' };
+      }
+    }
+    return null;
+  };
+
   // Bulk move pages to folder
   app.post('/api/pages/bulk/move', requireAuthIfEnabled, async (req: AuthRequest, res) => {
     try {
-      const { pageIds, folder } = req.body;
-      if (!Array.isArray(pageIds) || !folder || typeof folder !== 'string') {
+      const { folder } = req.body;
+      const pageIds = parseBulkPageIds(req.body.pageIds);
+      if (!pageIds || !folder || typeof folder !== 'string') {
         return res.status(400).json({ error: 'pageIds (array) and folder (string) required' });
       }
+      const denial = await bulkDenial(req.user?.id, pageIds, 'editor');
+      if (denial) return res.status(denial.status).json({ error: denial.error });
 
       const db = (storage as any).db;
       const { inArray } = await import('drizzle-orm');
       const results = await db
         .update(wikiPages)
         .set({ folder, updatedAt: new Date() })
-        .where(and(inArray(wikiPages.id, pageIds.map(Number)), isNull(wikiPages.deletedAt)))
+        .where(and(inArray(wikiPages.id, pageIds), isNull(wikiPages.deletedAt)))
         .returning();
 
       res.json({ updated: results.length });
@@ -1153,16 +1208,18 @@ export async function registerRoutes(
   // Bulk add/remove tags
   app.post('/api/pages/bulk/tags', requireAuthIfEnabled, async (req: AuthRequest, res) => {
     try {
-      const { pageIds, addTags, removeTags } = req.body;
-      if (!Array.isArray(pageIds)) {
+      const { addTags, removeTags } = req.body;
+      const pageIds = parseBulkPageIds(req.body.pageIds);
+      if (!pageIds) {
         return res.status(400).json({ error: 'pageIds (array) required' });
       }
+      const denial = await bulkDenial(req.user?.id, pageIds, 'editor');
+      if (denial) return res.status(denial.status).json({ error: denial.error });
 
-      const db = (storage as any).db;
       let updated = 0;
 
       for (const pageId of pageIds) {
-        const page = await storage.getWikiPage(Number(pageId));
+        const page = await storage.getWikiPage(pageId);
         if (!page) continue;
 
         let tags = [...page.tags];
@@ -1173,7 +1230,7 @@ export async function registerRoutes(
           tags = tags.filter((t: string) => !removeTags.includes(t));
         }
 
-        await storage.updateWikiPage(Number(pageId), { tags });
+        await storage.updateWikiPage(pageId, { tags });
         updated++;
       }
 
@@ -1187,14 +1244,16 @@ export async function registerRoutes(
   // Bulk delete (soft delete)
   app.post('/api/pages/bulk/delete', requireAuthIfEnabled, async (req: AuthRequest, res) => {
     try {
-      const { pageIds } = req.body;
-      if (!Array.isArray(pageIds)) {
+      const pageIds = parseBulkPageIds(req.body.pageIds);
+      if (!pageIds) {
         return res.status(400).json({ error: 'pageIds (array) required' });
       }
+      const denial = await bulkDenial(req.user?.id, pageIds, 'owner');
+      if (denial) return res.status(denial.status).json({ error: denial.error });
 
       let deleted = 0;
       for (const pageId of pageIds) {
-        const success = await storage.deleteWikiPage(Number(pageId));
+        const success = await storage.deleteWikiPage(pageId);
         if (success) deleted++;
       }
 
@@ -1207,50 +1266,56 @@ export async function registerRoutes(
 
   // ==================== Markdown Import API ====================
 
-  app.post('/api/pages/import/markdown', requireAuthIfEnabled, async (req: AuthRequest, res) => {
-    try {
-      const { title, content, folder, tags, teamId } = req.body;
-      if (!content || typeof content !== 'string') {
-        return res.status(400).json({ error: 'content (string) required' });
+  // Like POST /api/pages, a page can only be imported into a team the caller belongs to
+  app.post(
+    '/api/pages/import/markdown',
+    requireAuthIfEnabled,
+    requireTeamMembership,
+    async (req: AuthRequest, res) => {
+      try {
+        const { title, content, folder, tags, teamId } = req.body;
+        if (!content || typeof content !== 'string') {
+          return res.status(400).json({ error: 'content (string) required' });
+        }
+
+        const pageTitle =
+          title ||
+          content
+            .split('\n')[0]
+            ?.replace(/^#+\s*/, '')
+            .trim() ||
+          'Untitled Import';
+        const slug =
+          pageTitle
+            .toLowerCase()
+            .replace(/[^a-z0-9가-힣]+/g, '-')
+            .replace(/^-|-$/g, '') +
+          '-' +
+          Date.now().toString(36);
+
+        const author = (req as any).user?.email || (req as any).user?.name || 'imported';
+
+        const page = await storage.createWikiPage(
+          {
+            title: pageTitle,
+            slug,
+            content,
+            folder: folder || 'docs',
+            tags: Array.isArray(tags) ? tags : [],
+            author,
+            teamId: teamId ? Number(teamId) : undefined,
+            isPublished: true,
+          },
+          (req as any).user?.id
+        );
+
+        res.status(201).json(page);
+      } catch (error) {
+        logger.error('Error importing markdown:', { error });
+        res.status(500).json({ error: 'Failed to import markdown' });
       }
-
-      const pageTitle =
-        title ||
-        content
-          .split('\n')[0]
-          ?.replace(/^#+\s*/, '')
-          .trim() ||
-        'Untitled Import';
-      const slug =
-        pageTitle
-          .toLowerCase()
-          .replace(/[^a-z0-9가-힣]+/g, '-')
-          .replace(/^-|-$/g, '') +
-        '-' +
-        Date.now().toString(36);
-
-      const author = (req as any).user?.email || (req as any).user?.name || 'imported';
-
-      const page = await storage.createWikiPage(
-        {
-          title: pageTitle,
-          slug,
-          content,
-          folder: folder || 'docs',
-          tags: Array.isArray(tags) ? tags : [],
-          author,
-          teamId: teamId ? Number(teamId) : undefined,
-          isPublished: true,
-        },
-        (req as any).user?.id
-      );
-
-      res.status(201).json(page);
-    } catch (error) {
-      logger.error('Error importing markdown:', { error });
-      res.status(500).json({ error: 'Failed to import markdown' });
     }
-  });
+  );
 
   // ==================== Dashboard Stats API ====================
 
@@ -1811,7 +1876,8 @@ export async function registerRoutes(
           return res.status(403).json({ message: 'Only page owners can manage permissions' });
         }
 
-        const deleted = await storage.removePagePermission(permissionId);
+        // Only a permission of this page: owning one page grants nothing on another
+        const deleted = await storage.removePagePermission(pageId, permissionId);
         if (!deleted) {
           return res.status(404).json({ message: 'Permission not found' });
         }
