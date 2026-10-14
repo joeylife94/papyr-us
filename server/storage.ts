@@ -405,29 +405,31 @@ export class DBStorage {
   /**
    * SQL form of `checkPagePermission(viewer, page, 'viewer')`, for listings that must never
    * reveal a page GET /api/pages/:id would refuse:
-   * - no explicit permissions: team pages need membership, team-less pages are open;
-   * - explicit permissions: a public grant, or (signed in) authorship, a user grant, or a
-   *   grant to one of the viewer's teams. Team membership alone does not grant access here,
-   *   exactly as in checkPagePermission.
+   * - team pages: current members of the team, a public grant, or a grant to one of the
+   *   viewer's teams; authorship and user grants need membership, so they add nothing here;
+   * - team-less pages: open without explicit permissions; otherwise a public grant, or
+   *   (signed in) authorship, a user grant, or a grant to one of the viewer's teams.
    */
   private readableBy(viewer: PageViewer): SQL {
     const validPermission = sql`pp.permission IN ('viewer', 'commenter', 'editor', 'owner')`;
     const grant = (clause: SQL) =>
       sql`EXISTS (SELECT 1 FROM page_permissions pp WHERE pp.page_id = ${wikiPages.id} AND ${validPermission} AND ${clause})`;
     const hasPermissions = sql`EXISTS (SELECT 1 FROM page_permissions pp WHERE pp.page_id = ${wikiPages.id})`;
-    const memberOrTeamless =
-      viewer.teamIds.length > 0
-        ? or(isNull(wikiPages.teamId), inArray(wikiPages.teamId, viewer.teamIds))!
-        : isNull(wikiPages.teamId);
+    const teamless = isNull(wikiPages.teamId);
 
     const conditions: SQL[] = [
-      and(sql`NOT ${hasPermissions}`, memberOrTeamless)!,
+      and(sql`NOT ${hasPermissions}`, teamless)!,
       grant(sql`pp.entity_type = 'public'`),
     ];
     if (viewer.userId) {
-      conditions.push(grant(sql`pp.entity_type = 'user' AND pp.entity_id = ${viewer.userId}`));
-      if (viewer.email) conditions.push(and(hasPermissions, eq(wikiPages.author, viewer.email))!);
+      conditions.push(
+        and(teamless, grant(sql`pp.entity_type = 'user' AND pp.entity_id = ${viewer.userId}`))!
+      );
+      if (viewer.email) {
+        conditions.push(and(teamless, hasPermissions, eq(wikiPages.author, viewer.email))!);
+      }
       if (viewer.teamIds.length > 0) {
+        conditions.push(inArray(wikiPages.teamId, viewer.teamIds));
         conditions.push(
           grant(
             sql`pp.entity_type = 'team' AND pp.entity_id IN (${sql.join(
@@ -1336,27 +1338,39 @@ export class DBStorage {
       return false;
     }
 
-    // Check if user is the page author (implicit owner)
-    if (page.length > 0) {
-      const user = await this.db.select().from(users).where(eq(users.id, userId));
-      if (user.length > 0 && page[0].author === user[0].email) {
+    const pageTeamId = page.length > 0 && page[0].teamId ? Number(page[0].teamId) : null;
+    const userTeamIds = await this.getUserTeamIds(userId);
+    const isPageTeamMember = pageTeamId !== null && userTeamIds.includes(pageTeamId);
+
+    // Current members of the page's team can read it
+    if (isPageTeamMember && requiredLevel <= permissionLevels.viewer) {
+      return true;
+    }
+
+    // On a team page, authorship and user-specific permissions only count while the user is a
+    // member of that team, so removing a member revokes them without deleting any rows
+    if (pageTeamId === null || isPageTeamMember) {
+      // Check if user is the page author (implicit owner)
+      if (page.length > 0) {
+        const user = await this.db.select().from(users).where(eq(users.id, userId));
+        if (user.length > 0 && page[0].author === user[0].email) {
+          return true;
+        }
+      }
+
+      // Check user-specific permissions
+      const userPermission = permissions.find(
+        (p: PagePermission) => p.entityType === 'user' && p.entityId === userId
+      );
+      if (
+        userPermission &&
+        permissionLevels[userPermission.permission as PermissionLevel] >= requiredLevel
+      ) {
         return true;
       }
     }
 
-    // Check user-specific permissions
-    const userPermission = permissions.find(
-      (p: PagePermission) => p.entityType === 'user' && p.entityId === userId
-    );
-    if (
-      userPermission &&
-      permissionLevels[userPermission.permission as PermissionLevel] >= requiredLevel
-    ) {
-      return true;
-    }
-
     // Check team permissions (if user belongs to a team)
-    const userTeamIds = await this.getUserTeamIds(userId);
     if (userTeamIds.length > 0) {
       const teamPermission = permissions.find(
         (p: PagePermission) =>
@@ -1381,9 +1395,19 @@ export class DBStorage {
   }
 
   /**
-   * Get a user's permission level for a page (returns highest level)
+   * Get a user's permission level for a page (returns highest level).
+   * Like checkPagePermission, a user's own permissions on a team page lapse while they are not
+   * a member of that team.
    */
   async getUserPagePermission(userId: number, pageId: number): Promise<PermissionLevel | null> {
+    const [page] = await this.db
+      .select({ teamId: wikiPages.teamId })
+      .from(wikiPages)
+      .where(eq(wikiPages.id, pageId));
+    if (page?.teamId && !(await this.getUserTeamIds(userId)).includes(Number(page.teamId))) {
+      return null;
+    }
+
     const permissions = await this.db
       .select()
       .from(pagePermissions)
