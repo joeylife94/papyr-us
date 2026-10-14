@@ -87,6 +87,22 @@ const AI_ACTIONS: AIAction[] = [
   { icon: <ListTodo className="h-3.5 w-3.5" />, label: 'Taskify', action: 'taskify' },
 ];
 
+/**
+ * Set a React-controlled textarea's value so that the following `input` event reaches
+ * React's onChange. React tracks the last value through the element's own `value` setter,
+ * so a plain `textarea.value = next` also updates that tracker; the input event then looks
+ * like a no-op, onChange never fires, and the next render restores the old value.
+ * Writing through the prototype setter bypasses the tracker.
+ */
+function setControlledTextareaValue(textarea: HTMLTextAreaElement, value: string) {
+  const nativeSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+  if (nativeSetter) {
+    nativeSetter.call(textarea, value);
+  } else {
+    textarea.value = value;
+  }
+}
+
 interface InlineFormattingToolbarProps {
   /**
    * The container element to monitor for text selection.
@@ -237,7 +253,7 @@ export function InlineFormattingToolbar({ containerRef, onFormat }: InlineFormat
     }
 
     // Update textarea value
-    textarea.value = newValue;
+    setControlledTextareaValue(textarea, newValue);
     textarea.selectionStart = newStart;
     textarea.selectionEnd = newEnd;
 
@@ -280,7 +296,10 @@ export function InlineFormattingToolbar({ containerRef, onFormat }: InlineFormat
 
       // Replace selection with AI result
       const text = activeTextarea.value;
-      activeTextarea.value = text.substring(0, start) + replacement + text.substring(end);
+      setControlledTextareaValue(
+        activeTextarea,
+        text.substring(0, start) + replacement + text.substring(end)
+      );
       activeTextarea.selectionStart = start;
       activeTextarea.selectionEnd = start + replacement.length;
 
