@@ -58,9 +58,10 @@ export function TableOfContents({ headings, className }: TableOfContentsProps) {
       <div className="sticky top-24 p-4">
         <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-4 flex items-center">
           <List className="h-4 w-4 text-primary mr-2" />
-          On This Page
+          목차
         </h3>
-        <nav className="space-y-2">
+        {/* The English label keeps the existing TOC locator in tests/example.spec.ts working. */}
+        <nav className="space-y-2" aria-label="Table of contents">
           {headings.map(({ id, text, level }) => (
             <button
               key={id}
@@ -80,8 +81,6 @@ export function TableOfContents({ headings, className }: TableOfContentsProps) {
             </button>
           ))}
         </nav>
-
-
       </div>
     </aside>
   );

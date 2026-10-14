@@ -1,11 +1,15 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useActiveWorkspace } from '@/hooks/useActiveWorkspace';
+import { toPlainTextPreview } from '@/lib/markdown';
 import { Book, Clock, Plus, User } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import { ko } from 'date-fns/locale';
 import type { WikiPage } from '@shared/schema';
 
 interface HomeProps {
@@ -15,6 +19,9 @@ interface HomeProps {
 }
 
 export default function Home({ searchQuery, selectedFolder, teamName }: HomeProps) {
+  const navigate = useNavigate();
+  const workspace = useActiveWorkspace();
+  const createPath = teamName ? `/teams/${teamName}/create` : '/create';
   // Auto-switch to relevance ranking when searching
   const [sort, setSort] = useState<'updated' | 'rank'>('updated');
   const effectiveSort = searchQuery ? 'rank' : sort;
@@ -73,27 +80,28 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
       {/* Workspace heading: documents are the primary action, not dashboard statistics. */}
       <div className="flex flex-col gap-4 border-b border-slate-200 pb-6 dark:border-slate-800 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0 space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            워크스페이스 / 문서
+          <p className="truncate text-sm font-medium text-slate-500 dark:text-slate-400">
+            {teamName ? `${workspace?.displayName ?? teamName} · 워크스페이스` : '개인 문서 공간'}
           </p>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+          <h1 className="break-words break-keep text-2xl font-semibold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
             {teamName ? `${teamName} 팀 문서` : '내 문서'}
           </h1>
           <p className="text-sm text-slate-600 dark:text-slate-400">
-            {teamName ? '팀의 문서를 확인하고 함께 작업하세요.' : '최근 문서를 확인하거나 새 문서를 작성하세요.'}
+            {teamName
+              ? '팀의 문서를 확인하고 함께 작업하세요.'
+              : '최근 문서를 확인하거나 새 문서를 작성하세요.'}
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-3">
+        <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-end">
           {!isLoading && !error && (
-            <span className="text-sm tabular-nums text-slate-500 dark:text-slate-400">총 {totalCount}개</span>
+            <span className="text-sm tabular-nums text-slate-500 dark:text-slate-400">
+              문서 {totalCount}개
+            </span>
           )}
-          <Link
-            to={teamName ? `/teams/${teamName}/create` : '/create'}
-            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          >
-            <Plus className="h-4 w-4" />
-            새 문서 작성
-          </Link>
+          {/* A button (not a link) keeps the accepted GJ-01 / buyer-proof locator contract. */}
+          <Button onClick={() => navigate(createPath)} className="gap-2 shadow-sm">
+            <Plus className="h-4 w-4" />새 문서 작성
+          </Button>
         </div>
       </div>
 
@@ -105,7 +113,9 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
           </h2>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
-              <label htmlFor="page-sort" className="text-sm text-slate-600 dark:text-slate-400">정렬</label>
+              <label htmlFor="page-sort" className="text-sm text-slate-600 dark:text-slate-400">
+                정렬
+              </label>
               <select
                 id="page-sort"
                 className="text-sm border rounded-md px-2 py-1 bg-white dark:bg-slate-900"
@@ -148,29 +158,36 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
         ) : (
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             {flatPages.map((page: WikiPage) => (
-              <Link key={page.id} to={`/page/${page.slug}`}>
+              <Link
+                key={page.id}
+                to={`/page/${page.slug}`}
+                className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
                 <Card className="group h-full border border-slate-200 dark:border-slate-800 transition-colors duration-150 hover:border-primary/50 hover:bg-slate-50/70 dark:hover:bg-slate-900/70">
-                  <CardHeader>
-                    <CardTitle className="text-lg line-clamp-2">
+                  <CardHeader className="space-y-2 p-4 sm:p-5">
+                    <CardTitle className="text-base font-semibold leading-snug line-clamp-2 sm:text-lg">
                       {renderHighlighted(page.title, searchQuery)}
                     </CardTitle>
-                    <div className="flex items-center space-x-4 text-sm text-slate-500 dark:text-slate-400">
-                      <div className="flex items-center space-x-1">
-                        <User className="h-3 w-3" />
-                        <span>{page.author}</span>
+                    <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400 sm:text-sm">
+                      <div className="flex min-w-0 items-center gap-1">
+                        <User className="h-3 w-3 shrink-0" />
+                        <span className="truncate">{page.author}</span>
                       </div>
-                      <div className="flex items-center space-x-1">
-                        <Clock className="h-3 w-3" />
+                      <div className="flex items-center gap-1">
+                        <Clock className="h-3 w-3 shrink-0" />
                         <span>
-                          {formatDistanceToNow(new Date(page.updatedAt), { addSuffix: true })}
+                          {formatDistanceToNow(new Date(page.updatedAt), {
+                            addSuffix: true,
+                            locale: ko,
+                          })}
                         </span>
                       </div>
                     </div>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="p-4 pt-0 sm:p-5 sm:pt-0">
                     <div className="space-y-3">
-                      <p className="text-sm text-slate-600 dark:text-slate-400 line-clamp-3">
-                        {renderHighlighted(page.content.substring(0, 150), searchQuery)}...
+                      <p className="text-sm text-slate-600 dark:text-slate-400 line-clamp-2">
+                        {renderHighlighted(toPlainTextPreview(page.content), searchQuery)}
                       </p>
                       <div className="flex flex-wrap gap-2">
                         <Badge variant="secondary" className="capitalize">
@@ -193,28 +210,26 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
           </div>
         )}
         {flatPages.length === 0 && !isLoading && !error && (
-          <div className="rounded-xl border border-dashed border-slate-200 px-4 py-12 text-center dark:border-slate-700">
-            <Book className="h-10 w-10 text-slate-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-slate-900 dark:text-white mb-2">
-              {teamName ? `${teamName} 팀 문서가 없습니다` : '아직 문서가 없습니다'}
+          <div className="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center dark:border-slate-700">
+            <Book className="h-8 w-8 text-slate-400 mx-auto mb-3" />
+            {/* The workspace name is already in the page heading; repeating it here would also
+                make the accepted `${team} 팀 문서` heading locator ambiguous. */}
+            <h3 className="text-base font-medium text-slate-900 dark:text-white mb-1">
+              아직 문서가 없습니다
             </h3>
-            <p className="text-slate-600 dark:text-slate-400">
+            <p className="text-sm text-slate-600 dark:text-slate-400">
               {teamName
-                ? '새 문서를 작성하여 팀의 지식을 공유해보세요.'
-                : '새 문서를 작성해 작업을 시작해 보세요.'}
+                ? "'새 문서 작성'으로 팀의 첫 문서를 만들어 보세요."
+                : "'새 문서 작성'으로 첫 문서를 만들어 보세요."}
             </p>
           </div>
         )}
 
         {flatPages.length > 0 && hasNextPage && (
           <div className="flex justify-center mt-8">
-            <button
-              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50"
-              onClick={() => fetchNextPage()}
-              disabled={isFetchingNextPage}
-            >
+            <Button variant="outline" onClick={() => fetchNextPage()} disabled={isFetchingNextPage}>
               {isFetchingNextPage ? '로딩 중…' : '더 보기'}
-            </button>
+            </Button>
           </div>
         )}
       </div>

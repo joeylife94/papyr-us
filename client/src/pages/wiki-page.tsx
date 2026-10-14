@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from 'react-router-dom';
+import { Link, useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useCollaboration } from '@/hooks/useCollaboration';
 import { useFeatureFlags } from '@/features/FeatureFlagsContext';
+import { useWorkspaceScope } from '@/hooks/useActiveWorkspace';
 import { CollaboratorCursors } from '@/components/collaboration/CollaboratorCursors';
 import { TypingIndicator } from '@/components/collaboration/TypingIndicator';
 import { CollaboratorPresence } from '@/components/collaboration/CollaboratorPresence';
@@ -20,20 +21,8 @@ import { PageHistory } from '@/components/page-history';
 import { apiRequest } from '@/lib/queryClient';
 import { extractHeadings, estimateReadingTime } from '@/lib/markdown';
 import { formatDistanceToNow } from 'date-fns';
-import {
-  Edit,
-  Share,
-  User,
-  Clock,
-  Calendar,
-  ThumbsUp,
-  ThumbsDown,
-  AlertTriangle,
-  FileEdit,
-  Sparkles,
-  X,
-  Trash2,
-} from 'lucide-react';
+import { ko } from 'date-fns/locale';
+import { Edit, Share, User, Clock, Calendar, AlertTriangle, Sparkles, Trash2 } from 'lucide-react';
 import type { WikiPage } from '@shared/schema';
 
 export default function WikiPageView() {
@@ -43,6 +32,8 @@ export default function WikiPageView() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { flags } = useFeatureFlags();
+  const workspaceScope = useWorkspaceScope();
+  const workspace = workspaceScope.kind === 'team' ? workspaceScope.workspace : null;
   const contentRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
   const [showAICopilot, setShowAICopilot] = useState(false);
@@ -156,13 +147,13 @@ export default function WikiPageView() {
       try {
         await navigator.clipboard.writeText(window.location.href);
         toast({
-          title: 'Link Copied',
-          description: 'Page link copied to clipboard.',
+          title: '링크 복사됨',
+          description: '문서 링크를 클립보드에 복사했습니다.',
         });
       } catch (clipboardError) {
         toast({
-          title: 'Share Failed',
-          description: 'Unable to share or copy link.',
+          title: '공유 실패',
+          description: '링크를 공유하거나 복사할 수 없습니다.',
           variant: 'destructive',
         });
       }
@@ -171,17 +162,17 @@ export default function WikiPageView() {
 
   const handleDelete = async () => {
     if (!page) return;
-    const confirmed = window.confirm(`Are you sure you want to delete "${page.title}"?`);
+    const confirmed = window.confirm(`"${page.title}" 문서를 삭제할까요?`);
     if (!confirmed) return;
     try {
       await apiRequest('DELETE', `/api/pages/${page.id}`);
       queryClient.invalidateQueries({ queryKey: ['/api/pages'] });
-      toast({ title: 'Page Deleted', description: 'The page has been deleted successfully.' });
+      toast({ title: '문서 삭제됨', description: '문서를 삭제했습니다.' });
       navigate('/');
     } catch (error) {
       toast({
-        title: 'Delete Failed',
-        description: 'Unable to delete the page.',
+        title: '삭제 실패',
+        description: '문서를 삭제할 수 없습니다.',
         variant: 'destructive',
       });
     }
@@ -189,189 +180,185 @@ export default function WikiPageView() {
 
   if (isLoading) {
     return (
-      <div className="flex">
-        <div className="flex-1 max-w-4xl">
-          <article className="px-6 py-8">
-            <div className="space-y-6">
-              <Skeleton className="h-8 w-3/4" />
-              <div className="flex space-x-4">
-                <Skeleton className="h-4 w-24" />
-                <Skeleton className="h-4 w-24" />
-                <Skeleton className="h-4 w-24" />
-              </div>
-              <div className="space-y-4">
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-5/6" />
-                <Skeleton className="h-4 w-4/6" />
-              </div>
+      <div className="mx-auto w-full max-w-3xl">
+        <article className="px-1 py-5 sm:px-2 sm:py-8">
+          <div className="space-y-6">
+            <Skeleton className="h-4 w-48" />
+            <Skeleton className="h-9 w-3/4" />
+            <div className="flex flex-wrap gap-4">
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-4 w-24" />
             </div>
-          </article>
-        </div>
+            <div className="space-y-4">
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-5/6" />
+              <Skeleton className="h-4 w-4/6" />
+            </div>
+          </div>
+        </article>
       </div>
     );
   }
 
   if (error || !page) {
     return (
-      <div className="flex items-center justify-center min-h-96">
+      <div className="flex min-h-96 items-center justify-center px-4">
         <div className="text-center">
-          <AlertTriangle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Page Not Found</h1>
+          <AlertTriangle className="mx-auto mb-4 h-12 w-12 text-red-500" />
+          {/* Heading text is an accepted GJ-02 locator. */}
+          <h1 className="mb-2 text-2xl font-bold text-slate-900 dark:text-white">Page Not Found</h1>
           <p className="text-slate-600 dark:text-slate-400">
-            The page you're looking for doesn't exist or has been moved.
+            요청한 문서가 없거나 다른 위치로 이동되었습니다.
           </p>
+          <Button asChild variant="outline" className="mt-6">
+            <Link to="/">문서 목록으로</Link>
+          </Button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="relative flex w-full min-w-0">
+    <div className="relative flex w-full min-w-0 justify-center">
       {/* Collaborator Cursors Overlay */}
       <CollaboratorCursors cursors={cursors} />
 
-      {/* Content Area */}
-      <div className="min-w-0 w-full max-w-4xl flex-1">
-        <article className="min-w-0 px-2 py-5 sm:px-6 sm:py-8" ref={contentRef}>
+      {/* Reading column: sized to a comfortable text measure, independent of list/grid pages. */}
+      <div className="w-full min-w-0 max-w-3xl">
+        <article className="min-w-0 px-1 py-5 sm:px-2 sm:py-8" ref={contentRef}>
           {/* Collaboration Status Bar */}
           {isConnected && sessionUsers.length > 0 && (
-            <div className="mb-6 flex items-center justify-between">
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
               <CollaboratorPresence sessionUsers={sessionUsers} isConnected={isConnected} />
               <TypingIndicator typingUsers={typingUsers} />
             </div>
           )}
 
           {/* Breadcrumb */}
-          <nav className="mb-6">
+          <nav aria-label="문서 경로" className="mb-5">
             <ol className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-500 dark:text-slate-400">
-              <li>
-                <a href="/" className="hover:text-primary transition-colors">
-                  Home
-                </a>
+              <li className="min-w-0">
+                <Link
+                  to={workspace?.documentsPath ?? '/'}
+                  className="inline-flex max-w-[16rem] items-center transition-colors hover:text-primary"
+                >
+                  <span className="truncate">
+                    {workspace?.displayName ??
+                      (workspaceScope.kind === 'personal' ? '내 문서' : '문서')}
+                  </span>
+                </Link>
               </li>
-              <li>/</li>
-              <li className="capitalize">
-                <a href={`#${page.folder}`} className="hover:text-primary transition-colors">
-                  {page.folder}
-                </a>
+              <li aria-hidden="true">/</li>
+              <li className="capitalize">{page.folder}</li>
+              <li aria-hidden="true">/</li>
+              <li
+                aria-current="page"
+                className="min-w-0 max-w-full truncate text-slate-700 dark:text-slate-300"
+              >
+                {page.title}
               </li>
-              <li>/</li>
-              <li className="min-w-0 break-words text-slate-700 dark:text-slate-300">{page.title}</li>
             </ol>
           </nav>
 
           {/* Page Header */}
-          <header className="mb-8">
-            <div className="mb-4 flex min-w-0 flex-col items-start gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
-                <h1 className="min-w-0 break-words text-2xl font-semibold tracking-tight text-slate-900 dark:text-white sm:text-3xl">{page.title}</h1>
-                <div className="flex min-w-0 flex-wrap gap-2">
-                  <Badge variant="secondary" className="capitalize">
-                    {page.folder}
-                  </Badge>
-                  {page.tags.map((tag) => (
-                    <Badge key={tag} variant="outline">
-                      {tag}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-              <div className="flex max-w-full flex-wrap items-center gap-2">
-                <Button
-                  variant={showAICopilot ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => {
-                    setShowAICopilot(!showAICopilot);
-                    setIsCopilotMinimized(false);
-                  }}
-                  className="gap-2"
-                >
-                  <Sparkles className="h-4 w-4" />
-                  AI 코파일럿
-                </Button>
-                <PageHistory pageId={page.id} currentTitle={page.title} />
+          <header className="mb-8 space-y-4 border-b border-slate-200 pb-6 dark:border-slate-800">
+            <h1 className="break-words break-keep text-3xl font-semibold tracking-tight text-slate-900 dark:text-white sm:text-4xl">
+              {page.title}
+            </h1>
+
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-500 dark:text-slate-400">
+              <span className="flex min-w-0 items-center gap-1.5">
+                <User className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{page.author}</span>
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Calendar className="h-3.5 w-3.5 shrink-0" />
+                <span>
+                  {formatDistanceToNow(new Date(page.updatedAt), { addSuffix: true, locale: ko })}{' '}
+                  수정
+                </span>
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Clock className="h-3.5 w-3.5 shrink-0" />
+                <span>{readingTime}분 분량</span>
+              </span>
+            </div>
+
+            <div className="flex min-w-0 flex-wrap gap-2">
+              <Badge variant="secondary" className="capitalize">
+                {page.folder}
+              </Badge>
+              {page.tags.map((tag) => (
+                <Badge key={tag} variant="outline">
+                  {tag}
+                </Badge>
+              ))}
+            </div>
+
+            {/* One action group: primary edit, recovery, optional assistance, then secondary
+                share/delete. `title` values on edit/delete are accepted E2E locators. */}
+            <div role="group" aria-label="문서 작업" className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                onClick={() => navigate(`/edit/${page.id}`)}
+                title="Edit Page"
+                className="gap-2"
+              >
+                <Edit className="h-4 w-4" />
+                편집
+              </Button>
+              <PageHistory pageId={page.id} currentTitle={page.title} />
+              <Button
+                variant={showAICopilot ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => {
+                  setShowAICopilot(!showAICopilot);
+                  setIsCopilotMinimized(false);
+                }}
+                className="gap-2"
+              >
+                <Sparkles className="h-4 w-4" />
+                AI 코파일럿
+              </Button>
+              <div className="ml-auto flex items-center gap-1">
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => navigate(`/edit/${page.id}`)}
-                  title="Edit Page"
+                  onClick={handleShare}
+                  title="링크 공유"
+                  aria-label="링크 공유"
                 >
-                  <Edit className="h-4 w-4" />
-                </Button>
-                <Button variant="ghost" size="icon" onClick={handleShare} title="Share Page">
                   <Share className="h-4 w-4" />
                 </Button>
-                <Button variant="ghost" size="icon" onClick={handleDelete} title="Delete">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleDelete}
+                  title="Delete"
+                  aria-label="문서 삭제"
+                  className="text-slate-500 hover:bg-red-50 hover:text-red-600 dark:text-slate-400 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                >
                   <Trash2 className="h-4 w-4" />
                 </Button>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-slate-500 dark:text-slate-400 sm:text-sm">
-              <span className="flex items-center space-x-1">
-                <Calendar className="h-3 w-3" />
-                <span>
-                  Last updated: {formatDistanceToNow(new Date(page.updatedAt), { addSuffix: true })}
-                </span>
-              </span>
-              <span>•</span>
-              <span className="flex items-center space-x-1">
-                <Clock className="h-3 w-3" />
-                <span>{readingTime} min read</span>
-              </span>
-              <span>•</span>
-              <div className="flex items-center space-x-1">
-                <User className="h-3 w-3" />
-                <span>{page.author}</span>
               </div>
             </div>
           </header>
 
           {/* Content */}
           <div className="min-w-0 max-w-full overflow-x-auto">
-            <MarkdownRenderer content={page.content} />
+            <MarkdownRenderer content={page.content} className="lg:prose-lg" />
           </div>
 
-          {/* Page Footer */}
-          <footer className="mt-12 border-t border-slate-200 pt-6 dark:border-slate-700">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center space-x-4">
-                <span className="text-sm text-slate-500 dark:text-slate-400">
-                  Was this helpful?
-                </span>
-                <div className="flex space-x-2">
-                  <Button variant="ghost" size="icon" className="h-8 w-8">
-                    <ThumbsUp className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8">
-                    <ThumbsDown className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-                <Button variant="ghost" size="sm">
-                  Report Issue
-                </Button>
-                <Button variant="ghost" size="sm">
-                  <FileEdit className="h-3 w-3 mr-1" />
-                  Suggest Edit
-                </Button>
-              </div>
-            </div>
-          </footer>
-
           {/* Comments Section */}
-          {page && (
-            <div className="mt-12 pt-8 border-t border-slate-200 dark:border-slate-700">
-              <Comments pageId={page.id} />
-            </div>
-          )}
+          <section className="mt-12 border-t border-slate-200 pt-8 dark:border-slate-800">
+            <Comments pageId={page.id} />
+          </section>
 
           {/* Related Pages Section */}
-          {page && (
-            <div className="mt-12">
-              <RelatedPages pageId={page.id} pageTitle={page.title} pageContent={page.content} />
-            </div>
-          )}
+          <section className="mt-12">
+            <RelatedPages pageId={page.id} pageTitle={page.title} pageContent={page.content} />
+          </section>
         </article>
       </div>
 
