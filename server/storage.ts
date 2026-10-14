@@ -73,7 +73,7 @@ import {
   teamMembers,
 } from '../shared/schema.js';
 import { drizzle } from 'drizzle-orm/node-postgres';
-import { eq, like, and, or, sql, desc, asc, isNull, inArray } from 'drizzle-orm';
+import { eq, like, and, or, sql, desc, asc, isNull, inArray, type SQL } from 'drizzle-orm';
 import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 import type { RetrievedPageRow } from './services/retrieval.js';
@@ -82,6 +82,13 @@ import type { RetrievedPageRow } from './services/retrieval.js';
 function isBcryptHash(value: string): boolean {
   // bcrypt hashes typically start with $2a$, $2b$, or $2y$ and are ~60 chars
   return typeof value === 'string' && /^\$2[aby]?\$\d{2}\$[./A-Za-z0-9]{53}$/.test(value);
+}
+
+/** A caller listing pages: identity plus current team memberships (see DBStorage.readableBy). */
+export interface PageViewer {
+  userId?: number;
+  email?: string;
+  teamIds: number[];
 }
 
 const MAX_SLUG_INSERT_ATTEMPTS = 100;
@@ -239,7 +246,10 @@ export class DBStorage {
     return result.length;
   }
 
-  async searchWikiPages(params: SearchParams): Promise<{ pages: WikiPage[]; total: number }> {
+  async searchWikiPages(
+    params: SearchParams,
+    options: { readableBy?: PageViewer } = {}
+  ): Promise<{ pages: WikiPage[]; total: number }> {
     // Enable FTS by default (can be disabled with SEARCH_USE_FTS=false)
     const useFts = (process.env.SEARCH_USE_FTS || 'true').toLowerCase() === 'true';
     const hasQuery = !!(params.query && params.query.trim().length > 0);
@@ -294,6 +304,10 @@ export class DBStorage {
           sql`, `
         )}]::text[]`
       );
+    }
+    if (options.readableBy) {
+      // Applied in SQL so totals and pagination never count pages the viewer cannot read.
+      conditions.push(this.readableBy(options.readableBy));
     }
 
     if (conditions.length > 0) {
@@ -375,72 +389,96 @@ export class DBStorage {
       .limit(params.limit);
   }
 
-  /**
-   * SQL scope for pages a user may list: pages of teams they belong to plus team-less pages.
-   * This is the same scope GET /api/pages applies to authenticated users.
-   */
-  private async readablePageScope(userId: number) {
-    const teamIds = await this.getUserTeamIds(userId);
-    return teamIds.length > 0
-      ? or(isNull(wikiPages.teamId), inArray(wikiPages.teamId, teamIds))
-      : isNull(wikiPages.teamId);
+  /** Who is listing pages: identity plus current team memberships, loaded from the database. */
+  async getPageViewer(userId?: number): Promise<PageViewer> {
+    if (!userId) return { teamIds: [] };
+    const [user] = await this.db
+      .select({ email: users.email })
+      .from(users)
+      .where(eq(users.id, userId));
+    return { userId, email: user?.email, teamIds: await this.getUserTeamIds(userId) };
   }
 
   /**
-   * Drop pages whose explicit page permissions deny `viewer` access to the user, so listings
-   * never reveal a page that GET /api/pages/:id would refuse. Pages without explicit
-   * permissions are already covered by the team scope above.
+   * SQL form of `checkPagePermission(viewer, page, 'viewer')`, for listings that must never
+   * reveal a page GET /api/pages/:id would refuse:
+   * - no explicit permissions: team pages need membership, team-less pages are open;
+   * - explicit permissions: a public grant, or (signed in) authorship, a user grant, or a
+   *   grant to one of the viewer's teams. Team membership alone does not grant access here,
+   *   exactly as in checkPagePermission.
    */
-  private async withoutExplicitlyDeniedPages<T extends { id: number }>(
-    userId: number,
-    pages: T[]
-  ): Promise<T[]> {
-    if (pages.length === 0) return pages;
+  private readableBy(viewer: PageViewer): SQL {
+    const validPermission = sql`pp.permission IN ('viewer', 'commenter', 'editor', 'owner')`;
+    const grant = (clause: SQL) =>
+      sql`EXISTS (SELECT 1 FROM page_permissions pp WHERE pp.page_id = ${wikiPages.id} AND ${validPermission} AND ${clause})`;
+    const hasPermissions = sql`EXISTS (SELECT 1 FROM page_permissions pp WHERE pp.page_id = ${wikiPages.id})`;
+    const memberOrTeamless =
+      viewer.teamIds.length > 0
+        ? or(isNull(wikiPages.teamId), inArray(wikiPages.teamId, viewer.teamIds))!
+        : isNull(wikiPages.teamId);
 
-    const restricted = await this.db
-      .selectDistinct({ pageId: pagePermissions.pageId })
-      .from(pagePermissions)
-      .where(
-        inArray(
-          pagePermissions.pageId,
-          pages.map((page) => page.id)
-        )
-      );
-    if (restricted.length === 0) return pages;
+    const conditions: SQL[] = [
+      and(sql`NOT ${hasPermissions}`, memberOrTeamless)!,
+      grant(sql`pp.entity_type = 'public'`),
+    ];
+    if (viewer.userId) {
+      conditions.push(grant(sql`pp.entity_type = 'user' AND pp.entity_id = ${viewer.userId}`));
+      if (viewer.email) conditions.push(and(hasPermissions, eq(wikiPages.author, viewer.email))!);
+      if (viewer.teamIds.length > 0) {
+        conditions.push(
+          grant(
+            sql`pp.entity_type = 'team' AND pp.entity_id IN (${sql.join(
+              viewer.teamIds.map((teamId) => sql`${teamId}`),
+              sql`, `
+            )})`
+          )
+        );
+      }
+    }
+    return or(...conditions)!;
+  }
 
-    const restrictedIds = new Set(restricted.map((row: { pageId: number }) => row.pageId));
-    const readable = await Promise.all(
-      pages.map(
-        (page) => !restrictedIds.has(page.id) || this.checkPagePermission(userId, page.id, 'viewer')
-      )
-    );
-    return pages.filter((_, index) => readable[index]);
+  /**
+   * Listing scope: the viewer's teams plus team-less pages (the scope GET /api/pages already
+   * applies), narrowed to pages the viewer can read. Listings therefore also honour team
+   * revocation immediately.
+   */
+  private listableBy(viewer: PageViewer): SQL {
+    const teamScope =
+      viewer.teamIds.length > 0
+        ? or(isNull(wikiPages.teamId), inArray(wikiPages.teamId, viewer.teamIds))!
+        : isNull(wikiPages.teamId);
+    return and(teamScope, this.readableBy(viewer))!;
   }
 
   async getReadableWikiPagesByFolder(folder: string, userId: number): Promise<WikiPage[]> {
-    const pages = await this.db
+    const viewer = await this.getPageViewer(userId);
+    return this.db
       .select()
       .from(wikiPages)
       .where(
-        and(
-          eq(wikiPages.folder, folder),
-          isNull(wikiPages.deletedAt),
-          await this.readablePageScope(userId)
-        )
+        and(eq(wikiPages.folder, folder), isNull(wikiPages.deletedAt), this.listableBy(viewer))
       )
       .orderBy(desc(wikiPages.updatedAt));
-    return this.withoutExplicitlyDeniedPages(userId, pages);
+  }
+
+  async getReadableChildPages(parentId: number, userId?: number): Promise<WikiPage[]> {
+    const viewer = await this.getPageViewer(userId);
+    return this.db
+      .select()
+      .from(wikiPages)
+      .where(
+        and(eq(wikiPages.parentId, parentId), isNull(wikiPages.deletedAt), this.listableBy(viewer))
+      )
+      .orderBy(desc(wikiPages.updatedAt));
   }
 
   async getReadableTags(userId: number): Promise<Tag[]> {
-    const pages = await this.db
-      .select({ id: wikiPages.id, tags: wikiPages.tags })
+    const viewer = await this.getPageViewer(userId);
+    const allPages = await this.db
+      .select({ tags: wikiPages.tags })
       .from(wikiPages)
-      .where(and(isNull(wikiPages.deletedAt), await this.readablePageScope(userId)));
-    const allPages = await this.withoutExplicitlyDeniedPages<{ id: number; tags: string[] }>(
-      userId,
-      pages
-    );
+      .where(and(isNull(wikiPages.deletedAt), this.listableBy(viewer)));
     const tagCounts = new Map<string, number>();
     allPages.forEach((page: { tags: string[] }) => {
       page.tags?.forEach((tag: string) => {

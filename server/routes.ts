@@ -569,6 +569,7 @@ export async function registerRoutes(
       // If no teamId specified, scope to user's teams + global pages
       if (!resolvedTeamId && req.user?.id) {
         const userTeamIds = await storage.getUserTeamIds(req.user.id);
+        const viewer = await storage.getPageViewer(req.user.id);
         // Search pages across all user's teams and unassigned (global) pages
         const allResults = await Promise.all([
           ...userTeamIds.map((tid) => {
@@ -583,7 +584,7 @@ export async function registerRoutes(
             });
             return storage.searchWikiPages(params);
           }),
-          // Also include pages with no team (personal/shared pages)
+          // Also include pages with no team (personal/shared pages) the caller can read
           storage.searchWikiPages(
             searchSchema.parse({
               query: req.query.q as string,
@@ -593,7 +594,8 @@ export async function registerRoutes(
               limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
               offset: req.query.offset ? parseInt(req.query.offset as string) : undefined,
               teamId: 'null',
-            })
+            }),
+            { readableBy: viewer }
           ),
         ]);
 
@@ -632,7 +634,9 @@ export async function registerRoutes(
           offset: req.query.offset ? parseInt(req.query.offset as string) : undefined,
           teamId: 'null',
         });
-        const result = await storage.searchWikiPages(searchParams);
+        const result = await storage.searchWikiPages(searchParams, {
+          readableBy: await storage.getPageViewer(),
+        });
         const hasMore = result.pages.length === (searchParams.limit || 20);
         const nextCursor = hasMore ? result.pages[result.pages.length - 1]?.id : null;
         return res.json({
@@ -1950,11 +1954,11 @@ export async function registerRoutes(
     '/api/pages/:id/children',
     optionalAuth,
     requirePagePermission('viewer'),
-    async (req, res) => {
+    async (req: AuthRequest, res) => {
       try {
         const parentId = parseInt(req.params.id);
-        const allPages = await storage.searchWikiPages({ query: '', limit: 1000, offset: 0 });
-        const children = allPages.pages.filter((p: any) => p.parentId === parentId);
+        // Reading the parent does not grant reading its children: list only readable ones.
+        const children = await storage.getReadableChildPages(parentId, req.user?.id);
         res.json(children);
       } catch (error) {
         console.error('Error fetching sub-pages:', error);
@@ -1984,12 +1988,16 @@ export async function registerRoutes(
       // If no teamId, scope to user's teams + unassigned pages
       if (!teamId && req.user?.id) {
         const userTeamIds = await storage.getUserTeamIds(req.user.id);
-        // Fetch pages for each team plus unassigned (global) pages
+        const viewer = await storage.getPageViewer(req.user.id);
+        // Fetch pages for each team plus unassigned (global) pages the caller can read
         const allResults = await Promise.all([
           ...userTeamIds.map((tid) =>
             storage.searchWikiPages({ query: '', teamId: String(tid), limit: 1000, offset: 0 })
           ),
-          storage.searchWikiPages({ query: '', teamId: 'null', limit: 1000, offset: 0 }),
+          storage.searchWikiPages(
+            { query: '', teamId: 'null', limit: 1000, offset: 0 },
+            { readableBy: viewer }
+          ),
         ]);
         const seenIds = new Set<number>();
         const allPagesRaw = allResults
@@ -2032,12 +2040,15 @@ export async function registerRoutes(
       }
 
       // teamId is specified (already membership-checked) OR dev unauthenticated (global only)
-      const allPages = await storage.searchWikiPages({
-        query: '',
-        teamId: teamId || 'null',
-        limit: 1000,
-        offset: 0,
-      });
+      const allPages = await storage.searchWikiPages(
+        {
+          query: '',
+          teamId: teamId || 'null',
+          limit: 1000,
+          offset: 0,
+        },
+        teamId ? {} : { readableBy: await storage.getPageViewer() }
+      );
 
       // Build tree structure
       const pages = allPages.pages.map((p: any) => ({

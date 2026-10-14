@@ -1,9 +1,9 @@
 /**
- * Route-level access control for page-derived listings (folder pages, tags).
+ * Route-level access control for page listings (folder pages, tags, list, tree, children).
  *
- * Write enforcement is deliberately OFF here: these listings expose page titles, content and
- * tags, so they must fail closed without relying on ENFORCE_AUTH_WRITES. The team/permission
- * filtering itself runs in storage and is proven end to end by
+ * Write enforcement is deliberately OFF here: folder pages and tags expose page titles,
+ * content and tags, so they must fail closed without relying on ENFORCE_AUTH_WRITES. The
+ * team/permission filtering itself runs in storage SQL and is proven end to end by
  * tests/security-folder-pages-access.spec.ts against a real database.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -107,6 +107,43 @@ describe.each([
 
     expect(response.status).toBe(500);
     expect(JSON.stringify(response.body)).not.toContain('secret_table');
+  });
+});
+
+describe('general listings narrow team-less pages to what the caller can read', () => {
+  const viewer = { userId: 7, email: 'reader@example.com', teamIds: [3] };
+
+  beforeEach(() => {
+    (storage.getUserTeamIds as any).mockResolvedValue([3]);
+    (storage.getPageViewer as any).mockResolvedValue(viewer);
+    (storage.searchWikiPages as any).mockResolvedValue({ pages: [], total: 0 });
+  });
+
+  it.each(['/api/pages', '/api/page-tree'])('%s', async (path) => {
+    const response = await request(app)
+      .get(path)
+      .set('Cookie', [`accessToken=${token}`]);
+
+    expect(response.status).toBe(200);
+    const calls = (storage.searchWikiPages as any).mock.calls;
+    const teamless = calls.filter(([params]: any[]) => params.teamId === 'null');
+    const teamScoped = calls.filter(([params]: any[]) => params.teamId === '3');
+    expect(teamless).toHaveLength(1);
+    expect(teamless[0][1]).toEqual({ readableBy: viewer });
+    expect(teamScoped).toHaveLength(1);
+    expect(teamScoped[0][1] ?? {}).toEqual({});
+  });
+
+  it('GET /api/pages/:id/children lists children through the readable query', async () => {
+    (storage.getReadableChildPages as any).mockResolvedValue([]);
+
+    const response = await request(app)
+      .get('/api/pages/5/children')
+      .set('Cookie', [`accessToken=${token}`]);
+
+    expect(response.status).toBe(200);
+    expect(storage.getReadableChildPages).toHaveBeenCalledWith(5, 7);
+    expect(storage.searchWikiPages).not.toHaveBeenCalled();
   });
 });
 
