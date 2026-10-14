@@ -75,10 +75,20 @@ test.describe('[S1] 로그인 → 대시보드 진입', () => {
 
       // ── Result: 대시보드 진입 ────────────────────────────────────────────────
       // 루트("/") 또는 대시보드로 이동 확인 (networkidle로 SPA 리다이렉트 완료 보장)
-      await page.waitForURL(/^\/$|\/dashboard/, { waitUntil: 'networkidle', timeout: 20_000 });
+      // waitForURL matches a RegExp against the full URL, so `^\/$` could never match
+      // "http://host/"; compare the pathname instead.
+      await page.waitForURL(
+        (url) => url.pathname === '/' || url.pathname.startsWith('/dashboard'),
+        {
+          waitUntil: 'networkidle',
+          timeout: 20_000,
+        }
+      );
 
-      // 인증된 UI 확인: 헤더 로고
-      await expect(page.getByRole('link', { name: /Papyr\.us/i })).toBeVisible({ timeout: 15_000 });
+      // 인증된 UI 확인: 헤더 로고 (exact: seeded page links also mention "Papyr.us")
+      await expect(page.getByRole('link', { name: 'Papyr.us', exact: true })).toBeVisible({
+        timeout: 15_000,
+      });
 
       // 로그인 폼이 사라졌는지 확인
       await expect(page.getByRole('heading', { name: 'Login' })).not.toBeVisible();
