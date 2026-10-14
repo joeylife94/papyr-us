@@ -1312,15 +1312,11 @@ export class DBStorage {
       .from(pagePermissions)
       .where(eq(pagePermissions.pageId, pageId));
 
-    // If no explicit permissions exist:
-    // - Pages that belong to a team require team membership (prevents isolation bypass)
-    // - Pages without a teamId are legacy open-access pages
-    if (permissions.length === 0) {
-      if (page.length > 0 && page[0].teamId) {
-        if (!userId) return false;
-        const userTeamIds = await this.getUserTeamIds(userId);
-        return userTeamIds.includes(Number(page[0].teamId));
-      }
+    const pageTeamId = page.length > 0 && page[0].teamId ? Number(page[0].teamId) : null;
+
+    // Pages without a teamId and without explicit permissions are legacy open-access pages.
+    // Team pages without explicit permissions follow the team rules below, like any team page.
+    if (permissions.length === 0 && pageTeamId === null) {
       return true;
     }
 
@@ -1338,12 +1334,17 @@ export class DBStorage {
       return false;
     }
 
-    const pageTeamId = page.length > 0 && page[0].teamId ? Number(page[0].teamId) : null;
     const userTeamIds = await this.getUserTeamIds(userId);
     const isPageTeamMember = pageTeamId !== null && userTeamIds.includes(pageTeamId);
 
     // Current members of the page's team can read it
     if (isPageTeamMember && requiredLevel <= permissionLevels.viewer) {
+      return true;
+    }
+
+    // Current team owners and admins manage every page of their team, so a page never ends up
+    // unmanageable when its own owner leaves the team
+    if (isPageTeamMember && (await this.isTeamManager(userId, pageTeamId!))) {
       return true;
     }
 
@@ -1394,18 +1395,26 @@ export class DBStorage {
     return await this.db.select().from(pagePermissions).where(eq(pagePermissions.pageId, pageId));
   }
 
+  /** Whether the user is a current owner or admin of the team (see checkPagePermission). */
+  private async isTeamManager(userId: number, teamId: number): Promise<boolean> {
+    const role = await this.getUserTeamRole(userId, teamId);
+    return role === 'owner' || role === 'admin';
+  }
+
   /**
    * Get a user's permission level for a page (returns highest level).
    * Like checkPagePermission, a user's own permissions on a team page lapse while they are not
-   * a member of that team.
+   * a member of that team, and current team owners and admins hold owner on their team's pages.
    */
   async getUserPagePermission(userId: number, pageId: number): Promise<PermissionLevel | null> {
     const [page] = await this.db
       .select({ teamId: wikiPages.teamId })
       .from(wikiPages)
       .where(eq(wikiPages.id, pageId));
-    if (page?.teamId && !(await this.getUserTeamIds(userId)).includes(Number(page.teamId))) {
-      return null;
+    if (page?.teamId) {
+      const teamId = Number(page.teamId);
+      if (!(await this.getUserTeamIds(userId)).includes(teamId)) return null;
+      if (await this.isTeamManager(userId, teamId)) return 'owner';
     }
 
     const permissions = await this.db
