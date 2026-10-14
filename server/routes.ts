@@ -3234,9 +3234,15 @@ export async function registerRoutes(
             return res.status(401).json({ error: 'Authentication required' });
           }
 
-          const success = await storage.deleteTeam(id);
-          if (!success) {
+          const result = await storage.deleteTeam(id);
+          if (result === 'not-found') {
             return res.status(404).json({ error: 'Team not found' });
+          }
+          if (result === 'has-pages') {
+            return res.status(409).json({
+              error:
+                'The team still has pages. Move or delete them, including those in the trash, before deleting the team.',
+            });
           }
           res.status(204).send();
         } catch (error) {

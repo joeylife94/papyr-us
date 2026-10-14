@@ -100,10 +100,27 @@ describe('Team Management API', () => {
   });
 
   it('TC-TEAM-007: should delete a team', async () => {
-    (storage.deleteTeam as vi.Mock).mockResolvedValue({ success: true });
+    (storage.deleteTeam as vi.Mock).mockResolvedValue('deleted');
 
     const response = await request(app).delete(`/api/teams/${mockTeam.id}`);
 
     expect(response.status).toBe(204);
+  });
+
+  it('TC-TEAM-008: refuses to delete a team that still has pages', async () => {
+    (storage.deleteTeam as vi.Mock).mockResolvedValue('has-pages');
+
+    const response = await request(app).delete(`/api/teams/${mockTeam.id}`);
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toMatch(/still has pages/);
+  });
+
+  it('TC-TEAM-009: reports a missing team as not found', async () => {
+    (storage.deleteTeam as vi.Mock).mockResolvedValue('not-found');
+
+    const response = await request(app).delete(`/api/teams/${mockTeam.id}`);
+
+    expect(response.status).toBe(404);
   });
 });
