@@ -126,6 +126,11 @@ jobs:
       - name: Run Layer 5 Playwright E2E tests
         run: npx playwright test --config=playwright.layer5.config.ts --project=chromium --reporter=dot,html
 
+      # Runs on every PR (not path-filtered): listings must never reveal pages the caller
+      # cannot read, against the real server, auth, team membership and PostgreSQL.
+      - name: Run team data access control regression
+        run: npx playwright test tests/security-folder-pages-access.spec.ts --project=chromium --reporter=dot
+
       - name: Upload Playwright HTML report
         if: failure()
         uses: actions/upload-artifact@v4

@@ -73,7 +73,7 @@ import {
   teamMembers,
 } from '../shared/schema.js';
 import { drizzle } from 'drizzle-orm/node-postgres';
-import { eq, like, and, sql, desc, asc, isNull, inArray } from 'drizzle-orm';
+import { eq, like, and, or, sql, desc, asc, isNull, inArray, type SQL } from 'drizzle-orm';
 import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 import type { RetrievedPageRow } from './services/retrieval.js';
@@ -83,6 +83,16 @@ function isBcryptHash(value: string): boolean {
   // bcrypt hashes typically start with $2a$, $2b$, or $2y$ and are ~60 chars
   return typeof value === 'string' && /^\$2[aby]?\$\d{2}\$[./A-Za-z0-9]{53}$/.test(value);
 }
+
+/** A caller listing pages: identity plus current team memberships (see DBStorage.readableBy). */
+export interface PageViewer {
+  userId?: number;
+  email?: string;
+  teamIds: number[];
+}
+
+/** A caller without a session: only public or permission-free team-less pages are readable. */
+export const ANONYMOUS_PAGE_VIEWER: PageViewer = Object.freeze({ teamIds: [] as number[] });
 
 const MAX_SLUG_INSERT_ATTEMPTS = 100;
 
@@ -154,7 +164,10 @@ export class DBStorage {
     for (let attempt = 0; attempt < MAX_SLUG_INSERT_ATTEMPTS; attempt += 1) {
       const slug = buildUniqueSlugCandidate(page.slug, attempt);
       try {
-        const result = await this.db.insert(wikiPages).values({ ...page, slug }).returning();
+        const result = await this.db
+          .insert(wikiPages)
+          .values({ ...page, slug })
+          .returning();
         createdPage = result[0];
         break;
       } catch (error) {
@@ -236,7 +249,10 @@ export class DBStorage {
     return result.length;
   }
 
-  async searchWikiPages(params: SearchParams): Promise<{ pages: WikiPage[]; total: number }> {
+  async searchWikiPages(
+    params: SearchParams,
+    options: { readableBy?: PageViewer } = {}
+  ): Promise<{ pages: WikiPage[]; total: number }> {
     // Enable FTS by default (can be disabled with SEARCH_USE_FTS=false)
     const useFts = (process.env.SEARCH_USE_FTS || 'true').toLowerCase() === 'true';
     const hasQuery = !!(params.query && params.query.trim().length > 0);
@@ -291,6 +307,10 @@ export class DBStorage {
           sql`, `
         )}]::text[]`
       );
+    }
+    if (options.readableBy) {
+      // Applied in SQL so totals and pagination never count pages the viewer cannot read.
+      conditions.push(this.readableBy(options.readableBy));
     }
 
     if (conditions.length > 0) {
@@ -372,19 +392,96 @@ export class DBStorage {
       .limit(params.limit);
   }
 
-  async getWikiPagesByFolder(folder: string): Promise<WikiPage[]> {
+  /** Who is listing pages: identity plus current team memberships, loaded from the database. */
+  async getPageViewer(userId?: number): Promise<PageViewer> {
+    if (!userId) return ANONYMOUS_PAGE_VIEWER;
+    const [user] = await this.db
+      .select({ email: users.email })
+      .from(users)
+      .where(eq(users.id, userId));
+    return { userId, email: user?.email, teamIds: await this.getUserTeamIds(userId) };
+  }
+
+  /**
+   * SQL form of `checkPagePermission(viewer, page, 'viewer')`, for listings that must never
+   * reveal a page GET /api/pages/:id would refuse:
+   * - no explicit permissions: team pages need membership, team-less pages are open;
+   * - explicit permissions: a public grant, or (signed in) authorship, a user grant, or a
+   *   grant to one of the viewer's teams. Team membership alone does not grant access here,
+   *   exactly as in checkPagePermission.
+   */
+  private readableBy(viewer: PageViewer): SQL {
+    const validPermission = sql`pp.permission IN ('viewer', 'commenter', 'editor', 'owner')`;
+    const grant = (clause: SQL) =>
+      sql`EXISTS (SELECT 1 FROM page_permissions pp WHERE pp.page_id = ${wikiPages.id} AND ${validPermission} AND ${clause})`;
+    const hasPermissions = sql`EXISTS (SELECT 1 FROM page_permissions pp WHERE pp.page_id = ${wikiPages.id})`;
+    const memberOrTeamless =
+      viewer.teamIds.length > 0
+        ? or(isNull(wikiPages.teamId), inArray(wikiPages.teamId, viewer.teamIds))!
+        : isNull(wikiPages.teamId);
+
+    const conditions: SQL[] = [
+      and(sql`NOT ${hasPermissions}`, memberOrTeamless)!,
+      grant(sql`pp.entity_type = 'public'`),
+    ];
+    if (viewer.userId) {
+      conditions.push(grant(sql`pp.entity_type = 'user' AND pp.entity_id = ${viewer.userId}`));
+      if (viewer.email) conditions.push(and(hasPermissions, eq(wikiPages.author, viewer.email))!);
+      if (viewer.teamIds.length > 0) {
+        conditions.push(
+          grant(
+            sql`pp.entity_type = 'team' AND pp.entity_id IN (${sql.join(
+              viewer.teamIds.map((teamId) => sql`${teamId}`),
+              sql`, `
+            )})`
+          )
+        );
+      }
+    }
+    return or(...conditions)!;
+  }
+
+  /**
+   * Listing scope: the viewer's teams plus team-less pages (the scope GET /api/pages already
+   * applies), narrowed to pages the viewer can read. Listings therefore also honour team
+   * revocation immediately.
+   */
+  private listableBy(viewer: PageViewer): SQL {
+    const teamScope =
+      viewer.teamIds.length > 0
+        ? or(isNull(wikiPages.teamId), inArray(wikiPages.teamId, viewer.teamIds))!
+        : isNull(wikiPages.teamId);
+    return and(teamScope, this.readableBy(viewer))!;
+  }
+
+  async getReadableWikiPagesByFolder(folder: string, userId: number): Promise<WikiPage[]> {
+    const viewer = await this.getPageViewer(userId);
     return this.db
       .select()
       .from(wikiPages)
-      .where(and(eq(wikiPages.folder, folder), isNull(wikiPages.deletedAt)))
+      .where(
+        and(eq(wikiPages.folder, folder), isNull(wikiPages.deletedAt), this.listableBy(viewer))
+      )
       .orderBy(desc(wikiPages.updatedAt));
   }
 
-  async getAllTags(): Promise<Tag[]> {
+  async getReadableChildPages(parentId: number, userId?: number): Promise<WikiPage[]> {
+    const viewer = await this.getPageViewer(userId);
+    return this.db
+      .select()
+      .from(wikiPages)
+      .where(
+        and(eq(wikiPages.parentId, parentId), isNull(wikiPages.deletedAt), this.listableBy(viewer))
+      )
+      .orderBy(desc(wikiPages.updatedAt));
+  }
+
+  async getReadableTags(userId: number): Promise<Tag[]> {
+    const viewer = await this.getPageViewer(userId);
     const allPages = await this.db
       .select({ tags: wikiPages.tags })
       .from(wikiPages)
-      .where(isNull(wikiPages.deletedAt));
+      .where(and(isNull(wikiPages.deletedAt), this.listableBy(viewer)));
     const tagCounts = new Map<string, number>();
     allPages.forEach((page: { tags: string[] }) => {
       page.tags?.forEach((tag: string) => {
@@ -770,26 +867,52 @@ export class DBStorage {
     const teamIdStrings = teamIds.map(String);
     const [pageCountResult, commentCountResult, memberCountResult, taskCountResult, teamRecords] =
       await Promise.all([
-        this.db.select({ count: sql`count(*)` }).from(wikiPages).where(inArray(wikiPages.teamId, teamIds)),
-        this.db.select({ count: sql`count(*)` }).from(comments).innerJoin(wikiPages, eq(comments.pageId, wikiPages.id)).where(inArray(wikiPages.teamId, teamIds)),
-        this.db.select({ count: sql`count(*)` }).from(members).where(inArray(members.teamId, teamIds)),
-        this.db.select({ count: sql`count(*)` }).from(tasks).where(inArray(tasks.teamId, teamIdStrings)),
-        this.db.select({ id: teams.id, name: teams.name, displayName: teams.displayName }).from(teams).where(inArray(teams.id, teamIds)),
+        this.db
+          .select({ count: sql`count(*)` })
+          .from(wikiPages)
+          .where(inArray(wikiPages.teamId, teamIds)),
+        this.db
+          .select({ count: sql`count(*)` })
+          .from(comments)
+          .innerJoin(wikiPages, eq(comments.pageId, wikiPages.id))
+          .where(inArray(wikiPages.teamId, teamIds)),
+        this.db
+          .select({ count: sql`count(*)` })
+          .from(members)
+          .where(inArray(members.teamId, teamIds)),
+        this.db
+          .select({ count: sql`count(*)` })
+          .from(tasks)
+          .where(inArray(tasks.teamId, teamIdStrings)),
+        this.db
+          .select({ id: teams.id, name: teams.name, displayName: teams.displayName })
+          .from(teams)
+          .where(inArray(teams.id, teamIds)),
       ]);
 
     const teamStats = await Promise.all(
       teamRecords.map(async (team: { id: number; name: string; displayName: string }) => {
         const [pagesResult, commentsResult, tasksResult] = await Promise.all([
-this.db.select({ count: sql`count(*)` }).from(wikiPages).where(and(eq(wikiPages.teamId, team.id), isNull(wikiPages.deletedAt))),
-this.db.select({ count: sql`count(*)` }).from(comments).innerJoin(wikiPages, eq(comments.pageId, wikiPages.id)).where(and(eq(wikiPages.teamId, team.id), isNull(wikiPages.deletedAt))),
-this.db.select({ count: sql`count(*)` }).from(tasks).where(eq(tasks.teamId, String(team.id))),
+          this.db
+            .select({ count: sql`count(*)` })
+            .from(wikiPages)
+            .where(and(eq(wikiPages.teamId, team.id), isNull(wikiPages.deletedAt))),
+          this.db
+            .select({ count: sql`count(*)` })
+            .from(comments)
+            .innerJoin(wikiPages, eq(comments.pageId, wikiPages.id))
+            .where(and(eq(wikiPages.teamId, team.id), isNull(wikiPages.deletedAt))),
+          this.db
+            .select({ count: sql`count(*)` })
+            .from(tasks)
+            .where(eq(tasks.teamId, String(team.id))),
         ]);
         return {
-teamId: team.id,
-name: team.displayName || team.name,
-pages: Number(pagesResult[0].count),
-comments: Number(commentsResult[0].count),
-tasks: Number(tasksResult[0].count),
+          teamId: team.id,
+          name: team.displayName || team.name,
+          pages: Number(pagesResult[0].count),
+          comments: Number(commentsResult[0].count),
+          tasks: Number(tasksResult[0].count),
         };
       })
     );
