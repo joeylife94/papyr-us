@@ -73,7 +73,7 @@ import {
   teamMembers,
 } from '../shared/schema.js';
 import { drizzle } from 'drizzle-orm/node-postgres';
-import { eq, like, and, sql, desc, asc, isNull, inArray } from 'drizzle-orm';
+import { eq, like, and, or, sql, desc, asc, isNull, inArray } from 'drizzle-orm';
 import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 import type { RetrievedPageRow } from './services/retrieval.js';
@@ -375,19 +375,72 @@ export class DBStorage {
       .limit(params.limit);
   }
 
-  async getWikiPagesByFolder(folder: string): Promise<WikiPage[]> {
-    return this.db
-      .select()
-      .from(wikiPages)
-      .where(and(eq(wikiPages.folder, folder), isNull(wikiPages.deletedAt)))
-      .orderBy(desc(wikiPages.updatedAt));
+  /**
+   * SQL scope for pages a user may list: pages of teams they belong to plus team-less pages.
+   * This is the same scope GET /api/pages applies to authenticated users.
+   */
+  private async readablePageScope(userId: number) {
+    const teamIds = await this.getUserTeamIds(userId);
+    return teamIds.length > 0
+      ? or(isNull(wikiPages.teamId), inArray(wikiPages.teamId, teamIds))
+      : isNull(wikiPages.teamId);
   }
 
-  async getAllTags(): Promise<Tag[]> {
-    const allPages = await this.db
-      .select({ tags: wikiPages.tags })
+  /**
+   * Drop pages whose explicit page permissions deny `viewer` access to the user, so listings
+   * never reveal a page that GET /api/pages/:id would refuse. Pages without explicit
+   * permissions are already covered by the team scope above.
+   */
+  private async withoutExplicitlyDeniedPages<T extends { id: number }>(
+    userId: number,
+    pages: T[]
+  ): Promise<T[]> {
+    if (pages.length === 0) return pages;
+
+    const restricted = await this.db
+      .selectDistinct({ pageId: pagePermissions.pageId })
+      .from(pagePermissions)
+      .where(
+        inArray(
+          pagePermissions.pageId,
+          pages.map((page) => page.id)
+        )
+      );
+    if (restricted.length === 0) return pages;
+
+    const restrictedIds = new Set(restricted.map((row: { pageId: number }) => row.pageId));
+    const readable = await Promise.all(
+      pages.map(
+        (page) => !restrictedIds.has(page.id) || this.checkPagePermission(userId, page.id, 'viewer')
+      )
+    );
+    return pages.filter((_, index) => readable[index]);
+  }
+
+  async getReadableWikiPagesByFolder(folder: string, userId: number): Promise<WikiPage[]> {
+    const pages = await this.db
+      .select()
       .from(wikiPages)
-      .where(isNull(wikiPages.deletedAt));
+      .where(
+        and(
+          eq(wikiPages.folder, folder),
+          isNull(wikiPages.deletedAt),
+          await this.readablePageScope(userId)
+        )
+      )
+      .orderBy(desc(wikiPages.updatedAt));
+    return this.withoutExplicitlyDeniedPages(userId, pages);
+  }
+
+  async getReadableTags(userId: number): Promise<Tag[]> {
+    const pages = await this.db
+      .select({ id: wikiPages.id, tags: wikiPages.tags })
+      .from(wikiPages)
+      .where(and(isNull(wikiPages.deletedAt), await this.readablePageScope(userId)));
+    const allPages = await this.withoutExplicitlyDeniedPages<{ id: number; tags: string[] }>(
+      userId,
+      pages
+    );
     const tagCounts = new Map<string, number>();
     allPages.forEach((page: { tags: string[] }) => {
       page.tags?.forEach((tag: string) => {

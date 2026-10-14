@@ -1330,19 +1330,29 @@ export async function registerRoutes(
     }
   });
 
-  app.get('/api/folders/:folder/pages', async (req, res) => {
+  // Folder listings and tag counts are derived from page titles, content and tags, so they
+  // follow the page read boundary: always authenticated (fail closed regardless of
+  // ENFORCE_AUTH_WRITES), limited to the caller's teams plus team-less pages, and never
+  // including a page whose explicit permissions deny the caller viewer access. A folder
+  // holding only other teams' pages answers exactly like an unknown folder: 200 [].
+  app.get('/api/folders/:folder/pages', authMiddleware, async (req: AuthRequest, res) => {
+    if (!req.user?.id) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
     try {
-      const folder = req.params.folder;
-      const pages = await storage.getWikiPagesByFolder(folder);
+      const pages = await storage.getReadableWikiPagesByFolder(req.params.folder, req.user.id);
       res.json(pages);
     } catch (error) {
       res.status(500).json({ message: 'Server error' });
     }
   });
 
-  app.get('/api/tags', async (req, res) => {
+  app.get('/api/tags', authMiddleware, async (req: AuthRequest, res) => {
+    if (!req.user?.id) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
     try {
-      const tags = await storage.getAllTags();
+      const tags = await storage.getReadableTags(req.user.id);
       res.json(tags);
     } catch (error) {
       res.status(500).json({ message: 'Server error' });
