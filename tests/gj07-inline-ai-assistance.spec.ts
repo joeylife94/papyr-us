@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { loginPageWithCookies } from './e2e-helpers';
 
-const PASSWORD = 'password123';
+const PASSWORD = 'Password123!';
 
 test('GJ-07: inline AI replaces only selection and preserves text on visible failure', async ({
   page,
@@ -100,8 +100,12 @@ test('GJ-07: inline AI replaces only selection and preserves text on visible fai
   await selectText(replacement);
   await expect(page.locator('button[title="Rewrite"]')).toBeVisible();
   await page.locator('button[title="Rewrite"]').click();
-  await expect(page.getByText('AI action failed')).toBeVisible();
-  await expect(page.getByText('Your original text was preserved. Please try again.')).toBeVisible();
+  // Exact matches target the visible toast title/description; Radix also renders a transient
+  // screen-reader announcement containing both strings, which a substring match races with.
+  await expect(page.getByText('AI action failed', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText('Your original text was preserved. Please try again.', { exact: true })
+  ).toBeVisible();
   await expect(textarea).toHaveValue(beforeFailure);
 
   expect(inlineCalls).toBe(2);
