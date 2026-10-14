@@ -89,6 +89,17 @@ interface MulterRequest extends Request {
   files?: any[];
 }
 
+// Response body for a failed request. Validation failures keep their Zod issues, which only
+// describe the client's own input. Anything else (e.g. a database driver error carrying the
+// SQL text and parameters) is logged here and never sent to the client.
+function failureBody(message: string, error: unknown): Record<string, unknown> {
+  if (error instanceof Error && error.name === 'ZodError') {
+    return { message, error: { name: error.name, issues: (error as any).issues } };
+  }
+  logger.error(message, { error: error instanceof Error ? error.message : String(error) });
+  return { message };
+}
+
 export async function registerRoutes(
   app: Express,
   storage: DBStorage
@@ -753,7 +764,7 @@ export async function registerRoutes(
 
         res.status(201).json(page);
       } catch (error) {
-        res.status(400).json({ message: 'Invalid page data', error });
+        res.status(400).json(failureBody('Invalid page data', error));
       }
     }
   );
@@ -840,7 +851,7 @@ export async function registerRoutes(
 
         res.json(page);
       } catch (error) {
-        res.status(400).json({ message: 'Invalid update data', error });
+        res.status(400).json(failureBody('Invalid update data', error));
       }
     }
   );
@@ -1652,7 +1663,7 @@ export async function registerRoutes(
 
         res.status(201).json(comment);
       } catch (error) {
-        res.status(400).json({ message: 'Invalid comment data', error });
+        res.status(400).json(failureBody('Invalid comment data', error));
       }
     }
   );
@@ -1687,7 +1698,7 @@ export async function registerRoutes(
 
       res.json(comment);
     } catch (error) {
-      res.status(400).json({ message: 'Invalid update data', error });
+      res.status(400).json(failureBody('Invalid update data', error));
     }
   });
 
@@ -1744,7 +1755,7 @@ export async function registerRoutes(
       const permissions = await storage.getPagePermissions(pageId);
       res.json(permissions);
     } catch (error) {
-      res.status(500).json({ message: 'Failed to get permissions', error });
+      res.status(500).json(failureBody('Failed to get permissions', error));
     }
   });
 
@@ -1770,7 +1781,7 @@ export async function registerRoutes(
       const permission = await storage.addPagePermission(permissionData);
       res.status(201).json(permission);
     } catch (error) {
-      res.status(400).json({ message: 'Invalid permission data', error });
+      res.status(400).json(failureBody('Invalid permission data', error));
     }
   });
 
@@ -1796,7 +1807,7 @@ export async function registerRoutes(
 
         res.json({ message: 'Permission removed successfully' });
       } catch (error) {
-        res.status(500).json({ message: 'Failed to remove permission', error });
+        res.status(500).json(failureBody('Failed to remove permission', error));
       }
     }
   );
@@ -1817,7 +1828,7 @@ export async function registerRoutes(
       const links = await storage.getPagePublicLinks(pageId);
       res.json(links);
     } catch (error) {
-      res.status(500).json({ message: 'Failed to get share links', error });
+      res.status(500).json(failureBody('Failed to get share links', error));
     }
   });
 
@@ -1856,7 +1867,7 @@ export async function registerRoutes(
       const { password, ...publicLink } = link;
       res.status(201).json(publicLink);
     } catch (error) {
-      res.status(400).json({ message: 'Failed to create share link', error });
+      res.status(400).json(failureBody('Failed to create share link', error));
     }
   });
 
@@ -1879,7 +1890,7 @@ export async function registerRoutes(
 
       res.json({ message: 'Share link deleted successfully' });
     } catch (error) {
-      res.status(500).json({ message: 'Failed to delete share link', error });
+      res.status(500).json(failureBody('Failed to delete share link', error));
     }
   });
 
@@ -1911,7 +1922,7 @@ export async function registerRoutes(
         isPublicLink: true,
       });
     } catch (error) {
-      res.status(500).json({ message: 'Failed to access shared page', error });
+      res.status(500).json(failureBody('Failed to access shared page', error));
     }
   });
 
@@ -2506,7 +2517,7 @@ export async function registerRoutes(
 
         res.status(201).json(task);
       } catch (error) {
-        res.status(400).json({ message: 'Invalid task data', error });
+        res.status(400).json(failureBody('Invalid task data', error));
       }
     }
   );
@@ -2589,7 +2600,7 @@ export async function registerRoutes(
 
       res.json(task);
     } catch (error) {
-      res.status(400).json({ message: 'Invalid update data', error });
+      res.status(400).json(failureBody('Invalid update data', error));
     }
   });
 
@@ -2761,7 +2772,7 @@ export async function registerRoutes(
 
         res.status(201).json(notification);
       } catch (error) {
-        res.status(400).json({ message: 'Invalid notification data', error });
+        res.status(400).json(failureBody('Invalid notification data', error));
       }
     });
 
@@ -2800,7 +2811,7 @@ export async function registerRoutes(
 
         res.json(notification);
       } catch (error) {
-        res.status(400).json({ message: 'Invalid update data', error });
+        res.status(400).json(failureBody('Invalid update data', error));
       }
     });
 
