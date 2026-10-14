@@ -148,7 +148,7 @@ jobs:
             playwright-report/**/attachments
           retention-days: 7
 
-  # ==================== Golden Journey browser specs (GJ-01..07) ====================
+  # ==================== Golden Journey (GJ-01..07) and P0 browser specs ====================
   golden-journeys:
     needs: build
     runs-on: ubuntu-latest
@@ -194,6 +194,10 @@ jobs:
 
       - name: Run Golden Journey browser specs
         run: npm run test:gj -- --reporter=dot,html
+
+      # Must-pass P0 scenarios from tests/e2e-p0-matrix.md (S1-S3; S4-S5 optional but kept green).
+      - name: Run P0 scenario specs
+        run: npm run test:p0 -- --reporter=dot,html
 
       - name: Upload Golden Journey report and artifacts
         if: failure()
