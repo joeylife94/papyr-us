@@ -59,8 +59,12 @@ export function PageHistory({ pageId, currentTitle }: PageHistoryProps) {
       if (!res.ok) throw new Error('Failed to restore version');
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (restoredPage: { slug?: string }) => {
       queryClient.invalidateQueries({ queryKey: [`/api/pages/${pageId}`] });
+      // The open reader view loads by slug and never goes stale on its own.
+      if (restoredPage?.slug) {
+        queryClient.invalidateQueries({ queryKey: [`/api/pages/slug/${restoredPage.slug}`] });
+      }
       queryClient.invalidateQueries({ queryKey: ['/api/pages'] });
       toast({
         title: '버전 복원 완료',

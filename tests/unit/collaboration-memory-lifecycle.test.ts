@@ -1,8 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  CollaborationManager,
-  type LegacyCollabConfig,
-} from '../../server/services/socket';
+import { CollaborationManager, type LegacyCollabConfig } from '../../server/services/socket';
 import {
   YjsCollaborationManager,
   type CollabConfig,
@@ -106,5 +103,30 @@ describe('collaboration memory lifecycle', () => {
 
     manager.leaveDocument(socket);
     expect(manager.getUserCount('page-2')).toBe(0);
+  });
+
+  describe('Yjs document seeding', () => {
+    const namespace = { to: vi.fn(() => ({ except: vi.fn(() => ({ emit: vi.fn() })) })) } as any;
+    const seededBlocks = async (page: unknown) => {
+      const storage = { getWikiPage: vi.fn().mockResolvedValue(page), updateWikiPage: vi.fn() };
+      const manager = new YjsCollaborationManager(namespace, storage as any, yjsConfig);
+      const doc = await manager.getOrCreate('page-7', 7);
+      return doc.ydoc.getArray('blocks').toArray() as any[];
+    };
+
+    it('loads stored blocks as they are', async () => {
+      const blocks = [{ id: 'b1', type: 'heading1', content: 'Title' }];
+      expect(await seededBlocks({ content: 'Title', blocks })).toEqual(blocks);
+    });
+
+    it('seeds one paragraph from content when the page has no blocks', async () => {
+      const blocks = await seededBlocks({ content: 'Body text', blocks: [] });
+      expect(blocks).toHaveLength(1);
+      expect(blocks[0]).toMatchObject({ type: 'paragraph', content: 'Body text', order: 0 });
+    });
+
+    it('stays empty when the page has neither blocks nor content', async () => {
+      expect(await seededBlocks({ content: '', blocks: null })).toEqual([]);
+    });
   });
 });
