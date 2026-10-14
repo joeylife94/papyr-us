@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/hooks/use-theme';
+import { useActiveWorkspace } from '@/hooks/useActiveWorkspace';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { SearchBar } from '@/components/wiki/search-bar';
@@ -38,6 +39,7 @@ export function Header({ onToggleSidebar, searchQuery, onSearchChange }: HeaderP
   const { theme, toggleTheme } = useTheme();
   const { isAuthenticated, user, logout } = useAuth();
   const navigate = useNavigate();
+  const workspace = useActiveWorkspace();
   const [showMobileSearch, setShowMobileSearch] = useState(false);
   const { flags } = useFeatureFlags();
   const enableNotifications = flags.FEATURE_NOTIFICATIONS && flags.FEATURE_TEAMS;
@@ -61,24 +63,42 @@ export function Header({ onToggleSidebar, searchQuery, onSearchChange }: HeaderP
   };
 
   return (
-    <header className="fixed top-0 left-0 right-0 bg-gradient-to-r from-white/90 via-white/95 to-slate-50/90 dark:from-slate-900/90 dark:via-slate-900/95 dark:to-slate-950/90 backdrop-blur-md border-b border-slate-200/60 dark:border-slate-700/60 z-40 shadow-sm">
+    <header className="fixed top-0 left-0 right-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 z-40">
       <a href="#main-content" className="skip-link">
         Skip to main content
       </a>
       <div className="flex items-center justify-between px-4 h-16">
-        <div className="flex items-center space-x-3">
-          <Button variant="ghost" size="icon" className="lg:hidden" onClick={onToggleSidebar}>
+        <div className="flex min-w-0 items-center space-x-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="lg:hidden"
+            onClick={onToggleSidebar}
+            aria-label="메뉴 열기"
+          >
             <Menu className="h-5 w-5" />
           </Button>
           <Link
             to="/"
-            className="flex items-center space-x-2 hover:opacity-80 transition-opacity cursor-pointer"
+            className="flex shrink-0 items-center space-x-2 hover:opacity-80 transition-opacity cursor-pointer"
           >
             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
               <ScrollText className="h-4 w-4 text-white" />
             </div>
-            <h1 className="text-xl font-bold text-slate-900 dark:text-white">Papyr.us</h1>
+            {/* Phone widths keep the icon only; the name stays available to assistive tech. */}
+            <h1 className="sr-only text-xl font-bold text-slate-900 dark:text-white sm:not-sr-only">
+              Papyr.us
+            </h1>
           </Link>
+          {workspace && (
+            <Link
+              to={workspace.documentsPath}
+              aria-label={`현재 워크스페이스: ${workspace.displayName}`}
+              className="hidden min-w-0 max-w-[16rem] items-center border-l border-slate-200 pl-3 text-sm font-medium text-slate-600 transition-colors hover:text-slate-900 dark:border-slate-700 dark:text-slate-300 dark:hover:text-white sm:flex"
+            >
+              <span className="truncate">{workspace.displayName}</span>
+            </Link>
+          )}
         </div>
 
         <div className="flex-1 max-w-md mx-8 hidden md:block">
