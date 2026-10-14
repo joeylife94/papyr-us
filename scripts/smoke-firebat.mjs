@@ -32,7 +32,9 @@ if (!health.response.ok || health.body.status !== 'healthy') {
 
 const version = await jsonRequest('/version');
 if (!version.response.ok || !version.body.revision || version.body.revision === 'unknown') {
-  throw new Error(`version smoke failed: ${version.response.status} ${JSON.stringify(version.body)}`);
+  throw new Error(
+    `version smoke failed: ${version.response.status} ${JSON.stringify(version.body)}`
+  );
 }
 
 const registration = await jsonRequest('/api/auth/register', {
@@ -56,6 +58,13 @@ if (!login.response.ok || login.body?.user?.email !== email) {
 const cookie = getCookieHeader(login.response);
 if (!cookie.includes('accessToken=')) {
   throw new Error('login smoke did not return an accessToken cookie');
+}
+
+// Page search runs on PostgreSQL full-text search (wiki_pages.search_vector), which the
+// migrate step provisions after db:push. Without it this request fails instead of 200.
+const search = await jsonRequest('/api/pages?q=firebat', { headers: { Cookie: cookie } });
+if (!search.response.ok) {
+  throw new Error(`search smoke failed: ${search.response.status} ${JSON.stringify(search.body)}`);
 }
 
 await new Promise((resolve, reject) => {
@@ -89,6 +98,7 @@ console.log(
     health: health.body.status,
     revision: version.body.revision,
     login: email,
+    search: 'ok',
     websocket: 'connected',
   })
 );
