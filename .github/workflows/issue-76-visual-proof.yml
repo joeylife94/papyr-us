@@ -59,8 +59,11 @@ jobs:
           test -s issue-76-proof/01-workspace-empty-desktop.png
           test -s issue-76-proof/02-workspace-populated-desktop.png
           test -s issue-76-proof/03-document-reader-desktop.png
-          test -s issue-76-proof/04-document-reader-dark.png
-          test -s issue-76-proof/05-mobile-navigation.png
+          test -s issue-76-proof/04-version-history-desktop.png
+          test -s issue-76-proof/05-document-reader-dark.png
+          test -s issue-76-proof/06-mobile-workspace.png
+          test -s issue-76-proof/07-mobile-reader.png
+          test -s issue-76-proof/08-mobile-navigation.png
           ( cd issue-76-proof && sha256sum *.png > SHA256SUMS && sha256sum -c SHA256SUMS )
           printf 'candidate_head=%s\ngenerated_by=Issue 76 UI Visual Proof\ndata_class=synthetic-only\n' "$CANDIDATE_SHA" > issue-76-proof/PROVENANCE.txt
       - name: Upload screenshots
