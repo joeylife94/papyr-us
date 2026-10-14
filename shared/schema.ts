@@ -62,7 +62,9 @@ export const wikiPages = pgTable('wiki_pages', {
   tags: text('tags').array().notNull().default([]),
   author: text('author').notNull(),
   parentId: integer('parent_id'), // Nested pages: reference to parent page
-  teamId: integer('team_id').references(() => teams.id, { onDelete: 'set null' }), // 팀 소속
+  // A team cannot be deleted while pages (trashed ones included) still belong to it: losing the
+  // team would turn them into team-less pages with different access rules (see deleteTeam).
+  teamId: integer('team_id').references(() => teams.id, { onDelete: 'restrict' }), // 팀 소속
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
   isPublished: boolean('is_published').notNull().default(true),

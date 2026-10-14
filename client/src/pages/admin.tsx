@@ -324,7 +324,10 @@ export default function AdminPage() {
       const response = await fetch(`/api/teams/${id}`, {
         method: 'DELETE',
       });
-      if (!response.ok) throw new Error('Failed to delete team');
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.error || 'Failed to delete team');
+      }
     },
     onSuccess: () => {
       refetchTeams();
@@ -333,10 +336,10 @@ export default function AdminPage() {
         description: 'Team has been removed successfully',
       });
     },
-    onError: () => {
+    onError: (error: Error) => {
       toast({
         title: 'Error',
-        description: 'Failed to delete team',
+        description: error.message,
         variant: 'destructive',
       });
     },

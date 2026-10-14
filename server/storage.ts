@@ -96,6 +96,11 @@ export const ANONYMOUS_PAGE_VIEWER: PageViewer = Object.freeze({ teamIds: [] as 
 
 const MAX_SLUG_INSERT_ATTEMPTS = 100;
 
+function isTeamPagesForeignKeyViolation(error: unknown): boolean {
+  const dbError = error as { code?: string; constraint?: string } | null;
+  return dbError?.code === '23503' && dbError.constraint === 'wiki_pages_team_id_teams_id_fk';
+}
+
 function isSlugUniqueViolation(error: unknown): boolean {
   const dbError = error as { code?: string; constraint?: string } | null;
   if (dbError?.code !== '23505') return false;
@@ -711,9 +716,27 @@ export class DBStorage {
     return result[0];
   }
 
-  async deleteTeam(id: number): Promise<boolean> {
-    const result = await this.db.delete(teams).where(eq(teams.id, id)).returning();
-    return result.length > 0;
+  /**
+   * Deletes a team unless pages, trashed ones included, still belong to it. Those pages would
+   * otherwise lose their team and fall back to the team-less access rules, so they must be moved
+   * or deleted first. The wiki_pages.team_id foreign key (ON DELETE RESTRICT) backs this up when
+   * a page is added concurrently.
+   */
+  async deleteTeam(id: number): Promise<'deleted' | 'not-found' | 'has-pages'> {
+    const [page] = await this.db
+      .select({ id: wikiPages.id })
+      .from(wikiPages)
+      .where(eq(wikiPages.teamId, id))
+      .limit(1);
+    if (page) return 'has-pages';
+
+    try {
+      const result = await this.db.delete(teams).where(eq(teams.id, id)).returning();
+      return result.length > 0 ? 'deleted' : 'not-found';
+    } catch (error) {
+      if (isTeamPagesForeignKeyViolation(error)) return 'has-pages';
+      throw error;
+    }
   }
 
   async verifyTeamPassword(teamName: string, password: string): Promise<boolean> {
