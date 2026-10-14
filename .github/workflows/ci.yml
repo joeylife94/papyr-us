@@ -127,10 +127,10 @@ jobs:
         run: npx playwright test --config=playwright.layer5.config.ts --project=chromium --reporter=dot,html
 
       # Runs on every PR (not path-filtered): listings must never reveal pages the caller
-      # cannot read, and team page access must follow current team membership, against the
-      # real server, auth, team membership and PostgreSQL.
+      # cannot read, team page access must follow current team membership, and team pages must
+      # stay manageable by the team, against the real server, auth, team membership and PostgreSQL.
       - name: Run team data access control regression
-        run: npx playwright test tests/security-folder-pages-access.spec.ts tests/security-team-page-access.spec.ts --project=chromium --reporter=dot
+        run: npx playwright test tests/security-folder-pages-access.spec.ts tests/security-team-page-access.spec.ts tests/security-team-page-management.spec.ts --project=chromium --reporter=dot
 
       - name: Upload Playwright HTML report
         if: failure()
