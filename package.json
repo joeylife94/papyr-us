@@ -10,6 +10,8 @@
     "start": "cross-env PORT=5001 node dist/server/index.js",
     "check": "tsc",
     "db:push": "drizzle-kit push",
+    "db:fts:prepare": "node scripts/apply-fts-schema.mjs --allow-remote --before-push",
+    "db:fts": "node scripts/apply-fts-schema.mjs --allow-remote",
     "db:migrate": "drizzle-kit migrate",
     "db:generate": "drizzle-kit generate",
     "db:seed": "node --loader ts-node/esm server/migrate-data.js",
@@ -27,11 +29,14 @@
     "format": "prettier --write .",
     "test:db:migrate": "cross-env NODE_ENV=test drizzle-kit migrate",
     "test:db:seed": "cross-env NODE_ENV=test node --loader ts-node/esm server/migrate-data.js",
+    "test:db:fts": "node scripts/apply-fts-schema.mjs",
     "migrate:hash-dir-passwords": "tsx server/migrations/hash-directory-passwords.ts",
     "test:setup": "npm run test:db:migrate && npm run test:db:seed",
     "start:e2e": "cross-env PORT=5003 dotenv -e .env.test -- tsx server/index.ts",
     "e2e": "dotenv -e .env.test -- npm run test:setup && dotenv -e .env.test -- npx playwright test",
     "test:e2e": "node scripts/run-e2e-layer5.mjs",
+    "test:gj": "playwright test tests/gj01-auth-team-entry.spec.ts tests/gj02-document-lifecycle.spec.ts tests/gj03-authorization-boundary.spec.ts tests/gj04-version-recovery.spec.ts tests/gj07-inline-ai-assistance.spec.ts tests/task-team-scope.spec.ts tests/calendar-team-scope.spec.ts --project=chromium --workers=1",
+    "test:p0": "playwright test tests/p0 --project=chromium --workers=1",
     "test:visual": "node scripts/run-visual-layer6.mjs",
     "test:visual:update": "node scripts/update-visual-baselines.mjs",
     "test:all": "run-s test:static test:unit test:domain test:contract test:integration test:e2e test:visual",
@@ -112,9 +117,9 @@
     "lucide-react": "^0.453.0",
     "memorystore": "^1.6.7",
     "mime-types": "^2.1.35",
-    "multer": "^2.2.0",
+    "multer": "^2.3.0",
     "next-themes": "^0.4.6",
-    "nodemailer": "^9.0.5",
+    "nodemailer": "^10.0.16",
     "openai": "^5.6.0",
     "passport": "^0.7.0",
     "passport-github2": "^0.1.12",
@@ -140,7 +145,7 @@
     "remark-gfm": "^4.0.1",
     "remark-parse": "^11.0.0",
     "remark-rehype": "^11.1.2",
-    "sharp": "^0.35.3",
+    "sharp": "^0.35.5",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
     "tailwind-merge": "^2.6.0",
@@ -151,6 +156,7 @@
     "y-protocols": "^1.0.6",
     "y-websocket": "^3.0.0",
     "yjs": "^13.6.27",
+    "zod": "^3.25.76",
     "zod-validation-error": "^3.4.0"
   },
   "devDependencies": {
@@ -207,8 +213,7 @@
     "tsx": "^4.19.1",
     "typescript": "5.6.3",
     "vite": "^7.0.2",
-    "vitest": "^3.2.4",
-    "zod": "^3.25.76"
+    "vitest": "^3.2.4"
   },
   "optionalDependencies": {
     "bufferutil": "^4.0.8"

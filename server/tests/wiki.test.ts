@@ -151,8 +151,10 @@ describe('Wiki Page Management API', () => {
       expect(response.status).toBe(200);
       expect(response.body).toMatchObject(searchResult);
       expect(response.body.pagination).toBeDefined();
+      // Anonymous (dev-mode) listings only include pages an anonymous caller could open.
       expect(storage.searchWikiPages).toHaveBeenCalledWith(
-        expect.objectContaining({ query: 'test' })
+        expect.objectContaining({ query: 'test' }),
+        { readableBy: { teamIds: [] } }
       );
     });
 

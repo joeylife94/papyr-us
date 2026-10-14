@@ -1,5 +1,5 @@
-# Use the official Node.js 20 Alpine image to minimize the frozen v1.0 runtime OS surface.
-FROM node:20-alpine
+# Use the official Node.js 22 Alpine image to minimize the frozen v1.0 runtime OS surface.
+FROM node:22-alpine
 
 # Apply available Alpine security updates before installing application dependencies.
 # GAP-007 runtime evidence on the Debian slim candidate still showed 22 HIGH/CRITICAL OS findings.

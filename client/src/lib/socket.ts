@@ -214,6 +214,18 @@ class SocketManager {
 
 const socketManager = new SocketManager();
 
+// Bound once so callers can list these as effect dependencies. Binding inside useSocket
+// returned new identities on every render, which re-ran dependent effects on every render;
+// useCollaboration's disabled branch then set state each time and re-rendered forever.
+const socketApi = {
+  emit: socketManager.emit.bind(socketManager),
+  on: socketManager.on.bind(socketManager),
+  off: socketManager.off.bind(socketManager),
+  joinMember: socketManager.joinMember.bind(socketManager),
+  onNotificationNew: socketManager.onNotificationNew.bind(socketManager),
+  onNotificationUnreadCount: socketManager.onNotificationUnreadCount.bind(socketManager),
+};
+
 export function useSocket(options?: { enabled?: boolean }) {
   const enabled = options?.enabled ?? true;
   const [isConnected, setIsConnected] = useState(false);
@@ -286,12 +298,7 @@ export function useSocket(options?: { enabled?: boolean }) {
     isReconnecting,
     reconnectAttempt,
     reconnectError,
-    emit: socketManager.emit.bind(socketManager),
-    on: socketManager.on.bind(socketManager),
-    off: socketManager.off.bind(socketManager),
-    joinMember: socketManager.joinMember.bind(socketManager),
-    onNotificationNew: socketManager.onNotificationNew.bind(socketManager),
-    onNotificationUnreadCount: socketManager.onNotificationUnreadCount.bind(socketManager),
+    ...socketApi,
   };
 }
 

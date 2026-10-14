@@ -74,16 +74,13 @@ test.describe('[S2] 새 문서 생성 → 저장 확인', () => {
       await page.getByLabel('Title').fill(uniqueTitle);
       await page.getByLabel('Author').fill('P0 Tester');
 
-      // Content 필드: BlockEditor 내부 편집 가능 div를 타겟으로 한다
-      // 폴백: Content 라벨 연결 textarea/div
-      const contentArea = page
-        .locator('[contenteditable="true"]')
-        .or(page.getByLabel('Content (Block Editor)'))
-        .first();
-      if (await contentArea.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await contentArea.click();
-        await contentArea.fill('S2 P0 test content — created by automated scenario.');
-      }
+      // Content 필드: 에디터는 본문을 필수로 요구한다. 빈 블록 에디터에서 '단락' 블록을
+      // 추가한 뒤 그 textarea에 입력한다 (contenteditable 영역은 존재하지 않는다).
+      await page.getByRole('button', { name: '단락', exact: true }).click();
+      await page
+        .locator('textarea')
+        .first()
+        .fill('S2 P0 test content — created by automated scenario.');
 
       await captureEvidence(page, 's2', 'action');
 
@@ -121,9 +118,10 @@ test.describe('[S2] 새 문서 생성 → 저장 확인', () => {
       }
 
       // ── 토스트 확인 ──────────────────────────────────────────────────────────
-      await expect(
-        page.getByText('Page created').or(page.getByText('Your new page has been created'))
-      ).toBeVisible({ timeout: 10_000 });
+      // exact: Radix also renders a transient screen-reader announcement with both strings.
+      await expect(page.getByText('Page created', { exact: true })).toBeVisible({
+        timeout: 10_000,
+      });
 
       await captureEvidence(page, 's2', 'result');
 

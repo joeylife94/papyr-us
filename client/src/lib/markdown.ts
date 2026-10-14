@@ -51,6 +51,23 @@ export function estimateReadingTime(content: string): number {
   return Math.ceil(words / wordsPerMinute);
 }
 
+// Plain-text excerpt for document lists: drops common markdown syntax and only adds an
+// ellipsis when the text was actually shortened.
+export function toPlainTextPreview(content: string, maxLength = 160): string {
+  const text = content
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`([^`]*)`/g, '$1')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/^\s{0,3}(#{1,6}|>|[-*+]|\d+\.)\s+/gm, '')
+    .replace(/(\*\*|__|~~|\*)(\S(?:[\s\S]*?\S)?)\1/g, '$2')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength).trimEnd()}…`;
+}
+
 // Create slug from title
 export function createSlug(title: string): string {
   return title

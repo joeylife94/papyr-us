@@ -3,6 +3,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { teamMembers, users } from '../shared/schema.js';
 import { authMiddleware, type AuthRequest } from './middleware.js';
 import type { DBStorage } from './storage.js';
+import { notifyPageAccessChanged } from './services/page-access-events.js';
 
 function parseTeamId(raw: string): number | null {
   const teamId = Number(raw);
@@ -44,60 +45,58 @@ async function admitRegisteredMember(storage: DBStorage, teamId: number, userId:
     const [created] = await tx
       .insert(teamMembers)
       .values({ teamId, userId, role: 'member' })
-      .returning({ teamId: teamMembers.teamId, userId: teamMembers.userId, role: teamMembers.role });
+      .returning({
+        teamId: teamMembers.teamId,
+        userId: teamMembers.userId,
+        role: teamMembers.role,
+      });
 
     return { membership: created, created: true };
   });
 }
 
 export function registerTeamMembershipRoutes(app: Express, storage: DBStorage) {
-  app.post(
-    '/api/teams/:teamId/memberships',
-    authMiddleware,
-    async (req: AuthRequest, res) => {
-      const teamId = parseTeamId(req.params.teamId);
-      const actorUserId = Number(req.user?.id);
-      if (!teamId) return res.status(400).json({ message: 'Invalid team ID' });
+  app.post('/api/teams/:teamId/memberships', authMiddleware, async (req: AuthRequest, res) => {
+    const teamId = parseTeamId(req.params.teamId);
+    const actorUserId = Number(req.user?.id);
+    if (!teamId) return res.status(400).json({ message: 'Invalid team ID' });
 
-      const actorRole = await requireMembershipManager(storage, actorUserId, teamId);
-      if (!actorRole) {
-        return res.status(403).json({ message: 'Owner or admin role required' });
-      }
-
-      const email = typeof req.body?.email === 'string' ? req.body.email.trim() : '';
-      if (!email) return res.status(400).json({ message: 'Existing user email is required' });
-
-      const [target] = await storage.db
-        .select({ id: users.id, email: users.email })
-        .from(users)
-        .where(eq(users.email, email));
-      if (!target) return res.status(404).json({ message: 'Registered user not found' });
-
-      const result = await admitRegisteredMember(storage, teamId, target.id);
-      return res.status(result.created ? 201 : 200).json(result.membership);
+    const actorRole = await requireMembershipManager(storage, actorUserId, teamId);
+    if (!actorRole) {
+      return res.status(403).json({ message: 'Owner or admin role required' });
     }
-  );
 
-  app.delete(
-    '/api/teams/:teamId/memberships/me',
-    authMiddleware,
-    async (req: AuthRequest, res) => {
-      const teamId = parseTeamId(req.params.teamId);
-      const actorUserId = Number(req.user?.id);
-      if (!teamId) return res.status(400).json({ message: 'Invalid team ID' });
+    const email = typeof req.body?.email === 'string' ? req.body.email.trim() : '';
+    if (!email) return res.status(400).json({ message: 'Existing user email is required' });
 
-      const actorRole = await storage.getUserTeamRole(actorUserId, teamId);
-      if (!actorRole) return res.status(404).json({ message: 'Membership not found' });
-      if (actorRole === 'owner' && (await ownerCount(storage, teamId)) <= 1) {
-        return res.status(409).json({ message: 'Cannot remove the sole team owner' });
-      }
+    const [target] = await storage.db
+      .select({ id: users.id, email: users.email })
+      .from(users)
+      .where(eq(users.email, email));
+    if (!target) return res.status(404).json({ message: 'Registered user not found' });
 
-      await storage.db
-        .delete(teamMembers)
-        .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, actorUserId)));
-      return res.status(204).send();
+    const result = await admitRegisteredMember(storage, teamId, target.id);
+    return res.status(result.created ? 201 : 200).json(result.membership);
+  });
+
+  app.delete('/api/teams/:teamId/memberships/me', authMiddleware, async (req: AuthRequest, res) => {
+    const teamId = parseTeamId(req.params.teamId);
+    const actorUserId = Number(req.user?.id);
+    if (!teamId) return res.status(400).json({ message: 'Invalid team ID' });
+
+    const actorRole = await storage.getUserTeamRole(actorUserId, teamId);
+    if (!actorRole) return res.status(404).json({ message: 'Membership not found' });
+    if (actorRole === 'owner' && (await ownerCount(storage, teamId)) <= 1) {
+      return res.status(409).json({ message: 'Cannot remove the sole team owner' });
     }
-  );
+
+    await storage.db
+      .delete(teamMembers)
+      .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, actorUserId)));
+    // Open realtime sessions on the team's pages lose access now, not at the next reconnect
+    await notifyPageAccessChanged(actorUserId);
+    return res.status(204).send();
+  });
 
   app.delete(
     '/api/teams/:teamId/memberships/:userId',
@@ -129,6 +128,8 @@ export function registerTeamMembershipRoutes(app: Express, storage: DBStorage) {
       await storage.db
         .delete(teamMembers)
         .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, targetUserId)));
+      // Open realtime sessions on the team's pages lose access now, not at the next reconnect
+      await notifyPageAccessChanged(targetUserId);
       return res.status(204).send();
     }
   );

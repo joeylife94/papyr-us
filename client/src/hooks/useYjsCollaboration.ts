@@ -43,6 +43,23 @@ const USER_COLORS = [
   '#52B788',
 ];
 
+// The server exchanges Yjs updates as base64. Node's Buffer does not exist in the browser
+// (Vite does not polyfill it), so decode/encode with atob/btoa.
+function base64ToBytes(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary);
+}
+
 function getUserColor(userId: string): string {
   const hash = userId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
   return USER_COLORS[hash % USER_COLORS.length];
@@ -75,13 +92,24 @@ export function useYjsCollaboration({
   const yblocksRef = useRef<Y.Array<Block> | null>(null);
   const isApplyingRemoteRef = useRef(false);
 
+  // Callers pass inline callbacks, so read them through a ref instead of listing them as
+  // effect dependencies; otherwise every render tears down and recreates the Y.Doc and the
+  // /yjs socket, which reconnects in a loop and never finishes the initial sync.
+  const callbacksRef = useRef({ onBlocksChange, onUsersChange, onUserCountChange, onError });
+  callbacksRef.current = { onBlocksChange, onUsersChange, onUserCountChange, onError };
+
   const documentId = `page-${pageId}`;
 
   // Initialize Yjs document
   useEffect(() => {
     if (!enabled || !pageId) {
-      // If disabled, ensure we look disconnected.
-      setState({ isConnected: false, userCount: 0, isSynced: false, users: [] });
+      // If disabled, ensure we look disconnected. Keep the previous state when it already
+      // is, so re-running this effect never forces a re-render.
+      setState((prev) =>
+        !prev.isConnected && prev.userCount === 0 && !prev.isSynced && prev.users.length === 0
+          ? prev
+          : { isConnected: false, userCount: 0, isSynced: false, users: [] }
+      );
       return;
     }
 
@@ -119,17 +147,17 @@ export function useYjsCollaboration({
       });
 
       setState((prev) => ({ ...prev, users }));
-      onUsersChange?.(users);
+      callbacksRef.current.onUsersChange?.(users);
     };
 
     awareness.on('change', awarenessChangeHandler);
 
-    // Listen for local changes
-    const observer = (event: Y.YArrayEvent<Block>) => {
-      if (isApplyingRemoteRef.current) return; // Skip if applying remote changes
-
+    // Mirror every change (local edits and updates from other collaborators) into React.
+    // Skipping remote updates here meant other users' edits were applied to the Y.Doc but
+    // never rendered.
+    const observer = () => {
       const blocks = yblocks.toArray();
-      onBlocksChange(blocks);
+      callbacksRef.current.onBlocksChange(blocks);
     };
 
     yblocks.observe(observer);
@@ -140,7 +168,7 @@ export function useYjsCollaboration({
       awareness.destroy();
       ydoc.destroy();
     };
-  }, [enabled, pageId, userId, userName, onBlocksChange, onUsersChange]);
+  }, [enabled, pageId, userId, userName]);
 
   // Connect to Yjs server
   useEffect(() => {
@@ -174,11 +202,12 @@ export function useYjsCollaboration({
       if (!ydoc) return;
 
       try {
-        const stateVector = Buffer.from(data.stateVector, 'base64');
-        Y.applyUpdate(ydoc, stateVector);
+        const stateVector = base64ToBytes(data.stateVector);
+        // 'server' origin keeps the update handler below from echoing it back.
+        Y.applyUpdate(ydoc, stateVector, 'server');
 
         setState((prev) => ({ ...prev, isSynced: true, userCount: data.userCount }));
-        onUserCountChange?.(data.userCount);
+        callbacksRef.current.onUserCountChange?.(data.userCount);
 
         console.log('[Yjs] Document initialized', {
           documentId,
@@ -186,7 +215,7 @@ export function useYjsCollaboration({
         });
       } catch (error) {
         console.error('[Yjs] Failed to initialize document:', error);
-        onError?.('Failed to initialize document');
+        callbacksRef.current.onError?.('Failed to initialize document');
       }
     });
 
@@ -197,8 +226,8 @@ export function useYjsCollaboration({
 
       try {
         isApplyingRemoteRef.current = true;
-        const update = Buffer.from(data.update, 'base64');
-        Y.applyUpdate(ydoc, update);
+        const update = base64ToBytes(data.update);
+        Y.applyUpdate(ydoc, update, 'server');
         isApplyingRemoteRef.current = false;
 
         console.log('[Yjs] Applied remote update');
@@ -214,7 +243,7 @@ export function useYjsCollaboration({
       if (!awareness) return;
 
       try {
-        const update = Buffer.from(data.update, 'base64');
+        const update = base64ToBytes(data.update);
         const updateArray = Array.from(update);
         // Apply awareness update (this will trigger the 'change' event)
         // Note: y-protocols uses specific encoding, we'll handle this in a simple way
@@ -227,7 +256,7 @@ export function useYjsCollaboration({
     // Error handling
     socket.on('yjs:error', (data: { message: string }) => {
       console.error('[Yjs] Server error:', data.message);
-      onError?.(data.message);
+      callbacksRef.current.onError?.(data.message);
     });
 
     // Setup update broadcasting to server
@@ -240,7 +269,7 @@ export function useYjsCollaboration({
         // Send update to server
         socket.emit('yjs:update', {
           documentId,
-          update: Buffer.from(update).toString('base64'),
+          update: bytesToBase64(update),
         });
       };
 
@@ -255,7 +284,7 @@ export function useYjsCollaboration({
     return () => {
       socket.disconnect();
     };
-  }, [enabled, pageId, documentId, onError, onUserCountChange]);
+  }, [enabled, pageId, documentId]);
 
   // Update blocks (called from BlockEditor)
   const updateBlocks = useCallback((blocks: Block[]) => {

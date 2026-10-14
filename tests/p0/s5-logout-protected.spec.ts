@@ -61,7 +61,10 @@ test.describe('[S5] 로그아웃 후 보호 페이지 접근 차단', () => {
       await page.goto('/', { waitUntil: 'domcontentloaded' });
 
       // 인증 상태 확인: 헤더 로고 표시
-      await expect(page.getByRole('link', { name: /Papyr\.us/i })).toBeVisible({ timeout: 15_000 });
+      // exact: seeded page links also mention "Papyr.us"
+      await expect(page.getByRole('link', { name: 'Papyr.us', exact: true })).toBeVisible({
+        timeout: 15_000,
+      });
       await captureEvidence(page, 's5', 'initial');
 
       // ── Action: 드롭다운 메뉴 → Log out ──────────────────────────────────────
@@ -118,7 +121,9 @@ test.describe('[S5] 로그아웃 후 보호 페이지 접근 차단', () => {
       // Step 1: 인증 후 대시보드 접근 확인
       await injectAuthCookies(page, credentials, baseURL);
       await page.goto('/', { waitUntil: 'domcontentloaded' });
-      await expect(page.getByRole('link', { name: /Papyr\.us/i })).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByRole('link', { name: 'Papyr.us', exact: true })).toBeVisible({
+        timeout: 15_000,
+      });
 
       // Step 2: API로 로그아웃 (세션 쿠키 무효화)
       const logoutResp = await apiContext.post('/api/auth/logout');

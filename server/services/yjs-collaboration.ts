@@ -4,6 +4,7 @@ import { DBStorage } from '../storage.js';
 import logger from './logger.js';
 import jwt from 'jsonwebtoken';
 import { config } from '../config.js';
+import { onPageAccessChanged } from './page-access-events.js';
 
 /**
  * Collaboration robustness (Phase 3)
@@ -220,7 +221,7 @@ export class YjsCollaborationManager {
 
     // Load persisted state before attaching update listeners.
     const page = await this.storage.getWikiPage(pageId);
-    if (page && page.blocks && Array.isArray(page.blocks)) {
+    if (page && page.blocks && Array.isArray(page.blocks) && page.blocks.length > 0) {
       const yblocks = ydoc.getArray('blocks');
       yblocks.delete(0, yblocks.length);
       yblocks.push(page.blocks as any[]);
@@ -229,6 +230,20 @@ export class YjsCollaborationManager {
         pageId,
         blockCount: (page.blocks as any[]).length,
       });
+    } else if (page && page.content) {
+      // Pages saved without blocks (API- or template-created) open in the editor as one
+      // paragraph holding the content. Seed the same block here, once per document, so
+      // collaborators edit a shared block instead of an empty array that drops their edits.
+      ydoc.getArray('blocks').push([
+        {
+          id: `block_seed_${pageId}`,
+          type: 'paragraph',
+          content: page.content,
+          properties: {},
+          order: 0,
+          children: [],
+        },
+      ]);
     }
 
     const state: DocState = {
@@ -354,8 +369,44 @@ export class YjsCollaborationManager {
     return { canEdit, permission };
   }
 
+  /**
+   * Re-checks the page access of every socket of a user, as a fresh yjs:join would. A socket that
+   * lost read access leaves its document, so it stops sending and receiving updates, and gets
+   * ACCESS_REVOKED; otherwise its edit right is recomputed.
+   */
+  async revalidateUserAccess(userId: number): Promise<void> {
+    for (const socket of this.namespace.sockets.values()) {
+      const documentId = this.socketDocuments.get(socket.id);
+      if (Number(socket.data.userId) !== userId || !documentId) continue;
+      const parsed = parseDocumentId(documentId);
+      if (!parsed.ok) continue;
+      const stillJoined = () => this.socketDocuments.get(socket.id) === documentId;
+
+      const canRead = await this.storage.checkPagePermission(userId, parsed.pageId, 'viewer');
+      if (!stillJoined()) continue;
+      if (!canRead) {
+        this.detachSocketFromDocument(socket, documentId);
+        socket.data.documentId = undefined;
+        socket.data.pageId = undefined;
+        socket.data.userPermission = null;
+        socket.data.canEdit = false;
+        socket.emit('yjs:error', {
+          message: 'Your access to this page has been revoked.',
+          code: 'ACCESS_REVOKED',
+        });
+        continue;
+      }
+
+      const permission = await this.storage.getUserPagePermission(userId, parsed.pageId);
+      if (!stillJoined()) continue;
+      socket.data.userPermission = permission;
+      socket.data.canEdit = permission === 'owner' || permission === 'editor';
+    }
+  }
+
   leaveDocument(socket: Socket): void {
-    const documentId = this.socketDocuments.get(socket.id) ?? (socket.data.documentId as string | undefined);
+    const documentId =
+      this.socketDocuments.get(socket.id) ?? (socket.data.documentId as string | undefined);
     if (!documentId) return;
 
     this.detachSocketFromDocument(socket, documentId);
@@ -491,7 +542,10 @@ let yjsManager: YjsCollaborationManager | null = null;
 export function setupYjsCollaboration(io: SocketIOServer, storage: DBStorage) {
   const yjsNamespace = io.of('/yjs');
   const cfg = getCollabConfig();
-  yjsManager = new YjsCollaborationManager(yjsNamespace, storage, cfg);
+  const manager = new YjsCollaborationManager(yjsNamespace, storage, cfg);
+  yjsManager = manager;
+  // Sessions check page access once at join; check again when a user's access shrinks
+  onPageAccessChanged((userId) => manager.revalidateUserAccess(userId));
 
   logger.info('Yjs collaboration server initialized', {
     saveDebounceMs: cfg.saveDebounceMs,
@@ -661,13 +715,22 @@ export function setupYjsCollaboration(io: SocketIOServer, storage: DBStorage) {
         }
 
         // Apply update to Yjs document
-        if (typeof update !== 'string' || update.length > Math.ceil((cfg.maxUpdateBytes * 4) / 3) + 4) {
-          socket.emit('yjs:error', { message: 'Update payload too large', code: 'PAYLOAD_TOO_LARGE' });
+        if (
+          typeof update !== 'string' ||
+          update.length > Math.ceil((cfg.maxUpdateBytes * 4) / 3) + 4
+        ) {
+          socket.emit('yjs:error', {
+            message: 'Update payload too large',
+            code: 'PAYLOAD_TOO_LARGE',
+          });
           return;
         }
         const updateBuffer = Buffer.from(update, 'base64');
         if (updateBuffer.byteLength > cfg.maxUpdateBytes) {
-          socket.emit('yjs:error', { message: 'Update payload too large', code: 'PAYLOAD_TOO_LARGE' });
+          socket.emit('yjs:error', {
+            message: 'Update payload too large',
+            code: 'PAYLOAD_TOO_LARGE',
+          });
           return;
         }
         Y.applyUpdate(doc.ydoc, updateBuffer, socket.id); // Use socket.id as origin

@@ -1,9 +1,12 @@
 import { test, expect } from '@playwright/test';
 import { loginPageWithCookies } from './e2e-helpers';
 
-const PASSWORD = 'password123';
+const PASSWORD = 'Password123!';
 
-test('GJ-02: create, reopen, update, delete, restore document lifecycle', async ({ page, request }) => {
+test('GJ-02: create, reopen, update, delete, restore document lifecycle', async ({
+  page,
+  request,
+}) => {
   const stamp = Date.now();
   const email = `gj02-${stamp}@example.com`;
   const originalTitle = `GJ02 Document ${stamp}`;
@@ -25,9 +28,15 @@ test('GJ-02: create, reopen, update, delete, restore document lifecycle', async 
   await page.goto('/create');
   await expect(page.getByRole('heading', { name: 'Create New Page' })).toBeVisible();
   await page.getByLabel('Title').fill(originalTitle);
+  // The editor requires body content, so the document is created with a paragraph block.
+  await page.getByRole('button', { name: '단락', exact: true }).click();
+  await page.locator('textarea').first().fill(`GJ-02 lifecycle content ${stamp}`);
 
   const createResponsePromise = page.waitForResponse(
-    (response) => response.url().includes('/api/pages') && response.request().method() === 'POST' && response.status() === 201
+    (response) =>
+      response.url().includes('/api/pages') &&
+      response.request().method() === 'POST' &&
+      response.status() === 201
   );
   await page.getByRole('button', { name: 'Create Page' }).click();
   const createResponse = await createResponsePromise;
@@ -88,7 +97,7 @@ test('GJ-02: create, reopen, update, delete, restore document lifecycle', async 
   const trashResponse = await request.get('/api/trash');
   expect(trashResponse.status()).toBe(200);
   const trash = await trashResponse.json();
-  const deletedPages = Array.isArray(trash) ? trash : trash.pages ?? trash.items ?? [];
+  const deletedPages = Array.isArray(trash) ? trash : (trash.pages ?? trash.items ?? []);
   expect(deletedPages.some((item: any) => String(item.id) === pageId)).toBe(true);
 
   const restoreResponse = await request.post(`/api/trash/${pageId}/restore`);

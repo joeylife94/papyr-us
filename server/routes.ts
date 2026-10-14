@@ -82,11 +82,30 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import passport from 'passport';
 import { eq, and, isNull } from 'drizzle-orm';
-import { DBStorage } from './storage.js';
+import { ANONYMOUS_PAGE_VIEWER, DBStorage } from './storage.js';
 import { featureFlags } from './features.js';
 
 interface MulterRequest extends Request {
   files?: any[];
+}
+
+// JSON cannot carry a Date, so the task form sends `dueDate` as a date string, or ''
+// when the field is left empty. Map '' to "no due date" and parse strings so the
+// timestamp schema sees a Date; unparseable strings still fail schema validation.
+function normalizeTaskDueDate(body: Record<string, unknown>): Record<string, unknown> {
+  if (!body || typeof body.dueDate !== 'string') return body;
+  return { ...body, dueDate: body.dueDate === '' ? null : new Date(body.dueDate) };
+}
+
+// Response body for a failed request. Validation failures keep their Zod issues, which only
+// describe the client's own input. Anything else (e.g. a database driver error carrying the
+// SQL text and parameters) is logged here and never sent to the client.
+function failureBody(message: string, error: unknown): Record<string, unknown> {
+  if (error instanceof Error && error.name === 'ZodError') {
+    return { message, error: { name: error.name, issues: (error as any).issues } };
+  }
+  logger.error(message, { error: error instanceof Error ? error.message : String(error) });
+  return { message };
 }
 
 export async function registerRoutes(
@@ -569,6 +588,7 @@ export async function registerRoutes(
       // If no teamId specified, scope to user's teams + global pages
       if (!resolvedTeamId && req.user?.id) {
         const userTeamIds = await storage.getUserTeamIds(req.user.id);
+        const viewer = await storage.getPageViewer(req.user.id);
         // Search pages across all user's teams and unassigned (global) pages
         const allResults = await Promise.all([
           ...userTeamIds.map((tid) => {
@@ -583,7 +603,7 @@ export async function registerRoutes(
             });
             return storage.searchWikiPages(params);
           }),
-          // Also include pages with no team (personal/shared pages)
+          // Also include pages with no team (personal/shared pages) the caller can read
           storage.searchWikiPages(
             searchSchema.parse({
               query: req.query.q as string,
@@ -593,7 +613,8 @@ export async function registerRoutes(
               limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
               offset: req.query.offset ? parseInt(req.query.offset as string) : undefined,
               teamId: 'null',
-            })
+            }),
+            { readableBy: viewer }
           ),
         ]);
 
@@ -632,7 +653,9 @@ export async function registerRoutes(
           offset: req.query.offset ? parseInt(req.query.offset as string) : undefined,
           teamId: 'null',
         });
-        const result = await storage.searchWikiPages(searchParams);
+        const result = await storage.searchWikiPages(searchParams, {
+          readableBy: ANONYMOUS_PAGE_VIEWER,
+        });
         const hasMore = result.pages.length === (searchParams.limit || 20);
         const nextCursor = hasMore ? result.pages[result.pages.length - 1]?.id : null;
         return res.json({
@@ -753,7 +776,7 @@ export async function registerRoutes(
 
         res.status(201).json(page);
       } catch (error) {
-        res.status(400).json({ message: 'Invalid page data', error });
+        res.status(400).json(failureBody('Invalid page data', error));
       }
     }
   );
@@ -769,6 +792,25 @@ export async function registerRoutes(
 
         // Get old page data for comparison and version snapshot
         const oldPage = await storage.getWikiPage(id);
+
+        // Authorship counts as ownership, the team decides who may access the page, and trash
+        // state is the owner's call, so changing any of them needs owner. A page can only move
+        // into a team the caller belongs to.
+        const changesAuthor =
+          updateData.author !== undefined && updateData.author !== oldPage?.author;
+        const changesTeam =
+          updateData.teamId !== undefined && updateData.teamId !== (oldPage?.teamId ?? null);
+        if (changesAuthor || changesTeam || updateData.deletedAt !== undefined) {
+          if (!(await storage.checkPagePermission(req.user?.id, id, 'owner'))) {
+            return res.status(403).json({ message: 'Insufficient permissions: owner required' });
+          }
+        }
+        if (changesTeam && updateData.teamId != null) {
+          const userTeamIds = req.user?.id ? await storage.getUserTeamIds(req.user.id) : [];
+          if (!userTeamIds.includes(Number(updateData.teamId))) {
+            return res.status(403).json({ message: 'You are not a member of the target team' });
+          }
+        }
 
         // Save a version snapshot BEFORE updating (only if content/blocks changed)
         if (oldPage && (updateData.content !== undefined || updateData.blocks !== undefined)) {
@@ -840,7 +882,7 @@ export async function registerRoutes(
 
         res.json(page);
       } catch (error) {
-        res.status(400).json({ message: 'Invalid update data', error });
+        res.status(400).json(failureBody('Invalid update data', error));
       }
     }
   );
@@ -1020,35 +1062,45 @@ export async function registerRoutes(
     }
   });
 
-  // Restore a page from trash
-  app.post('/api/trash/:id/restore', requireAuthIfEnabled, async (req: AuthRequest, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const restored = await storage.restoreWikiPage(id);
-      if (!restored) {
-        return res.status(404).json({ error: 'Page not found in trash' });
+  // Restore a page from trash (undoes DELETE /api/pages/:id, so it needs the same owner level)
+  app.post(
+    '/api/trash/:id/restore',
+    requireAuthIfEnabled,
+    requirePagePermission('owner'),
+    async (req: AuthRequest, res) => {
+      try {
+        const id = parseInt(req.params.id);
+        const restored = await storage.restoreWikiPage(id);
+        if (!restored) {
+          return res.status(404).json({ error: 'Page not found in trash' });
+        }
+        res.json(restored);
+      } catch (error) {
+        logger.error('Error restoring page:', { error });
+        res.status(500).json({ error: 'Failed to restore page' });
       }
-      res.json(restored);
-    } catch (error) {
-      logger.error('Error restoring page:', { error });
-      res.status(500).json({ error: 'Failed to restore page' });
     }
-  });
+  );
 
-  // Permanently delete a page
-  app.delete('/api/trash/:id', requireAuthIfEnabled, async (req: AuthRequest, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const deleted = await storage.permanentlyDeleteWikiPage(id);
-      if (!deleted) {
-        return res.status(404).json({ error: 'Page not found' });
+  // Permanently delete a trashed page (owner only; pages that are not in the trash are kept)
+  app.delete(
+    '/api/trash/:id',
+    requireAuthIfEnabled,
+    requirePagePermission('owner'),
+    async (req: AuthRequest, res) => {
+      try {
+        const id = parseInt(req.params.id);
+        const deleted = await storage.permanentlyDeleteWikiPage(id);
+        if (!deleted) {
+          return res.status(404).json({ error: 'Page not found' });
+        }
+        res.json({ message: 'Page permanently deleted' });
+      } catch (error) {
+        logger.error('Error permanently deleting page:', { error });
+        res.status(500).json({ error: 'Failed to permanently delete page' });
       }
-      res.json({ message: 'Page permanently deleted' });
-    } catch (error) {
-      logger.error('Error permanently deleting page:', { error });
-      res.status(500).json({ error: 'Failed to permanently delete page' });
     }
-  });
+  );
 
   // Empty entire trash
   app.delete('/api/trash', requireAuthIfEnabled, requireAdmin, async (req: AuthRequest, res) => {
@@ -1115,20 +1167,46 @@ export async function registerRoutes(
 
   // ==================== Bulk Operations API ====================
 
+  // A bulk call needs, on every listed page, the level its single-page route requires (move
+  // and tags: editor, delete: owner). One page falling short rejects the whole call before
+  // anything changes.
+  const parseBulkPageIds = (value: unknown): number[] | null => {
+    if (!Array.isArray(value)) return null;
+    const ids = value.map(Number);
+    return ids.every((id) => Number.isInteger(id) && id > 0) ? Array.from(new Set(ids)) : null;
+  };
+  const bulkDenial = async (
+    userId: number | undefined,
+    pageIds: number[],
+    level: 'owner' | 'editor'
+  ): Promise<{ status: number; error: string } | null> => {
+    for (const pageId of pageIds) {
+      if (!(await storage.checkPagePermission(userId, pageId, level))) {
+        return userId
+          ? { status: 403, error: `Insufficient permissions: ${level} required` }
+          : { status: 401, error: 'Authentication required' };
+      }
+    }
+    return null;
+  };
+
   // Bulk move pages to folder
   app.post('/api/pages/bulk/move', requireAuthIfEnabled, async (req: AuthRequest, res) => {
     try {
-      const { pageIds, folder } = req.body;
-      if (!Array.isArray(pageIds) || !folder || typeof folder !== 'string') {
+      const { folder } = req.body;
+      const pageIds = parseBulkPageIds(req.body.pageIds);
+      if (!pageIds || !folder || typeof folder !== 'string') {
         return res.status(400).json({ error: 'pageIds (array) and folder (string) required' });
       }
+      const denial = await bulkDenial(req.user?.id, pageIds, 'editor');
+      if (denial) return res.status(denial.status).json({ error: denial.error });
 
       const db = (storage as any).db;
       const { inArray } = await import('drizzle-orm');
       const results = await db
         .update(wikiPages)
         .set({ folder, updatedAt: new Date() })
-        .where(and(inArray(wikiPages.id, pageIds.map(Number)), isNull(wikiPages.deletedAt)))
+        .where(and(inArray(wikiPages.id, pageIds), isNull(wikiPages.deletedAt)))
         .returning();
 
       res.json({ updated: results.length });
@@ -1141,16 +1219,18 @@ export async function registerRoutes(
   // Bulk add/remove tags
   app.post('/api/pages/bulk/tags', requireAuthIfEnabled, async (req: AuthRequest, res) => {
     try {
-      const { pageIds, addTags, removeTags } = req.body;
-      if (!Array.isArray(pageIds)) {
+      const { addTags, removeTags } = req.body;
+      const pageIds = parseBulkPageIds(req.body.pageIds);
+      if (!pageIds) {
         return res.status(400).json({ error: 'pageIds (array) required' });
       }
+      const denial = await bulkDenial(req.user?.id, pageIds, 'editor');
+      if (denial) return res.status(denial.status).json({ error: denial.error });
 
-      const db = (storage as any).db;
       let updated = 0;
 
       for (const pageId of pageIds) {
-        const page = await storage.getWikiPage(Number(pageId));
+        const page = await storage.getWikiPage(pageId);
         if (!page) continue;
 
         let tags = [...page.tags];
@@ -1161,7 +1241,7 @@ export async function registerRoutes(
           tags = tags.filter((t: string) => !removeTags.includes(t));
         }
 
-        await storage.updateWikiPage(Number(pageId), { tags });
+        await storage.updateWikiPage(pageId, { tags });
         updated++;
       }
 
@@ -1175,14 +1255,16 @@ export async function registerRoutes(
   // Bulk delete (soft delete)
   app.post('/api/pages/bulk/delete', requireAuthIfEnabled, async (req: AuthRequest, res) => {
     try {
-      const { pageIds } = req.body;
-      if (!Array.isArray(pageIds)) {
+      const pageIds = parseBulkPageIds(req.body.pageIds);
+      if (!pageIds) {
         return res.status(400).json({ error: 'pageIds (array) required' });
       }
+      const denial = await bulkDenial(req.user?.id, pageIds, 'owner');
+      if (denial) return res.status(denial.status).json({ error: denial.error });
 
       let deleted = 0;
       for (const pageId of pageIds) {
-        const success = await storage.deleteWikiPage(Number(pageId));
+        const success = await storage.deleteWikiPage(pageId);
         if (success) deleted++;
       }
 
@@ -1195,50 +1277,56 @@ export async function registerRoutes(
 
   // ==================== Markdown Import API ====================
 
-  app.post('/api/pages/import/markdown', requireAuthIfEnabled, async (req: AuthRequest, res) => {
-    try {
-      const { title, content, folder, tags, teamId } = req.body;
-      if (!content || typeof content !== 'string') {
-        return res.status(400).json({ error: 'content (string) required' });
+  // Like POST /api/pages, a page can only be imported into a team the caller belongs to
+  app.post(
+    '/api/pages/import/markdown',
+    requireAuthIfEnabled,
+    requireTeamMembership,
+    async (req: AuthRequest, res) => {
+      try {
+        const { title, content, folder, tags, teamId } = req.body;
+        if (!content || typeof content !== 'string') {
+          return res.status(400).json({ error: 'content (string) required' });
+        }
+
+        const pageTitle =
+          title ||
+          content
+            .split('\n')[0]
+            ?.replace(/^#+\s*/, '')
+            .trim() ||
+          'Untitled Import';
+        const slug =
+          pageTitle
+            .toLowerCase()
+            .replace(/[^a-z0-9가-힣]+/g, '-')
+            .replace(/^-|-$/g, '') +
+          '-' +
+          Date.now().toString(36);
+
+        const author = (req as any).user?.email || (req as any).user?.name || 'imported';
+
+        const page = await storage.createWikiPage(
+          {
+            title: pageTitle,
+            slug,
+            content,
+            folder: folder || 'docs',
+            tags: Array.isArray(tags) ? tags : [],
+            author,
+            teamId: teamId ? Number(teamId) : undefined,
+            isPublished: true,
+          },
+          (req as any).user?.id
+        );
+
+        res.status(201).json(page);
+      } catch (error) {
+        logger.error('Error importing markdown:', { error });
+        res.status(500).json({ error: 'Failed to import markdown' });
       }
-
-      const pageTitle =
-        title ||
-        content
-          .split('\n')[0]
-          ?.replace(/^#+\s*/, '')
-          .trim() ||
-        'Untitled Import';
-      const slug =
-        pageTitle
-          .toLowerCase()
-          .replace(/[^a-z0-9가-힣]+/g, '-')
-          .replace(/^-|-$/g, '') +
-        '-' +
-        Date.now().toString(36);
-
-      const author = (req as any).user?.email || (req as any).user?.name || 'imported';
-
-      const page = await storage.createWikiPage(
-        {
-          title: pageTitle,
-          slug,
-          content,
-          folder: folder || 'docs',
-          tags: Array.isArray(tags) ? tags : [],
-          author,
-          teamId: teamId ? Number(teamId) : undefined,
-          isPublished: true,
-        },
-        (req as any).user?.id
-      );
-
-      res.status(201).json(page);
-    } catch (error) {
-      logger.error('Error importing markdown:', { error });
-      res.status(500).json({ error: 'Failed to import markdown' });
     }
-  });
+  );
 
   // ==================== Dashboard Stats API ====================
 
@@ -1330,19 +1418,29 @@ export async function registerRoutes(
     }
   });
 
-  app.get('/api/folders/:folder/pages', async (req, res) => {
+  // Folder listings and tag counts are derived from page titles, content and tags, so they
+  // follow the page read boundary: always authenticated (fail closed regardless of
+  // ENFORCE_AUTH_WRITES), limited to the caller's teams plus team-less pages, and never
+  // including a page whose explicit permissions deny the caller viewer access. A folder
+  // holding only other teams' pages answers exactly like an unknown folder: 200 [].
+  app.get('/api/folders/:folder/pages', authMiddleware, async (req: AuthRequest, res) => {
+    if (!req.user?.id) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
     try {
-      const folder = req.params.folder;
-      const pages = await storage.getWikiPagesByFolder(folder);
+      const pages = await storage.getReadableWikiPagesByFolder(req.params.folder, req.user.id);
       res.json(pages);
     } catch (error) {
       res.status(500).json({ message: 'Server error' });
     }
   });
 
-  app.get('/api/tags', async (req, res) => {
+  app.get('/api/tags', authMiddleware, async (req: AuthRequest, res) => {
+    if (!req.user?.id) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
     try {
-      const tags = await storage.getAllTags();
+      const tags = await storage.getReadableTags(req.user.id);
       res.json(tags);
     } catch (error) {
       res.status(500).json({ message: 'Server error' });
@@ -1652,7 +1750,7 @@ export async function registerRoutes(
 
         res.status(201).json(comment);
       } catch (error) {
-        res.status(400).json({ message: 'Invalid comment data', error });
+        res.status(400).json(failureBody('Invalid comment data', error));
       }
     }
   );
@@ -1687,7 +1785,7 @@ export async function registerRoutes(
 
       res.json(comment);
     } catch (error) {
-      res.status(400).json({ message: 'Invalid update data', error });
+      res.status(400).json(failureBody('Invalid update data', error));
     }
   });
 
@@ -1744,7 +1842,7 @@ export async function registerRoutes(
       const permissions = await storage.getPagePermissions(pageId);
       res.json(permissions);
     } catch (error) {
-      res.status(500).json({ message: 'Failed to get permissions', error });
+      res.status(500).json(failureBody('Failed to get permissions', error));
     }
   });
 
@@ -1770,7 +1868,7 @@ export async function registerRoutes(
       const permission = await storage.addPagePermission(permissionData);
       res.status(201).json(permission);
     } catch (error) {
-      res.status(400).json({ message: 'Invalid permission data', error });
+      res.status(400).json(failureBody('Invalid permission data', error));
     }
   });
 
@@ -1789,14 +1887,15 @@ export async function registerRoutes(
           return res.status(403).json({ message: 'Only page owners can manage permissions' });
         }
 
-        const deleted = await storage.removePagePermission(permissionId);
+        // Only a permission of this page: owning one page grants nothing on another
+        const deleted = await storage.removePagePermission(pageId, permissionId);
         if (!deleted) {
           return res.status(404).json({ message: 'Permission not found' });
         }
 
         res.json({ message: 'Permission removed successfully' });
       } catch (error) {
-        res.status(500).json({ message: 'Failed to remove permission', error });
+        res.status(500).json(failureBody('Failed to remove permission', error));
       }
     }
   );
@@ -1817,7 +1916,7 @@ export async function registerRoutes(
       const links = await storage.getPagePublicLinks(pageId);
       res.json(links);
     } catch (error) {
-      res.status(500).json({ message: 'Failed to get share links', error });
+      res.status(500).json(failureBody('Failed to get share links', error));
     }
   });
 
@@ -1856,7 +1955,7 @@ export async function registerRoutes(
       const { password, ...publicLink } = link;
       res.status(201).json(publicLink);
     } catch (error) {
-      res.status(400).json({ message: 'Failed to create share link', error });
+      res.status(400).json(failureBody('Failed to create share link', error));
     }
   });
 
@@ -1879,7 +1978,7 @@ export async function registerRoutes(
 
       res.json({ message: 'Share link deleted successfully' });
     } catch (error) {
-      res.status(500).json({ message: 'Failed to delete share link', error });
+      res.status(500).json(failureBody('Failed to delete share link', error));
     }
   });
 
@@ -1911,7 +2010,7 @@ export async function registerRoutes(
         isPublicLink: true,
       });
     } catch (error) {
-      res.status(500).json({ message: 'Failed to access shared page', error });
+      res.status(500).json(failureBody('Failed to access shared page', error));
     }
   });
 
@@ -1940,11 +2039,11 @@ export async function registerRoutes(
     '/api/pages/:id/children',
     optionalAuth,
     requirePagePermission('viewer'),
-    async (req, res) => {
+    async (req: AuthRequest, res) => {
       try {
         const parentId = parseInt(req.params.id);
-        const allPages = await storage.searchWikiPages({ query: '', limit: 1000, offset: 0 });
-        const children = allPages.pages.filter((p: any) => p.parentId === parentId);
+        // Reading the parent does not grant reading its children: list only readable ones.
+        const children = await storage.getReadableChildPages(parentId, req.user?.id);
         res.json(children);
       } catch (error) {
         console.error('Error fetching sub-pages:', error);
@@ -1974,12 +2073,16 @@ export async function registerRoutes(
       // If no teamId, scope to user's teams + unassigned pages
       if (!teamId && req.user?.id) {
         const userTeamIds = await storage.getUserTeamIds(req.user.id);
-        // Fetch pages for each team plus unassigned (global) pages
+        const viewer = await storage.getPageViewer(req.user.id);
+        // Fetch pages for each team plus unassigned (global) pages the caller can read
         const allResults = await Promise.all([
           ...userTeamIds.map((tid) =>
             storage.searchWikiPages({ query: '', teamId: String(tid), limit: 1000, offset: 0 })
           ),
-          storage.searchWikiPages({ query: '', teamId: 'null', limit: 1000, offset: 0 }),
+          storage.searchWikiPages(
+            { query: '', teamId: 'null', limit: 1000, offset: 0 },
+            { readableBy: viewer }
+          ),
         ]);
         const seenIds = new Set<number>();
         const allPagesRaw = allResults
@@ -2022,12 +2125,15 @@ export async function registerRoutes(
       }
 
       // teamId is specified (already membership-checked) OR dev unauthenticated (global only)
-      const allPages = await storage.searchWikiPages({
-        query: '',
-        teamId: teamId || 'null',
-        limit: 1000,
-        offset: 0,
-      });
+      const allPages = await storage.searchWikiPages(
+        {
+          query: '',
+          teamId: teamId || 'null',
+          limit: 1000,
+          offset: 0,
+        },
+        teamId ? {} : { readableBy: ANONYMOUS_PAGE_VIEWER }
+      );
 
       // Build tree structure
       const pages = allPages.pages.map((p: any) => ({
@@ -2484,7 +2590,7 @@ export async function registerRoutes(
     requireTeamMembership,
     async (req: AuthRequest, res) => {
       try {
-        const taskData = insertTaskSchema.parse(req.body);
+        const taskData = insertTaskSchema.parse(normalizeTaskDueDate(req.body));
         const task = await storage.createTask(taskData);
 
         // Trigger workflows for task_created event
@@ -2506,7 +2612,7 @@ export async function registerRoutes(
 
         res.status(201).json(task);
       } catch (error) {
-        res.status(400).json({ message: 'Invalid task data', error });
+        res.status(400).json(failureBody('Invalid task data', error));
       }
     }
   );
@@ -2539,7 +2645,7 @@ export async function registerRoutes(
         }
       }
 
-      const updateData = updateTaskSchema.parse(req.body);
+      const updateData = updateTaskSchema.parse(normalizeTaskDueDate(req.body));
 
       const task = await storage.updateTask(id, updateData);
 
@@ -2589,7 +2695,7 @@ export async function registerRoutes(
 
       res.json(task);
     } catch (error) {
-      res.status(400).json({ message: 'Invalid update data', error });
+      res.status(400).json(failureBody('Invalid update data', error));
     }
   });
 
@@ -2761,7 +2867,7 @@ export async function registerRoutes(
 
         res.status(201).json(notification);
       } catch (error) {
-        res.status(400).json({ message: 'Invalid notification data', error });
+        res.status(400).json(failureBody('Invalid notification data', error));
       }
     });
 
@@ -2800,7 +2906,7 @@ export async function registerRoutes(
 
         res.json(notification);
       } catch (error) {
-        res.status(400).json({ message: 'Invalid update data', error });
+        res.status(400).json(failureBody('Invalid update data', error));
       }
     });
 
@@ -3213,9 +3319,15 @@ export async function registerRoutes(
             return res.status(401).json({ error: 'Authentication required' });
           }
 
-          const success = await storage.deleteTeam(id);
-          if (!success) {
+          const result = await storage.deleteTeam(id);
+          if (result === 'not-found') {
             return res.status(404).json({ error: 'Team not found' });
+          }
+          if (result === 'has-pages') {
+            return res.status(409).json({
+              error:
+                'The team still has pages. Move or delete them, including those in the trash, before deleting the team.',
+            });
           }
           res.status(204).send();
         } catch (error) {

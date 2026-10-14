@@ -198,6 +198,9 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
     },
     onSuccess: (updatedPage: WikiPage) => {
       queryClient.invalidateQueries({ queryKey: [`/api/pages/${pageId}`] });
+      // The reader view loads by slug; without this it keeps showing the pre-edit page
+      // (queries never go stale on their own) after navigating back below.
+      queryClient.invalidateQueries({ queryKey: [`/api/pages/slug/${updatedPage.slug}`] });
       queryClient.invalidateQueries({ queryKey: ['/api/pages'] });
       queryClient.invalidateQueries({ queryKey: [`/api/folders/${updatedPage.folder}/pages`] });
       toast({
@@ -273,7 +276,9 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
   if (teamScopeUnavailable) {
     return (
       <div className="p-6" role="alert">
-        <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Team workspace unavailable</h1>
+        <h1 className="text-xl font-semibold text-slate-900 dark:text-white">
+          Team workspace unavailable
+        </h1>
         <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
           This team is not accessible or could not be resolved.
         </p>
