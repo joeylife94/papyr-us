@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { useFeatureFlags } from '@/features/FeatureFlagsContext';
 import { isRuntimeFeatureEnabled } from '@/features/runtimeFeatureGates';
+import { useWorkspaceScope } from '@/hooks/useActiveWorkspace';
 
 import {
   Book,
@@ -59,17 +60,21 @@ const folderColors: Record<string, string> = {
 
 export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: SidebarProps) {
   const { pathname } = useLocation();
-  const activeTeamSlug = pathname.match(/^\/teams\/([^/]+)(?:\/|$)/)?.[1];
-  const activeTeamPrefix = activeTeamSlug ? `/teams/${activeTeamSlug}` : null;
-  const documentsHref = activeTeamPrefix ? `${activeTeamPrefix}/pages` : '/';
-  const createHref = activeTeamPrefix ? `${activeTeamPrefix}/create` : '/';
+  const workspaceScope = useWorkspaceScope();
+  const workspace = workspaceScope.kind === 'team' ? workspaceScope.workspace : null;
+  const activeTeamPrefix = workspace?.basePath ?? null;
+  const documentsHref = workspace?.documentsPath ?? '/';
+  const createHref = workspace?.createPath ?? '/create';
+  // Reading or editing a document keeps "Documents" highlighted; aria-current stays on the list.
+  const isDocumentsSection =
+    pathname === documentsHref || pathname.startsWith('/page/') || pathname.startsWith('/edit/');
   const { flags } = useFeatureFlags();
   const showCollaborationTest = isRuntimeFeatureEnabled(flags, 'collaborationTest');
   const showAiSearch = isRuntimeFeatureEnabled(flags, 'aiSearch');
   const showKnowledgeGraph = isRuntimeFeatureEnabled(flags, 'knowledgeGraph');
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
-    docs: true, // docs expanded by default
-  });
+  // Folders are a secondary browse path, so they start collapsed and are fetched on demand;
+  // the workspace document list is the primary entry point.
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
   const [passwordPrompt, setPasswordPrompt] = useState<{ teamName: string; teamId: number } | null>(
     null
   );
@@ -255,10 +260,30 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
         <div className="p-4">
           {/* Mobile Close Button */}
           <div className="flex justify-end mb-4 lg:hidden">
-            <Button variant="ghost" size="mobile" onClick={onClose} className="h-10 w-10" aria-label="메뉴 닫기">
+            <Button
+              variant="ghost"
+              size="mobile"
+              onClick={onClose}
+              className="h-10 w-10"
+              aria-label="메뉴 닫기"
+            >
               <X className="h-5 w-5" />
             </Button>
           </div>
+
+          {/* Current workspace context; hidden where the route is not workspace-scoped. */}
+          {workspaceScope.kind !== 'unknown' && (
+            <div
+              role="group"
+              aria-label="현재 워크스페이스"
+              className="mb-4 rounded-lg border border-slate-200 px-3 py-2.5 dark:border-slate-800"
+            >
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">워크스페이스</p>
+              <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">
+                {workspace ? workspace.displayName : '내 문서'}
+              </p>
+            </div>
+          )}
 
           {/* Primary workspace navigation */}
           <nav className="mb-6 space-y-1" aria-label="주요 메뉴">
@@ -268,7 +293,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
               aria-current={pathname === documentsHref ? 'page' : undefined}
               className={cn(
                 'flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                pathname === documentsHref
+                isDocumentsSection
                   ? 'bg-primary/10 text-primary'
                   : 'text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800'
               )}
@@ -290,7 +315,9 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                   aria-current={pathname === `${activeTeamPrefix}/tasks` ? 'page' : undefined}
                   className={cn(
                     'flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800',
-                    pathname === `${activeTeamPrefix}/tasks` ? 'bg-primary/10 font-medium text-primary' : 'text-slate-700 dark:text-slate-200'
+                    pathname === `${activeTeamPrefix}/tasks`
+                      ? 'bg-primary/10 font-medium text-primary'
+                      : 'text-slate-700 dark:text-slate-200'
                   )}
                 >
                   <CheckSquare className="h-4 w-4" /> 할 일
@@ -302,19 +329,36 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                     aria-current={pathname === `${activeTeamPrefix}/calendar` ? 'page' : undefined}
                     className={cn(
                       'flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800',
-                      pathname === `${activeTeamPrefix}/calendar` ? 'bg-primary/10 font-medium text-primary' : 'text-slate-700 dark:text-slate-200'
+                      pathname === `${activeTeamPrefix}/calendar`
+                        ? 'bg-primary/10 font-medium text-primary'
+                        : 'text-slate-700 dark:text-slate-200'
                     )}
                   >
                     <Calendar className="h-4 w-4" /> 캘린더
                   </Link>
                 )}
+                <Link
+                  to={`${activeTeamPrefix}/members`}
+                  onClick={onClose}
+                  aria-current={pathname === `${activeTeamPrefix}/members` ? 'page' : undefined}
+                  className={cn(
+                    'flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800',
+                    pathname === `${activeTeamPrefix}/members`
+                      ? 'bg-primary/10 font-medium text-primary'
+                      : 'text-slate-700 dark:text-slate-200'
+                  )}
+                >
+                  <Users className="h-4 w-4" /> 팀원
+                </Link>
               </>
             )}
           </nav>
 
           {/* Secondary tools remain available without dominating the sidebar. */}
           <details className="mb-6 rounded-lg border border-slate-200 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-800/30">
-            <summary className="cursor-pointer rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white">기타 도구</summary>
+            <summary className="cursor-pointer rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white">
+              기타 도구
+            </summary>
             <div className="space-y-2 px-2 pb-3 pt-1">
               <Link to="/dashboard">
                 <Button variant="outline" className="w-full justify-start">
@@ -376,7 +420,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
             <div className="mb-6">
               <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 flex items-center">
                 <Users className="h-4 w-4 text-emerald-500 mr-2" />
-                워크스페이스
+                워크스페이스 목록
                 {teamsLoading && <span className="ml-2 text-xs text-slate-400">(로딩 중...)</span>}
               </h3>
 
@@ -531,7 +575,8 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
           </div>
 
           {/* Navigation Tree */}
-          <nav className="space-y-2">
+          <h3 className="mb-3 text-sm font-semibold text-slate-900 dark:text-white">폴더</h3>
+          <nav className="space-y-2" aria-label="폴더">
             {directories.map((directory) => {
               const Icon = folderIcons[directory.name as keyof typeof folderIcons] || Book;
               const iconColor =
@@ -585,8 +630,8 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                       {folderPages.length === 0 && (
                         <div className="p-3 text-xs text-slate-400 italic bg-slate-50/50 dark:bg-slate-800/30 rounded-lg">
                           {searchQuery.trim()
-                            ? 'No matching pages found'
-                            : 'No pages in this section'}
+                            ? '일치하는 문서가 없습니다'
+                            : '이 폴더에 문서가 없습니다'}
                         </div>
                       )}
                     </div>

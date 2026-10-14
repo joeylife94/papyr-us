@@ -149,7 +149,8 @@
   /* Skip to main content link */
   .skip-link {
     position: absolute;
-    top: -40px;
+    /* Clear the 44px mobile touch-target min-height so no sliver shows above the header. */
+    top: -60px;
     left: 6px;
     background: hsl(217, 91%, 59%);
     color: white;

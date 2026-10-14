@@ -78,7 +78,8 @@ const HomeWrapper = () => {
 
 function AppLayout() {
   const { pathname } = useLocation();
-  const isDocumentRoute = /^\/(page|edit|create)(\/|$)/.test(pathname) || /^\/teams\/[^/]+\/create$/.test(pathname);
+  const isDocumentRoute =
+    /^\/(page|edit|create)(\/|$)/.test(pathname) || /^\/teams\/[^/]+\/create$/.test(pathname);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -103,7 +104,9 @@ function AppLayout() {
         />
 
         <main id="main-content" className="min-w-0 flex-1 lg:ml-72">
-          <div className={`mx-auto w-full px-4 py-6 md:px-8 md:py-8 ${isDocumentRoute ? 'max-w-[1180px]' : 'max-w-[1480px]'}`}>
+          <div
+            className={`mx-auto w-full px-4 py-6 md:px-8 md:py-8 ${isDocumentRoute ? 'max-w-[1180px]' : 'max-w-[1480px]'}`}
+          >
             <Suspense fallback={<div>Loading page...</div>}>
               <Outlet />
             </Suspense>

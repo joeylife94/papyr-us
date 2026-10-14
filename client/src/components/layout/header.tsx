@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/hooks/use-theme';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useActiveWorkspace } from '@/hooks/useActiveWorkspace';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { SearchBar } from '@/components/wiki/search-bar';
 import { NotificationBell } from '@/components/ui/notification-bell';
@@ -38,9 +39,7 @@ export function Header({ onToggleSidebar, searchQuery, onSearchChange }: HeaderP
   const { theme, toggleTheme } = useTheme();
   const { isAuthenticated, user, logout } = useAuth();
   const navigate = useNavigate();
-  const { pathname } = useLocation();
-  const teamSegment = pathname.match(/^\/teams\/([^/]+)(?:\/|$)/)?.[1];
-  const activeTeamName = teamSegment ? decodeURIComponent(teamSegment) : null;
+  const workspace = useActiveWorkspace();
   const [showMobileSearch, setShowMobileSearch] = useState(false);
   const { flags } = useFeatureFlags();
   const enableNotifications = flags.FEATURE_NOTIFICATIONS && flags.FEATURE_TEAMS;
@@ -69,23 +68,36 @@ export function Header({ onToggleSidebar, searchQuery, onSearchChange }: HeaderP
         Skip to main content
       </a>
       <div className="flex items-center justify-between px-4 h-16">
-        <div className="flex items-center space-x-3">
-          <Button variant="ghost" size="icon" className="lg:hidden" onClick={onToggleSidebar} aria-label="메뉴 열기">
+        <div className="flex min-w-0 items-center space-x-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="lg:hidden"
+            onClick={onToggleSidebar}
+            aria-label="메뉴 열기"
+          >
             <Menu className="h-5 w-5" />
           </Button>
           <Link
             to="/"
-            className="flex items-center space-x-2 hover:opacity-80 transition-opacity cursor-pointer"
+            className="flex shrink-0 items-center space-x-2 hover:opacity-80 transition-opacity cursor-pointer"
           >
             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
               <ScrollText className="h-4 w-4 text-white" />
             </div>
-            <h1 className="text-xl font-bold text-slate-900 dark:text-white">Papyr.us</h1>
+            {/* Phone widths keep the icon only; the name stays available to assistive tech. */}
+            <h1 className="sr-only text-xl font-bold text-slate-900 dark:text-white sm:not-sr-only">
+              Papyr.us
+            </h1>
           </Link>
-          {activeTeamName && (
-            <div className="hidden sm:flex min-w-0 items-center gap-2 border-l border-slate-200 pl-3 dark:border-slate-700" aria-label="현재 워크스페이스">
-              <span className="truncate text-sm font-medium text-slate-600 dark:text-slate-300">{activeTeamName}</span>
-            </div>
+          {workspace && (
+            <Link
+              to={workspace.documentsPath}
+              aria-label={`현재 워크스페이스: ${workspace.displayName}`}
+              className="hidden min-w-0 max-w-[16rem] items-center border-l border-slate-200 pl-3 text-sm font-medium text-slate-600 transition-colors hover:text-slate-900 dark:border-slate-700 dark:text-slate-300 dark:hover:text-white sm:flex"
+            >
+              <span className="truncate">{workspace.displayName}</span>
+            </Link>
           )}
         </div>
 
