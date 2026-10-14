@@ -107,4 +107,47 @@ describe('Task Management API', () => {
     expect(response.status).toBe(200);
     expect(response.body.message).toBe('Task deleted successfully');
   });
+
+  it('TC-TASK-007: should create a task with an empty due date as no due date', async () => {
+    (storage.createTask as vi.Mock).mockImplementation(async (data: any) => ({ ...data, id: 3 }));
+
+    const response = await request(app)
+      .post('/api/tasks')
+      .send({ title: 'No deadline', teamId: 'dev-team', dueDate: '' });
+
+    expect(response.status).toBe(201);
+    expect((storage.createTask as vi.Mock).mock.calls[0][0].dueDate).toBeNull();
+  });
+
+  it('TC-TASK-008: should create a task with a date-string due date', async () => {
+    (storage.createTask as vi.Mock).mockImplementation(async (data: any) => ({ ...data, id: 4 }));
+
+    const response = await request(app)
+      .post('/api/tasks')
+      .send({ title: 'Has deadline', teamId: 'dev-team', dueDate: '2026-10-20' });
+
+    expect(response.status).toBe(201);
+    const persisted = (storage.createTask as vi.Mock).mock.calls[0][0].dueDate;
+    expect(persisted).toBeInstanceOf(Date);
+    expect(persisted.toISOString()).toBe('2026-10-20T00:00:00.000Z');
+  });
+
+  it('TC-TASK-009: should reject an unparseable due date', async () => {
+    const response = await request(app)
+      .post('/api/tasks')
+      .send({ title: 'Bad deadline', teamId: 'dev-team', dueDate: 'not-a-date' });
+
+    expect(response.status).toBe(400);
+    expect(storage.createTask).not.toHaveBeenCalled();
+  });
+
+  it('TC-TASK-010: should clear the due date when an update sends an empty due date', async () => {
+    (storage.getTask as vi.Mock).mockResolvedValue({ ...mockTask, dueDate: new Date() });
+    (storage.updateTask as vi.Mock).mockResolvedValue({ ...mockTask, dueDate: null });
+
+    const response = await request(app).put(`/api/tasks/${mockTask.id}`).send({ dueDate: '' });
+
+    expect(response.status).toBe(200);
+    expect((storage.updateTask as vi.Mock).mock.calls[0][1].dueDate).toBeNull();
+  });
 });
