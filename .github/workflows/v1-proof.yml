@@ -8,10 +8,13 @@ on:
       - 'tests/proof-v1.spec.ts'
       - 'tests/team-creator-owner.spec.ts'
       - 'tests/d1-02-team-admission.spec.ts'
+      - 'tests/d2-01-invitation-onboarding.spec.ts'
       - 'server/routes.ts'
       - 'server/storage.ts'
       - 'server/index.ts'
       - 'server/team-membership-routes.ts'
+      - 'server/team-invitation-routes.ts'
+      - 'shared/schema.ts'
       - '.github/workflows/v1-proof.yml'
   workflow_dispatch: {}
 
@@ -64,6 +67,9 @@ jobs:
 
       - name: Verify D1 small-team handoff acceptance
         run: npx playwright test tests/d1-02-team-admission.spec.ts --project=chromium --reporter=dot
+
+      - name: Verify D2 invite-driven onboarding acceptance
+        run: npx playwright test tests/d2-01-invitation-onboarding.spec.ts --project=chromium --reporter=dot
 
       - name: Generate fresh v1.0 browser proof
         run: npx playwright test tests/proof-v1.spec.ts --project=chromium --reporter=dot

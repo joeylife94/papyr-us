@@ -18,6 +18,7 @@ import express from 'express';
 import { registerRoutes } from './routes.js';
 import { registerOperationalRoutes } from './operational.js';
 import { registerTeamMembershipRoutes } from './team-membership-routes.js';
+import { registerTeamInvitationRoutes } from './team-invitation-routes.js';
 import { serveStaticAssets, serveIndex } from './static.js';
 import {
   log,
@@ -52,7 +53,7 @@ try {
 app.use(sentryRequestHandler());
 app.use(sentryTracingHandler());
 
-// Request context (request ID) middleware - enables request tracing
+// Request context (request ID) middleware
 app.use(requestContextMiddleware);
 
 // Prometheus metrics middleware
@@ -70,6 +71,7 @@ setupSecurity(app);
   // Register deterministic operational endpoints before the legacy route bundle.
   registerOperationalRoutes(app, storage);
   registerTeamMembershipRoutes(app, storage);
+  registerTeamInvitationRoutes(app, storage);
   serveStaticAssets(app);
   const { httpServer } = await registerRoutes(app, storage);
 
@@ -119,7 +121,7 @@ setupSecurity(app);
       log('[SHUTDOWN] Forced exit after timeout.', 'error');
       process.exit(1);
     }, 10_000);
-    forceTimer.unref(); // Don't keep process alive just for this timer
+    forceTimer.unref();
 
     httpServer.close(async () => {
       log('[SHUTDOWN] HTTP server closed.');
@@ -136,11 +138,9 @@ setupSecurity(app);
     });
   };
 
-  // Allow disabling SIGINT handling in dev/smoke to avoid shared-terminal Ctrl+C side effects
   const ignoreSigint =
     (process.env.IGNORE_SIGINT || '').toLowerCase() === '1' ||
     (process.env.IGNORE_SIGINT || '').toLowerCase() === 'true';
-  // In test/dev smokes, prevent CTRL+C or child process exits from taking down the server
   if (!ignoreSigint) {
     process.on('SIGINT', () => shutdown('SIGINT'));
   }
@@ -150,7 +150,6 @@ setupSecurity(app);
   process.exit(1);
 });
 
-// Global safety nets — prevent the process from crashing on stray errors
 process.on('uncaughtException', (err) => {
   console.error('[uncaughtException]', err);
   if (process.env.NODE_ENV === 'production') process.exit(1);
