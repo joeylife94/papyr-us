@@ -2,12 +2,11 @@ import { useInfiniteQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useActiveWorkspace } from '@/hooks/useActiveWorkspace';
 import { toPlainTextPreview } from '@/lib/markdown';
-import { Book, Clock, Plus, User } from 'lucide-react';
+import { Book, Plus, User } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import type { WikiPage } from '@shared/schema';
@@ -17,6 +16,8 @@ interface HomeProps {
   selectedFolder: string;
   teamName?: string;
 }
+
+const ROW_GRID = 'md:grid-cols-[minmax(0,1fr)_110px_140px_100px]';
 
 export default function Home({ searchQuery, selectedFolder, teamName }: HomeProps) {
   const navigate = useNavigate();
@@ -74,158 +75,192 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
       ? ((data as any).pages as any[]).flatMap((p: any) => p.pages as WikiPage[])
       : []
   ) as WikiPage[];
+  const listLabel = teamName ? '문서 목록' : '최근 문서';
 
   return (
-    <div className="space-y-8">
-      {/* Workspace heading: documents are the primary action, not dashboard statistics. */}
-      <div className="flex flex-col gap-4 border-b border-border pb-6 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0 space-y-2">
-          <p className="truncate text-sm font-medium text-muted-foreground">
+    <div className="space-y-6 pb-16 lg:pb-0">
+      {/* Workspace heading: the document list is the primary surface, creation the primary action. */}
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0 space-y-1.5">
+          <p className="truncate text-[13px] text-muted-foreground">
             {teamName ? `${workspace?.displayName ?? teamName} · 워크스페이스` : '개인 문서 공간'}
           </p>
-          <h1 className="break-words break-keep text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-            {teamName ? `${teamName} 팀 문서` : '내 문서'}
-          </h1>
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+            <h1 className="break-words break-keep text-2xl font-extrabold tracking-tight text-foreground sm:text-[28px]">
+              {teamName ? `${teamName} 팀 문서` : '내 문서'}
+            </h1>
+            {!isLoading && !error && (
+              <span className="font-mono text-sm tabular-nums text-muted-foreground">
+                문서 {totalCount}개
+              </span>
+            )}
+          </div>
           <p className="text-sm text-foreground-secondary">
             {teamName
               ? '팀의 문서를 확인하고 함께 작업하세요.'
               : '최근 문서를 확인하거나 새 문서를 작성하세요.'}
           </p>
         </div>
-        <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-end">
-          {!isLoading && !error && (
-            <span className="text-sm tabular-nums text-muted-foreground">문서 {totalCount}개</span>
-          )}
-          {/* A button (not a link) keeps the accepted GJ-01 / buyer-proof locator contract. */}
-          <Button onClick={() => navigate(createPath)} className="gap-2 shadow-sm">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2">
+            <label htmlFor="page-sort" className="text-[13px] text-muted-foreground">
+              정렬
+            </label>
+            <select
+              id="page-sort"
+              className="h-9 rounded-lg border border-border bg-card px-2.5 text-[13.5px] text-foreground"
+              value={effectiveSort}
+              onChange={(e) => setSort(e.target.value as 'updated' | 'rank')}
+              disabled={!!searchQuery}
+              title={searchQuery ? '검색 시 자동으로 관련도순 정렬됩니다' : '정렬 방식 선택'}
+            >
+              <option value="updated">최신순</option>
+              <option value="rank">관련도순</option>
+            </select>
+          </div>
+          {/* A button (not a link) keeps the accepted GJ-01 / buyer-proof locator contract.
+              Below the desktop breakpoint the floating button takes over. */}
+          <Button
+            onClick={() => navigate(createPath)}
+            className="hidden gap-2 font-bold lg:inline-flex"
+          >
             <Plus className="h-4 w-4" />새 문서 작성
           </Button>
         </div>
-      </div>
+      </header>
 
-      {/* Recent Pages */}
-      <div>
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold text-foreground">
-            {teamName ? '문서 목록' : '최근 문서'}
-          </h2>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <label htmlFor="page-sort" className="text-sm text-foreground-secondary">
-                정렬
-              </label>
-              <select
-                id="page-sort"
-                className="text-sm border rounded-md px-2 py-1 bg-card"
-                value={effectiveSort}
-                onChange={(e) => setSort(e.target.value as 'updated' | 'rank')}
-                disabled={!!searchQuery}
-                title={searchQuery ? '검색 시 자동으로 관련도순 정렬됩니다' : '정렬 방식 선택'}
-              >
-                <option value="updated">최신순</option>
-                <option value="rank">관련도순</option>
-              </select>
-            </div>
+      <section aria-label={listLabel}>
+        {error ? (
+          <div className="rounded-xl border border-border bg-card px-4 py-12 text-center">
+            <Book className="mx-auto mb-2 h-10 w-10 text-destructive" />
+            <p className="text-base font-semibold text-foreground">
+              데이터를 불러오는데 실패했습니다
+            </p>
+            <p className="text-sm text-foreground-secondary">잠시 후 다시 시도해주세요.</p>
           </div>
-        </div>
-
-        {isLoading ? (
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <Card key={i}>
-                <CardHeader>
-                  <Skeleton className="h-4 w-3/4" />
-                  <Skeleton className="h-3 w-1/2" />
-                </CardHeader>
-                <CardContent>
-                  <Skeleton className="h-20 w-full" />
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        ) : error ? (
-          <div className="text-center py-12">
-            <div className="text-destructive mb-4">
-              <Book className="h-12 w-12 mx-auto mb-2" />
-              <p className="text-lg font-medium">데이터를 불러오는데 실패했습니다</p>
-              <p className="text-sm text-foreground-secondary">잠시 후 다시 시도해주세요.</p>
-            </div>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            {flatPages.map((page: WikiPage) => (
-              <Link
-                key={page.id}
-                to={`/page/${page.slug}`}
-                className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              >
-                <Card className="group h-full border border-border transition-colors duration-150 hover:border-primary/50 hover:bg-muted/70">
-                  <CardHeader className="space-y-2 p-4 sm:p-5">
-                    <CardTitle className="text-base font-semibold leading-snug line-clamp-2 sm:text-lg">
-                      {renderHighlighted(page.title, searchQuery)}
-                    </CardTitle>
-                    <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground sm:text-sm">
-                      <div className="flex min-w-0 items-center gap-1">
-                        <User className="h-3 w-3 shrink-0" />
-                        <span className="truncate">{page.author}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Clock className="h-3 w-3 shrink-0" />
-                        <span>
-                          {formatDistanceToNow(new Date(page.updatedAt), {
-                            addSuffix: true,
-                            locale: ko,
-                          })}
-                        </span>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="p-4 pt-0 sm:p-5 sm:pt-0">
-                    <div className="space-y-3">
-                      <p className="text-sm text-foreground-secondary line-clamp-2">
-                        {renderHighlighted(toPlainTextPreview(page.content), searchQuery)}
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        <Badge variant="secondary" className="capitalize">
-                          {page.folder}
-                        </Badge>
-                        {page.tags.slice(0, 2).map((tag: string) => (
-                          <Badge key={tag} variant="outline">
-                            {tag}
-                          </Badge>
-                        ))}
-                        {page.tags.length > 2 && (
-                          <Badge variant="outline">+{page.tags.length - 2}개 더</Badge>
-                        )}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
-          </div>
-        )}
-        {flatPages.length === 0 && !isLoading && !error && (
-          <div className="rounded-xl border border-dashed border-border px-4 py-10 text-center">
-            <Book className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
+        ) : !isLoading && flatPages.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border px-4 py-12 text-center">
+            <Book className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
             {/* The workspace name is already in the page heading; repeating it here would also
                 make the accepted `${team} 팀 문서` heading locator ambiguous. */}
-            <h3 className="text-base font-medium text-foreground mb-1">아직 문서가 없습니다</h3>
+            <h3 className="mb-1 text-base font-semibold text-foreground">아직 문서가 없습니다</h3>
             <p className="text-sm text-foreground-secondary">
               {teamName
                 ? "'새 문서 작성'으로 팀의 첫 문서를 만들어 보세요."
                 : "'새 문서 작성'으로 첫 문서를 만들어 보세요."}
             </p>
           </div>
+        ) : (
+          // One responsive structure, not separate desktop and mobile copies, so each title
+          // appears exactly once.
+          <div
+            role="table"
+            aria-label={listLabel}
+            className="overflow-hidden rounded-xl border border-border bg-card"
+          >
+            <div
+              role="row"
+              className={`hidden h-10 items-center gap-4 border-b border-border px-[18px] font-mono text-[11px] text-muted-foreground md:grid ${ROW_GRID}`}
+            >
+              <span role="columnheader">제목</span>
+              <span role="columnheader">폴더</span>
+              <span role="columnheader">작성자</span>
+              <span role="columnheader" className="text-right">
+                수정
+              </span>
+            </div>
+            {isLoading
+              ? Array.from({ length: 6 }).map((_, i) => (
+                  <div
+                    key={i}
+                    role="row"
+                    className="flex flex-col gap-2 border-b border-border px-4 py-4 last:border-b-0 md:px-[18px]"
+                  >
+                    <Skeleton className="h-4 w-2/5" />
+                    <Skeleton className="h-3 w-3/5" />
+                  </div>
+                ))
+              : flatPages.map((page: WikiPage) => (
+                  <PageRow key={page.id} page={page} searchQuery={searchQuery} />
+                ))}
+          </div>
         )}
 
         {flatPages.length > 0 && hasNextPage && (
-          <div className="flex justify-center mt-8">
+          <div className="mt-6 flex justify-center">
             <Button variant="outline" onClick={() => fetchNextPage()} disabled={isFetchingNextPage}>
               {isFetchingNextPage ? '로딩 중…' : '더 보기'}
             </Button>
           </div>
         )}
+      </section>
+
+      {/* Below the desktop breakpoint the create action floats above the mobile tab bar. */}
+      <Button
+        onClick={() => navigate(createPath)}
+        className="fixed bottom-20 right-4 z-30 h-[52px] gap-2 rounded-2xl px-5 text-[14.5px] font-extrabold shadow-xl lg:hidden"
+      >
+        <Plus className="h-[18px] w-[18px]" />새 문서 작성
+      </Button>
+    </div>
+  );
+}
+
+function PageRow({ page, searchQuery }: { page: WikiPage; searchQuery: string }) {
+  const updated = formatDistanceToNow(new Date(page.updatedAt), { addSuffix: true, locale: ko });
+
+  return (
+    <div
+      role="row"
+      className={`relative grid gap-x-4 gap-y-1 border-b border-border px-4 py-3.5 transition-colors last:border-b-0 hover:bg-accent md:items-center md:px-[18px] ${ROW_GRID}`}
+    >
+      <div role="cell" className="flex min-w-0 flex-col gap-1">
+        {/* The title link stretches over the row, so the whole row is the click target. */}
+        <Link
+          to={`/page/${page.slug}`}
+          className="truncate text-[15px] font-bold text-foreground after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:rounded-md focus-visible:after:ring-2 focus-visible:after:ring-ring"
+        >
+          {renderHighlighted(page.title, searchQuery)}
+        </Link>
+        <p className="truncate text-[13px] text-muted-foreground">
+          {renderHighlighted(toPlainTextPreview(page.content), searchQuery)}
+        </p>
+        {page.tags.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 pt-0.5">
+            {page.tags.slice(0, 2).map((tag: string) => (
+              <Badge key={tag} variant="outline" className="h-5 px-1.5 text-[11px] font-normal">
+                {tag}
+              </Badge>
+            ))}
+            {page.tags.length > 2 && (
+              <Badge variant="outline" className="h-5 px-1.5 text-[11px] font-normal">
+                +{page.tags.length - 2}
+              </Badge>
+            )}
+          </div>
+        )}
+        {/* Phones show folder, author and time on one line instead of columns. */}
+        <p className="font-mono text-[11.5px] text-muted-foreground md:hidden">
+          {page.folder} · {page.author} · {updated}
+        </p>
+      </div>
+      <div role="cell" className="hidden md:block">
+        <span className="rounded-md border border-border px-2 py-0.5 text-xs capitalize text-foreground-secondary">
+          {page.folder}
+        </span>
+      </div>
+      <div
+        role="cell"
+        className="hidden min-w-0 items-center gap-2 text-[13px] text-foreground-secondary md:flex"
+      >
+        <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <span className="truncate">{page.author}</span>
+      </div>
+      <div
+        role="cell"
+        className="hidden text-right font-mono text-xs text-muted-foreground md:block"
+      >
+        <time dateTime={new Date(page.updatedAt).toISOString()}>{updated}</time>
       </div>
     </div>
   );
