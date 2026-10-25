@@ -27,7 +27,17 @@ import {
   Video,
   Sigma,
   Link2,
+  GripVertical,
 } from 'lucide-react';
+import {
+  DragDropContext,
+  Draggable,
+  Droppable,
+  type DropResult,
+  type ResponderProvided,
+} from '@hello-pangea/dnd';
+import { cn } from '@/lib/utils';
+import { moveBlock as reorderBlocks } from '@/lib/block-order';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -318,6 +328,58 @@ export function BlockEditor({
     [blocks, onChange, pageId, collaboration, useYjs, yjsCollaboration]
   );
 
+  // 블록 이동 함수 (issue #103 E3): drag, Alt+↑/↓ and the drag handle's keyboard mode.
+  const moveBlockAt = useCallback(
+    (from: number, to: number) => {
+      if (from === to || to < 0 || to >= blocks.length) return;
+      if (useYjs && yjsCollaboration.isSynced) {
+        // Yjs CRDT: one transaction, so collaborators converge on the new order.
+        yjsCollaboration.moveBlock(from, to);
+      } else {
+        // The legacy Socket.IO channel has no move; pages edit through Yjs or autosave.
+        onChange(reorderBlocks(blocks, from, to));
+      }
+    },
+    [blocks, onChange, useYjs, yjsCollaboration]
+  );
+
+  // Screen reader feedback for Alt+↑/↓ moves (drags announce through the dnd library).
+  const [moveAnnouncement, setMoveAnnouncement] = useState('');
+
+  const handleRowKeyDown = (event: React.KeyboardEvent, index: number) => {
+    if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+    event.preventDefault();
+    const to = event.key === 'ArrowUp' ? index - 1 : index + 1;
+    if (to < 0 || to >= blocks.length) return;
+
+    // Reordering can move the focused element in the DOM, which drops focus; put it back.
+    const active = document.activeElement as HTMLElement | null;
+    const caret =
+      active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement
+        ? [active.selectionStart, active.selectionEnd]
+        : null;
+    moveBlockAt(index, to);
+    setMoveAnnouncement(`블록을 ${to + 1}번째 위치로 옮겼습니다 (${blocks.length}개 중)`);
+    requestAnimationFrame(() => {
+      if (!active?.isConnected) return;
+      if (document.activeElement !== active) active.focus();
+      if (caret && (active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement)) {
+        active.setSelectionRange(caret[0], caret[1]);
+      }
+    });
+  };
+
+  const handleDragEnd = (result: DropResult, provided: ResponderProvided) => {
+    if (!result.destination) {
+      provided.announce('블록 이동을 취소했습니다');
+      return;
+    }
+    const to = result.destination.index;
+    moveBlockAt(result.source.index, to);
+    provided.announce(`블록을 ${to + 1}번째 위치에 놓았습니다`);
+  };
+
   // Keep refs in sync so handleSlashSelect can call these without circular dependency
   addBlockRef.current = addBlock;
   updateBlockRef.current = updateBlock;
@@ -480,7 +542,7 @@ export function BlockEditor({
   return (
     <div
       ref={editorContainerRef}
-      className="block-editor min-h-[400px] p-4 relative"
+      className="block-editor relative min-h-[400px] py-2 sm:py-4"
       onMouseMove={(e) => {
         // Update cursor position for Yjs collaboration
         if (useYjs && yjsCollaboration.isConnected && pageId) {
@@ -631,7 +693,75 @@ export function BlockEditor({
         </div>
       ) : (
         <div className="space-y-2">
-          {blocks.map((block, index) => renderBlock(block, index))}
+          <DragDropContext
+            onDragStart={(start, provided) =>
+              provided.announce(`${start.source.index + 1}번째 블록을 들었습니다`)
+            }
+            onDragUpdate={(update, provided) => {
+              if (update.destination) {
+                provided.announce(`${update.destination.index + 1}번째 위치`);
+              }
+            }}
+            onDragEnd={handleDragEnd}
+            dragHandleUsageInstructions="스페이스바로 블록을 들고 위아래 화살표로 옮긴 뒤 스페이스바로 놓습니다. Esc로 취소합니다. 블록 안에서는 Alt+위/아래 화살표로도 옮길 수 있습니다."
+          >
+            <Droppable droppableId="page-blocks">
+              {(dropProvided) => (
+                <div
+                  ref={dropProvided.innerRef}
+                  {...dropProvided.droppableProps}
+                  className="space-y-1"
+                >
+                  {blocks.map((block, index) => (
+                    <Draggable key={block.id} draggableId={block.id} index={index}>
+                      {(dragProvided, snapshot) => (
+                        <div
+                          ref={dragProvided.innerRef}
+                          {...dragProvided.draggableProps}
+                          data-block-row={block.id}
+                          onKeyDown={(event) => handleRowKeyDown(event, index)}
+                          className={cn(
+                            // The gutter hangs into the left margin so text lines up near the title.
+                            'group/row relative -ml-4 flex items-start gap-0.5 sm:-ml-12 sm:gap-1',
+                            snapshot.isDragging && 'rounded-lg bg-card shadow-lg ring-1 ring-border'
+                          )}
+                        >
+                          {/* Gutter: insert below and the drag handle (keyboard: Space). The
+                              targets are 24px on touch screens (WCAG 2.5.8); `!min-*` overrides
+                              the global 44px mobile minimum, which would double the gutter. */}
+                          <div className="flex w-6 shrink-0 items-center justify-end gap-0.5 pt-2 opacity-0 transition-opacity focus-within:opacity-100 group-hover/row:opacity-100 [@media(hover:none)]:opacity-60 sm:w-11 sm:pt-2.5">
+                            <button
+                              type="button"
+                              onClick={() => addBlock(index + 1, 'paragraph')}
+                              aria-label="아래에 블록 추가"
+                              title="아래에 블록 추가"
+                              className="hidden h-5 w-5 !min-h-0 !min-w-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:inline-flex"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </button>
+                            <div
+                              {...dragProvided.dragHandleProps}
+                              aria-label={`블록 ${index + 1} 이동`}
+                              title="드래그해서 이동"
+                              data-testid="block-drag-handle"
+                              className="inline-flex h-6 w-6 !min-h-0 !min-w-0 cursor-grab items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing sm:h-5 sm:w-5"
+                            >
+                              <GripVertical className="h-4 w-4" />
+                            </div>
+                          </div>
+                          <div className="min-w-0 flex-1">{renderBlock(block, index)}</div>
+                        </div>
+                      )}
+                    </Draggable>
+                  ))}
+                  {dropProvided.placeholder}
+                </div>
+              )}
+            </Droppable>
+          </DragDropContext>
+          <p className="sr-only" role="status" aria-live="polite">
+            {moveAnnouncement}
+          </p>
 
           {/* 마지막에 새 블록 추가 버튼 */}
           <div className="flex justify-center pt-4">

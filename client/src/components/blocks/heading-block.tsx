@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Block, BlockType } from '@shared/schema';
-import { Trash2, Type } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface HeadingBlockProps {
@@ -93,12 +93,7 @@ export function HeadingBlock({
       onFocus={onFocus}
       onBlur={onBlur}
     >
-      {/* 블록 타입 표시 */}
-      <div className="absolute left-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity">
-        <Type className="h-4 w-4 text-muted-foreground" />
-      </div>
-
-      {/* 제목 입력 */}
+      {/* 제목 입력 (블록 핸들은 에디터의 왼쪽 여백에 있다) */}
       <textarea
         ref={textareaRef}
         value={content}
@@ -107,7 +102,7 @@ export function HeadingBlock({
         onFocus={onFocus}
         onBlur={onBlur}
         placeholder={getPlaceholder()}
-        className={`w-full resize-none border-none outline-none bg-transparent ${getHeadingStyle()} text-foreground placeholder:text-muted-foreground pl-8 pr-12`}
+        className={`w-full resize-none border-none outline-none bg-transparent ${getHeadingStyle()} text-foreground placeholder:text-muted-foreground pl-0 pr-8`}
         rows={1}
       />
 
