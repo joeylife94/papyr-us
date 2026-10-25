@@ -72,7 +72,15 @@ import {
 } from './services/retrieval.js';
 import * as aiService from './services/ai.js';
 import { aiAssistant } from './services/ai-assistant.js';
+import { z } from 'zod';
 import { triggerWorkflows, initWorkflowService, executeWorkflow } from './services/workflow.js';
+import {
+  savePage,
+  checkpointPage,
+  snapshotBeforeRestore,
+  setSessionClosedHandler,
+  storagePageSaveStore,
+} from './services/page-save.js';
 import logger from './services/logger.js';
 import { ExternalIntegrationError } from './services/resilience.js';
 import path from 'path';
@@ -117,6 +125,37 @@ export async function registerRoutes(
 
   // Expose storage to middleware via app.locals
   app.locals.storage = storage;
+
+  // One save pipeline for REST and Yjs page writes (issue #103 E1). Workflows for an autosaved
+  // editing session fire once, when the session closes, instead of on every autosave.
+  const pageSaveStore = storagePageSaveStore(storage as any);
+  setSessionClosedHandler(({ page, tagsAtStart }) => {
+    triggerWorkflows('page_updated', {
+      id: page.id,
+      title: page.title,
+      slug: page.slug,
+      content: page.content,
+      folder: page.folder,
+      tags: page.tags,
+      author: page.author,
+      teamId: page.teamId,
+      oldTags: tagsAtStart,
+      newTags: page.tags,
+    }).catch((error) => {
+      console.error('Failed to trigger workflows for page_updated:', error);
+    });
+    const addedTags = page.tags.filter((tag) => !tagsAtStart.includes(tag));
+    if (addedTags.length > 0) {
+      triggerWorkflows('tag_added', {
+        id: page.id,
+        title: page.title,
+        tags: addedTags,
+        teamId: page.teamId,
+      }).catch((error) => {
+        console.error('Failed to trigger workflows for tag_added:', error);
+      });
+    }
+  });
 
   // Initialize Passport for OAuth strategies
   app.use(passport.initialize());
@@ -812,38 +851,10 @@ export async function registerRoutes(
           }
         }
 
-        // Save a version snapshot BEFORE updating (only if content/blocks changed)
-        if (oldPage && (updateData.content !== undefined || updateData.blocks !== undefined)) {
-          try {
-            // Get the current max version number
-            const db = (storage as any).db;
-            if (db) {
-              const { desc, eq, sql } = await import('drizzle-orm');
-              const [latestVersion] = await db
-                .select({
-                  maxVersion: sql<number>`COALESCE(MAX(${pageVersions.versionNumber}), 0)`,
-                })
-                .from(pageVersions)
-                .where(eq(pageVersions.pageId, id));
-              const nextVersion = (latestVersion?.maxVersion || 0) + 1;
-
-              await db.insert(pageVersions).values({
-                pageId: id,
-                title: oldPage.title,
-                content: oldPage.content,
-                blocks: oldPage.blocks || [],
-                author: oldPage.author,
-                versionNumber: nextVersion,
-                changeDescription: `Version ${nextVersion}`,
-              });
-            }
-          } catch (versionError) {
-            // Don't block page update if version creation fails
-            console.error('Failed to create page version:', versionError);
-          }
-        }
-
-        const page = await storage.updateWikiPage(id, updateData);
+        // One save pipeline (issue #103 E1): content is derived from blocks when only blocks are
+        // sent, and the pre-save state is kept as one version, as before.
+        const saved = await savePage(pageSaveStore, id, updateData, 'manual');
+        const page = saved?.after;
 
         if (!page) {
           return res.status(404).json({ message: 'Page not found' });
@@ -884,6 +895,57 @@ export async function registerRoutes(
       } catch (error) {
         res.status(400).json(failureBody('Invalid update data', error));
       }
+    }
+  );
+
+  // Autosave (issue #103 E1). Body edits only: moving teams, authorship, trash state and slugs
+  // stay on PUT /api/pages/:id, where they need owner.
+  const autosaveSchema = z
+    .object({
+      title: z.string().min(1).max(500).optional(),
+      content: z.string().optional(),
+      blocks: z.array(z.any()).optional(),
+      tags: z.array(z.string()).optional(),
+      folder: z.string().min(1).optional(),
+    })
+    .strict();
+
+  app.put(
+    '/api/pages/:id/autosave',
+    requireAuthIfEnabled,
+    requirePagePermission('editor'),
+    async (req: AuthRequest, res) => {
+      const id = parseInt(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) {
+        return res.status(400).json({ message: 'Invalid page ID' });
+      }
+      const parsed = autosaveSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json(failureBody('Invalid autosave data', parsed.error));
+      }
+      try {
+        const saved = await savePage(pageSaveStore, id, parsed.data, 'autosave');
+        if (!saved) return res.status(404).json({ message: 'Page not found' });
+        const { after } = saved;
+        res.json({ id: after.id, slug: after.slug, title: after.title, savedAt: new Date() });
+      } catch (error) {
+        logger.error('Autosave failed', { pageId: id, error: (error as Error)?.message });
+        res.status(500).json({ message: 'Failed to save page' });
+      }
+    }
+  );
+
+  // Leaving the page closes its autosave session, so the next edit starts a new version.
+  app.post(
+    '/api/pages/:id/checkpoint',
+    requireAuthIfEnabled,
+    requirePagePermission('editor'),
+    async (req: AuthRequest, res) => {
+      const id = parseInt(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) {
+        return res.status(400).json({ message: 'Invalid page ID' });
+      }
+      res.json({ checkpointed: await checkpointPage(id) });
     }
   );
 
@@ -991,6 +1053,9 @@ export async function registerRoutes(
         if (!version) {
           return res.status(404).json({ error: 'Version not found' });
         }
+
+        // Keep the current state as a version first, so restoring never loses the latest edit.
+        await snapshotBeforeRestore(pageSaveStore, pageId);
 
         const restoredPage = await storage.updateWikiPage(pageId, {
           title: version.title,
