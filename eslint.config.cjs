@@ -5,7 +5,8 @@ const tsPlugin = require('@typescript-eslint/eslint-plugin');
 module.exports = [
   // Ignored paths
   {
-    ignores: ['dist/**', 'node_modules/**', 'build/**', 'coverage/**'],
+    // .claude/ holds local agent worktrees (gitignored copies of the repo with their own dist/).
+    ignores: ['dist/**', 'node_modules/**', 'build/**', 'coverage/**', '.claude/**'],
   },
   // TypeScript source files — parser + minimal safe rules
   {
