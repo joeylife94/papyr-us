@@ -7,6 +7,8 @@ import {
   timestamp,
   jsonb,
   varchar,
+  primaryKey,
+  index,
 } from 'drizzle-orm/pg-core';
 import { createInsertSchema } from 'drizzle-zod';
 import { z } from 'zod';
@@ -117,6 +119,27 @@ export const updateWikiPageSchema = insertWikiPageSchema.partial();
 export type InsertWikiPage = z.infer<typeof insertWikiPageSchema>;
 export type UpdateWikiPage = z.infer<typeof updateWikiPageSchema>;
 export type WikiPage = typeof wikiPages.$inferSelect;
+
+// Page-to-page links (#103 E6): one row per distinct target a page's blocks link to, kept in
+// sync by the save pipeline. Readers must filter both ends by what the viewer can read.
+export const pageLinks = pgTable(
+  'page_links',
+  {
+    sourcePageId: integer('source_page_id')
+      .notNull()
+      .references(() => wikiPages.id, { onDelete: 'cascade' }),
+    targetPageId: integer('target_page_id')
+      .notNull()
+      .references(() => wikiPages.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.sourcePageId, table.targetPageId] }),
+    index('idx_page_links_target').on(table.targetPageId),
+  ]
+);
+
+export type PageLink = typeof pageLinks.$inferSelect;
 
 // Page version history
 export const pageVersions = pgTable('page_versions', {

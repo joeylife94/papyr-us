@@ -466,6 +466,14 @@ export class DBStorage {
     return and(teamScope, this.readableBy(viewer))!;
   }
 
+  /**
+   * `listableBy` for read paths outside this class (page tree, link picker, backlinks, link
+   * resolution, graph, #103 E5/E6): every page such a path returns must satisfy it.
+   */
+  readablePageCondition(viewer: PageViewer): SQL {
+    return this.listableBy(viewer);
+  }
+
   async getReadableWikiPagesByFolder(folder: string, userId: number): Promise<WikiPage[]> {
     const viewer = await this.getPageViewer(userId);
     return this.db
