@@ -26,19 +26,17 @@ test('GJ-04: edit, inspect history, restore prior version, and persist restored 
 
   // Establish the prior state through the real browser editor.
   await page.goto('/create');
-  await expect(page.getByRole('heading', { name: 'Create New Page' })).toBeVisible();
-  await page.getByLabel('Title').fill(originalTitle);
+  await expect(page.getByTestId('page-title')).toBeVisible();
+  // In-place editing (#103 E2): the page is created on first input; there is no save button.
+  const createResponsePromise = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === '/api/pages' && response.request().method() === 'POST'
+  );
+  await page.getByTestId('page-title').fill(originalTitle);
   // The editor requires body content, so the document is created with a paragraph block.
   await page.getByRole('button', { name: '단락', exact: true }).click();
   await page.locator('textarea').first().fill(`GJ-04 recovery content ${stamp}`);
 
-  const createResponsePromise = page.waitForResponse(
-    (response) =>
-      response.url().includes('/api/pages') &&
-      response.request().method() === 'POST' &&
-      response.status() === 201
-  );
-  await page.getByRole('button', { name: 'Create Page' }).click();
   const createResponse = await createResponsePromise;
   const created = await createResponse.json();
 
@@ -48,17 +46,16 @@ test('GJ-04: edit, inspect history, restore prior version, and persist restored 
   const slug = String(created.slug);
 
   // Create a distinct newer state and verify it is durable before recovery.
-  await page.locator('button[title="Edit Page"]').click();
-  await expect(page.getByRole('heading', { name: 'Edit Page' })).toBeVisible();
-  await page.getByLabel('Title').fill(updatedTitle);
+  // Edit in place: the title autosaves.
+  await expect(page).toHaveURL(new RegExp(`/page/${slug}$`));
 
   const updateResponsePromise = page.waitForResponse(
     (response) =>
-      response.url().includes(`/api/pages/${pageId}`) &&
+      response.url().includes(`/api/pages/${pageId}/autosave`) &&
       response.request().method() === 'PUT' &&
       response.status() === 200
   );
-  await page.getByRole('button', { name: 'Update Page' }).click();
+  await page.getByTestId('page-title').fill(updatedTitle);
   await updateResponsePromise;
 
   await expect(page.getByRole('heading', { name: updatedTitle })).toBeVisible();

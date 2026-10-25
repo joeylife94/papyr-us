@@ -935,6 +935,24 @@ export async function registerRoutes(
     }
   );
 
+  // What the current user may do with a page, so the page view can open in edit or read mode.
+  // Same check as the write routes; it reveals nothing beyond what viewing the page already does.
+  app.get(
+    '/api/pages/:id/access',
+    optionalAuth,
+    requirePagePermission('viewer'),
+    async (req: AuthRequest, res) => {
+      const id = parseInt(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) {
+        return res.status(400).json({ message: 'Invalid page ID' });
+      }
+      const canEdit = req.user?.id
+        ? await storage.checkPagePermission(req.user.id, id, 'editor')
+        : false;
+      res.json({ canEdit });
+    }
+  );
+
   // Leaving the page closes its autosave session, so the next edit starts a new version.
   app.post(
     '/api/pages/:id/checkpoint',
@@ -1066,6 +1084,11 @@ export async function registerRoutes(
         if (!restoredPage) {
           return res.status(404).json({ error: 'Page not found' });
         }
+
+        // Editors with the page open get the restored blocks, and their next save cannot write
+        // the pre-restore blocks back.
+        const { reloadCollaborativeDocs } = await import('./services/yjs-collaboration.js');
+        await reloadCollaborativeDocs(pageId);
 
         res.json(restoredPage);
       } catch (error) {

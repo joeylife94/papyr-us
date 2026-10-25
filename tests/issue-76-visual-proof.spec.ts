@@ -67,7 +67,8 @@ test('Issue 76: capture genuine workspace, reader, history, dark mode, and mobil
   // The create entry point still resolves to the team-scoped editor.
   await createButton.click();
   await expect(page).toHaveURL(`/teams/${teamName}/create`);
-  await expect(page.getByRole('heading', { name: `${teamName} 팀 새 문서 작성` })).toBeVisible();
+  // In-place editing (#103 E2): a new, untitled page waiting for its first input.
+  await expect(page.getByTestId('page-title')).toHaveAttribute('contenteditable', 'true');
   await page.goBack();
   await expect(page).toHaveURL(`/teams/${teamName}/pages`);
 
@@ -116,7 +117,8 @@ test('Issue 76: capture genuine workspace, reader, history, dark mode, and mobil
     page.getByRole('link', { name: `현재 워크스페이스: ${teamDisplayName}` })
   ).toBeVisible();
   const actions = page.getByRole('group', { name: '문서 작업' });
-  await expect(actions.getByRole('button', { name: '편집' })).toBeVisible();
+  // The page itself is the editor: the title edits in place.
+  await expect(page.getByTestId('page-title')).toHaveAttribute('contenteditable', 'true');
   await expect(actions.getByRole('button', { name: /버전 기록/ })).toBeVisible();
   await page.screenshot({ path: `${PROOF_DIR}/03-document-reader-desktop.png`, fullPage: true });
 
@@ -137,16 +139,12 @@ test('Issue 76: capture genuine workspace, reader, history, dark mode, and mobil
   await page.keyboard.press('Escape');
   await expect(historyDialog).toBeHidden();
 
-  // Existing edit entry is preserved, and the shell keeps the document's workspace context.
-  await actions.getByRole('button', { name: '편집' }).click();
-  await expect(page).toHaveURL(`/edit/${created.id}`);
-  await expect(page.getByRole('heading', { name: 'Edit Page' })).toBeVisible();
+  // The old edit route opens the page itself, and the shell keeps the document's workspace.
+  await page.goto(`/edit/${created.id}`);
+  await expect(page).toHaveURL(`/page/${created.slug}`);
   await expect(
     page.getByRole('group', { name: '현재 워크스페이스' }).getByText(teamDisplayName)
   ).toBeVisible();
-
-  // Return to the reader explicitly; the editor preview also renders the title as a heading.
-  await page.goto(`/page/${created.slug}`);
   await expect(page).toHaveURL(`/page/${created.slug}`);
   await expect(page.getByRole('group', { name: '문서 작업' })).toBeVisible();
 

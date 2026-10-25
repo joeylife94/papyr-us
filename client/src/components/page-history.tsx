@@ -24,15 +24,21 @@ interface PageVersion {
 interface PageHistoryProps {
   pageId: number;
   currentTitle: string;
+  /** Called after a restore so an open editor can reload the restored page. */
+  onRestored?: (page: { slug?: string }) => void;
 }
 
-export function PageHistory({ pageId, currentTitle }: PageHistoryProps) {
+export function PageHistory({ pageId, currentTitle, onRestored }: PageHistoryProps) {
   const [selectedVersion, setSelectedVersion] = useState<PageVersion | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: versions = [], isLoading } = useQuery<PageVersion[]>({
+  const {
+    data: versions = [],
+    isLoading,
+    refetch: refetchVersions,
+  } = useQuery<PageVersion[]>({
     queryKey: [`/api/pages/${pageId}/versions`],
     queryFn: async () => {
       const res = await fetch(`/api/pages/${pageId}/versions`);
@@ -66,6 +72,9 @@ export function PageHistory({ pageId, currentTitle }: PageHistoryProps) {
         queryClient.invalidateQueries({ queryKey: [`/api/pages/slug/${restoredPage.slug}`] });
       }
       queryClient.invalidateQueries({ queryKey: ['/api/pages'] });
+      // The restore kept the pre-restore state as a new version.
+      queryClient.invalidateQueries({ queryKey: [`/api/pages/${pageId}/versions`] });
+      onRestored?.(restoredPage);
       toast({
         title: '버전 복원 완료',
         description: '선택한 버전으로 페이지가 복원되었습니다.',
@@ -82,7 +91,8 @@ export function PageHistory({ pageId, currentTitle }: PageHistoryProps) {
 
   return (
     <>
-      <Sheet>
+      {/* Autosave adds versions while the page is open, so reload the list on every open. */}
+      <Sheet onOpenChange={(open) => open && void refetchVersions()}>
         <SheetTrigger asChild>
           <Button variant="outline" size="sm" className="gap-2">
             <History className="h-4 w-4" />

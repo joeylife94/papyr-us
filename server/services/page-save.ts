@@ -43,6 +43,8 @@ export interface SessionClosedEvent {
 
 interface EditSession {
   tagsAtStart: string[];
+  /** Whether the pre-session version was taken (only once a versioned field changes). */
+  snapshotTaken: boolean;
   idleTimer: ReturnType<typeof setTimeout>;
   store: PageSaveStore;
 }
@@ -88,6 +90,11 @@ export function derivePageContent(blocks: unknown): string {
 
 function touchesBody(update: UpdateWikiPage) {
   return update.content !== undefined || update.blocks !== undefined;
+}
+
+/** Fields a version records; an autosave session keeps a version once one of them changes. */
+function touchesVersionedFields(update: UpdateWikiPage) {
+  return touchesBody(update) || update.title !== undefined;
 }
 
 async function closeSession(pageId: number, reason: SessionClosedEvent['reason']) {
@@ -146,19 +153,24 @@ export async function savePage(
       await snapshotSafely(store, before, `Version`);
     }
   } else {
-    const session = sessions.get(pageId);
+    let session = sessions.get(pageId);
     if (session) {
       clearTimeout(session.idleTimer);
       session.idleTimer = armIdleTimer(pageId);
     } else {
-      if (touchesBody(data)) {
-        await snapshotSafely(store, before, 'Before editing session');
-      }
-      sessions.set(pageId, {
+      session = {
         tagsAtStart: [...before.tags],
+        snapshotTaken: false,
         idleTimer: armIdleTimer(pageId),
         store,
-      });
+      };
+      sessions.set(pageId, session);
+    }
+    // The first change to the title or body in a session keeps the state before it as a version,
+    // even when the session started with a tags/folder-only save.
+    if (!session.snapshotTaken && touchesVersionedFields(data)) {
+      session.snapshotTaken = true;
+      await snapshotSafely(store, before, 'Before editing session');
     }
   }
 

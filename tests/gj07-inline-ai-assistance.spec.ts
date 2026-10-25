@@ -49,8 +49,8 @@ test('GJ-07: inline AI replaces only selection and preserves text on visible fai
 
   await loginPageWithCookies(page, email, PASSWORD);
   await page.goto(`/page/${slug}`, { waitUntil: 'networkidle' });
-  await page.locator('button[title="Edit Page"]').click();
-  await expect(page.getByRole('heading', { name: 'Edit Page' })).toBeVisible();
+  // In-place editing (#103 E2): the page view is the editor.
+  await expect(page.getByTestId('page-title')).toHaveAttribute('contenteditable', 'true');
 
   const textarea = page.locator('textarea').first();
   await expect(textarea).toHaveValue(original);
