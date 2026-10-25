@@ -2,6 +2,7 @@ import * as Y from 'yjs';
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import { DBStorage } from '../storage.js';
 import logger from './logger.js';
+import { savePage, storagePageSaveStore } from './page-save.js';
 import jwt from 'jsonwebtoken';
 import { config } from '../config.js';
 import { onPageAccessChanged } from './page-access-events.js';
@@ -475,7 +476,9 @@ export class YjsCollaborationManager {
       const yblocks = doc.ydoc.getArray('blocks');
       const blocks = yblocks.toArray();
 
-      await this.storage.updateWikiPage(doc.pageId, { blocks });
+      // Same pipeline as REST autosave (issue #103 E1): keeps `content` (reader, FTS, AI search)
+      // in step with the blocks and groups saves into one version per editing session.
+      await savePage(storagePageSaveStore(this.storage), doc.pageId, { blocks }, 'autosave');
 
       doc.dirty = false;
       doc.metrics.savesSucceeded += 1;
