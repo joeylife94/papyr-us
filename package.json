@@ -117,7 +117,7 @@
     "lucide-react": "^0.453.0",
     "memorystore": "^1.6.7",
     "mime-types": "^2.1.35",
-    "multer": "^2.3.0",
+    "multer": "^2.5.0",
     "next-themes": "^0.4.6",
     "nodemailer": "^10.0.16",
     "openai": "^5.6.0",
