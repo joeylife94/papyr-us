@@ -125,9 +125,11 @@ export async function savePage(
   pageId: number,
   update: UpdateWikiPage,
   mode: SaveMode
-): Promise<{ before: WikiPage; after: WikiPage } | undefined> {
+): Promise<{ before: WikiPage | undefined; after: WikiPage } | undefined> {
+  // Routes only reach here after the page permission check found the page. If it still cannot
+  // be read, skip versioning and sessions and let the update decide, as the PUT route did
+  // before the pipeline existed.
   const before = await store.getPage(pageId);
-  if (!before) return undefined;
 
   const data: UpdateWikiPage = { ...update };
   // Autosaves (REST or Yjs) always derive content from blocks. A manual save keeps any content
@@ -136,7 +138,9 @@ export async function savePage(
     data.content = derivePageContent(data.blocks);
   }
 
-  if (mode === 'manual') {
+  if (!before) {
+    // Nothing to snapshot.
+  } else if (mode === 'manual') {
     await closeSession(pageId, 'manual-save');
     if (touchesBody(data)) {
       await snapshotSafely(store, before, `Version`);
