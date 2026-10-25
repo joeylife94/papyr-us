@@ -63,7 +63,7 @@ export function Header({ onToggleSidebar, searchQuery, onSearchChange }: HeaderP
   };
 
   return (
-    <header className="fixed top-0 left-0 right-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 z-40">
+    <header className="fixed top-0 left-0 right-0 bg-card/95 backdrop-blur-md border-b border-border z-40">
       <a href="#main-content" className="skip-link">
         Skip to main content
       </a>
@@ -83,18 +83,16 @@ export function Header({ onToggleSidebar, searchQuery, onSearchChange }: HeaderP
             className="flex shrink-0 items-center space-x-2 hover:opacity-80 transition-opacity cursor-pointer"
           >
             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-              <ScrollText className="h-4 w-4 text-white" />
+              <ScrollText className="h-4 w-4 text-primary-foreground" />
             </div>
             {/* Phone widths keep the icon only; the name stays available to assistive tech. */}
-            <h1 className="sr-only text-xl font-bold text-slate-900 dark:text-white sm:not-sr-only">
-              Papyr.us
-            </h1>
+            <h1 className="sr-only text-xl font-bold text-foreground sm:not-sr-only">Papyr.us</h1>
           </Link>
           {workspace && (
             <Link
               to={workspace.documentsPath}
               aria-label={`현재 워크스페이스: ${workspace.displayName}`}
-              className="hidden min-w-0 max-w-[16rem] items-center border-l border-slate-200 pl-3 text-sm font-medium text-slate-600 transition-colors hover:text-slate-900 dark:border-slate-700 dark:text-slate-300 dark:hover:text-white sm:flex"
+              className="hidden min-w-0 max-w-[16rem] items-center border-l border-border pl-3 text-sm font-medium text-foreground-secondary transition-colors hover:text-foreground sm:flex"
             >
               <span className="truncate">{workspace.displayName}</span>
             </Link>

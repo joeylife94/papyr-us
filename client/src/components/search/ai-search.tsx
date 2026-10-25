@@ -113,7 +113,7 @@ export function AISearch({ teamId }: { teamId?: string }) {
     switch (sourceType) {
       case 'page':
       default:
-        return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
+        return 'bg-info/15 text-info';
     }
   };
 
@@ -123,7 +123,7 @@ export function AISearch({ teamId }: { teamId?: string }) {
       <div className="relative">
         <div className="flex items-center space-x-2">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -155,14 +155,14 @@ export function AISearch({ teamId }: { teamId?: string }) {
 
         {/* 검색 제안 */}
         {showSuggestions && suggestions.length > 0 && (
-          <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50">
+          <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-lg shadow-lg z-50">
             {suggestions.map((suggestion, index) => (
               <button
                 key={index}
                 onClick={() => handleSuggestionClick(suggestion)}
-                className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2"
+                className="w-full text-left px-4 py-2 hover:bg-muted flex items-center space-x-2"
               >
-                <Search className="h-4 w-4 text-gray-400" />
+                <Search className="h-4 w-4 text-muted-foreground" />
                 <span>{suggestion}</span>
               </button>
             ))}
@@ -206,9 +206,9 @@ export function AISearch({ teamId }: { teamId?: string }) {
           {searchMutation.data.results.length === 0 ? (
             <Card>
               <CardContent className="p-8 text-center">
-                <Search className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                <Search className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                 <h3 className="text-lg font-semibold mb-2">검색 결과가 없습니다</h3>
-                <p className="text-gray-600 dark:text-gray-400">다른 검색어를 시도해보세요.</p>
+                <p className="text-foreground-secondary">다른 검색어를 시도해보세요.</p>
               </CardContent>
             </Card>
           ) : (
@@ -224,7 +224,7 @@ export function AISearch({ teamId }: { teamId?: string }) {
                       </div>
                       {/* Rank position, not a percentage: ftsScore and aiScore use
                           different scales and must not be shown as one number. */}
-                      <div className="flex items-center space-x-2 text-sm text-gray-500">
+                      <div className="flex items-center space-x-2 text-sm text-muted-foreground">
                         <Star className="h-4 w-4" />
                         <span>#{result.rank}</span>
                       </div>
@@ -232,9 +232,7 @@ export function AISearch({ teamId }: { teamId?: string }) {
 
                     {/* Snippets are untrusted page content: ts_headline does not
                         sanitise them. Render as a text node only — never as raw HTML. */}
-                    <p className="text-gray-600 dark:text-gray-400 mb-3 line-clamp-2">
-                      {result.snippet}
-                    </p>
+                    <p className="text-foreground-secondary mb-3 line-clamp-2">{result.snippet}</p>
 
                     <div className="flex items-center justify-between">
                       <Button
@@ -256,7 +254,7 @@ export function AISearch({ teamId }: { teamId?: string }) {
       {searchMutation.error && (
         <Card>
           <CardContent className="p-8 text-center">
-            <div className="text-red-500 mb-4">
+            <div className="text-destructive mb-4">
               <Search className="h-12 w-12 mx-auto mb-2" />
               <h3 className="text-lg font-semibold">검색 중 오류가 발생했습니다</h3>
             </div>

@@ -118,13 +118,13 @@ export function ParagraphBlock({
 
   return (
     <div
-      className={`relative group ${isFocused ? 'bg-blue-50 dark:bg-blue-950/20' : ''} rounded-lg p-2 transition-colors`}
+      className={`relative group ${isFocused ? 'bg-primary/10 ' : ''} rounded-lg p-2 transition-colors`}
       onFocus={onFocus}
       onBlur={onBlur}
     >
       {/* 블록 타입 표시 */}
       <div className="absolute left-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity">
-        <AlignLeft className="h-4 w-4 text-gray-400" />
+        <AlignLeft className="h-4 w-4 text-muted-foreground" />
       </div>
 
       {/* 단락 입력 */}
@@ -136,7 +136,7 @@ export function ParagraphBlock({
         onFocus={onFocus}
         onBlur={onBlur}
         placeholder="단락을 입력하세요..."
-        className="w-full resize-none border-none outline-none bg-transparent text-base text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 pl-8 pr-12 leading-relaxed"
+        className="w-full resize-none border-none outline-none bg-transparent text-base text-foreground placeholder:text-muted-foreground pl-8 pr-12 leading-relaxed"
         rows={1}
       />
 
@@ -147,7 +147,7 @@ export function ParagraphBlock({
             variant="ghost"
             size="sm"
             onClick={onDelete}
-            className="h-6 w-6 p-0 text-gray-400 hover:text-red-500"
+            className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
           >
             <Trash2 className="h-3 w-3" />
           </Button>

@@ -270,16 +270,14 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
   const isLoading = createPageMutation.isPending || updatePageMutation.isPending;
 
   if (urlTeamName && teamsLoading) {
-    return <div className="p-6 text-sm text-slate-500">Loading team workspace...</div>;
+    return <div className="p-6 text-sm text-muted-foreground">Loading team workspace...</div>;
   }
 
   if (teamScopeUnavailable) {
     return (
       <div className="p-6" role="alert">
-        <h1 className="text-xl font-semibold text-slate-900 dark:text-white">
-          Team workspace unavailable
-        </h1>
-        <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+        <h1 className="text-xl font-semibold text-foreground">Team workspace unavailable</h1>
+        <p className="mt-2 text-sm text-foreground-secondary">
           This team is not accessible or could not be resolved.
         </p>
       </div>
@@ -295,7 +293,7 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
             Back
           </Button>
           <div>
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
+            <h1 className="text-2xl font-bold text-foreground">
               {pageId
                 ? urlTeamName
                   ? `${urlTeamName} 팀 문서 수정`
@@ -304,7 +302,7 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
                   ? `${urlTeamName} 팀 새 문서 작성`
                   : 'Create New Page'}
             </h1>
-            <p className="text-slate-600 dark:text-slate-400">
+            <p className="text-foreground-secondary">
               {pageId
                 ? urlTeamName
                   ? '팀 문서를 수정합니다'
@@ -394,7 +392,7 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
                       <FormControl>
                         <Input placeholder="tag1, tag2, tag3..." {...field} />
                       </FormControl>
-                      <p className="text-sm text-slate-500">Separate tags with commas</p>
+                      <p className="text-sm text-muted-foreground">Separate tags with commas</p>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -485,7 +483,7 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
                 <h1 className="text-2xl font-bold mb-2">
                   {form.watch('title') || 'Untitled Page'}
                 </h1>
-                <div className="flex items-center space-x-4 text-sm text-slate-500">
+                <div className="flex items-center space-x-4 text-sm text-muted-foreground">
                   <span>By {form.watch('author') || 'Unknown'}</span>
                   <Badge variant="secondary">{getFolderDisplayName(form.watch('folder'))}</Badge>
                 </div>
@@ -495,7 +493,7 @@ export default function PageEditor({ pageId, initialFolder = 'docs', teamName }:
                 {currentContent ? (
                   <MarkdownRenderer content={currentContent} />
                 ) : (
-                  <p className="text-slate-500 italic">
+                  <p className="text-muted-foreground italic">
                     Start writing content to see the preview...
                   </p>
                 )}

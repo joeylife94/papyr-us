@@ -121,7 +121,7 @@ export function FormulaEditor({ value, fields, onChange, className }: FormulaEdi
     <div className={cn('space-y-3', className)}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Calculator className="h-4 w-4 text-primary" />
+          <Calculator className="h-4 w-4 text-highlight" />
           <span className="text-sm font-medium">Formula Editor</span>
         </div>
         <Button variant="ghost" size="sm" onClick={() => setShowHelp(!showHelp)}>
@@ -145,7 +145,7 @@ export function FormulaEditor({ value, fields, onChange, className }: FormulaEdi
           placeholder="Enter formula... e.g., sum(price, tax)"
           className={cn(
             'w-full px-3 py-2 border rounded-md font-mono text-sm min-h-[100px] resize-y',
-            !validation.valid && value && 'border-red-500'
+            !validation.valid && value && 'border-destructive'
           )}
         />
 
@@ -166,7 +166,9 @@ export function FormulaEditor({ value, fields, onChange, className }: FormulaEdi
       </div>
 
       {/* Validation error */}
-      {!validation.valid && value && <div className="text-xs text-red-500">{validation.error}</div>}
+      {!validation.valid && value && (
+        <div className="text-xs text-destructive">{validation.error}</div>
+      )}
 
       {/* Quick insert buttons */}
       <div className="space-y-3">
@@ -249,7 +251,7 @@ export function FormulaEditor({ value, fields, onChange, className }: FormulaEdi
 
       {/* Test result (TODO: implement formula evaluation) */}
       {validation.valid && value && (
-        <div className="p-2 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded text-xs text-green-700 dark:text-green-400">
+        <div className="p-2 bg-success/10 border border-success/30 rounded text-xs text-success">
           ✓ Formula syntax is valid
         </div>
       )}

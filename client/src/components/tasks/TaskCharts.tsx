@@ -178,7 +178,7 @@ export function TaskCharts({ tasks }: TaskChartsProps) {
           <Card>
             <CardHeader className="pb-2">
               <CardDescription>진행 중</CardDescription>
-              <CardTitle className="text-3xl text-amber-500">
+              <CardTitle className="text-3xl text-warning">
                 {tasks.filter((t) => t.status === 'in_progress').length}
               </CardTitle>
             </CardHeader>
@@ -186,7 +186,7 @@ export function TaskCharts({ tasks }: TaskChartsProps) {
           <Card>
             <CardHeader className="pb-2">
               <CardDescription>완료</CardDescription>
-              <CardTitle className="text-3xl text-green-500">
+              <CardTitle className="text-3xl text-success">
                 {tasks.filter((t) => t.status === 'done').length}
               </CardTitle>
             </CardHeader>

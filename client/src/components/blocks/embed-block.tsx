@@ -147,7 +147,7 @@ export function EmbedBlock({
               href={url}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-sm text-primary hover:underline"
+              className="text-sm text-highlight hover:underline"
             >
               Open in new tab
             </a>

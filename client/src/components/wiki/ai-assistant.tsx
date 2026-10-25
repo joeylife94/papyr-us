@@ -70,12 +70,12 @@ export function AIAssistant() {
   };
 
   return (
-    <div className="mt-8 p-4 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+    <div className="mt-8 p-4 rounded-lg border border-primary/40 bg-primary/5">
       <div className="flex items-center mb-2">
-        <Bot className="h-4 w-4 text-primary mr-2" />
-        <h4 className="text-sm font-semibold text-slate-900 dark:text-white">AI Assistant</h4>
+        <Bot className="h-4 w-4 text-highlight mr-2" />
+        <h4 className="text-sm font-semibold text-foreground">AI Assistant</h4>
       </div>
-      <p className="text-xs text-slate-600 dark:text-slate-400 mb-3">
+      <p className="text-xs text-foreground-secondary mb-3">
         Get AI-powered suggestions and summaries for your content.
       </p>
 
@@ -96,7 +96,7 @@ export function AIAssistant() {
 
           <div className="space-y-4">
             <div>
-              <label className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2 block">
+              <label className="text-sm font-medium text-foreground-secondary mb-2 block">
                 What would you like me to help you with?
               </label>
               <Textarea
@@ -129,15 +129,15 @@ export function AIAssistant() {
             {generatedContent && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                  <label className="text-sm font-medium text-foreground-secondary">
                     Generated Content
                   </label>
                   <Button variant="outline" size="sm" onClick={copyToClipboard}>
                     Copy to Clipboard
                   </Button>
                 </div>
-                <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-4 max-h-96 overflow-y-auto">
-                  <pre className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap">
+                <div className="bg-muted rounded-lg p-4 max-h-96 overflow-y-auto">
+                  <pre className="text-sm text-foreground-secondary whitespace-pre-wrap">
                     {generatedContent}
                   </pre>
                 </div>

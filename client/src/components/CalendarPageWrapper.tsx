@@ -22,14 +22,14 @@ export default function CalendarPageWrapper() {
   const resolvedTeamId = resolveCalendarTeamId(teamId, teamName, teams);
 
   if (isLoading) {
-    return <div className="p-6 text-sm text-slate-500">Loading team calendar...</div>;
+    return <div className="p-6 text-sm text-muted-foreground">Loading team calendar...</div>;
   }
 
   if (isError || !resolvedTeamId) {
     return (
       <div className="p-6" role="alert">
-        <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Calendar unavailable</h1>
-        <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+        <h1 className="text-xl font-semibold text-foreground">Calendar unavailable</h1>
+        <p className="mt-2 text-sm text-foreground-secondary">
           This team is not accessible or could not be resolved.
         </p>
       </div>

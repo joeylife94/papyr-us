@@ -156,7 +156,7 @@ export function KnowledgeGraph({ teamId }: KnowledgeGraphProps) {
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b">
         <div className="flex items-center gap-2">
-          <Network className="w-5 h-5 text-primary" />
+          <Network className="w-5 h-5 text-highlight" />
           <h2 className="text-lg font-semibold">지식 그래프</h2>
         </div>
         <div className="flex items-center gap-2">
@@ -208,7 +208,7 @@ export function KnowledgeGraph({ teamId }: KnowledgeGraphProps) {
           {isLoading ? (
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="text-center">
-                <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-2 text-primary" />
+                <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-2 text-highlight" />
                 <p className="text-sm text-muted-foreground">그래프 생성 중...</p>
               </div>
             </div>
@@ -298,8 +298,8 @@ export function KnowledgeGraph({ teamId }: KnowledgeGraphProps) {
                 <span className="font-semibold">{stats.avgConnections.toFixed(1)}</span>
               </div>
               <div className="flex justify-between text-xs">
-                <span className="text-muted-foreground text-red-500">고아 페이지</span>
-                <span className="font-semibold text-red-500">{stats.orphanPages}</span>
+                <span className="text-destructive">고아 페이지</span>
+                <span className="font-semibold text-destructive">{stats.orphanPages}</span>
               </div>
             </CardContent>
           </Card>

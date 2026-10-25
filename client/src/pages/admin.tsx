@@ -428,16 +428,14 @@ export default function AdminPage() {
 
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center p-6">
+      <div className="min-h-screen flex items-center justify-center p-6">
         <Card className="w-full max-w-md shadow-lg">
           <CardHeader className="text-center">
             <div className="mx-auto w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mb-4">
-              <Lock className="w-6 h-6 text-primary" />
+              <Lock className="w-6 h-6 text-highlight" />
             </div>
             <CardTitle className="text-2xl">Admin Access</CardTitle>
-            <p className="text-slate-600 dark:text-slate-400">
-              Enter the admin password to continue
-            </p>
+            <p className="text-foreground-secondary">Enter the admin password to continue</p>
           </CardHeader>
           <CardContent className="space-y-4">
             <Input
@@ -460,7 +458,7 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 p-6">
+    <div className="min-h-screen p-6">
       <div className="max-w-6xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-center space-x-4">
@@ -469,11 +467,11 @@ export default function AdminPage() {
             Back to Wiki
           </Button>
           <div>
-            <h1 className="text-3xl font-bold text-slate-900 dark:text-white flex items-center">
-              <Settings className="h-8 w-8 mr-3 text-primary" />
+            <h1 className="text-3xl font-bold text-foreground flex items-center">
+              <Settings className="h-8 w-8 mr-3 text-highlight" />
               Admin Panel
             </h1>
-            <p className="text-slate-600 dark:text-slate-400">
+            <p className="text-foreground-secondary">
               Manage directories, teams, and access permissions
             </p>
           </div>
@@ -492,10 +490,8 @@ export default function AdminPage() {
           <TabsContent value="directories" className="space-y-6">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-white">
-                  Directory Management
-                </h2>
-                <p className="text-slate-600 dark:text-slate-400">
+                <h2 className="text-2xl font-bold text-foreground">Directory Management</h2>
+                <p className="text-foreground-secondary">
                   Manage directories and access permissions
                 </p>
               </div>
@@ -529,7 +525,7 @@ export default function AdminPage() {
                             <FormControl>
                               <Input placeholder="docs, team1, etc." {...field} />
                             </FormControl>
-                            <p className="text-xs text-slate-500">
+                            <p className="text-xs text-muted-foreground">
                               Lowercase letters, numbers, hyphens, and underscores only
                             </p>
                             <FormMessage />
@@ -625,9 +621,9 @@ export default function AdminPage() {
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-lg flex items-center">
                         {directory.isVisible ? (
-                          <Eye className="h-4 w-4 mr-2 text-green-500" />
+                          <Eye className="h-4 w-4 mr-2 text-success" />
                         ) : (
-                          <EyeOff className="h-4 w-4 mr-2 text-slate-400" />
+                          <EyeOff className="h-4 w-4 mr-2 text-muted-foreground" />
                         )}
                         {directory.displayName}
                       </CardTitle>
@@ -645,7 +641,7 @@ export default function AdminPage() {
                           size="sm"
                           aria-label="Delete"
                           onClick={() => handleDelete(directory.id)}
-                          className="text-red-500 hover:text-red-700"
+                          className="text-destructive hover:text-destructive"
                         >
                           <Trash2 className="h-3 w-3" />
                         </Button>
@@ -654,21 +650,21 @@ export default function AdminPage() {
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-slate-500">Name:</span>
+                      <span className="text-muted-foreground">Name:</span>
                       <Badge variant="outline">{directory.name}</Badge>
                     </div>
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-slate-500">Order:</span>
+                      <span className="text-muted-foreground">Order:</span>
                       <span className="font-mono">{directory.order}</span>
                     </div>
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-slate-500">Protected:</span>
+                      <span className="text-muted-foreground">Protected:</span>
                       <Badge variant={directory.password ? 'destructive' : 'secondary'}>
                         {directory.password ? 'Yes' : 'No'}
                       </Badge>
                     </div>
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-slate-500">Status:</span>
+                      <span className="text-muted-foreground">Status:</span>
                       <Badge variant={directory.isVisible ? 'default' : 'secondary'}>
                         {directory.isVisible ? 'Visible' : 'Hidden'}
                       </Badge>
@@ -681,11 +677,11 @@ export default function AdminPage() {
             {directories.length === 0 && (
               <Card className="text-center py-12">
                 <CardContent>
-                  <Settings className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">
+                  <Settings className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-foreground mb-2">
                     No directories found
                   </h3>
-                  <p className="text-slate-600 dark:text-slate-400 mb-4">
+                  <p className="text-foreground-secondary mb-4">
                     Create your first directory to get started
                   </p>
                   <Button onClick={() => setIsDirectoryDialogOpen(true)}>
@@ -700,10 +696,8 @@ export default function AdminPage() {
           <TabsContent value="teams" className="space-y-6">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-white">
-                  Team Management
-                </h2>
-                <p className="text-slate-600 dark:text-slate-400">Manage teams and their members</p>
+                <h2 className="text-2xl font-bold text-foreground">Team Management</h2>
+                <p className="text-foreground-secondary">Manage teams and their members</p>
               </div>
 
               <Dialog open={isTeamDialogOpen} onOpenChange={setIsTeamDialogOpen}>
@@ -733,7 +727,7 @@ export default function AdminPage() {
                             <FormControl>
                               <Input placeholder="backend-team, frontend-team, etc." {...field} />
                             </FormControl>
-                            <p className="text-xs text-slate-500">
+                            <p className="text-xs text-muted-foreground">
                               Lowercase letters, numbers, hyphens, and underscores only
                             </p>
                             <FormMessage />
@@ -808,7 +802,7 @@ export default function AdminPage() {
                           <FormItem>
                             <FormLabel>Color Class</FormLabel>
                             <FormControl>
-                              <Input placeholder="text-blue-500, text-green-500, etc." {...field} />
+                              <Input placeholder="text-info, text-success, etc." {...field} />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -871,9 +865,9 @@ export default function AdminPage() {
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-lg flex items-center">
                         {team.isActive ? (
-                          <Eye className="h-4 w-4 mr-2 text-green-500" />
+                          <Eye className="h-4 w-4 mr-2 text-success" />
                         ) : (
-                          <EyeOff className="h-4 w-4 mr-2 text-slate-400" />
+                          <EyeOff className="h-4 w-4 mr-2 text-muted-foreground" />
                         )}
                         {team.displayName}
                       </CardTitle>
@@ -891,7 +885,7 @@ export default function AdminPage() {
                           size="sm"
                           aria-label="Delete"
                           onClick={() => handleDeleteTeam(team.id)}
-                          className="text-red-500 hover:text-red-700"
+                          className="text-destructive hover:text-destructive"
                         >
                           <Trash2 className="h-3 w-3" />
                         </Button>
@@ -900,26 +894,24 @@ export default function AdminPage() {
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-slate-500">Name:</span>
+                      <span className="text-muted-foreground">Name:</span>
                       <Badge variant="outline">{team.name}</Badge>
                     </div>
                     {team.description && (
-                      <div className="text-sm text-slate-600 dark:text-slate-400">
-                        {team.description}
-                      </div>
+                      <div className="text-sm text-foreground-secondary">{team.description}</div>
                     )}
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-slate-500">Order:</span>
+                      <span className="text-muted-foreground">Order:</span>
                       <span className="font-mono">{team.order}</span>
                     </div>
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-slate-500">Protected:</span>
+                      <span className="text-muted-foreground">Protected:</span>
                       <Badge variant={team.password ? 'destructive' : 'secondary'}>
                         {team.password ? 'Yes' : 'No'}
                       </Badge>
                     </div>
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-slate-500">Status:</span>
+                      <span className="text-muted-foreground">Status:</span>
                       <Badge variant={team.isActive ? 'default' : 'secondary'}>
                         {team.isActive ? 'Active' : 'Inactive'}
                       </Badge>
@@ -932,11 +924,9 @@ export default function AdminPage() {
             {teams.length === 0 && (
               <Card className="text-center py-12">
                 <CardContent>
-                  <Settings className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">
-                    No teams found
-                  </h3>
-                  <p className="text-slate-600 dark:text-slate-400 mb-4">
+                  <Settings className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-foreground mb-2">No teams found</h3>
+                  <p className="text-foreground-secondary mb-4">
                     Create your first team to get started
                   </p>
                   <Button onClick={() => setIsTeamDialogOpen(true)}>

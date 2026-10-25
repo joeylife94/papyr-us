@@ -131,7 +131,7 @@ export function RelationFieldPicker({
                         isSelected ? 'border-primary bg-primary' : 'border-muted-foreground'
                       )}
                     >
-                      {isSelected && <div className="w-2 h-2 bg-white rounded-sm" />}
+                      {isSelected && <div className="w-2 h-2 bg-card rounded-sm" />}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-medium truncate">

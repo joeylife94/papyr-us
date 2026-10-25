@@ -240,7 +240,7 @@ export default function AutomationPage() {
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-2">
-            <Zap className="h-8 w-8 text-amber-500" />
+            <Zap className="h-8 w-8 text-warning" />
             자동화 워크플로우
           </h1>
           <p className="text-muted-foreground mt-2">반복 작업을 자동화하고 팀 생산성을 높이세요</p>
@@ -315,7 +315,7 @@ export default function AutomationPage() {
                 <div className="space-y-3">
                   {/* Trigger */}
                   <div className="flex items-start gap-2">
-                    <Badge variant="outline" className="bg-blue-50 dark:bg-blue-950">
+                    <Badge variant="outline" className="bg-info/10">
                       트리거
                     </Badge>
                     <span className="text-sm">{getTriggerLabel(workflow.trigger)}</span>
@@ -324,7 +324,7 @@ export default function AutomationPage() {
                   {/* Conditions */}
                   {workflow.conditions && workflow.conditions.length > 0 && (
                     <div className="flex items-start gap-2">
-                      <Badge variant="outline" className="bg-amber-50 dark:bg-amber-950">
+                      <Badge variant="outline" className="bg-warning/10">
                         조건
                       </Badge>
                       <span className="text-sm">{workflow.conditions.length}개 조건</span>
@@ -333,7 +333,7 @@ export default function AutomationPage() {
 
                   {/* Actions */}
                   <div className="flex items-start gap-2">
-                    <Badge variant="outline" className="bg-green-50 dark:bg-green-950">
+                    <Badge variant="outline" className="bg-success/10">
                       액션
                     </Badge>
                     <div className="flex flex-wrap gap-1">
@@ -369,7 +369,7 @@ export default function AutomationPage() {
         <CardContent>
           <div className="grid gap-4 md:grid-cols-2">
             <div className="flex gap-3 p-3 rounded-lg border">
-              <CheckCircle className="h-5 w-5 text-green-500 mt-0.5" />
+              <CheckCircle className="h-5 w-5 text-success mt-0.5" />
               <div>
                 <h4 className="font-medium text-sm mb-1">태스크 자동 알림</h4>
                 <p className="text-xs text-muted-foreground">
@@ -378,7 +378,7 @@ export default function AutomationPage() {
               </div>
             </div>
             <div className="flex gap-3 p-3 rounded-lg border">
-              <CheckCircle className="h-5 w-5 text-green-500 mt-0.5" />
+              <CheckCircle className="h-5 w-5 text-success mt-0.5" />
               <div>
                 <h4 className="font-medium text-sm mb-1">페이지 자동 정리</h4>
                 <p className="text-xs text-muted-foreground">
@@ -387,7 +387,7 @@ export default function AutomationPage() {
               </div>
             </div>
             <div className="flex gap-3 p-3 rounded-lg border">
-              <CheckCircle className="h-5 w-5 text-green-500 mt-0.5" />
+              <CheckCircle className="h-5 w-5 text-success mt-0.5" />
               <div>
                 <h4 className="font-medium text-sm mb-1">AI 자동 요약</h4>
                 <p className="text-xs text-muted-foreground">
@@ -396,7 +396,7 @@ export default function AutomationPage() {
               </div>
             </div>
             <div className="flex gap-3 p-3 rounded-lg border">
-              <CheckCircle className="h-5 w-5 text-green-500 mt-0.5" />
+              <CheckCircle className="h-5 w-5 text-success mt-0.5" />
               <div>
                 <h4 className="font-medium text-sm mb-1">외부 연동</h4>
                 <p className="text-xs text-muted-foreground">

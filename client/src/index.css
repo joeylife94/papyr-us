@@ -2,125 +2,109 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * B · Graphite design tokens (issue #101).
+ * Values are HSL channels so Tailwind opacity modifiers (bg-primary/10) work.
+ * Dark leads the design; light mirrors it. Lime (--primary) is a fill only:
+ * text emphasis uses --highlight, which stays readable on light surfaces.
+ */
 :root {
-  --background: hsl(0, 0%, 100%);
-  --foreground: hsl(20, 14.3%, 4.1%);
-  --muted: hsl(60, 4.8%, 95.9%);
-  --muted-foreground: hsl(25, 5.3%, 44.7%);
-  --popover: hsl(0, 0%, 100%);
-  --popover-foreground: hsl(20, 14.3%, 4.1%);
-  --card: hsl(0, 0%, 100%);
-  --card-foreground: hsl(20, 14.3%, 4.1%);
-  --border: hsl(20, 5.9%, 90%);
-  --input: hsl(20, 5.9%, 90%);
-  --primary: hsl(217, 91%, 59%);
-  --primary-foreground: hsl(0, 0%, 100%);
-  --secondary: hsl(60, 4.8%, 95.9%);
-  --secondary-foreground: hsl(24, 9.8%, 10%);
-  --accent: hsl(60, 4.8%, 95.9%);
-  --accent-foreground: hsl(24, 9.8%, 10%);
-  --destructive: hsl(0, 84.2%, 60.2%);
-  --destructive-foreground: hsl(60, 9.1%, 97.8%);
-  --ring: hsl(20, 14.3%, 4.1%);
+  --background: 240 5.9% 96.7%;
+  --foreground: 220 8.1% 7.3%;
+  --foreground-secondary: 222 7.4% 26.7%;
+  --muted: 240 6.7% 94.1%;
+  --muted-foreground: 222.9 6.5% 42%;
+  --card: 0 0% 100%;
+  --card-foreground: 220 8.1% 7.3%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 220 8.1% 7.3%;
+  --panel: 0 0% 100%;
+  --raised: 0 0% 100%;
+  --rail: 240 5.9% 93.3%;
+  --border: 240 5.7% 89.6%;
+  --input: 240 5.7% 89.6%;
+  --primary: 74.5 84.7% 61.6%;
+  --primary-foreground: 220 8.1% 7.3%;
+  --secondary: 240 8.6% 93.1%;
+  --secondary-foreground: 220 8.1% 7.3%;
+  --accent: 72 15.2% 93.5%;
+  --accent-foreground: 220 8.1% 7.3%;
+  --highlight: 76.8 100% 21%;
+  --success: 134.2 60.8% 30%;
+  --success-foreground: 0 0% 100%;
+  --warning: 39.1 100% 27.1%;
+  --warning-foreground: 0 0% 100%;
+  --info: 210 88% 36.1%;
+  --info-foreground: 0 0% 100%;
+  --destructive: 4.2 76.5% 40%;
+  --destructive-foreground: 0 0% 100%;
+  --ring: 76.8 100% 21%;
   --radius: 0.5rem;
 
-  /* Sidebar colors */
-  --sidebar-background: hsl(0, 0%, 100%);
-  --sidebar-foreground: hsl(20, 14.3%, 4.1%);
-  --sidebar-primary: hsl(217, 91%, 59%);
-  --sidebar-primary-foreground: hsl(0, 0%, 100%);
-  --sidebar-accent: hsl(60, 4.8%, 95.9%);
-  --sidebar-accent-foreground: hsl(24, 9.8%, 10%);
-  --sidebar-border: hsl(20, 5.9%, 90%);
-  --sidebar-ring: hsl(20, 14.3%, 4.1%);
+  --chart-1: 76.8 100% 21%;
+  --chart-2: 210 88% 36.1%;
+  --chart-3: 39.1 100% 27.1%;
+  --chart-4: 134.2 60.8% 30%;
+  --chart-5: 4.2 76.5% 40%;
+
+  --sidebar-background: 0 0% 100%;
+  --sidebar-foreground: 220 8.1% 7.3%;
+  --sidebar-primary: 74.5 84.7% 61.6%;
+  --sidebar-primary-foreground: 220 8.1% 7.3%;
+  --sidebar-accent: 72 15.2% 93.5%;
+  --sidebar-accent-foreground: 220 8.1% 7.3%;
+  --sidebar-border: 240 5.7% 89.6%;
+  --sidebar-ring: 76.8 100% 21%;
 }
 
 .dark {
-  --background: hsl(240, 10%, 3.9%);
-  --foreground: hsl(0, 0%, 98%);
-  --muted: hsl(240, 3.7%, 15.9%);
-  --muted-foreground: hsl(240, 5%, 64.9%);
-  --popover: hsl(240, 10%, 3.9%);
-  --popover-foreground: hsl(0, 0%, 98%);
-  --card: hsl(240, 10%, 3.9%);
-  --card-foreground: hsl(0, 0%, 98%);
-  --border: hsl(240, 3.7%, 15.9%);
-  --input: hsl(240, 3.7%, 15.9%);
-  --primary: hsl(217, 91%, 59%);
-  --primary-foreground: hsl(0, 0%, 100%);
-  --secondary: hsl(240, 3.7%, 15.9%);
-  --secondary-foreground: hsl(0, 0%, 98%);
-  --accent: hsl(240, 3.7%, 15.9%);
-  --accent-foreground: hsl(0, 0%, 98%);
-  --destructive: hsl(0, 62.8%, 30.6%);
-  --destructive-foreground: hsl(0, 0%, 98%);
-  --ring: hsl(240, 4.9%, 83.9%);
+  --background: 220 9.7% 6.1%;
+  --foreground: 220 8.6% 93.1%;
+  --foreground-secondary: 222 7.1% 72.5%;
+  --muted: 230 9.7% 12.2%;
+  --muted-foreground: 221.5 5.9% 56.7%;
+  --card: 228 10.6% 9.2%;
+  --card-foreground: 220 8.6% 93.1%;
+  --popover: 230 9.7% 12.2%;
+  --popover-foreground: 220 8.6% 93.1%;
+  --panel: 228 10.6% 9.2%;
+  --raised: 230 9.7% 12.2%;
+  --rail: 220 12% 4.9%;
+  --border: 225 8.7% 18%;
+  --input: 225 8.7% 18%;
+  --primary: 74.5 84.7% 61.6%;
+  --primary-foreground: 220 9.7% 6.1%;
+  --secondary: 230 9.7% 12.2%;
+  --secondary-foreground: 220 8.6% 93.1%;
+  --accent: 230 9.7% 12.2%;
+  --accent-foreground: 220 8.6% 93.1%;
+  --highlight: 74.5 84.7% 61.6%;
+  --success: 141.9 69.2% 58%;
+  --success-foreground: 220 9.7% 6.1%;
+  --warning: 37 91.3% 55.1%;
+  --warning-foreground: 220 9.7% 6.1%;
+  --info: 199.4 95.5% 73.9%;
+  --info-foreground: 220 9.7% 6.1%;
+  --destructive: 0 100% 71%;
+  --destructive-foreground: 220 9.7% 6.1%;
+  --ring: 74.5 84.7% 61.6%;
 
-  /* Dark sidebar colors */
-  --sidebar-background: hsl(240, 10%, 3.9%);
-  --sidebar-foreground: hsl(0, 0%, 98%);
-  --sidebar-primary: hsl(217, 91%, 59%);
-  --sidebar-primary-foreground: hsl(0, 0%, 100%);
-  --sidebar-accent: hsl(240, 3.7%, 15.9%);
-  --sidebar-accent-foreground: hsl(0, 0%, 98%);
-  --sidebar-border: hsl(240, 3.7%, 15.9%);
-  --sidebar-ring: hsl(240, 4.9%, 83.9%);
-}
+  --chart-1: 74.5 84.7% 61.6%;
+  --chart-2: 199.4 95.5% 73.9%;
+  --chart-3: 37 91.3% 55.1%;
+  --chart-4: 141.9 69.2% 58%;
+  --chart-5: 0 100% 71%;
 
-/* Dark mode improvements */
-.dark {
-  /* Better contrast for dark mode */
+  --sidebar-background: 228 10.6% 9.2%;
+  --sidebar-foreground: 220 8.6% 93.1%;
+  --sidebar-primary: 74.5 84.7% 61.6%;
+  --sidebar-primary-foreground: 220 9.7% 6.1%;
+  --sidebar-accent: 230 9.7% 12.2%;
+  --sidebar-accent-foreground: 220 8.6% 93.1%;
+  --sidebar-border: 225 8.7% 18%;
+  --sidebar-ring: 74.5 84.7% 61.6%;
 
-  /* Improved scrollbar for dark mode */
-  --scrollbar-track: hsl(240, 3.7%, 15.9%);
-  --scrollbar-thumb: hsl(240, 4.9%, 83.9%);
-  --scrollbar-thumb-hover: hsl(240, 5%, 64.9%);
-}
-
-/* Dark mode scrollbar */
-.dark ::-webkit-scrollbar-track {
-  background: var(--scrollbar-track);
-}
-
-.dark ::-webkit-scrollbar-thumb {
-  background: var(--scrollbar-thumb);
-}
-
-.dark ::-webkit-scrollbar-thumb:hover {
-  background: var(--scrollbar-thumb-hover);
-}
-
-/* Dark mode card improvements */
-.dark .bg-white {
-  background-color: hsl(240, 10%, 3.9%);
-}
-
-.dark .bg-slate-50 {
-  background-color: hsl(240, 3.7%, 15.9%);
-}
-
-.dark .bg-slate-100 {
-  background-color: hsl(240, 3.7%, 15.9%);
-}
-
-.dark .border-slate-200 {
-  border-color: hsl(240, 3.7%, 15.9%);
-}
-
-.dark .text-slate-600 {
-  color: hsl(240, 5%, 64.9%);
-}
-
-.dark .text-slate-700 {
-  color: hsl(240, 5%, 64.9%);
-}
-
-.dark .text-slate-800 {
-  color: hsl(0, 0%, 98%);
-}
-
-.dark .text-slate-900 {
-  color: hsl(0, 0%, 98%);
+  color-scheme: dark;
 }
 
 @layer base {
@@ -130,18 +114,11 @@
 
   body {
     @apply font-sans antialiased bg-background text-foreground;
-    font-family:
-      'Inter',
-      -apple-system,
-      BlinkMacSystemFont,
-      'Segoe UI',
-      'Roboto',
-      sans-serif;
   }
 
   /* Improved focus styles for accessibility */
   *:focus-visible {
-    outline: 2px solid hsl(217, 91%, 59%);
+    outline: 2px solid hsl(var(--ring));
     outline-offset: 2px;
     border-radius: 0.375rem;
   }
@@ -152,8 +129,8 @@
     /* Clear the 44px mobile touch-target min-height so no sliver shows above the header. */
     top: -60px;
     left: 6px;
-    background: hsl(217, 91%, 59%);
-    color: white;
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
     padding: 8px;
     text-decoration: none;
     border-radius: 0.375rem;
@@ -221,11 +198,11 @@
 }
 
 .prose pre {
-  @apply bg-slate-100 dark:bg-slate-800 rounded-lg p-4 overflow-x-auto border border-border;
+  @apply bg-muted rounded-lg p-4 overflow-x-auto border border-border;
 }
 
 .prose code {
-  @apply bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-sm font-mono;
+  @apply bg-muted px-1.5 py-0.5 rounded text-sm font-mono;
 }
 
 .prose pre code {
@@ -246,7 +223,7 @@
 }
 
 .prose a {
-  @apply text-primary hover:underline;
+  @apply text-highlight underline-offset-2 hover:underline;
 }
 
 .prose table {
@@ -324,83 +301,68 @@
   }
 }
 
-/* Dark mode styles for react-calendar */
-.dark .react-calendar {
-  background-color: #1f2937 !important;
-  color: #f9fafb !important;
-  border: 1px solid #374151 !important;
+/* react-calendar, themed from tokens in both modes */
+.react-calendar {
+  background-color: hsl(var(--card)) !important;
+  color: hsl(var(--foreground)) !important;
+  border: 1px solid hsl(var(--border)) !important;
+  border-radius: var(--radius);
+  font-family: inherit !important;
 }
 
-.dark .react-calendar__navigation button {
-  background-color: #374151 !important;
-  color: #f9fafb !important;
+.react-calendar__navigation button,
+.react-calendar__navigation__label,
+.react-calendar__navigation__arrow {
+  background-color: transparent !important;
+  color: hsl(var(--foreground)) !important;
   border: none !important;
 }
 
-.dark .react-calendar__navigation button:hover {
-  background-color: #4b5563 !important;
+.react-calendar__navigation button:enabled:hover,
+.react-calendar__navigation button:enabled:focus {
+  background-color: hsl(var(--accent)) !important;
 }
 
-.dark .react-calendar__navigation button:disabled {
-  background-color: #1f2937 !important;
-  color: #6b7280 !important;
+.react-calendar__navigation button:disabled {
+  color: hsl(var(--muted-foreground)) !important;
 }
 
-.dark .react-calendar__month-view__weekdays {
-  background-color: #1f2937 !important;
-  color: #9ca3af !important;
+.react-calendar__month-view__weekdays,
+.react-calendar__month-view__weekdays__weekday {
+  color: hsl(var(--muted-foreground)) !important;
 }
 
-.dark .react-calendar__month-view__weekdays__weekday {
-  color: #9ca3af !important;
+.react-calendar__tile {
+  background-color: transparent !important;
+  color: hsl(var(--foreground)) !important;
 }
 
-.dark .react-calendar__month-view__days__day {
-  background-color: #1f2937 !important;
-  color: #f9fafb !important;
+.react-calendar__tile:enabled:hover,
+.react-calendar__tile:enabled:focus {
+  background-color: hsl(var(--accent)) !important;
 }
 
-.dark .react-calendar__month-view__days__day:hover {
-  background-color: #374151 !important;
-  color: #f9fafb !important;
+.react-calendar__month-view__days__day--neighboringMonth {
+  color: hsl(var(--muted-foreground)) !important;
 }
 
-.dark .react-calendar__month-view__days__day--neighboringMonth {
-  color: #6b7280 !important;
+.react-calendar__month-view__days__day--weekend {
+  color: hsl(var(--foreground)) !important;
 }
 
-.dark .react-calendar__month-view__days__day--weekend {
-  color: #f9fafb !important;
+.react-calendar__tile--now {
+  background-color: hsl(var(--raised)) !important;
+  color: hsl(var(--highlight)) !important;
+  font-weight: 700 !important;
 }
 
-.dark .react-calendar__tile--active {
-  background-color: #3b82f6 !important;
-  color: white !important;
+.react-calendar__tile--active,
+.react-calendar__tile--hasActive {
+  background-color: hsl(var(--primary)) !important;
+  color: hsl(var(--primary-foreground)) !important;
 }
 
-.dark .react-calendar__tile--now {
-  background-color: #374151 !important;
-  color: #fbbf24 !important;
-  font-weight: bold !important;
-}
-
-.dark .react-calendar__tile--hasActive {
-  background-color: #1e40af !important;
-  color: white !important;
-}
-
-.dark .react-calendar__tile--range {
-  background-color: #1e3a8a !important;
-  color: white !important;
-}
-
-/* Dark mode for calendar navigation */
-.dark .react-calendar__navigation__label {
-  background-color: #374151 !important;
-  color: #f9fafb !important;
-}
-
-.dark .react-calendar__navigation__arrow {
-  background-color: #374151 !important;
-  color: #f9fafb !important;
+.react-calendar__tile--range {
+  background-color: hsl(var(--primary) / 0.25) !important;
+  color: hsl(var(--foreground)) !important;
 }

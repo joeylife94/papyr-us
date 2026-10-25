@@ -68,10 +68,10 @@ interface Team {
 }
 
 const statusColors = {
-  todo: 'bg-gray-100 text-gray-800',
-  in_progress: 'bg-blue-100 text-blue-800',
-  review: 'bg-yellow-100 text-yellow-800',
-  done: 'bg-green-100 text-green-800',
+  todo: 'bg-muted text-foreground',
+  in_progress: 'bg-info/15 text-info',
+  review: 'bg-warning/15 text-warning',
+  done: 'bg-success/15 text-success',
 };
 
 const statusLabels = {
@@ -82,11 +82,11 @@ const statusLabels = {
 };
 
 const priorityColors = {
-  1: 'bg-red-100 text-red-800',
-  2: 'bg-orange-100 text-orange-800',
-  3: 'bg-yellow-100 text-yellow-800',
-  4: 'bg-blue-100 text-blue-800',
-  5: 'bg-gray-100 text-gray-800',
+  1: 'bg-destructive/15 text-destructive',
+  2: 'bg-warning/15 text-warning',
+  3: 'bg-warning/15 text-warning',
+  4: 'bg-info/15 text-info',
+  5: 'bg-muted text-foreground',
 };
 
 const priorityLabels = {
@@ -461,7 +461,7 @@ export default function TasksPage({ teamName }: TasksPageProps) {
                     </div>
                     <div className="flex items-center gap-1">
                       <Calendar className="w-3 h-3" />
-                      <span className={isOverdue(task.dueDate) ? 'text-red-500' : ''}>
+                      <span className={isOverdue(task.dueDate) ? 'text-destructive' : ''}>
                         {formatDate(task.dueDate)}
                       </span>
                     </div>
@@ -552,7 +552,7 @@ export default function TasksPage({ teamName }: TasksPageProps) {
                   </div>
                   <div className="flex items-center gap-1">
                     <Calendar className="w-4 h-4" />
-                    <span className={isOverdue(task.dueDate) ? 'text-red-500' : ''}>
+                    <span className={isOverdue(task.dueDate) ? 'text-destructive' : ''}>
                       {formatDate(task.dueDate)}
                     </span>
                   </div>

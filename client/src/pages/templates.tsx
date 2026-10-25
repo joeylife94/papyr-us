@@ -134,7 +134,7 @@ const TemplatesPage: React.FC = () => {
     return Array.from({ length: 5 }, (_, i) => (
       <Star
         key={i}
-        className={`w-4 h-4 ${i < rating ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300'}`}
+        className={`w-4 h-4 ${i < rating ? 'fill-warning text-warning' : 'text-muted-foreground'}`}
       />
     ));
   };
@@ -217,7 +217,7 @@ const TemplatesPage: React.FC = () => {
       {/* Template Editor Modal */}
       {showEditor && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-900 rounded-lg max-w-6xl w-full max-h-[90vh] overflow-hidden">
+          <div className="bg-card rounded-lg max-w-6xl w-full max-h-[90vh] overflow-hidden">
             <TemplateEditor
               template={editingTemplate || undefined}
               onSave={handleSaveTemplate}
@@ -324,7 +324,7 @@ const TemplateCard: React.FC<TemplateCardProps> = ({
       {/* Preview Modal */}
       {isPreviewOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[80vh] overflow-hidden">
+          <div className="bg-card rounded-lg max-w-4xl w-full max-h-[80vh] overflow-hidden">
             <div className="flex items-center justify-between p-4 border-b">
               <h3 className="text-lg font-semibold">{template.title}</h3>
               <Button variant="ghost" size="sm" onClick={() => setIsPreviewOpen(false)}>

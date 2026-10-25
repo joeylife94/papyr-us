@@ -498,18 +498,18 @@ export function BlockEditor({
 
       {/* 실시간 협업 상태 표시 */}
       {pageId && (
-        <div className="flex items-center justify-between mb-4 p-2 bg-gray-50 rounded-lg">
+        <div className="flex items-center justify-between mb-4 p-2 bg-muted rounded-lg">
           <div className="flex items-center space-x-2">
             <div className="flex items-center space-x-1">
               {useYjs ? (
                 // Yjs CRDT collaboration status
                 <>
                   {yjsCollaboration.isConnected ? (
-                    <Wifi className="h-4 w-4 text-green-500" />
+                    <Wifi className="h-4 w-4 text-success" />
                   ) : (
-                    <WifiOff className="h-4 w-4 text-red-500" />
+                    <WifiOff className="h-4 w-4 text-destructive" />
                   )}
-                  <span className="text-sm text-gray-600">
+                  <span className="text-sm text-foreground-secondary">
                     {yjsCollaboration.isConnected
                       ? yjsCollaboration.isSynced
                         ? '🟢 Yjs 동기화됨'
@@ -521,11 +521,11 @@ export function BlockEditor({
                 // Legacy Socket.IO collaboration status
                 <>
                   {collaboration.isConnected ? (
-                    <Wifi className="h-4 w-4 text-green-500" />
+                    <Wifi className="h-4 w-4 text-success" />
                   ) : (
-                    <WifiOff className="h-4 w-4 text-red-500" />
+                    <WifiOff className="h-4 w-4 text-destructive" />
                   )}
-                  <span className="text-sm text-gray-600">
+                  <span className="text-sm text-foreground-secondary">
                     {collaboration.isConnected ? '실시간 연결됨' : '연결 끊김'}
                   </span>
                 </>
@@ -536,8 +536,8 @@ export function BlockEditor({
               ? // Yjs user count
                 yjsCollaboration.userCount > 0 && (
                   <div className="flex items-center space-x-1">
-                    <Users className="h-4 w-4 text-blue-500" />
-                    <span className="text-sm text-gray-600">
+                    <Users className="h-4 w-4 text-info" />
+                    <span className="text-sm text-foreground-secondary">
                       {yjsCollaboration.userCount}명 참여 중
                     </span>
                   </div>
@@ -545,8 +545,8 @@ export function BlockEditor({
               : // Legacy user count
                 collaboration.users.length > 0 && (
                   <div className="flex items-center space-x-1">
-                    <Users className="h-4 w-4 text-blue-500" />
-                    <span className="text-sm text-gray-600">
+                    <Users className="h-4 w-4 text-info" />
+                    <span className="text-sm text-foreground-secondary">
                       {collaboration.users.length}명 참여 중
                     </span>
                   </div>
@@ -577,7 +577,7 @@ export function BlockEditor({
                 ))}
 
             {!useYjs && collaboration.typingUsers.length > 0 && (
-              <Badge variant="outline" className="text-xs text-blue-600">
+              <Badge variant="outline" className="text-xs text-info">
                 {collaboration.typingUsers.length}명 입력 중...
               </Badge>
             )}
@@ -585,10 +585,10 @@ export function BlockEditor({
         </div>
       )}
       {blocks.length === 0 ? (
-        <div className="flex items-center justify-center h-64 border-2 border-dashed border-gray-300 rounded-lg hover:border-gray-400 transition-colors">
+        <div className="flex items-center justify-center h-64 border-2 border-dashed border-border rounded-lg hover:border-muted-foreground transition-colors">
           <div className="text-center space-y-4">
-            <Plus className="h-8 w-8 mx-auto text-gray-400" />
-            <p className="text-gray-500">첫 번째 블록을 추가하세요</p>
+            <Plus className="h-8 w-8 mx-auto text-muted-foreground" />
+            <p className="text-muted-foreground">첫 번째 블록을 추가하세요</p>
             <div className="flex flex-wrap justify-center gap-2">
               {(
                 [

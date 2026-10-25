@@ -203,7 +203,7 @@ export function AIBlockGenerator({ onGenerate, className }: AIBlockGeneratorProp
   return (
     <div className={cn('space-y-3 p-4 border rounded-lg bg-muted/30', className)}>
       <div className="flex items-center gap-2">
-        <Sparkles className="h-5 w-5 text-purple-500" />
+        <Sparkles className="h-5 w-5 text-highlight" />
         <h3 className="font-semibold">AI Block Generator</h3>
       </div>
 
@@ -304,7 +304,7 @@ export function AISuggestions({ text, cursorPosition, onSelect, className }: AIS
   return (
     <div className={cn('space-y-1 p-2 border rounded-lg bg-background shadow-lg', className)}>
       <div className="flex items-center gap-2 px-2 py-1">
-        <Sparkles className="h-3 w-3 text-purple-500" />
+        <Sparkles className="h-3 w-3 text-highlight" />
         <span className="text-xs font-medium">AI Suggestions</span>
       </div>
 

@@ -56,8 +56,8 @@ export function TableOfContents({ headings, className }: TableOfContentsProps) {
   return (
     <aside className={cn('hidden xl:block w-48 shrink-0 ml-4 2xl:w-56 2xl:ml-6', className)}>
       <div className="sticky top-24 p-4">
-        <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-4 flex items-center">
-          <List className="h-4 w-4 text-primary mr-2" />
+        <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center">
+          <List className="h-4 w-4 text-highlight mr-2" />
           목차
         </h3>
         {/* The English label keeps the existing TOC locator in tests/example.spec.ts working. */}
@@ -73,8 +73,8 @@ export function TableOfContents({ headings, className }: TableOfContentsProps) {
                 level === 3 && 'pl-6',
                 level >= 4 && 'pl-9',
                 activeId === id
-                  ? 'text-primary border-primary font-medium'
-                  : 'text-slate-600 dark:text-slate-400 border-transparent hover:text-primary hover:border-primary'
+                  ? 'text-highlight border-primary font-medium'
+                  : 'text-foreground-secondary border-transparent hover:text-highlight hover:border-primary'
               )}
             >
               {text}

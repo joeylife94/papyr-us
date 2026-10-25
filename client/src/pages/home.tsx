@@ -78,15 +78,15 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
   return (
     <div className="space-y-8">
       {/* Workspace heading: documents are the primary action, not dashboard statistics. */}
-      <div className="flex flex-col gap-4 border-b border-slate-200 pb-6 dark:border-slate-800 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-4 border-b border-border pb-6 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0 space-y-2">
-          <p className="truncate text-sm font-medium text-slate-500 dark:text-slate-400">
+          <p className="truncate text-sm font-medium text-muted-foreground">
             {teamName ? `${workspace?.displayName ?? teamName} · 워크스페이스` : '개인 문서 공간'}
           </p>
-          <h1 className="break-words break-keep text-2xl font-semibold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+          <h1 className="break-words break-keep text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
             {teamName ? `${teamName} 팀 문서` : '내 문서'}
           </h1>
-          <p className="text-sm text-slate-600 dark:text-slate-400">
+          <p className="text-sm text-foreground-secondary">
             {teamName
               ? '팀의 문서를 확인하고 함께 작업하세요.'
               : '최근 문서를 확인하거나 새 문서를 작성하세요.'}
@@ -94,9 +94,7 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
         </div>
         <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-end">
           {!isLoading && !error && (
-            <span className="text-sm tabular-nums text-slate-500 dark:text-slate-400">
-              문서 {totalCount}개
-            </span>
+            <span className="text-sm tabular-nums text-muted-foreground">문서 {totalCount}개</span>
           )}
           {/* A button (not a link) keeps the accepted GJ-01 / buyer-proof locator contract. */}
           <Button onClick={() => navigate(createPath)} className="gap-2 shadow-sm">
@@ -108,17 +106,17 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
       {/* Recent Pages */}
       <div>
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+          <h2 className="text-lg font-semibold text-foreground">
             {teamName ? '문서 목록' : '최근 문서'}
           </h2>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
-              <label htmlFor="page-sort" className="text-sm text-slate-600 dark:text-slate-400">
+              <label htmlFor="page-sort" className="text-sm text-foreground-secondary">
                 정렬
               </label>
               <select
                 id="page-sort"
-                className="text-sm border rounded-md px-2 py-1 bg-white dark:bg-slate-900"
+                className="text-sm border rounded-md px-2 py-1 bg-card"
                 value={effectiveSort}
                 onChange={(e) => setSort(e.target.value as 'updated' | 'rank')}
                 disabled={!!searchQuery}
@@ -147,12 +145,10 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
           </div>
         ) : error ? (
           <div className="text-center py-12">
-            <div className="text-red-500 mb-4">
+            <div className="text-destructive mb-4">
               <Book className="h-12 w-12 mx-auto mb-2" />
               <p className="text-lg font-medium">데이터를 불러오는데 실패했습니다</p>
-              <p className="text-sm text-slate-600 dark:text-slate-400">
-                잠시 후 다시 시도해주세요.
-              </p>
+              <p className="text-sm text-foreground-secondary">잠시 후 다시 시도해주세요.</p>
             </div>
           </div>
         ) : (
@@ -163,12 +159,12 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
                 to={`/page/${page.slug}`}
                 className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
-                <Card className="group h-full border border-slate-200 dark:border-slate-800 transition-colors duration-150 hover:border-primary/50 hover:bg-slate-50/70 dark:hover:bg-slate-900/70">
+                <Card className="group h-full border border-border transition-colors duration-150 hover:border-primary/50 hover:bg-muted/70">
                   <CardHeader className="space-y-2 p-4 sm:p-5">
                     <CardTitle className="text-base font-semibold leading-snug line-clamp-2 sm:text-lg">
                       {renderHighlighted(page.title, searchQuery)}
                     </CardTitle>
-                    <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400 sm:text-sm">
+                    <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground sm:text-sm">
                       <div className="flex min-w-0 items-center gap-1">
                         <User className="h-3 w-3 shrink-0" />
                         <span className="truncate">{page.author}</span>
@@ -186,7 +182,7 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
                   </CardHeader>
                   <CardContent className="p-4 pt-0 sm:p-5 sm:pt-0">
                     <div className="space-y-3">
-                      <p className="text-sm text-slate-600 dark:text-slate-400 line-clamp-2">
+                      <p className="text-sm text-foreground-secondary line-clamp-2">
                         {renderHighlighted(toPlainTextPreview(page.content), searchQuery)}
                       </p>
                       <div className="flex flex-wrap gap-2">
@@ -210,14 +206,12 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
           </div>
         )}
         {flatPages.length === 0 && !isLoading && !error && (
-          <div className="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center dark:border-slate-700">
-            <Book className="h-8 w-8 text-slate-400 mx-auto mb-3" />
+          <div className="rounded-xl border border-dashed border-border px-4 py-10 text-center">
+            <Book className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
             {/* The workspace name is already in the page heading; repeating it here would also
                 make the accepted `${team} 팀 문서` heading locator ambiguous. */}
-            <h3 className="text-base font-medium text-slate-900 dark:text-white mb-1">
-              아직 문서가 없습니다
-            </h3>
-            <p className="text-sm text-slate-600 dark:text-slate-400">
+            <h3 className="text-base font-medium text-foreground mb-1">아직 문서가 없습니다</h3>
+            <p className="text-sm text-foreground-secondary">
               {teamName
                 ? "'새 문서 작성'으로 팀의 첫 문서를 만들어 보세요."
                 : "'새 문서 작성'으로 첫 문서를 만들어 보세요."}
@@ -247,7 +241,7 @@ function renderHighlighted(text: string, query: string) {
       <>
         {parts.map((part, i) =>
           part.match(re) ? (
-            <mark key={i} className="bg-yellow-200 dark:bg-yellow-700 rounded px-0.5">
+            <mark key={i} className="bg-warning/20 rounded px-0.5">
               {part}
             </mark>
           ) : (

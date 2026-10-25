@@ -198,7 +198,7 @@ export function Comments({ pageId }: CommentsProps) {
   return (
     <div className="space-y-6">
       <div className="flex items-center space-x-2">
-        <MessageCircle className="h-5 w-5 text-primary" />
+        <MessageCircle className="h-5 w-5 text-highlight" />
         <h3 className="text-lg font-semibold">Comments ({comments.length})</h3>
       </div>
 

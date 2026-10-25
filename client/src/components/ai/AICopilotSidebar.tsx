@@ -193,9 +193,9 @@ export function AICopilotSidebar({
   return (
     <div className="fixed right-0 top-0 h-full w-96 bg-background border-l shadow-2xl flex flex-col z-40">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-purple-500/10 to-blue-500/10">
+      <div className="flex items-center justify-between p-4 border-b">
         <div className="flex items-center gap-2">
-          <Sparkles className="w-5 h-5 text-purple-500" />
+          <Sparkles className="w-5 h-5 text-highlight" />
           <h2 className="font-semibold">AI 코파일럿</h2>
         </div>
         <div className="flex items-center gap-1">
@@ -238,7 +238,7 @@ export function AICopilotSidebar({
             ))}
           </div>
           <Separator className="my-4" />
-          <Card className="bg-gradient-to-br from-purple-50 to-blue-50 dark:from-purple-950/20 dark:to-blue-950/20 border-purple-200 dark:border-purple-800">
+          <Card className="border-primary/40">
             <CardContent className="p-4">
               <p className="text-sm text-muted-foreground">
                 💡 <strong>팁:</strong> 페이지 내용을 선택하고 질문하면 더 정확한 답변을 받을 수

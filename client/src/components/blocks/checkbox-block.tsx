@@ -78,7 +78,7 @@ export function CheckboxBlock({
 
   return (
     <div
-      className={`relative group ${isFocused ? 'bg-blue-50 dark:bg-blue-950/20' : ''} rounded-lg p-2 transition-colors`}
+      className={`relative group ${isFocused ? 'bg-primary/10 ' : ''} rounded-lg p-2 transition-colors`}
       onFocus={onFocus}
       onBlur={onBlur}
     >
@@ -87,7 +87,7 @@ export function CheckboxBlock({
         <button
           type="button"
           onClick={handleCheckboxToggle}
-          className={`mt-1 flex-shrink-0 ${isChecked ? 'text-green-600' : 'text-gray-400'} hover:text-green-600 transition-colors`}
+          className={`mt-1 flex-shrink-0 ${isChecked ? 'text-success' : 'text-muted-foreground'} hover:text-success transition-colors`}
         >
           {isChecked ? <CheckSquare className="h-5 w-5" /> : <Square className="h-5 w-5" />}
         </button>
@@ -101,8 +101,8 @@ export function CheckboxBlock({
           onFocus={onFocus}
           onBlur={onBlur}
           placeholder="할 일을 입력하세요..."
-          className={`flex-1 resize-none border-none outline-none bg-transparent text-base placeholder-gray-400 dark:placeholder-gray-500 leading-relaxed ${
-            isChecked ? 'text-gray-500 line-through' : 'text-gray-900 dark:text-white'
+          className={`flex-1 resize-none border-none outline-none bg-transparent text-base placeholder:text-muted-foreground leading-relaxed ${
+            isChecked ? 'text-muted-foreground line-through' : 'text-foreground'
           }`}
           rows={1}
         />
@@ -114,7 +114,7 @@ export function CheckboxBlock({
               variant="ghost"
               size="sm"
               onClick={onDelete}
-              className="h-6 w-6 p-0 text-gray-400 hover:text-red-500"
+              className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
             >
               <Trash2 className="h-3 w-3" />
             </Button>

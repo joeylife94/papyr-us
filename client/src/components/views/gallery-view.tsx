@@ -167,7 +167,7 @@ export function GalleryView({
                 </DropdownMenuItem>
               )}
               {onDelete && (
-                <DropdownMenuItem onClick={() => onDelete(item)} className="text-red-600">
+                <DropdownMenuItem onClick={() => onDelete(item)} className="text-destructive">
                   <Trash2 className="h-4 w-4 mr-2" />
                   삭제
                 </DropdownMenuItem>
@@ -273,7 +273,7 @@ export function GalleryView({
                     </DropdownMenuItem>
                   )}
                   {onDelete && (
-                    <DropdownMenuItem onClick={() => onDelete(item)} className="text-red-600">
+                    <DropdownMenuItem onClick={() => onDelete(item)} className="text-destructive">
                       <Trash2 className="h-4 w-4 mr-2" />
                       삭제
                     </DropdownMenuItem>

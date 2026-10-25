@@ -257,9 +257,9 @@ export function FileUpload({
         <div className="flex flex-col items-center space-y-4">
           <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
             {isUploading ? (
-              <Loader2 className="w-6 h-6 text-primary animate-spin" />
+              <Loader2 className="w-6 h-6 text-highlight animate-spin" />
             ) : (
-              <Upload className="w-6 h-6 text-primary" />
+              <Upload className="w-6 h-6 text-highlight" />
             )}
           </div>
 
@@ -320,7 +320,7 @@ export function FileUpload({
                       <div className="flex items-center justify-between text-xs text-muted-foreground">
                         <span>{formatFileSize(item.file.size)}</span>
                         {item.status === 'completed' && (
-                          <Badge variant="outline" className="text-green-600">
+                          <Badge variant="outline" className="text-success">
                             <Check className="w-3 h-3 mr-1" />
                             완료
                           </Badge>

@@ -205,10 +205,10 @@ export default function WikiPageView() {
     return (
       <div className="flex min-h-96 items-center justify-center px-4">
         <div className="text-center">
-          <AlertTriangle className="mx-auto mb-4 h-12 w-12 text-red-500" />
+          <AlertTriangle className="mx-auto mb-4 h-12 w-12 text-destructive" />
           {/* Heading text is an accepted GJ-02 locator. */}
-          <h1 className="mb-2 text-2xl font-bold text-slate-900 dark:text-white">Page Not Found</h1>
-          <p className="text-slate-600 dark:text-slate-400">
+          <h1 className="mb-2 text-2xl font-bold text-foreground">Page Not Found</h1>
+          <p className="text-foreground-secondary">
             요청한 문서가 없거나 다른 위치로 이동되었습니다.
           </p>
           <Button asChild variant="outline" className="mt-6">
@@ -237,11 +237,11 @@ export default function WikiPageView() {
 
           {/* Breadcrumb */}
           <nav aria-label="문서 경로" className="mb-5">
-            <ol className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-500 dark:text-slate-400">
+            <ol className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
               <li className="min-w-0">
                 <Link
                   to={workspace?.documentsPath ?? '/'}
-                  className="inline-flex max-w-[16rem] items-center transition-colors hover:text-primary"
+                  className="inline-flex max-w-[16rem] items-center transition-colors hover:text-highlight"
                 >
                   <span className="truncate">
                     {workspace?.displayName ??
@@ -254,7 +254,7 @@ export default function WikiPageView() {
               <li aria-hidden="true">/</li>
               <li
                 aria-current="page"
-                className="min-w-0 max-w-full truncate text-slate-700 dark:text-slate-300"
+                className="min-w-0 max-w-full truncate text-foreground-secondary"
               >
                 {page.title}
               </li>
@@ -262,12 +262,12 @@ export default function WikiPageView() {
           </nav>
 
           {/* Page Header */}
-          <header className="mb-8 space-y-4 border-b border-slate-200 pb-6 dark:border-slate-800">
-            <h1 className="break-words break-keep text-3xl font-semibold tracking-tight text-slate-900 dark:text-white sm:text-4xl">
+          <header className="mb-8 space-y-4 border-b border-border pb-6">
+            <h1 className="break-words break-keep text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
               {page.title}
             </h1>
 
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-500 dark:text-slate-400">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
               <span className="flex min-w-0 items-center gap-1.5">
                 <User className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate">{page.author}</span>
@@ -337,7 +337,7 @@ export default function WikiPageView() {
                   onClick={handleDelete}
                   title="Delete"
                   aria-label="문서 삭제"
-                  className="text-slate-500 hover:bg-red-50 hover:text-red-600 dark:text-slate-400 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                  className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
@@ -351,7 +351,7 @@ export default function WikiPageView() {
           </div>
 
           {/* Comments Section */}
-          <section className="mt-12 border-t border-slate-200 pt-8 dark:border-slate-800">
+          <section className="mt-12 border-t border-border pt-8">
             <Comments pageId={page.id} />
           </section>
 

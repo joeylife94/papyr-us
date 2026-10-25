@@ -162,7 +162,7 @@ export function TableBlock({
 
   return (
     <div
-      className={`relative group ${isFocused ? 'bg-blue-50 dark:bg-blue-950/20' : ''} rounded-lg p-4 transition-colors`}
+      className={`relative group ${isFocused ? 'bg-primary/10 ' : ''} rounded-lg p-4 transition-colors`}
       onFocus={onFocus}
       onBlur={onBlur}
       onKeyDown={handleKeyDown}
@@ -170,7 +170,7 @@ export function TableBlock({
     >
       {/* 블록 타입 표시 */}
       <div className="absolute left-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity">
-        <TableIcon className="h-4 w-4 text-gray-400" />
+        <TableIcon className="h-4 w-4 text-muted-foreground" />
       </div>
 
       {/* 테이블 컨트롤 */}
@@ -188,7 +188,7 @@ export function TableBlock({
             variant="ghost"
             size="sm"
             onClick={addRow}
-            className="h-6 w-6 p-0 text-gray-400 hover:text-green-600"
+            className="h-6 w-6 p-0 text-muted-foreground hover:text-success"
           >
             <Plus className="h-3 w-3" />
           </Button>
@@ -197,7 +197,7 @@ export function TableBlock({
             size="sm"
             onClick={removeRow}
             disabled={tableData.rows <= 1}
-            className="h-6 w-6 p-0 text-gray-400 hover:text-red-500 disabled:opacity-50"
+            className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive disabled:opacity-50"
           >
             <Minus className="h-3 w-3" />
           </Button>
@@ -205,7 +205,7 @@ export function TableBlock({
             variant="ghost"
             size="sm"
             onClick={addColumn}
-            className="h-6 w-6 p-0 text-gray-400 hover:text-green-600"
+            className="h-6 w-6 p-0 text-muted-foreground hover:text-success"
           >
             <Plus className="h-3 w-3" />
           </Button>
@@ -214,7 +214,7 @@ export function TableBlock({
             size="sm"
             onClick={removeColumn}
             disabled={tableData.cols <= 1}
-            className="h-6 w-6 p-0 text-gray-400 hover:text-red-500 disabled:opacity-50"
+            className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive disabled:opacity-50"
           >
             <Minus className="h-3 w-3" />
           </Button>
@@ -222,7 +222,7 @@ export function TableBlock({
             variant="ghost"
             size="sm"
             onClick={onDelete}
-            className="h-6 w-6 p-0 text-gray-400 hover:text-red-500"
+            className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
           >
             <Trash2 className="h-3 w-3" />
           </Button>
@@ -231,7 +231,7 @@ export function TableBlock({
 
       {/* 테이블 */}
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse border border-gray-300 dark:border-gray-600">
+        <table className="w-full border-collapse border border-border">
           <tbody>
             {tableData.cells.map((row, rowIndex) => (
               <tr key={rowIndex}>
@@ -244,9 +244,9 @@ export function TableBlock({
                     <td
                       key={colIndex}
                       className={`
-                        border border-gray-300 dark:border-gray-600 p-2 min-w-[100px]
-                        ${isHeader ? 'bg-gray-100 dark:bg-gray-800 font-semibold' : 'bg-white dark:bg-gray-900'}
-                        ${isEditing ? 'p-0' : 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800'}
+                        border border-border p-2 min-w-[100px]
+                        ${isHeader ? 'bg-muted font-semibold' : 'bg-card'}
+                        ${isEditing ? 'p-0' : 'cursor-pointer hover:bg-muted'}
                       `}
                       onClick={() => !isEditing && startCellEdit(rowIndex, colIndex)}
                     >
@@ -261,7 +261,9 @@ export function TableBlock({
                         />
                       ) : (
                         <div className="min-h-[20px]">
-                          {cell || <span className="text-gray-400 text-sm">클릭하여 편집</span>}
+                          {cell || (
+                            <span className="text-muted-foreground text-sm">클릭하여 편집</span>
+                          )}
                         </div>
                       )}
                     </td>

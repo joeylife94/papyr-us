@@ -39,10 +39,10 @@ const notificationIcons = {
 };
 
 const notificationColors = {
-  comment: 'text-blue-500',
-  mention: 'text-purple-500',
-  task_due: 'text-orange-500',
-  task_assigned: 'text-green-500',
+  comment: 'text-info',
+  mention: 'text-highlight',
+  task_due: 'text-warning',
+  task_assigned: 'text-success',
 };
 
 import { useSocket } from '@/lib/socket';

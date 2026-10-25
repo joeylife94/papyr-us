@@ -36,7 +36,11 @@ interface DashboardOverview {
 }
 
 export default function DashboardPage() {
-  const { data: overview, isLoading, isError } = useQuery<DashboardOverview>({
+  const {
+    data: overview,
+    isLoading,
+    isError,
+  } = useQuery<DashboardOverview>({
     queryKey: ['/api/dashboard/overview'],
     queryFn: async () => {
       const response = await fetch('/api/dashboard/overview');
@@ -58,7 +62,7 @@ export default function DashboardPage() {
   if (isError || !overview) {
     return (
       <div className="container mx-auto p-6">
-        <div className="text-center text-red-500">대시보드 데이터를 불러올 수 없습니다.</div>
+        <div className="text-center text-destructive">대시보드 데이터를 불러올 수 없습니다.</div>
       </div>
     );
   }
@@ -153,15 +157,15 @@ export default function DashboardPage() {
                   <Progress value={(teamTotal / totalContributions) * 100} className="h-2" />
                   <div className="grid grid-cols-3 gap-4 text-center">
                     <div>
-                      <div className="text-2xl font-bold text-blue-600">{team.pages}</div>
+                      <div className="text-2xl font-bold text-info">{team.pages}</div>
                       <div className="text-xs text-muted-foreground">페이지</div>
                     </div>
                     <div>
-                      <div className="text-2xl font-bold text-green-600">{team.comments}</div>
+                      <div className="text-2xl font-bold text-success">{team.comments}</div>
                       <div className="text-xs text-muted-foreground">댓글</div>
                     </div>
                     <div>
-                      <div className="text-2xl font-bold text-purple-600">{team.tasks}</div>
+                      <div className="text-2xl font-bold text-highlight">{team.tasks}</div>
                       <div className="text-xs text-muted-foreground">과제</div>
                     </div>
                   </div>
@@ -188,9 +192,9 @@ export default function DashboardPage() {
               {overview.recentActivity.map((activity, index) => (
                 <div key={index} className="flex items-start space-x-3 p-3 rounded-lg border">
                   {activity.type === 'page' ? (
-                    <FileText className="w-5 h-5 text-blue-500" />
+                    <FileText className="w-5 h-5 text-info" />
                   ) : (
-                    <MessageSquare className="w-5 h-5 text-green-500" />
+                    <MessageSquare className="w-5 h-5 text-success" />
                   )}
                   <div className="flex-1 min-w-0">
                     <span className="text-sm font-medium">{activity.author}</span>

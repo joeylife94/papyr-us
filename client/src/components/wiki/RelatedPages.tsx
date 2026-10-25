@@ -120,7 +120,7 @@ export function RelatedPages({ pageId, pageTitle, pageContent }: RelatedPagesPro
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
-              <Link2 className="h-5 w-5 text-blue-500" />
+              <Link2 className="h-5 w-5 text-info" />
               백링크 ({backlinks.length})
               <Badge variant="outline" className="ml-2">
                 이 페이지를 참조
@@ -133,18 +133,16 @@ export function RelatedPages({ pageId, pageTitle, pageContent }: RelatedPagesPro
                 <Link
                   key={page.id}
                   to={`/page/${page.slug}`}
-                  className="block p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                  className="block p-3 rounded-lg border border-border hover:border-info/30 hover:bg-muted transition-colors"
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
-                      <h4 className="font-medium text-slate-900 dark:text-white mb-1">
-                        {page.title}
-                      </h4>
-                      <p className="text-sm text-slate-500 dark:text-slate-400 line-clamp-2">
+                      <h4 className="font-medium text-foreground mb-1">{page.title}</h4>
+                      <p className="text-sm text-muted-foreground line-clamp-2">
                         {page.content.substring(0, 150)}...
                       </p>
                     </div>
-                    <ArrowRight className="h-4 w-4 text-slate-400 mt-1 ml-2 flex-shrink-0" />
+                    <ArrowRight className="h-4 w-4 text-muted-foreground mt-1 ml-2 flex-shrink-0" />
                   </div>
                 </Link>
               ))}
@@ -158,9 +156,9 @@ export function RelatedPages({ pageId, pageTitle, pageContent }: RelatedPagesPro
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
-              <Sparkles className="h-5 w-5 text-purple-500" />
+              <Sparkles className="h-5 w-5 text-highlight" />
               AI 추천 관련 페이지
-              <Badge variant="outline" className="ml-2 bg-purple-50 dark:bg-purple-950">
+              <Badge variant="outline" className="ml-2 bg-primary/10">
                 {aiRelated.relatedPages.length}개 발견
               </Badge>
             </CardTitle>
@@ -171,21 +169,19 @@ export function RelatedPages({ pageId, pageTitle, pageContent }: RelatedPagesPro
                 <Link
                   key={page.id}
                   to={`/page/${page.slug}`}
-                  className="block p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-purple-300 dark:hover:border-purple-700 hover:bg-purple-50 dark:hover:bg-purple-950/30 transition-colors"
+                  className="block p-3 rounded-lg border border-border hover:border-primary/40 hover:bg-primary/10 transition-colors"
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
-                        <h4 className="font-medium text-slate-900 dark:text-white">{page.title}</h4>
+                        <h4 className="font-medium text-foreground">{page.title}</h4>
                         <Badge variant="secondary" className="text-xs">
                           {Math.round(page.similarity * 100)}% 유사
                         </Badge>
                       </div>
-                      <p className="text-sm text-slate-500 dark:text-slate-400 line-clamp-2">
-                        {page.reason}
-                      </p>
+                      <p className="text-sm text-muted-foreground line-clamp-2">{page.reason}</p>
                     </div>
-                    <ArrowRight className="h-4 w-4 text-slate-400 mt-1 ml-2 flex-shrink-0" />
+                    <ArrowRight className="h-4 w-4 text-muted-foreground mt-1 ml-2 flex-shrink-0" />
                   </div>
                 </Link>
               ))}

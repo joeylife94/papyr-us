@@ -51,11 +51,11 @@ const folderIcons: Record<string, React.ElementType> = {
 };
 
 const folderColors: Record<string, string> = {
-  docs: 'text-primary',
-  ideas: 'text-amber-500',
-  members: 'text-emerald-500',
-  logs: 'text-purple-500',
-  archive: 'text-slate-500',
+  docs: 'text-highlight',
+  ideas: 'text-warning',
+  members: 'text-success',
+  logs: 'text-highlight',
+  archive: 'text-muted-foreground',
 };
 
 export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: SidebarProps) {
@@ -252,7 +252,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
       {/* Sidebar */}
       <aside
         className={cn(
-          'fixed left-0 top-16 bottom-0 w-[85vw] max-w-sm lg:w-72 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 overflow-y-auto transform transition-transform duration-200 z-30',
+          'fixed left-0 top-16 bottom-0 w-[85vw] max-w-sm lg:w-72 bg-card border-r border-border overflow-y-auto transform transition-transform duration-200 z-30',
           'lg:translate-x-0',
           isOpen ? 'translate-x-0' : '-translate-x-full'
         )}
@@ -276,10 +276,10 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
             <div
               role="group"
               aria-label="현재 워크스페이스"
-              className="mb-4 rounded-lg border border-slate-200 px-3 py-2.5 dark:border-slate-800"
+              className="mb-4 rounded-lg border border-border px-3 py-2.5"
             >
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">워크스페이스</p>
-              <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">
+              <p className="text-xs font-medium text-muted-foreground">워크스페이스</p>
+              <p className="truncate text-sm font-semibold text-foreground">
                 {workspace ? workspace.displayName : '내 문서'}
               </p>
             </div>
@@ -294,8 +294,8 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
               className={cn(
                 'flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                 isDocumentsSection
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800'
+                  ? 'bg-primary/10 text-highlight'
+                  : 'text-foreground-secondary hover:bg-muted'
               )}
             >
               <FileText className="h-4 w-4" /> 문서
@@ -314,10 +314,10 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                   onClick={onClose}
                   aria-current={pathname === `${activeTeamPrefix}/tasks` ? 'page' : undefined}
                   className={cn(
-                    'flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800',
+                    'flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-muted',
                     pathname === `${activeTeamPrefix}/tasks`
-                      ? 'bg-primary/10 font-medium text-primary'
-                      : 'text-slate-700 dark:text-slate-200'
+                      ? 'bg-primary/10 font-medium text-highlight'
+                      : 'text-foreground-secondary'
                   )}
                 >
                   <CheckSquare className="h-4 w-4" /> 할 일
@@ -328,10 +328,10 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                     onClick={onClose}
                     aria-current={pathname === `${activeTeamPrefix}/calendar` ? 'page' : undefined}
                     className={cn(
-                      'flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800',
+                      'flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-muted',
                       pathname === `${activeTeamPrefix}/calendar`
-                        ? 'bg-primary/10 font-medium text-primary'
-                        : 'text-slate-700 dark:text-slate-200'
+                        ? 'bg-primary/10 font-medium text-highlight'
+                        : 'text-foreground-secondary'
                     )}
                   >
                     <Calendar className="h-4 w-4" /> 캘린더
@@ -342,10 +342,10 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                   onClick={onClose}
                   aria-current={pathname === `${activeTeamPrefix}/members` ? 'page' : undefined}
                   className={cn(
-                    'flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800',
+                    'flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-muted',
                     pathname === `${activeTeamPrefix}/members`
-                      ? 'bg-primary/10 font-medium text-primary'
-                      : 'text-slate-700 dark:text-slate-200'
+                      ? 'bg-primary/10 font-medium text-highlight'
+                      : 'text-foreground-secondary'
                   )}
                 >
                   <Users className="h-4 w-4" /> 팀원
@@ -355,35 +355,35 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
           </nav>
 
           {/* Secondary tools remain available without dominating the sidebar. */}
-          <details className="mb-6 rounded-lg border border-slate-200 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-800/30">
-            <summary className="cursor-pointer rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white">
+          <details className="mb-6 rounded-lg border border-border bg-muted/70">
+            <summary className="cursor-pointer rounded-lg px-3 py-2 text-sm font-medium text-foreground-secondary hover:text-foreground">
               기타 도구
             </summary>
             <div className="space-y-2 px-2 pb-3 pt-1">
               <Link to="/dashboard">
                 <Button variant="outline" className="w-full justify-start">
-                  <Activity className="h-4 w-4 mr-2 text-purple-500" />
+                  <Activity className="h-4 w-4 mr-2 text-highlight" />
                   스터디 대시보드
                 </Button>
               </Link>
               {flags.FEATURE_TEMPLATES ? (
                 <Link to="/templates">
                   <Button variant="outline" className="w-full justify-start">
-                    <BookOpen className="h-4 w-4 mr-2 text-blue-500" />
+                    <BookOpen className="h-4 w-4 mr-2 text-info" />
                     템플릿 갤러리
                   </Button>
                 </Link>
               ) : null}
               <Link to="/database">
                 <Button variant="outline" className="w-full justify-start">
-                  <Database className="h-4 w-4 mr-2 text-indigo-500" />
+                  <Database className="h-4 w-4 mr-2 text-info" />
                   데이터베이스 뷰
                 </Button>
               </Link>
               {showCollaborationTest ? (
                 <Link to="/collaboration-test">
                   <Button variant="outline" className="w-full justify-start">
-                    <Users className="h-4 w-4 mr-2 text-green-500" />
+                    <Users className="h-4 w-4 mr-2 text-success" />
                     실시간 협업 테스트
                   </Button>
                 </Link>
@@ -391,7 +391,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
               {showAiSearch ? (
                 <Link to="/ai-search">
                   <Button variant="outline" className="w-full justify-start">
-                    <Sparkles className="h-4 w-4 mr-2 text-purple-500" />
+                    <Sparkles className="h-4 w-4 mr-2 text-highlight" />
                     AI 검색
                   </Button>
                 </Link>
@@ -399,7 +399,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
               {showKnowledgeGraph ? (
                 <Link to="/knowledge-graph">
                   <Button variant="outline" className="w-full justify-start">
-                    <Network className="h-4 w-4 mr-2 text-cyan-500" />
+                    <Network className="h-4 w-4 mr-2 text-info" />
                     지식 그래프
                   </Button>
                 </Link>
@@ -407,7 +407,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
               {flags.FEATURE_AUTOMATION ? (
                 <Link to="/automation">
                   <Button variant="outline" className="w-full justify-start">
-                    <Zap className="h-4 w-4 mr-2 text-amber-500" />
+                    <Zap className="h-4 w-4 mr-2 text-warning" />
                     자동화
                   </Button>
                 </Link>
@@ -418,23 +418,24 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
           {/* Teams Section */}
           {showTeams ? (
             <div className="mb-6">
-              <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 flex items-center">
-                <Users className="h-4 w-4 text-emerald-500 mr-2" />
+              <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center">
+                <Users className="h-4 w-4 text-success mr-2" />
                 워크스페이스 목록
-                {teamsLoading && <span className="ml-2 text-xs text-slate-400">(로딩 중...)</span>}
+                {teamsLoading && (
+                  <span className="ml-2 text-xs text-muted-foreground">(로딩 중...)</span>
+                )}
               </h3>
 
               {teamsError && (
-                <div className="text-xs text-red-500 mb-2">팀 목록을 불러오는데 실패했습니다.</div>
+                <div className="text-xs text-destructive mb-2">
+                  팀 목록을 불러오는데 실패했습니다.
+                </div>
               )}
 
               {teamsLoading ? (
                 <div className="space-y-2">
                   {[1, 2].map((i) => (
-                    <div
-                      key={i}
-                      className="h-10 bg-slate-200 dark:bg-slate-700 rounded-lg animate-pulse"
-                    />
+                    <div key={i} className="h-10 bg-muted rounded-lg animate-pulse" />
                   ))}
                 </div>
               ) : (
@@ -456,21 +457,21 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                         })()
                       : Users;
 
-                    const iconColor = team.color || 'text-primary';
+                    const iconColor = team.color || 'text-highlight';
 
                     return (
                       <div key={team.id} className="group">
                         <Button
                           variant="ghost"
-                          className="w-full justify-start p-3 h-auto rounded-xl hover:bg-gradient-to-r hover:from-primary/5 hover:to-primary/10 transition-all duration-200"
+                          className="w-full justify-start p-3 h-auto rounded-xl hover:bg-accent transition-all duration-200"
                           onClick={() => handleTeamClick(team)}
                         >
                           <Icon className={cn('h-5 w-5 mr-3', iconColor)} />
                           <span className="flex-1 text-left font-medium">{team.displayName}</span>
                           {expandedSections[`team-${team.id}`] ? (
-                            <ChevronDown className="h-4 w-4 text-slate-400 group-hover:text-primary transition-colors" />
+                            <ChevronDown className="h-4 w-4 text-muted-foreground group-hover:text-highlight transition-colors" />
                           ) : (
-                            <ChevronRight className="h-4 w-4 text-slate-400 group-hover:text-primary transition-colors" />
+                            <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-highlight transition-colors" />
                           )}
                         </Button>
 
@@ -480,10 +481,10 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="w-full justify-start h-9 text-xs rounded-lg hover:bg-gradient-to-r hover:from-emerald-50 hover:to-emerald-100 dark:hover:from-emerald-900/20 dark:hover:to-emerald-800/20 transition-all"
+                                className="w-full justify-start h-9 text-xs rounded-lg hover:bg-accent transition-all"
                                 onClick={onClose}
                               >
-                                <Users className="h-4 w-4 mr-2 text-emerald-500" />
+                                <Users className="h-4 w-4 mr-2 text-success" />
                                 팀원 관리
                               </Button>
                             </Link>
@@ -491,10 +492,10 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="w-full justify-start h-9 text-xs rounded-lg hover:bg-gradient-to-r hover:from-orange-50 hover:to-orange-100 dark:hover:from-orange-900/20 dark:hover:to-orange-800/20 transition-all"
+                                className="w-full justify-start h-9 text-xs rounded-lg hover:bg-accent transition-all"
                                 onClick={onClose}
                               >
-                                <CheckSquare className="h-4 w-4 mr-2 text-orange-500" />
+                                <CheckSquare className="h-4 w-4 mr-2 text-warning" />
                                 과제 트래커
                               </Button>
                             </Link>
@@ -502,10 +503,10 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="w-full justify-start h-9 text-xs rounded-lg hover:bg-gradient-to-r hover:from-blue-50 hover:to-blue-100 dark:hover:from-blue-900/20 dark:hover:to-blue-800/20 transition-all"
+                                className="w-full justify-start h-9 text-xs rounded-lg hover:bg-accent transition-all"
                                 onClick={onClose}
                               >
-                                <File className="h-4 w-4 mr-2 text-blue-500" />
+                                <File className="h-4 w-4 mr-2 text-info" />
                                 파일 관리
                               </Button>
                             </Link>
@@ -514,10 +515,10 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  className="w-full justify-start h-9 text-xs rounded-lg hover:bg-gradient-to-r hover:from-purple-50 hover:to-purple-100 dark:hover:from-purple-900/20 dark:hover:to-purple-800/20 transition-all"
+                                  className="w-full justify-start h-9 text-xs rounded-lg hover:bg-accent transition-all"
                                   onClick={onClose}
                                 >
-                                  <Calendar className="h-4 w-4 mr-2 text-purple-500" />팀 캘린더
+                                  <Calendar className="h-4 w-4 mr-2 text-highlight" />팀 캘린더
                                 </Button>
                               </Link>
                             ) : null}
@@ -525,20 +526,20 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="w-full justify-start h-9 text-xs rounded-lg hover:bg-gradient-to-r hover:from-green-50 hover:to-green-100 dark:hover:from-green-900/20 dark:hover:to-green-800/20 transition-all"
+                                className="w-full justify-start h-9 text-xs rounded-lg hover:bg-accent transition-all"
                                 onClick={onClose}
                               >
-                                <Plus className="h-4 w-4 mr-2 text-green-500" />팀 페이지
+                                <Plus className="h-4 w-4 mr-2 text-success" />팀 페이지
                               </Button>
                             </Link>
                             <Link to={`/teams/${team.name}/database`}>
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="w-full justify-start h-9 text-xs rounded-lg hover:bg-gradient-to-r hover:from-indigo-50 hover:to-indigo-100 dark:hover:from-indigo-900/20 dark:hover:to-indigo-800/20 transition-all"
+                                className="w-full justify-start h-9 text-xs rounded-lg hover:bg-accent transition-all"
                                 onClick={onClose}
                               >
-                                <Database className="h-4 w-4 mr-2 text-indigo-500" />팀 데이터
+                                <Database className="h-4 w-4 mr-2 text-info" />팀 데이터
                               </Button>
                             </Link>
                           </div>
@@ -550,7 +551,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
               )}
 
               {!teamsLoading && teams.length === 0 && (
-                <div className="text-xs text-slate-400 italic p-3 bg-slate-50 dark:bg-slate-800/30 rounded-lg">
+                <div className="text-xs text-muted-foreground italic p-3 bg-muted rounded-lg">
                   팀이 없습니다. 관리자 페이지에서 팀을 추가하세요.
                 </div>
               )}
@@ -559,8 +560,8 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
 
           {/* Search */}
           <div className="mb-6">
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 flex items-center">
-              <Tags className="h-4 w-4 text-primary mr-2" />
+            <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center">
+              <Tags className="h-4 w-4 text-highlight mr-2" />
               문서 검색
             </h3>
             <div className="relative">
@@ -569,18 +570,18 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                 placeholder="문서 제목이나 내용 검색..."
                 value={searchQuery}
                 onChange={(e) => onSearchChange(e.target.value)}
-                className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-colors"
+                className="w-full px-3 py-2 text-sm bg-card border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-colors"
               />
             </div>
           </div>
 
           {/* Navigation Tree */}
-          <h3 className="mb-3 text-sm font-semibold text-slate-900 dark:text-white">폴더</h3>
+          <h3 className="mb-3 text-sm font-semibold text-foreground">폴더</h3>
           <nav className="space-y-2" aria-label="폴더">
             {directories.map((directory) => {
               const Icon = folderIcons[directory.name as keyof typeof folderIcons] || Book;
               const iconColor =
-                folderColors[directory.name as keyof typeof folderColors] || 'text-primary';
+                folderColors[directory.name as keyof typeof folderColors] || 'text-highlight';
               const isExpanded = expandedSections[directory.name];
               const allFolderPages =
                 folderQueriesMap[directory.name as keyof typeof folderQueriesMap]?.data || [];
@@ -595,15 +596,15 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                 <div key={directory.name} className="group">
                   <Button
                     variant="ghost"
-                    className="w-full justify-start p-3 h-auto rounded-xl hover:bg-gradient-to-r hover:from-primary/5 hover:to-primary/10 transition-all duration-200"
+                    className="w-full justify-start p-3 h-auto rounded-xl hover:bg-accent transition-all duration-200"
                     onClick={() => toggleSection(directory.name)}
                   >
                     <Icon className={cn('h-5 w-5 mr-3', iconColor)} />
                     <span className="flex-1 text-left font-medium">{directory.displayName}</span>
                     {isExpanded ? (
-                      <ChevronDown className="h-4 w-4 text-slate-400 group-hover:text-primary transition-colors" />
+                      <ChevronDown className="h-4 w-4 text-muted-foreground group-hover:text-highlight transition-colors" />
                     ) : (
-                      <ChevronRight className="h-4 w-4 text-slate-400 group-hover:text-primary transition-colors" />
+                      <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-highlight transition-colors" />
                     )}
                   </Button>
 
@@ -615,8 +616,8 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                             className={cn(
                               'block p-3 text-sm rounded-lg transition-all duration-200 cursor-pointer group',
                               isActivePage(page.slug)
-                                ? 'text-primary bg-gradient-to-r from-primary/10 to-primary/5 border border-primary/20 font-medium shadow-sm'
-                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-gradient-to-r hover:from-slate-50 hover:to-slate-100 dark:hover:from-slate-800 dark:hover:to-slate-700'
+                                ? 'text-highlight bg-raised border border-border font-medium'
+                                : 'text-foreground-secondary hover:text-foreground hover:bg-accent'
                             )}
                             onClick={onClose}
                           >
@@ -628,7 +629,7 @@ export function Sidebar({ isOpen, onClose, searchQuery, onSearchChange }: Sideba
                         </Link>
                       ))}
                       {folderPages.length === 0 && (
-                        <div className="p-3 text-xs text-slate-400 italic bg-slate-50/50 dark:bg-slate-800/30 rounded-lg">
+                        <div className="p-3 text-xs text-muted-foreground italic bg-muted/50 rounded-lg">
                           {searchQuery.trim()
                             ? '일치하는 문서가 없습니다'
                             : '이 폴더에 문서가 없습니다'}

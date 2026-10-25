@@ -113,7 +113,7 @@ export function UserAvatarList({ users, maxVisible = 5 }: UserAvatarListProps) {
       {visibleUsers.map((user) => (
         <div
           key={user.id}
-          className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold text-white shadow-md ring-2 ring-white"
+          className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold text-white shadow-md ring-2 ring-background"
           style={{ backgroundColor: user.color }}
           title={user.name}
         >
@@ -121,7 +121,7 @@ export function UserAvatarList({ users, maxVisible = 5 }: UserAvatarListProps) {
         </div>
       ))}
       {remainingCount > 0 && (
-        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-400 text-xs font-semibold text-white shadow-md ring-2 ring-white">
+        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted-foreground text-xs font-semibold text-background shadow-md ring-2 ring-background">
           +{remainingCount}
         </div>
       )}

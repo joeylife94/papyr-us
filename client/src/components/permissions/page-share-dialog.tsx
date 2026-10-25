@@ -316,7 +316,7 @@ export function PageShareDialog({ pageId, pageTitle, trigger }: PageShareDialogP
                           {link.accessCount} views • Created{' '}
                           {new Date(link.createdAt).toLocaleDateString()}
                           {link.expiresAt && (
-                            <span className="text-orange-500">
+                            <span className="text-warning">
                               {' '}
                               • Expires {new Date(link.expiresAt).toLocaleDateString()}
                             </span>
@@ -332,7 +332,7 @@ export function PageShareDialog({ pageId, pageTitle, trigger }: PageShareDialogP
                         className="h-8"
                       >
                         {copiedToken === link.token ? (
-                          <Check className="h-4 w-4 text-green-500" />
+                          <Check className="h-4 w-4 text-success" />
                         ) : (
                           <Copy className="h-4 w-4" />
                         )}

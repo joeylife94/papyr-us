@@ -53,8 +53,8 @@ export function FeatureFlagsProvider({ children }: { children: React.ReactNode }
 
   if (isLoading) {
     return (
-      <div className="min-h-screen w-full flex items-center justify-center bg-gray-50">
-        <div className="text-sm text-gray-600">Loading…</div>
+      <div className="min-h-screen w-full flex items-center justify-center bg-background">
+        <div className="text-sm text-foreground-secondary">Loading…</div>
       </div>
     );
   }
