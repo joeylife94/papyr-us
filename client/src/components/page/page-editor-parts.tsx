@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import type { AutosaveStatus } from '@/hooks/usePageAutosave';
 
 interface PageTitleProps {
-  /** Initial text; the element is uncontrolled afterwards so typing never loses the caret. */
+  /** Initial text. Editable titles are uncontrolled afterwards so typing never loses the caret. */
   initialTitle: string;
   editable: boolean;
   onChange?: (title: string) => void;
@@ -25,14 +25,15 @@ export function PageTitle({
   placeholder = '제목 없음',
 }: PageTitleProps) {
   const ref = useRef<HTMLHeadingElement>(null);
+  // While editing, the DOM owns the text after mount, so React never re-renders it (re-rendering a
+  // contentEditable child would fight the caret). Read-only titles follow the page being shown.
+  const followedTitle = editable ? null : initialTitle;
 
   useEffect(() => {
     if (ref.current && ref.current.textContent !== initialTitle) {
       ref.current.textContent = initialTitle;
     }
-    // Only on mount / remount: afterwards the DOM owns the text, so React never re-renders it
-    // (re-rendering a contentEditable child would fight the caret).
-  }, []);
+  }, [followedTitle]);
 
   return (
     <h1

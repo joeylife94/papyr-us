@@ -7,6 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useActiveWorkspace } from '@/hooks/useActiveWorkspace';
 import { blocksToContent, initialBlocksFor, parseTags, slugForTitle } from '@/lib/page-content';
+import { cn } from '@/lib/utils';
 import { resolvePageTeamId, type PageTeamRef } from '@/lib/page-team-scope';
 import { getUserId, getUserName } from '@/lib/user';
 import type { Block, WikiPage } from '@shared/schema';
@@ -17,6 +18,8 @@ interface NewPageProps {
 }
 
 const CREATE_DELAY_MS = 600;
+const RETRY_BASE_MS = 2000;
+const RETRY_MAX_MS = 30000;
 
 /**
  * A new, untitled page (issue #103 E2). Nothing is stored until the first title or block input;
@@ -41,9 +44,19 @@ export default function NewPage({ teamName, initialFolder = 'docs' }: NewPagePro
   const [folder, setFolder] = useState(initialFolder);
   const [tagsText, setTagsText] = useState(template?.tags?.join(', ') ?? '');
   const [touched, setTouched] = useState(false);
+  const [creatingState, setCreatingState] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
   const creating = useRef(false);
+  const mounted = useRef(true);
   const latest = useRef({ title, blocks, folder, tagsText });
   latest.current = { title, blocks, folder, tagsText };
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const { data: folders = [] } = useQuery<string[]>({ queryKey: ['/api/folders'] });
   const {
@@ -68,6 +81,7 @@ export default function NewPage({ teamName, initialFolder = 'docs' }: NewPagePro
   async function createPage() {
     if (creating.current) return;
     creating.current = true;
+    setCreatingState(true);
     const sent = latest.current;
     const payload = {
       title: sent.title.trim() || '제목 없음',
@@ -89,29 +103,52 @@ export default function NewPage({ teamName, initialFolder = 'docs' }: NewPagePro
       if (!res.ok) throw new Error(`create ${res.status}`);
       const created: WikiPage = await res.json();
 
-      // Anything typed while the page was being created goes in with one autosave.
-      const now = latest.current;
+      // Anything typed while the page was being created (or while these saves are in flight) is
+      // saved before the view moves on, so the page never opens on an older state. A failed save
+      // is retried; the draft stays on screen until everything is stored. If the user leaves
+      // meanwhile, one last best-effort save is sent.
       const snapshot = (v: typeof sent) =>
         JSON.stringify([v.title.trim(), v.blocks, v.folder, v.tagsText]);
-      if (snapshot(now) !== snapshot(sent)) {
-        await fetch(`/api/pages/${created.id}/autosave`, {
+      let stored = sent;
+      let failures = 0;
+      while (snapshot(latest.current) !== snapshot(stored)) {
+        const now = latest.current;
+        const saved = await fetch(`/api/pages/${created.id}/autosave`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
+          keepalive: !mounted.current,
           body: JSON.stringify({
             ...(now.title.trim() ? { title: now.title.trim() } : {}),
             blocks: now.blocks,
             folder: now.folder,
             tags: parseTags(now.tagsText),
           }),
-        }).catch(() => undefined);
+        }).then(
+          (r) => r.ok,
+          () => false
+        );
+        if (saved) {
+          stored = now;
+          failures = 0;
+          setSaveFailed(false);
+        } else {
+          if (!mounted.current) break;
+          failures += 1;
+          setSaveFailed(true);
+          await new Promise((resolve) =>
+            setTimeout(resolve, Math.min(RETRY_BASE_MS * 2 ** (failures - 1), RETRY_MAX_MS))
+          );
+        }
       }
+      if (!mounted.current) return;
 
       queryClient.invalidateQueries({ queryKey: ['/api/pages'] });
       queryClient.invalidateQueries({ queryKey: [`/api/folders/${created.folder}/pages`] });
       navigate(`/page/${created.slug}`, { replace: true });
     } catch {
       creating.current = false;
+      setCreatingState(false);
       toast({
         title: '문서를 만들지 못했습니다',
         description: '잠시 후 다시 입력하면 다시 시도합니다.',
@@ -152,8 +189,19 @@ export default function NewPage({ teamName, initialFolder = 'docs' }: NewPagePro
           </ol>
         </nav>
         <header className="mb-6 space-y-4">
-          <p className="font-mono text-xs text-muted-foreground" role="status" aria-live="polite">
-            {creating.current ? '문서를 만드는 중…' : '입력을 시작하면 문서가 만들어집니다'}
+          <p
+            className={cn(
+              'font-mono text-xs',
+              saveFailed ? 'text-destructive' : 'text-muted-foreground'
+            )}
+            role="status"
+            aria-live="polite"
+          >
+            {saveFailed
+              ? '저장 실패 · 다시 시도 중'
+              : creatingState
+                ? '문서를 만드는 중…'
+                : '입력을 시작하면 문서가 만들어집니다'}
           </p>
           <PageTitle
             initialTitle={title}
