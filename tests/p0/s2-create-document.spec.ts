@@ -63,16 +63,20 @@ test.describe('[S2] 새 문서 생성 → 저장 확인', () => {
 
       // ── Initial: 빈 에디터 진입 ──────────────────────────────────────────────
       await page.goto('/create', { waitUntil: 'domcontentloaded' });
-      await expect(page.getByRole('heading', { name: 'Create New Page' })).toBeVisible({
-        timeout: 15_000,
-      });
+      await expect(page.getByTestId('page-title')).toBeVisible({ timeout: 15_000 });
       await captureEvidence(page, 's2', 'initial');
+
+      // In-place editing (#103 E2): the page is created on first input; there is no save button.
+      const createResponse = page.waitForResponse(
+        (resp) =>
+          new URL(resp.url()).pathname === '/api/pages' && resp.request().method() === 'POST',
+        { timeout: 30_000 }
+      );
 
       // ── Action: 폼 입력 ──────────────────────────────────────────────────────
       const uniqueTitle = `S2 P0 Test Doc ${runId}`;
 
-      await page.getByLabel('Title').fill(uniqueTitle);
-      await page.getByLabel('Author').fill('P0 Tester');
+      await page.getByTestId('page-title').fill(uniqueTitle);
 
       // Content 필드: 에디터는 본문을 필수로 요구한다. 빈 블록 에디터에서 '단락' 블록을
       // 추가한 뒤 그 textarea에 입력한다 (contenteditable 영역은 존재하지 않는다).
@@ -85,11 +89,6 @@ test.describe('[S2] 새 문서 생성 → 저장 확인', () => {
       await captureEvidence(page, 's2', 'action');
 
       // ── Submit: 저장 API 응답 포착 ───────────────────────────────────────────
-      const createResponse = page.waitForResponse(
-        (resp) => resp.url().includes('/api/pages') && resp.request().method() === 'POST',
-        { timeout: 30_000 }
-      );
-      await page.getByRole('button', { name: 'Create Page' }).click();
       const resp = await createResponse;
 
       // 201이거나 리다이렉트 후 저장 성공 확인
@@ -117,10 +116,8 @@ test.describe('[S2] 새 문서 생성 → 저장 확인', () => {
         }
       }
 
-      // ── 토스트 확인 ──────────────────────────────────────────────────────────
-      // exact: Radix also renders a transient screen-reader announcement with both strings.
-      await expect(page.getByText('Page created', { exact: true })).toBeVisible({
-        timeout: 10_000,
+      await expect(page.getByRole('heading', { name: uniqueTitle })).toBeVisible({
+        timeout: 15_000,
       });
 
       await captureEvidence(page, 's2', 'result');
@@ -175,7 +172,7 @@ test.describe('[S2] 새 문서 생성 → 저장 확인', () => {
     }
   });
 
-  test('S2-c: 빈 제목으로 저장을 시도하면 /create에 머문다 (유효성 검사)', async ({
+  test('S2-c: 아무것도 입력하지 않으면 문서가 만들어지지 않고 /create에 머문다', async ({
     page,
   }, testInfo) => {
     const runId = generateRunId(testInfo.workerIndex);
@@ -186,18 +183,18 @@ test.describe('[S2] 새 문서 생성 → 저장 확인', () => {
     try {
       await injectAuthCookies(page, credentials, baseURL);
       await page.goto('/create', { waitUntil: 'domcontentloaded' });
-      await expect(page.getByRole('heading', { name: 'Create New Page' })).toBeVisible({
-        timeout: 15_000,
+      await expect(page.getByTestId('page-title')).toBeVisible({ timeout: 15_000 });
+      // Lazy creation: opening the editor and leaving it empty stores nothing.
+      const creates: string[] = [];
+      page.on('request', (req) => {
+        if (new URL(req.url()).pathname === '/api/pages' && req.method() === 'POST') {
+          creates.push(req.url());
+        }
       });
-
-      // 제목을 비우고 저장 시도
-      await page.getByLabel('Title').fill('');
-      await page.getByRole('button', { name: 'Create Page' }).click();
-
-      // /create에 머물러야 한다 (HTML5 validation 또는 클라이언트 오류)
-      // 짧은 대기 후 URL이 /create 임을 확인
+      await page.getByTestId('page-title').fill('');
       await page.waitForTimeout(1_500);
       await expect(page).toHaveURL(/\/create/, { timeout: 5_000 });
+      expect(creates).toHaveLength(0);
     } finally {
       await apiContext.dispose();
     }

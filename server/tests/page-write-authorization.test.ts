@@ -326,3 +326,57 @@ describe('Markdown import needs membership of the target team', () => {
     expect(storage.createWikiPage).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('In-place editing endpoints (issue #103 E1/E2) use the single-page levels', () => {
+  it('reports edit rights to editors and owners, and nothing to callers who cannot view', async () => {
+    const editor = await request(app).get(`/api/pages/${PAGE_A}/access`).set(as(EDITOR));
+    expect(editor.status).toBe(200);
+    expect(editor.body).toEqual({ canEdit: true });
+
+    const owner = await request(app).get(`/api/pages/${PAGE_A}/access`).set(as(OWNER));
+    expect(owner.body).toEqual({ canEdit: true });
+
+    const outsider = await request(app).get(`/api/pages/${PAGE_A}/access`).set(as(OUTSIDER));
+    expect(outsider.status).toBe(403);
+  });
+
+  it('autosaves for editors and refuses callers without edit rights', async () => {
+    const ok = await request(app)
+      .put(`/api/pages/${PAGE_A}/autosave`)
+      .set(as(EDITOR))
+      .send({ title: 'Renamed' });
+    expect(ok.status).toBe(200);
+    expect(storage.updateWikiPage).toHaveBeenCalledWith(PAGE_A, { title: 'Renamed' });
+
+    storage.updateWikiPage.mockClear();
+    const denied = await request(app)
+      .put(`/api/pages/${PAGE_A}/autosave`)
+      .set(as(OUTSIDER))
+      .send({ title: 'Hijack' });
+    expect(denied.status).toBe(403);
+    expect(storage.updateWikiPage).not.toHaveBeenCalled();
+  });
+
+  it('autosave cannot change team, author, trash state or slug (those stay owner-only on PUT)', async () => {
+    for (const body of [
+      { teamId: TEAM_C },
+      { author: 'someone else' },
+      { deletedAt: new Date().toISOString() },
+      { slug: 'other' },
+    ]) {
+      const res = await request(app)
+        .put(`/api/pages/${PAGE_A}/autosave`)
+        .set(as(EDITOR))
+        .send({ title: 'x', ...body });
+      expect(res.status).toBe(400);
+    }
+    expect(storage.updateWikiPage).not.toHaveBeenCalled();
+  });
+
+  it('checkpoints only for callers with edit rights', async () => {
+    const ok = await request(app).post(`/api/pages/${PAGE_A}/checkpoint`).set(as(EDITOR));
+    expect(ok.status).toBe(200);
+    const denied = await request(app).post(`/api/pages/${PAGE_A}/checkpoint`).set(as(OUTSIDER));
+    expect(denied.status).toBe(403);
+  });
+});

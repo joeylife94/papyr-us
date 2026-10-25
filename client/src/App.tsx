@@ -18,7 +18,8 @@ import Home from '@/pages/home';
 import WikiPageView from '@/pages/wiki-page';
 import CalendarPage from '@/pages/calendar';
 import CalendarPageWrapper from '@/components/CalendarPageWrapper';
-import PageEditor from '@/pages/page-editor';
+import NewPage from '@/pages/new-page';
+import EditRedirect from '@/pages/edit-redirect';
 import AdminPage from '@/pages/admin';
 import Members from '@/pages/members';
 import FileManager from '@/pages/file-manager';
@@ -42,13 +43,18 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 
 // Helper components to handle route params
 
-const PageEditorWrapper = () => {
-  const { pageId, folder, teamName } = useParams<{
-    pageId: string;
-    folder: string;
-    teamName: string;
-  }>();
-  return <PageEditor pageId={pageId} initialFolder={folder} teamName={teamName} />;
+// In-place editing (issue #103 E2): new pages are created on first input, and the old edit
+// route opens the page itself.
+const NewPageWrapper = () => {
+  const { folder, teamName } = useParams<{ folder: string; teamName: string }>();
+  return (
+    <NewPage key={`${teamName ?? ''}/${folder ?? ''}`} initialFolder={folder} teamName={teamName} />
+  );
+};
+
+const EditRedirectWrapper = () => {
+  const { pageId } = useParams<{ pageId: string }>();
+  return <EditRedirect pageId={pageId} />;
 };
 
 const MembersWrapper = () => {
@@ -146,10 +152,10 @@ function App() {
                           </FeatureGate>
                         }
                       />
-                      <Route path="/edit/:pageId" element={<PageEditorWrapper />} />
-                      <Route path="/create" element={<PageEditorWrapper />} />
-                      <Route path="/create/:folder" element={<PageEditorWrapper />} />
-                      <Route path="/teams/:teamName/create" element={<PageEditorWrapper />} />
+                      <Route path="/edit/:pageId" element={<EditRedirectWrapper />} />
+                      <Route path="/create" element={<NewPageWrapper />} />
+                      <Route path="/create/:folder" element={<NewPageWrapper />} />
+                      <Route path="/teams/:teamName/create" element={<NewPageWrapper />} />
                       <Route
                         path="/admin"
                         element={

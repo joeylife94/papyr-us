@@ -496,8 +496,8 @@ export function BlockEditor({
         <UserCursors users={yjsCollaboration.users} containerRef={editorContainerRef} />
       )}
 
-      {/* 실시간 협업 상태 표시 */}
-      {pageId && (
+      {/* 실시간 협업 상태 표시 (협업 기능이 켜진 경우에만) */}
+      {collaborationEnabled && (
         <div className="flex items-center justify-between mb-4 p-2 bg-muted rounded-lg">
           <div className="flex items-center space-x-2">
             <div className="flex items-center space-x-1">

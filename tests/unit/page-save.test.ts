@@ -135,6 +135,22 @@ describe('savePage', () => {
     expect(snapshots.map((s) => s.content)).toEqual(['v0', 'one']);
   });
 
+  it('a title-only autosave keeps the pre-session version (versions record the title)', async () => {
+    const { store, snapshots } = makeStore(makePage({ title: 'Original' }));
+    await savePage(store, 1, { title: 'Renamed' }, 'autosave');
+    await savePage(store, 1, { title: 'Renamed again' }, 'autosave');
+    expect(snapshots).toEqual([{ content: 'v0', description: 'Before editing session' }]);
+  });
+
+  it('a session that starts with tags only keeps a version at its first title/body change', async () => {
+    const { store, snapshots } = makeStore(makePage());
+    await savePage(store, 1, { tags: ['ops', 'later'] }, 'autosave');
+    expect(snapshots).toHaveLength(0);
+    await savePage(store, 1, { blocks: [{ content: 'edited' }] }, 'autosave');
+    await savePage(store, 1, { blocks: [{ content: 'edited more' }] }, 'autosave');
+    expect(snapshots).toEqual([{ content: 'v0', description: 'Before editing session' }]);
+  });
+
   it('each autosave pushes the idle deadline back', async () => {
     const { store } = makeStore(makePage());
     await savePage(store, 1, { blocks: [{ content: 'one' }] }, 'autosave');

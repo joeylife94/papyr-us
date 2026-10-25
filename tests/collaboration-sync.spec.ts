@@ -40,8 +40,9 @@ test('two editors share edits in real time and the save keeps them', async ({
       if (message.text().startsWith('[Yjs]')) yjsLogs.push(message.text());
     });
     await loginPageWithCookies(page, user.email, user.password);
-    await page.goto(`/edit/${pageId}`);
-    await expect(page.getByRole('heading', { name: 'Edit Page' })).toBeVisible();
+    // In-place editing (#103 E2): the page view is the collaborative editor.
+    await page.goto(`/page/${slug}`);
+    await expect(page.getByTestId('page-title')).toHaveAttribute('contenteditable', 'true');
     await expect
       .poll(() => yjsLogs.some((log) => log.startsWith('[Yjs] Document initialized')))
       .toBe(true);
@@ -64,13 +65,13 @@ test('two editors share edits in real time and the save keeps them', async ({
   await textarea(b.page).fill(`from B ${stamp}`);
   await expect(textarea(a.page)).toHaveValue(`from B ${stamp}`);
 
-  const saved = a.page.waitForResponse(
-    (r) => r.url().includes(`/api/pages/${pageId}`) && r.request().method() === 'PUT'
-  );
-  await a.page.getByRole('button', { name: 'Update Page' }).click();
-  expect((await saved).status()).toBe(200);
-  const stored = await (await api.get(`/api/pages/${pageId}`)).json();
-  expect(stored.content).toBe(`from B ${stamp}`);
+  // No save button: autosave (and the Yjs server's own saves) persist the merged text, and the
+  // server derives `content` from the blocks.
+  await expect
+    .poll(async () => (await (await api.get(`/api/pages/${pageId}`)).json()).content, {
+      timeout: 15_000,
+    })
+    .toBe(`from B ${stamp}`);
 
   await a.context.close();
   await b.context.close();
