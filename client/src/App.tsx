@@ -6,8 +6,10 @@ import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { ThemeProvider } from '@/hooks/use-theme';
 import { AuthProvider } from '@/hooks/useAuth';
-import { Header } from '@/components/layout/header';
-import { Sidebar } from '@/components/layout/sidebar';
+import { AppRail } from '@/components/layout/app-rail';
+import { WorkspacePanel } from '@/components/layout/workspace-panel';
+import { MobileShell } from '@/components/layout/mobile-shell';
+import { useMediaQuery } from '@/hooks/use-responsive';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { CommandPalette } from '@/components/command-palette';
 
@@ -80,39 +82,41 @@ function AppLayout() {
   const { pathname } = useLocation();
   const isDocumentRoute =
     /^\/(page|edit|create)(\/|$)/.test(pathname) || /^\/teams\/[^/]+\/create$/.test(pathname);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-
-  const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
-  const closeSidebar = () => setIsSidebarOpen(false);
+  // Desktop gets the icon rail + workspace panel; narrower screens get the mobile shell.
+  // Only one shell is mounted so landmarks and controls are never duplicated.
+  const isDesktop = useMediaQuery('(min-width: 1024px)');
 
   return (
     <div className="min-h-screen bg-background">
-      <Header
-        onToggleSidebar={toggleSidebar}
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-      />
+      <a href="#main-content" className="skip-link">
+        본문으로 건너뛰기
+      </a>
       <CommandPalette />
 
-      <div className="flex pt-16">
-        <Sidebar
-          isOpen={isSidebarOpen}
-          onClose={closeSidebar}
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-        />
-
-        <main id="main-content" className="min-w-0 flex-1 lg:ml-72">
-          <div
-            className={`mx-auto w-full px-4 py-6 md:px-8 md:py-8 ${isDocumentRoute ? 'max-w-[1180px]' : 'max-w-[1480px]'}`}
+      {isDesktop ? (
+        <>
+          <AppRail />
+          <aside
+            aria-label="워크스페이스 패널"
+            className="fixed inset-y-0 left-[60px] z-30 w-[240px] overflow-y-auto border-r border-border bg-panel"
           >
-            <Suspense fallback={<div>Loading page...</div>}>
-              <Outlet />
-            </Suspense>
-          </div>
-        </main>
-      </div>
+            <WorkspacePanel searchQuery={searchQuery} onSearchChange={setSearchQuery} />
+          </aside>
+        </>
+      ) : (
+        <MobileShell searchQuery={searchQuery} onSearchChange={setSearchQuery} />
+      )}
+
+      <main id="main-content" className={isDesktop ? 'min-w-0 pl-[300px]' : 'min-w-0 pb-20 pt-14'}>
+        <div
+          className={`mx-auto w-full px-4 py-6 md:px-8 md:py-8 ${isDocumentRoute ? 'max-w-[1180px]' : 'max-w-[1480px]'}`}
+        >
+          <Suspense fallback={<div>Loading page...</div>}>
+            <Outlet />
+          </Suspense>
+        </div>
+      </main>
     </div>
   );
 }

@@ -79,7 +79,8 @@ export function useBreakpoint(): {
  * Hook to detect if viewport is at or above a breakpoint
  */
 export function useMediaQuery(query: string): boolean {
-  const [matches, setMatches] = useState(false);
+  // Read the query synchronously so the first render already picks the right layout.
+  const [matches, setMatches] = useState(() => !isServer && window.matchMedia(query).matches);
 
   useEffect(() => {
     if (isServer) return;

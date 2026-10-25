@@ -159,7 +159,8 @@ test.describe('[S3] 문서 목록/검색에서 생성 문서 노출', () => {
 
       // ── 헤더 검색창 확인 및 입력 ─────────────────────────────────────────────
       const searchInput = page
-        .getByPlaceholder('Search documentation...')
+        .getByPlaceholder('문서 검색')
+        .or(page.getByPlaceholder('Search documentation...'))
         .or(page.getByPlaceholder('Search...'))
         .first();
 

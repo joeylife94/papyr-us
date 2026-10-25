@@ -86,8 +86,8 @@ test.describe('[S5] 로그아웃 후 보호 페이지 접근 차단', () => {
         // Strict mode 위반 방지: 컨텍스트 메뉴([role="menu"]) 내로 범위 한정
         const dropdownMenu = page.locator('[role="menu"]');
         const logoutMenuItem = dropdownMenu
-          .getByRole('menuitem', { name: /log out/i })
-          .or(dropdownMenu.getByText(/log out/i));
+          .getByRole('menuitem', { name: /로그아웃|log out/i })
+          .or(dropdownMenu.getByText(/로그아웃|log out/i));
         await expect(logoutMenuItem.first()).toBeVisible({ timeout: 5_000 });
         await logoutMenuItem.first().click();
       } else {

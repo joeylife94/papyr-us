@@ -150,12 +150,12 @@ test('Issue 76: capture genuine workspace, reader, history, dark mode, and mobil
   await expect(page).toHaveURL(`/page/${created.slug}`);
   await expect(page.getByRole('group', { name: '문서 작업' })).toBeVisible();
 
-  const toDark = page.getByRole('button', { name: 'Switch to dark mode' });
+  const toDark = page.getByRole('button', { name: '다크 모드로 전환' });
   await expect(toDark).toBeVisible();
   await toDark.click();
   await expect(page.locator('html')).toHaveClass(/dark/);
   await page.screenshot({ path: `${PROOF_DIR}/05-document-reader-dark.png`, fullPage: true });
-  await page.getByRole('button', { name: 'Switch to light mode' }).click();
+  await page.getByRole('button', { name: '라이트 모드로 전환' }).click();
   await expect(page.locator('html')).not.toHaveClass(/dark/);
 
   // Mobile surfaces: workspace list, reader, and navigation drawer without horizontal overflow.
@@ -174,9 +174,7 @@ test('Issue 76: capture genuine workspace, reader, history, dark mode, and mobil
   await page.getByRole('button', { name: '메뉴 열기' }).click();
   await expect(page.getByRole('navigation', { name: '주요 메뉴' })).toBeVisible();
   // Wait for the drawer's slide-in to finish before asserting layout and capturing.
-  const drawer = page
-    .getByRole('complementary')
-    .filter({ has: page.getByRole('navigation', { name: '주요 메뉴' }) });
+  const drawer = page.getByRole('complementary', { name: '워크스페이스 패널' });
   await expect
     .poll(async () => Math.round((await drawer.boundingBox())?.x ?? -1))
     .toBeGreaterThanOrEqual(0);
