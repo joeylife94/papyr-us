@@ -86,7 +86,7 @@ export function ReadOnlyBanner({ permission, pageTitle }: ReadOnlyBannerProps) {
   return (
     <div className="bg-muted border-l-4 border-primary p-4 mb-4 rounded-r-lg">
       <div className="flex items-center gap-3">
-        <Shield className="h-5 w-5 text-primary" />
+        <Shield className="h-5 w-5 text-highlight" />
         <div>
           <p className="font-semibold text-sm">Read-only access</p>
           <p className="text-sm text-muted-foreground">

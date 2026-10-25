@@ -10,7 +10,7 @@ interface TagFilterProps {
 
 export function TagFilter({ tags, selectedTags, onTagToggle }: TagFilterProps) {
   if (tags.length === 0) {
-    return <div className="text-sm text-slate-500 dark:text-slate-400">No tags available</div>;
+    return <div className="text-sm text-muted-foreground">No tags available</div>;
   }
 
   return (
@@ -26,8 +26,8 @@ export function TagFilter({ tags, selectedTags, onTagToggle }: TagFilterProps) {
             className={cn(
               'px-3 py-1 text-xs font-medium rounded-full transition-colors',
               isSelected
-                ? 'bg-primary text-white hover:bg-primary/90'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-primary hover:text-white'
+                ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                : 'bg-muted text-foreground-secondary hover:bg-primary hover:text-primary-foreground'
             )}
           >
             {tag.name}

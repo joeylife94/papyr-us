@@ -211,7 +211,7 @@ export function MobileTabBar({ className }: MobileNavProps) {
               'transition-colors',
               tab.isAction && 'relative -mt-4',
               location.pathname === tab.href
-                ? 'text-primary'
+                ? 'text-highlight'
                 : 'text-muted-foreground active:text-foreground'
             )}
           >

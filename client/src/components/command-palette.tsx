@@ -156,7 +156,9 @@ export function CommandPalette() {
               >
                 <FileText className="mr-2 h-4 w-4" />
                 <span>{page.title}</span>
-                <CommandShortcut className="text-xs text-slate-400">{page.folder}</CommandShortcut>
+                <CommandShortcut className="text-xs text-muted-foreground">
+                  {page.folder}
+                </CommandShortcut>
               </CommandItem>
             ))}
           </CommandGroup>

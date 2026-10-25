@@ -246,7 +246,7 @@ export function SlashCommandMenu({
   return (
     <div
       ref={menuRef}
-      className="fixed z-[9999] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl overflow-hidden"
+      className="fixed z-[9999] bg-card border border-border rounded-lg shadow-xl overflow-hidden"
       style={{
         top: position.top,
         left: position.left,
@@ -254,7 +254,7 @@ export function SlashCommandMenu({
         maxHeight: 360,
       }}
     >
-      <div className="px-3 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-800">
+      <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider border-b border-border">
         블록 타입 선택
       </div>
       <div className="overflow-y-auto max-h-[300px]">
@@ -266,8 +266,8 @@ export function SlashCommandMenu({
             }}
             className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${
               index === selectedIndex
-                ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300'
-                : 'hover:bg-slate-50 dark:hover:bg-slate-800/50 text-slate-700 dark:text-slate-300'
+                ? 'bg-accent text-foreground'
+                : 'hover:bg-muted text-foreground-secondary'
             }`}
             onClick={() => onSelect(cmd.type)}
             onMouseEnter={() => setSelectedIndex(index)}
@@ -275,17 +275,15 @@ export function SlashCommandMenu({
             <div
               className={`flex-shrink-0 w-8 h-8 rounded-md flex items-center justify-center ${
                 index === selectedIndex
-                  ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                  ? 'bg-primary/15 text-highlight'
+                  : 'bg-muted text-muted-foreground'
               }`}
             >
               {cmd.icon}
             </div>
             <div className="min-w-0">
               <div className="text-sm font-medium truncate">{cmd.label}</div>
-              <div className="text-xs text-slate-400 dark:text-slate-500 truncate">
-                {cmd.description}
-              </div>
+              <div className="text-xs text-muted-foreground truncate">{cmd.description}</div>
             </div>
           </button>
         ))}

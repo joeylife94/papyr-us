@@ -8,12 +8,12 @@ export default function AISearchPage() {
     <div className="container mx-auto px-4 py-8 max-w-6xl">
       <div className="mb-8">
         <div className="flex items-center space-x-3 mb-4">
-          <div className="p-2 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg">
-            <Sparkles className="h-6 w-6 text-white" />
+          <div className="p-2 rounded-lg bg-primary">
+            <Sparkles className="h-6 w-6 text-primary-foreground" />
           </div>
           <div>
             <h1 className="text-3xl font-bold">AI 검색</h1>
-            <p className="text-gray-600 dark:text-gray-400">자연어로 원하는 내용을 찾아보세요</p>
+            <p className="text-foreground-secondary">자연어로 원하는 내용을 찾아보세요</p>
           </div>
         </div>
       </div>
@@ -36,32 +36,30 @@ export default function AISearchPage() {
             <CardContent className="space-y-4">
               <div className="space-y-3">
                 <div className="flex items-start space-x-3">
-                  <Search className="h-4 w-4 text-blue-500 mt-1" />
+                  <Search className="h-4 w-4 text-info mt-1" />
                   <div>
                     <h4 className="font-semibold">자연어 검색</h4>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                    <p className="text-sm text-foreground-secondary">
                       "프로젝트 일정" 같은 자연스러운 표현으로 검색
                     </p>
                   </div>
                 </div>
 
                 <div className="flex items-start space-x-3">
-                  <Zap className="h-4 w-4 text-green-500 mt-1" />
+                  <Zap className="h-4 w-4 text-success mt-1" />
                   <div>
                     <h4 className="font-semibold">스마트 필터링</h4>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                    <p className="text-sm text-foreground-secondary">
                       관련도에 따른 자동 정렬 및 필터링
                     </p>
                   </div>
                 </div>
 
                 <div className="flex items-start space-x-3">
-                  <Sparkles className="h-4 w-4 text-purple-500 mt-1" />
+                  <Sparkles className="h-4 w-4 text-highlight mt-1" />
                   <div>
                     <h4 className="font-semibold">검색 제안</h4>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
-                      AI가 제안하는 관련 검색어
-                    </p>
+                    <p className="text-sm text-foreground-secondary">AI가 제안하는 관련 검색어</p>
                   </div>
                 </div>
               </div>
@@ -88,10 +86,10 @@ export default function AISearchPage() {
             </CardHeader>
             <CardContent className="space-y-2">
               <div className="text-sm space-y-1">
-                <p className="text-gray-600">"프로젝트 계획서"</p>
-                <p className="text-gray-600">"다음 주 회의록"</p>
-                <p className="text-gray-600">"사용자 가이드 문서"</p>
-                <p className="text-gray-600">"프로젝트 진행 상황은?"</p>
+                <p className="text-foreground-secondary">"프로젝트 계획서"</p>
+                <p className="text-foreground-secondary">"다음 주 회의록"</p>
+                <p className="text-foreground-secondary">"사용자 가이드 문서"</p>
+                <p className="text-foreground-secondary">"프로젝트 진행 상황은?"</p>
               </div>
             </CardContent>
           </Card>

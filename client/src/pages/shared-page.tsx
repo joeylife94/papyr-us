@@ -58,17 +58,17 @@ export default function SharedPage() {
 
   if (needsPassword) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-950">
-        <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-8 w-full max-w-sm space-y-4">
-          <div className="flex items-center gap-2 text-slate-700 dark:text-slate-200">
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="bg-card rounded-lg shadow-lg p-8 w-full max-w-sm space-y-4">
+          <div className="flex items-center gap-2 text-foreground-secondary">
             <Lock className="w-5 h-5" />
             <h2 className="text-lg font-semibold">Password Required</h2>
           </div>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
+          <p className="text-sm text-muted-foreground">
             This shared page is password-protected. Enter the password to continue.
           </p>
           {passwordError && submittedPassword !== undefined && (
-            <p className="text-sm text-red-500">Incorrect password. Please try again.</p>
+            <p className="text-sm text-destructive">Incorrect password. Please try again.</p>
           )}
           <Input
             type="password"
@@ -89,18 +89,16 @@ export default function SharedPage() {
 
   if (!data) {
     return (
-      <div className="max-w-4xl mx-auto px-4 py-12 text-center text-slate-500">
+      <div className="max-w-4xl mx-auto px-4 py-12 text-center text-muted-foreground">
         Page not found or link has expired.
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-950">
+    <div className="min-h-screen">
       <div className="max-w-4xl mx-auto px-4 py-12">
-        <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100 mb-6">
-          {data.page.title}
-        </h1>
+        <h1 className="text-3xl font-bold text-foreground mb-6">{data.page.title}</h1>
         <div className="prose prose-slate dark:prose-invert max-w-none">
           <MarkdownRenderer content={data.page.content} />
         </div>

@@ -153,7 +153,7 @@ export function ImageBlock({
   if (!imageUrl) {
     return (
       <div
-        className={`relative group ${isFocused ? 'bg-blue-50 dark:bg-blue-950/20' : ''} rounded-lg p-4 transition-colors`}
+        className={`relative group ${isFocused ? 'bg-primary/10 ' : ''} rounded-lg p-4 transition-colors`}
         onFocus={onFocus}
         onBlur={onBlur}
         onKeyDown={handleKeyDown}
@@ -161,7 +161,7 @@ export function ImageBlock({
       >
         {/* 블록 타입 표시 */}
         <div className="absolute left-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity">
-          <ImageIcon className="h-4 w-4 text-gray-400" />
+          <ImageIcon className="h-4 w-4 text-muted-foreground" />
         </div>
 
         <div
@@ -203,7 +203,7 @@ export function ImageBlock({
               variant="ghost"
               size="sm"
               onClick={onDelete}
-              className="h-6 w-6 p-0 text-gray-400 hover:text-red-500"
+              className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
             >
               <Trash2 className="h-3 w-3" />
             </Button>
@@ -216,7 +216,7 @@ export function ImageBlock({
   // 이미지가 있는 경우 이미지 표시
   return (
     <div
-      className={`relative group ${isFocused ? 'bg-blue-50 dark:bg-blue-950/20' : ''} rounded-lg p-4 transition-colors`}
+      className={`relative group ${isFocused ? 'bg-primary/10 ' : ''} rounded-lg p-4 transition-colors`}
       onFocus={onFocus}
       onBlur={onBlur}
       onKeyDown={handleKeyDown}
@@ -224,7 +224,7 @@ export function ImageBlock({
     >
       {/* 블록 타입 표시 */}
       <div className="absolute left-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity">
-        <ImageIcon className="h-4 w-4 text-gray-400" />
+        <ImageIcon className="h-4 w-4 text-muted-foreground" />
       </div>
 
       {/* 이미지 컨테이너 */}
@@ -241,8 +241,8 @@ export function ImageBlock({
         />
 
         {/* 이미지 로드 실패 시 표시 */}
-        <div className="hidden w-full h-32 bg-gray-100 dark:bg-gray-800 rounded-lg flex items-center justify-center">
-          <div className="text-center text-gray-500">
+        <div className="hidden w-full h-32 bg-muted rounded-lg flex items-center justify-center">
+          <div className="text-center text-muted-foreground">
             <ImageIcon className="h-8 w-8 mx-auto mb-2" />
             <p className="text-sm">이미지를 불러올 수 없습니다</p>
           </div>
@@ -268,7 +268,7 @@ export function ImageBlock({
                   };
                   input.click();
                 }}
-                className="bg-white/90 hover:bg-white text-gray-900"
+                className="bg-card/90 hover:bg-card text-foreground"
               >
                 <Upload className="h-4 w-4 mr-1" />
                 변경
@@ -277,7 +277,7 @@ export function ImageBlock({
                 variant="secondary"
                 size="sm"
                 onClick={onDelete}
-                className="bg-white/90 hover:bg-white text-red-600"
+                className="bg-card/90 hover:bg-card text-destructive"
               >
                 <Trash2 className="h-4 w-4 mr-1" />
                 삭제
@@ -315,7 +315,7 @@ export function ImageBlock({
                 variant="ghost"
                 size="sm"
                 onClick={() => setIsEditingCaption(true)}
-                className="h-6 w-6 p-0 text-gray-400 hover:text-gray-600"
+                className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground-secondary"
               >
                 <Edit3 className="h-3 w-3" />
               </Button>
@@ -331,7 +331,7 @@ export function ImageBlock({
             variant="ghost"
             size="sm"
             onClick={onDelete}
-            className="h-6 w-6 p-0 text-gray-400 hover:text-red-500"
+            className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
           >
             <Trash2 className="h-3 w-3" />
           </Button>

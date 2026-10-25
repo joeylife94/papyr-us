@@ -64,12 +64,12 @@ export const KANBAN_COLUMNS = [
 
 /** 칸반 카드 우선순위 점 — Tailwind className 반환 */
 const PRIORITY_CLASS_MAP: Record<string, string> = {
-  high: 'bg-red-500',
-  medium: 'bg-amber-500',
-  low: 'bg-emerald-500',
+  high: 'bg-destructive',
+  medium: 'bg-warning',
+  low: 'bg-success',
 };
 export const getPriorityColor = (priority: string): string =>
-  PRIORITY_CLASS_MAP[priority] ?? 'bg-gray-400';
+  PRIORITY_CLASS_MAP[priority] ?? 'bg-muted-foreground';
 
 /** 갤러리/뱃지 상태 — hex 반환 (inline style에 사용) */
 const STATUS_HEX_MAP: Record<string, string> = {

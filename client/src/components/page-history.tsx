@@ -119,15 +119,13 @@ export function PageHistory({ pageId, currentTitle }: PageHistoryProps) {
             ) : (
               <div className="space-y-2">
                 {/* Current version */}
-                <div className="p-3 rounded-lg bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800">
+                <div className="p-3 rounded-lg bg-success/10 border border-success/30">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <FileText className="h-4 w-4 text-green-600" />
-                      <span className="text-sm font-medium text-green-700 dark:text-green-400">
-                        현재 버전
-                      </span>
+                      <FileText className="h-4 w-4 text-success" />
+                      <span className="text-sm font-medium text-success">현재 버전</span>
                     </div>
-                    <Badge variant="outline" className="text-xs text-green-600 border-green-300">
+                    <Badge variant="outline" className="text-xs text-success border-success/30">
                       최신
                     </Badge>
                   </div>
@@ -137,7 +135,7 @@ export function PageHistory({ pageId, currentTitle }: PageHistoryProps) {
                 {versions.map((version) => (
                   <div
                     key={version.id}
-                    className="p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                    className="p-3 rounded-lg border border-border hover:bg-muted transition-colors"
                   >
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
@@ -181,7 +179,7 @@ export function PageHistory({ pageId, currentTitle }: PageHistoryProps) {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-7 text-xs text-blue-600 hover:text-blue-700"
+                        className="h-7 text-xs text-info hover:text-info"
                         onClick={() => {
                           if (confirm(`v${version.versionNumber}으로 복원하시겠습니까?`)) {
                             restoreMutation.mutate(version.id);
@@ -227,7 +225,7 @@ export function PageHistory({ pageId, currentTitle }: PageHistoryProps) {
                   {format(new Date(viewVersionQuery.data.createdAt), 'yyyy-MM-dd HH:mm')}
                 </div>
               </div>
-              <div className="prose prose-sm dark:prose-invert max-w-none border rounded-lg p-4 bg-slate-50 dark:bg-slate-900">
+              <div className="prose prose-sm dark:prose-invert max-w-none border rounded-lg p-4 bg-muted">
                 <pre className="whitespace-pre-wrap text-sm">{viewVersionQuery.data.content}</pre>
               </div>
               <div className="flex justify-end">

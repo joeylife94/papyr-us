@@ -60,27 +60,25 @@ class ErrorBoundary extends Component<Props, State> {
 
       // Default error UI
       return (
-        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-4">
-          <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+        <div className="min-h-screen bg-background flex items-center justify-center p-4">
+          <div className="max-w-md w-full bg-card rounded-lg shadow-lg p-6">
             <div className="flex items-center gap-3 mb-4">
-              <AlertCircle className="h-8 w-8 text-red-500" />
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                Something went wrong
-              </h1>
+              <AlertCircle className="h-8 w-8 text-destructive" />
+              <h1 className="text-2xl font-bold text-foreground">Something went wrong</h1>
             </div>
 
-            <p className="text-gray-600 dark:text-gray-300 mb-4">
+            <p className="text-foreground-secondary mb-4">
               We're sorry, but something unexpected happened. The error has been logged and we'll
               look into it.
             </p>
 
             {import.meta.env.DEV && this.state.error && (
-              <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 rounded border border-red-200 dark:border-red-800">
-                <p className="text-sm font-mono text-red-800 dark:text-red-200 mb-2">
+              <div className="mb-4 p-3 bg-destructive/10 rounded border border-destructive/30">
+                <p className="text-sm font-mono text-destructive mb-2">
                   {this.state.error.toString()}
                 </p>
                 {this.state.errorInfo && (
-                  <details className="text-xs text-red-700 dark:text-red-300">
+                  <details className="text-xs text-destructive">
                     <summary className="cursor-pointer hover:underline">Component Stack</summary>
                     <pre className="mt-2 overflow-auto">{this.state.errorInfo.componentStack}</pre>
                   </details>
@@ -90,7 +88,7 @@ class ErrorBoundary extends Component<Props, State> {
 
             <button
               onClick={this.handleReset}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg transition-colors"
             >
               <RefreshCw className="h-4 w-4" />
               Reload Page

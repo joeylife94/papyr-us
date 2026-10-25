@@ -271,7 +271,7 @@ export function ActionSheet({
         {/* Cancel Button */}
         <button
           onClick={onClose}
-          className="w-full bg-background rounded-2xl px-4 py-3 text-center text-lg font-semibold text-primary active:bg-muted"
+          className="w-full bg-background rounded-2xl px-4 py-3 text-center text-lg font-semibold text-highlight active:bg-muted"
         >
           {cancelLabel}
         </button>

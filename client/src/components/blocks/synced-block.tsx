@@ -87,8 +87,8 @@ export function SyncedBlock({
       {isHovered && (
         <div className="absolute -top-8 left-0 right-0 flex items-center justify-between px-2 py-1 bg-primary/10 border border-primary/20 rounded-t-lg z-10">
           <div className="flex items-center gap-2">
-            <Link2 className="h-3 w-3 text-primary" />
-            <span className="text-xs font-medium text-primary">
+            <Link2 className="h-3 w-3 text-highlight" />
+            <span className="text-xs font-medium text-highlight">
               {isOriginal ? 'Original Synced Block' : 'Synced from original'}
             </span>
             {!isOriginal && (
@@ -211,7 +211,7 @@ export function SyncedBlockPicker({
               className="w-full text-left p-3 border rounded-lg hover:bg-muted/50 transition-colors"
             >
               <div className="flex items-center gap-2">
-                <Link2 className="h-4 w-4 text-primary" />
+                <Link2 className="h-4 w-4 text-highlight" />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">
                     {block.content?.[0]?.content || 'Untitled'}

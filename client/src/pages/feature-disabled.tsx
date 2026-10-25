@@ -5,15 +5,15 @@ import { Button } from '@/components/ui/button';
 
 export default function FeatureDisabledPage({ featureName }: { featureName?: string }) {
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gray-50">
+    <div className="min-h-screen w-full flex items-center justify-center bg-background">
       <Card className="w-full max-w-md mx-4">
         <CardContent className="pt-6">
           <div className="flex mb-4 gap-2 items-center">
-            <Ban className="h-8 w-8 text-slate-600" />
-            <h1 className="text-2xl font-bold text-gray-900">Feature disabled</h1>
+            <Ban className="h-8 w-8 text-foreground-secondary" />
+            <h1 className="text-2xl font-bold text-foreground">Feature disabled</h1>
           </div>
 
-          <p className="mt-4 text-sm text-gray-600">
+          <p className="mt-4 text-sm text-foreground-secondary">
             {featureName ? (
               <>
                 The feature <span className="font-medium">{featureName}</span> is disabled in this

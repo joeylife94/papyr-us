@@ -62,20 +62,20 @@ function DraggableItem({
     setIsDragging(false);
   };
 
-  const priorityColor = getPriorityColor?.(item.priority || 'medium') || 'bg-blue-500';
+  const priorityColor = getPriorityColor?.(item.priority || 'medium') || 'bg-primary';
 
   return (
     <div
       draggable
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
-      className={`p-3 bg-white dark:bg-gray-800 rounded-lg border shadow-sm cursor-move hover:shadow-md transition-shadow ${
+      className={`p-3 bg-card rounded-lg border shadow-sm cursor-move hover:shadow-md transition-shadow ${
         isDragging ? 'opacity-50' : ''
       }`}
     >
       <div className="flex items-start justify-between mb-2">
         <div className="flex items-center gap-2">
-          <GripVertical className="h-4 w-4 text-gray-400" />
+          <GripVertical className="h-4 w-4 text-muted-foreground" />
           {item.priority && <div className={`w-2 h-2 rounded-full ${priorityColor}`} />}
         </div>
         <DropdownMenu>
@@ -87,7 +87,7 @@ function DraggableItem({
           <DropdownMenuContent align="end">
             {onEdit && <DropdownMenuItem onClick={() => onEdit(item)}>편집</DropdownMenuItem>}
             {onDelete && (
-              <DropdownMenuItem onClick={() => onDelete(item)} className="text-red-600">
+              <DropdownMenuItem onClick={() => onDelete(item)} className="text-destructive">
                 삭제
               </DropdownMenuItem>
             )}
@@ -98,12 +98,10 @@ function DraggableItem({
       <h4 className="font-medium text-sm mb-1 line-clamp-2">{item.title}</h4>
 
       {item.description && (
-        <p className="text-xs text-gray-600 dark:text-gray-400 mb-2 line-clamp-2">
-          {item.description}
-        </p>
+        <p className="text-xs text-foreground-secondary mb-2 line-clamp-2">{item.description}</p>
       )}
 
-      <div className="flex items-center justify-between text-xs text-gray-500">
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
         <div className="flex items-center gap-2">
           {item.assignee && (
             <div className="flex items-center gap-1">
@@ -177,9 +175,7 @@ function DroppableColumn({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       className={`min-h-[500px] p-4 rounded-lg border-2 border-dashed transition-colors ${
-        isOver
-          ? 'border-blue-400 bg-blue-50 dark:bg-blue-950/20'
-          : 'border-gray-200 dark:border-gray-700'
+        isOver ? 'border-primary bg-primary/10' : 'border-border'
       }`}
     >
       {children}
@@ -261,7 +257,9 @@ export function KanbanView({
                 ))}
 
                 {column.items.length === 0 && (
-                  <div className="text-center py-8 text-gray-500 text-sm">작업이 없습니다</div>
+                  <div className="text-center py-8 text-muted-foreground text-sm">
+                    작업이 없습니다
+                  </div>
                 )}
               </div>
             </DroppableColumn>

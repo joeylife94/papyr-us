@@ -39,7 +39,7 @@ export default function CollaborationTest() {
         </CardHeader>
         <CardContent className="space-y-6">
           {/* 사용자 설정 */}
-          <div className="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg">
+          <div className="flex items-center space-x-4 p-4 bg-muted rounded-lg">
             <div className="flex items-center space-x-2">
               <Label htmlFor="userName">사용자 이름:</Label>
               <Input
@@ -51,15 +51,15 @@ export default function CollaborationTest() {
               />
             </div>
             <div className="flex items-center space-x-2">
-              <Wifi className="h-4 w-4 text-green-500" />
-              <span className="text-sm text-gray-600">실시간 연결됨</span>
+              <Wifi className="h-4 w-4 text-success" />
+              <span className="text-sm text-foreground-secondary">실시간 연결됨</span>
             </div>
           </div>
 
           {/* 테스트 안내 */}
-          <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <h3 className="font-semibold text-blue-800 mb-2">테스트 방법:</h3>
-            <ul className="text-sm text-blue-700 space-y-1">
+          <div className="p-4 bg-info/10 border border-info/30 rounded-lg">
+            <h3 className="font-semibold text-info mb-2">테스트 방법:</h3>
+            <ul className="text-sm text-info space-y-1">
               <li>• 이 페이지를 여러 브라우저 탭에서 열어보세요</li>
               <li>• 각 탭에서 다른 사용자 이름을 설정하세요</li>
               <li>• 한 탭에서 블록을 편집하면 다른 탭에서 실시간으로 반영됩니다</li>
@@ -79,9 +79,9 @@ export default function CollaborationTest() {
           </div>
 
           {/* 현재 상태 표시 */}
-          <div className="p-4 bg-gray-50 rounded-lg">
+          <div className="p-4 bg-muted rounded-lg">
             <h3 className="font-semibold mb-2">현재 상태:</h3>
-            <div className="text-sm text-gray-600 space-y-1">
+            <div className="text-sm text-foreground-secondary space-y-1">
               <p>• 페이지 ID: {pageId}</p>
               <p>• 사용자 ID: {getUserId()}</p>
               <p>• 사용자 이름: {userName}</p>

@@ -308,7 +308,7 @@ export default function CalendarPage({ teamId }: CalendarPageProps) {
             {dayEvents.slice(0, 2).map((event) => (
               <div
                 key={event.id}
-                className={`w-3 h-3 rounded-full cursor-pointer hover:scale-125 transition-all duration-200 border border-white/30 hover:border-white/60 ${getPriorityColor(event.priority)}`}
+                className={`w-3 h-3 rounded-full cursor-pointer hover:scale-125 transition-all duration-200 border border-border hover:border-border ${getPriorityColor(event.priority)}`}
                 title={`Click to edit: ${event.title} (Priority ${event.priority ?? 1})`}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -317,7 +317,9 @@ export default function CalendarPage({ teamId }: CalendarPageProps) {
               />
             ))}
             {dayEvents.length > 2 && (
-              <div className="text-xs text-slate-500 font-medium">+{dayEvents.length - 2}</div>
+              <div className="text-xs text-muted-foreground font-medium">
+                +{dayEvents.length - 2}
+              </div>
             )}
           </div>
         );
@@ -331,17 +333,17 @@ export default function CalendarPage({ teamId }: CalendarPageProps) {
     const p = priority || 1; // Default to 1 if undefined/null
     switch (p) {
       case 1:
-        return 'bg-red-500'; // Highest priority
+        return 'bg-destructive text-destructive-foreground'; // Highest priority
       case 2:
-        return 'bg-orange-500';
+        return 'bg-warning text-warning-foreground';
       case 3:
-        return 'bg-yellow-500';
+        return 'bg-warning/80 text-warning-foreground';
       case 4:
-        return 'bg-blue-500';
+        return 'bg-primary text-primary-foreground';
       case 5:
-        return 'bg-green-500'; // Lowest priority
+        return 'bg-success text-success-foreground'; // Lowest priority
       default:
-        return 'bg-blue-500';
+        return 'bg-primary text-primary-foreground';
     }
   };
 
@@ -409,18 +411,15 @@ export default function CalendarPage({ teamId }: CalendarPageProps) {
           {weekDays.map((day, index) => {
             const dayEvents = getEventsForDate(day);
             return (
-              <div
-                key={index}
-                className="border border-slate-200 dark:border-slate-700 rounded-lg p-2 min-h-[120px]"
-              >
-                <div className="text-sm font-medium text-slate-900 dark:text-white mb-2">
+              <div key={index} className="border border-border rounded-lg p-2 min-h-[120px]">
+                <div className="text-sm font-medium text-foreground mb-2">
                   {format(day, 'EEE d')}
                 </div>
                 <div className="space-y-1">
                   {dayEvents.map((event) => (
                     <div
                       key={event.id}
-                      className={`p-2 rounded text-xs text-white cursor-pointer hover:opacity-80 hover:scale-105 transition-all duration-200 border border-transparent hover:border-white/30 ${getPriorityColor(event.priority)}`}
+                      className={`p-2 rounded text-xs cursor-pointer hover:opacity-80 hover:scale-105 transition-all duration-200 border border-transparent hover:border-border ${getPriorityColor(event.priority)}`}
                       title={`Click to edit: ${event.title} (Priority ${event.priority ?? 1})`}
                       onClick={() => handleEditEvent(event)}
                     >
@@ -452,8 +451,8 @@ export default function CalendarPage({ teamId }: CalendarPageProps) {
       <div className="space-y-4">
         {/* All Day Events Section */}
         {allDayEvents.length > 0 && (
-          <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
-            <h3 className="font-medium text-slate-900 dark:text-white mb-3 flex items-center">
+          <div className="border border-border rounded-lg p-4">
+            <h3 className="font-medium text-foreground mb-3 flex items-center">
               <CalendarSmall className="h-4 w-4 mr-2" />
               All Day Events
             </h3>
@@ -461,7 +460,7 @@ export default function CalendarPage({ teamId }: CalendarPageProps) {
               {allDayEvents.map((event) => (
                 <div
                   key={event.id}
-                  className={`p-3 rounded text-white cursor-pointer hover:opacity-90 hover:scale-105 transition-all duration-200 shadow-md hover:shadow-lg group ${getPriorityColor(event.priority)}`}
+                  className={`p-3 rounded cursor-pointer hover:opacity-90 hover:scale-105 transition-all duration-200 shadow-md hover:shadow-lg group ${getPriorityColor(event.priority)}`}
                   title={`Click to edit: ${event.title} (Priority ${event.priority ?? 1})`}
                   onClick={() => handleEditEvent(event)}
                 >
@@ -482,19 +481,16 @@ export default function CalendarPage({ teamId }: CalendarPageProps) {
         )}
 
         {/* Timed Events Section */}
-        <div className="border border-slate-200 dark:border-slate-700 rounded-lg">
-          <div className="p-3 border-b border-slate-200 dark:border-slate-700">
-            <h3 className="font-medium text-slate-900 dark:text-white flex items-center">
+        <div className="border border-border rounded-lg">
+          <div className="p-3 border-b border-border">
+            <h3 className="font-medium text-foreground flex items-center">
               <Clock className="h-4 w-4 mr-2" />
               Schedule
             </h3>
           </div>
           {hours.map((hour) => (
-            <div
-              key={hour}
-              className="flex border-b border-slate-100 dark:border-slate-800 last:border-b-0"
-            >
-              <div className="w-16 p-2 text-sm text-slate-600 dark:text-slate-400 border-r border-slate-100 dark:border-slate-800">
+            <div key={hour} className="flex border-b border-border last:border-b-0">
+              <div className="w-16 p-2 text-sm text-foreground-secondary border-r border-border">
                 {hour.toString().padStart(2, '0')}:00
               </div>
               <div className="flex-1 p-2 min-h-[60px] relative">
@@ -507,7 +503,7 @@ export default function CalendarPage({ teamId }: CalendarPageProps) {
                   .map((event) => (
                     <div
                       key={event.id}
-                      className={`absolute left-2 right-2 p-3 rounded text-white cursor-pointer hover:opacity-90 hover:scale-105 transition-all duration-200 shadow-md hover:shadow-lg group ${getPriorityColor(event.priority)}`}
+                      className={`absolute left-2 right-2 p-3 rounded cursor-pointer hover:opacity-90 hover:scale-105 transition-all duration-200 shadow-md hover:shadow-lg group ${getPriorityColor(event.priority)}`}
                       title={`Click to edit: ${event.title} (Priority ${event.priority ?? 1})`}
                       onClick={() => handleEditEvent(event)}
                     >
@@ -534,10 +530,8 @@ export default function CalendarPage({ teamId }: CalendarPageProps) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-white">{teamName} Calendar</h1>
-          <p className="text-slate-600 dark:text-slate-400">
-            Manage your team's schedule and deadlines
-          </p>
+          <h1 className="text-3xl font-bold text-foreground">{teamName} Calendar</h1>
+          <p className="text-foreground-secondary">Manage your team's schedule and deadlines</p>
         </div>
         <div className="flex items-center space-x-4">
           <div className="flex items-center space-x-2">
@@ -693,7 +687,7 @@ export default function CalendarPage({ teamId }: CalendarPageProps) {
                             </SelectContent>
                           </Select>
                           {watchedStartTime && endTimeOptions.length === 0 && (
-                            <p className="text-sm text-red-500">
+                            <p className="text-sm text-destructive">
                               No available end times. Please select an earlier start time.
                             </p>
                           )}
@@ -767,7 +761,7 @@ export default function CalendarPage({ teamId }: CalendarPageProps) {
           <Button variant="outline" size="sm" onClick={() => navigateDate('prev')}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <h2 className="text-xl font-semibold text-slate-900 dark:text-white">{getViewTitle()}</h2>
+          <h2 className="text-xl font-semibold text-foreground">{getViewTitle()}</h2>
           <Button variant="outline" size="sm" onClick={() => navigateDate('next')}>
             <ChevronRight className="h-4 w-4" />
           </Button>
@@ -813,37 +807,31 @@ export default function CalendarPage({ teamId }: CalendarPageProps) {
             </CardHeader>
             <CardContent className="space-y-3">
               {selectedDateEvents.length === 0 ? (
-                <p className="text-slate-500 dark:text-slate-400 text-sm">
-                  No events scheduled for this date
-                </p>
+                <p className="text-muted-foreground text-sm">No events scheduled for this date</p>
               ) : (
                 selectedDateEvents.map((event) => (
                   <div
                     key={event.id}
-                    className="p-3 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                    className="p-3 border border-border rounded-lg hover:bg-muted transition-colors"
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <Badge
                             variant="outline"
-                            className={`text-xs ${getPriorityColor(event.priority || 1)} text-white border-none`}
+                            className={`text-xs ${getPriorityColor(event.priority || 1)} border-none`}
                           >
                             P{event.priority || 1}
                           </Badge>
-                          <h4 className="font-medium text-slate-900 dark:text-white">
-                            {event.title}
-                          </h4>
+                          <h4 className="font-medium text-foreground">{event.title}</h4>
                         </div>
-                        <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                        <p className="text-sm text-foreground-secondary mt-1">
                           {format(new Date(event.startDate), 'MMM d, yyyy')}
                           {event.endDate && ` - ${format(new Date(event.endDate), 'MMM d, yyyy')}`}
                         </p>
-                        <p className="text-sm text-slate-500 dark:text-slate-400">
-                          {formatEventTime(event)}
-                        </p>
+                        <p className="text-sm text-muted-foreground">{formatEventTime(event)}</p>
                         {event.description && (
-                          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1 line-clamp-2">
+                          <p className="text-sm text-foreground-secondary mt-1 line-clamp-2">
                             {event.description}
                           </p>
                         )}
@@ -878,26 +866,26 @@ export default function CalendarPage({ teamId }: CalendarPageProps) {
                 .map((event) => (
                   <div
                     key={event.id}
-                    className="flex items-center justify-between p-2 hover:bg-slate-50 dark:hover:bg-slate-800 rounded"
+                    className="flex items-center justify-between p-2 hover:bg-muted rounded"
                   >
                     <div>
                       <div className="flex items-center gap-2">
                         <Badge
                           variant="outline"
-                          className={`text-xs ${getPriorityColor(event.priority || 1)} text-white border-none`}
+                          className={`text-xs ${getPriorityColor(event.priority || 1)} border-none`}
                         >
                           P{event.priority || 1}
                         </Badge>
                         <p className="font-medium text-sm">{event.title}</p>
                       </div>
-                      <p className="text-xs text-slate-500">
+                      <p className="text-xs text-muted-foreground">
                         {format(new Date(event.startDate), 'MMM d')} - {formatEventTime(event)}
                       </p>
                     </div>
                   </div>
                 ))}
               {events.filter((event) => new Date(event.startDate) > new Date()).length === 0 && (
-                <p className="text-sm text-slate-500 dark:text-slate-400">No upcoming events</p>
+                <p className="text-sm text-muted-foreground">No upcoming events</p>
               )}
             </CardContent>
           </Card>

@@ -150,7 +150,7 @@ export function CodeBlock({
 
   return (
     <div
-      className={`relative group ${isFocused ? 'bg-blue-50 dark:bg-blue-950/20' : ''} rounded-lg p-4 transition-colors`}
+      className={`relative group ${isFocused ? 'bg-primary/10 ' : ''} rounded-lg p-4 transition-colors`}
       onFocus={onFocus}
       onBlur={onBlur}
       onKeyDown={handleKeyDown}
@@ -158,7 +158,7 @@ export function CodeBlock({
     >
       {/* 블록 타입 표시 */}
       <div className="absolute left-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity">
-        <Code className="h-4 w-4 text-gray-400" />
+        <Code className="h-4 w-4 text-muted-foreground" />
       </div>
 
       {/* 코드 블록 헤더 */}
@@ -186,7 +186,7 @@ export function CodeBlock({
               variant="ghost"
               size="sm"
               onClick={handleCopy}
-              className="h-6 w-6 p-0 text-gray-400 hover:text-green-600"
+              className="h-6 w-6 p-0 text-muted-foreground hover:text-success"
             >
               {isCopied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
             </Button>
@@ -194,7 +194,7 @@ export function CodeBlock({
               variant="ghost"
               size="sm"
               onClick={onDelete}
-              className="h-6 w-6 p-0 text-gray-400 hover:text-red-500"
+              className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
             >
               <Trash2 className="h-3 w-3" />
             </Button>
@@ -214,8 +214,8 @@ export function CodeBlock({
           className={`
             w-full resize-none border-none outline-none bg-transparent
             font-mono text-sm leading-relaxed
-            text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500
-            bg-gray-50 dark:bg-gray-900 rounded-md p-3
+            text-foreground placeholder:text-muted-foreground
+            bg-muted rounded-md p-3
             focus:ring-2 focus:ring-primary focus:ring-inset
           `}
           rows={Math.max(3, content.split('\n').length)}
@@ -224,7 +224,7 @@ export function CodeBlock({
 
         {/* 라인 번호 (선택사항) */}
         {content.includes('\n') && (
-          <div className="absolute left-3 top-3 text-xs text-gray-400 select-none pointer-events-none">
+          <div className="absolute left-3 top-3 text-xs text-muted-foreground select-none pointer-events-none">
             {content.split('\n').map((_, index) => (
               <div key={index} className="leading-relaxed">
                 {index + 1}

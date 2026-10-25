@@ -126,7 +126,7 @@ export function UserAvatarList({ users, maxVisible = 5, className = '' }: UserAv
       {visibleUsers.map((user) => (
         <div
           key={user.id}
-          className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold text-white shadow-md ring-2 ring-white transition-transform hover:scale-110"
+          className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold text-white shadow-md ring-2 ring-background transition-transform hover:scale-110"
           style={{ backgroundColor: user.color }}
           title={user.name}
         >
@@ -135,7 +135,7 @@ export function UserAvatarList({ users, maxVisible = 5, className = '' }: UserAv
       ))}
       {remainingCount > 0 && (
         <div
-          className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-400 text-xs font-semibold text-white shadow-md ring-2 ring-white"
+          className="flex h-8 w-8 items-center justify-center rounded-full bg-muted-foreground text-xs font-semibold text-background shadow-md ring-2 ring-background"
           title={`${remainingCount} more user${remainingCount > 1 ? 's' : ''}`}
         >
           +{remainingCount}
@@ -156,15 +156,15 @@ interface CollaborationStatusProps {
 
 export function CollaborationStatus({ isConnected, userCount, users }: CollaborationStatusProps) {
   return (
-    <div className="flex items-center gap-3 rounded-lg bg-white px-4 py-2 shadow-md dark:bg-gray-800">
+    <div className="flex items-center gap-3 rounded-lg bg-popover border border-border px-4 py-2 shadow-md">
       {/* Connection indicator */}
       <div className="flex items-center gap-2">
         <div
           className={`h-2 w-2 rounded-full ${
-            isConnected ? 'bg-green-500 animate-pulse' : 'bg-gray-400'
+            isConnected ? 'bg-success animate-pulse' : 'bg-muted-foreground'
           }`}
         />
-        <span className="text-sm text-gray-600 dark:text-gray-300">
+        <span className="text-sm text-foreground-secondary">
           {isConnected ? '실시간 협업 중' : '오프라인'}
         </span>
       </div>
@@ -172,15 +172,15 @@ export function CollaborationStatus({ isConnected, userCount, users }: Collabora
       {/* User count */}
       {userCount > 0 && (
         <>
-          <div className="h-4 w-px bg-gray-300 dark:bg-gray-600" />
-          <span className="text-sm text-gray-600 dark:text-gray-300">{userCount + 1}명 접속</span>
+          <div className="h-4 w-px bg-border" />
+          <span className="text-sm text-foreground-secondary">{userCount + 1}명 접속</span>
         </>
       )}
 
       {/* User avatars */}
       {users.length > 0 && (
         <>
-          <div className="h-4 w-px bg-gray-300 dark:bg-gray-600" />
+          <div className="h-4 w-px bg-border" />
           <UserAvatarList users={users} maxVisible={3} />
         </>
       )}

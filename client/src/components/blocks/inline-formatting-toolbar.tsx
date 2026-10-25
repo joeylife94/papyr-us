@@ -320,7 +320,7 @@ export function InlineFormattingToolbar({ containerRef, onFormat }: InlineFormat
   return (
     <div
       ref={toolbarRef}
-      className="fixed z-[9999] flex items-center gap-0.5 px-1 py-0.5 bg-slate-900 dark:bg-slate-100 rounded-lg shadow-xl"
+      className="fixed z-[9999] flex items-center gap-0.5 px-1 py-0.5 bg-popover border border-border rounded-lg shadow-xl"
       style={{
         top: Math.max(8, position.top),
         left: position.left,
@@ -336,7 +336,7 @@ export function InlineFormattingToolbar({ containerRef, onFormat }: InlineFormat
           key={action.label}
           variant="ghost"
           size="sm"
-          className="h-7 w-7 p-0 text-white dark:text-slate-900 hover:bg-slate-700 dark:hover:bg-slate-300 rounded-md"
+          className="h-7 w-7 p-0 text-foreground hover:bg-accent rounded-md"
           title={`${action.label}${action.shortcut ? ` (${action.shortcut})` : ''}`}
           onClick={() => {
             if (activeTextarea) {
@@ -349,13 +349,13 @@ export function InlineFormattingToolbar({ containerRef, onFormat }: InlineFormat
       ))}
       {showAI && (
         <>
-          <div className="w-px h-4 bg-slate-600 dark:bg-slate-400 mx-0.5" />
+          <div className="w-px h-4 bg-border mx-0.5" />
           {AI_ACTIONS.map((ai) => (
             <Button
               key={ai.label}
               variant="ghost"
               size="sm"
-              className="h-7 w-7 p-0 text-purple-300 dark:text-purple-700 hover:bg-slate-700 dark:hover:bg-slate-300 rounded-md"
+              className="h-7 w-7 p-0 text-highlight hover:bg-accent rounded-md"
               title={ai.label}
               disabled={aiLoading !== null}
               onClick={() => handleAIAction(ai.action)}

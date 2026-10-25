@@ -54,7 +54,7 @@ export function QuoteBlock({
     return (
       <div className="group relative border-l-4 border-primary bg-muted/30 p-4 rounded-r-lg">
         <div className="flex items-start gap-3">
-          <Quote className="h-5 w-5 text-primary mt-1 flex-shrink-0" />
+          <Quote className="h-5 w-5 text-highlight mt-1 flex-shrink-0" />
           <div className="flex-1 space-y-3">
             <Textarea
               value={editContent}
@@ -97,7 +97,7 @@ export function QuoteBlock({
   return (
     <div className="group relative border-l-4 border-primary bg-muted/30 p-4 rounded-r-lg hover:bg-muted/50 transition-colors">
       <div className="flex items-start gap-3">
-        <Quote className="h-5 w-5 text-primary mt-1 flex-shrink-0" />
+        <Quote className="h-5 w-5 text-highlight mt-1 flex-shrink-0" />
         <div className="flex-1">
           <blockquote className="text-base font-medium italic text-foreground mb-2">
             "{content}"

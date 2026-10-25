@@ -26,9 +26,9 @@ export default function SocketConnectionStatus() {
   // Reconnecting state
   if (isReconnecting) {
     return (
-      <Alert className="fixed bottom-4 right-4 w-auto max-w-md bg-yellow-50 border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-700 z-50">
-        <Loader2 className="h-4 w-4 animate-spin text-yellow-600 dark:text-yellow-400" />
-        <AlertDescription className="ml-2 text-yellow-800 dark:text-yellow-200">
+      <Alert className="fixed bottom-4 right-4 w-auto max-w-md bg-warning/10 border-warning/30 z-50">
+        <Loader2 className="h-4 w-4 animate-spin text-warning" />
+        <AlertDescription className="ml-2 text-warning">
           재연결 중... (시도 {reconnectAttempt}/5)
         </AlertDescription>
       </Alert>
@@ -38,11 +38,9 @@ export default function SocketConnectionStatus() {
   // Error state
   if (reconnectError) {
     return (
-      <Alert className="fixed bottom-4 right-4 w-auto max-w-md bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-700 z-50">
-        <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
-        <AlertDescription className="ml-2 text-red-800 dark:text-red-200">
-          {reconnectError}
-        </AlertDescription>
+      <Alert className="fixed bottom-4 right-4 w-auto max-w-md bg-destructive/10 border-destructive/30 z-50">
+        <AlertCircle className="h-4 w-4 text-destructive" />
+        <AlertDescription className="ml-2 text-destructive">{reconnectError}</AlertDescription>
       </Alert>
     );
   }
@@ -50,9 +48,9 @@ export default function SocketConnectionStatus() {
   // Disconnected state
   if (!isConnected) {
     return (
-      <Alert className="fixed bottom-4 right-4 w-auto max-w-md bg-gray-50 border-gray-200 dark:bg-gray-900/20 dark:border-gray-700 z-50">
-        <WifiOff className="h-4 w-4 text-gray-600 dark:text-gray-400" />
-        <AlertDescription className="ml-2 text-gray-800 dark:text-gray-200">
+      <Alert className="fixed bottom-4 right-4 w-auto max-w-md bg-muted border-border z-50">
+        <WifiOff className="h-4 w-4 text-foreground-secondary" />
+        <AlertDescription className="ml-2 text-foreground">
           실시간 협업 연결이 끊어졌습니다
         </AlertDescription>
       </Alert>
@@ -74,7 +72,7 @@ export function ConnectionIndicator() {
 
   if (isReconnecting) {
     return (
-      <div className="flex items-center gap-1.5 text-xs text-yellow-600 dark:text-yellow-400">
+      <div className="flex items-center gap-1.5 text-xs text-warning">
         <Loader2 className="h-3 w-3 animate-spin" />
         <span>재연결 중</span>
       </div>
@@ -83,7 +81,7 @@ export function ConnectionIndicator() {
 
   if (isConnected) {
     return (
-      <div className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400">
+      <div className="flex items-center gap-1.5 text-xs text-success">
         <CheckCircle className="h-3 w-3" />
         <span>연결됨</span>
       </div>
@@ -91,7 +89,7 @@ export function ConnectionIndicator() {
   }
 
   return (
-    <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
       <WifiOff className="h-3 w-3" />
       <span>오프라인</span>
     </div>
