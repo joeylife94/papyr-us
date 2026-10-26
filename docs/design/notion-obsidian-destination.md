@@ -79,7 +79,7 @@ Status: ✅ shipped (on `main` or in an open PR), 🚧 phase 2 (#113), 🔜 late
 
 ## Order of work
 
-1. **Phase 1, #112:** icons, tree, id-based links, backlinks, graph views, quick switcher, daily notes, Markdown shortcuts.
+1. **Phase 1:** icons (#114) and the page tree (#115), both on `main`; then #112: id-based links, backlinks, graph views, quick switcher, daily notes, Markdown shortcuts.
 2. **Phase 2, #113:**
    - Markdown fidelity first: it is the base for the reader, export and import.
    - Live preview, vault export/import and inline databases in parallel.
