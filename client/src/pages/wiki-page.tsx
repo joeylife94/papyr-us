@@ -18,6 +18,8 @@ import { TypingIndicator } from '@/components/collaboration/TypingIndicator';
 import { CollaboratorPresence } from '@/components/collaboration/CollaboratorPresence';
 import { AICopilotSidebar } from '@/components/ai/AICopilotSidebar';
 import { RelatedPages } from '@/components/wiki/RelatedPages';
+import { LocalGraphPanel } from '@/components/knowledge/local-graph';
+import { UnlinkedMentions } from '@/components/page/unlinked-mentions';
 import { PageHistory } from '@/components/page-history';
 import { BlockEditor } from '@/components/blocks/block-editor';
 import { PageProperties, PageTitle, SaveStatus } from '@/components/page/page-editor-parts';
@@ -329,6 +331,12 @@ export default function WikiPageView() {
 
           <section className="mt-12">
             <RelatedPages pageId={page.id} pageTitle={page.title} pageContent={content} />
+          </section>
+
+          {/* Knowledge views (#111 §2, §5): local graph and unlinked mentions. */}
+          <section aria-label="문서 연결" className="mt-8 space-y-3">
+            <LocalGraphPanel pageId={page.id} />
+            <UnlinkedMentions pageId={page.id} pageTitle={page.title} />
           </section>
         </article>
       </div>
