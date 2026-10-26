@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { markdownToHtml } from '../../client/src/lib/markdown';
+import { markdownToHtml, plainTextFallbackHtml } from '../../client/src/lib/markdown';
 import { isSafeUrl } from '../../client/src/lib/rehype-safe-urls';
 
 // Page content is untrusted: the reader must never render a script URL (stored XSS).
@@ -35,5 +35,13 @@ describe('URLs in rendered Markdown', () => {
     expect(isSafeUrl('java\u0000script:alert(1)')).toBe(false);
     expect(isSafeUrl('//cdn.example.com/a.png')).toBe(true);
     expect(isSafeUrl('docs/guide')).toBe(true);
+  });
+});
+
+describe('the reader fallback when rendering fails', () => {
+  it('shows the page text escaped', () => {
+    expect(plainTextFallbackHtml('<img src=x onerror="alert(1)"> & <b>')).toBe(
+      '<pre>&lt;img src=x onerror=&quot;alert(1)&quot;&gt; &amp; &lt;b&gt;</pre>'
+    );
   });
 });
