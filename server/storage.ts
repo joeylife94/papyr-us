@@ -94,6 +94,16 @@ export interface PageViewer {
 /** A caller without a session: only public or permission-free team-less pages are readable. */
 export const ANONYMOUS_PAGE_VIEWER: PageViewer = Object.freeze({ teamIds: [] as number[] });
 
+/** A page as the link picker, quick switcher and tree show it: never its content. */
+export interface PageTitleMatch {
+  id: number;
+  title: string;
+  slug: string;
+  icon: string | null;
+  teamId: number | null;
+  updatedAt: Date;
+}
+
 const MAX_SLUG_INSERT_ATTEMPTS = 100;
 
 function isTeamPagesForeignKeyViolation(error: unknown): boolean {
@@ -471,6 +481,57 @@ export class DBStorage {
    */
   readablePageCondition(viewer: PageViewer): SQL {
     return this.listableBy(viewer);
+  }
+
+  /**
+   * Live pages of one workspace scope (a team, or `null` for team-less pages) that the viewer can
+   * read: the base condition for the page tree, link picker, quick switcher and graph.
+   */
+  readablePagesInScope(viewer: PageViewer, teamId: number | null): SQL {
+    return and(
+      isNull(wikiPages.deletedAt),
+      teamId === null ? isNull(wikiPages.teamId) : eq(wikiPages.teamId, teamId),
+      this.listableBy(viewer)
+    )!;
+  }
+
+  /**
+   * Readable pages of one scope whose title contains `query` (case-insensitive), for the link
+   * picker and the quick switcher (#103 E6, #111). Exact matches come first, then prefix
+   * matches, then the most recently updated; an empty query lists the most recently updated.
+   */
+  async searchReadablePageTitles(
+    viewer: PageViewer,
+    teamId: number | null,
+    options: { query?: string; limit?: number; excludeId?: number } = {}
+  ): Promise<PageTitleMatch[]> {
+    const query = (options.query ?? '').trim();
+    const limit = Math.min(Math.max(options.limit ?? 20, 1), 50);
+    const conditions: SQL[] = [this.readablePagesInScope(viewer, teamId)];
+    if (options.excludeId) conditions.push(sql`${wikiPages.id} <> ${options.excludeId}`);
+    const lowered = query.toLowerCase();
+    // ILIKE/LIKE treat % and _ as wildcards; a typed title must match literally.
+    const escaped = lowered.replace(/[\\%_]/g, (c) => `\\${c}`);
+    if (query) conditions.push(sql`${wikiPages.title} ILIKE ${`%${escaped}%`}`);
+    const order: SQL[] = query
+      ? [
+          sql`CASE WHEN lower(${wikiPages.title}) = ${lowered} THEN 0
+            WHEN lower(${wikiPages.title}) LIKE ${`${escaped}%`} THEN 1 ELSE 2 END`,
+        ]
+      : [];
+    return this.db
+      .select({
+        id: wikiPages.id,
+        title: wikiPages.title,
+        slug: wikiPages.slug,
+        icon: wikiPages.icon,
+        teamId: wikiPages.teamId,
+        updatedAt: wikiPages.updatedAt,
+      })
+      .from(wikiPages)
+      .where(and(...conditions))
+      .orderBy(...order, desc(wikiPages.updatedAt))
+      .limit(limit);
   }
 
   async getReadableWikiPagesByFolder(folder: string, userId: number): Promise<WikiPage[]> {
