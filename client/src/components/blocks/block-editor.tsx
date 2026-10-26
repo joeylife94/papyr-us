@@ -37,7 +37,7 @@ import {
   type ResponderProvided,
 } from '@hello-pangea/dnd';
 import { cn } from '@/lib/utils';
-import { moveBlock as reorderBlocks } from '@/lib/block-order';
+import { moveBlock as reorderBlocks, resolveDrop } from '@/lib/block-order';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -375,9 +375,14 @@ export function BlockEditor({
       provided.announce('블록 이동을 취소했습니다');
       return;
     }
-    const to = result.destination.index;
-    moveBlockAt(result.source.index, to);
-    provided.announce(`블록을 ${to + 1}번째 위치에 놓았습니다`);
+    // Resolve by id: the order may have changed under the drag (a collaborator's edit).
+    const move = resolveDrop(blocks, result.draggableId, result.destination.index);
+    if (!move) {
+      provided.announce('블록을 옮기지 않았습니다');
+      return;
+    }
+    moveBlockAt(move.from, move.to);
+    provided.announce(`블록을 ${move.to + 1}번째 위치에 놓았습니다`);
   };
 
   // Keep refs in sync so handleSlashSelect can call these without circular dependency
