@@ -8,17 +8,16 @@ import {
   useRef,
   useState,
   type ChangeEvent,
-  type CSSProperties,
   type KeyboardEvent,
   type ReactNode,
   type RefObject,
 } from 'react';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
-import { formatPageLink, hasPageLinks } from '@shared/page-links';
+import { formatPageLink } from '@shared/page-links';
 import { cn } from '@/lib/utils';
+import { useInlinePreview } from './inline-preview';
 import { PageIcon } from './page-icon';
 import { PAGE_LINK_QUERY_KEY, type ResolvedPageLink } from './page-link-data';
-import { PageLinkText } from './page-link-text';
 import { findPageLinkTrigger, type PageLinkTrigger } from './page-link-trigger';
 
 /**
@@ -27,9 +26,8 @@ import { findPageLinkTrigger, type PageLinkTrigger } from './page-link-trigger';
  * - Picker: `@` at a word boundary or `[[` opens a title search over the pages the viewer can
  *   read in the edited page's workspace scope. It follows the ARIA combobox pattern on the
  *   block's textarea; ↑/↓ move, Enter/Tab insert `[[page:<id>]]`, Esc closes and keeps the text.
- * - Live preview: a block holding a link shows its text with chips while it is not focused; the
- *   textarea stays in the DOM (visually hidden, still focusable) so Tab, clicks and any code
- *   that focuses a block's textarea switch it back to the raw text.
+ * - Live preview: out of focus, a block shows its links as chips, together with its other inline
+ *   Markdown (#113 §2); see `useInlinePreview` in `inline-preview.tsx`.
  */
 
 export interface PageLinkEditorScope {
@@ -52,19 +50,6 @@ interface TitleSearchPage {
 
 const SEARCH_DEBOUNCE_MS = 120;
 const SEARCH_LIMIT = 8;
-
-const VISUALLY_HIDDEN: CSSProperties = {
-  position: 'absolute',
-  width: 1,
-  height: 1,
-  margin: -1,
-  padding: 0,
-  border: 0,
-  overflow: 'hidden',
-  clip: 'rect(0 0 0 0)',
-  whiteSpace: 'nowrap',
-  opacity: 0,
-};
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value);
@@ -243,17 +228,15 @@ export function usePageLinkEditing({
     else if (found.end !== trigger.end) setTrigger(found);
   };
 
-  const previewing = !isFocused && hasPageLinks(content);
-
-  const activatePreview = () => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.focus();
-    el.setSelectionRange(el.value.length, el.value.length);
-  };
+  const preview = useInlinePreview({
+    content,
+    isFocused,
+    textareaRef,
+    className: previewClassName,
+  });
 
   const textareaProps = {
-    style: previewing ? VISUALLY_HIDDEN : undefined,
+    style: preview.textareaStyle,
     onSelectCapture: handleSelect,
     onBlurCapture: close,
     ...(open
@@ -274,25 +257,7 @@ export function usePageLinkEditing({
 
   const overlay: ReactNode = (
     <>
-      {previewing && (
-        // Hidden from assistive technology: the focusable textarea carries the same text.
-        <div
-          aria-hidden="true"
-          data-page-link-preview=""
-          onMouseDown={(event) => {
-            // A chip is a link: let the click open it. Anywhere else edits the block.
-            if ((event.target as HTMLElement).closest('a[data-page-link]')) return;
-            event.preventDefault();
-            activatePreview();
-          }}
-          className={cn(
-            'min-h-[1.625em] cursor-text whitespace-pre-wrap break-words text-foreground',
-            previewClassName
-          )}
-        >
-          <PageLinkText text={content} focusable={false} />
-        </div>
-      )}
+      {preview.element}
       {open && (
         <div
           data-testid="page-link-picker"
@@ -342,5 +307,5 @@ export function usePageLinkEditing({
     </>
   );
 
-  return { handleInput, handleKeyDown, textareaProps, overlay, previewing };
+  return { handleInput, handleKeyDown, textareaProps, overlay, previewing: preview.previewing };
 }

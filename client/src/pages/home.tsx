@@ -1,11 +1,12 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageIcon } from '@/components/page/page-icon';
 import { useActiveWorkspace } from '@/hooks/useActiveWorkspace';
+import { TAG_CHIP_CLASS } from '@/lib/inline-markdown';
 import { toPlainTextPreview } from '@/lib/markdown';
 import { Book, Plus, User } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
@@ -22,6 +23,10 @@ const ROW_GRID = 'md:grid-cols-[minmax(0,1fr)_110px_140px_100px]';
 
 export default function Home({ searchQuery, selectedFolder, teamName }: HomeProps) {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  // `?tag=` filters by a page tag: `#tag` chips in pages link here (#113).
+  const [searchParams] = useSearchParams();
+  const tag = searchParams.get('tag')?.trim() ?? '';
   const workspace = useActiveWorkspace();
   const createPath = teamName ? `/teams/${teamName}/create` : '/create';
   // Auto-switch to relevance ranking when searching
@@ -31,13 +36,14 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
 
   const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useInfiniteQuery<{ pages: WikiPage[]; total: number; offset: number; limit: number }>({
-      queryKey: ['/api/pages', searchQuery, selectedFolder, teamName, effectiveSort],
+      queryKey: ['/api/pages', searchQuery, selectedFolder, teamName, effectiveSort, tag],
       queryFn: async ({ pageParam = 0 }) => {
         try {
           const queryParams = new URLSearchParams();
           if (searchQuery) queryParams.append('q', searchQuery);
           if (selectedFolder) queryParams.append('folder', selectedFolder);
           if (teamName) queryParams.append('teamId', teamName);
+          if (tag) queryParams.append('tags', tag);
           queryParams.append('limit', String(limit));
           queryParams.append('offset', String(pageParam));
           queryParams.append('sort', effectiveSort);
@@ -76,7 +82,7 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
       ? ((data as any).pages as any[]).flatMap((p: any) => p.pages as WikiPage[])
       : []
   ) as WikiPage[];
-  const listLabel = teamName ? '문서 목록' : '최근 문서';
+  const listLabel = tag ? `#${tag} 태그 문서` : teamName ? '문서 목록' : '최근 문서';
 
   return (
     <div className="space-y-6 pb-16 lg:pb-0">
@@ -101,6 +107,21 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
               ? '팀의 문서를 확인하고 함께 작업하세요.'
               : '최근 문서를 확인하거나 새 문서를 작성하세요.'}
           </p>
+          {tag && (
+            <p
+              data-testid="tag-filter"
+              className="flex flex-wrap items-center gap-2 pt-1 text-sm text-foreground-secondary"
+            >
+              <span>태그로 거른 문서</span>
+              <span className={TAG_CHIP_CLASS}>#{tag}</span>
+              <Link
+                to={pathname}
+                className="text-[13px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+              >
+                필터 해제
+              </Link>
+            </p>
+          )}
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           <div className="flex items-center gap-2">
@@ -144,12 +165,27 @@ export default function Home({ searchQuery, selectedFolder, teamName }: HomeProp
             <Book className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
             {/* The workspace name is already in the page heading; repeating it here would also
                 make the accepted `${team} 팀 문서` heading locator ambiguous. */}
-            <h3 className="mb-1 text-base font-semibold text-foreground">아직 문서가 없습니다</h3>
-            <p className="text-sm text-foreground-secondary">
-              {teamName
-                ? "'새 문서 작성'으로 팀의 첫 문서를 만들어 보세요."
-                : "'새 문서 작성'으로 첫 문서를 만들어 보세요."}
-            </p>
+            {tag ? (
+              <>
+                <h3 className="mb-1 text-base font-semibold text-foreground">
+                  이 태그가 붙은 문서가 없습니다
+                </h3>
+                <p className="text-sm text-foreground-secondary">
+                  문서 속성의 태그에 ‘{tag}’를 추가하면 여기에 표시됩니다.
+                </p>
+              </>
+            ) : (
+              <>
+                <h3 className="mb-1 text-base font-semibold text-foreground">
+                  아직 문서가 없습니다
+                </h3>
+                <p className="text-sm text-foreground-secondary">
+                  {teamName
+                    ? "'새 문서 작성'으로 팀의 첫 문서를 만들어 보세요."
+                    : "'새 문서 작성'으로 첫 문서를 만들어 보세요."}
+                </p>
+              </>
+            )}
           </div>
         ) : (
           // One responsive structure, not separate desktop and mobile copies, so each title
