@@ -4,7 +4,9 @@
  * rename shows up everywhere, and a viewer who cannot read the target sees no title at all.
  */
 
-const TOKEN = /\[\[page:(\d{1,10})\]\]/g;
+/** One link token; group 1 is the target id. Global: use with `matchAll` or `replace`. */
+export const PAGE_LINK_PATTERN = /\[\[page:(\d{1,10})\]\]/g;
+const TOKEN = PAGE_LINK_PATTERN;
 
 /** Most links indexed per page; anything beyond is still rendered, just not indexed. */
 export const MAX_INDEXED_LINKS = 500;

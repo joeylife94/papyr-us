@@ -103,6 +103,9 @@ import { registerKnowledgeRoutes } from './routes/knowledge.js';
 import { buildKnowledgeGraph, suggestAiLinks } from './services/knowledge-graph.js';
 import { isReservedDailyNoteSlug } from '../shared/daily-notes.js';
 import { registerDailyNoteRoutes } from './routes/daily-notes.js';
+import { registerVaultRoutes } from './routes/vault.js';
+import { contentWithLinkTitles, singlePageMarkdown } from './services/vault-export.js';
+import { pageLinkTokenIds } from './services/vault-format.js';
 import { featureFlags } from './features.js';
 
 interface MulterRequest extends Request {
@@ -621,6 +624,7 @@ export async function registerRoutes(
   // segments are never read as a page id.
   registerKnowledgeRoutes(app, storage);
   registerDailyNoteRoutes(app, storage);
+  registerVaultRoutes(app, storage);
 
   app.get('/api/pages', optionalAuth, async (req: AuthRequest, res) => {
     try {
@@ -5376,23 +5380,20 @@ export async function registerRoutes(
 
         if (!page) return res.status(404).json({ error: 'Page not found' });
 
+        // Link tokens become titles of pages the viewer can read, never others' (#113 P2-D2).
+        const viewer = await storage.getPageViewer(req.user?.id);
+        const linked = await storage.resolveReadablePageLinks(
+          viewer,
+          pageLinkTokenIds(page.content || '')
+        );
+        const linkedTitles = new Map<number, string>(
+          linked.map((target) => [target.id, target.title])
+        );
+
         switch (format) {
           case 'markdown':
           case 'md': {
-            const frontmatter = [
-              '---',
-              `title: "${page.title.replace(/"/g, '\\"')}"`,
-              `slug: "${page.slug}"`,
-              `author: "${page.author}"`,
-              `folder: "${page.folder}"`,
-              `tags: [${page.tags.map((t) => `"${t}"`).join(', ')}]`,
-              `created: "${page.createdAt}"`,
-              `updated: "${page.updatedAt}"`,
-              '---',
-              '',
-            ].join('\n');
-
-            const markdown = frontmatter + (page.content || '');
+            const markdown = singlePageMarkdown(page, linkedTitles);
             res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
             res.setHeader('Content-Disposition', `attachment; filename="${page.slug}.md"`);
             return res.send(markdown);
@@ -5405,7 +5406,9 @@ export async function registerRoutes(
             const rehypeStringify = (await import('rehype-stringify')).default;
 
             const processor = remark().use(remarkGfm).use(remarkRehype).use(rehypeStringify);
-            const result = await processor.process(page.content || '');
+            const result = await processor.process(
+              contentWithLinkTitles(page.content || '', linkedTitles)
+            );
 
             const html = `<!DOCTYPE html>
 <html lang="en">
