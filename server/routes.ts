@@ -45,6 +45,7 @@ import {
   tasks,
   comments,
   users,
+  pageIconSchema,
   type CalendarEvent,
   type Task,
 } from '../shared/schema.js';
@@ -907,6 +908,8 @@ export async function registerRoutes(
       blocks: z.array(z.any()).optional(),
       tags: z.array(z.string()).optional(),
       folder: z.string().min(1).optional(),
+      // Page icon (issue #103 E4): one emoji, or null to remove it.
+      icon: pageIconSchema.nullable().optional(),
     })
     .strict();
 

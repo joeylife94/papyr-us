@@ -373,6 +373,48 @@ describe('In-place editing endpoints (issue #103 E1/E2) use the single-page leve
     expect(storage.updateWikiPage).not.toHaveBeenCalled();
   });
 
+  it('autosave sets or clears the page icon (issue #103 E4) and accepts only one emoji', async () => {
+    const set = await request(app)
+      .put(`/api/pages/${PAGE_A}/autosave`)
+      .set(as(EDITOR))
+      .send({ icon: '🚀' });
+    expect(set.status).toBe(200);
+    expect(storage.updateWikiPage).toHaveBeenCalledWith(PAGE_A, { icon: '🚀' });
+
+    const cleared = await request(app)
+      .put(`/api/pages/${PAGE_A}/autosave`)
+      .set(as(EDITOR))
+      .send({ icon: null });
+    expect(cleared.status).toBe(200);
+    expect(storage.updateWikiPage).toHaveBeenLastCalledWith(PAGE_A, { icon: null });
+
+    storage.updateWikiPage.mockClear();
+    for (const icon of ['rocket', '🚀🚀', '<img src=x>', '', 42]) {
+      const res = await request(app)
+        .put(`/api/pages/${PAGE_A}/autosave`)
+        .set(as(EDITOR))
+        .send({ icon });
+      expect(res.status).toBe(400);
+    }
+    expect(storage.updateWikiPage).not.toHaveBeenCalled();
+
+    const denied = await request(app)
+      .put(`/api/pages/${PAGE_A}/autosave`)
+      .set(as(OUTSIDER))
+      .send({ icon: '🔥' });
+    expect(denied.status).toBe(403);
+    expect(storage.updateWikiPage).not.toHaveBeenCalled();
+  });
+
+  it('manual PUT validates the icon with the same rule', async () => {
+    const bad = await request(app)
+      .put(`/api/pages/${PAGE_A}`)
+      .set(as(EDITOR))
+      .send({ icon: 'not an emoji' });
+    expect(bad.status).toBe(400);
+    expect(storage.updateWikiPage).not.toHaveBeenCalled();
+  });
+
   it('checkpoints only for callers with edit rights', async () => {
     const ok = await request(app).post(`/api/pages/${PAGE_A}/checkpoint`).set(as(EDITOR));
     expect(ok.status).toBe(200);

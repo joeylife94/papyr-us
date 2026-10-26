@@ -21,7 +21,8 @@ import { RelatedPages } from '@/components/wiki/RelatedPages';
 import { PageHistory } from '@/components/page-history';
 import { BlockEditor } from '@/components/blocks/block-editor';
 import { PageProperties, PageTitle, SaveStatus } from '@/components/page/page-editor-parts';
-import { apiRequest } from '@/lib/queryClient';
+import { PageIcon, PageIconPicker } from '@/components/page/page-icon';
+import { apiRequest, invalidatePageLists } from '@/lib/queryClient';
 import { extractHeadings, estimateReadingTime } from '@/lib/markdown';
 import { blocksToContent, initialBlocksFor, parseTags } from '@/lib/page-content';
 import { getUserId, getUserName } from '@/lib/user';
@@ -250,7 +251,7 @@ export default function WikiPageView() {
     </div>
   );
 
-  const breadcrumb = (title: string) => (
+  const breadcrumb = (title: string, icon?: string | null) => (
     <nav aria-label="문서 경로" className="mb-5">
       <ol className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
         <li className="min-w-0">
@@ -266,8 +267,12 @@ export default function WikiPageView() {
         <li aria-hidden="true">/</li>
         <li className="capitalize">{page.folder}</li>
         <li aria-hidden="true">/</li>
-        <li aria-current="page" className="min-w-0 max-w-full truncate text-foreground-secondary">
-          {title || '제목 없음'}
+        <li
+          aria-current="page"
+          className="flex min-w-0 max-w-full items-center gap-1.5 text-foreground-secondary"
+        >
+          <PageIcon icon={icon} fallback={false} />
+          <span className="truncate">{title || '제목 없음'}</span>
         </li>
       </ol>
     </nav>
@@ -331,7 +336,7 @@ export default function WikiPageView() {
 interface BodyProps {
   page: WikiPage;
   actions: React.ReactNode;
-  breadcrumb: (title: string) => React.ReactNode;
+  breadcrumb: (title: string, icon?: string | null) => React.ReactNode;
 }
 
 function PageMeta({ page, content }: { page: WikiPage; content: string }) {
@@ -359,8 +364,9 @@ function PageMeta({ page, content }: { page: WikiPage; content: string }) {
 function ReadOnlyPageBody({ page, actions, breadcrumb }: BodyProps) {
   return (
     <>
-      {breadcrumb(page.title)}
+      {breadcrumb(page.title, page.icon)}
       <header className="mb-8 space-y-4 border-b border-border pb-6">
+        {page.icon && <PageIcon icon={page.icon} className="block text-[44px]" />}
         <PageTitle initialTitle={page.title} editable={false} />
         <PageMeta page={page} content={page.content} />
         <div className="flex min-w-0 flex-wrap gap-2">
@@ -406,12 +412,13 @@ function EditablePageBody({
   const [blocks, setBlocks] = useState<Block[]>(() => initialBlocksFor(page));
   const [folder, setFolder] = useState(page.folder);
   const [tagsText, setTagsText] = useState(page.tags.join(', '));
+  const [icon, setIcon] = useState<string | null>(page.icon ?? null);
   const { data: folders = [] } = useQuery<string[]>({ queryKey: ['/api/folders'] });
 
   const { status, queue, flush, reset } = usePageAutosave(page.id, {
     onSaved: () => {
-      // Lists and the folder tree show titles and folders; refresh them quietly.
-      queryClient.invalidateQueries({ queryKey: ['/api/pages'] });
+      // Lists and the sidebar show titles, icons and folders; refresh them quietly.
+      void invalidatePageLists(queryClient);
     },
   });
 
@@ -431,6 +438,7 @@ function EditablePageBody({
     setBlocks(initialBlocksFor(page));
     setFolder(page.folder);
     setTagsText(page.tags.join(', '));
+    setIcon(page.icon ?? null);
     // Only when the token changes; `page` is the refetched page by then.
   }, [reloadToken]);
 
@@ -451,11 +459,18 @@ function EditablePageBody({
 
   return (
     <>
-      {breadcrumb(title)}
+      {breadcrumb(title, icon)}
       <header className="mb-6 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <SaveStatus status={status} />
         </div>
+        <PageIconPicker
+          icon={icon}
+          onChange={(next) => {
+            setIcon(next);
+            queue({ icon: next });
+          }}
+        />
         <PageTitle
           key={reloadToken}
           initialTitle={page.title}
