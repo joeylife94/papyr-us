@@ -53,6 +53,7 @@ async function createSchema() {
       metadata     JSONB DEFAULT '{}',
       deleted_at   TIMESTAMP,
       icon         TEXT,
+      position     INTEGER,
       search_vector tsvector
     )
   `);

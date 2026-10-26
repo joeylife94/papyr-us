@@ -1,4 +1,4 @@
-import { Routes, Route, Outlet, useParams, useLocation } from 'react-router-dom';
+import { Routes, Route, Outlet, useParams, useLocation, useSearchParams } from 'react-router-dom';
 import React, { useState, Suspense } from 'react';
 import { queryClient } from './lib/queryClient';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -47,8 +47,17 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 // route opens the page itself.
 const NewPageWrapper = () => {
   const { folder, teamName } = useParams<{ folder: string; teamName: string }>();
+  const [searchParams] = useSearchParams();
+  // "+" in the page tree opens a new child page (issue #103 E5).
+  const parent = Number(searchParams.get('parent'));
+  const parentId = Number.isInteger(parent) && parent > 0 ? parent : undefined;
   return (
-    <NewPage key={`${teamName ?? ''}/${folder ?? ''}`} initialFolder={folder} teamName={teamName} />
+    <NewPage
+      key={`${teamName ?? ''}/${folder ?? ''}/${parentId ?? ''}`}
+      initialFolder={folder}
+      teamName={teamName}
+      parentId={parentId}
+    />
   );
 };
 

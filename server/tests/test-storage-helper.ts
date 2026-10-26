@@ -29,6 +29,15 @@ export function buildMockStorage(actualModule: any) {
     instance.checkPagePermission.mockResolvedValue(true);
   }
 
+  // Page tree (issue #103 E5): by default a page has no children, so deletes and restores act on
+  // the page alone, as before. Tree tests override these.
+  instance.getLiveDescendantIds?.mockResolvedValue([]);
+  instance.getReadablePageTreeRows?.mockResolvedValue([]);
+  instance.getReadableSiblingIds?.mockResolvedValue([]);
+  instance.trashPages?.mockImplementation(async (ids: number[]) => ids.length);
+  instance.getTrashedTogetherIds?.mockImplementation(async (id: number) => [id]);
+  instance.restorePages?.mockImplementation(async (ids: number[]) => ids.length);
+
   return instance;
 }
 

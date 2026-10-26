@@ -38,9 +38,8 @@ test('a page icon is picked, persists, and appears in header, breadcrumb, table 
     await page.goto(`/page/${slug}`);
     await expect(page.getByTestId('page-title')).toHaveAttribute('contenteditable', 'true');
     expect(await storedIcon()).toBeNull();
-    // The sidebar's folder list is already loaded (cached) before the icon changes.
+    // The sidebar page tree is already loaded (cached) before the icon changes.
     const sidebar = page.getByRole('navigation', { name: '페이지', exact: true });
-    await sidebar.getByRole('button', { name: 'Documentation' }).click();
     const sidebarLink = sidebar.getByRole('link', { name: title });
     await expect(sidebarLink).toBeVisible();
     await expect(sidebarLink.locator('[data-page-icon]')).toHaveCount(0);
@@ -85,9 +84,6 @@ test('a page icon is picked, persists, and appears in header, breadcrumb, table 
     await page.goto('/');
     const row = page.getByRole('row').filter({ hasText: title });
     await expect(row.locator('[data-page-icon="🦊"]')).toBeVisible();
-    if ((await sidebarLink.count()) === 0) {
-      await sidebar.getByRole('button', { name: 'Documentation' }).click();
-    }
     await expect(
       sidebar.getByRole('link', { name: title }).locator('[data-page-icon="🦊"]')
     ).toBeVisible();

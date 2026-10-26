@@ -55,9 +55,10 @@ export const queryClient = new QueryClient({
 });
 
 /**
- * Refresh every cached page list after a page's title, icon or folder changed: the document table
- * and command palette (`/api/pages…`) and the sidebar's per-folder lists (`/api/folders/:f/pages`).
- * These queries never go stale on their own, so a save has to invalidate them.
+ * Refresh every cached page list after a page's title, icon, folder or place changed: the
+ * document table and command palette (`/api/pages…`), per-folder lists (`/api/folders/:f/pages`)
+ * and the sidebar page tree (`/api/page-tree…`). These queries never go stale on their own, so a
+ * save has to invalidate them.
  */
 export function invalidatePageLists(client: QueryClient = queryClient) {
   return client.invalidateQueries({
@@ -65,7 +66,9 @@ export function invalidatePageLists(client: QueryClient = queryClient) {
       const key = queryKey[0];
       return (
         typeof key === 'string' &&
-        (key === '/api/pages' || (key.startsWith('/api/folders/') && key.endsWith('/pages')))
+        (key === '/api/pages' ||
+          key.startsWith('/api/page-tree') ||
+          (key.startsWith('/api/folders/') && key.endsWith('/pages')))
       );
     },
   });

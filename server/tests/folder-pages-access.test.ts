@@ -119,7 +119,7 @@ describe('general listings narrow team-less pages to what the caller can read', 
     (storage.searchWikiPages as any).mockResolvedValue({ pages: [], total: 0 });
   });
 
-  it.each(['/api/pages', '/api/page-tree'])('%s', async (path) => {
+  it.each(['/api/pages'])('%s', async (path) => {
     const response = await request(app)
       .get(path)
       .set('Cookie', [`accessToken=${token}`]);
@@ -132,6 +132,94 @@ describe('general listings narrow team-less pages to what the caller can read', 
     expect(teamless[0][1]).toEqual({ readableBy: viewer });
     expect(teamScoped).toHaveLength(1);
     expect(teamScoped[0][1] ?? {}).toEqual({});
+  });
+
+  it('/api/page-tree lists only through the caller-scoped tree query (issue #103 E5)', async () => {
+    const response = await request(app)
+      .get('/api/page-tree')
+      .set('Cookie', [`accessToken=${token}`]);
+
+    expect(response.status).toBe(200);
+    expect(storage.getReadablePageTreeRows).toHaveBeenCalledTimes(1);
+    const [userId, scope, viewerOverride] = (storage.getReadablePageTreeRows as any).mock.calls[0];
+    expect(userId).toBe(7);
+    expect(scope).toEqual({ teamId: undefined, personalOnly: false });
+    expect(viewerOverride).toBeUndefined();
+    expect(storage.searchWikiPages).not.toHaveBeenCalled();
+  });
+
+  it('/api/page-tree shows a readable page under a hidden parent at the root, without the parent id', async () => {
+    const at = new Date(0).toISOString();
+    (storage.getReadablePageTreeRows as any).mockResolvedValue([
+      {
+        id: 1,
+        title: 'Root',
+        slug: 'root',
+        icon: null,
+        parentId: null,
+        position: 0,
+        folder: 'docs',
+        teamId: null,
+        updatedAt: at,
+        createdAt: at,
+      },
+      {
+        id: 2,
+        title: 'Orphan',
+        slug: 'orphan',
+        icon: '🚀',
+        parentId: 99,
+        position: null,
+        folder: 'docs',
+        teamId: null,
+        updatedAt: at,
+        createdAt: at,
+      },
+      {
+        id: 3,
+        title: 'Child',
+        slug: 'child',
+        icon: null,
+        parentId: 1,
+        position: null,
+        folder: 'docs',
+        teamId: null,
+        updatedAt: at,
+        createdAt: at,
+      },
+    ]);
+
+    const response = await request(app)
+      .get('/api/page-tree')
+      .set('Cookie', [`accessToken=${token}`]);
+
+    expect(response.status).toBe(200);
+    expect(response.body.map((n: any) => [n.id, n.parentId])).toEqual([
+      [1, null],
+      [2, null],
+    ]);
+    expect(response.body[0].children.map((n: any) => n.id)).toEqual([3]);
+    expect(JSON.stringify(response.body)).not.toContain('99');
+  });
+
+  it('/api/page-tree?teamId= needs membership and scope=personal limits to team-less pages', async () => {
+    const outsider = await request(app)
+      .get('/api/page-tree?teamId=4')
+      .set('Cookie', [`accessToken=${token}`]);
+    expect(outsider.status).toBe(403);
+    expect(storage.getReadablePageTreeRows).not.toHaveBeenCalled();
+
+    await request(app)
+      .get('/api/page-tree?teamId=3')
+      .set('Cookie', [`accessToken=${token}`]);
+    await request(app)
+      .get('/api/page-tree?scope=personal')
+      .set('Cookie', [`accessToken=${token}`]);
+    const scopes = (storage.getReadablePageTreeRows as any).mock.calls.map((c: any[]) => c[1]);
+    expect(scopes).toEqual([
+      { teamId: 3, personalOnly: false },
+      { teamId: undefined, personalOnly: true },
+    ]);
   });
 
   it('GET /api/pages/:id/children lists children through the readable query', async () => {

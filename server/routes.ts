@@ -82,6 +82,13 @@ import {
   setSessionClosedHandler,
   storagePageSaveStore,
 } from './services/page-save.js';
+import {
+  buildPageTree,
+  checkParent,
+  orderWithMove,
+  subtreeForTrash,
+  type PageTreeStore,
+} from './services/page-tree.js';
 import logger from './services/logger.js';
 import { ExternalIntegrationError } from './services/resilience.js';
 import path from 'path';
@@ -130,6 +137,14 @@ export async function registerRoutes(
   // One save pipeline for REST and Yjs page writes (issue #103 E1). Workflows for an autosaved
   // editing session fire once, when the session closes, instead of on every autosave.
   const pageSaveStore = storagePageSaveStore(storage as any);
+  // Page tree rules (issue #103 E5) read pages and permissions through the same storage.
+  const pageTreeStore: PageTreeStore = {
+    getPage: (id) => storage.getWikiPage(id),
+    canEdit: (userId, id) => storage.checkPagePermission(userId, id, 'editor'),
+    canRead: (userId, id) => storage.checkPagePermission(userId, id, 'viewer'),
+    canOwn: (userId, id) => storage.checkPagePermission(userId, id, 'owner'),
+    getLiveDescendantIds: (id) => storage.getLiveDescendantIds(id),
+  };
   setSessionClosedHandler(({ page, tagsAtStart }) => {
     triggerWorkflows('page_updated', {
       id: page.id,
@@ -791,6 +806,16 @@ export async function registerRoutes(
           }
         }
 
+        // A child page (issue #103 E5) joins its parent's team and needs editor on the parent.
+        if (pageData.parentId != null) {
+          const parent = await storage.getWikiPage(pageData.parentId);
+          if (pageData.teamId == null && parent?.teamId != null) pageData.teamId = parent.teamId;
+          const refused = await checkParent(pageTreeStore, req.user?.id, pageData.parentId, {
+            teamId: (pageData.teamId as number | null | undefined) ?? null,
+          });
+          if (refused) return res.status(refused.status).json({ message: refused.message });
+        }
+
         // Pass creator user ID for automatic owner permission assignment
         const creatorUserId = req.user?.id;
         const page = creatorUserId
@@ -849,6 +874,33 @@ export async function registerRoutes(
           const userTeamIds = req.user?.id ? await storage.getUserTeamIds(req.user.id) : [];
           if (!userTeamIds.includes(Number(updateData.teamId))) {
             return res.status(403).json({ message: 'You are not a member of the target team' });
+          }
+        }
+
+        // Page tree rules (issue #103 E5): a new parent must be editable, in the page's team, and
+        // not below the page; a page with a parent or children keeps its team.
+        const changesParent =
+          updateData.parentId !== undefined &&
+          (updateData.parentId ?? null) !== (oldPage?.parentId ?? null);
+        const teamAfter = (changesTeam ? updateData.teamId : oldPage?.teamId) ?? null;
+        if (changesParent && updateData.parentId != null) {
+          const refused = await checkParent(pageTreeStore, req.user?.id, updateData.parentId, {
+            id,
+            teamId: teamAfter as number | null,
+          });
+          if (refused) return res.status(refused.status).json({ message: refused.message });
+        }
+        if (changesTeam) {
+          if ((await storage.getLiveDescendantIds(id)).length > 0) {
+            return res.status(409).json({
+              message: '하위 문서가 있는 문서는 다른 워크스페이스로 옮길 수 없습니다',
+            });
+          }
+          if (!changesParent && oldPage?.parentId != null) {
+            return res.status(409).json({
+              message:
+                '상위 문서 아래에 있는 문서는 다른 워크스페이스로 옮길 수 없습니다. 먼저 최상위로 옮기세요.',
+            });
           }
         }
 
@@ -1111,8 +1163,16 @@ export async function registerRoutes(
 
         // Get page data before deletion
         const page = await storage.getWikiPage(id);
+        if (!page || page.deletedAt) {
+          return res.status(404).json({ message: 'Page not found' });
+        }
 
-        const deleted = await storage.deleteWikiPage(id);
+        // The whole subtree goes to the trash together, or nothing does (issue #103 E5, D5).
+        const subtree = await subtreeForTrash(pageTreeStore, req.user?.id, id);
+        if ('error' in subtree) {
+          return res.status(subtree.error.status).json({ message: subtree.error.message });
+        }
+        const deleted = await storage.trashPages(subtree.ids);
 
         if (!deleted) {
           return res.status(404).json({ message: 'Page not found' });
@@ -1132,7 +1192,7 @@ export async function registerRoutes(
           });
         }
 
-        res.json({ message: 'Page moved to trash' });
+        res.json({ message: 'Page moved to trash', trashed: subtree.ids.length });
       } catch (error) {
         res.status(400).json({ message: 'Invalid page ID' });
       }
@@ -1161,11 +1221,25 @@ export async function registerRoutes(
     async (req: AuthRequest, res) => {
       try {
         const id = parseInt(req.params.id);
-        const restored = await storage.restoreWikiPage(id);
-        if (!restored) {
+        // Pages trashed together with this one (its subtree, D5) come back with it; each needs
+        // owner, as trashing them did.
+        const together = await storage.getTrashedTogetherIds(id);
+        if (together.length === 0) {
           return res.status(404).json({ error: 'Page not found in trash' });
         }
-        res.json(restored);
+        for (const pageId of together) {
+          if (
+            pageId !== id &&
+            !(await storage.checkPagePermission(req.user?.id, pageId, 'owner'))
+          ) {
+            return res.status(403).json({
+              error: '함께 삭제된 하위 문서 중 복원할 권한이 없는 문서가 있어 복원할 수 없습니다',
+            });
+          }
+        }
+        await storage.restorePages(together);
+        const restored = await storage.getWikiPage(id);
+        res.json({ ...restored, restoredCount: together.length });
       } catch (error) {
         logger.error('Error restoring page:', { error });
         res.status(500).json({ error: 'Failed to restore page' });
@@ -1353,11 +1427,16 @@ export async function registerRoutes(
       const denial = await bulkDenial(req.user?.id, pageIds, 'owner');
       if (denial) return res.status(denial.status).json({ error: denial.error });
 
-      let deleted = 0;
+      // Each page takes its subtree to the trash (issue #103 E5, D5): all or nothing.
+      const ids = new Set<number>();
       for (const pageId of pageIds) {
-        const success = await storage.deleteWikiPage(pageId);
-        if (success) deleted++;
+        const subtree = await subtreeForTrash(pageTreeStore, req.user?.id, pageId);
+        if ('error' in subtree) {
+          return res.status(subtree.error.status).json({ error: subtree.error.message });
+        }
+        subtree.ids.forEach((subtreeId) => ids.add(subtreeId));
       }
+      const deleted = await storage.trashPages([...ids]);
 
       res.json({ deleted });
     } catch (error) {
@@ -2143,120 +2222,89 @@ export async function registerRoutes(
     }
   );
 
-  // Get page tree (for sidebar)
+  // Move a page in the tree (issue #103 E5): under `parentId` (null = root), right after the
+  // sibling `afterId` (null = first). Needs editor on the page and on the new parent; the parent
+  // must be in the same team (or both personal) and not below the page. Only the siblings the
+  // caller can read are renumbered.
+  const moveSchema = z
+    .object({
+      parentId: z.number().int().positive().nullable(),
+      afterId: z.number().int().positive().nullable().default(null),
+    })
+    .strict();
+
+  app.post(
+    '/api/pages/:id/move',
+    requireAuthIfEnabled,
+    requirePagePermission('editor'),
+    async (req: AuthRequest, res) => {
+      const id = parseInt(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) {
+        return res.status(400).json({ message: 'Invalid page ID' });
+      }
+      const parsed = moveSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json(failureBody('Invalid move', parsed.error));
+      }
+      const { parentId, afterId } = parsed.data;
+      try {
+        const page = await storage.getWikiPage(id);
+        if (!page || page.deletedAt) return res.status(404).json({ message: 'Page not found' });
+        const teamId = page.teamId ?? null;
+        if (parentId !== null) {
+          const refused = await checkParent(pageTreeStore, req.user?.id, parentId, {
+            id,
+            teamId,
+          });
+          if (refused) return res.status(refused.status).json({ message: refused.message });
+        }
+        const siblings = await storage.getReadableSiblingIds(req.user?.id, parentId, teamId);
+        if (afterId !== null && (afterId === id || !siblings.includes(afterId))) {
+          return res.status(400).json({ message: '옮길 위치가 올바르지 않습니다' });
+        }
+        const ordered = orderWithMove(siblings, id, afterId);
+        await storage.placePageInTree(id, parentId, ordered);
+        res.json({ id, parentId, position: ordered.indexOf(id) });
+      } catch (error) {
+        logger.error('Page move failed', { pageId: id, error: (error as Error)?.message });
+        res.status(500).json({ message: 'Failed to move page' });
+      }
+    }
+  );
+
+  // Page tree for the sidebar (issue #103 E5). Nested pages in sibling order, limited to what
+  // the caller may list. `teamId` limits the tree to one team (members only) and
+  // `scope=personal` to team-less pages; without either it spans the caller's teams and team-less
+  // pages. A readable page under an unreadable parent is listed at the root (decision D4).
   app.get('/api/page-tree', optionalAuth, async (req: AuthRequest, res) => {
     try {
-      const teamId = req.query.teamId as string | undefined;
+      const teamParam = req.query.teamId as string | undefined;
+      const personalOnly = req.query.scope === 'personal';
+      let teamId: number | undefined;
 
-      // If teamId is specified and user is authenticated, verify team membership
-      if (teamId && req.user?.id) {
-        const resolvedTeamId = !isNaN(parseInt(teamId)) ? parseInt(teamId) : undefined;
-        if (resolvedTeamId) {
-          const userTeamIds = await storage.getUserTeamIds(req.user.id);
-          if (!userTeamIds.includes(resolvedTeamId)) {
-            return res.status(403).json({ message: 'You are not a member of this team' });
-          }
+      if (teamParam && teamParam !== 'null') {
+        teamId = parseInt(teamParam, 10);
+        if (!Number.isInteger(teamId) || teamId <= 0) {
+          return res.status(400).json({ message: 'Invalid team ID' });
         }
-      } else if (teamId && config.enforceAuthForWrites && !req.user?.id) {
+        if (!req.user?.id) {
+          return res.status(401).json({ message: 'Authentication required' });
+        }
+        const userTeamIds = await storage.getUserTeamIds(req.user.id);
+        if (!userTeamIds.includes(teamId)) {
+          return res.status(403).json({ message: 'You are not a member of this team' });
+        }
+      } else if (!req.user?.id && config.enforceAuthForWrites) {
+        // Unauthenticated: in production reject, in development list only open team-less pages.
         return res.status(401).json({ message: 'Authentication required' });
       }
 
-      // If no teamId, scope to user's teams + unassigned pages
-      if (!teamId && req.user?.id) {
-        const userTeamIds = await storage.getUserTeamIds(req.user.id);
-        const viewer = await storage.getPageViewer(req.user.id);
-        // Fetch pages for each team plus unassigned (global) pages the caller can read
-        const allResults = await Promise.all([
-          ...userTeamIds.map((tid) =>
-            storage.searchWikiPages({ query: '', teamId: String(tid), limit: 1000, offset: 0 })
-          ),
-          storage.searchWikiPages(
-            { query: '', teamId: 'null', limit: 1000, offset: 0 },
-            { readableBy: viewer }
-          ),
-        ]);
-        const seenIds = new Set<number>();
-        const allPagesRaw = allResults
-          .flatMap((r) => r.pages)
-          .filter((p: any) => {
-            if (seenIds.has(p.id)) return false;
-            seenIds.add(p.id);
-            return true;
-          });
-        // Build tree with the merged set
-        const pages = allPagesRaw.map((p: any) => ({
-          id: p.id,
-          title: p.title,
-          slug: p.slug,
-          parentId: p.parentId || null,
-          folder: p.folder,
-          updatedAt: p.updatedAt,
-        }));
-        const rootPages = pages.filter((p: any) => !p.parentId);
-        const childMap = new Map<number, any[]>();
-        pages.forEach((p: any) => {
-          if (p.parentId) {
-            if (!childMap.has(p.parentId)) childMap.set(p.parentId, []);
-            childMap.get(p.parentId)!.push(p);
-          }
-        });
-        const attachChildren = (page: any, depth = 0): any => {
-          const children = childMap.get(page.id) || [];
-          return {
-            ...page,
-            children: depth < 3 ? children.map((c: any) => attachChildren(c, depth + 1)) : [],
-          };
-        };
-        return res.json(rootPages.map((p: any) => attachChildren(p)));
-      } else if (!teamId && !req.user?.id) {
-        // Unauthenticated: in prod reject, in dev return only global pages
-        if (config.enforceAuthForWrites) {
-          return res.status(401).json({ message: 'Authentication required' });
-        }
-      }
-
-      // teamId is specified (already membership-checked) OR dev unauthenticated (global only)
-      const allPages = await storage.searchWikiPages(
-        {
-          query: '',
-          teamId: teamId || 'null',
-          limit: 1000,
-          offset: 0,
-        },
-        teamId ? {} : { readableBy: ANONYMOUS_PAGE_VIEWER }
+      const rows = await storage.getReadablePageTreeRows(
+        req.user?.id,
+        { teamId, personalOnly: personalOnly || teamParam === 'null' },
+        req.user?.id ? undefined : ANONYMOUS_PAGE_VIEWER
       );
-
-      // Build tree structure
-      const pages = allPages.pages.map((p: any) => ({
-        id: p.id,
-        title: p.title,
-        slug: p.slug,
-        parentId: p.parentId || null,
-        folder: p.folder,
-        updatedAt: p.updatedAt,
-      }));
-
-      // Separate root pages and children
-      const rootPages = pages.filter((p: any) => !p.parentId);
-      const childMap = new Map<number, any[]>();
-      pages.forEach((p: any) => {
-        if (p.parentId) {
-          if (!childMap.has(p.parentId)) childMap.set(p.parentId, []);
-          childMap.get(p.parentId)!.push(p);
-        }
-      });
-
-      // Attach children recursively (max 3 levels)
-      const attachChildren = (page: any, depth = 0): any => {
-        const children = childMap.get(page.id) || [];
-        return {
-          ...page,
-          children: depth < 3 ? children.map((c: any) => attachChildren(c, depth + 1)) : [],
-        };
-      };
-
-      const tree = rootPages.map((p: any) => attachChildren(p));
-      res.json(tree);
+      res.json(buildPageTree(rows));
     } catch (error) {
       console.error('Error fetching page tree:', error);
       res.status(500).json({ error: 'Failed to fetch page tree' });

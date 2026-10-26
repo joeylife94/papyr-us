@@ -88,6 +88,9 @@ export const wikiPages = pgTable('wiki_pages', {
   tags: text('tags').array().notNull().default([]),
   author: text('author').notNull(),
   parentId: integer('parent_id'), // Nested pages: reference to parent page
+  // Order among siblings in the page tree; null sorts after positioned siblings by creation time
+  // (drizzle/0020_add_wiki_pages_position.sql).
+  position: integer('position'),
   // A team cannot be deleted while pages (trashed ones included) still belong to it: losing the
   // team would turn them into team-less pages with different access rules (see deleteTeam).
   teamId: integer('team_id').references(() => teams.id, { onDelete: 'restrict' }), // 팀 소속
@@ -104,6 +107,8 @@ export const insertWikiPageSchema = createInsertSchema(wikiPages)
     id: true,
     createdAt: true,
     updatedAt: true,
+    // Tree order changes only through POST /api/pages/:id/move (issue #103 E5).
+    position: true,
   })
   .extend({ icon: pageIconSchema.nullable().optional() });
 
