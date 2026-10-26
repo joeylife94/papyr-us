@@ -34,16 +34,19 @@ test('local graph lists and opens linked pages; unlinked mentions show a mention
   };
 
   try {
-    const hub = await create(`Hub ${stamp}`, 'The hub page.');
     const target = await create(`Target ${stamp}`, 'Linked from the hub.');
+    // The link is a token in the hub's content, so page_links holds it however the page is
+    // saved (the index follows the content on every write, collaborative saves included).
+    const hub = await create(`Hub ${stamp}`, `The hub page links [[page:${target.id}]].`);
     const mentioner = await create(
       `Mentioner ${stamp}`,
       `Meeting notes. Next step: update hub ${stamp} with the new plan.`
     );
-    await pool.query('INSERT INTO page_links (source_page_id, target_page_id) VALUES ($1, $2)', [
-      hub.id,
-      target.id,
-    ]);
+    const { rows } = await pool.query(
+      'SELECT target_page_id FROM page_links WHERE source_page_id = $1',
+      [hub.id]
+    );
+    expect(rows).toEqual([{ target_page_id: target.id }]);
 
     await loginPageWithCookies(page, user.email, user.password);
     await page.goto(`/page/${hub.slug}`);
