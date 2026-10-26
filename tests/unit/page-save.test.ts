@@ -4,14 +4,11 @@ import {
   checkpointPage,
   derivePageContent,
   hasOpenEditSession,
-  indexNewPageLinks,
-  pageLinkTargets,
   resetEditSessions,
   savePage,
   setAutosaveIdleMs,
   setSessionClosedHandler,
   snapshotBeforeRestore,
-  writeRestoredPage,
   type PageSaveStore,
   type SessionClosedEvent,
 } from '../../server/services/page-save';
@@ -43,7 +40,6 @@ function makeStore(initial: WikiPage) {
   let page = initial;
   const snapshots: Array<{ content: string; description: string }> = [];
   const updates: UpdateWikiPage[] = [];
-  const linkSyncs: Array<{ pageId: number; targetIds: number[] }> = [];
   const store: PageSaveStore = {
     getPage: async (id) => (id === page.id ? page : undefined),
     updatePage: async (id, data) => {
@@ -55,11 +51,8 @@ function makeStore(initial: WikiPage) {
     snapshotVersion: async (p, description) => {
       snapshots.push({ content: p.content, description });
     },
-    syncLinks: async (pageId, targetIds) => {
-      linkSyncs.push({ pageId, targetIds });
-    },
   };
-  return { store, snapshots, updates, linkSyncs, current: () => page };
+  return { store, snapshots, updates, current: () => page };
 }
 
 describe('derivePageContent', () => {
@@ -210,106 +203,5 @@ describe('savePage', () => {
     const { store } = makeStore(makePage());
     expect(await savePage(store, 99, { content: 'x' }, 'autosave')).toBeUndefined();
     expect(hasOpenEditSession(99)).toBe(false);
-  });
-});
-
-describe('page link index (#103 E6)', () => {
-  const paragraph = (content: string) => ({ id: content, type: 'paragraph', content });
-
-  beforeEach(() => {
-    vi.useFakeTimers();
-    resetEditSessions();
-    setAutosaveIdleMs(IDLE);
-  });
-
-  afterEach(() => {
-    resetEditSessions();
-    vi.useRealTimers();
-  });
-
-  it('takes distinct targets from blocks, else from content, without self-links', () => {
-    expect(
-      pageLinkTargets(1, {
-        blocks: [paragraph('[[page:3]] [[page:1]]'), paragraph('[[page:3]] then [[page:2]]')],
-        content: '[[page:9]]',
-      })
-    ).toEqual([3, 2]);
-    expect(pageLinkTargets(1, { blocks: [], content: 'see [[page:4]] and [[page:4]]' })).toEqual([
-      4,
-    ]);
-    expect(pageLinkTargets(1, { content: 'no links [[page:x]] [[Page:2]]' })).toEqual([]);
-  });
-
-  it('manual save replaces the links from the saved blocks', async () => {
-    const { store, linkSyncs } = makeStore(makePage());
-    await savePage(
-      store,
-      1,
-      { blocks: [paragraph('to [[page:5]] and [[page:6]] and [[page:5]]')] },
-      'manual'
-    );
-    expect(linkSyncs).toEqual([{ pageId: 1, targetIds: [5, 6] }]);
-  });
-
-  it('autosave (REST) and a blocks-only Yjs-style save replace the links on every body change', async () => {
-    const { store, linkSyncs } = makeStore(makePage());
-    await savePage(store, 1, { blocks: [paragraph('[[page:5]]')] }, 'autosave');
-    // What the Yjs server sends: blocks only, through the same autosave pipeline.
-    await savePage(store, 1, { blocks: [paragraph('[[page:7]] [[page:1]]')] }, 'autosave');
-    await savePage(store, 1, { blocks: [paragraph('no links left')] }, 'autosave');
-    expect(linkSyncs).toEqual([
-      { pageId: 1, targetIds: [5] },
-      { pageId: 1, targetIds: [7] },
-      { pageId: 1, targetIds: [] },
-    ]);
-  });
-
-  it('a content-only write indexes its content, not the stored blocks', async () => {
-    const { store, linkSyncs } = makeStore(
-      makePage({ blocks: [paragraph('[[page:8]]')] as WikiPage['blocks'] })
-    );
-    await savePage(store, 1, { content: 'now [[page:9]]' }, 'manual');
-    expect(linkSyncs).toEqual([{ pageId: 1, targetIds: [9] }]);
-  });
-
-  it('leaves the links alone when the body did not change or was not written', async () => {
-    const page = makePage();
-    const { store, linkSyncs } = makeStore(page);
-    await savePage(store, 1, { tags: ['ops', 'more'] }, 'autosave');
-    await savePage(store, 1, { title: 'Renamed' }, 'manual');
-    await savePage(store, 1, { blocks: page.blocks as any[] }, 'autosave');
-    expect(linkSyncs).toEqual([]);
-  });
-
-  it('a failed link sync does not fail the save', async () => {
-    const { store, current } = makeStore(makePage());
-    store.syncLinks = async () => {
-      throw new Error('db down');
-    };
-    const saved = await savePage(store, 1, { blocks: [paragraph('[[page:5]]')] }, 'autosave');
-    expect(saved?.after.content).toBe('[[page:5]]');
-    expect(current().content).toBe('[[page:5]]');
-  });
-
-  it('indexes a created page only when it links somewhere', async () => {
-    const { store, linkSyncs } = makeStore(makePage());
-    await indexNewPageLinks(store, { id: 4, blocks: [], content: 'plain' });
-    await indexNewPageLinks(store, {
-      id: 4,
-      blocks: [paragraph('[[page:2]] [[page:4]]')],
-      content: '',
-    });
-    expect(linkSyncs).toEqual([{ pageId: 4, targetIds: [2] }]);
-  });
-
-  it('a restore writes the version and re-indexes its links', async () => {
-    const { store, linkSyncs, current } = makeStore(makePage());
-    await writeRestoredPage(store, 1, {
-      title: 'Restored',
-      content: 'old [[page:3]]',
-      blocks: [paragraph('old [[page:3]]')],
-    });
-    expect(current().title).toBe('Restored');
-    expect(linkSyncs).toEqual([{ pageId: 1, targetIds: [3] }]);
   });
 });

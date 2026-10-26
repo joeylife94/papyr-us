@@ -17,14 +17,9 @@
  *
  * Session state lives in this process (the app runs as a single instance); after a restart the
  * next autosave simply starts a new session, which can only add a version, never lose one.
- *
- * Page links (#103 E6): after a write that changes the body, the page's rows in `page_links` are
- * replaced with the pages its link tokens point to. Page creation and version restore write the
- * body outside `savePage` and index through `indexNewPageLinks` / `writeRestoredPage`.
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { pageVersions, type UpdateWikiPage, type WikiPage } from '../../shared/schema.js';
-import { extractPageLinkIds, extractPageLinkIdsFromText } from '../../shared/page-links.js';
 import logger from './logger.js';
 
 /** Idle time after which an autosave session closes (decision D2 on #103). */
@@ -37,15 +32,6 @@ export interface PageSaveStore {
   updatePage(id: number, data: UpdateWikiPage): Promise<WikiPage | undefined>;
   /** Record `page` as the next version, with a short description of why it was taken. */
   snapshotVersion(page: WikiPage, description: string): Promise<void>;
-  /**
-   * Replace the outgoing links of `pageId` with `targetIds` in one transaction (`page_links`,
-   * #103 E6). Ids of pages that do not exist are skipped.
-   */
-  /**
-   * Replace the page's outgoing links. `expectedContent` is the content the write produced; the
-   * store may skip the sync when a later write has already changed it (that write syncs itself).
-   */
-  syncLinks(pageId: number, targetIds: number[], expectedContent?: string): Promise<void>;
 }
 
 export interface SessionClosedEvent {
@@ -100,32 +86,6 @@ export function derivePageContent(blocks: unknown): string {
         : ''
     )
     .join('\n\n');
-}
-
-/**
- * Pages a body links to (#103 E6): the tokens in its blocks, or in `content` when it has no
- * blocks (content-only writes, API- and template-created pages). Distinct, without self-links.
- *
- * The index records every target the author typed, including pages the author cannot read
- * (a token is only an id). That is harmless only because every read of `page_links` (backlinks,
- * graph) filters BOTH ends for the viewer: keep it that way.
- */
-export function pageLinkTargets(
-  pageId: number,
-  body: { blocks?: unknown; content?: unknown }
-): number[] {
-  const ids =
-    Array.isArray(body.blocks) && body.blocks.length > 0
-      ? extractPageLinkIds(body.blocks)
-      : extractPageLinkIdsFromText(typeof body.content === 'string' ? body.content : '');
-  return ids.filter((id) => id !== pageId);
-}
-
-function sameBody(before: WikiPage, after: WikiPage) {
-  return (
-    before.content === after.content &&
-    JSON.stringify(before.blocks ?? []) === JSON.stringify(after.blocks ?? [])
-  );
 }
 
 function touchesBody(update: UpdateWikiPage) {
@@ -216,41 +176,7 @@ export async function savePage(
 
   const after = await store.updatePage(pageId, data);
   if (!after) return undefined;
-
-  // The links follow what this write carried: its blocks, or its content when it sent only that.
-  if (touchesBody(data) && (!before || !sameBody(before, after))) {
-    const body = data.blocks !== undefined ? data : { content: data.content };
-    await syncLinksSafely(store, pageId, pageLinkTargets(pageId, body), after.content);
-  }
   return { before, after };
-}
-
-/** Index the links of a page that was just created (POST /api/pages, duplicate, import). */
-export async function indexNewPageLinks(
-  store: PageSaveStore,
-  page: Pick<WikiPage, 'id' | 'blocks' | 'content'>
-) {
-  const targets = pageLinkTargets(page.id, page);
-  // A new page has no rows yet, so there is nothing to replace when it links nowhere.
-  if (targets.length > 0) await syncLinksSafely(store, page.id, targets, page.content);
-}
-
-/**
- * Write a restored version's title and body (after `snapshotBeforeRestore`) and re-index its
- * links, so backlinks match the restored page.
- */
-export async function writeRestoredPage(
-  store: PageSaveStore,
-  pageId: number,
-  version: { title: string; content: string; blocks: unknown }
-): Promise<WikiPage | undefined> {
-  const after = await store.updatePage(pageId, {
-    title: version.title,
-    content: version.content,
-    blocks: version.blocks as UpdateWikiPage['blocks'],
-  });
-  if (after) await syncLinksSafely(store, pageId, pageLinkTargets(pageId, version), after.content);
-  return after;
 }
 
 /** Close the page's autosave session (the editor left the page). */
@@ -278,24 +204,6 @@ async function snapshotSafely(store: PageSaveStore, page: WikiPage, description:
   }
 }
 
-async function syncLinksSafely(
-  store: PageSaveStore,
-  pageId: number,
-  targetIds: number[],
-  expectedContent: string
-) {
-  try {
-    await store.syncLinks(pageId, targetIds, expectedContent);
-  } catch (error) {
-    // The link index is derived data: a failed sync must not fail the save, and the next body
-    // change rebuilds the page's rows. Stale rows never reveal anything (reads filter both ends).
-    logger.error('Failed to update page links', {
-      pageId,
-      error: error instanceof Error ? error.message : 'Unknown error',
-    });
-  }
-}
-
 type DrizzleLike = {
   select: (...args: any[]) => any;
   insert: (...args: any[]) => any;
@@ -305,20 +213,11 @@ type DrizzleLike = {
 export function storagePageSaveStore(storage: {
   getWikiPage(id: number): Promise<WikiPage | undefined>;
   updateWikiPage(id: number, page: UpdateWikiPage): Promise<WikiPage | undefined>;
-  replacePageLinks?(
-    sourcePageId: number,
-    targetIds: number[],
-    options?: { expectedContent?: string }
-  ): Promise<void>;
   db?: DrizzleLike;
 }): PageSaveStore {
   return {
     getPage: (id) => storage.getWikiPage(id),
     updatePage: (id, data) => storage.updateWikiPage(id, data),
-    async syncLinks(pageId, targetIds, expectedContent) {
-      if (!storage.replacePageLinks) return;
-      await storage.replacePageLinks(pageId, targetIds, { expectedContent });
-    },
     async snapshotVersion(page, description) {
       const db = storage.db;
       if (!db) return;

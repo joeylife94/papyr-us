@@ -10,7 +10,6 @@ import type { DBStorage } from '../storage.js';
 import * as aiService from './ai.js';
 import { sendEmail, isEmailConfigured } from './email.js';
 import logger from './logger.js';
-import { indexNewPageLinks, storagePageSaveStore } from './page-save.js';
 import { fetchWithRetry, ExternalIntegrationError } from './resilience.js';
 
 let _storage: DBStorage | null = null;
@@ -157,8 +156,6 @@ async function executeAction(
           author: context.trigger?.author || 'automation',
           teamId: context.trigger?.teamId,
         });
-        // Link tokens in the generated body get backlinks right away, like any create (#103 E6).
-        await indexNewPageLinks(storagePageSaveStore(getWorkflowStorage()), newPage);
         return { success: true, result: newPage };
 
       case 'add_comment':

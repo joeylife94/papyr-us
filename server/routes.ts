@@ -81,8 +81,6 @@ import {
   snapshotBeforeRestore,
   setSessionClosedHandler,
   storagePageSaveStore,
-  indexNewPageLinks,
-  writeRestoredPage,
 } from './services/page-save.js';
 import {
   buildPageTree,
@@ -101,12 +99,10 @@ import jwt from 'jsonwebtoken';
 import passport from 'passport';
 import { eq, and, isNull } from 'drizzle-orm';
 import { ANONYMOUS_PAGE_VIEWER, DBStorage } from './storage.js';
-import { registerPageTitleSearchRoutes } from './routes/page-title-search.js';
 import { registerKnowledgeRoutes } from './routes/knowledge.js';
 import { buildKnowledgeGraph, suggestAiLinks } from './services/knowledge-graph.js';
 import { isReservedDailyNoteSlug } from '../shared/daily-notes.js';
 import { registerDailyNoteRoutes } from './routes/daily-notes.js';
-import { registerPageLinkRoutes } from './routes/page-links.js';
 import { featureFlags } from './features.js';
 
 interface MulterRequest extends Request {
@@ -621,12 +617,10 @@ export async function registerRoutes(
   }
 
   // Wiki Pages API
-  // Page tree, link and knowledge routes (#103 E5/E6, #111). They are registered before
-  // /api/pages/:id so their fixed path segments are never read as a page id.
-  registerPageTitleSearchRoutes(app, storage);
+  // Knowledge routes (#111). They are registered before /api/pages/:id so their fixed path
+  // segments are never read as a page id.
   registerKnowledgeRoutes(app, storage);
   registerDailyNoteRoutes(app, storage);
-  registerPageLinkRoutes(app, storage);
 
   app.get('/api/pages', optionalAuth, async (req: AuthRequest, res) => {
     try {
@@ -846,8 +840,6 @@ export async function registerRoutes(
         const page = creatorUserId
           ? await storage.createWikiPage(pageData, creatorUserId)
           : await storage.createWikiPage(pageData);
-        // Links typed before the first save (E2's lazy creation) are indexed with the page.
-        await indexNewPageLinks(pageSaveStore, page);
 
         // Trigger workflows for page_created event
         triggerWorkflows('page_created', {
@@ -1162,10 +1154,10 @@ export async function registerRoutes(
         // Keep the current state as a version first, so restoring never loses the latest edit.
         await snapshotBeforeRestore(pageSaveStore, pageId);
 
-        const restoredPage = await writeRestoredPage(pageSaveStore, pageId, {
+        const restoredPage = await storage.updateWikiPage(pageId, {
           title: version.title,
           content: version.content,
-          blocks: version.blocks,
+          blocks: version.blocks as any,
         });
 
         if (!restoredPage) {
@@ -1353,7 +1345,6 @@ export async function registerRoutes(
           },
           (req as any).user?.id
         );
-        await indexNewPageLinks(pageSaveStore, cloned);
 
         res.status(201).json(cloned);
       } catch (error) {
@@ -1522,7 +1513,6 @@ export async function registerRoutes(
           },
           (req as any).user?.id
         );
-        await indexNewPageLinks(pageSaveStore, page);
 
         res.status(201).json(page);
       } catch (error) {
@@ -2342,6 +2332,84 @@ export async function registerRoutes(
     } catch (error) {
       console.error('Error fetching page tree:', error);
       res.status(500).json({ error: 'Failed to fetch page tree' });
+    }
+  });
+
+  // ==================== Page links (issue #103 E6) ====================
+
+  // What a `[[page:<id>]]` link shows: the target's current title and icon when the caller may
+  // read it, otherwise only `accessible: false`. Missing, trashed and unreadable targets get the
+  // same answer, so a link reveals nothing about a page the caller cannot open.
+  app.get('/api/pages/:id/link-preview', optionalAuth, async (req: AuthRequest, res) => {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ message: 'Invalid page ID' });
+    }
+    try {
+      const page = await storage.getWikiPage(id);
+      const readable =
+        !!page &&
+        !page.deletedAt &&
+        (await storage.checkPagePermission(req.user?.id, id, 'viewer'));
+      if (!readable) return res.json({ id, accessible: false });
+      res.json({
+        id,
+        accessible: true,
+        title: page.title,
+        slug: page.slug,
+        icon: page.icon ?? null,
+      });
+    } catch (error) {
+      logger.error('Link preview failed', { pageId: id, error: (error as Error)?.message });
+      res.status(500).json({ message: 'Failed to load link' });
+    }
+  });
+
+  // "이 문서를 링크한 문서": live pages linking here that the caller may list.
+  app.get(
+    '/api/pages/:id/backlinks',
+    optionalAuth,
+    requirePagePermission('viewer'),
+    async (req: AuthRequest, res) => {
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isInteger(id) || id <= 0) {
+        return res.status(400).json({ message: 'Invalid page ID' });
+      }
+      try {
+        res.json(await storage.getReadableBacklinks(req.user?.id, id));
+      } catch (error) {
+        logger.error('Backlinks failed', { pageId: id, error: (error as Error)?.message });
+        res.status(500).json({ message: 'Failed to load backlinks' });
+      }
+    }
+  );
+
+  // Link picker: pages whose title matches `q` that the caller may read, in the team
+  // `teamId` (members only) or among personal pages (`scope=personal`).
+  app.get('/api/page-links/search', requireAuthIfEnabled, async (req: AuthRequest, res) => {
+    const q = typeof req.query.q === 'string' ? req.query.q.slice(0, 200) : '';
+    const teamParam = req.query.teamId as string | undefined;
+    let teamId: number | undefined;
+    if (teamParam) {
+      teamId = parseInt(teamParam, 10);
+      if (!Number.isInteger(teamId) || teamId <= 0) {
+        return res.status(400).json({ message: 'Invalid team ID' });
+      }
+      const userTeamIds = req.user?.id ? await storage.getUserTeamIds(req.user.id) : [];
+      if (!userTeamIds.includes(teamId)) {
+        return res.status(403).json({ message: 'You are not a member of this team' });
+      }
+    }
+    try {
+      const results = await storage.searchLinkTargets(
+        req.user?.id,
+        teamId !== undefined ? { teamId } : { personalOnly: true },
+        q
+      );
+      res.json(results);
+    } catch (error) {
+      logger.error('Link search failed', { error: (error as Error)?.message });
+      res.status(500).json({ message: 'Failed to search pages' });
     }
   });
 

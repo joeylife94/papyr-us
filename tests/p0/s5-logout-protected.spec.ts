@@ -195,6 +195,10 @@ test.describe('[S5] 로그아웃 후 보호 페이지 접근 차단', () => {
 
       // ERR_ABORTED 방지: 현재 페이지의 네트워크 활동이 완전히 멈춘 뒤 이동
       await page.waitForLoadState('networkidle').catch(() => null);
+      // 만료된 세션을 감지한 현재 페이지가 스스로 /login 으로 이동하는 중이면, 그 이동이 끝난 뒤에
+      // /create 로 간다. 두 이동이 겹치면 아래 goto 가 ERR_ABORTED 로 끊긴다.
+      await page.waitForURL(/\/login/, { timeout: 5_000 }).catch(() => null);
+      await page.waitForLoadState('domcontentloaded').catch(() => null);
 
       await page.addInitScript(() => {
         Object.defineProperty(window, '__PLAYWRIGHT__', {

@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { apiRequest } from '@/lib/queryClient';
 import { Sparkles, ArrowRight } from 'lucide-react';
 
 interface RelatedPagesProps {
@@ -12,8 +11,11 @@ interface RelatedPagesProps {
   pageContent: string;
 }
 
+/**
+ * AI-recommended related pages. Backlinks ("이 문서를 링크한 문서") come from the page_links index
+ * instead (components/page/backlinks.tsx, issue #103 E6).
+ */
 export function RelatedPages({ pageId, pageTitle, pageContent }: RelatedPagesProps) {
-  // Backlinks are the page_links-backed "이 문서를 링크한 문서" panel (#103 E6), not computed here.
   // Fetch AI-recommended related pages
   const { data: aiRelated, isLoading: aiLoading } = useQuery<{
     relatedPages: Array<{

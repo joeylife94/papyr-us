@@ -5,10 +5,61 @@ import remarkRehype from 'remark-rehype';
 import rehypeStringify from 'rehype-stringify';
 import rehypeHighlight from 'rehype-highlight';
 import matter from 'gray-matter';
-// Relative imports: unit tests load this module without the Vite aliases.
-import { replacePageLinks } from '../../../shared/page-links';
-import { rehypePageLinkSlots } from '../components/page/page-link-markdown';
+import { hasPageLinks, splitPageLinks } from '@shared/page-links';
 import { rehypeSafeUrls } from './rehype-safe-urls';
+
+/**
+ * Page links (issue #103 E6): turn `[[page:<id>]]` tokens in text into empty
+ * `<span data-page-link="<id>">` placeholders, which MarkdownRenderer fills with link chips.
+ * Code spans and code blocks are not text nodes, so tokens there stay as written.
+ */
+function remarkPageLinks() {
+  return (tree: any) => {
+    const walk = (node: any) => {
+      if (!Array.isArray(node.children)) return;
+      const children: any[] = [];
+      for (const child of node.children) {
+        if (child.type === 'text' && hasPageLinks(child.value)) {
+          for (const segment of splitPageLinks(child.value)) {
+            children.push(
+              segment.kind === 'text'
+                ? { type: 'text', value: segment.text }
+                : {
+                    type: 'emphasis',
+                    children: [],
+                    data: {
+                      hName: 'span',
+                      hProperties: {
+                        dataPageLink: String(segment.pageId),
+                        className: ['page-link'],
+                      },
+                    },
+                  }
+            );
+          }
+        } else {
+          walk(child);
+          children.push(child);
+        }
+      }
+      node.children = children;
+    };
+    walk(tree);
+  };
+}
+
+/**
+ * What the reader shows when `markdownToHtml` fails: the page text as escaped plain text. Page
+ * content is untrusted; inserting it unescaped would run any HTML it holds.
+ */
+export function plainTextFallbackHtml(content: string): string {
+  const escaped = content
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+  return `<pre>${escaped}</pre>`;
+}
 
 // Parse markdown with frontmatter
 export function parseMarkdown(content: string) {
@@ -16,13 +67,13 @@ export function parseMarkdown(content: string) {
   return { frontmatter, content: markdownContent };
 }
 
-// Convert markdown to HTML. Page link tokens become chip placeholders (#103 E6). Raw HTML is
-// dropped by remark-rehype; links and images keep only safe URL schemes.
+// Convert markdown to HTML. Raw HTML is dropped by remark-rehype; links and images keep only safe
+// URL schemes (a `javascript:` link would otherwise run in the reader).
 export async function markdownToHtml(markdown: string): Promise<string> {
   const processor = remark()
     .use(remarkGfm)
+    .use(remarkPageLinks)
     .use(remarkRehype)
-    .use(rehypePageLinkSlots)
     .use(rehypeHighlight)
     .use(rehypeSafeUrls)
     .use(rehypeStringify);
@@ -39,9 +90,7 @@ export function extractHeadings(content: string) {
 
   while ((match = headingRegex.exec(content)) !== null) {
     const level = match[1].length;
-    // A page link token is an id, not text: leave it out of the table of contents (#103 E6).
-    const text = replacePageLinks(match[2], () => '').trim();
-    if (!text) continue;
+    const text = match[2].trim();
     const id = text
       .toLowerCase()
       .replace(/[^\w\s-]/g, '')
@@ -63,8 +112,7 @@ export function estimateReadingTime(content: string): number {
 // Plain-text excerpt for document lists: drops common markdown syntax and only adds an
 // ellipsis when the text was actually shortened.
 export function toPlainTextPreview(content: string, maxLength = 160): string {
-  // Page link tokens carry only an id; list previews leave them out (#103 E6).
-  const text = replacePageLinks(content, () => ' ')
+  const text = content
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/`([^`]*)`/g, '$1')
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')

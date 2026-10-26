@@ -1,17 +1,3 @@
-import type { QueryClient } from '@tanstack/react-query';
-
-const PAGE_LIST_KEY = /^\/api\/(pages($|\?|\/tree|\/title-search)|page-tree|folders)/;
-
-/** Refresh the page lists, tree and folder listings after a page was created outside them. */
-export function invalidatePageLists(queryClient: QueryClient) {
-  return queryClient.invalidateQueries({
-    predicate: (query) => {
-      const key = query.queryKey[0];
-      return typeof key === 'string' && PAGE_LIST_KEY.test(key);
-    },
-  });
-}
-
 const POLL_MS = 50;
 const DEFAULT_TIMEOUT_MS = 8000;
 

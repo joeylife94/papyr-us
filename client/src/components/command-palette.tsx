@@ -78,13 +78,13 @@ export function CommandPalette() {
   useEffect(() => {
     if (!open) setSearch('');
   }, [open]);
-  const { data: titleData } = useQuery<{ pages: TitleMatch[] }>({
-    queryKey: ['/api/pages/title-search', teamParam, debouncedSearch, 'palette'],
+  const { data: titleData } = useQuery<TitleMatch[]>({
+    queryKey: ['/api/page-links/search', teamParam, debouncedSearch, 'palette'],
     queryFn: async () => {
-      const params = new URLSearchParams({ q: debouncedSearch, limit: '10' });
+      const params = new URLSearchParams({ q: debouncedSearch });
       if (teamParam) params.set('teamId', teamParam);
-      const res = await fetch(`/api/pages/title-search?${params}`, { credentials: 'include' });
-      if (!res.ok) return { pages: [] };
+      const res = await fetch(`/api/page-links/search?${params}`, { credentials: 'include' });
+      if (!res.ok) return [];
       return res.json();
     },
     enabled: open && !!debouncedSearch && scope.status === 'ready',
@@ -92,7 +92,7 @@ export function CommandPalette() {
   });
   const recentIds = new Set(pages.slice(0, 10).map((page) => page.id));
   const searchedPages = debouncedSearch
-    ? (titleData?.pages ?? []).filter((page) => !recentIds.has(page.id))
+    ? (titleData ?? []).filter((page) => !recentIds.has(page.id)).slice(0, 10)
     : [];
 
   // Global keyboard shortcut: Cmd/Ctrl + K

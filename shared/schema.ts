@@ -120,8 +120,9 @@ export type InsertWikiPage = z.infer<typeof insertWikiPageSchema>;
 export type UpdateWikiPage = z.infer<typeof updateWikiPageSchema>;
 export type WikiPage = typeof wikiPages.$inferSelect;
 
-// Page-to-page links (#103 E6): one row per distinct target a page's blocks link to, kept in
-// sync by the save pipeline. Readers must filter both ends by what the viewer can read.
+// Page links (issue #103 E6): which pages a page links to, from the `[[page:<id>]]` tokens in its
+// content (shared/page-links.ts). Kept in step by DBStorage on every content write; backlinks
+// read it. Rows go when either page is deleted for good (drizzle/0021_add_page_links.sql).
 export const pageLinks = pgTable(
   'page_links',
   {
@@ -131,15 +132,12 @@ export const pageLinks = pgTable(
     targetPageId: integer('target_page_id')
       .notNull()
       .references(() => wikiPages.id, { onDelete: 'cascade' }),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
   },
   (table) => [
     primaryKey({ columns: [table.sourcePageId, table.targetPageId] }),
     index('idx_page_links_target').on(table.targetPageId),
   ]
 );
-
-export type PageLink = typeof pageLinks.$inferSelect;
 
 // Page version history
 export const pageVersions = pgTable('page_versions', {

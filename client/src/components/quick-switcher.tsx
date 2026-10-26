@@ -9,7 +9,8 @@ import { PageIcon } from '@/components/page/page-icon';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useCurrentPageScope } from '@/hooks/usePageScope';
-import { focusPageBodyWhenReady, invalidatePageLists } from '@/lib/page-open';
+import { focusPageBodyWhenReady } from '@/lib/page-open';
+import { invalidatePageLists } from '@/lib/queryClient';
 import { slugForTitle } from '@/lib/page-content';
 import { scopeTeamParam, type CurrentPageScope } from '@/lib/page-scope';
 import { getUserName } from '@/lib/user';
@@ -18,7 +19,6 @@ import type { Block } from '@shared/schema';
 
 const OPEN_EVENT = 'papyrus:open-quick-switcher';
 const SEARCH_DEBOUNCE_MS = 150;
-const RESULT_LIMIT = 20;
 // New pages land where /create puts them by default.
 const NEW_PAGE_FOLDER = 'docs';
 
@@ -27,12 +27,12 @@ export function openQuickSwitcher() {
   window.dispatchEvent(new Event(OPEN_EVENT));
 }
 
+/** A result of the page search the link picker uses (GET /api/page-links/search, #103 E6). */
 interface TitleMatch {
   id: number;
   title: string;
   slug: string;
   icon: string | null;
-  teamId: number | null;
   updatedAt: string;
 }
 
@@ -138,16 +138,17 @@ function SwitcherBody({ onOpenPage }: { onOpenPage: (path: string) => void }) {
   const query = input.trim();
   const debouncedQuery = useDebouncedValue(query, SEARCH_DEBOUNCE_MS);
 
-  const search = useQuery<{ pages: TitleMatch[] }>({
-    queryKey: ['/api/pages/title-search', teamParam, debouncedQuery],
+  // The link picker's search (#103 E6): readable titles of the scope, exact match first.
+  const search = useQuery<TitleMatch[]>({
+    queryKey: ['/api/page-links/search', teamParam, debouncedQuery],
     queryFn: async ({ signal }) => {
-      const params = new URLSearchParams({ q: debouncedQuery, limit: String(RESULT_LIMIT) });
+      const params = new URLSearchParams({ q: debouncedQuery });
       if (teamParam) params.set('teamId', teamParam);
-      const res = await fetch(`/api/pages/title-search?${params}`, {
+      const res = await fetch(`/api/page-links/search?${params}`, {
         credentials: 'include',
         signal,
       });
-      if (!res.ok) throw new Error(`title-search ${res.status}`);
+      if (!res.ok) throw new Error(`page search ${res.status}`);
       return res.json();
     },
     enabled: scope.status === 'ready',
@@ -156,7 +157,7 @@ function SwitcherBody({ onOpenPage }: { onOpenPage: (path: string) => void }) {
     staleTime: 0,
   });
 
-  const pages = search.data?.pages ?? [];
+  const pages = search.data ?? [];
   const current = debouncedQuery === query && !search.isPlaceholderData && !search.isFetching;
   const settled = scope.status === 'ready' && current && (search.isSuccess || search.isError);
   const exactMatch = (list: TitleMatch[]) =>

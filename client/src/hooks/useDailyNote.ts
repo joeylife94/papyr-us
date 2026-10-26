@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
 import { useCurrentPageScope } from '@/hooks/usePageScope';
-import { focusPageBodyWhenReady, invalidatePageLists } from '@/lib/page-open';
+import { focusPageBodyWhenReady } from '@/lib/page-open';
+import { invalidatePageLists } from '@/lib/queryClient';
 import { localDateString } from '@shared/daily-notes';
 
 const FAILURE_MESSAGES: Record<string, string> = {

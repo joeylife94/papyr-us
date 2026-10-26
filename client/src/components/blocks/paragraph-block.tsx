@@ -2,7 +2,9 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Block, BlockType } from '@shared/schema';
 import { Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { usePageLinkEditing } from '@/components/page/page-link-editing';
+import { PageLinkChip, TextWithPageLinks } from '@/components/page/page-links';
+import { cn } from '@/lib/utils';
+import { extractPageLinkIds, hasPageLinks } from '@shared/page-links';
 
 interface ParagraphBlockProps {
   block: Block;
@@ -15,10 +17,16 @@ interface ParagraphBlockProps {
   onSlashCommand?: (rect: DOMRect) => void;
   onSlashFilter?: (filter: string) => void;
   onSlashClose?: () => void;
+  /** `@` or `[[` was typed (issue #103 E6): open the link picker for that span of text. */
+  onPageLinkTrigger?: (rect: DOMRect, start: number, length: number) => void;
   /** Markdown shortcuts (#111 §6): returns true when the editor converted the block. */
   onMarkdownShortcut?: (previous: string, next: string, caret: number) => boolean;
   placeholder?: string;
 }
+
+/** Focus or clicks on a link chip open the linked page instead of editing the block. */
+const isOnPageLink = (target: EventTarget) =>
+  target instanceof Element && !!target.closest('a[data-page-link-state]');
 
 export function ParagraphBlock({
   block,
@@ -31,24 +39,13 @@ export function ParagraphBlock({
   onSlashCommand,
   onSlashFilter,
   onSlashClose,
+  onPageLinkTrigger,
   onMarkdownShortcut,
   placeholder = '단락을 입력하세요...',
 }: ParagraphBlockProps) {
   const [content, setContent] = useState(block.content);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const slashStartRef = useRef<number | null>(null);
-  // Page links (#103 E6): `@` / `[[` picker and the chip preview while the block is not focused.
-  const pageLinks = usePageLinkEditing({
-    blockId: block.id,
-    content,
-    isFocused,
-    textareaRef,
-    onContentChange: (next) => {
-      setContent(next);
-      onUpdate({ content: next });
-    },
-    previewClassName: 'text-base leading-relaxed pr-8',
-  });
 
   // 포커스 시 자동 높이 조정
   useEffect(() => {
@@ -102,13 +99,24 @@ export function ParagraphBlock({
       } else {
         onSlashFilter?.(filter);
       }
+    } else if (onPageLinkTrigger && textareaRef.current) {
+      // Page links: "[[" anywhere, or "@" at the start or after whitespace.
+      const before = newContent.slice(0, cursorPos);
+      const atMention =
+        before.endsWith('@') && (cursorPos === 1 || /\s/.test(newContent[cursorPos - 2]));
+      if (before.endsWith('[[') || atMention) {
+        const length = atMention ? 1 : 2;
+        const rect = textareaRef.current.getBoundingClientRect();
+        onPageLinkTrigger(
+          new DOMRect(rect.left, rect.top + 28, rect.width, rect.height),
+          cursorPos - length,
+          length
+        );
+      }
     }
-
-    pageLinks.handleInput(e, { suspended: slashStartRef.current !== null });
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (pageLinks.handleKeyDown(e)) return;
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       if (slashStartRef.current !== null) {
         // Let slash command menu handle Enter
@@ -143,9 +151,24 @@ export function ParagraphBlock({
   return (
     <div
       className={`relative group ${isFocused ? 'bg-primary/10 ' : ''} rounded-lg p-2 transition-colors`}
-      onFocus={onFocus}
+      onFocus={(event) => !isOnPageLink(event.target) && onFocus()}
       onBlur={onBlur}
     >
+      {/* Page links show as chips while the block is not being edited (issue #103 E6). */}
+      {!isFocused && hasPageLinks(content) && (
+        <div
+          tabIndex={0}
+          role="textbox"
+          aria-label="단락 (편집하려면 선택)"
+          data-testid="paragraph-preview"
+          onFocus={(event) => !isOnPageLink(event.target) && onFocus()}
+          onClick={(event) => !isOnPageLink(event.target) && onFocus()}
+          className="min-h-[1.5rem] cursor-text whitespace-pre-wrap break-words pr-8 text-base leading-relaxed text-foreground outline-none"
+        >
+          <TextWithPageLinks text={content} />
+        </div>
+      )}
+
       {/* 단락 입력 (블록 핸들은 에디터의 왼쪽 여백에 있다) */}
       <textarea
         ref={textareaRef}
@@ -155,11 +178,22 @@ export function ParagraphBlock({
         onFocus={onFocus}
         onBlur={onBlur}
         placeholder={placeholder}
-        className="w-full resize-none border-none outline-none bg-transparent text-base text-foreground placeholder:text-muted-foreground pl-0 pr-8 leading-relaxed"
+        className={cn(
+          'w-full resize-none border-none outline-none bg-transparent text-base text-foreground placeholder:text-muted-foreground pl-0 pr-8 leading-relaxed',
+          !isFocused && hasPageLinks(content) && 'hidden'
+        )}
         rows={1}
-        {...pageLinks.textareaProps}
       />
-      {pageLinks.overlay}
+
+      {/* While editing, the raw [[page:<id>]] tokens are named underneath. */}
+      {isFocused && hasPageLinks(content) && (
+        <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+          <span>링크:</span>
+          {extractPageLinkIds(content).map((pageId) => (
+            <PageLinkChip key={pageId} pageId={pageId} className="text-xs" />
+          ))}
+        </div>
+      )}
 
       {/* 액션 버튼들 */}
       {isFocused && (

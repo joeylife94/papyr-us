@@ -24,8 +24,8 @@ import { PageHistory } from '@/components/page-history';
 import { BlockEditor } from '@/components/blocks/block-editor';
 import { PageProperties, PageTitle, SaveStatus } from '@/components/page/page-editor-parts';
 import { PageIcon, PageIconPicker } from '@/components/page/page-icon';
+import { Backlinks } from '@/components/page/page-links';
 import { apiRequest, invalidatePageLists } from '@/lib/queryClient';
-import { Backlinks } from '@/components/page/backlinks';
 import { extractHeadings, estimateReadingTime } from '@/lib/markdown';
 import { blocksToContent, initialBlocksFor, parseTags } from '@/lib/page-content';
 import { getUserId, getUserName } from '@/lib/user';
@@ -326,9 +326,10 @@ export default function WikiPageView() {
             <ReadOnlyPageBody page={page} actions={actions} breadcrumb={breadcrumb} />
           )}
 
-          {/* #103 E6: pages that link here, then the knowledge views under it (#111 §2, §5). */}
           <Backlinks pageId={page.id} />
-          <section aria-label="문서 연결" className="mt-4 space-y-3">
+
+          {/* Knowledge views (#111 §2, §5): unlinked mentions under the backlinks, local graph. */}
+          <section aria-label="문서 연결" className="mt-8 space-y-3">
             <UnlinkedMentions pageId={page.id} pageTitle={page.title} />
             <LocalGraphPanel pageId={page.id} />
           </section>
@@ -538,7 +539,7 @@ function EditablePageBody({
           userId={getUserId()}
           userName={getUserName()}
           useYjs={true}
-          pageTeamId={page.teamId ?? null}
+          linkTeamId={page.teamId}
         />
       </div>
     </>

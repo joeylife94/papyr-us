@@ -1,27 +1,15 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { markdownToHtml } from '@/lib/markdown';
-import { PageLinkChip } from '@/components/page/page-link-chip';
-import { PAGE_LINK_SLOT_ATTRIBUTE } from '@/components/page/page-link-markdown';
+import { useEffect, useState } from 'react';
+import { markdownToHtml, plainTextFallbackHtml } from '@/lib/markdown';
+import { PageLinkPortals } from '@/components/page/page-links';
 
 interface MarkdownRendererProps {
   content: string;
   className?: string;
 }
 
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
 export function MarkdownRenderer({ content, className = '' }: MarkdownRendererProps) {
   const [html, setHtml] = useState('');
-  const containerRef = useRef<HTMLDivElement>(null);
-  // Page link placeholders in the rendered HTML; each gets a chip (#103 E6).
-  const [linkSlots, setLinkSlots] = useState<HTMLElement[]>([]);
+  const [root, setRoot] = useState<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let isCancelled = false;
@@ -35,8 +23,8 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
       .catch((err) => {
         console.warn('Failed to render markdown:', err);
         if (!isCancelled) {
-          // Fall back to plain text display (escaped: page content is untrusted input)
-          setHtml(`<pre>${escapeHtml(content)}</pre>`);
+          // Fall back to plain text display, escaped (page content is untrusted)
+          setHtml(plainTextFallbackHtml(content));
         }
       });
 
@@ -44,13 +32,6 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
       isCancelled = true;
     };
   }, [content]);
-
-  useLayoutEffect(() => {
-    const root = containerRef.current;
-    setLinkSlots(
-      root ? Array.from(root.querySelectorAll<HTMLElement>(`[${PAGE_LINK_SLOT_ATTRIBUTE}]`)) : []
-    );
-  }, [html]);
 
   if (!html) {
     return (
@@ -70,17 +51,12 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
   return (
     <>
       <div
-        ref={containerRef}
+        ref={setRoot}
         className={`prose prose-slate dark:prose-invert max-w-none ${className}`}
         dangerouslySetInnerHTML={{ __html: html }}
       />
-      {linkSlots.map((slot, index) =>
-        createPortal(
-          <PageLinkChip pageId={Number(slot.getAttribute(PAGE_LINK_SLOT_ATTRIBUTE))} />,
-          slot,
-          `${index}:${slot.getAttribute(PAGE_LINK_SLOT_ATTRIBUTE)}`
-        )
-      )}
+      {/* Page links (issue #103 E6) render as chips inside their placeholders. */}
+      <PageLinkPortals root={root} html={html} />
     </>
   );
 }
