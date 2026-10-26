@@ -27,7 +27,8 @@ const HEADING_ID = 'heading-계획-개요';
 const EXPECTED_CONTENT = [
   '## 계획 개요',
   '- 첫 항목\n- 둘째 항목',
-  '- [x] 할 일',
+  // A to-do list right after a bulleted list uses `*`, so Markdown keeps them two lists.
+  '* [x] 할 일',
   '> 인용문',
   '```\nconst answer = 42;\n```',
   '---',
@@ -268,7 +269,7 @@ test('a page created with Markdown content opens as blocks; dividers come and go
           '# API 문서',
           '소개 문단 [[page:999999999]]',
           '- 하나\n- 둘',
-          '- [ ] 확인',
+          '* [ ] 확인',
           '> 메모',
           '```ts\nconst x = 1;\n```',
           '마지막',
