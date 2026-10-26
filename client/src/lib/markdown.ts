@@ -5,47 +5,51 @@ import remarkRehype from 'remark-rehype';
 import rehypeStringify from 'rehype-stringify';
 import rehypeHighlight from 'rehype-highlight';
 import matter from 'gray-matter';
+import type { Element, ElementContent, Root, RootContent } from 'hast';
 import { hasPageLinks, splitPageLinks } from '@shared/page-links';
+import { rehypeInlineTags } from './rehype-inline-tags';
 import { rehypeSafeUrls } from './rehype-safe-urls';
+
+const RAW_TEXT_PARENTS = new Set(['code', 'pre', 'script', 'style']);
+
+function pageLinkPlaceholders(text: string): ElementContent[] {
+  return splitPageLinks(text).map((segment) =>
+    segment.kind === 'text'
+      ? { type: 'text', value: segment.text }
+      : {
+          type: 'element',
+          tagName: 'span',
+          properties: { dataPageLink: String(segment.pageId), className: ['page-link'] },
+          children: [],
+        }
+  );
+}
+
+function replacePageLinkTokens(node: Root | Element) {
+  if (node.type === 'element' && RAW_TEXT_PARENTS.has(node.tagName)) return;
+  const children: Array<RootContent | ElementContent> = [];
+  let changed = false;
+  for (const child of node.children) {
+    if (child.type === 'text' && hasPageLinks(child.value)) {
+      changed = true;
+      // A loop, not a spread: a text node can hold more tokens than an argument list takes.
+      for (const part of pageLinkPlaceholders(child.value)) children.push(part);
+    } else {
+      if (child.type === 'element') replacePageLinkTokens(child);
+      children.push(child);
+    }
+  }
+  if (changed) node.children = children as typeof node.children;
+}
 
 /**
  * Page links (issue #103 E6): turn `[[page:<id>]]` tokens in text into empty
  * `<span data-page-link="<id>">` placeholders, which MarkdownRenderer fills with link chips.
- * Code spans and code blocks are not text nodes, so tokens there stay as written.
+ * Code keeps the token as written. A rehype step that runs after `rehypeInlineTags` (#113): that
+ * step reads the source positions of text nodes, which splitting them here would drop.
  */
-function remarkPageLinks() {
-  return (tree: any) => {
-    const walk = (node: any) => {
-      if (!Array.isArray(node.children)) return;
-      const children: any[] = [];
-      for (const child of node.children) {
-        if (child.type === 'text' && hasPageLinks(child.value)) {
-          for (const segment of splitPageLinks(child.value)) {
-            children.push(
-              segment.kind === 'text'
-                ? { type: 'text', value: segment.text }
-                : {
-                    type: 'emphasis',
-                    children: [],
-                    data: {
-                      hName: 'span',
-                      hProperties: {
-                        dataPageLink: String(segment.pageId),
-                        className: ['page-link'],
-                      },
-                    },
-                  }
-            );
-          }
-        } else {
-          walk(child);
-          children.push(child);
-        }
-      }
-      node.children = children;
-    };
-    walk(tree);
-  };
+function rehypePageLinks() {
+  return (tree: Root) => replacePageLinkTokens(tree);
 }
 
 // Parse markdown with frontmatter
@@ -54,13 +58,15 @@ export function parseMarkdown(content: string) {
   return { frontmatter, content: markdownContent };
 }
 
-// Convert markdown to HTML. Raw HTML is dropped by remark-rehype; links and images keep only safe
-// URL schemes (a `javascript:` link would otherwise run in the reader).
+// Convert markdown to HTML. Page link tokens become chip placeholders (#103 E6) and `#tags` links
+// to the tag's document list (#113). Raw HTML is dropped by remark-rehype; links and images keep
+// only safe URL schemes (a `javascript:` link would otherwise run in the reader).
 export async function markdownToHtml(markdown: string): Promise<string> {
   const processor = remark()
     .use(remarkGfm)
-    .use(remarkPageLinks)
     .use(remarkRehype)
+    .use(rehypeInlineTags)
+    .use(rehypePageLinks)
     .use(rehypeHighlight)
     .use(rehypeSafeUrls)
     .use(rehypeStringify);

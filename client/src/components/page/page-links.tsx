@@ -22,8 +22,18 @@ type LinkPreview =
 /**
  * One `[[page:<id>]]` link (issue #103 E6): the target's current icon and title, or
  * "접근할 수 없는 페이지" when it is deleted or the viewer cannot read it (no title is shown).
+ * `focusable={false}` (editor previews, #113) keeps the link out of the tab order and keeps focus
+ * where it is when the link is pressed; a click still opens the page.
  */
-export function PageLinkChip({ pageId, className }: { pageId: number; className?: string }) {
+export function PageLinkChip({
+  pageId,
+  className,
+  focusable = true,
+}: {
+  pageId: number;
+  className?: string;
+  focusable?: boolean;
+}) {
   const { data, isLoading } = useQuery<LinkPreview>({
     queryKey: [`/api/pages/${pageId}/link-preview`],
   });
@@ -54,6 +64,8 @@ export function PageLinkChip({ pageId, className }: { pageId: number; className?
     <Link
       to={`/page/${data.slug}`}
       onClick={(event) => event.stopPropagation()}
+      tabIndex={focusable ? undefined : -1}
+      onMouseDown={focusable ? undefined : (event) => event.preventDefault()}
       data-page-link-state="ok"
       data-page-link-target={data.id}
       className={cn(
