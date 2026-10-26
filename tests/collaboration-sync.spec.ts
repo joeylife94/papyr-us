@@ -73,6 +73,27 @@ test('two editors share edits in real time and the save keeps them', async ({
     })
     .toBe(`from B ${stamp}`);
 
+  // A block reorder (#103 E3) is one Yjs move, so both editors converge on the new order and
+  // the stored content follows it.
+  const order = (page: Page) =>
+    page
+      .locator('[data-page-body] [data-block-row] textarea')
+      .evaluateAll((els) => els.map((el) => (el as HTMLTextAreaElement).value));
+  await textarea(a.page).press('End');
+  await textarea(a.page).press('Enter');
+  const second = a.page.locator('[data-page-body] [data-block-row] textarea').nth(1);
+  await expect(second).toBeFocused();
+  await second.fill(`second ${stamp}`);
+  await expect.poll(() => order(b.page)).toEqual([`from B ${stamp}`, `second ${stamp}`]);
+  await second.press('Alt+ArrowUp');
+  await expect.poll(() => order(a.page)).toEqual([`second ${stamp}`, `from B ${stamp}`]);
+  await expect.poll(() => order(b.page)).toEqual([`second ${stamp}`, `from B ${stamp}`]);
+  await expect
+    .poll(async () => (await (await api.get(`/api/pages/${pageId}`)).json()).content, {
+      timeout: 15_000,
+    })
+    .toBe(`second ${stamp}\n\nfrom B ${stamp}`);
+
   await a.context.close();
   await b.context.close();
   await api.delete(`/api/pages/${pageId}`).catch(() => {});

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Block, BlockType } from '@shared/schema';
-import { Trash2, AlignLeft } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface ParagraphBlockProps {
@@ -122,12 +122,7 @@ export function ParagraphBlock({
       onFocus={onFocus}
       onBlur={onBlur}
     >
-      {/* 블록 타입 표시 */}
-      <div className="absolute left-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity">
-        <AlignLeft className="h-4 w-4 text-muted-foreground" />
-      </div>
-
-      {/* 단락 입력 */}
+      {/* 단락 입력 (블록 핸들은 에디터의 왼쪽 여백에 있다) */}
       <textarea
         ref={textareaRef}
         value={content}
@@ -136,7 +131,7 @@ export function ParagraphBlock({
         onFocus={onFocus}
         onBlur={onBlur}
         placeholder="단락을 입력하세요..."
-        className="w-full resize-none border-none outline-none bg-transparent text-base text-foreground placeholder:text-muted-foreground pl-8 pr-12 leading-relaxed"
+        className="w-full resize-none border-none outline-none bg-transparent text-base text-foreground placeholder:text-muted-foreground pl-0 pr-8 leading-relaxed"
         rows={1}
       />
 
