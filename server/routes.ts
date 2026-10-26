@@ -2322,6 +2322,84 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== Page links (issue #103 E6) ====================
+
+  // What a `[[page:<id>]]` link shows: the target's current title and icon when the caller may
+  // read it, otherwise only `accessible: false`. Missing, trashed and unreadable targets get the
+  // same answer, so a link reveals nothing about a page the caller cannot open.
+  app.get('/api/pages/:id/link-preview', optionalAuth, async (req: AuthRequest, res) => {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ message: 'Invalid page ID' });
+    }
+    try {
+      const page = await storage.getWikiPage(id);
+      const readable =
+        !!page &&
+        !page.deletedAt &&
+        (await storage.checkPagePermission(req.user?.id, id, 'viewer'));
+      if (!readable) return res.json({ id, accessible: false });
+      res.json({
+        id,
+        accessible: true,
+        title: page.title,
+        slug: page.slug,
+        icon: page.icon ?? null,
+      });
+    } catch (error) {
+      logger.error('Link preview failed', { pageId: id, error: (error as Error)?.message });
+      res.status(500).json({ message: 'Failed to load link' });
+    }
+  });
+
+  // "이 문서를 링크한 문서": live pages linking here that the caller may list.
+  app.get(
+    '/api/pages/:id/backlinks',
+    optionalAuth,
+    requirePagePermission('viewer'),
+    async (req: AuthRequest, res) => {
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isInteger(id) || id <= 0) {
+        return res.status(400).json({ message: 'Invalid page ID' });
+      }
+      try {
+        res.json(await storage.getReadableBacklinks(req.user?.id, id));
+      } catch (error) {
+        logger.error('Backlinks failed', { pageId: id, error: (error as Error)?.message });
+        res.status(500).json({ message: 'Failed to load backlinks' });
+      }
+    }
+  );
+
+  // Link picker: pages whose title matches `q` that the caller may read, in the team
+  // `teamId` (members only) or among personal pages (`scope=personal`).
+  app.get('/api/page-links/search', requireAuthIfEnabled, async (req: AuthRequest, res) => {
+    const q = typeof req.query.q === 'string' ? req.query.q.slice(0, 200) : '';
+    const teamParam = req.query.teamId as string | undefined;
+    let teamId: number | undefined;
+    if (teamParam) {
+      teamId = parseInt(teamParam, 10);
+      if (!Number.isInteger(teamId) || teamId <= 0) {
+        return res.status(400).json({ message: 'Invalid team ID' });
+      }
+      const userTeamIds = req.user?.id ? await storage.getUserTeamIds(req.user.id) : [];
+      if (!userTeamIds.includes(teamId)) {
+        return res.status(403).json({ message: 'You are not a member of this team' });
+      }
+    }
+    try {
+      const results = await storage.searchLinkTargets(
+        req.user?.id,
+        teamId !== undefined ? { teamId } : { personalOnly: true },
+        q
+      );
+      res.json(results);
+    } catch (error) {
+      logger.error('Link search failed', { error: (error as Error)?.message });
+      res.status(500).json({ message: 'Failed to search pages' });
+    }
+  });
+
   // File Upload API
   app.post(
     '/api/upload',

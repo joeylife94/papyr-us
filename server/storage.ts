@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import {
   wikiPages,
+  pageLinks,
   type WikiPage,
   type InsertWikiPage,
   type UpdateWikiPage,
@@ -78,6 +79,7 @@ import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 import type { RetrievedPageRow } from './services/retrieval.js';
 import type { PageTreeRow } from './services/page-tree.js';
+import { extractPageLinkIds } from '../shared/page-links.js';
 
 // Helper: detect if a string looks like a bcrypt hash
 function isBcryptHash(value: string): boolean {
@@ -195,6 +197,7 @@ export class DBStorage {
       }
     }
 
+    await this.replacePageLinks(createdPage.id, createdPage.content);
     return createdPage;
   }
 
@@ -204,7 +207,99 @@ export class DBStorage {
       .set(page)
       .where(eq(wikiPages.id, id))
       .returning();
+    // Every content write (REST, autosave, Yjs, restore) passes through here.
+    if (result[0] && page.content !== undefined) {
+      await this.replacePageLinks(id, result[0].content);
+    }
     return result[0];
+  }
+
+  /**
+   * Keep page_links in step with a page's content (issue #103 E6): the targets of its
+   * `[[page:<id>]]` tokens that exist, other than itself. Unknown ids are skipped, not refused:
+   * a token to a page that is gone still renders, as an inaccessible link.
+   */
+  async replacePageLinks(sourcePageId: number, content: string | null | undefined): Promise<void> {
+    const targets = extractPageLinkIds(content).filter((id) => id !== sourcePageId);
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('DELETE FROM page_links WHERE source_page_id = $1', [sourcePageId]);
+      if (targets.length > 0) {
+        await client.query(
+          `INSERT INTO page_links (source_page_id, target_page_id)
+           SELECT $1, id FROM wiki_pages WHERE id = ANY($2::int[])
+           ON CONFLICT DO NOTHING`,
+          [sourcePageId, targets]
+        );
+      }
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      // The page itself is saved; a stale link index only affects backlinks until the next save.
+      console.error('Failed to update page links:', (error as Error)?.message);
+    } finally {
+      client.release();
+    }
+  }
+
+  /** Pages linking to `targetPageId` that the viewer may list, live ones only. */
+  async getReadableBacklinks(
+    userId: number | undefined,
+    targetPageId: number
+  ): Promise<Array<{ id: number; title: string; slug: string; icon: string | null }>> {
+    const viewer = await this.getPageViewer(userId);
+    return this.db
+      .select({
+        id: wikiPages.id,
+        title: wikiPages.title,
+        slug: wikiPages.slug,
+        icon: wikiPages.icon,
+      })
+      .from(pageLinks)
+      .innerJoin(wikiPages, eq(pageLinks.sourcePageId, wikiPages.id))
+      .where(
+        and(
+          eq(pageLinks.targetPageId, targetPageId),
+          isNull(wikiPages.deletedAt),
+          this.listableBy(viewer)
+        )
+      )
+      .orderBy(asc(wikiPages.title), asc(wikiPages.id))
+      .limit(200);
+  }
+
+  /**
+   * Link picker results (issue #103 E6): live pages the viewer may list whose title contains
+   * `query`, in one team or among personal pages, most recently updated first.
+   */
+  async searchLinkTargets(
+    userId: number | undefined,
+    scope: { teamId?: number; personalOnly?: boolean },
+    query: string,
+    limit = 20
+  ): Promise<Array<{ id: number; title: string; slug: string; icon: string | null }>> {
+    const viewer = await this.getPageViewer(userId);
+    const conditions: SQL[] = [isNull(wikiPages.deletedAt), this.listableBy(viewer)];
+    if (scope.teamId !== undefined) conditions.push(eq(wikiPages.teamId, scope.teamId));
+    if (scope.personalOnly) conditions.push(isNull(wikiPages.teamId));
+    const q = query.trim();
+    if (q) {
+      // LIKE wildcards in the query match literally.
+      const escaped = q.replace(/[\\%_]/g, (c) => `\\${c}`);
+      conditions.push(sql`${wikiPages.title} ILIKE ${'%' + escaped + '%'}`);
+    }
+    return this.db
+      .select({
+        id: wikiPages.id,
+        title: wikiPages.title,
+        slug: wikiPages.slug,
+        icon: wikiPages.icon,
+      })
+      .from(wikiPages)
+      .where(and(...conditions))
+      .orderBy(desc(wikiPages.updatedAt))
+      .limit(Math.min(Math.max(limit, 1), 50));
   }
 
   async deleteWikiPage(id: number): Promise<boolean> {
