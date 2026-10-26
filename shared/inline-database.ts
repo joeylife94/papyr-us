@@ -433,3 +433,55 @@ export function planReplaceFields(current: DatabaseField[], next: DatabaseField[
     .map((field) => field.id);
   return finish(fields, removed, requireEmpty);
 }
+
+// ── Database blocks ────────────────────────────────────────────────────────────────────────
+
+const MAX_DATABASE_ID = 2_147_483_647;
+
+/**
+ * The database a `database_inline` block points at (`properties.schemaId`), or null for any other
+ * block and for a missing or malformed id. Blocks are untrusted page content.
+ */
+export function databaseBlockSchemaId(block: unknown): number | null {
+  if (!block || typeof block !== 'object') return null;
+  const { type, properties } = block as { type?: unknown; properties?: unknown };
+  if (type !== 'database_inline' || !properties || typeof properties !== 'object') return null;
+  const schemaId = (properties as { schemaId?: unknown }).schemaId;
+  return typeof schemaId === 'number' &&
+    Number.isInteger(schemaId) &&
+    schemaId > 0 &&
+    schemaId <= MAX_DATABASE_ID
+    ? schemaId
+    : null;
+}
+
+/** The distinct databases the `database_inline` blocks of a block list point at. */
+export function databaseBlockSchemaIds(blocks: unknown): number[] {
+  if (!Array.isArray(blocks)) return [];
+  const ids = new Set<number>();
+  for (const block of blocks) {
+    const schemaId = databaseBlockSchemaId(block);
+    if (schemaId !== null) ids.add(schemaId);
+  }
+  return [...ids];
+}
+
+/**
+ * `blocks` with every `database_inline` block pointed at `schemaIds.get(its database)`. A block
+ * whose database is not in the map loses its `schemaId`, so the editor creates a new, empty
+ * database for it. Other blocks, and a value that is not a block list, stay as they are.
+ */
+export function remapDatabaseBlocks<T>(blocks: T, schemaIds: ReadonlyMap<number, number>): T {
+  if (!Array.isArray(blocks)) return blocks;
+  return blocks.map((block) => {
+    if (!block || typeof block !== 'object' || block.type !== 'database_inline') return block;
+    const properties: Record<string, unknown> =
+      block.properties && typeof block.properties === 'object' && !Array.isArray(block.properties)
+        ? { ...block.properties }
+        : {};
+    delete properties.schemaId;
+    const schemaId = schemaIds.get(databaseBlockSchemaId(block) ?? 0);
+    if (schemaId !== undefined) properties.schemaId = schemaId;
+    return { ...block, properties };
+  }) as T;
+}
