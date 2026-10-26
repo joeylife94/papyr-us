@@ -50,6 +50,9 @@ import {
   type PermissionLevel,
   type TeamMember,
   type TeamRole,
+  type DatabaseSchema,
+  type DatabaseRow,
+  type DatabaseRelation,
   databaseSchemas,
   databaseRows,
   databaseRelations,
@@ -81,6 +84,13 @@ import type { RetrievedPageRow } from './services/retrieval.js';
 import type { PageTreeRow } from './services/page-tree.js';
 import { isReservedDailyNoteSlug } from '../shared/daily-notes.js';
 import { MAX_PAGE_LINK_TARGETS } from '../shared/page-links.js';
+import {
+  presentValues,
+  type DatabaseCellValue,
+  type DatabaseField,
+  type DatabaseRowData,
+  type FieldPlan,
+} from '../shared/inline-database.js';
 import type { VaultExportRow } from './services/vault-export.js';
 
 // Helper: detect if a string looks like a bcrypt hash
@@ -2135,39 +2145,37 @@ export class DBStorage {
   }
 
   // ==================== Database Schema Operations ====================
+  // Inline databases (#113 §4). These methods do not authorize: every /api/database route
+  // resolves the owning page (schema → page_id) and checks the caller's permission on it first.
 
   async createDatabaseSchema(
     pageId: number,
-    userId: number,
-    schema: {
-      name: string;
-      fields: any[];
-      primaryDisplay?: string;
-    }
-  ) {
+    schema: { name: string; description?: string | null; fields: DatabaseField[] }
+  ): Promise<DatabaseSchema> {
     const [newSchema] = await this.db
       .insert(databaseSchemas)
       .values({
         pageId,
-        createdBy: userId,
         name: schema.name,
+        description: schema.description ?? null,
         fields: schema.fields,
-        primaryDisplay: schema.primaryDisplay,
       })
       .returning();
     return newSchema;
   }
 
-  async getDatabaseSchema(schemaId: number) {
-    return await this.db.query.databaseSchemas.findFirst({
-      where: eq(databaseSchemas.id, schemaId),
-    });
+  async getDatabaseSchema(schemaId: number): Promise<DatabaseSchema | undefined> {
+    const [schema] = await this.db
+      .select()
+      .from(databaseSchemas)
+      .where(eq(databaseSchemas.id, schemaId));
+    return schema;
   }
 
   async updateDatabaseSchema(
     schemaId: number,
-    updates: { name?: string; fields?: any[]; primaryDisplay?: string }
-  ) {
+    updates: { name?: string; description?: string | null }
+  ): Promise<DatabaseSchema | undefined> {
     const [updated] = await this.db
       .update(databaseSchemas)
       .set({
@@ -2179,47 +2187,174 @@ export class DBStorage {
     return updated;
   }
 
+  /**
+   * Changes a schema's properties with the schema row locked, so concurrent property edits apply
+   * one after the other instead of overwriting each other. `plan` sees the locked schema and
+   * returns the new property list (see shared/inline-database.ts). Values of deleted properties
+   * are removed from every row in the same transaction; a type change that is not lossless is
+   * refused (409) while any row has a value for the property.
+   */
+  async mutateDatabaseFields(
+    schemaId: number,
+    plan: (schema: DatabaseSchema) => FieldPlan
+  ): Promise<
+    { ok: true; schema: DatabaseSchema } | { ok: false; status: 400 | 404 | 409; message: string }
+  > {
+    return this.db.transaction(async (tx: any) => {
+      const [schema] = await tx
+        .select()
+        .from(databaseSchemas)
+        .where(eq(databaseSchemas.id, schemaId))
+        .for('update');
+      if (!schema) return { ok: false, status: 404, message: 'Database not found' };
+      const outcome = plan(schema);
+      if (!outcome.ok) return outcome;
+      for (const fieldId of outcome.requireEmptyFieldIds) {
+        const [inUse] = await tx
+          .select({ id: databaseRows.id })
+          .from(databaseRows)
+          .where(and(eq(databaseRows.schemaId, schemaId), sql`${databaseRows.data} ? ${fieldId}`))
+          .limit(1);
+        if (inUse) {
+          return {
+            ok: false,
+            status: 409,
+            message: 'The property has values, so its type cannot change to this type',
+          };
+        }
+      }
+      for (const fieldId of outcome.removedFieldIds) {
+        await tx
+          .update(databaseRows)
+          .set({ data: sql`${databaseRows.data} - ${fieldId}::text` })
+          .where(and(eq(databaseRows.schemaId, schemaId), sql`${databaseRows.data} ? ${fieldId}`));
+      }
+      const [updated] = await tx
+        .update(databaseSchemas)
+        .set({ fields: outcome.fields, updatedAt: new Date() })
+        .where(eq(databaseSchemas.id, schemaId))
+        .returning();
+      return { ok: true, schema: updated };
+    });
+  }
+
   async deleteDatabaseSchema(schemaId: number) {
     await this.db.delete(databaseSchemas).where(eq(databaseSchemas.id, schemaId));
   }
 
   // ==================== Database Row Operations ====================
 
-  async createDatabaseRow(schemaId: number, userId: number, data: Record<string, any>) {
-    const [newRow] = await this.db
-      .insert(databaseRows)
-      .values({
-        schemaId,
-        createdBy: userId,
-        data,
-      })
-      .returning();
-    return newRow;
-  }
-
-  async getDatabaseRow(rowId: number) {
-    return await this.db.query.databaseRows.findFirst({
-      where: eq(databaseRows.id, rowId),
+  /**
+   * A new row at the end of its database, or null when the database already has `maxRows`
+   * rows. Creation is serialized per database (schema row lock) so the limit and the order hold.
+   */
+  async createDatabaseRow(
+    schemaId: number,
+    userId: number | null,
+    data: DatabaseRowData,
+    maxRows: number
+  ): Promise<DatabaseRow | null> {
+    return this.db.transaction(async (tx: any) => {
+      await tx
+        .select({ id: databaseSchemas.id })
+        .from(databaseSchemas)
+        .where(eq(databaseSchemas.id, schemaId))
+        .for('update');
+      const [stats] = await tx
+        .select({
+          count: sql<number>`count(*)::int`,
+          maxOrder: sql<number | null>`max(${databaseRows.orderIndex})`,
+        })
+        .from(databaseRows)
+        .where(eq(databaseRows.schemaId, schemaId));
+      if (Number(stats?.count ?? 0) >= maxRows) return null;
+      const [newRow] = await tx
+        .insert(databaseRows)
+        .values({
+          schemaId,
+          createdBy: userId,
+          data,
+          orderIndex: stats?.maxOrder == null ? 0 : Number(stats.maxOrder) + 1,
+        })
+        .returning();
+      return newRow;
     });
   }
 
-  async getDatabaseRows(schemaId: number) {
-    return await this.db.query.databaseRows.findMany({
-      where: eq(databaseRows.schemaId, schemaId),
-      orderBy: (rows: any, { desc }: any) => [desc(rows.createdAt)],
-    });
+  async getDatabaseRow(rowId: number): Promise<DatabaseRow | undefined> {
+    const [row] = await this.db.select().from(databaseRows).where(eq(databaseRows.id, rowId));
+    return row;
   }
 
-  async updateDatabaseRow(rowId: number, data: Record<string, any>) {
-    const [updated] = await this.db
-      .update(databaseRows)
-      .set({
-        data,
-        updatedAt: new Date(),
-      })
-      .where(eq(databaseRows.id, rowId))
-      .returning();
-    return updated;
+  /** A database's rows in their stored order. */
+  async getDatabaseRows(schemaId: number): Promise<DatabaseRow[]> {
+    return await this.db
+      .select()
+      .from(databaseRows)
+      .where(eq(databaseRows.schemaId, schemaId))
+      .orderBy(asc(databaseRows.orderIndex), asc(databaseRows.id));
+  }
+
+  /**
+   * Changes a row's cells and/or its place. `values` merges into the stored data (`null` clears
+   * a cell), so editors changing different cells of one row never undo each other. `place` moves
+   * the row right before or after another row of the same database and renumbers the database's
+   * order 0..n-1 in one statement, with the schema row locked.
+   */
+  async updateDatabaseRow(
+    rowId: number,
+    changes: {
+      values?: Record<string, DatabaseCellValue | null>;
+      place?: { beforeRowId: number } | { afterRowId: number };
+    }
+  ): Promise<{ ok: true; row: DatabaseRow } | { ok: false; status: 400 | 404; message: string }> {
+    return this.db.transaction(async (tx: any) => {
+      const [existing] = await tx.select().from(databaseRows).where(eq(databaseRows.id, rowId));
+      if (!existing) return { ok: false, status: 404, message: 'Database not found' };
+      const schemaId = existing.schemaId;
+
+      if (changes.place) {
+        await tx
+          .select({ id: databaseSchemas.id })
+          .from(databaseSchemas)
+          .where(eq(databaseSchemas.id, schemaId))
+          .for('update');
+        const ordered: Array<{ id: number }> = await tx
+          .select({ id: databaseRows.id })
+          .from(databaseRows)
+          .where(eq(databaseRows.schemaId, schemaId))
+          .orderBy(asc(databaseRows.orderIndex), asc(databaseRows.id));
+        const before = 'beforeRowId' in changes.place;
+        const anchorId =
+          'beforeRowId' in changes.place ? changes.place.beforeRowId : changes.place.afterRowId;
+        const ids = ordered.map((row) => row.id).filter((id) => id !== rowId);
+        const at = ids.indexOf(anchorId);
+        if (at === -1) {
+          return { ok: false, status: 400, message: 'The anchor row is not in this database' };
+        }
+        ids.splice(before ? at : at + 1, 0, rowId);
+        await tx.execute(sql`
+          UPDATE database_rows AS r
+          SET order_index = (v.ord - 1)::int
+          FROM jsonb_array_elements_text(${JSON.stringify(ids)}::jsonb) WITH ORDINALITY AS v(id, ord)
+          WHERE r.id = v.id::int AND r.schema_id = ${schemaId} AND r.order_index <> (v.ord - 1)
+        `);
+      }
+
+      const set: Record<string, unknown> = { updatedAt: new Date() };
+      const entries = Object.entries(changes.values ?? {});
+      if (entries.length > 0) {
+        const present = presentValues(changes.values ?? {});
+        const cleared = entries.filter(([, value]) => value === null).map(([key]) => key);
+        set.data = sql`(${databaseRows.data} || ${JSON.stringify(present)}::jsonb) - ARRAY(SELECT jsonb_array_elements_text(${JSON.stringify(cleared)}::jsonb))`;
+      }
+      const [row] = await tx
+        .update(databaseRows)
+        .set(set)
+        .where(eq(databaseRows.id, rowId))
+        .returning();
+      return { ok: true, row };
+    });
   }
 
   async deleteDatabaseRow(rowId: number) {
@@ -2234,7 +2369,7 @@ export class DBStorage {
     propertyName: string,
     toSchemaId: number,
     toRowId: number
-  ) {
+  ): Promise<DatabaseRelation> {
     const [relation] = await this.db
       .insert(databaseRelations)
       .values({
@@ -2248,15 +2383,25 @@ export class DBStorage {
     return relation;
   }
 
-  async getRelations(rowId: number, propertyName?: string) {
+  async getRelations(rowId: number, propertyName?: string): Promise<DatabaseRelation[]> {
     const conditions = [eq(databaseRelations.fromRowId, rowId)];
     if (propertyName) {
       conditions.push(eq(databaseRelations.propertyName, propertyName));
     }
 
-    return await this.db.query.databaseRelations.findMany({
-      where: and(...conditions),
-    });
+    return await this.db
+      .select()
+      .from(databaseRelations)
+      .where(and(...conditions))
+      .orderBy(asc(databaseRelations.id));
+  }
+
+  async getDatabaseRelation(relationId: number): Promise<DatabaseRelation | undefined> {
+    const [relation] = await this.db
+      .select()
+      .from(databaseRelations)
+      .where(eq(databaseRelations.id, relationId));
+    return relation;
   }
 
   async deleteRelation(relationId: number) {
@@ -2264,7 +2409,8 @@ export class DBStorage {
   }
 
   /**
-   * Calculate rollup value based on relations
+   * Calculate rollup value based on relations. `targetSchemaIds` limits the rollup to related
+   * rows of those databases (the ones the caller may read).
    */
   async calculateRollup(
     rowId: number,
@@ -2273,39 +2419,43 @@ export class DBStorage {
       relationField: string;
       targetField: string;
       aggregation: 'count' | 'sum' | 'avg' | 'min' | 'max' | 'unique';
-    }
+    },
+    targetSchemaIds?: number[]
   ) {
-    const relations = await this.getRelations(rowId, config.relationField);
+    const relations = (await this.getRelations(rowId, config.relationField)).filter(
+      (relation) => !targetSchemaIds || targetSchemaIds.includes(relation.toSchemaId)
+    );
 
     if (relations.length === 0) {
       return config.aggregation === 'count' ? 0 : null;
     }
 
     // Get related rows data
-    const relatedRowIds = relations.map((r: any) => r.toRowId);
-    const relatedRows = await this.db.query.databaseRows.findMany({
-      where: sql`id = ANY(${relatedRowIds})`,
-    });
+    const relatedRowIds = relations.map((r) => r.toRowId);
+    const relatedRows: DatabaseRow[] = await this.db
+      .select()
+      .from(databaseRows)
+      .where(inArray(databaseRows.id, relatedRowIds));
 
     const values = relatedRows
-      .map((row: any) => row.data[config.targetField])
-      .filter((v: any) => v !== null && v !== undefined);
+      .map((row) => (row.data as Record<string, unknown>)?.[config.targetField])
+      .filter((v) => v !== null && v !== undefined);
 
     switch (config.aggregation) {
       case 'count':
         return values.length;
       case 'sum':
-        return values.reduce((sum: number, val: any) => sum + Number(val), 0);
+        return values.reduce((sum: number, val) => sum + Number(val), 0);
       case 'avg':
         return values.length > 0
-          ? values.reduce((sum: number, val: any) => sum + Number(val), 0) / values.length
+          ? values.reduce((sum: number, val) => sum + Number(val), 0) / values.length
           : null;
       case 'min':
         return values.length > 0 ? Math.min(...values.map(Number)) : null;
       case 'max':
         return values.length > 0 ? Math.max(...values.map(Number)) : null;
       case 'unique':
-        return new Set(values).size;
+        return new Set(values.map((value) => JSON.stringify(value))).size;
       default:
         return null;
     }
