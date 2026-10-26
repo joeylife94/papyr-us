@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Block } from '../../shared/schema';
-import { moveBlock } from '../../client/src/lib/block-order';
+import { moveBlock, resolveDrop } from '../../client/src/lib/block-order';
 
 const block = (id: string, order: number): Block =>
   ({ id, type: 'paragraph', content: id, properties: {}, order, children: [] }) as Block;
@@ -46,5 +46,30 @@ describe('moveBlock', () => {
     expect(moveBlock(list, -1, 0)).toBe(list);
     expect(moveBlock(list, 0, 4)).toBe(list);
     expect(moveBlock([], 0, 0)).toEqual([]);
+  });
+});
+
+describe('resolveDrop', () => {
+  const list = [block('a', 0), block('b', 1), block('c', 2)];
+
+  it('moves the dragged block found by id', () => {
+    expect(resolveDrop(list, 'b', 0)).toEqual({ from: 1, to: 0 });
+  });
+
+  it('follows the dragged block when a collaborator reordered during the drag', () => {
+    // The drag of B started on [A, B, C] (source index 1); meanwhile A moved to the end.
+    const reordered = [block('b', 0), block('c', 1), block('a', 2)];
+    const move = resolveDrop(reordered, 'b', 2);
+    expect(move).toEqual({ from: 0, to: 2 });
+    expect(ids(moveBlock(reordered, move!.from, move!.to))).toEqual(['c', 'a', 'b']);
+  });
+
+  it('cancels when the dragged block was deleted, or nothing moves', () => {
+    expect(resolveDrop([block('a', 0), block('c', 1)], 'b', 0)).toBeNull();
+    expect(resolveDrop(list, 'c', 2)).toBeNull();
+  });
+
+  it('clamps a destination beyond a list that shrank', () => {
+    expect(resolveDrop([block('a', 0), block('b', 1)], 'a', 2)).toEqual({ from: 0, to: 1 });
   });
 });
