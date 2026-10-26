@@ -69,7 +69,7 @@ export const TAG_CHIP_CLASS =
 // ── Scanning helpers ────────────────────────────────────────────────────────────────────────
 
 const ESCAPABLE = new Set('!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~');
-const PAGE_LINK_AT = /\[\[page:(\d{1,9})\]\]/y;
+const PAGE_LINK_AT = /\[\[page:(\d{1,10})\]\]/y;
 const ALPHANUMERIC = /^[\p{L}\p{N}]$/u;
 const WHITESPACE = /^\s$/;
 /**

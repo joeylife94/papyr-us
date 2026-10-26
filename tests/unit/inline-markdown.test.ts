@@ -114,6 +114,8 @@ describe('parseInlineMarkdown', () => {
       ' and ',
       ['strong', ['page', 3]],
     ]);
+    // Ten digits, like the reader's pattern: the editor and the reader agree on what a chip is.
+    expect(parse('[[page:1234567890]]')).toEqual([['page', 1234567890]]);
   });
 
   it('keeps only safe link URLs', () => {

@@ -185,6 +185,10 @@ describe('page link tokens on export', () => {
     );
     expect(pageLinkTokenIds(`${text} [[page:1]]`)).toEqual([1, 22]);
   });
+
+  it('collects only ids that can name a page, so lookups never see out-of-range ids', () => {
+    expect(pageLinkTokenIds('[[page:9999999999]] [[page:2147483648]] [[page:5]]')).toEqual([5]);
+  });
 });
 
 describe('wikilinks on import', () => {

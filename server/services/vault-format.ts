@@ -10,7 +10,7 @@
  * or double-quoted scalars, `[a, b]` flow lists and `- item` block lists. Anything else is
  * skipped. It never evaluates tags, anchors, aliases or other YAML features.
  */
-import { PAGE_LINK_PATTERN } from '../../shared/page-links.js';
+import { PAGE_LINK_PATTERN, isPageId } from '../../shared/page-links.js';
 
 /** Shown instead of a link whose target the exporting viewer cannot read (never its title). */
 export const INACCESSIBLE_PAGE_LABEL = '접근할 수 없는 페이지';
@@ -352,12 +352,12 @@ export function renderPageLinkTokens(text: string, render: (pageId: number) => s
   );
 }
 
-/** The ids of page link tokens outside code, in first-appearance order. */
+/** The valid page ids of link tokens outside code, in first-appearance order. */
 export function pageLinkTokenIds(text: string): number[] {
   const ids: number[] = [];
   const seen = new Set<number>();
   renderPageLinkTokens(text, (id) => {
-    if (!seen.has(id)) {
+    if (isPageId(id) && !seen.has(id)) {
       seen.add(id);
       ids.push(id);
     }

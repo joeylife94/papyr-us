@@ -102,6 +102,7 @@ import { ANONYMOUS_PAGE_VIEWER, DBStorage } from './storage.js';
 import { registerKnowledgeRoutes } from './routes/knowledge.js';
 import { buildKnowledgeGraph, suggestAiLinks } from './services/knowledge-graph.js';
 import { isReservedDailyNoteSlug } from '../shared/daily-notes.js';
+import { isPageId } from '../shared/page-links.js';
 import { registerDailyNoteRoutes } from './routes/daily-notes.js';
 import { registerVaultRoutes } from './routes/vault.js';
 import { contentWithLinkTitles, singlePageMarkdown } from './services/vault-export.js';
@@ -2360,7 +2361,7 @@ export async function registerRoutes(
   // same answer, so a link reveals nothing about a page the caller cannot open.
   app.get('/api/pages/:id/link-preview', optionalAuth, async (req: AuthRequest, res) => {
     const id = parseInt(req.params.id, 10);
-    if (!Number.isInteger(id) || id <= 0) {
+    if (!isPageId(id)) {
       return res.status(400).json({ message: 'Invalid page ID' });
     }
     try {

@@ -331,6 +331,20 @@ describe('POST /api/vault/import', () => {
     expect(response.body.skipped).toEqual([{ path: 'huge.md', reason: 'too-large' }]);
   });
 
+  it('indexes no link target beyond the page id column', async () => {
+    const response = await request(app)
+      .post('/api/vault/import')
+      .set('Cookie', cookie)
+      .attach('files', Buffer.from('Code `[[page:9999999999]]` and [[B]]'), 'A.md')
+      .attach('files', Buffer.from('b'), 'B.md');
+
+    expect(response.status).toBe(201);
+    const input = (storage.insertImportedPages as any).mock.calls[0][0];
+    const alpha = input.pages.find((page: any) => page.title === 'A');
+    expect(alpha.content).toBe('Code `[[page:9999999999]]` and [[page:102]]');
+    expect(alpha.linkTargets).toEqual([102]);
+  });
+
   it('answers 200 without writing when nothing can be imported', async () => {
     const response = await upload().attach('files', zipOf([{ name: 'a.png', data: 'x' }]), 'v.zip');
     expect(response.status).toBe(200);

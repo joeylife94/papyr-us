@@ -82,7 +82,12 @@ import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 import type { RetrievedPageRow } from './services/retrieval.js';
 import type { PageTreeRow } from './services/page-tree.js';
-import { MAX_INDEXED_LINKS, extractPageLinkIds, hasPageLinks } from '../shared/page-links.js';
+import {
+  MAX_INDEXED_LINKS,
+  extractPageLinkIds,
+  hasPageLinks,
+  isPageId,
+} from '../shared/page-links.js';
 import { isReservedDailyNoteSlug } from '../shared/daily-notes.js';
 import {
   DATABASE_LIMITS,
@@ -340,7 +345,7 @@ export class DBStorage {
     viewer: PageViewer,
     ids: number[]
   ): Promise<Array<{ id: number; title: string; slug: string; icon: string | null }>> {
-    const unique = Array.from(new Set(ids));
+    const unique = Array.from(new Set(ids.filter(isPageId)));
     const found: Array<{ id: number; title: string; slug: string; icon: string | null }> = [];
     // Batches keep every query far below Postgres' bind-parameter limit.
     for (let at = 0; at < unique.length; at += RESOLVE_LINKS_BATCH) {

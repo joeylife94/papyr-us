@@ -168,6 +168,19 @@ describe('page links (real Postgres)', () => {
     expect(await linksFrom(source.id)).toEqual([]);
   });
 
+  it('an id beyond the page id column breaks neither the index nor the title lookup', async () => {
+    const target = await storage.createWikiPage(page('Big id target', ALICE.email), ALICE.id);
+    const source = await storage.createWikiPage(
+      page('Big id source', ALICE.email, `[[page:${target.id}]] [[page:9999999999]]`),
+      ALICE.id
+    );
+    expect(await linksFrom(source.id)).toEqual([target.id]);
+
+    const viewer = await storage.getPageViewer(ALICE.id);
+    const found = await storage.resolveReadablePageLinks(viewer, [9999999999, target.id]);
+    expect(found.map((p: any) => p.id)).toEqual([target.id]);
+  });
+
   it('concurrent saves leave the index matching the content that won', async () => {
     const a = await storage.createWikiPage(page('Race A', ALICE.email, 'a'), ALICE.id);
     const b = await storage.createWikiPage(page('Race B', ALICE.email, 'b'), ALICE.id);

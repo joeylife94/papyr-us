@@ -11,18 +11,29 @@ const TOKEN = PAGE_LINK_PATTERN;
 /** Most links indexed per page; anything beyond is still rendered, just not indexed. */
 export const MAX_INDEXED_LINKS = 500;
 
+/** Largest page id: `wiki_pages.id` is a Postgres `integer`. */
+export const MAX_PAGE_ID = 2_147_483_647;
+
+/**
+ * Whether a token's id can name a page. A token may carry up to ten digits, so ids beyond the
+ * column's range are dropped before they reach SQL, where they would fail the whole query.
+ */
+export function isPageId(id: number): boolean {
+  return Number.isSafeInteger(id) && id > 0 && id <= MAX_PAGE_ID;
+}
+
 export function pageLinkToken(pageId: number): string {
   return `[[page:${pageId}]]`;
 }
 
-/** Distinct target ids in the order they first appear (positive integers only). */
+/** Distinct target ids in the order they first appear (valid page ids only, see `isPageId`). */
 export function extractPageLinkIds(content: string | null | undefined): number[] {
   if (!content) return [];
   const ids: number[] = [];
   const seen = new Set<number>();
   for (const match of content.matchAll(TOKEN)) {
     const id = Number(match[1]);
-    if (Number.isSafeInteger(id) && id > 0 && !seen.has(id)) {
+    if (isPageId(id) && !seen.has(id)) {
       seen.add(id);
       ids.push(id);
       if (ids.length >= MAX_INDEXED_LINKS) break;
