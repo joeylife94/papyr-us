@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Database } from 'lucide-react';
 import type { Block } from '@shared/schema';
 import {
   DEFAULT_DATABASE_NAME,
   defaultDatabaseFields,
   readDatabaseProperties,
+  type InlineDatabaseProperties,
 } from '@/lib/inline-database';
 import type { DatabaseSchemaRecord } from '@shared/inline-database';
 import { createDatabase } from './use-inline-database';
@@ -29,14 +30,34 @@ export function InlineDatabaseBlock({
   pageId?: number;
   onUpdate: (updates: Partial<Block>) => void;
 }) {
-  const config = readDatabaseProperties(block.properties);
+  // Same object while the stored properties are unchanged, so the memoized database does not
+  // re-render when the editor re-renders (each edit, each Yjs update of the block array).
+  const propertiesKey = JSON.stringify(block.properties ?? {});
+  const config = useMemo(() => readDatabaseProperties(block.properties), [propertiesKey]);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const name = block.content.trim() || DEFAULT_DATABASE_NAME;
-  // The creation resolves later: by then the editor's blocks may have changed, so it must call
-  // the latest `onUpdate` (an older one would write back older blocks).
+  // Creation resolves later, and the database calls back from its own (memoized) render: by then
+  // the editor's blocks may have changed, so always call the latest `onUpdate` (an older one
+  // would write back older blocks).
   const latest = useRef({ onUpdate, properties: block.properties });
   latest.current = { onUpdate, properties: block.properties };
+  const onConfigChange = useCallback(
+    (next: InlineDatabaseProperties) =>
+      latest.current.onUpdate({
+        properties: {
+          ...(latest.current.properties ?? {}),
+          schemaId: next.schemaId,
+          activeView: next.activeView,
+          views: next.views,
+        },
+      }),
+    []
+  );
+  const onNameChange = useCallback(
+    (next: string) => latest.current.onUpdate({ content: next }),
+    []
+  );
 
   // The name doubles as the block's text: it makes a new page "touched" and keeps search working.
   useEffect(() => {
@@ -73,7 +94,10 @@ export function InlineDatabaseBlock({
     return () => {
       cancelled = true;
     };
-  }, [config.schemaId, pageId, block.id, attempt]);
+    // `block.properties` by identity: the editor can replace the block before the id lands. The
+    // first Yjs sync replaces every block with the server's copy, possibly in the same render as
+    // this update, so `schemaId` stays null throughout; a replaced block gets the id again.
+  }, [config.schemaId, pageId, block.id, block.properties, attempt]);
 
   if (!config.schemaId) {
     return (
@@ -107,17 +131,8 @@ export function InlineDatabaseBlock({
       schemaId={config.schemaId}
       config={config}
       readOnly={false}
-      onConfigChange={(next) =>
-        onUpdate({
-          properties: {
-            ...(block.properties ?? {}),
-            schemaId: next.schemaId,
-            activeView: next.activeView,
-            views: next.views,
-          },
-        })
-      }
-      onNameChange={(next) => onUpdate({ content: next })}
+      onConfigChange={onConfigChange}
+      onNameChange={onNameChange}
     />
   );
 }
