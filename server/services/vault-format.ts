@@ -272,17 +272,40 @@ export function normalizeTags(value: FrontmatterValue | undefined): string[] {
 
 // ---- Code-aware text transforms ----
 
-const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})/;
+const FENCE = /^(`{3,}|~{3,})/;
+const FENCE_CLOSE = /^(`{3,}|~{3,})[ \t]*\r?\n?$/;
 
 /**
- * `text` with `transform` applied to everything outside fenced code blocks and inline code
- * spans, which are kept as they are.
+ * Where a line's content starts once its containers are stripped: the number of blockquote
+ * markers (`>`) before it, and its indentation after them (as in a list item). A plain loop
+ * rather than a regex, which would backtrack on long runs of markers and spaces.
+ */
+function linePrefix(line: string): { depth: number; indent: number; start: number } {
+  let at = 0;
+  let depth = 0;
+  for (;;) {
+    let spaces = 0;
+    while (spaces < 4 && line[at + spaces] === ' ') spaces += 1;
+    if (spaces === 4 || line[at + spaces] !== '>') break;
+    at += spaces + 1;
+    if (line[at] === ' ' || line[at] === '\t') at += 1;
+    depth += 1;
+  }
+  let indent = 0;
+  while (line[at + indent] === ' ' || line[at + indent] === '\t') indent += 1;
+  return { depth, indent, start: at + indent };
+}
+
+/**
+ * `text` with `transform` applied to everything outside code, which is kept as it is: fenced
+ * code blocks (also inside blockquotes, as in Obsidian callouts, and inside list items) and
+ * inline code spans.
  */
 export function mapOutsideCode(text: string, transform: (prose: string) => string): string {
   const lines = text.split(/(?<=\n)/);
   let output = '';
   let prose = '';
-  let fence: { marker: string; length: number } | null = null;
+  let fence: { marker: string; length: number; depth: number; indent: number } | null = null;
   const flush = () => {
     // Code spans never run past a blank line, so each paragraph is scanned on its own.
     for (const paragraph of prose.split(/(?<=\n[ \t]*\n)/)) {
@@ -291,16 +314,31 @@ export function mapOutsideCode(text: string, transform: (prose: string) => strin
     prose = '';
   };
   for (const line of lines) {
+    const prefix = linePrefix(line);
+    const content = line.slice(prefix.start);
     if (fence) {
-      output += line;
-      const close = /^ {0,3}(`{3,}|~{3,})[ \t]*\r?\n?$/.exec(line);
-      if (close && close[1][0] === fence.marker && close[1].length >= fence.length) fence = null;
-      continue;
+      // A fence ends with its container: a line with fewer `>` markers ends a blockquote, and a
+      // less indented line of text ends the list item of a fence indented like one (4+ spaces).
+      const leftContainer =
+        prefix.depth < fence.depth ||
+        (fence.indent >= 4 && content.trim() !== '' && prefix.indent < fence.indent);
+      if (!leftContainer) {
+        output += line;
+        const close = FENCE_CLOSE.exec(content);
+        if (close && close[1][0] === fence.marker && close[1].length >= fence.length) fence = null;
+        continue;
+      }
+      fence = null;
     }
-    const open = FENCE_OPEN.exec(line);
-    if (open && !(open[1][0] === '`' && line.slice(open[0].length).includes('`'))) {
+    const open = FENCE.exec(content);
+    if (open && !(open[1][0] === '`' && content.slice(open[0].length).includes('`'))) {
       flush();
-      fence = { marker: open[1][0], length: open[1].length };
+      fence = {
+        marker: open[1][0],
+        length: open[1].length,
+        depth: prefix.depth,
+        indent: prefix.indent,
+      };
       output += line;
       continue;
     }

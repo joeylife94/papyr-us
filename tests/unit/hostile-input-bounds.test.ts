@@ -56,6 +56,13 @@ describe('hostile input stays within bounds', () => {
     );
   });
 
+  it('long runs of blockquote markers and spaces are mapped in linear time', () => {
+    const text = `${'>  '.repeat(300_000)}x\n${'> '.repeat(300_000)}\`\`\`\n${'    '.repeat(200_000)}y\n`;
+    const { result, ms } = timed(() => mapOutsideCode(text, (prose) => prose.toUpperCase()));
+    expect(ms).toBeLessThan(BOUND_MS);
+    expect(result.length).toBe(text.length);
+  });
+
   it('path-suffix wikilinks resolve with one lookup each', () => {
     // ~900 pages (the import's page cap is 1,000): the old lookup scanned all of them per link.
     const files = Array.from({ length: 900 }, (_, i) => source(`d/p${i}.md`, 'x'));

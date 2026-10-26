@@ -175,6 +175,24 @@ describe('code-aware transforms', () => {
   it('runs an unclosed fence to the end', () => {
     expect(mapOutsideCode('a\n```\nb', upper)).toBe('A\n```\nb');
   });
+
+  it('leaves fences inside blockquotes and list items alone', () => {
+    // An Obsidian callout is a blockquote; its code block keeps the `>` prefix.
+    expect(mapOutsideCode('> [!note] a\n> ~~~\n> b\n> ~~~\n> c\nd', upper)).toBe(
+      '> [!NOTE] A\n> ~~~\n> b\n> ~~~\n> C\nD'
+    );
+    expect(mapOutsideCode('>> ```\n>> b\n>> ```\nc', upper)).toBe('>> ```\n>> b\n>> ```\nC');
+    expect(mapOutsideCode('- a\n\n    ```\n    b\n    ```\n- c', upper)).toBe(
+      '- A\n\n    ```\n    b\n    ```\n- C'
+    );
+  });
+
+  it('ends a fence with its blockquote or list item', () => {
+    expect(mapOutsideCode('> ```\n> b\n\nc', upper)).toBe('> ```\n> b\n\nC');
+    expect(mapOutsideCode('1. a\n\n    ```\n    b\n\nc', upper)).toBe(
+      '1. A\n\n    ```\n    b\n\nC'
+    );
+  });
 });
 
 describe('page link tokens on export', () => {
@@ -184,6 +202,12 @@ describe('page link tokens on export', () => {
       'See <1> and <22>.\n`[[page:3]]`\n```\n[[page:4]]\n```\n'
     );
     expect(pageLinkTokenIds(`${text} [[page:1]]`)).toEqual([1, 22]);
+  });
+
+  it('keeps tokens in the code block of a callout', () => {
+    expect(renderPageLinkTokens('> ~~~\n> [[page:1]]\n> ~~~\n[[page:2]]', (id) => `<${id}>`)).toBe(
+      '> ~~~\n> [[page:1]]\n> ~~~\n<2>'
+    );
   });
 
   it('collects only ids that can name a page, so lookups never see out-of-range ids', () => {
@@ -222,6 +246,10 @@ describe('wikilinks on import', () => {
     const text = '[[A]] ![[B]] `[[C]]` [[D|dee]]\n```\n[[E]]\n```';
     expect(replaceWikiLinks(text, (link) => `{${link.target}}`)).toBe(
       '{A} ![[B]] `[[C]]` {D}\n```\n[[E]]\n```'
+    );
+    // A code sample in a callout shows the syntax; it is not a link.
+    expect(replaceWikiLinks('> ~~~\n> [[F]]\n> ~~~\n> [[G]]', (link) => `{${link.target}}`)).toBe(
+      '> ~~~\n> [[F]]\n> ~~~\n> {G}'
     );
   });
 
