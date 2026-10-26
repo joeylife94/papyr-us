@@ -101,6 +101,7 @@ import { eq, and, isNull } from 'drizzle-orm';
 import { ANONYMOUS_PAGE_VIEWER, DBStorage } from './storage.js';
 import { registerKnowledgeRoutes } from './routes/knowledge.js';
 import { buildKnowledgeGraph, suggestAiLinks } from './services/knowledge-graph.js';
+import { isReservedDailyNoteSlug } from '../shared/daily-notes.js';
 import { registerDailyNoteRoutes } from './routes/daily-notes.js';
 import { featureFlags } from './features.js';
 
@@ -872,6 +873,10 @@ export async function registerRoutes(
       try {
         const id = parseInt(req.params.id);
         const updateData = updateWikiPageSchema.parse(req.body);
+        // Only the daily-note route gives out daily note slugs (#111).
+        if (updateData.slug !== undefined && isReservedDailyNoteSlug(updateData.slug)) {
+          return res.status(400).json({ message: 'This slug is reserved for daily notes' });
+        }
 
         // Get old page data for comparison and version snapshot
         const oldPage = await storage.getWikiPage(id);

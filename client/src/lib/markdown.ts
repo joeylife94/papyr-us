@@ -6,6 +6,7 @@ import rehypeStringify from 'rehype-stringify';
 import rehypeHighlight from 'rehype-highlight';
 import matter from 'gray-matter';
 import { hasPageLinks, splitPageLinks } from '@shared/page-links';
+import { rehypeSafeUrls } from './rehype-safe-urls';
 
 /**
  * Page links (issue #103 E6): turn `[[page:<id>]]` tokens in text into empty
@@ -53,13 +54,15 @@ export function parseMarkdown(content: string) {
   return { frontmatter, content: markdownContent };
 }
 
-// Convert markdown to HTML
+// Convert markdown to HTML. Raw HTML is dropped by remark-rehype; links and images keep only safe
+// URL schemes (a `javascript:` link would otherwise run in the reader).
 export async function markdownToHtml(markdown: string): Promise<string> {
   const processor = remark()
     .use(remarkGfm)
     .use(remarkPageLinks)
     .use(remarkRehype)
     .use(rehypeHighlight)
+    .use(rehypeSafeUrls)
     .use(rehypeStringify);
 
   const result = await processor.process(markdown);

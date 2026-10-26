@@ -80,6 +80,7 @@ import bcrypt from 'bcryptjs';
 import type { RetrievedPageRow } from './services/retrieval.js';
 import type { PageTreeRow } from './services/page-tree.js';
 import { extractPageLinkIds, hasPageLinks } from '../shared/page-links.js';
+import { isReservedDailyNoteSlug } from '../shared/daily-notes.js';
 
 // Helper: detect if a string looks like a bcrypt hash
 function isBcryptHash(value: string): boolean {
@@ -169,7 +170,10 @@ export class DBStorage {
   async createWikiPage(page: InsertWikiPage, creatorUserId?: number): Promise<WikiPage> {
     let createdPage: WikiPage | undefined;
 
-    for (let attempt = 0; attempt < MAX_SLUG_INSERT_ATTEMPTS; attempt += 1) {
+    // A daily note's slug (#111) is only created by findOrCreateDailyNote; any other create
+    // starts from the next candidate, as it would after a slug conflict.
+    const firstAttempt = isReservedDailyNoteSlug(page.slug) ? 1 : 0;
+    for (let attempt = firstAttempt; attempt < MAX_SLUG_INSERT_ATTEMPTS; attempt += 1) {
       const slug = buildUniqueSlugCandidate(page.slug, attempt);
       try {
         const result = await this.db
@@ -205,6 +209,10 @@ export class DBStorage {
   }
 
   async updateWikiPage(id: number, page: UpdateWikiPage): Promise<WikiPage | undefined> {
+    // Only the daily-note route gives out daily note slugs (#111).
+    if (page.slug !== undefined && isReservedDailyNoteSlug(page.slug)) {
+      throw new Error('This slug is reserved for daily notes');
+    }
     if (page.content === undefined) {
       const result = await this.db
         .update(wikiPages)
@@ -1901,22 +1909,27 @@ export class DBStorage {
       .select({ teamId: wikiPages.teamId })
       .from(wikiPages)
       .where(eq(wikiPages.id, pageId));
+    const userTeamIds = await this.getUserTeamIds(userId);
     if (page?.teamId) {
       const teamId = Number(page.teamId);
-      if (!(await this.getUserTeamIds(userId)).includes(teamId)) return null;
+      if (!userTeamIds.includes(teamId)) return null;
       if (await this.isTeamManager(userId, teamId)) return 'owner';
     }
 
+    // The user's own grants, plus grants to a team they currently belong to, as in
+    // checkPagePermission (a team daily note's members edit through its team grant, #111).
+    const grantees = [
+      and(eq(pagePermissions.entityType, 'user'), eq(pagePermissions.entityId, userId)),
+    ];
+    if (userTeamIds.length > 0) {
+      grantees.push(
+        and(eq(pagePermissions.entityType, 'team'), inArray(pagePermissions.entityId, userTeamIds))
+      );
+    }
     const permissions = await this.db
       .select()
       .from(pagePermissions)
-      .where(
-        and(
-          eq(pagePermissions.pageId, pageId),
-          eq(pagePermissions.entityType, 'user'),
-          eq(pagePermissions.entityId, userId)
-        )
-      );
+      .where(and(eq(pagePermissions.pageId, pageId), or(...grantees)));
 
     if (permissions.length === 0) {
       return null;
