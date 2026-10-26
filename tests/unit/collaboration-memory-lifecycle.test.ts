@@ -4,6 +4,7 @@ import {
   YjsCollaborationManager,
   type CollabConfig,
 } from '../../server/services/yjs-collaboration';
+import { initialBlocksFor } from '../../client/src/lib/page-content';
 
 // Regression coverage for connection-scoped membership and bounded document snapshots.
 const legacyConfig: LegacyCollabConfig = {
@@ -119,10 +120,28 @@ describe('collaboration memory lifecycle', () => {
       expect(await seededBlocks({ content: 'Title', blocks })).toEqual(blocks);
     });
 
-    it('seeds one paragraph from content when the page has no blocks', async () => {
+    it('seeds a paragraph from plain content when the page has no blocks', async () => {
       const blocks = await seededBlocks({ content: 'Body text', blocks: [] });
       expect(blocks).toHaveLength(1);
       expect(blocks[0]).toMatchObject({ type: 'paragraph', content: 'Body text', order: 0 });
+    });
+
+    it('seeds Markdown content as the blocks it describes, with the editor ids (#113)', async () => {
+      const blocks = await seededBlocks({
+        id: 7,
+        content: '## Plan\n\n- [x] ship\n\n```ts\nx\n```\n\n---',
+        blocks: [],
+      });
+      expect(blocks.map((b) => [b.id, b.type, b.content, b.properties])).toEqual([
+        ['block_seed_7_0', 'heading2', 'Plan', {}],
+        ['block_seed_7_1', 'checkbox', 'ship', { checked: true }],
+        ['block_seed_7_2', 'code', 'x', { language: 'ts' }],
+        ['block_seed_7_3', 'divider', '', {}],
+      ]);
+      // The browser opens the same page with the same blocks before the shared document syncs.
+      expect(
+        initialBlocksFor({ id: 7, content: '## Plan\n\n- [x] ship\n\n```ts\nx\n```\n\n---' })
+      ).toEqual(blocks);
     });
 
     it('stays empty when the page has neither blocks nor content', async () => {

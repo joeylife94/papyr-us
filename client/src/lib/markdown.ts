@@ -7,6 +7,7 @@ import rehypeHighlight from 'rehype-highlight';
 import matter from 'gray-matter';
 import type { Element, ElementContent, Root, RootContent } from 'hast';
 import { hasPageLinks, splitPageLinks } from '@shared/page-links';
+import { blocksToMarkdownWithRanges } from '@shared/block-markdown';
 import { rehypeInlineTags } from './rehype-inline-tags';
 import { rehypeSafeUrls } from './rehype-safe-urls';
 
@@ -58,15 +59,17 @@ export function parseMarkdown(content: string) {
   return { frontmatter, content: markdownContent };
 }
 
-// Convert markdown to HTML. Page link tokens become chip placeholders (#103 E6) and `#tags` links
-// to the tag's document list (#113). Raw HTML is dropped by remark-rehype; links and images keep
-// only safe URL schemes (a `javascript:` link would otherwise run in the reader).
+// Convert markdown to HTML. Page link tokens become chip placeholders (#103 E6), `#tags` link to
+// the tag's document list and headings get the anchor ids the table of contents links to (#113).
+// Raw HTML is dropped by remark-rehype; links and images keep only safe URL schemes (a
+// `javascript:` link would otherwise run in the reader).
 export async function markdownToHtml(markdown: string): Promise<string> {
   const processor = remark()
     .use(remarkGfm)
     .use(remarkRehype)
     .use(rehypeInlineTags)
     .use(rehypePageLinks)
+    .use(rehypeHeadingIds)
     .use(rehypeHighlight)
     .use(rehypeSafeUrls)
     .use(rehypeStringify);
@@ -75,24 +78,119 @@ export async function markdownToHtml(markdown: string): Promise<string> {
   return result.toString();
 }
 
-// Extract headings for table of contents
-export function extractHeadings(content: string) {
-  const headingRegex = /^(#{1,6})\s+(.+)$/gm;
-  const headings: Array<{ id: string; text: string; level: number }> = [];
-  let match;
+// ---- Headings and the table of contents (#113 §1) -------------------------------------------
+// The reader and the table of contents find headings in the same tree (remark + GFM + link
+// slots) and name them with the same slugger, so every TOC entry points at a rendered heading.
 
-  while ((match = headingRegex.exec(content)) !== null) {
-    const level = match[1].length;
-    const text = match[2].trim();
-    const id = text
-      .toLowerCase()
-      .replace(/[^\w\s-]/g, '')
-      .replace(/\s+/g, '-');
+type HastNode = {
+  type: string;
+  tagName?: string;
+  value?: string;
+  properties?: Record<string, unknown>;
+  children?: HastNode[];
+  position?: { start?: { offset?: number } };
+};
 
-    headings.push({ id, text, level });
+const HEADING_TAGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']);
+
+/** A heading's visible text: link slots are empty, so link tokens never become text (#103 E6). */
+function hastText(node: HastNode): string {
+  if (node.type === 'text') return node.value ?? '';
+  return (node.children ?? []).map(hastText).join('');
+}
+
+/** Headings in document order, with their text (empty ones are left out of the TOC). */
+function collectHeadings(
+  node: HastNode,
+  out: Array<{ node: HastNode; text: string; level: number }> = []
+) {
+  for (const child of node.children ?? []) {
+    if (child.type !== 'element') continue;
+    if (child.tagName && HEADING_TAGS.has(child.tagName)) {
+      const text = hastText(child).replace(/\s+/g, ' ').trim();
+      if (text) out.push({ node: child, text, level: Number(child.tagName.slice(1)) });
+    } else {
+      collectHeadings(child, out);
+    }
   }
+  return out;
+}
 
-  return headings;
+/**
+ * Anchor ids for one document's headings: `heading-` and a slug of the text (letters and digits
+ * of any script, so Korean headings get real ids), with `-1`, `-2` … for repeats. The prefix
+ * keeps ids written from page text from colliding with the app's own element ids.
+ */
+export function createHeadingSlugger(): (text: string) => string {
+  const used = new Set<string>();
+  return (text) => {
+    const slug =
+      text
+        .toLowerCase()
+        .replace(/[^\p{L}\p{M}\p{N}\s_-]/gu, '')
+        .trim()
+        .replace(/\s+/g, '-') || 'section';
+    const base = `heading-${slug}`;
+    let id = base;
+    for (let n = 1; used.has(id); n++) id = `${base}-${n}`;
+    used.add(id);
+    return id;
+  };
+}
+
+/** Rehype plugin: give each non-empty heading its table-of-contents anchor id. */
+export function rehypeHeadingIds() {
+  return (tree: HastNode) => {
+    const slug = createHeadingSlugger();
+    for (const heading of collectHeadings(tree)) {
+      heading.node.properties = { ...heading.node.properties, id: slug(heading.text) };
+    }
+  };
+}
+
+export interface PageHeading {
+  id: string;
+  text: string;
+  level: number;
+}
+
+/** Headings of a Markdown document with their offsets in it, as the reader renders them. */
+function headingsWithOffsets(content: string): Array<PageHeading & { offset: number }> {
+  // Most edits never touch a heading: skip parsing when no ATX or setext heading is possible.
+  if (!content.includes('#') && !/^ {0,3}(?:=+|-+)[ \t]*$/m.test(content)) return [];
+  const processor = remark().use(remarkGfm).use(remarkRehype).use(rehypePageLinks);
+  const tree = processor.runSync(processor.parse(content)) as unknown as HastNode;
+  const slug = createHeadingSlugger();
+  return collectHeadings(tree).map(({ node, text, level }) => ({
+    id: slug(text),
+    text,
+    level,
+    offset: node.position?.start?.offset ?? 0,
+  }));
+}
+
+// Extract headings for the table of contents: the ids match the reader's (`markdownToHtml`).
+// Headings inside code blocks are code, not headings.
+export function extractHeadings(content: string): PageHeading[] {
+  return headingsWithOffsets(content).map(({ id, text, level }) => ({ id, text, level }));
+}
+
+/**
+ * For the editor: the table-of-contents id of the first heading each block writes into the
+ * page content, keyed by block id, so the TOC can scroll to blocks while editing.
+ */
+export function headingIdsByBlock(blocks: ReadonlyArray<{ id: string }>): Map<string, string> {
+  const { markdown, ranges } = blocksToMarkdownWithRanges(blocks);
+  const ids = new Map<string, string>();
+  let index = 0;
+  for (const heading of headingsWithOffsets(markdown)) {
+    while (index < ranges.length && ranges[index].end <= heading.offset) index++;
+    const block = blocks[index];
+    if (block && heading.offset >= ranges[index].start && !ids.has(block.id)) {
+      ids.set(block.id, heading.id);
+    }
+  }
+  return ids;
 }
 
 // Generate reading time estimate
@@ -105,7 +203,10 @@ export function estimateReadingTime(content: string): number {
 // Plain-text excerpt for document lists: drops common markdown syntax and only adds an
 // ellipsis when the text was actually shortened.
 export function toPlainTextPreview(content: string, maxLength = 160): string {
-  const text = content
+  // Page link tokens carry only an id; list previews leave them out (#103 E6).
+  const text = splitPageLinks(content)
+    .map((part) => (part.kind === 'text' ? part.text : ' '))
+    .join('')
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/`([^`]*)`/g, '$1')
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
