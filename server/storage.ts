@@ -79,7 +79,7 @@ import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 import type { RetrievedPageRow } from './services/retrieval.js';
 import type { PageTreeRow } from './services/page-tree.js';
-import { extractPageLinkIds } from '../shared/page-links.js';
+import { extractPageLinkIds, hasPageLinks } from '../shared/page-links.js';
 
 // Helper: detect if a string looks like a bcrypt hash
 function isBcryptHash(value: string): boolean {
@@ -197,7 +197,10 @@ export class DBStorage {
       }
     }
 
-    await this.replacePageLinks(createdPage.id, createdPage.content);
+    // A new page has no link rows yet, so only content with links needs indexing.
+    if (hasPageLinks(createdPage.content)) {
+      await this.replacePageLinks(createdPage.id, createdPage.content);
+    }
     return createdPage;
   }
 
