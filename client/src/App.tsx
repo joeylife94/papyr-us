@@ -12,6 +12,7 @@ import { MobileShell } from '@/components/layout/mobile-shell';
 import { useMediaQuery } from '@/hooks/use-responsive';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { CommandPalette } from '@/components/command-palette';
+import { QuickSwitcher } from '@/components/quick-switcher';
 
 // Pages
 import Home from '@/pages/home';
@@ -99,6 +100,7 @@ function AppLayout() {
         본문으로 건너뛰기
       </a>
       <CommandPalette />
+      <QuickSwitcher />
 
       {isDesktop ? (
         <>

@@ -2175,6 +2175,116 @@ export class DBStorage {
       referenceCount: references.filter((r: any) => r.syncedBlockId === block.id).length,
     }));
   }
+
+  // ==================== Daily notes (#111) ====================
+
+  /**
+   * Find or create the daily note stored under `note.slug` (see shared/daily-notes.ts). A
+   * transaction-scoped advisory lock on the slug serializes concurrent opens, so two tabs
+   * opening the same note at once still get one page.
+   *
+   * A page found under the slug only counts as this scope's note when it belongs to the same
+   * team (team scope), or is team-less and owned by the user through the self-granted owner
+   * grant this method creates (personal scope). Anything else, such as a page another user
+   * created with that slug through the general API, is reported as `conflict` and never
+   * returned. A matching note in the trash is reported as `trashed`, not replaced.
+   *
+   * A new note gets the creator's owner grant like any created page; a team note also grants
+   * the team editor access, so every current member can write in the team's shared note.
+   */
+  async findOrCreateDailyNote(note: {
+    slug: string;
+    title: string;
+    folder: string;
+    tags: string[];
+    author: string;
+    teamId: number | null;
+    userId: number;
+  }): Promise<
+    | { status: 'found'; page: WikiPage }
+    | { status: 'created'; page: WikiPage }
+    | { status: 'trashed' }
+    | { status: 'conflict' }
+  > {
+    try {
+      return await this.db.transaction(async (tx: any) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${note.slug}, 0))`);
+
+        const [existing] = await tx.select().from(wikiPages).where(eq(wikiPages.slug, note.slug));
+        if (existing) {
+          let isScopeNote = false;
+          if (note.teamId !== null) {
+            isScopeNote = existing.teamId === note.teamId;
+          } else if (existing.teamId === null) {
+            const selfGrant = await tx
+              .select({ id: pagePermissions.id })
+              .from(pagePermissions)
+              .where(
+                and(
+                  eq(pagePermissions.pageId, existing.id),
+                  eq(pagePermissions.entityType, 'user'),
+                  eq(pagePermissions.entityId, note.userId),
+                  eq(pagePermissions.permission, 'owner'),
+                  eq(pagePermissions.grantedBy, note.userId)
+                )
+              );
+            isScopeNote = selfGrant.length > 0;
+          }
+          if (!isScopeNote) return { status: 'conflict' as const };
+          if (existing.deletedAt) return { status: 'trashed' as const };
+          return { status: 'found' as const, page: existing as WikiPage };
+        }
+
+        const [page] = await tx
+          .insert(wikiPages)
+          .values({
+            title: note.title,
+            slug: note.slug,
+            content: '',
+            // One empty paragraph, so the note opens with the caret in its body.
+            blocks: [
+              {
+                id: `block_${note.slug}`,
+                type: 'paragraph',
+                content: '',
+                properties: {},
+                order: 0,
+                children: [],
+              },
+            ],
+            folder: note.folder,
+            tags: note.tags,
+            author: note.author,
+            teamId: note.teamId,
+          })
+          .returning();
+        const grants: InsertPagePermission[] = [
+          {
+            pageId: page.id,
+            entityType: 'user',
+            entityId: note.userId,
+            permission: 'owner',
+            grantedBy: note.userId,
+          },
+        ];
+        if (note.teamId !== null) {
+          grants.push({
+            pageId: page.id,
+            entityType: 'team',
+            entityId: note.teamId,
+            permission: 'editor',
+            grantedBy: note.userId,
+          });
+        }
+        await tx.insert(pagePermissions).values(grants);
+        return { status: 'created' as const, page: page as WikiPage };
+      });
+    } catch (error) {
+      // A page created through the general API took the slug between the lookup and the insert.
+      if (isSlugUniqueViolation(error)) return { status: 'conflict' };
+      throw error;
+    }
+  }
 }
 
 // Export singleton instance with DI support for testing
