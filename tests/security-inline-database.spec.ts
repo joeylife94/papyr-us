@@ -5,7 +5,8 @@
  * Invariant under test: a database is exactly as readable and writable as the page that owns it.
  * A caller who cannot read the page gets the same 404 as for an unknown id on the schema, its
  * rows and relations, for reads and writes alike; a reader of the page may read but every write
- * is 403; an editor of another page cannot write into this page's database, nor link from it;
+ * is 403; an editor of another page cannot write into this page's database, nor link to or
+ * from it (a relation needs editor on both pages);
  * relation listings and rollups never include rows of databases the caller cannot read; a
  * trashed page takes its database with it.
  */
@@ -234,15 +235,23 @@ test.describe('Inline database access control', () => {
           })
         ).status()
       ).toBe(403);
-      // memberA edits page M: linking from M's database to a readable row is fine, linking from
-      // Team A's database (memberA only reads it) is not.
+      // memberA edits page M and only reads page A: a relation needs editor on both pages, so
+      // linking within M's database is fine and linking to or from Team A's database is not.
+      const rowM2 = await createRow(memberARequest, schemaM, 'M2');
+      expect(
+        (
+          await memberARequest.post('/api/database/relations', {
+            data: { fromRowId: rowM1, toRowId: rowM2, propertyName: 'related' },
+          })
+        ).status()
+      ).toBe(201);
       expect(
         (
           await memberARequest.post('/api/database/relations', {
             data: { fromRowId: rowM1, toRowId: rowA1, propertyName: 'related' },
           })
         ).status()
-      ).toBe(201);
+      ).toBe(403);
       expect(
         (
           await memberARequest.post('/api/database/relations', {

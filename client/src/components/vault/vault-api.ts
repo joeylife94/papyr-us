@@ -26,8 +26,12 @@ export class VaultRequestError extends Error {
   }
 }
 
-function scopeQuery(teamName: string | null): string {
-  return teamName ? `?teamId=${encodeURIComponent(teamName)}` : '';
+/**
+ * The scope by team id, never by name: the server reads an all-digit value as an id, so a team
+ * named "42" would otherwise select team 42.
+ */
+function scopeQuery(teamId: number | null): string {
+  return teamId === null ? '' : `?teamId=${teamId}`;
 }
 
 /** The file name a `Content-Disposition` header suggests, preferring the UTF-8 form. */
@@ -45,10 +49,10 @@ export function fileNameFromDisposition(header: string | null): string | null {
 }
 
 /** Downloads the scope's vault as a `.zip` and returns the file name it was saved as. */
-export async function downloadVault(teamName: string | null): Promise<string> {
+export async function downloadVault(teamId: number | null): Promise<string> {
   let response: Response;
   try {
-    response = await fetch(`/api/vault/export${scopeQuery(teamName)}`, { credentials: 'include' });
+    response = await fetch(`/api/vault/export${scopeQuery(teamId)}`, { credentials: 'include' });
   } catch {
     throw new VaultRequestError(0);
   }
@@ -70,14 +74,14 @@ export async function downloadVault(teamName: string | null): Promise<string> {
 
 /** Uploads `files` (one `.zip` or several `.md`) into the scope and returns the summary. */
 export async function importVault(
-  teamName: string | null,
+  teamId: number | null,
   files: File[]
 ): Promise<VaultImportSummary> {
   const form = new FormData();
   for (const file of files) form.append('files', file, file.name);
   let response: Response;
   try {
-    response = await fetch(`/api/vault/import${scopeQuery(teamName)}`, {
+    response = await fetch(`/api/vault/import${scopeQuery(teamId)}`, {
       method: 'POST',
       body: form,
       credentials: 'include',

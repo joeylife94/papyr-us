@@ -174,7 +174,7 @@ export function WorkspacePanel({
           {/* Markdown vault export and import of the tree's workspace (#113 P2-D2). */}
           {treeUrl && (
             <VaultMenu
-              teamName={workspace ? workspace.name : null}
+              teamId={workspaceTeamId === '' ? null : workspaceTeamId}
               scopeLabel={workspace ? workspace.displayName : '내 문서'}
             />
           )}
