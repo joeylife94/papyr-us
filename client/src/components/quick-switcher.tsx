@@ -130,6 +130,9 @@ function SwitcherBody({ onOpenPage }: { onOpenPage: (path: string) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [input, setInput] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
+  // Whether the user moved the selection since the results last changed: then Enter keeps that
+  // choice even while newer results are still loading.
+  const [chosenByUser, setChosenByUser] = useState(false);
   const [creating, setCreating] = useState(false);
   // A choice made before the results for the typed text arrived, carried out once they do, so
   // it never acts on results of an earlier query. `query` is the text it was made for.
@@ -169,7 +172,10 @@ function SwitcherBody({ onOpenPage }: { onOpenPage: (path: string) => void }) {
   const optionId = (index: number) => `${listId}-option-${index}`;
 
   useEffect(() => inputRef.current?.focus(), []);
-  useEffect(() => setActiveIndex(0), [query, search.data]);
+  useEffect(() => {
+    setActiveIndex(0);
+    setChosenByUser(false);
+  }, [query, search.data]);
 
   useEffect(() => {
     if (options.length > 0) {
@@ -177,9 +183,9 @@ function SwitcherBody({ onOpenPage }: { onOpenPage: (path: string) => void }) {
     }
   }, [active, options.length]);
 
-  // Carry out a pending choice on the fresh results: Enter takes the first option, as it would
-  // have with the results on screen; "새 문서" opens the page that turned out to have exactly
-  // that title instead of creating a duplicate.
+  // Carry out a pending choice on the fresh results: Enter on the default selection takes the
+  // first option, as it would have with the results on screen; "새 문서" opens the page that
+  // turned out to have exactly that title instead of creating a duplicate.
   useEffect(() => {
     if (pending === null) return;
     if (pending.query !== query) {
@@ -257,9 +263,12 @@ function SwitcherBody({ onOpenPage }: { onOpenPage: (path: string) => void }) {
       if (options.length === 0) return;
       const step = e.key === 'ArrowDown' ? 1 : -1;
       setActiveIndex((active + step + options.length) % options.length);
+      setChosenByUser(true);
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      if (settled) choose(options[active]);
+      // A choice the user made stands: a page opens, "새 문서" waits for the fresh results
+      // only to avoid a duplicate. The untouched default waits for the fresh first option.
+      if (settled || (chosenByUser && options[active])) choose(options[active]);
       else setPending({ kind: 'enter', query });
     }
   };
