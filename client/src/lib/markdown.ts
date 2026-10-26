@@ -124,6 +124,10 @@ function collectHeadings(
   for (const child of node.children ?? []) {
     if (child.type !== 'element') continue;
     if (child.tagName && HEADING_TAGS.has(child.tagName)) {
+      // A heading that already has an id was generated, not written: GFM's screen-reader
+      // footnote label, which footnote references point at. It keeps its id and stays out of
+      // the table of contents.
+      if (child.properties?.id) continue;
       const text = hastText(child).replace(/\s+/g, ' ').trim();
       if (text) out.push({ node: child, text, level: Number(child.tagName.slice(1)) });
     } else {

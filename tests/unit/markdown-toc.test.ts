@@ -59,6 +59,14 @@ describe('table of contents and reader heading ids', () => {
     expect(html).toContain('<h2><span data-page-link="9" class="page-link"></span></h2>');
   });
 
+  it('leaves the footnote label its id and out of the contents', async () => {
+    const content = '# Intro\n\nText[^1].\n\n[^1]: A note.\n';
+    const html = await markdownToHtml(content);
+    expect(html).toContain('aria-describedby="footnote-label"');
+    expect(html).toContain('id="footnote-label"');
+    expect(extractHeadings(content).map((heading) => heading.text)).toEqual(['Intro']);
+  });
+
   it('finds the headings of derived block content', () => {
     const blocks = [
       { id: 'a', type: 'heading1', content: 'Title' },

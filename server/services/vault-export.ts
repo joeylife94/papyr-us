@@ -154,7 +154,17 @@ export function singlePageMarkdown(
   return serializeFrontmatter(fields) + body;
 }
 
-/** `content` with link tokens replaced by readable titles, for plain-text exports (HTML). */
+/**
+ * `content` with link tokens replaced by readable titles, for the HTML export, which renders the
+ * result as Markdown. Titles are escaped, so `*`, `[...](...)` or `#` in one shows as written.
+ */
 export function contentWithLinkTitles(content: string, linkedTitles: Map<number, string>): string {
-  return renderPageLinkTokens(content, (id) => linkedTitles.get(id) ?? INACCESSIBLE_PAGE_LABEL);
+  return renderPageLinkTokens(content, (id) =>
+    escapeMarkdownText(linkedTitles.get(id) ?? INACCESSIBLE_PAGE_LABEL)
+  );
+}
+
+/** `text` with every ASCII punctuation character backslash-escaped (CommonMark §2.4). */
+function escapeMarkdownText(text: string): string {
+  return text.replace(/[!-/:-@[-`{-~]/g, '\\$&');
 }
