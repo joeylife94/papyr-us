@@ -399,6 +399,15 @@ export function parseWikiLink(inner: string): WikiLink {
 }
 
 /**
+ * The wikilink target for the file `<name>.md`. A trailing `.md` in a link is read as the
+ * extension (by `parseWikiLink` and by Obsidian), so a name that already ends in `.md` (a page
+ * titled `README.md`, written as `README.md.md`) keeps the extension: `[[README.md.md]]`.
+ */
+export function wikiLinkTarget(name: string): string {
+  return /\.md$/i.test(name) ? `${name}.md` : name;
+}
+
+/**
  * `text` with every wikilink outside code replaced by `replace(link)`. Embeds (`![[...]]`) are
  * left as written: transclusion is not supported yet.
  */

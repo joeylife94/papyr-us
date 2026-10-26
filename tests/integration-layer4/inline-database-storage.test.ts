@@ -8,6 +8,8 @@
  *     row both survive;
  *   - moving a row before/after another renumbers the database 0..n-1, and an anchor from
  *     another database is refused without changing anything;
+ *   - row values are checked against the properties under the schema lock, so a property
+ *     changed or deleted after the caller validated is refused rather than written around;
  *   - property changes run under the schema lock: concurrent additions both land, deleting a
  *     property removes its values from that database's rows only, and a type change that is not
  *     lossless is refused while values exist;
@@ -268,6 +270,63 @@ describe('inline database storage (real Postgres)', () => {
       ok: false,
       status: 404,
     });
+  });
+
+  it('checks row values against the properties as they are when the row is written', async () => {
+    const schemaId = await createDatabase();
+    const row = await storage.createDatabaseRow(schemaId, null, { title: 't' }, 10);
+    const apply = (plan: (current: DatabaseField[]) => any) =>
+      storage.mutateDatabaseFields(schemaId, (schema: any) =>
+        plan(parseStoredFields(schema.fields)!)
+      );
+    const changed = /properties changed/;
+
+    // A property change committed while a cell write waits: the write sees the new properties.
+    const other = await admin.connect();
+    try {
+      await other.query('BEGIN');
+      await other.query(`SELECT id FROM ${SCHEMA}.database_schemas WHERE id = $1 FOR UPDATE`, [
+        schemaId,
+      ]);
+      await other.query(
+        `UPDATE ${SCHEMA}.database_schemas
+            SET fields = (SELECT jsonb_agg(f) FROM jsonb_array_elements(fields) AS f
+                           WHERE f->>'id' <> 'notes')
+          WHERE id = $1`,
+        [schemaId]
+      );
+      const writing = storage.updateDatabaseRow(row.id, { values: { notes: 'validated before' } });
+      writing.catch(() => {});
+      for (let tries = 0; tries < 100; tries += 1) {
+        const { rows } = await admin.query(
+          `SELECT count(*)::int AS n FROM pg_locks WHERE NOT granted AND pid <> pg_backend_pid()`
+        );
+        if (rows[0].n > 0) break;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      await other.query('COMMIT');
+      await expect(writing).rejects.toThrow(changed);
+    } finally {
+      other.release();
+    }
+
+    // Values checked against properties that have changed since: refused, nothing written.
+    expect(
+      (await apply((current) => planUpdateField(current, 'points', { type: 'select' }))).ok
+    ).toBe(true);
+    await expect(storage.updateDatabaseRow(row.id, { values: { points: 3 } })).rejects.toThrow(
+      changed
+    );
+    await expect(
+      storage.createDatabaseRow(schemaId, null, { title: 'n', points: 3 }, 10)
+    ).rejects.toThrow(changed);
+    expect((await storage.getDatabaseRows(schemaId)).map((r: any) => r.data)).toEqual([
+      { title: 't' },
+    ]);
+
+    // Values that fit still go through.
+    const ok = await storage.updateDatabaseRow(row.id, { values: { title: 'renamed' } });
+    expect(ok).toMatchObject({ ok: true, row: { data: { title: 'renamed' } } });
   });
 
   it('rolls up only the related rows of allowed databases', async () => {

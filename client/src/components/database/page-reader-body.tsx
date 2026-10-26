@@ -1,4 +1,5 @@
 import { MarkdownRenderer } from '@/components/wiki/markdown-renderer';
+import { takenHeadingIdsByPart } from '@/lib/markdown';
 import { blocksToContent } from '@/lib/page-content';
 import { readDatabaseProperties } from '@/lib/inline-database';
 import type { Block } from '@shared/schema';
@@ -47,13 +48,29 @@ export function PageReaderBody({
 
   if (!segments) return <MarkdownRenderer content={page.content} className={className} />;
 
+  // Heading ids continue across the parts, as in one document, so the table of contents (built
+  // from the whole `content`) still points at every heading.
+  const contents = segments.map((segment) =>
+    segment.kind === 'markdown' ? blocksToContent(segment.blocks) : ''
+  );
+  const takenByPart = takenHeadingIdsByPart(contents);
+  const parts = segments.map((segment, index) => ({
+    segment,
+    content: contents[index],
+    taken: takenByPart[index],
+  }));
+
   return (
     <div className="space-y-4">
-      {segments.map((segment, index) => {
+      {parts.map(({ segment, content, taken }, index) => {
         if (segment.kind === 'markdown') {
-          const content = blocksToContent(segment.blocks);
           return content.trim() ? (
-            <MarkdownRenderer key={`md-${index}`} content={content} className={className} />
+            <MarkdownRenderer
+              key={`md-${index}`}
+              content={content}
+              className={className}
+              takenHeadingIds={taken}
+            />
           ) : null;
         }
         return (

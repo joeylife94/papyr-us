@@ -21,13 +21,17 @@ export function parseMarkdown(content: string) {
 // Convert markdown to HTML. Page link tokens become chip placeholders (#103 E6), `#tags` link to
 // the tag's document list and headings get the anchor ids the table of contents links to (#113).
 // Raw HTML is dropped by remark-rehype; links and images keep only safe URL schemes.
-export async function markdownToHtml(markdown: string): Promise<string> {
+// `takenHeadingIds`: ids of headings earlier in the same page, when it renders in parts.
+export async function markdownToHtml(
+  markdown: string,
+  options: { takenHeadingIds?: readonly string[] } = {}
+): Promise<string> {
   const processor = remark()
     .use(remarkGfm)
     .use(remarkRehype)
     .use(rehypeInlineTags)
     .use(rehypePageLinkSlots)
-    .use(rehypeHeadingIds)
+    .use(rehypeHeadingIds, { taken: options.takenHeadingIds })
     .use(rehypeHighlight)
     .use(rehypeSafeUrls)
     .use(rehypeStringify);
@@ -77,10 +81,12 @@ function collectHeadings(
 /**
  * Anchor ids for one document's headings: `heading-` and a slug of the text (letters and digits
  * of any script, so Korean headings get real ids), with `-1`, `-2` … for repeats. The prefix
- * keeps ids written from page text from colliding with the app's own element ids.
+ * keeps ids written from page text from colliding with the app's own element ids. `taken` holds
+ * ids already used by earlier parts of the same page, so a page rendered in parts gets the ids
+ * it would get in one piece.
  */
-export function createHeadingSlugger(): (text: string) => string {
-  const used = new Set<string>();
+export function createHeadingSlugger(taken: Iterable<string> = []): (text: string) => string {
+  const used = new Set<string>(taken);
   return (text) => {
     const slug =
       text
@@ -97,9 +103,9 @@ export function createHeadingSlugger(): (text: string) => string {
 }
 
 /** Rehype plugin: give each non-empty heading its table-of-contents anchor id. */
-export function rehypeHeadingIds() {
+export function rehypeHeadingIds(options: { taken?: readonly string[] } = {}) {
   return (tree: HastNode) => {
-    const slug = createHeadingSlugger();
+    const slug = createHeadingSlugger(options.taken);
     for (const heading of collectHeadings(tree)) {
       heading.node.properties = { ...heading.node.properties, id: slug(heading.text) };
     }
@@ -113,12 +119,15 @@ export interface PageHeading {
 }
 
 /** Headings of a Markdown document with their offsets in it, as the reader renders them. */
-function headingsWithOffsets(content: string): Array<PageHeading & { offset: number }> {
+function headingsWithOffsets(
+  content: string,
+  taken: readonly string[] = []
+): Array<PageHeading & { offset: number }> {
   // Most edits never touch a heading: skip parsing when no ATX or setext heading is possible.
   if (!content.includes('#') && !/^ {0,3}(?:=+|-+)[ \t]*$/m.test(content)) return [];
   const processor = remark().use(remarkGfm).use(remarkRehype).use(rehypePageLinkSlots);
   const tree = processor.runSync(processor.parse(content)) as unknown as HastNode;
-  const slug = createHeadingSlugger();
+  const slug = createHeadingSlugger(taken);
   return collectHeadings(tree).map(({ node, text, level }) => ({
     id: slug(text),
     text,
@@ -128,9 +137,30 @@ function headingsWithOffsets(content: string): Array<PageHeading & { offset: num
 }
 
 // Extract headings for the table of contents: the ids match the reader's (`markdownToHtml`).
-// Headings inside code blocks are code, not headings.
-export function extractHeadings(content: string): PageHeading[] {
-  return headingsWithOffsets(content).map(({ id, text, level }) => ({ id, text, level }));
+// Headings inside code blocks are code, not headings. `takenHeadingIds` as in markdownToHtml.
+export function extractHeadings(
+  content: string,
+  takenHeadingIds: readonly string[] = []
+): PageHeading[] {
+  return headingsWithOffsets(content, takenHeadingIds).map(({ id, text, level }) => ({
+    id,
+    text,
+    level,
+  }));
+}
+
+/**
+ * For a page rendered in parts (Markdown runs around inline databases): the heading ids each
+ * part must skip, so the parts together get the ids of the whole document, which the table of
+ * contents links to.
+ */
+export function takenHeadingIdsByPart(parts: readonly string[]): string[][] {
+  const taken: string[] = [];
+  return parts.map((content) => {
+    const before = taken.slice();
+    for (const heading of extractHeadings(content, before)) taken.push(heading.id);
+    return before;
+  });
 }
 
 /**

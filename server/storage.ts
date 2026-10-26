@@ -86,6 +86,8 @@ import { isReservedDailyNoteSlug } from '../shared/daily-notes.js';
 import { MAX_PAGE_LINK_TARGETS } from '../shared/page-links.js';
 import {
   DATABASE_LIMITS,
+  checkRowData,
+  parseStoredFields,
   presentValues,
   type DatabaseCellValue,
   type DatabaseField,
@@ -105,6 +107,23 @@ export interface PageViewer {
   userId?: number;
   email?: string;
   teamIds: number[];
+}
+
+/**
+ * Thrown by a row write whose values no longer fit the database's properties: a property was
+ * deleted or changed type after the caller validated against it. Nothing is written.
+ */
+export class DatabasePropertiesChanged extends Error {
+  constructor() {
+    super("The database's properties changed; reload and try again");
+    this.name = 'DatabasePropertiesChanged';
+  }
+}
+
+/** Whether row values still fit a database's stored properties (read under the schema lock). */
+function fitsDatabaseFields(storedFields: unknown, values: Record<string, unknown>): boolean {
+  const fields = parseStoredFields(storedFields);
+  return fields !== null && checkRowData(fields, values).ok;
 }
 
 /** A caller without a session: only public or permission-free team-less pages are readable. */
@@ -2261,7 +2280,9 @@ export class DBStorage {
 
   /**
    * A new row at the end of its database, or null when the database already has `maxRows`
-   * rows. Creation is serialized per database (schema row lock) so the limit and the order hold.
+   * rows. Creation is serialized per database (schema row lock) so the limit and the order hold,
+   * and `data` is checked against the locked properties (DatabasePropertiesChanged if a property
+   * changed since the caller validated it).
    */
   async createDatabaseRow(
     schemaId: number,
@@ -2270,11 +2291,12 @@ export class DBStorage {
     maxRows: number
   ): Promise<DatabaseRow | null> {
     return this.db.transaction(async (tx: any) => {
-      await tx
-        .select({ id: databaseSchemas.id })
+      const [schema] = await tx
+        .select({ fields: databaseSchemas.fields })
         .from(databaseSchemas)
         .where(eq(databaseSchemas.id, schemaId))
         .for('update');
+      if (schema && !fitsDatabaseFields(schema.fields, data)) throw new DatabasePropertiesChanged();
       const [stats] = await tx
         .select({
           count: sql<number>`count(*)::int`,
@@ -2314,7 +2336,10 @@ export class DBStorage {
    * Changes a row's cells and/or its place. `values` merges into the stored data (`null` clears
    * a cell), so editors changing different cells of one row never undo each other. `place` moves
    * the row right before or after another row of the same database and renumbers the database's
-   * order 0..n-1 in one statement, with the schema row locked.
+   * order 0..n-1 in one statement, with the schema row locked. Cell changes hold the schema row
+   * with a share lock and are checked against its properties, so a concurrent property change or
+   * deletion comes first or after, never between (DatabasePropertiesChanged if they no longer
+   * fit).
    */
   async updateDatabaseRow(
     rowId: number,
@@ -2327,13 +2352,18 @@ export class DBStorage {
       const [existing] = await tx.select().from(databaseRows).where(eq(databaseRows.id, rowId));
       if (!existing) return { ok: false, status: 404, message: 'Database not found' };
       const schemaId = existing.schemaId;
+      // Schema before rows, like every other database write, so locks are taken in one order.
+      const [schema] = await tx
+        .select({ fields: databaseSchemas.fields })
+        .from(databaseSchemas)
+        .where(eq(databaseSchemas.id, schemaId))
+        .for(changes.place ? 'update' : 'share');
+      const values = changes.values ?? {};
+      if (Object.keys(values).length > 0 && !fitsDatabaseFields(schema?.fields, values)) {
+        throw new DatabasePropertiesChanged();
+      }
 
       if (changes.place) {
-        await tx
-          .select({ id: databaseSchemas.id })
-          .from(databaseSchemas)
-          .where(eq(databaseSchemas.id, schemaId))
-          .for('update');
         const ordered: Array<{ id: number }> = await tx
           .select({ id: databaseRows.id })
           .from(databaseRows)

@@ -9,6 +9,8 @@ import { PAGE_LINK_SLOT_ATTRIBUTE } from '@/components/page/page-link-markdown';
 interface MarkdownRendererProps {
   content: string;
   className?: string;
+  /** Heading ids used by earlier parts of the same page (see markdownToHtml). */
+  takenHeadingIds?: readonly string[];
 }
 
 function escapeHtml(text: string): string {
@@ -19,17 +21,24 @@ function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;');
 }
 
-export function MarkdownRenderer({ content, className = '' }: MarkdownRendererProps) {
+export function MarkdownRenderer({
+  content,
+  className = '',
+  takenHeadingIds,
+}: MarkdownRendererProps) {
   const [html, setHtml] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
   // Page link placeholders in the rendered HTML; each gets a chip (#103 E6).
   const [linkSlots, setLinkSlots] = useState<HTMLElement[]>([]);
   const navigate = useNavigate();
 
+  // A stable dependency for the list (a new array each render would re-render every time).
+  const takenKey = takenHeadingIds?.join('\n') ?? '';
+
   useEffect(() => {
     let isCancelled = false;
 
-    markdownToHtml(content)
+    markdownToHtml(content, { takenHeadingIds: takenKey ? takenKey.split('\n') : [] })
       .then((htmlContent) => {
         if (!isCancelled) {
           setHtml(htmlContent);
@@ -46,7 +55,7 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
     return () => {
       isCancelled = true;
     };
-  }, [content]);
+  }, [content, takenKey]);
 
   useLayoutEffect(() => {
     const root = containerRef.current;

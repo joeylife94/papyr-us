@@ -18,6 +18,7 @@ import {
   renderPageLinkTokens,
   sanitizeFileName,
   serializeFrontmatter,
+  wikiLinkTarget,
   type FrontmatterValue,
 } from './vault-format.js';
 import type { ZipInputEntry } from './zip.js';
@@ -110,7 +111,7 @@ export function buildVaultEntries(
     return nameCounts.get(name.toLowerCase())! > 1 ? `${folderOf.get(id)}${name}` : name;
   };
   const renderLink = (id: number) => {
-    if (nameOf.has(id)) return `[[${linkName(id)}]]`;
+    if (nameOf.has(id)) return `[[${wikiLinkTarget(linkName(id))}]]`;
     return outsideTitles.get(id) ?? INACCESSIBLE_PAGE_LABEL;
   };
 
@@ -146,7 +147,9 @@ export function singlePageMarkdown(
   fields.splice(1, 0, ['slug', page.slug], ['author', page.author], ['folder', page.folder]);
   const body = renderPageLinkTokens(page.content ?? '', (id) => {
     const title = linkedTitles.get(id);
-    return title === undefined ? INACCESSIBLE_PAGE_LABEL : `[[${sanitizeFileName(title)}]]`;
+    return title === undefined
+      ? INACCESSIBLE_PAGE_LABEL
+      : `[[${wikiLinkTarget(sanitizeFileName(title))}]]`;
   });
   return serializeFrontmatter(fields) + body;
 }

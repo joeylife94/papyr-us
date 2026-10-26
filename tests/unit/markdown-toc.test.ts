@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { extractHeadings, headingIdsByBlock, markdownToHtml } from '../../client/src/lib/markdown';
+import {
+  extractHeadings,
+  headingIdsByBlock,
+  markdownToHtml,
+  takenHeadingIdsByPart,
+} from '../../client/src/lib/markdown';
 import { blocksToMarkdown } from '../../shared/block-markdown';
 
 // Issue #113 §1: once `content` carries Markdown headings, the table of contents lists them and
@@ -84,5 +89,22 @@ describe('table of contents and reader heading ids', () => {
       h2: 'heading-plan-1',
     });
     expect(headingIdsByBlock([]).size).toBe(0);
+  });
+
+  it('gives a page rendered in parts the heading ids of the whole page', async () => {
+    // A page split around an inline database: the reader renders each run on its own.
+    const parts = ['# Repeated\n\nbefore', '', '# Repeated\n\n## Other'];
+    const whole = extractHeadings(parts.filter(Boolean).join('\n\n')).map((h) => h.id);
+    expect(whole).toEqual(['heading-repeated', 'heading-repeated-1', 'heading-other']);
+
+    const taken = takenHeadingIdsByPart(parts);
+    expect(taken).toEqual([[], ['heading-repeated'], ['heading-repeated']]);
+    const rendered = await Promise.all(
+      parts.map((part, index) => markdownToHtml(part, { takenHeadingIds: taken[index] }))
+    );
+    const ids = rendered.flatMap((html) =>
+      Array.from(html.matchAll(/ id="([^"]+)"/g), (m) => m[1])
+    );
+    expect(ids).toEqual(whole);
   });
 });

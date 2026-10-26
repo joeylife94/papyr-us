@@ -152,6 +152,11 @@ describe('singlePageMarkdown', () => {
       papyrus_id: '1',
     });
     expect(body).toBe('A [[Q&A plans]] B 접근할 수 없는 페이지');
+    const readme = singlePageMarkdown(
+      { ...row(1, 'Page', null, 'See [[page:2]]'), author: 'me@example.com', folder: 'docs' },
+      new Map([[2, 'notes.MD']])
+    );
+    expect(parseFrontmatter(readme).body).toBe('See [[notes.MD.md]]');
   });
 });
 
@@ -339,6 +344,33 @@ describe('export, zip, import round trip', () => {
     expect(contents[projects]).toBe(`Index: [[page:${ids[child]}]] and [[page:${ids[root]}]]\n`);
     expect(contents[child]).toBe(`Back to [[page:${ids[projects]}]]. Elsewhere: Outside page.\n`);
     expect(contents[root]).toBe(`A namesake at the root links [[page:${ids[child]}]].\n`);
+    expect(unresolved).toEqual([]);
+  });
+
+  it('links a page whose title ends in .md to its own file', () => {
+    const rows = [
+      row(1, 'Index', null, 'See [[page:2]] and [[page:3]]'),
+      row(2, 'README.md', null),
+      row(3, 'README', null),
+    ];
+    const entries = buildVaultEntries(rows, new Map());
+    expect(entries.map((entry) => entry.name).sort()).toEqual([
+      'Index.md',
+      'README.md',
+      'README.md.md',
+    ]);
+    expect(text(entries.find((entry) => entry.name === 'Index.md')!.data)).toContain(
+      'See [[README.md.md]] and [[README]]'
+    );
+
+    const files = entries.map((entry) => source(entry.name, text(entry.data)));
+    const plan = planVaultImport(files);
+    const ids = plan.pages.map((_, index) => 700 + index);
+    const { contents, unresolved } = renderImportedBodies(plan, [], ids);
+    const at = (title: string) => plan.pages.findIndex((page) => page.title === title);
+    expect(contents[at('Index')]).toBe(
+      `See [[page:${ids[at('README.md')]}]] and [[page:${ids[at('README')]}]]\n`
+    );
     expect(unresolved).toEqual([]);
   });
 });
