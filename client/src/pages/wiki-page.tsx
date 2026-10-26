@@ -22,7 +22,7 @@ import { PageHistory } from '@/components/page-history';
 import { BlockEditor } from '@/components/blocks/block-editor';
 import { PageProperties, PageTitle, SaveStatus } from '@/components/page/page-editor-parts';
 import { PageIcon, PageIconPicker } from '@/components/page/page-icon';
-import { apiRequest } from '@/lib/queryClient';
+import { apiRequest, invalidatePageLists } from '@/lib/queryClient';
 import { extractHeadings, estimateReadingTime } from '@/lib/markdown';
 import { blocksToContent, initialBlocksFor, parseTags } from '@/lib/page-content';
 import { getUserId, getUserName } from '@/lib/user';
@@ -417,8 +417,8 @@ function EditablePageBody({
 
   const { status, queue, flush, reset } = usePageAutosave(page.id, {
     onSaved: () => {
-      // Lists and the folder tree show titles and folders; refresh them quietly.
-      queryClient.invalidateQueries({ queryKey: ['/api/pages'] });
+      // Lists and the sidebar show titles, icons and folders; refresh them quietly.
+      void invalidatePageLists(queryClient);
     },
   });
 

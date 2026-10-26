@@ -9,6 +9,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useActiveWorkspace } from '@/hooks/useActiveWorkspace';
 import { blocksToContent, initialBlocksFor, parseTags, slugForTitle } from '@/lib/page-content';
 import { cn } from '@/lib/utils';
+import { invalidatePageLists } from '@/lib/queryClient';
 import { resolvePageTeamId, type PageTeamRef } from '@/lib/page-team-scope';
 import { getUserId, getUserName } from '@/lib/user';
 import type { Block, WikiPage } from '@shared/schema';
@@ -147,8 +148,7 @@ export default function NewPage({ teamName, initialFolder = 'docs' }: NewPagePro
       }
       if (!mounted.current) return;
 
-      queryClient.invalidateQueries({ queryKey: ['/api/pages'] });
-      queryClient.invalidateQueries({ queryKey: [`/api/folders/${created.folder}/pages`] });
+      void invalidatePageLists(queryClient);
       navigate(`/page/${created.slug}`, { replace: true });
     } catch {
       creating.current = false;
