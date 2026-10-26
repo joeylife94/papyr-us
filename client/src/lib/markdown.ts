@@ -53,6 +53,19 @@ function rehypePageLinks() {
   return (tree: Root) => replacePageLinkTokens(tree);
 }
 
+/**
+ * What the reader shows when `markdownToHtml` fails: the page text as escaped plain text. Page
+ * content is untrusted; inserting it unescaped would run any HTML it holds.
+ */
+export function plainTextFallbackHtml(content: string): string {
+  const escaped = content
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+  return `<pre>${escaped}</pre>`;
+}
+
 // Parse markdown with frontmatter
 export function parseMarkdown(content: string) {
   const { data: frontmatter, content: markdownContent } = matter(content);

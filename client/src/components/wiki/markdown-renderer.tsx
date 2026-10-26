@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { markdownToHtml } from '@/lib/markdown';
+import { markdownToHtml, plainTextFallbackHtml } from '@/lib/markdown';
 import { INLINE_TAG_ATTRIBUTE } from '@/lib/rehype-inline-tags';
 import { PageLinkPortals } from '@/components/page/page-links';
 
@@ -9,14 +9,6 @@ interface MarkdownRendererProps {
   className?: string;
   /** Heading ids used by earlier parts of the same page (see markdownToHtml). */
   takenHeadingIds?: readonly string[];
-}
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }
 
 export function MarkdownRenderer({
@@ -43,8 +35,8 @@ export function MarkdownRenderer({
       .catch((err) => {
         console.warn('Failed to render markdown:', err);
         if (!isCancelled) {
-          // Fall back to plain text display (escaped: page content is untrusted input)
-          setHtml(`<pre>${escapeHtml(content)}</pre>`);
+          // Fall back to plain text display, escaped (page content is untrusted)
+          setHtml(plainTextFallbackHtml(content));
         }
       });
 
