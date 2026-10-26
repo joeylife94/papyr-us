@@ -85,6 +85,19 @@ describe('blocksToMarkdown', () => {
     );
   });
 
+  it('switches the bullet when a to-do run follows a bulleted run, so they stay two lists', () => {
+    expect(
+      blocksToMarkdown([
+        block('bulleted_list', 'a'),
+        block('checkbox', 'b'),
+        block('checkbox', 'c'),
+        block('bulleted_list', 'd'),
+        block('paragraph', 'p'),
+        block('checkbox', 'e'),
+      ])
+    ).toBe(['- a', '* [ ] b\n* [ ] c', '- d', 'p', '- [ ] e'].join('\n\n'));
+  });
+
   it('keeps multi-line text inside its block', () => {
     expect(blocksToMarkdown([block('bulleted_list', 'first\nsecond\n\nthird')])).toBe(
       '- first\n  second\n\n  third'

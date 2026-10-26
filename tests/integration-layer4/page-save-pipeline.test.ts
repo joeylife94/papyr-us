@@ -199,7 +199,7 @@ describe('page save pipeline (real Postgres)', () => {
 
     const page = await storage.getWikiPage(id);
     expect(page.content).toBe(
-      '## Wombat burrows\n\n- tunnels\n\n- [x] survey\n\n```js\ndig()\n```'
+      '## Wombat burrows\n\n- tunnels\n\n* [x] survey\n\n```js\ndig()\n```'
     );
     expect(await matchesSearch(id, 'wombat burrows')).toBe(true);
     expect(await matchesSearch(id, 'survey')).toBe(true);
