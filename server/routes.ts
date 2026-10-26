@@ -99,6 +99,7 @@ import jwt from 'jsonwebtoken';
 import passport from 'passport';
 import { eq, and, isNull } from 'drizzle-orm';
 import { ANONYMOUS_PAGE_VIEWER, DBStorage } from './storage.js';
+import { registerPageTitleSearchRoutes } from './routes/page-title-search.js';
 import { featureFlags } from './features.js';
 
 interface MulterRequest extends Request {
@@ -613,6 +614,10 @@ export async function registerRoutes(
   }
 
   // Wiki Pages API
+  // Page tree, link and knowledge routes (#103 E5/E6, #111). They are registered before
+  // /api/pages/:id so their fixed path segments are never read as a page id.
+  registerPageTitleSearchRoutes(app, storage);
+
   app.get('/api/pages', optionalAuth, async (req: AuthRequest, res) => {
     try {
       const teamIdParam = req.query.teamId as string;
