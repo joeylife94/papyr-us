@@ -19,6 +19,7 @@ import {
   Heading1,
   Heading2,
   Heading3,
+  Minus,
 } from 'lucide-react';
 
 export interface SlashCommandItem {
@@ -92,6 +93,14 @@ const SLASH_COMMANDS: SlashCommandItem[] = [
     description: '인용구 블록',
     icon: <Quote className="h-4 w-4" />,
     keywords: ['quote', 'blockquote', '인용', '인용구'],
+  },
+  {
+    // Divider (#113 §1): a horizontal rule, `---` in the page's Markdown.
+    type: 'divider',
+    label: '구분선',
+    description: '내용을 나누는 가로선 (--- 입력)',
+    icon: <Minus className="h-4 w-4" />,
+    keywords: ['divider', 'separator', 'hr', 'line', 'rule', '---', '구분선', '구분', '선'],
   },
   {
     type: 'callout',
