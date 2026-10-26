@@ -7,6 +7,8 @@ import { PageLinkPortals } from '@/components/page/page-links';
 interface MarkdownRendererProps {
   content: string;
   className?: string;
+  /** Heading ids used by earlier parts of the same page (see markdownToHtml). */
+  takenHeadingIds?: readonly string[];
 }
 
 function escapeHtml(text: string): string {
@@ -17,15 +19,22 @@ function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;');
 }
 
-export function MarkdownRenderer({ content, className = '' }: MarkdownRendererProps) {
+export function MarkdownRenderer({
+  content,
+  className = '',
+  takenHeadingIds,
+}: MarkdownRendererProps) {
   const [html, setHtml] = useState('');
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
   const navigate = useNavigate();
 
+  // A stable dependency for the list (a new array each render would re-render every time).
+  const takenKey = takenHeadingIds?.join('\n') ?? '';
+
   useEffect(() => {
     let isCancelled = false;
 
-    markdownToHtml(content)
+    markdownToHtml(content, { takenHeadingIds: takenKey ? takenKey.split('\n') : [] })
       .then((htmlContent) => {
         if (!isCancelled) {
           setHtml(htmlContent);
@@ -42,7 +51,7 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
     return () => {
       isCancelled = true;
     };
-  }, [content]);
+  }, [content, takenKey]);
 
   // `#tag` links (#113) are plain anchors in the HTML; open them in the app, not by a reload.
   useEffect(() => {

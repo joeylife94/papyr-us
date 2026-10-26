@@ -39,13 +39,15 @@
  *
  * Bodies are validated against shared/inline-database.ts: properties, cell values keyed by
  * property id (PATCH merges them; `null` clears a cell) and the limits (50 properties, 5,000 rows
- * per database, bounded cell values). Errors never carry internal details.
+ * per database, bounded cell values). Row writes are checked again against the properties
+ * under the schema lock: a property changed or deleted in between answers 409, nothing written.
+ * Errors never carry internal details.
  */
 import crypto from 'crypto';
 import type { Express, Response } from 'express';
 import { z } from 'zod';
 import { optionalAuth, requireAuthIfEnabled, type AuthRequest } from '../middleware.js';
-import type { DBStorage } from '../storage.js';
+import { DatabasePropertiesChanged, type DBStorage } from '../storage.js';
 import type { DatabaseRow, DatabaseSchema } from '../../shared/schema.js';
 import {
   DATABASE_LIMITS,
@@ -405,6 +407,9 @@ export function registerDatabaseRoutes(app: Express, storage: DBStorage) {
       }
       res.status(201).json(row);
     } catch (error) {
+      if (error instanceof DatabasePropertiesChanged) {
+        return refuse(res, { status: 409, message: error.message });
+      }
       fail(res, 'Failed to create database row', error);
     }
   });
@@ -445,6 +450,9 @@ export function registerDatabaseRoutes(app: Express, storage: DBStorage) {
       if (!outcome.ok) return refuse(res, outcome);
       res.json(outcome.row);
     } catch (error) {
+      if (error instanceof DatabasePropertiesChanged) {
+        return refuse(res, { status: 409, message: error.message });
+      }
       fail(res, 'Failed to update database row', error);
     }
   });

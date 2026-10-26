@@ -1,9 +1,9 @@
 /**
  * /api/database/* (#113 §4, P2-D4): every route resolves the page that owns the data and needs
- * viewer on it to read, editor to write (a new relation needs editor on both pages). Unknown ids and databases on missing, trashed or
- * unreadable pages answer the same 404. Bodies are validated (properties, cell values keyed by
- * property id, limits) and errors never leak internals. The real-database proof is
- * tests/security-inline-database.spec.ts.
+ * viewer on it to read, editor to write (a new relation needs editor on both pages). Unknown ids
+ * and databases on missing, trashed or unreadable pages answer the same 404. Bodies are
+ * validated (properties, cell values keyed by property id, limits) and errors never leak
+ * internals. The real-database proof is tests/security-inline-database.spec.ts.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
@@ -41,7 +41,7 @@ vi.mock('../storage', async (importOriginal) => {
   return mockStorageModuleFrom(actual);
 });
 
-import { storage } from '../storage';
+import { storage, DatabasePropertiesChanged } from '../storage';
 
 const USER_ID = 7;
 const token = jwt.sign({ id: USER_ID, email: 'user@example.com', role: 'user' }, TEST_SECRET);
@@ -610,6 +610,18 @@ describe('rows', () => {
       message: 'The anchor row is not in this database',
     });
     expect((await api.patch('/api/database/rows/11', { afterRowId: 31 })).status).toBe(400);
+  });
+
+  it('answers 409 when the properties changed after the values were checked', async () => {
+    const conflict = { message: "The database's properties changed; reload and try again" };
+    (storage.updateDatabaseRow as any).mockRejectedValue(new DatabasePropertiesChanged());
+    const patched = await api.patch('/api/database/rows/11', { data: { status: 'done' } });
+    expect(patched.status).toBe(409);
+    expect(patched.body).toEqual(conflict);
+    (storage.createDatabaseRow as any).mockRejectedValue(new DatabasePropertiesChanged());
+    const created = await api.post('/api/database/rows', { schemaId: 1 });
+    expect(created.status).toBe(409);
+    expect(created.body).toEqual(conflict);
   });
 });
 
