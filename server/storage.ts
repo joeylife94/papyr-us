@@ -580,6 +580,26 @@ export class DBStorage {
     return and(teamScope, this.readableBy(viewer))!;
   }
 
+  /**
+   * `listableBy` for read paths outside this class (the knowledge graph, local graph, unlinked
+   * mentions and daily notes, #111): every page such a path lists must satisfy it.
+   */
+  readablePageCondition(viewer: PageViewer): SQL {
+    return this.listableBy(viewer);
+  }
+
+  /**
+   * Live pages of one workspace scope (a team, or `null` for team-less pages) that the viewer can
+   * read: the base condition of the #111 read paths.
+   */
+  readablePagesInScope(viewer: PageViewer, teamId: number | null): SQL {
+    return and(
+      isNull(wikiPages.deletedAt),
+      teamId === null ? isNull(wikiPages.teamId) : eq(wikiPages.teamId, teamId),
+      this.listableBy(viewer)
+    )!;
+  }
+
   async getReadableWikiPagesByFolder(folder: string, userId: number): Promise<WikiPage[]> {
     const viewer = await this.getPageViewer(userId);
     return this.db
