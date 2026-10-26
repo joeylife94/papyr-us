@@ -58,6 +58,12 @@ export function splitPageLinks(text: string): PageLinkSegment[] {
   return segments;
 }
 
+/**
+ * Most distinct targets one page's link index keeps. Far above any real page, it bounds the
+ * delete-and-reinsert work of a save and keeps the insert well under Postgres' parameter limit.
+ */
+export const MAX_PAGE_LINK_TARGETS = 1000;
+
 /** Most ids one link resolution request may carry (GET /api/pages/links/resolve). */
 export const MAX_PAGE_LINK_RESOLVE_IDS = 100;
 

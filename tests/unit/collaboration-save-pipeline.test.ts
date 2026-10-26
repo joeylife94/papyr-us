@@ -84,7 +84,9 @@ describe('realtime saves go through the page save pipeline', () => {
       content: 'See [[page:12]]\n\nand [[page:7]] [[page:12]]',
     });
     // Self-links (page 7) and duplicates are dropped before the index is written.
-    expect(storage.replacePageLinks).toHaveBeenCalledWith(7, [12]);
+    expect(storage.replacePageLinks).toHaveBeenCalledWith(7, [12], {
+      expectedContent: expect.any(String),
+    });
     manager.leaveSession('socket-1');
   });
 
@@ -100,6 +102,8 @@ describe('realtime saves go through the page save pipeline', () => {
 
     await manager.saveDoc('page-7', 'manual');
 
-    expect(storage.replacePageLinks).toHaveBeenCalledWith(7, [12]);
+    expect(storage.replacePageLinks).toHaveBeenCalledWith(7, [12], {
+      expectedContent: expect.any(String),
+    });
   });
 });

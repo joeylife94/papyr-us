@@ -49,3 +49,13 @@ export function isDailyNoteDate(date: unknown, now: Date = new Date()): date is 
 export function dailyNoteSlug(date: string, teamId: number | null, userId: number): string {
   return teamId === null ? `daily-${date}-u${userId}` : `daily-${date}-t${teamId}`;
 }
+
+const DAILY_NOTE_SLUG_PATTERN = /^daily-\d{4}-\d{2}-\d{2}-[tu]\d+$/;
+
+/**
+ * Whether `slug` has the shape of a daily note's slug. Only the daily-note route may use such a
+ * slug; otherwise anyone could take another team's or user's note address ahead of time.
+ */
+export function isReservedDailyNoteSlug(slug: unknown): boolean {
+  return typeof slug === 'string' && DAILY_NOTE_SLUG_PATTERN.test(slug.trim());
+}

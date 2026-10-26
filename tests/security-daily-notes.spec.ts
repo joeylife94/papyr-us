@@ -5,7 +5,7 @@
  * Invariants under test: opening a scope's note for a day, however often and however
  * concurrently, yields one page (one row in wiki_pages); a team's note is reachable only by
  * current members of that team; a personal note only by its owner; a trashed note is not
- * silently replaced; a page squatting a note's slug is never handed out.
+ * silently replaced; nobody can take another user's or team's note slug ahead of time.
  */
 import {
   test,
@@ -176,13 +176,17 @@ test.describe('Daily notes: one note per day and scope', () => {
       expect(restored.status()).toBe(200);
       expect((await restored.json()).page.id).toBe(personalNote.id);
 
-      // ── 7. A page squatting someone's note slug is never handed to them ──
+      // ── 7. Nobody can take someone else's note slug ahead of time ──
+      // An ordinary create with a daily note's slug gets the next slug candidate instead, so the
+      // user's note still opens as their own. (A page already holding the slug, e.g. from older
+      // data, is answered with 409 daily_note_unavailable; see server/tests/daily-notes.test.ts.)
       const squattedUserId = await userId(squattedRequest);
+      const reservedSlug = `daily-${date}-u${squattedUserId}`;
       const marker = `daily-squat-${stamp}`;
       const squat = await ownerBRequest.post('/api/pages', {
         data: {
           title: `Squat ${marker}`,
-          slug: `daily-${date}-u${squattedUserId}`,
+          slug: reservedSlug,
           content: `Squatter content ${marker}`,
           folder: 'docs',
           tags: [],
@@ -192,16 +196,23 @@ test.describe('Daily notes: one note per day and scope', () => {
       expect(squat.status()).toBe(201);
       const squatPage = await squat.json();
       pageIds.push(squatPage.id);
-      // Even an owner grant from the squatter does not make it the user's own note.
-      const grant = await ownerBRequest.post(`/api/pages/${squatPage.id}/permissions`, {
-        data: { entityType: 'user', entityId: squattedUserId, permission: 'owner' },
-      });
-      expect(grant.status()).toBe(201);
+      expect(squatPage.slug).not.toBe(reservedSlug);
+
       const squattedOpen = await open(squattedRequest);
-      expect(squattedOpen.status()).toBe(409);
+      expect(squattedOpen.status()).toBe(200);
       const squattedText = await squattedOpen.text();
-      expect(JSON.parse(squattedText).code).toBe('daily_note_unavailable');
+      const squattedNote = JSON.parse(squattedText);
+      pageIds.push(squattedNote.page.id);
+      expect(squattedNote).toMatchObject({ created: true, page: { slug: reservedSlug } });
+      expect(squattedNote.page.id).not.toBe(squatPage.id);
       expect(squattedText).not.toContain(marker);
+
+      // Renaming a page to a daily note slug is refused as well.
+      const rename = await ownerBRequest.put(`/api/pages/${squatPage.id}`, {
+        data: { slug: `daily-${date}-u${ownerAUserId}` },
+      });
+      expect(rename.status()).toBe(400);
+      expect(await rowsWithSlug(`daily-${date}-u${ownerAUserId}`)).toEqual([personalNote.id]);
     } finally {
       if (pageIds.length > 0) {
         await pool.query('DELETE FROM wiki_pages WHERE id = ANY($1::int[])', [pageIds]);

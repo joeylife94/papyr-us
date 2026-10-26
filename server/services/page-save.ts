@@ -41,7 +41,11 @@ export interface PageSaveStore {
    * Replace the outgoing links of `pageId` with `targetIds` in one transaction (`page_links`,
    * #103 E6). Ids of pages that do not exist are skipped.
    */
-  syncLinks(pageId: number, targetIds: number[]): Promise<void>;
+  /**
+   * Replace the page's outgoing links. `expectedContent` is the content the write produced; the
+   * store may skip the sync when a later write has already changed it (that write syncs itself).
+   */
+  syncLinks(pageId: number, targetIds: number[], expectedContent?: string): Promise<void>;
 }
 
 export interface SessionClosedEvent {
@@ -216,7 +220,7 @@ export async function savePage(
   // The links follow what this write carried: its blocks, or its content when it sent only that.
   if (touchesBody(data) && (!before || !sameBody(before, after))) {
     const body = data.blocks !== undefined ? data : { content: data.content };
-    await syncLinksSafely(store, pageId, pageLinkTargets(pageId, body));
+    await syncLinksSafely(store, pageId, pageLinkTargets(pageId, body), after.content);
   }
   return { before, after };
 }
@@ -228,7 +232,7 @@ export async function indexNewPageLinks(
 ) {
   const targets = pageLinkTargets(page.id, page);
   // A new page has no rows yet, so there is nothing to replace when it links nowhere.
-  if (targets.length > 0) await syncLinksSafely(store, page.id, targets);
+  if (targets.length > 0) await syncLinksSafely(store, page.id, targets, page.content);
 }
 
 /**
@@ -245,7 +249,7 @@ export async function writeRestoredPage(
     content: version.content,
     blocks: version.blocks as UpdateWikiPage['blocks'],
   });
-  if (after) await syncLinksSafely(store, pageId, pageLinkTargets(pageId, version));
+  if (after) await syncLinksSafely(store, pageId, pageLinkTargets(pageId, version), after.content);
   return after;
 }
 
@@ -274,9 +278,14 @@ async function snapshotSafely(store: PageSaveStore, page: WikiPage, description:
   }
 }
 
-async function syncLinksSafely(store: PageSaveStore, pageId: number, targetIds: number[]) {
+async function syncLinksSafely(
+  store: PageSaveStore,
+  pageId: number,
+  targetIds: number[],
+  expectedContent: string
+) {
   try {
-    await store.syncLinks(pageId, targetIds);
+    await store.syncLinks(pageId, targetIds, expectedContent);
   } catch (error) {
     // The link index is derived data: a failed sync must not fail the save, and the next body
     // change rebuilds the page's rows. Stale rows never reveal anything (reads filter both ends).
@@ -296,15 +305,19 @@ type DrizzleLike = {
 export function storagePageSaveStore(storage: {
   getWikiPage(id: number): Promise<WikiPage | undefined>;
   updateWikiPage(id: number, page: UpdateWikiPage): Promise<WikiPage | undefined>;
-  replacePageLinks?(sourcePageId: number, targetIds: number[]): Promise<void>;
+  replacePageLinks?(
+    sourcePageId: number,
+    targetIds: number[],
+    options?: { expectedContent?: string }
+  ): Promise<void>;
   db?: DrizzleLike;
 }): PageSaveStore {
   return {
     getPage: (id) => storage.getWikiPage(id),
     updatePage: (id, data) => storage.updateWikiPage(id, data),
-    async syncLinks(pageId, targetIds) {
+    async syncLinks(pageId, targetIds, expectedContent) {
       if (!storage.replacePageLinks) return;
-      await storage.replacePageLinks(pageId, targetIds);
+      await storage.replacePageLinks(pageId, targetIds, { expectedContent });
     },
     async snapshotVersion(page, description) {
       const db = storage.db;
