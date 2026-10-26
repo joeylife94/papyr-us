@@ -160,7 +160,12 @@ export function ParagraphBlock({
     <div
       className={`relative group ${isFocused ? 'bg-primary/10 ' : ''} rounded-lg p-2 transition-colors`}
       onFocus={(event) => !isOnPageLink(event.target) && onFocus()}
-      onBlur={onBlur}
+      // Focus moving within the block (to a chip in the link row below, or the delete button)
+      // keeps it focused, so keyboard users can reach those links. React's blur bubbles, so this
+      // also handles the textarea's.
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) onBlur();
+      }}
     >
       {/* The rendered text while the block is not being edited (see useInlinePreview). */}
       {preview.element && <div data-testid="paragraph-preview">{preview.element}</div>}
@@ -172,7 +177,6 @@ export function ParagraphBlock({
         onChange={handleContentChange}
         onKeyDown={handleKeyDown}
         onFocus={onFocus}
-        onBlur={onBlur}
         placeholder={placeholder}
         className="w-full resize-none border-none outline-none bg-transparent text-base text-foreground placeholder:text-muted-foreground pl-0 pr-8 leading-relaxed"
         rows={1}
