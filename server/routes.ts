@@ -47,6 +47,8 @@ import {
   users,
   type CalendarEvent,
   type Task,
+  type UpdateWikiPage,
+  type WikiPage,
 } from '../shared/schema.js';
 import {
   upload,
@@ -101,6 +103,7 @@ import { isReservedDailyNoteSlug } from '../shared/daily-notes.js';
 import { registerDailyNoteRoutes } from './routes/daily-notes.js';
 import { registerPageLinkRoutes } from './routes/page-links.js';
 import { checkTreeParent, registerPageTreeRoutes } from './routes/page-tree.js';
+import { presentPage, presentPages } from './services/page-payload.js';
 import { featureFlags } from './features.js';
 
 interface MulterRequest extends Request {
@@ -691,7 +694,7 @@ export async function registerRoutes(
         const nextCursor = hasMore ? paginatedPages[paginatedPages.length - 1]?.id : null;
 
         return res.json({
-          pages: paginatedPages,
+          pages: await presentPages(storage, req.user?.id, paginatedPages),
           total: mergedPages.length,
           pagination: { hasMore, nextCursor, count: paginatedPages.length },
         });
@@ -717,6 +720,7 @@ export async function registerRoutes(
         const nextCursor = hasMore ? result.pages[result.pages.length - 1]?.id : null;
         return res.json({
           ...result,
+          pages: await presentPages(storage, undefined, result.pages),
           pagination: { hasMore, nextCursor, count: result.pages.length },
         });
       }
@@ -740,6 +744,7 @@ export async function registerRoutes(
 
       res.json({
         ...result,
+        pages: await presentPages(storage, req.user?.id, result.pages),
         pagination: {
           hasMore,
           nextCursor,
@@ -751,26 +756,33 @@ export async function registerRoutes(
     }
   });
 
-  app.get('/api/pages/:id', optionalAuth, requirePagePermission('viewer'), async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const page = await storage.getWikiPage(id);
+  // Single pages and listings carry the tree fields as the viewer sees them (#103 D4, see
+  // services/page-payload.ts).
+  app.get(
+    '/api/pages/:id',
+    optionalAuth,
+    requirePagePermission('viewer'),
+    async (req: AuthRequest, res) => {
+      try {
+        const id = parseInt(req.params.id);
+        const page = await storage.getWikiPage(id);
 
-      if (!page) {
-        return res.status(404).json({ message: 'Page not found' });
+        if (!page) {
+          return res.status(404).json({ message: 'Page not found' });
+        }
+
+        res.json(await presentPage(storage, req.user?.id, page));
+      } catch (error) {
+        res.status(400).json({ message: 'Invalid page ID' });
       }
-
-      res.json(page);
-    } catch (error) {
-      res.status(400).json({ message: 'Invalid page ID' });
     }
-  });
+  );
 
   app.get(
     '/api/pages/slug/:slug',
     optionalAuth,
     requirePagePermission('viewer'),
-    async (req, res) => {
+    async (req: AuthRequest, res) => {
       try {
         // Use page resolved by requirePagePermission middleware if available
         const page =
@@ -780,7 +792,7 @@ export async function registerRoutes(
           return res.status(404).json({ message: 'Page not found' });
         }
 
-        res.json(page);
+        res.json(await presentPage(storage, req.user?.id, page));
       } catch (error) {
         res.status(500).json({ message: 'Server error' });
       }
@@ -790,6 +802,9 @@ export async function registerRoutes(
   // Every page write that can set the icon accepts one emoji or null (#103 E4).
   const createPageSchema = insertWikiPageSchema.extend({ icon: pageIconField });
   const updatePageSchema = updateWikiPageSchema.extend({ icon: pageIconField });
+
+  // A page tree check that failed under the tree lock (#103 E5).
+  type TreeRefusal = { refusal: { status: 403 | 404 | 409; message: string } };
 
   app.post(
     '/api/pages',
@@ -819,23 +834,46 @@ export async function registerRoutes(
             message: 'A new page is placed after its siblings; use POST /api/pages/:id/move',
           });
         }
+        // Pass creator user ID for automatic owner permission assignment
+        const creatorUserId = req.user?.id;
+        const create = () =>
+          creatorUserId
+            ? storage.createWikiPage(pageData, creatorUserId)
+            : storage.createWikiPage(pageData);
+
+        let page: WikiPage;
         if (pageData.parentId != null) {
-          const parentCheck = await checkTreeParent(
-            storage,
-            req.user?.id,
-            pageData.parentId,
-            pageData.teamId ?? null
-          );
+          const parentId = pageData.parentId;
+          const teamId = pageData.teamId ?? null;
+          const parentCheck = await checkTreeParent(storage, req.user?.id, parentId, teamId);
           if (!parentCheck.ok) {
             return res.status(parentCheck.status).json({ message: parentCheck.message });
           }
+          // Checked again under the workspace's tree lock, so a team change or a delete of the
+          // parent cannot land between the check and the insert.
+          const outcome = await storage.withPageTreeLock<TreeRefusal | { page: WikiPage }>(
+            teamId,
+            async () => {
+              const parent = await storage.getWikiPage(parentId);
+              if (!parent) return { refusal: { status: 404, message: 'Parent page not found' } };
+              if ((parent.teamId ?? null) !== teamId) {
+                return {
+                  refusal: {
+                    status: 403,
+                    message: 'A sub-page must be in the same team as its parent',
+                  },
+                };
+              }
+              return { page: await create() };
+            }
+          );
+          if ('refusal' in outcome) {
+            return res.status(outcome.refusal.status).json({ message: outcome.refusal.message });
+          }
+          page = outcome.page;
+        } else {
+          page = await create();
         }
-
-        // Pass creator user ID for automatic owner permission assignment
-        const creatorUserId = req.user?.id;
-        const page = creatorUserId
-          ? await storage.createWikiPage(pageData, creatorUserId)
-          : await storage.createWikiPage(pageData);
         // Links typed before the first save (E2's lazy creation) are indexed with the page.
         await indexNewPageLinks(pageSaveStore, page);
 
@@ -876,13 +914,17 @@ export async function registerRoutes(
           return res.status(400).json({ message: 'This slug is reserved for daily notes' });
         }
 
-        // Get old page data for comparison and version snapshot
+        // Get old page data for comparison and version snapshot. A page in the trash is not
+        // edited: the trash restore route brings it back together with its sub-pages (#103 D5).
         const oldPage = await storage.getWikiPage(id);
+        if (!oldPage) {
+          return res.status(404).json({ message: 'Page not found' });
+        }
 
         // The page's place in the tree changes only through the move route, which applies the
         // tree rules (#103 E5); re-sending the current values is fine.
-        const changesParent = parentId !== undefined && parentId !== (oldPage?.parentId ?? null);
-        const changesPosition = position !== undefined && position !== (oldPage?.position ?? null);
+        const changesParent = parentId !== undefined && parentId !== (oldPage.parentId ?? null);
+        const changesPosition = position !== undefined && position !== (oldPage.position ?? null);
         if (changesParent || changesPosition) {
           return res
             .status(400)
@@ -907,21 +949,53 @@ export async function registerRoutes(
             return res.status(403).json({ message: 'You are not a member of the target team' });
           }
         }
-        // A sub-page stays in its parent's team (#103 E5): only a root page without live
-        // sub-pages changes team.
-        if (changesTeam) {
-          const hasSubPages = ((await storage.getLivePageDescendantIds(id)) ?? []).length > 0;
-          if (oldPage?.parentId != null || hasSubPages) {
-            return res.status(409).json({
-              message:
-                'Move the page to the workspace root and move its sub-pages out before changing its team',
-            });
-          }
-        }
-
         // One save pipeline (issue #103 E1): content is derived from blocks when only blocks are
         // sent, and the pre-save state is kept as one version, as before.
-        const saved = await savePage(pageSaveStore, id, updateData, 'manual');
+        const save = (update: UpdateWikiPage) => savePage(pageSaveStore, id, update, 'manual');
+        let saved: Awaited<ReturnType<typeof save>>;
+        if (changesTeam) {
+          // A sub-page stays in its parent's team (#103 E5), so only a root page without live
+          // sub-pages changes team. Checked under the workspace's tree lock, against the page
+          // as it is then.
+          const outcome = await storage.withPageTreeLock<TreeRefusal | { saved: typeof saved }>(
+            oldPage.teamId ?? null,
+            async () => {
+              const current = await storage.getWikiPage(id);
+              if (!current) return { refusal: { status: 404, message: 'Page not found' } };
+              if (((await storage.getLivePageDescendantIds(id)) ?? []).length > 0) {
+                return {
+                  refusal: {
+                    status: 409,
+                    message: 'Move the sub-pages out of this page before changing its team',
+                  },
+                };
+              }
+              let update: UpdateWikiPage = updateData;
+              if (current.parentId != null) {
+                // A parent the caller can see keeps the page in the tree: they move it to the
+                // root first. A parent they cannot see is never revealed (D4): for them the page
+                // is a root page already, so it leaves that parent with the team change.
+                const shown = await presentPage(storage, req.user?.id, current);
+                if (shown.parentId != null) {
+                  return {
+                    refusal: {
+                      status: 409,
+                      message: 'Move the page to the workspace root before changing its team',
+                    },
+                  };
+                }
+                update = { ...updateData, parentId: null };
+              }
+              return { saved: await save(update) };
+            }
+          );
+          if ('refusal' in outcome) {
+            return res.status(outcome.refusal.status).json({ message: outcome.refusal.message });
+          }
+          saved = outcome.saved;
+        } else {
+          saved = await save(updateData);
+        }
         const page = saved?.after;
 
         if (!page) {
@@ -938,14 +1012,14 @@ export async function registerRoutes(
           tags: page.tags,
           author: page.author,
           teamId: page.teamId,
-          oldTags: oldPage?.tags || [],
+          oldTags: oldPage.tags || [],
           newTags: page.tags,
         }).catch((error) => {
           console.error('Failed to trigger workflows for page_updated:', error);
         });
 
         // Check if tags were added
-        if (oldPage && updateData.tags) {
+        if (updateData.tags) {
           const addedTags = updateData.tags.filter((tag) => !oldPage.tags.includes(tag));
           if (addedTags.length > 0) {
             triggerWorkflows('tag_added', {
@@ -959,7 +1033,7 @@ export async function registerRoutes(
           }
         }
 
-        res.json(page);
+        res.json(await presentPage(storage, req.user?.id, page));
       } catch (error) {
         res.status(400).json(failureBody('Invalid update data', error));
       }
@@ -994,6 +1068,10 @@ export async function registerRoutes(
         return res.status(400).json(failureBody('Invalid autosave data', parsed.error));
       }
       try {
+        // Like PUT, a page in the trash is not edited.
+        if (!(await storage.getWikiPage(id))) {
+          return res.status(404).json({ message: 'Page not found' });
+        }
         const saved = await savePage(pageSaveStore, id, parsed.data, 'autosave');
         if (!saved) return res.status(404).json({ message: 'Page not found' });
         const { after } = saved;
@@ -1160,7 +1238,7 @@ export async function registerRoutes(
         const { reloadCollaborativeDocs } = await import('./services/yjs-collaboration.js');
         await reloadCollaborativeDocs(pageId);
 
-        res.json(restoredPage);
+        res.json(await presentPage(storage, req.user?.id, restoredPage));
       } catch (error) {
         console.error('Error restoring page version:', error);
         res.status(500).json({ error: 'Failed to restore page version' });
@@ -1193,12 +1271,16 @@ export async function registerRoutes(
         // Get page data before deletion
         const page = await storage.getWikiPage(id);
 
-        const subPages = page ? ((await storage.getLivePageDescendantIds(id)) ?? []) : [];
-        if (!(await ownsEveryPage(req.user?.id, subPages))) {
+        // Under the workspace's tree lock, so no sub-page is added or moved in meanwhile.
+        const outcome = await storage.withPageTreeLock(page?.teamId ?? null, async () => {
+          const subPages = page ? ((await storage.getLivePageDescendantIds(id)) ?? []) : [];
+          if (!(await ownsEveryPage(req.user?.id, subPages))) return { refused: true } as const;
+          return { deleted: await storage.deleteWikiPage(id, subPages), subPages };
+        });
+        if ('refused' in outcome) {
           return res.status(403).json(SUBTREE_NOT_DELETABLE);
         }
-
-        const deleted = await storage.deleteWikiPage(id, subPages);
+        const { deleted, subPages } = outcome;
 
         if (!deleted) {
           return res.status(404).json({ message: 'Page not found' });
@@ -1227,12 +1309,14 @@ export async function registerRoutes(
 
   // ==================== Trash / Recycle Bin API ====================
 
-  // List trashed pages
+  // List trashed pages: only those the caller can read, without content (the listing rule of
+  // live pages, applied to the trash).
   app.get('/api/trash', requireAuthIfEnabled, async (req: AuthRequest, res) => {
     try {
-      const teamId = req.query.teamId ? parseInt(req.query.teamId as string) : undefined;
-      const pages = await storage.getTrashPages(teamId);
-      res.json(pages);
+      const teamParam = Number.parseInt(String(req.query.teamId ?? ''), 10);
+      const teamId = Number.isInteger(teamParam) && teamParam > 0 ? teamParam : undefined;
+      const viewer = await storage.getPageViewer(req.user?.id);
+      res.json(await storage.getReadableTrashPages(viewer, teamId));
     } catch (error) {
       logger.error('Error fetching trash:', { error });
       res.status(500).json({ error: 'Failed to fetch trash' });
@@ -1259,7 +1343,7 @@ export async function registerRoutes(
         if (!restored) {
           return res.status(404).json({ error: 'Page not found in trash' });
         }
-        res.json(restored);
+        res.json(await presentPage(storage, req.user?.id, restored));
       } catch (error) {
         logger.error('Error restoring page:', { error });
         res.status(500).json({ error: 'Failed to restore page' });
@@ -1352,7 +1436,7 @@ export async function registerRoutes(
         );
         await indexNewPageLinks(pageSaveStore, cloned);
 
-        res.status(201).json(cloned);
+        res.status(201).json(await presentPage(storage, req.user?.id, cloned));
       } catch (error) {
         logger.error('Error duplicating page:', { error });
         res.status(500).json({ error: 'Failed to duplicate page' });
@@ -1458,12 +1542,17 @@ export async function registerRoutes(
       if (denial) return res.status(denial.status).json({ error: denial.error });
 
       // Each listed page goes with its live subtree (#103 D5), so the caller must own every
-      // sub-page too. A listed page inside another listed page's subtree is trashed with it.
-      const subPagesOf = new Map<number, number[]>();
+      // sub-page too. A listed page inside another listed page's subtree is trashed with it; a
+      // listed page that is already in the trash is skipped and takes nothing with it.
+      const livePageIds: number[] = [];
       for (const pageId of pageIds) {
+        if (await storage.getWikiPage(pageId)) livePageIds.push(pageId);
+      }
+      const subPagesOf = new Map<number, number[]>();
+      for (const pageId of livePageIds) {
         subPagesOf.set(pageId, (await storage.getLivePageDescendantIds(pageId)) ?? []);
       }
-      const listed = new Set(pageIds);
+      const listed = new Set(livePageIds);
       const covered = new Set(Array.from(subPagesOf.values()).flat());
       if (
         !(await ownsEveryPage(
@@ -1478,7 +1567,7 @@ export async function registerRoutes(
 
       let deleted = 0;
       const trashed = new Set<number>();
-      const topmostFirst = [...pageIds].sort(
+      const topmostFirst = [...livePageIds].sort(
         (a, b) => Number(covered.has(a)) - Number(covered.has(b))
       );
       for (const pageId of topmostFirst) {
@@ -1651,7 +1740,7 @@ export async function registerRoutes(
     }
     try {
       const pages = await storage.getReadableWikiPagesByFolder(req.params.folder, req.user.id);
-      res.json(pages);
+      res.json(await presentPages(storage, req.user.id, pages));
     } catch (error) {
       res.status(500).json({ message: 'Server error' });
     }
@@ -2225,9 +2314,10 @@ export async function registerRoutes(
         return res.status(404).json({ message: 'Page not found' });
       }
 
-      // Return page with permission level
+      // Return page with permission level; the link's visitor sees tree fields like anyone
+      // without a session (#103 D4)
       res.json({
-        page,
+        page: await presentPage(storage, undefined, page),
         permission: link.permission,
         isPublicLink: true,
       });
@@ -2266,7 +2356,7 @@ export async function registerRoutes(
         const parentId = parseInt(req.params.id);
         // Reading the parent does not grant reading its children: list only readable ones.
         const children = await storage.getReadableChildPages(parentId, req.user?.id);
-        res.json(children);
+        res.json(await presentPages(storage, req.user?.id, children));
       } catch (error) {
         console.error('Error fetching sub-pages:', error);
         res.status(500).json({ error: 'Failed to fetch sub-pages' });

@@ -45,6 +45,22 @@ export type PageMoveResult =
   | { status: 'moved'; page: { id: number; parentId: number | null } }
   | { status: 'not-found' | 'parent-not-found' | 'cross-team' | 'cycle' };
 
+/** A page in the trash listing (GET /api/trash): never content. */
+export interface TrashedPage {
+  id: number;
+  title: string;
+  slug: string;
+  icon: string | null;
+  folder: string;
+  author: string;
+  teamId: number | null;
+  deletedAt: Date | null;
+  updatedAt: Date;
+}
+
+/** Name of the advisory lock that serializes page tree writes within one workspace scope. */
+export const PAGE_TREE_LOCK_NAME = 'papyrus.page_tree';
+
 /** Highest sibling index the move route accepts (larger values are a client bug). */
 export const MAX_TREE_INDEX = 100_000;
 

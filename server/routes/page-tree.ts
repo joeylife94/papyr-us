@@ -60,6 +60,9 @@ export async function checkTreeParent(
   return { ok: true };
 }
 
+// A loop refusal does not say why: the loop may run through pages the caller cannot read.
+const CANNOT_MOVE_THERE = { message: 'The page cannot be moved there' };
+
 const moveSchema = z
   .object({
     parentId: z.number().int().positive().nullable(),
@@ -109,7 +112,7 @@ export function registerPageTreeRoutes(app: Express, storage: DBStorage) {
       }
       if (parentId !== null) {
         if (parentId === id) {
-          return res.status(400).json({ message: 'A page cannot be moved under itself' });
+          return res.status(400).json(CANNOT_MOVE_THERE);
         }
         const parentCheck = await checkTreeParent(storage, userId, parentId, page.teamId ?? null);
         if (!parentCheck.ok) {
@@ -117,7 +120,7 @@ export function registerPageTreeRoutes(app: Express, storage: DBStorage) {
         }
         const ancestors = (await storage.getPageAncestorIds(parentId)) ?? [];
         if (ancestors.includes(id)) {
-          return res.status(400).json({ message: 'A page cannot be moved under its own sub-page' });
+          return res.status(400).json(CANNOT_MOVE_THERE);
         }
       }
 
@@ -127,7 +130,7 @@ export function registerPageTreeRoutes(app: Express, storage: DBStorage) {
         case 'moved':
           return res.json(result.page);
         case 'cycle':
-          return res.status(400).json({ message: 'A page cannot be moved under its own sub-page' });
+          return res.status(400).json(CANNOT_MOVE_THERE);
         case 'cross-team':
           return res
             .status(403)

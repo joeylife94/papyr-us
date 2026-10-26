@@ -8,9 +8,15 @@
  *   response (or its breadcrumb) hints at that parent (D4);
  * - moves need editor on the page and the new parent, never cross teams (403) and never build
  *   a loop (400); an unreadable parent answers like a missing one (404);
- * - POST /api/pages and PUT /api/pages/:id cannot place a page around those rules;
+ * - POST /api/pages and PUT /api/pages/:id cannot place a page around those rules; PUT and
+ *   autosave leave pages in the trash alone; a team change never reveals a hidden parent;
+ * - page payloads (single reads and listings) name a parent only when the caller can see it and
+ *   never carry a stored position; team-less moves never write other people's private pages;
  * - deleting a page trashes its live subtree only if the caller may delete every page in it,
- *   otherwise nothing changes and the refusal names no page; restoring brings the subtree back.
+ *   otherwise nothing changes and the refusal names no page; restoring brings the subtree back,
+ *   and a restored page whose parent is not live or in another team becomes a root page; a page
+ *   already in the trash takes nothing with a bulk delete;
+ * - the trash lists only pages the caller can read, without content.
  */
 import {
   test,
@@ -18,6 +24,7 @@ import {
   request as playwrightRequest,
   type APIRequestContext,
 } from '@playwright/test';
+import { Pool } from 'pg';
 import { createAuthenticatedApiContext, registerTestUser } from './e2e-helpers';
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:5003';
@@ -46,6 +53,14 @@ test.describe('Page tree access control', () => {
     const anonymous = await playwrightRequest.newContext({ baseURL: BASE_URL });
     const created: Array<{ ctx: APIRequestContext; id: number }> = [];
     const teamIds: number[] = [];
+    // Stored tree columns are read (and legacy shapes written) directly in the database.
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    const stored = async (id: number) =>
+      (
+        await pool.query('SELECT parent_id, position, deleted_at FROM wiki_pages WHERE id = $1', [
+          id,
+        ])
+      ).rows[0] as { parent_id: number | null; position: number | null; deleted_at: Date | null };
 
     const createPage = async (
       ctx: APIRequestContext,
@@ -134,7 +149,10 @@ test.describe('Page tree access control', () => {
 
       // ── 2. Moves: permission, team and loop rules ──
       expect((await move(ownerARequest, a1.id, c1.id)).status(), 'cross-team move').toBe(403);
-      expect((await move(ownerARequest, a1.id, a1c.id)).status(), 'into own child').toBe(400);
+      const intoChild = await move(ownerARequest, a1.id, a1c.id);
+      expect(intoChild.status(), 'into own child').toBe(400);
+      // The refusal does not say why: a loop may run through pages the caller cannot read.
+      expect(await intoChild.json()).toEqual({ message: 'The page cannot be moved there' });
       expect((await move(ownerARequest, a1.id, a1.id)).status(), 'under itself').toBe(400);
       expect((await move(memberARequest, a2.id, a1.id)).status(), 'viewer moves').toBe(403);
       expect((await move(ownerBRequest, a2.id, null)).status(), 'outsider moves').toBe(404);
@@ -186,6 +204,10 @@ test.describe('Page tree access control', () => {
         data: { teamId: teamC.id },
       });
       expect(teamChange.status(), 'a page with sub-pages keeps its team').toBe(409);
+      const childTeamChange = await ownerARequest.put(`/api/pages/${a1c.id}`, {
+        data: { teamId: teamC.id },
+      });
+      expect(childTeamChange.status(), 'a page under a visible parent keeps its team').toBe(409);
       const unchanged = (await treeOf(ownerARequest, teamA.id)).pages;
       expect(unchanged.find((page) => page.id === a2.id)?.parentId).toBeNull();
       expect(unchanged.find((page) => page.id === a1c.id)?.parentId).toBe(a1.id);
@@ -219,6 +241,35 @@ test.describe('Page tree access control', () => {
       expect(ownerAPersonal.pages.some((page) => page.id === secret.id)).toBe(true);
       expect(ownerAPersonal.text).not.toContain('Visible child');
 
+      // Page payloads say the same: no stored parent id, no stored position.
+      expect((await stored(visibleChild.id)).parent_id).toBe(secret.id);
+      for (const path of [
+        `/api/pages/${visibleChild.id}`,
+        `/api/pages/slug/${visibleChild.slug}`,
+      ]) {
+        const read = await ownerBRequest.get(path);
+        expect(read.status(), path).toBe(200);
+        expect(await read.json(), path).toMatchObject({ parentId: null, position: null });
+      }
+      const ownerBList = await ownerBRequest.get('/api/pages?limit=100');
+      const listed = (await ownerBList.json()).pages.find(
+        (page: { id: number }) => page.id === visibleChild.id
+      );
+      expect(listed).toMatchObject({ parentId: null, position: null });
+      expect(JSON.stringify(listed)).not.toContain(String(secret.id));
+      const visibleParent = await (await memberARequest.get(`/api/pages/${a1c.id}`)).json();
+      expect(visibleParent).toMatchObject({ parentId: a1.id, position: null });
+
+      // ── 4b. Team-less moves renumber only pages the mover can read ──
+      const privateA = await mustCreate(ownerARequest, `Private A ${marker}`);
+      const personalB1 = await mustCreate(ownerBRequest, `Personal B1 ${marker}`);
+      const personalB2 = await mustCreate(ownerBRequest, `Personal B2 ${marker}`);
+      expect((await stored(privateA.id)).position).toBeNull();
+      expect((await move(ownerBRequest, personalB2.id, null, 0)).status()).toBe(200);
+      expect((await stored(personalB2.id)).position).toBe(0);
+      expect((await stored(personalB1.id)).position).not.toBeNull();
+      expect((await stored(privateA.id)).position, "another user's private page").toBeNull();
+
       // ── 5. D5: the subtree goes only when every page in it may be deleted ──
       const refused = await ownerARequest.delete(`/api/pages/${secret.id}`);
       expect(refused.status()).toBe(403);
@@ -233,29 +284,89 @@ test.describe('Page tree access control', () => {
       expect((await ownerARequest.get(`/api/pages/${secret.id}`)).status()).toBe(200);
       expect((await ownerBRequest.get(`/api/pages/${visibleChild.id}`)).status()).toBe(200);
 
+      // A team change of the child does not reveal the hidden parent: the page leaves it.
+      const leaves = await ownerBRequest.put(`/api/pages/${visibleChild.id}`, {
+        data: { teamId: teamB.id },
+      });
+      expect(leaves.status()).toBe(200);
+      expect(await leaves.text()).not.toContain(String(secret.id));
+      expect((await stored(visibleChild.id)).parent_id).toBeNull();
+      expect((await ownerARequest.delete(`/api/pages/${secret.id}`)).status()).toBe(200);
+
       const deleted = await ownerARequest.delete(`/api/pages/${a1.id}`);
       expect(deleted.status()).toBe(200);
       expect((await deleted.json()).subPages).toBe(1);
       expect((await ownerARequest.get(`/api/pages/${a1c.id}`)).status()).toBe(404);
       expect((await treeOf(memberARequest, teamA.id)).text).not.toContain(`A1 ${marker}`);
 
-      // Restoring only the child: it is live under a trashed parent, so it is a root page (D4).
+      // ── 5b. The trash lists only readable pages, without content ──
+      const ownerATrash = await ownerARequest.get('/api/trash');
+      expect(ownerATrash.status()).toBe(200);
+      const ownerATrashed = (await ownerATrash.json()) as Array<Record<string, unknown>>;
+      expect(ownerATrashed.map((page) => page.id)).toEqual(expect.arrayContaining([a1.id, a1c.id]));
+      expect(ownerATrashed.every((page) => !('content' in page) && !('blocks' in page))).toBe(true);
+      const memberTrash = await memberARequest.get(`/api/trash?teamId=${teamA.id}`);
+      expect(((await memberTrash.json()) as Array<{ id: number }>).map((p) => p.id)).toEqual(
+        expect.arrayContaining([a1.id, a1c.id])
+      );
+      for (const path of ['/api/trash', `/api/trash?teamId=${teamA.id}`]) {
+        const outsiderTrash = await ownerBRequest.get(path);
+        expect(outsiderTrash.status(), path).toBe(200);
+        const text = await outsiderTrash.text();
+        expect(text, path).not.toContain(`A1 ${marker}`);
+        expect(text, path).not.toContain('Secret parent');
+      }
+
+      // ── 5c. PUT and autosave leave a page in the trash alone ──
+      for (const data of [{ deletedAt: null }, { teamId: teamC.id }, { title: 'Edited' }]) {
+        const put = await ownerARequest.put(`/api/pages/${a1.id}`, { data });
+        expect(put.status(), `PUT trashed ${JSON.stringify(data)}`).toBe(404);
+      }
+      const trashedAutosave = await ownerARequest.put(`/api/pages/${a1.id}/autosave`, {
+        data: { title: 'Edited' },
+      });
+      expect(trashedAutosave.status()).toBe(404);
+      expect((await stored(a1.id)).deleted_at).not.toBeNull();
+
+      // ── 5d. Bulk delete of a page already in the trash takes nothing with it ──
+      // (a live page under a trashed one only exists in data from before the tree rules)
+      const legacyLive = await mustCreate(ownerARequest, `Legacy live ${marker}`, {
+        teamId: teamA.id,
+      });
+      await pool.query('UPDATE wiki_pages SET parent_id = $1 WHERE id = $2', [
+        a1.id,
+        legacyLive.id,
+      ]);
+      const bulkTrashed = await ownerARequest.post('/api/pages/bulk/delete', {
+        data: { pageIds: [a1.id] },
+      });
+      expect(bulkTrashed.status()).toBe(200);
+      expect(await bulkTrashed.json()).toEqual({ deleted: 0 });
+      expect((await stored(legacyLive.id)).deleted_at).toBeNull();
+      await pool.query('UPDATE wiki_pages SET parent_id = NULL WHERE id = $1', [legacyLive.id]);
+
+      // ── 5e. Restores never hang a page under a parent that is not live or in another team ──
+      // Restoring only the child while its parent is in the trash makes it a root page.
       expect((await ownerARequest.post(`/api/trash/${a1c.id}/restore`)).status()).toBe(200);
+      expect((await stored(a1c.id)).parent_id).toBeNull();
       const childAlone = (await treeOf(memberARequest, teamA.id)).pages;
       expect(childAlone.find((page) => page.id === a1c.id)?.parentId).toBeNull();
       expect(childAlone.some((page) => page.id === a1.id)).toBe(false);
-
-      // Restoring the parent brings back what was trashed with it.
-      expect((await ownerARequest.delete(`/api/pages/${a1c.id}`)).status()).toBe(200);
       expect((await ownerARequest.post(`/api/trash/${a1.id}/restore`)).status()).toBe(200);
-      const restored = (await treeOf(memberARequest, teamA.id)).pages;
-      expect(restored.find((page) => page.id === a1.id)?.parentId).toBeNull();
-      expect(restored.some((page) => page.id === a1c.id)).toBe(false);
-      expect((await ownerARequest.post(`/api/trash/${a1c.id}/restore`)).status()).toBe(200);
+      expect((await stored(a1c.id)).parent_id).toBeNull();
+
+      // A page and its sub-page trashed together come back together.
+      expect((await move(ownerARequest, a1c.id, a1.id)).status()).toBe(200);
       expect((await ownerARequest.delete(`/api/pages/${a1.id}`)).status()).toBe(200);
       expect((await ownerARequest.post(`/api/trash/${a1.id}/restore`)).status()).toBe(200);
       const subtreeBack = (await treeOf(memberARequest, teamA.id)).pages;
       expect(subtreeBack.find((page) => page.id === a1c.id)?.parentId).toBe(a1.id);
+
+      // A parent in another team (pre-rules data) is dropped on restore.
+      expect((await ownerARequest.delete(`/api/pages/${a2.id}`)).status()).toBe(200);
+      await pool.query('UPDATE wiki_pages SET parent_id = $1 WHERE id = $2', [c1.id, a2.id]);
+      expect((await ownerARequest.post(`/api/trash/${a2.id}/restore`)).status()).toBe(200);
+      expect((await stored(a2.id)).parent_id).toBeNull();
 
       // ── 6. A revoked member loses the team tree immediately ──
       const removed = await ownerARequest.delete(
@@ -274,6 +385,7 @@ test.describe('Page tree access control', () => {
         await ownerARequest.delete(`/api/teams/${teamId}`).catch(() => {});
         await ownerBRequest.delete(`/api/teams/${teamId}`).catch(() => {});
       }
+      await pool.end();
       await anonymous.dispose();
       await ownerARequest.dispose();
       await memberARequest.dispose();

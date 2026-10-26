@@ -87,7 +87,7 @@ function saveExpanded(scope: string, ids: Set<number>) {
 function moveFailure(error: unknown): string {
   const status = Number(String((error as Error)?.message ?? '').split(':')[0]);
   if (status === 403) return '이 위치로 옮길 권한이 없습니다.';
-  if (status === 400) return '문서를 자기 하위 문서 안으로 옮길 수 없습니다.';
+  if (status === 400) return '이 위치로 옮길 수 없습니다.';
   if (status === 404) return '문서를 찾을 수 없습니다. 목록을 새로 고칩니다.';
   return '잠시 후 다시 시도하세요.';
 }

@@ -29,6 +29,11 @@ export function buildMockStorage(actualModule: any) {
     instance.checkPagePermission.mockResolvedValue(true);
   }
 
+  // The page tree lock (#103 E5) only serializes; in route tests it simply runs its callback.
+  if (instance.withPageTreeLock) {
+    instance.withPageTreeLock.mockImplementation((_teamId: unknown, run: () => unknown) => run());
+  }
+
   return instance;
 }
 
