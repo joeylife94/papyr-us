@@ -839,11 +839,17 @@ export class DBStorage {
    * on a small pool of their own, so a waiting caller never holds a connection `run` needs.
    */
   async withPageTreeLock<T>(teamId: number | null, run: () => Promise<T>): Promise<T> {
-    this.treeLockPool ??= new Pool({
-      connectionString: process.env.DATABASE_URL,
-      max: 4,
-      allowExitOnIdle: true,
-    });
+    if (!this.treeLockPool) {
+      this.treeLockPool = new Pool({
+        connectionString: process.env.DATABASE_URL,
+        max: 4,
+        allowExitOnIdle: true,
+      });
+      // Like the main pool: an idle client's error must not crash the process.
+      this.treeLockPool.on('error', (err) => {
+        console.error('[DB Tree Lock Pool] Unexpected error on idle client:', err.message);
+      });
+    }
     const key = [PAGE_TREE_LOCK_NAME, teamId ?? 0];
     const client = await this.treeLockPool.connect();
     try {
