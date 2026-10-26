@@ -6,6 +6,7 @@
  *   - autosaves in one editing session record exactly one version (the pre-session state);
  *   - a checkpoint closes the session, so the next autosave records the next version;
  *   - a blocks-only save (what Yjs sends) updates `content`, and therefore FTS;
+ *   - structured blocks derive Markdown `content` that FTS still indexes word by word (#113);
  *   - a restore keeps the current state as a version before it is overwritten.
  *
  * The tables live in their own schema so this file can run next to the other Layer 4 files.
@@ -178,6 +179,30 @@ describe('page save pipeline (real Postgres)', () => {
     expect(page.content).toBe('quokka habitat\n\nnotes');
     expect(await matchesSearch(id, 'quokka')).toBe(true);
     expect(await matchesSearch(id, 'zebra')).toBe(false);
+  });
+
+  it('derives Markdown from structured blocks, and FTS still finds their words (#113)', async () => {
+    const id = await createPage('markdown-fts', 'zebra');
+    await pipeline.savePage(
+      store,
+      id,
+      {
+        blocks: [
+          { id: 'h', type: 'heading2', content: 'Wombat burrows' },
+          { id: 'l', type: 'bulleted_list', content: 'tunnels' },
+          { id: 't', type: 'checkbox', content: 'survey', properties: { checked: true } },
+          { id: 'c', type: 'code', content: 'dig()', properties: { language: 'js' } },
+        ],
+      },
+      'autosave'
+    );
+
+    const page = await storage.getWikiPage(id);
+    expect(page.content).toBe(
+      '## Wombat burrows\n\n- tunnels\n\n- [x] survey\n\n```js\ndig()\n```'
+    );
+    expect(await matchesSearch(id, 'wombat burrows')).toBe(true);
+    expect(await matchesSearch(id, 'survey')).toBe(true);
   });
 
   it('manual saves keep one pre-save version each, numbered after existing versions', async () => {

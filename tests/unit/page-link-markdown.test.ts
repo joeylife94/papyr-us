@@ -23,8 +23,9 @@ describe('page link tokens in rendered Markdown', () => {
   });
 
   it('leaves tokens out of the table of contents and list previews', () => {
+    // #113 §1: TOC ids carry a `heading-` prefix (they must match the reader's heading ids).
     expect(extractHeadings('# Plan for [[page:3]]\n\n## [[page:4]]')).toEqual([
-      { id: 'plan-for', text: 'Plan for', level: 1 },
+      { id: 'heading-plan-for', text: 'Plan for', level: 1 },
     ]);
     expect(toPlainTextPreview('See [[page:3]] here')).toBe('See here');
   });

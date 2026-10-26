@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { UpdateWikiPage, WikiPage } from '../../shared/schema';
+import type { Block, UpdateWikiPage, WikiPage } from '../../shared/schema';
+import { blocksToContent } from '../../client/src/lib/page-content';
 import {
   checkpointPage,
   derivePageContent,
@@ -76,6 +77,26 @@ describe('derivePageContent', () => {
     expect(derivePageContent([{ type: 'image' }, { content: 'x' }])).toBe('\n\nx');
     expect(derivePageContent(undefined)).toBe('');
     expect(derivePageContent({})).toBe('');
+  });
+
+  it('writes structural blocks as Markdown, the same string the editor derives (#113 §1)', () => {
+    const blocks = [
+      { id: 'h', type: 'heading2', content: 'Plan', properties: {}, order: 0, children: [] },
+      { id: 'a', type: 'bulleted_list', content: 'a', properties: {}, order: 1, children: [] },
+      { id: 'b', type: 'bulleted_list', content: 'b', properties: {}, order: 2, children: [] },
+      {
+        id: 't',
+        type: 'checkbox',
+        content: 'ship',
+        properties: { checked: true },
+        order: 3,
+        children: [],
+      },
+      { id: 'd', type: 'divider', content: '', properties: {}, order: 4, children: [] },
+    ] as Block[];
+    const content = '## Plan\n\n- a\n- b\n\n- [x] ship\n\n---';
+    expect(derivePageContent(blocks)).toBe(content);
+    expect(blocksToContent(blocks)).toBe(content);
   });
 });
 
