@@ -94,6 +94,7 @@ import { ANONYMOUS_PAGE_VIEWER, DBStorage } from './storage.js';
 import { registerPageTitleSearchRoutes } from './routes/page-title-search.js';
 import { registerKnowledgeRoutes } from './routes/knowledge.js';
 import { buildKnowledgeGraph, suggestAiLinks } from './services/knowledge-graph.js';
+import { pageIconField } from '../shared/page-icon.js';
 import { featureFlags } from './features.js';
 
 interface MulterRequest extends Request {
@@ -777,6 +778,10 @@ export async function registerRoutes(
     }
   );
 
+  // Every page write that can set the icon accepts one emoji or null (#103 E4).
+  const createPageSchema = insertWikiPageSchema.extend({ icon: pageIconField });
+  const updatePageSchema = updateWikiPageSchema.extend({ icon: pageIconField });
+
   app.post(
     '/api/pages',
     requireAuthIfEnabled,
@@ -786,7 +791,7 @@ export async function registerRoutes(
         // Removed temporary E2E triage logging. The instrumentation used to write
         // `test-server-received-posts.log` during debugging has been cleaned up.
 
-        const pageData = insertWikiPageSchema.parse(req.body);
+        const pageData = createPageSchema.parse(req.body);
 
         // If teamId is provided, find the actual team ID
         if (pageData.teamId && typeof pageData.teamId === 'string') {
@@ -835,7 +840,7 @@ export async function registerRoutes(
     async (req: AuthRequest, res) => {
       try {
         const id = parseInt(req.params.id);
-        const updateData = updateWikiPageSchema.parse(req.body);
+        const updateData = updatePageSchema.parse(req.body);
 
         // Get old page data for comparison and version snapshot
         const oldPage = await storage.getWikiPage(id);
@@ -907,7 +912,8 @@ export async function registerRoutes(
   );
 
   // Autosave (issue #103 E1). Body edits only: moving teams, authorship, trash state and slugs
-  // stay on PUT /api/pages/:id, where they need owner.
+  // stay on PUT /api/pages/:id, where they need owner. The icon (#103 E4) is an editor-level
+  // change: an icon-only autosave records no version and opens no editing session.
   const autosaveSchema = z
     .object({
       title: z.string().min(1).max(500).optional(),
@@ -915,6 +921,7 @@ export async function registerRoutes(
       blocks: z.array(z.any()).optional(),
       tags: z.array(z.string()).optional(),
       folder: z.string().min(1).optional(),
+      icon: pageIconField,
     })
     .strict();
 
@@ -1246,6 +1253,7 @@ export async function registerRoutes(
             tags: original.tags,
             author,
             parentId: original.parentId,
+            icon: original.icon,
             teamId: original.teamId,
             isPublished: false,
             metadata: original.metadata as any,

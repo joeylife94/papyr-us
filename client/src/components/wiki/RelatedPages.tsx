@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageIcon } from '@/components/page/page-icon';
 import { apiRequest } from '@/lib/queryClient';
 import { Link2, Sparkles, ArrowRight } from 'lucide-react';
 import type { WikiPage } from '@shared/schema';
@@ -18,6 +19,7 @@ interface BacklinkPage {
   title: string;
   slug: string;
   content: string;
+  icon: string | null;
 }
 
 export function RelatedPages({ pageId, pageTitle, pageContent }: RelatedPagesProps) {
@@ -84,6 +86,7 @@ export function RelatedPages({ pageId, pageTitle, pageContent }: RelatedPagesPro
           title: p.title,
           slug: p.slug,
           content: p.content,
+          icon: p.icon ?? null,
         }))
     : [];
 
@@ -137,7 +140,10 @@ export function RelatedPages({ pageId, pageTitle, pageContent }: RelatedPagesPro
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
-                      <h4 className="font-medium text-foreground mb-1">{page.title}</h4>
+                      <h4 className="font-medium text-foreground mb-1 flex items-center gap-2">
+                        <PageIcon icon={page.icon} />
+                        {page.title}
+                      </h4>
                       <p className="text-sm text-muted-foreground line-clamp-2">
                         {page.content.substring(0, 150)}...
                       </p>
@@ -174,6 +180,8 @@ export function RelatedPages({ pageId, pageTitle, pageContent }: RelatedPagesPro
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
+                        {/* Icons come from the page list, never from the AI answer. */}
+                        <PageIcon icon={allPages?.find((p) => p.id === page.id)?.icon} />
                         <h4 className="font-medium text-foreground">{page.title}</h4>
                         <Badge variant="secondary" className="text-xs">
                           {Math.round(page.similarity * 100)}% 유사

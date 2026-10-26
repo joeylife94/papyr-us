@@ -23,6 +23,8 @@ import { UnlinkedMentions } from '@/components/page/unlinked-mentions';
 import { PageHistory } from '@/components/page-history';
 import { BlockEditor } from '@/components/blocks/block-editor';
 import { PageProperties, PageTitle, SaveStatus } from '@/components/page/page-editor-parts';
+import { PageHeaderIcon } from '@/components/page/icon-picker';
+import { PageIcon } from '@/components/page/page-icon';
 import { apiRequest } from '@/lib/queryClient';
 import { extractHeadings, estimateReadingTime } from '@/lib/markdown';
 import { blocksToContent, initialBlocksFor, parseTags } from '@/lib/page-content';
@@ -70,6 +72,16 @@ export default function WikiPageView() {
   const headings = useMemo(() => extractHeadings(content), [content]);
 
   const collaborationEnabled = flags.FEATURE_COLLABORATION && !!page && !!user;
+
+  // The browser tab shows the page, its icon first (#103 E4).
+  useEffect(() => {
+    if (!page) return;
+    const previous = document.title;
+    document.title = `${page.icon ? `${page.icon} ` : ''}${page.title} · Papyr.us`;
+    return () => {
+      document.title = previous;
+    };
+  }, [page?.title, page?.icon]);
 
   const {
     isConnected,
@@ -252,7 +264,7 @@ export default function WikiPageView() {
     </div>
   );
 
-  const breadcrumb = (title: string) => (
+  const breadcrumb = (title: string, icon?: string | null) => (
     <nav aria-label="문서 경로" className="mb-5">
       <ol className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
         <li className="min-w-0">
@@ -268,8 +280,12 @@ export default function WikiPageView() {
         <li aria-hidden="true">/</li>
         <li className="capitalize">{page.folder}</li>
         <li aria-hidden="true">/</li>
-        <li aria-current="page" className="min-w-0 max-w-full truncate text-foreground-secondary">
-          {title || '제목 없음'}
+        <li
+          aria-current="page"
+          className="flex min-w-0 max-w-full items-center gap-1.5 text-foreground-secondary"
+        >
+          <PageIcon icon={icon} fallback={false} />
+          <span className="truncate">{title || '제목 없음'}</span>
         </li>
       </ol>
     </nav>
@@ -339,7 +355,7 @@ export default function WikiPageView() {
 interface BodyProps {
   page: WikiPage;
   actions: React.ReactNode;
-  breadcrumb: (title: string) => React.ReactNode;
+  breadcrumb: (title: string, icon?: string | null) => React.ReactNode;
 }
 
 function PageMeta({ page, content }: { page: WikiPage; content: string }) {
@@ -367,8 +383,9 @@ function PageMeta({ page, content }: { page: WikiPage; content: string }) {
 function ReadOnlyPageBody({ page, actions, breadcrumb }: BodyProps) {
   return (
     <>
-      {breadcrumb(page.title)}
+      {breadcrumb(page.title, page.icon)}
       <header className="mb-8 space-y-4 border-b border-border pb-6">
+        <PageHeaderIcon icon={page.icon ?? null} />
         <PageTitle initialTitle={page.title} editable={false} />
         <PageMeta page={page} content={page.content} />
         <div className="flex min-w-0 flex-wrap gap-2">
@@ -414,14 +431,27 @@ function EditablePageBody({
   const [blocks, setBlocks] = useState<Block[]>(() => initialBlocksFor(page));
   const [folder, setFolder] = useState(page.folder);
   const [tagsText, setTagsText] = useState(page.tags.join(', '));
+  const [icon, setIcon] = useState<string | null>(page.icon ?? null);
   const { data: folders = [] } = useQuery<string[]>({ queryKey: ['/api/folders'] });
 
   const { status, queue, flush, reset } = usePageAutosave(page.id, {
-    onSaved: () => {
+    onSaved: (_result, saved) => {
       // Lists and the folder tree show titles and folders; refresh them quietly.
       queryClient.invalidateQueries({ queryKey: ['/api/pages'] });
+      if ('icon' in saved) {
+        // The icon also shows in the page view (tab title, reader) and the page tree.
+        queryClient.invalidateQueries({ queryKey: [`/api/pages/slug/${page.slug}`] });
+        queryClient.invalidateQueries({ queryKey: ['/api/pages/tree'] });
+      }
     },
   });
+
+  // An editor-level change (#103 E4): saved right away through autosave, without a version.
+  const changeIcon = (next: string | null) => {
+    setIcon(next);
+    queue({ icon: next });
+    void flush();
+  };
 
   const content = useMemo(() => blocksToContent(blocks), [blocks]);
   useEffect(() => onContentChange(content), [content, onContentChange]);
@@ -459,9 +489,10 @@ function EditablePageBody({
 
   return (
     <>
-      {breadcrumb(title)}
-      <header className="mb-6 space-y-4">
+      {breadcrumb(title, icon)}
+      <header className="group/page-header mb-6 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
+          <PageHeaderIcon icon={icon} onChange={changeIcon} />
           <SaveStatus status={status} />
         </div>
         <PageTitle

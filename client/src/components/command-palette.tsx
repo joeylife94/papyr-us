@@ -12,7 +12,6 @@ import {
   CommandShortcut,
 } from '@/components/ui/command';
 import {
-  FileText,
   Plus,
   Search,
   Settings,
@@ -31,6 +30,7 @@ import {
 } from 'lucide-react';
 import type { WikiPage } from '@shared/schema';
 import { useTheme } from '@/hooks/use-theme';
+import { PageIcon } from '@/components/page/page-icon';
 
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
@@ -154,7 +154,7 @@ export function CommandPalette() {
                 value={`${page.title} ${page.folder} ${page.tags.join(' ')}`}
                 onSelect={() => runCommand(() => navigate(`/page/${page.slug}`))}
               >
-                <FileText className="mr-2 h-4 w-4" />
+                <PageIcon icon={page.icon} className="mr-2 h-4 w-4 text-sm" />
                 <span>{page.title}</span>
                 <CommandShortcut className="text-xs text-muted-foreground">
                   {page.folder}

@@ -46,6 +46,8 @@ async function createSchema() {
       tags         TEXT[] NOT NULL DEFAULT '{}',
       author       TEXT NOT NULL,
       parent_id    INTEGER,
+      position     INTEGER,
+      icon         TEXT,
       team_id      INTEGER,
       created_at   TIMESTAMP NOT NULL DEFAULT NOW(),
       updated_at   TIMESTAMP NOT NULL DEFAULT NOW(),

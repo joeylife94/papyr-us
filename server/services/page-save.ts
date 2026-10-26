@@ -13,6 +13,7 @@
  *   pre-session state; later autosaves in the same session record nothing. A session closes
  *   after `idleMs` without saves, on an explicit checkpoint (leaving the page), on a manual
  *   save, or before a restore. Workflows for an autosaved session fire when it closes.
+ * - An icon-only autosave (#103 E4) stays outside sessions: no version, no workflow.
  * - A restore snapshots the current state first, so restoring never loses the latest edit.
  *
  * Session state lives in this process (the app runs as a single instance); after a restart the
@@ -97,6 +98,17 @@ function touchesVersionedFields(update: UpdateWikiPage) {
   return touchesBody(update) || update.title !== undefined;
 }
 
+/**
+ * An icon-only save (#103 E4). The icon is an editor-level change: it is neither versioned nor
+ * part of an editing session, so it records no version and fires no workflow.
+ */
+function onlyIcon(update: UpdateWikiPage) {
+  const fields = Object.keys(update).filter(
+    (key) => update[key as keyof UpdateWikiPage] !== undefined
+  );
+  return fields.length > 0 && fields.every((key) => key === 'icon');
+}
+
 async function closeSession(pageId: number, reason: SessionClosedEvent['reason']) {
   const session = sessions.get(pageId);
   if (!session) return false;
@@ -147,6 +159,8 @@ export async function savePage(
 
   if (!before) {
     // Nothing to snapshot.
+  } else if (mode === 'autosave' && onlyIcon(data)) {
+    // Saved as is, outside any editing session.
   } else if (mode === 'manual') {
     await closeSession(pageId, 'manual-save');
     if (touchesBody(data)) {

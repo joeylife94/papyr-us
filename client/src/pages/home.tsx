@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageIcon } from '@/components/page/page-icon';
 import { useActiveWorkspace } from '@/hooks/useActiveWorkspace';
 import { toPlainTextPreview } from '@/lib/markdown';
 import { Book, Plus, User } from 'lucide-react';
@@ -216,12 +217,15 @@ function PageRow({ page, searchQuery }: { page: WikiPage; searchQuery: string })
     >
       <div role="cell" className="flex min-w-0 flex-col gap-1">
         {/* The title link stretches over the row, so the whole row is the click target. */}
-        <Link
-          to={`/page/${page.slug}`}
-          className="truncate text-[15px] font-bold text-foreground after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:rounded-md focus-visible:after:ring-2 focus-visible:after:ring-ring"
-        >
-          {renderHighlighted(page.title, searchQuery)}
-        </Link>
+        <div className="flex min-w-0 items-center gap-2">
+          <PageIcon icon={page.icon} className="w-4 text-[15px]" />
+          <Link
+            to={`/page/${page.slug}`}
+            className="truncate text-[15px] font-bold text-foreground after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:rounded-md focus-visible:after:ring-2 focus-visible:after:ring-ring"
+          >
+            {renderHighlighted(page.title, searchQuery)}
+          </Link>
+        </div>
         <p className="truncate text-[13px] text-muted-foreground">
           {renderHighlighted(toPlainTextPreview(page.content), searchQuery)}
         </p>
