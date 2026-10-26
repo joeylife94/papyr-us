@@ -20,6 +20,7 @@ import {
   Heading2,
   Heading3,
   Minus,
+  Database,
 } from 'lucide-react';
 
 export interface SlashCommandItem {
@@ -143,6 +144,14 @@ const SLASH_COMMANDS: SlashCommandItem[] = [
     description: '외부 콘텐츠 (YouTube, Figma 등)',
     icon: <Video className="h-4 w-4" />,
     keywords: ['embed', 'youtube', 'figma', 'iframe', '임베드'],
+  },
+  {
+    // An inline database owned by this page (#113 §4).
+    type: 'database_inline',
+    label: '데이터베이스',
+    description: '표와 보드로 보는 인라인 데이터베이스',
+    icon: <Database className="h-4 w-4" />,
+    keywords: ['database', 'db', 'table', 'board', 'kanban', '데이터베이스', '보드', '칸반'],
   },
   {
     type: 'mention',
