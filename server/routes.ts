@@ -81,6 +81,8 @@ import {
   snapshotBeforeRestore,
   setSessionClosedHandler,
   storagePageSaveStore,
+  indexNewPageLinks,
+  writeRestoredPage,
 } from './services/page-save.js';
 import {
   buildPageTree,
@@ -103,6 +105,7 @@ import { registerPageTitleSearchRoutes } from './routes/page-title-search.js';
 import { registerKnowledgeRoutes } from './routes/knowledge.js';
 import { buildKnowledgeGraph, suggestAiLinks } from './services/knowledge-graph.js';
 import { registerDailyNoteRoutes } from './routes/daily-notes.js';
+import { registerPageLinkRoutes } from './routes/page-links.js';
 import { featureFlags } from './features.js';
 
 interface MulterRequest extends Request {
@@ -622,6 +625,7 @@ export async function registerRoutes(
   registerPageTitleSearchRoutes(app, storage);
   registerKnowledgeRoutes(app, storage);
   registerDailyNoteRoutes(app, storage);
+  registerPageLinkRoutes(app, storage);
 
   app.get('/api/pages', optionalAuth, async (req: AuthRequest, res) => {
     try {
@@ -841,6 +845,8 @@ export async function registerRoutes(
         const page = creatorUserId
           ? await storage.createWikiPage(pageData, creatorUserId)
           : await storage.createWikiPage(pageData);
+        // Links typed before the first save (E2's lazy creation) are indexed with the page.
+        await indexNewPageLinks(pageSaveStore, page);
 
         // Trigger workflows for page_created event
         triggerWorkflows('page_created', {
@@ -1151,10 +1157,10 @@ export async function registerRoutes(
         // Keep the current state as a version first, so restoring never loses the latest edit.
         await snapshotBeforeRestore(pageSaveStore, pageId);
 
-        const restoredPage = await storage.updateWikiPage(pageId, {
+        const restoredPage = await writeRestoredPage(pageSaveStore, pageId, {
           title: version.title,
           content: version.content,
-          blocks: version.blocks as any,
+          blocks: version.blocks,
         });
 
         if (!restoredPage) {
@@ -1342,6 +1348,7 @@ export async function registerRoutes(
           },
           (req as any).user?.id
         );
+        await indexNewPageLinks(pageSaveStore, cloned);
 
         res.status(201).json(cloned);
       } catch (error) {
@@ -1510,6 +1517,7 @@ export async function registerRoutes(
           },
           (req as any).user?.id
         );
+        await indexNewPageLinks(pageSaveStore, page);
 
         res.status(201).json(page);
       } catch (error) {

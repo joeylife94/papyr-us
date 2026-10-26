@@ -536,6 +536,87 @@ export class DBStorage {
       .limit(limit);
   }
 
+  /**
+   * Link chips (#103 E6): the pages among `ids` that are live and readable by the viewer, with
+   * the fields a chip shows. An id missing from the result is deleted, unknown or unreadable;
+   * callers must not tell those apart.
+   */
+  async resolveReadablePageLinks(
+    viewer: PageViewer,
+    ids: number[]
+  ): Promise<Array<Pick<PageTitleMatch, 'id' | 'title' | 'slug' | 'icon'>>> {
+    if (ids.length === 0) return [];
+    return this.db
+      .select({
+        id: wikiPages.id,
+        title: wikiPages.title,
+        slug: wikiPages.slug,
+        icon: wikiPages.icon,
+      })
+      .from(wikiPages)
+      .where(and(inArray(wikiPages.id, ids), isNull(wikiPages.deletedAt), this.listableBy(viewer)));
+  }
+
+  /**
+   * Backlinks (#103 E6): live pages the viewer can read whose body links to `pageId`, most
+   * recently updated first. `page_links` also indexes links to pages their author cannot read,
+   * so the source side is filtered here and the target side by the caller's page check.
+   */
+  async getReadableBacklinks(
+    viewer: PageViewer,
+    pageId: number,
+    limit = 100
+  ): Promise<Array<Omit<PageTitleMatch, 'teamId'>>> {
+    return this.db
+      .select({
+        id: wikiPages.id,
+        title: wikiPages.title,
+        slug: wikiPages.slug,
+        icon: wikiPages.icon,
+        updatedAt: wikiPages.updatedAt,
+      })
+      .from(wikiPages)
+      .where(
+        and(
+          sql`EXISTS (SELECT 1 FROM page_links pl WHERE pl.source_page_id = ${wikiPages.id} AND pl.target_page_id = ${pageId})`,
+          sql`${wikiPages.id} <> ${pageId}`,
+          isNull(wikiPages.deletedAt),
+          this.listableBy(viewer)
+        )
+      )
+      .orderBy(desc(wikiPages.updatedAt))
+      .limit(limit);
+  }
+
+  /**
+   * Replace the outgoing links of a page with `targetIds` in one transaction (the save
+   * pipeline's link index, #103 E6). Self-links and ids of pages that do not exist are skipped;
+   * trashed targets stay indexed so their backlinks return with them on restore.
+   */
+  async replacePageLinks(sourcePageId: number, targetIds: number[]): Promise<void> {
+    const targets = Array.from(
+      new Set(targetIds.filter((id) => Number.isInteger(id) && id > 0 && id !== sourcePageId))
+    );
+    await this.db.transaction(async (tx: any) => {
+      // Serializes concurrent syncs of one page (a REST autosave and a Yjs save can overlap).
+      // NO KEY UPDATE does not block the foreign-key checks of links from other pages.
+      const source = await tx.execute(
+        sql`SELECT id FROM wiki_pages WHERE id = ${sourcePageId} FOR NO KEY UPDATE`
+      );
+      if (source.rows.length === 0) return;
+      await tx.execute(sql`DELETE FROM page_links WHERE source_page_id = ${sourcePageId}`);
+      if (targets.length === 0) return;
+      await tx.execute(sql`
+        INSERT INTO page_links (source_page_id, target_page_id)
+        SELECT ${sourcePageId}, id FROM wiki_pages
+        WHERE id IN (${sql.join(
+          targets.map((id) => sql`${id}`),
+          sql`, `
+        )})
+        ON CONFLICT DO NOTHING`);
+    });
+  }
+
   async getReadableWikiPagesByFolder(folder: string, userId: number): Promise<WikiPage[]> {
     const viewer = await this.getPageViewer(userId);
     return this.db
