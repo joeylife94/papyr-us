@@ -99,6 +99,8 @@ import jwt from 'jsonwebtoken';
 import passport from 'passport';
 import { eq, and, isNull } from 'drizzle-orm';
 import { ANONYMOUS_PAGE_VIEWER, DBStorage } from './storage.js';
+import { registerKnowledgeRoutes } from './routes/knowledge.js';
+import { buildKnowledgeGraph, suggestAiLinks } from './services/knowledge-graph.js';
 import { featureFlags } from './features.js';
 
 interface MulterRequest extends Request {
@@ -613,6 +615,10 @@ export async function registerRoutes(
   }
 
   // Wiki Pages API
+  // Knowledge routes (#111). They are registered before /api/pages/:id so their fixed path
+  // segments are never read as a page id.
+  registerKnowledgeRoutes(app, storage);
+
   app.get('/api/pages', optionalAuth, async (req: AuthRequest, res) => {
     try {
       const teamIdParam = req.query.teamId as string;
@@ -4025,195 +4031,51 @@ export async function registerRoutes(
     }
   });
 
-  // Knowledge Graph API
+  // Knowledge Graph API (#111 §1): readable pages of the caller's teams (or one team), with
+  // page-link, legacy [[Title]], tag and optional AI edges. Never carries page content.
   app.get(
     '/api/knowledge-graph',
     requireAuthIfEnabled,
     requireTeamMembership,
     async (req: AuthRequest, res) => {
       try {
-        const teamId = req.query.teamId as string | undefined;
+        const teamParam = typeof req.query.teamId === 'string' ? req.query.teamId : undefined;
         const includeAILinks = req.query.includeAI === 'true';
 
         // Use team IDs already resolved by requireTeamMembership middleware
         const userTeamIds: number[] = (req as any).userTeamIds ?? [];
 
-        // If a specific teamId is requested, verify the user is a member
-        if (teamId && !userTeamIds.map(String).includes(teamId)) {
-          return res.status(403).json({ message: 'You are not a member of this team' });
+        // A team may be named like everywhere else; requireTeamMembership already refused
+        // unknown names and teams the caller is not in.
+        let teamId: number | undefined;
+        if (teamParam) {
+          teamId = /^\d+$/.test(teamParam)
+            ? Number(teamParam)
+            : (await storage.getTeamByName(teamParam))?.id;
+          if (!teamId || !userTeamIds.includes(teamId)) {
+            return res.status(403).json({ message: 'You are not a member of this team' });
+          }
         }
 
         // Build the set of team IDs to query ? never falls through to undefined / full-DB scan
-        const effectiveTeamIds: string[] = teamId ? [teamId] : userTeamIds.map(String);
+        const effectiveTeamIds: number[] = teamId ? [teamId] : userTeamIds;
 
         // If user belongs to no teams, return an empty graph immediately
-        if (effectiveTeamIds.length === 0) {
+        if (effectiveTeamIds.length === 0 || !req.user?.id) {
           return res.json({ nodes: [], links: [] });
         }
 
-        // Aggregate pages across all authorized teams, always passing an explicit teamId
-        const pageResults = await Promise.all(
-          effectiveTeamIds.map((tid) =>
-            storage.searchWikiPages({ query: '', limit: 1000, offset: 0, teamId: tid })
-          )
-        );
-        const pages = pageResults.flatMap((r: any) => r.pages);
+        const viewer = await storage.getPageViewer(req.user.id);
+        const { pages, links } = await storage.getKnowledgeGraphSource(viewer, effectiveTeamIds);
+        const aiLinks =
+          includeAILinks && pages.length > 0
+            ? await suggestAiLinks(pages, aiService.findRelatedPages)
+            : [];
 
-        // Build nodes and links
-        const nodes: any[] = [];
-        const links: any[] = [];
-        const tagMap = new Map<string, Set<number>>();
-
-        // Create nodes for pages
-        pages.forEach((page: any) => {
-          const connections = 0; // Will be calculated later
-          const isOrphan = connections === 0;
-
-          nodes.push({
-            id: `page-${page.id}`,
-            name: page.title,
-            type: isOrphan ? 'orphan' : 'page',
-            val: 10, // Base size
-            color: isOrphan ? '#EF4444' : '#3B82F6',
-            pageId: page.id,
-            slug: page.slug,
-            connections: 0,
-            tags: page.tags,
-            content: page.content,
-          });
-
-          // Track tags
-          page.tags?.forEach((tag: string) => {
-            if (!tagMap.has(tag)) {
-              tagMap.set(tag, new Set());
-            }
-            tagMap.get(tag)!.add(page.id);
-          });
-
-          // Find content links (simple [[link]] detection)
-          const linkRegex = /\[\[([^\]]+)\]\]/g;
-          const matches = page.content.matchAll(linkRegex);
-          for (const match of matches) {
-            const linkedTitle = match[1];
-            const linkedPage = pages.find(
-              (p: any) => p.title.toLowerCase() === linkedTitle.toLowerCase()
-            );
-            if (linkedPage && linkedPage.id !== page.id) {
-              links.push({
-                source: `page-${page.id}`,
-                target: `page-${linkedPage.id}`,
-                type: 'content',
-                strength: 2,
-              });
-            }
-          }
-        });
-
-        // Create tag nodes and links
-        tagMap.forEach((pageIds, tag) => {
-          if (pageIds.size > 1) {
-            nodes.push({
-              id: `tag-${tag}`,
-              name: `#${tag}`,
-              type: 'tag',
-              val: pageIds.size * 5,
-              color: '#F59E0B',
-              connections: pageIds.size,
-            });
-
-            // Link pages with same tag
-            const pageIdArray = Array.from(pageIds);
-            pageIdArray.forEach((pageId) => {
-              links.push({
-                source: `page-${pageId}`,
-                target: `tag-${tag}`,
-                type: 'tag',
-                strength: 1,
-              });
-            });
-          }
-        });
-
-        // Add AI-recommended links if requested
-        if (includeAILinks && pages.length > 0) {
-          try {
-            // Get AI service
-            const aiModule = await import('./services/ai.js');
-
-            // Analyze a sample of pages (max 20 to avoid rate limits)
-            const samplePages = pages
-              .filter((p: any) => p.content && p.content.length > 100)
-              .sort(() => Math.random() - 0.5)
-              .slice(0, 20);
-
-            for (const page of samplePages) {
-              try {
-                const relatedPages = await aiModule.findRelatedPages(
-                  page.content,
-                  page.title,
-                  pages.filter((p: any) => p.id !== page.id) // Exclude current page
-                );
-
-                if (relatedPages && relatedPages.length > 0) {
-                  relatedPages.slice(0, 3).forEach((related: any) => {
-                    // Only add if not already connected
-                    const existingLink = links.find(
-                      (l) =>
-                        (l.source === `page-${page.id}` && l.target === `page-${related.pageId}`) ||
-                        (l.target === `page-${page.id}` && l.source === `page-${related.pageId}`)
-                    );
-
-                    if (!existingLink && related.relevance > 0.5) {
-                      links.push({
-                        source: `page-${page.id}`,
-                        target: `page-${related.pageId}`,
-                        type: 'ai-recommended',
-                        strength: 1,
-                        relevance: related.relevance,
-                        reason: related.reason,
-                      });
-                    }
-                  });
-                }
-              } catch (aiError) {
-                console.error(`AI link generation failed for page ${page.id}:`, aiError);
-              }
-            }
-          } catch (aiError) {
-            console.error('AI link generation failed:', aiError);
-          }
-        }
-
-        // Calculate connections for each node
-        nodes.forEach((node) => {
-          const nodeLinks = links.filter(
-            (link) => link.source === node.id || link.target === node.id
-          );
-          node.connections = nodeLinks.length;
-          node.val = 10 + node.connections * 3;
-
-          // Update orphan status
-          if (node.type === 'page' && node.connections === 0) {
-            node.type = 'orphan';
-            node.color = '#EF4444';
-          } else if (node.type === 'orphan' && node.connections > 0) {
-            node.type = 'page';
-            node.color = '#3B82F6';
-          }
-        });
-
-        // Remove content field from nodes to reduce response size
-        nodes.forEach((node) => {
-          delete node.content;
-        });
-
-        res.json({ nodes, links });
+        res.json(buildKnowledgeGraph(pages, links, { aiLinks }));
       } catch (error) {
-        console.error('Knowledge graph error:', error);
-        res.status(500).json({
-          message: 'Failed to generate knowledge graph',
-          error: (error as Error).message,
-        });
+        logger.error('Knowledge graph failed', { error: (error as Error)?.message });
+        res.status(500).json({ message: 'Failed to generate knowledge graph' });
       }
     }
   );

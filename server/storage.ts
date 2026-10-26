@@ -782,6 +782,179 @@ export class DBStorage {
     return Array.from(tagCounts.entries()).map(([name, count]) => ({ name, count }));
   }
 
+  /**
+   * Source rows of the knowledge graph (#111 §1): live pages of the given teams the viewer can
+   * read (most recently updated first, capped), and the `page_links` rows whose both ends are
+   * among them. `content` feeds legacy `[[Title]]` edges and AI suggestions only; the graph
+   * response never carries it.
+   */
+  async getKnowledgeGraphSource(
+    viewer: PageViewer,
+    teamIds: number[],
+    limit = 2000
+  ): Promise<{
+    pages: Array<{
+      id: number;
+      title: string;
+      slug: string;
+      icon: string | null;
+      tags: string[] | null;
+      content: string | null;
+    }>;
+    links: Array<{ sourcePageId: number; targetPageId: number }>;
+  }> {
+    if (teamIds.length === 0) return { pages: [], links: [] };
+    // Equivalent to OR-ing readablePagesInScope over the teams, without repeating the ACL SQL.
+    const pages = await this.db
+      .select({
+        id: wikiPages.id,
+        title: wikiPages.title,
+        slug: wikiPages.slug,
+        icon: wikiPages.icon,
+        tags: wikiPages.tags,
+        content: wikiPages.content,
+      })
+      .from(wikiPages)
+      .where(
+        and(
+          isNull(wikiPages.deletedAt),
+          inArray(wikiPages.teamId, teamIds),
+          this.readablePageCondition(viewer)
+        )
+      )
+      .orderBy(desc(wikiPages.updatedAt))
+      .limit(limit);
+    if (pages.length === 0) return { pages, links: [] };
+    const ids = pages.map((page: { id: number }) => page.id);
+    const links = await this.db
+      .select({ sourcePageId: pageLinks.sourcePageId, targetPageId: pageLinks.targetPageId })
+      .from(pageLinks)
+      .where(and(inArray(pageLinks.sourcePageId, ids), inArray(pageLinks.targetPageId, ids)));
+    return { pages, links };
+  }
+
+  /**
+   * Readable neighbourhood of a page in `page_links` (#111 §2 local graph): pages it links to and
+   * pages linking to it, up to `depth` hops, then every link among those pages. Traversal only
+   * passes through live pages the viewer can read, so an unreadable or trashed page is neither
+   * shown nor used as a bridge. The centre page itself is the caller's (already checked) page.
+   */
+  async getLocalPageGraph(
+    viewer: PageViewer,
+    pageId: number,
+    depth: 1 | 2,
+    maxNodes = 150
+  ): Promise<{
+    neighbours: Array<{ id: number; title: string; slug: string; icon: string | null }>;
+    links: Array<{ sourcePageId: number; targetPageId: number }>;
+  }> {
+    const neighbours: Array<{ id: number; title: string; slug: string; icon: string | null }> = [];
+    const known = new Set<number>([pageId]);
+    let frontier = [pageId];
+    for (let level = 0; level < depth && frontier.length > 0 && known.size < maxNodes; level++) {
+      const rows = await this.db
+        .select({
+          id: wikiPages.id,
+          title: wikiPages.title,
+          slug: wikiPages.slug,
+          icon: wikiPages.icon,
+        })
+        .from(wikiPages)
+        .where(
+          and(
+            or(
+              inArray(
+                wikiPages.id,
+                this.db
+                  .select({ id: pageLinks.targetPageId })
+                  .from(pageLinks)
+                  .where(inArray(pageLinks.sourcePageId, frontier))
+              ),
+              inArray(
+                wikiPages.id,
+                this.db
+                  .select({ id: pageLinks.sourcePageId })
+                  .from(pageLinks)
+                  .where(inArray(pageLinks.targetPageId, frontier))
+              )
+            ),
+            sql`${wikiPages.id} NOT IN (${sql.join(
+              [...known].map((id) => sql`${id}`),
+              sql`, `
+            )})`,
+            isNull(wikiPages.deletedAt),
+            this.readablePageCondition(viewer)
+          )
+        )
+        .orderBy(asc(wikiPages.title), asc(wikiPages.id))
+        .limit(maxNodes - known.size);
+      frontier = [];
+      for (const row of rows) {
+        known.add(row.id);
+        neighbours.push(row);
+        frontier.push(row.id);
+      }
+    }
+    if (neighbours.length === 0) return { neighbours, links: [] };
+    const ids = [...known];
+    const links = await this.db
+      .select({ sourcePageId: pageLinks.sourcePageId, targetPageId: pageLinks.targetPageId })
+      .from(pageLinks)
+      .where(and(inArray(pageLinks.sourcePageId, ids), inArray(pageLinks.targetPageId, ids)));
+    return { neighbours, links };
+  }
+
+  /**
+   * Unlinked mentions of a page (#111 §5): live pages of the same scope (its team, or team-less
+   * pages) the viewer can read, whose content contains the page title (case-insensitive,
+   * literal) but which do not link to it in `page_links`. Each row carries a ~240-character
+   * content window around the first mention (`excerpt`, starting at character `offset`) for
+   * the snippet; titles shorter than two characters match nothing.
+   */
+  async getUnlinkedMentions(
+    viewer: PageViewer,
+    page: { id: number; title: string; teamId: number | null },
+    limit = 20
+  ): Promise<
+    Array<{
+      id: number;
+      title: string;
+      slug: string;
+      icon: string | null;
+      excerpt: string;
+      offset: number;
+      contentLength: number;
+    }>
+  > {
+    const title = page.title.trim();
+    if ([...title].length < 2) return [];
+    const lowered = title.toLowerCase();
+    // ILIKE/LIKE treat % and _ as wildcards; the title must match literally.
+    const escaped = lowered.replace(/[\\%_]/g, (c) => `\\${c}`);
+    const windowStart = sql`greatest(strpos(lower(${wikiPages.content}), ${lowered}) - 60, 1)`;
+    return this.db
+      .select({
+        id: wikiPages.id,
+        title: wikiPages.title,
+        slug: wikiPages.slug,
+        icon: wikiPages.icon,
+        excerpt: sql<string>`substring(${wikiPages.content} from ${windowStart} for 240)`,
+        offset: sql<number>`(${windowStart} - 1)::int`,
+        contentLength: sql<number>`char_length(${wikiPages.content})::int`,
+      })
+      .from(wikiPages)
+      .where(
+        and(
+          this.readablePagesInScope(viewer, page.teamId),
+          sql`${wikiPages.id} <> ${page.id}`,
+          sql`${wikiPages.content} ILIKE ${`%${escaped}%`}`,
+          sql`NOT EXISTS (SELECT 1 FROM ${pageLinks} WHERE ${pageLinks.sourcePageId} = ${wikiPages.id} AND ${pageLinks.targetPageId} = ${page.id})`
+        )
+      )
+      .orderBy(desc(wikiPages.updatedAt))
+      .limit(Math.min(Math.max(limit, 1), 50));
+  }
+
   async getFolders(): Promise<string[]> {
     const result = await this.db
       .selectDistinct({ folder: wikiPages.folder })
