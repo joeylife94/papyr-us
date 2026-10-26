@@ -6,6 +6,7 @@ import rehypeStringify from 'rehype-stringify';
 import rehypeHighlight from 'rehype-highlight';
 import matter from 'gray-matter';
 import type { Element, ElementContent, Root, RootContent } from 'hast';
+import type { Root as MdastRoot } from 'mdast';
 import { hasPageLinks, splitPageLinks } from '@shared/page-links';
 import { blocksToMarkdownWithRanges } from '@shared/block-markdown';
 import { rehypeInlineTags } from './rehype-inline-tags';
@@ -72,18 +73,46 @@ export function parseMarkdown(content: string) {
   return { frontmatter, content: markdownContent };
 }
 
+/**
+ * GFM names every footnote list's heading `footnote-label` (each reference points at it with
+ * `aria-describedby`), and remark-rehype's `clobberPrefix` does not reach that id. With `id`,
+ * the label and the references to it use that id instead, so each part of a page rendered in
+ * parts keeps its own label.
+ */
+function rehypeFootnoteLabelId(options: { id?: string }) {
+  const rename = (node: HastNode) => {
+    const properties = node.properties;
+    if (properties?.id === 'footnote-label') properties.id = options.id;
+    if (Array.isArray(properties?.ariaDescribedBy)) {
+      properties.ariaDescribedBy = properties.ariaDescribedBy.map((id) =>
+        id === 'footnote-label' ? options.id : id
+      );
+    }
+    node.children?.forEach(rename);
+  };
+  return (tree: HastNode) => {
+    if (options.id) rename(tree);
+  };
+}
+
 // Convert markdown to HTML. Page link tokens become chip placeholders (#103 E6), `#tags` link to
 // the tag's document list and headings get the anchor ids the table of contents links to (#113).
 // Raw HTML is dropped by remark-rehype; links and images keep only safe URL schemes (a
 // `javascript:` link would otherwise run in the reader).
-// `takenHeadingIds`: ids of headings earlier in the same page, when it renders in parts.
+// When a page renders in parts (see `markdownParts`): `takenHeadingIds` are the ids of headings
+// earlier in the page, `footnoteIdPrefix` keeps this part's footnote ids apart from the others'.
 export async function markdownToHtml(
   markdown: string,
-  options: { takenHeadingIds?: readonly string[] } = {}
+  options: { takenHeadingIds?: readonly string[]; footnoteIdPrefix?: string } = {}
 ): Promise<string> {
+  // The default prefix without `footnoteIdPrefix`, so whole pages render as they always have.
+  const footnoteIds = `user-content-${options.footnoteIdPrefix ?? ''}`;
   const processor = remark()
     .use(remarkGfm)
-    .use(remarkRehype)
+    .use(remarkRehype, { clobberPrefix: footnoteIds })
+    .use(rehypeFootnoteLabelId, {
+      id: options.footnoteIdPrefix ? `${footnoteIds}footnote-label` : undefined,
+    })
     .use(rehypeInlineTags)
     .use(rehypePageLinks)
     .use(rehypeHeadingIds, { taken: options.takenHeadingIds })
@@ -220,6 +249,85 @@ export function takenHeadingIdsByPart(parts: readonly string[]): string[][] {
     for (const heading of extractHeadings(content, before)) taken.push(heading.id);
     return before;
   });
+}
+
+type MdastNode = {
+  type: string;
+  children?: MdastNode[];
+  position?: {
+    start?: { line?: number; offset?: number };
+    end?: { line?: number; offset?: number };
+  };
+};
+
+const DEFINITION_TYPES = new Set(['definition', 'footnoteDefinition']);
+
+/**
+ * The link reference and footnote definitions of one Markdown document, as Markdown, and
+ * whether the document holds anything else. Definitions are copied as written, except one that
+ * spans lines inside a quote or a list: its lines carry the container's markers, so it is
+ * copied as remark writes it.
+ */
+function definitionsOf(content: string): { definitions: string[]; onlyDefinitions: boolean } {
+  // Every definition has a `]:` right after its label.
+  if (!content.includes(']:')) return { definitions: [], onlyDefinitions: !content.trim() };
+  const processor = remark().use(remarkGfm);
+  const tree = processor.parse(content);
+  const definitions: string[] = [];
+  const collect = (node: MdastNode, topLevel: boolean) => {
+    for (const child of node.children ?? []) {
+      if (!DEFINITION_TYPES.has(child.type)) {
+        collect(child, false);
+        continue;
+      }
+      const { start, end } = child.position ?? {};
+      const asWritten = topLevel || start?.line === end?.line;
+      definitions.push(
+        asWritten && start?.offset !== undefined && end?.offset !== undefined
+          ? content.slice(start.offset, end.offset)
+          : processor.stringify({ type: 'root', children: [child] } as MdastRoot).trimEnd()
+      );
+    }
+  };
+  collect(tree as unknown as MdastNode, true);
+  const onlyDefinitions = tree.children.every((child) => DEFINITION_TYPES.has(child.type));
+  return { definitions, onlyDefinitions };
+}
+
+export interface MarkdownPart {
+  /** The part's Markdown, with the other parts' definitions appended. */
+  markdown: string;
+  takenHeadingIds: string[];
+  footnoteIdPrefix: string;
+}
+
+/**
+ * For a page rendered in parts (Markdown runs around inline databases, #113 §4): what each part
+ * renders, so that together the parts read as the page's one document. Null for a part that
+ * shows nothing (empty, or only definitions).
+ * - Link reference and footnote definitions apply to the whole page. Markdown reads
+ *   `[text][label]` and `[^label]` as references only when the label is defined in the same
+ *   document, so each part renders with the other parts' definitions appended (definitions
+ *   render nothing themselves).
+ * - A part lists the footnotes it cites at its own end, as GFM does for a document, under ids
+ *   with the part's own prefix: two parts citing a footnote never both emit `user-content-fn-1`
+ *   or `footnote-label`.
+ * - Heading ids continue across the parts, so the table of contents (built from the whole
+ *   `content`) points at every heading.
+ */
+export function markdownParts(parts: readonly string[]): Array<MarkdownPart | null> {
+  const found = parts.map(definitionsOf);
+  const markdown = parts.map((content, index) => {
+    if (found[index].onlyDefinitions) return '';
+    const others = found.flatMap((part, other) => (other === index ? [] : part.definitions));
+    return others.length > 0 ? `${content}\n\n${others.join('\n\n')}` : content;
+  });
+  const taken = takenHeadingIdsByPart(markdown);
+  return markdown.map((content, index) =>
+    content
+      ? { markdown: content, takenHeadingIds: taken[index], footnoteIdPrefix: `part-${index}-` }
+      : null
+  );
 }
 
 /**

@@ -1,5 +1,5 @@
 import { MarkdownRenderer } from '@/components/wiki/markdown-renderer';
-import { takenHeadingIdsByPart } from '@/lib/markdown';
+import { markdownParts } from '@/lib/markdown';
 import { blocksToContent } from '@/lib/page-content';
 import { readDatabaseProperties } from '@/lib/inline-database';
 import type { Block } from '@shared/schema';
@@ -48,28 +48,25 @@ export function PageReaderBody({
 
   if (!segments) return <MarkdownRenderer content={page.content} className={className} />;
 
-  // Heading ids continue across the parts, as in one document, so the table of contents (built
-  // from the whole `content`) still points at every heading.
-  const contents = segments.map((segment) =>
-    segment.kind === 'markdown' ? blocksToContent(segment.blocks) : ''
+  // Each part renders as its own Markdown document; `markdownParts` makes them read as the one
+  // document the page is: definitions shared, footnote ids unique, heading ids continued (the
+  // table of contents is built from the whole `content`).
+  const parts = markdownParts(
+    segments.map((segment) => (segment.kind === 'markdown' ? blocksToContent(segment.blocks) : ''))
   );
-  const takenByPart = takenHeadingIdsByPart(contents);
-  const parts = segments.map((segment, index) => ({
-    segment,
-    content: contents[index],
-    taken: takenByPart[index],
-  }));
 
   return (
     <div className="space-y-4">
-      {parts.map(({ segment, content, taken }, index) => {
+      {segments.map((segment, index) => {
         if (segment.kind === 'markdown') {
-          return content.trim() ? (
+          const part = parts[index];
+          return part ? (
             <MarkdownRenderer
               key={`md-${index}`}
-              content={content}
+              content={part.markdown}
               className={className}
-              takenHeadingIds={taken}
+              takenHeadingIds={part.takenHeadingIds}
+              footnoteIdPrefix={part.footnoteIdPrefix}
             />
           ) : null;
         }

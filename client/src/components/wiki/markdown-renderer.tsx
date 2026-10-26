@@ -9,12 +9,15 @@ interface MarkdownRendererProps {
   className?: string;
   /** Heading ids used by earlier parts of the same page (see markdownToHtml). */
   takenHeadingIds?: readonly string[];
+  /** Prefix for this part's footnote ids, on a page rendered in parts (see markdownToHtml). */
+  footnoteIdPrefix?: string;
 }
 
 export function MarkdownRenderer({
   content,
   className = '',
   takenHeadingIds,
+  footnoteIdPrefix,
 }: MarkdownRendererProps) {
   const [html, setHtml] = useState('');
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
@@ -26,7 +29,10 @@ export function MarkdownRenderer({
   useEffect(() => {
     let isCancelled = false;
 
-    markdownToHtml(content, { takenHeadingIds: takenKey ? takenKey.split('\n') : [] })
+    markdownToHtml(content, {
+      takenHeadingIds: takenKey ? takenKey.split('\n') : [],
+      footnoteIdPrefix,
+    })
       .then((htmlContent) => {
         if (!isCancelled) {
           setHtml(htmlContent);
@@ -43,7 +49,7 @@ export function MarkdownRenderer({
     return () => {
       isCancelled = true;
     };
-  }, [content, takenKey]);
+  }, [content, takenKey, footnoteIdPrefix]);
 
   // `#tag` links (#113) are plain anchors in the HTML; open them in the app, not by a reload.
   useEffect(() => {
