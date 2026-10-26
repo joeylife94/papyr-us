@@ -171,6 +171,15 @@ describe('GET /api/vault/export', () => {
     expect(archiveFiles(response.body).size).toBe(0);
   });
 
+  it('refuses a scope too large to build in one request', async () => {
+    (storage.getVaultExportPages as any).mockResolvedValue(
+      Array.from({ length: 20_001 }, (_, i) => exportRow(i + 1, `P${i}`, null))
+    );
+    const response = await request(app).get('/api/vault/export').set('Cookie', cookie);
+    expect(response.status).toBe(413);
+    expect(storage.resolveReadablePageLinks).not.toHaveBeenCalled();
+  });
+
   it('does not leak internal errors', async () => {
     (storage.getVaultExportPages as any).mockRejectedValue(
       new Error('relation "secret_x" missing')
@@ -201,6 +210,30 @@ describe('GET /api/pages/:id/export', () => {
     expect(data).toMatchObject({ title: 'Page', slug: 'p5', papyrus_id: '5' });
     expect(body).toBe('A [[Q&A notes]] B 접근할 수 없는 페이지 `[[page:7]]`');
   });
+});
+
+describe('GET /api/pages/:id/export file names', () => {
+  it.each(['markdown', 'html', 'json'])(
+    'names a Korean slug in a valid, RFC 5987 encoded header (%s)',
+    async (format) => {
+      (storage.checkPagePermission as any).mockResolvedValue(true);
+      (storage.getWikiPage as any).mockResolvedValue({
+        ...exportRow(5, '회의록', null, 'body'),
+        slug: '회의록-ab12',
+        author: 'member@example.com',
+        folder: 'docs',
+      });
+
+      const response = await request(app)
+        .get(`/api/pages/5/export?format=${format}`)
+        .set('Cookie', cookie);
+
+      expect(response.status).toBe(200);
+      const disposition = response.headers['content-disposition'];
+      expect(disposition).toMatch(/^attachment; filename="[\x20-\x7e]+"; filename\*=UTF-8''/);
+      expect(disposition).toContain(encodeURIComponent('회의록-ab12'));
+    }
+  );
 });
 
 describe('POST /api/vault/import', () => {

@@ -257,18 +257,28 @@ export function renderImportedBodies(
       null
     );
   };
+  // Every `/`-boundary suffix of each path, built once, so a `[[folder/Name]]` lookup is one map
+  // read instead of a scan of all pages per link.
+  const bySuffixLower = new Map<string, number>();
+  plan.pages.forEach((page, index) => {
+    const key = page.key.toLowerCase();
+    for (let at = key.indexOf('/'); at >= 0; at = key.indexOf('/', at + 1)) {
+      setFirst(bySuffixLower, key.slice(at + 1), index);
+    }
+  });
   // A path from the vault root wins (so `[[Name]]` means the root-level `Name.md` when several
   // files share the name), then a path suffix, then names and titles.
+  const resolved = new Map<string, number | null>();
   const resolve = (target: string): number | null => {
     if (!target) return null;
+    const cached = resolved.get(target);
+    if (cached !== undefined) return cached;
     const lower = target.toLowerCase();
     let index = byPath.get(target) ?? byPathLower.get(lower);
-    if (index === undefined && target.includes('/')) {
-      const suffix = plan.pages.findIndex((page) => page.key.toLowerCase().endsWith(`/${lower}`));
-      if (suffix >= 0) index = suffix;
-    }
-    if (index !== undefined) return ids[index];
-    return resolveName(target.split('/').pop() ?? '');
+    if (index === undefined && target.includes('/')) index = bySuffixLower.get(lower);
+    const id = index !== undefined ? ids[index] : resolveName(target.split('/').pop() ?? '');
+    resolved.set(target, id);
+    return id;
   };
 
   const unresolved: Array<{ path: string; target: string }> = [];

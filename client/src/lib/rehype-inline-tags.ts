@@ -94,7 +94,7 @@ function transform(node: Root | Element, source: string | null) {
     const split =
       child.type === 'text' && child.value.includes('#') ? splitTags(child, source) : null;
     if (split) {
-      children.push(...split);
+      for (const part of split) children.push(part); // no spread: text can hold many tags
       changed = true;
     } else {
       if (child.type === 'element') transform(child, source);
