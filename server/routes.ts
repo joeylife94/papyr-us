@@ -1331,9 +1331,6 @@ export async function registerRoutes(
     async (req: AuthRequest, res) => {
       try {
         const id = parseInt(req.params.id);
-        const db = (storage as any).db;
-        if (!db) return res.status(500).json({ error: 'Database not available' });
-
         const original = await storage.getWikiPage(id);
         if (!original) {
           return res.status(404).json({ error: 'Page not found' });
@@ -1348,7 +1345,10 @@ export async function registerRoutes(
         }
 
         const author = (req as any).user?.email || (req as any).user?.name || original.author;
-        const cloned = await storage.createWikiPage(
+        // The copy gets its own copies of the page's inline databases (#113 §4), in the same
+        // transaction as the page.
+        const cloned = await storage.duplicateWikiPage(
+          id,
           {
             title: `${original.title} (Copy)`,
             slug,

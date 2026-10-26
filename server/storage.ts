@@ -92,8 +92,10 @@ import { isReservedDailyNoteSlug } from '../shared/daily-notes.js';
 import {
   DATABASE_LIMITS,
   checkRowData,
+  databaseBlockSchemaIds,
   parseStoredFields,
   presentValues,
+  remapDatabaseBlocks,
   type DatabaseCellValue,
   type DatabaseField,
   type DatabaseRowData,
@@ -205,20 +207,22 @@ export class DBStorage {
     return result[0];
   }
 
-  async createWikiPage(page: InsertWikiPage, creatorUserId?: number): Promise<WikiPage> {
-    let createdPage: WikiPage | undefined;
-
+  /**
+   * Inserts a page under its slug or, while that is taken, the next candidate
+   * (`buildUniqueSlugCandidate`). `insert` runs once per candidate; inside a transaction it must
+   * run in a savepoint, so a slug conflict leaves the transaction usable.
+   */
+  private async insertWithUniqueSlug(
+    baseSlug: string,
+    insert: (slug: string) => Promise<WikiPage | undefined>
+  ): Promise<WikiPage> {
     // A daily note's slug (#111) is only created by findOrCreateDailyNote; any other create
     // starts from the next candidate, as it would after a slug conflict.
-    const firstAttempt = isReservedDailyNoteSlug(page.slug) ? 1 : 0;
+    const firstAttempt = isReservedDailyNoteSlug(baseSlug) ? 1 : 0;
     for (let attempt = firstAttempt; attempt < MAX_SLUG_INSERT_ATTEMPTS; attempt += 1) {
-      const slug = buildUniqueSlugCandidate(page.slug, attempt);
       try {
-        const result = await this.db
-          .insert(wikiPages)
-          .values({ ...page, slug })
-          .returning();
-        createdPage = result[0];
+        const created = await insert(buildUniqueSlugCandidate(baseSlug, attempt));
+        if (created) return created;
         break;
       } catch (error) {
         if (!isSlugUniqueViolation(error) || attempt === MAX_SLUG_INSERT_ATTEMPTS - 1) {
@@ -226,10 +230,17 @@ export class DBStorage {
         }
       }
     }
+    throw new Error('Failed to allocate a unique page slug');
+  }
 
-    if (!createdPage) {
-      throw new Error('Failed to allocate a unique page slug');
-    }
+  async createWikiPage(page: InsertWikiPage, creatorUserId?: number): Promise<WikiPage> {
+    const createdPage = await this.insertWithUniqueSlug(page.slug, async (slug) => {
+      const result = await this.db
+        .insert(wikiPages)
+        .values({ ...page, slug })
+        .returning();
+      return result[0];
+    });
 
     if (creatorUserId) {
       try {
@@ -244,6 +255,128 @@ export class DBStorage {
       await this.replacePageLinks(createdPage.id, createdPage.content);
     }
     return createdPage;
+  }
+
+  /**
+   * Creates `page`, a copy of page `sourcePageId` (POST /api/pages/:id/duplicate), the way
+   * createWikiPage does, with copies of the source's inline databases (#113 §4), all in one
+   * transaction: a failure leaves no copy behind.
+   *
+   * A database belongs to its page, so a `database_inline` block of `page.blocks` whose database
+   * is owned by the source page points at a new database on the copy, with the same properties,
+   * the same rows and the relations between those rows; blocks that share a database share its
+   * copy. Relations to rows that are not copied stay behind (linking to a row needs editor on its
+   * page). Any other database block loses its `schemaId`, so nothing is read from a database of
+   * another page, and the editor creates a new, empty one. The source databases are share-locked
+   * while they are copied, so properties, rows and their order are copied as of one moment.
+   */
+  async duplicateWikiPage(
+    sourcePageId: number,
+    page: InsertWikiPage,
+    creatorUserId?: number
+  ): Promise<WikiPage> {
+    const referenced = databaseBlockSchemaIds(page.blocks);
+    return this.db.transaction(async (tx: any) => {
+      const sources: DatabaseSchema[] =
+        referenced.length === 0
+          ? []
+          : await tx
+              .select()
+              .from(databaseSchemas)
+              .where(
+                and(
+                  inArray(databaseSchemas.id, referenced),
+                  eq(databaseSchemas.pageId, sourcePageId)
+                )
+              )
+              .orderBy(asc(databaseSchemas.id))
+              .for('share');
+
+      // The page needs an id before its databases can, so it is inserted without database ids
+      // and pointed at the copies before the transaction commits.
+      const blocks = remapDatabaseBlocks(page.blocks, new Map());
+      let copy = await this.insertWithUniqueSlug(page.slug, (slug) =>
+        tx.transaction(async (savepoint: any) => {
+          const result = await savepoint
+            .insert(wikiPages)
+            .values({ ...page, slug, blocks })
+            .returning();
+          return result[0];
+        })
+      );
+
+      const schemaIds = new Map<number, number>();
+      for (const source of sources) {
+        const [created] = await tx
+          .insert(databaseSchemas)
+          .values({
+            pageId: copy.id,
+            name: source.name,
+            description: source.description,
+            fields: source.fields,
+          })
+          .returning({ id: databaseSchemas.id });
+        schemaIds.set(source.id, created.id);
+      }
+
+      if (schemaIds.size > 0) {
+        const schemaMap = [...schemaIds].map(([from, to]) => ({ from, to }));
+        // Row ids are drawn up front (in the source order), so the relations between copied
+        // rows are remapped in the same statement. A relation's ends are judged by the rows,
+        // not by its stored schema ids.
+        await tx.execute(sql`
+          WITH schema_map AS (
+            SELECT * FROM jsonb_to_recordset(${JSON.stringify(schemaMap)}::jsonb)
+              AS m("from" integer, "to" integer)
+          ),
+          row_map AS MATERIALIZED (
+            SELECT r.id AS old_id,
+                   nextval(pg_get_serial_sequence('database_rows', 'id'))::integer AS new_id,
+                   m."to" AS schema_id, r.data, r.order_index, r.created_by
+              FROM database_rows r
+              JOIN schema_map m ON m."from" = r.schema_id
+             ORDER BY r.schema_id, r.order_index, r.id
+          ),
+          copied_rows AS (
+            INSERT INTO database_rows (id, schema_id, data, order_index, created_by)
+            SELECT new_id, schema_id, data, order_index, created_by FROM row_map
+          )
+          INSERT INTO database_relations
+            (from_schema_id, from_row_id, to_schema_id, to_row_id, property_name)
+          SELECT f.schema_id, f.new_id, t.schema_id, t.new_id, rel.property_name
+            FROM database_relations rel
+            JOIN row_map f ON f.old_id = rel.from_row_id
+            JOIN row_map t ON t.old_id = rel.to_row_id
+           ORDER BY rel.id
+        `);
+        const result = await tx
+          .update(wikiPages)
+          .set({ blocks: remapDatabaseBlocks(page.blocks, schemaIds) })
+          .where(eq(wikiPages.id, copy.id))
+          .returning();
+        copy = result[0];
+      }
+
+      // As in createWikiPage, a failed owner grant is logged and does not undo the page.
+      if (creatorUserId) {
+        try {
+          await tx.transaction((savepoint: any) =>
+            savepoint.insert(pagePermissions).values({
+              pageId: copy.id,
+              entityType: 'user',
+              entityId: creatorUserId,
+              permission: 'owner',
+              grantedBy: creatorUserId,
+            })
+          );
+        } catch (error) {
+          console.error('Failed to set page owner permission:', error);
+        }
+      }
+
+      if (hasPageLinks(copy.content)) await this.writePageLinks(tx, copy.id, copy.content);
+      return copy;
+    });
   }
 
   async updateWikiPage(id: number, page: UpdateWikiPage): Promise<WikiPage | undefined> {

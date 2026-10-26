@@ -14,6 +14,8 @@ import {
 import {
   checkCellValue,
   checkRowData,
+  databaseBlockSchemaId,
+  databaseBlockSchemaIds,
   databaseFieldsSchema,
   isIsoDate,
   isValidDatabaseId,
@@ -22,6 +24,7 @@ import {
   planRemoveField,
   planReplaceFields,
   planUpdateField,
+  remapDatabaseBlocks,
   type DatabaseField,
   type DatabaseRowRecord,
 } from '../../shared/inline-database';
@@ -405,5 +408,62 @@ describe('reserved ids', () => {
     const checked = checkRowData(fields, { title: 'a', notes: null });
     expect(checked).toEqual({ ok: true, values: { title: 'a', notes: null } });
     expect(checked.ok && Object.getPrototypeOf(checked.values)).toBe(Object.prototype);
+  });
+});
+
+describe('database blocks of a duplicated page', () => {
+  const database = (id: string, properties: unknown) => ({
+    id,
+    type: 'database_inline',
+    content: 'DB',
+    properties,
+  });
+  const view = { activeView: 'board', views: { board: { groupBy: 'status' } } };
+
+  it('reads only well-formed database ids of database blocks', () => {
+    expect(databaseBlockSchemaId(database('a', { schemaId: 7 }))).toBe(7);
+    expect(databaseBlockSchemaId(database('a', { schemaId: 2_147_483_647 }))).toBe(2_147_483_647);
+    for (const schemaId of [0, -1, 1.5, '7', null, 2_147_483_648, Number.MAX_SAFE_INTEGER + 2]) {
+      expect(databaseBlockSchemaId(database('a', { schemaId })), String(schemaId)).toBeNull();
+    }
+    expect(databaseBlockSchemaId(database('a', null))).toBeNull();
+    expect(databaseBlockSchemaId({ type: 'paragraph', properties: { schemaId: 7 } })).toBeNull();
+    expect(databaseBlockSchemaId(null)).toBeNull();
+    expect(
+      databaseBlockSchemaIds([
+        database('a', { schemaId: 7 }),
+        database('b', { schemaId: 9 }),
+        database('c', { schemaId: 7 }),
+        { type: 'paragraph', properties: { schemaId: 3 } },
+      ])
+    ).toEqual([7, 9]);
+    expect(databaseBlockSchemaIds({ not: 'a list' })).toEqual([]);
+  });
+
+  it('points blocks at the copies and drops every other database id', () => {
+    const paragraph = { id: 'p', type: 'paragraph', content: 'x', properties: { schemaId: 7 } };
+    const blocks = [
+      paragraph,
+      database('a', { schemaId: 7, ...view }),
+      database('b', { schemaId: 7 }),
+      database('c', { schemaId: 8, ...view }),
+      database('d', { schemaId: '7' }),
+      database('e', undefined),
+    ];
+
+    const remapped = remapDatabaseBlocks(blocks, new Map([[7, 70]]));
+
+    expect(remapped).toEqual([
+      paragraph,
+      database('a', { schemaId: 70, ...view }),
+      database('b', { schemaId: 70 }),
+      database('c', view),
+      database('d', {}),
+      database('e', {}),
+    ]);
+    expect(remapped[0]).toBe(paragraph);
+    // The source's blocks are not changed.
+    expect(blocks[1].properties).toEqual({ schemaId: 7, ...view });
+    expect(remapDatabaseBlocks(null, new Map([[7, 70]]))).toBeNull();
   });
 });
