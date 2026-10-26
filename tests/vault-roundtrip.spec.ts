@@ -17,12 +17,16 @@ interface TreeNode {
   id: number;
   title: string;
   parentId: number | null;
+  children: TreeNode[];
 }
 
+/** Every node of the team's page tree, flattened. */
 async function treeOf(api: APIRequestContext, teamId: number): Promise<TreeNode[]> {
-  const response = await api.get(`/api/pages/tree?teamId=${teamId}`);
+  const response = await api.get(`/api/page-tree?teamId=${teamId}`);
   expect(response.status()).toBe(200);
-  return (await response.json()).pages;
+  const flatten = (nodes: TreeNode[]): TreeNode[] =>
+    nodes.flatMap((node) => [node, ...flatten(node.children)]);
+  return flatten(await response.json());
 }
 
 const workspaceMenu = (page: Page) =>
@@ -90,7 +94,7 @@ test('vault round trip: export a tree as Markdown and import it into another tea
     // ── Export from the source team's workspace menu ──
     await page.goto(`/teams/${source.name}/pages`);
     const sourceTree = page.getByRole('tree', { name: '페이지 트리' });
-    await expect(sourceTree.getByRole('treeitem', { name: 'Guide', exact: true })).toBeVisible();
+    await expect(sourceTree.getByRole('treeitem', { name: 'Guide' })).toBeVisible();
     await workspaceMenu(page).click();
     const exportItem = page.getByRole('menuitem', { name: 'Markdown으로 내보내기' });
     await expect(exportItem).toBeVisible();
@@ -141,8 +145,8 @@ test('vault round trip: export a tree as Markdown and import it into another tea
     await dialog.getByRole('button', { name: '닫기' }).click();
     await expect(dialog).toBeHidden();
     const targetTree = page.getByRole('tree', { name: '페이지 트리' });
-    await expect(targetTree.getByRole('treeitem', { name: 'Guide', exact: true })).toBeVisible();
-    await expect(targetTree.getByRole('treeitem', { name: 'FAQ', exact: true })).toBeVisible();
+    await expect(targetTree.getByRole('treeitem', { name: 'Guide' })).toBeVisible();
+    await expect(targetTree.getByRole('treeitem', { name: 'FAQ' })).toBeVisible();
 
     // ── Titles, hierarchy, tags, icons and links survived, pointing at the imported pages ──
     const tree = await treeOf(api, target.id);

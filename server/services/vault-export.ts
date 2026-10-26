@@ -10,7 +10,7 @@
  *   page outside it its plain title, anything else `INACCESSIBLE_PAGE_LABEL`. Titles of pages
  *   the viewer cannot read never reach the archive.
  */
-import { buildPageTree, type PageTreeRow } from './page-tree.js';
+import { buildPageTree, type PageTreeNode, type PageTreeRow } from './page-tree.js';
 import {
   FolderNames,
   INACCESSIBLE_PAGE_LABEL,
@@ -65,6 +65,18 @@ export function pageFrontmatter(page: {
   return fields;
 }
 
+/** The nodes of `tree` depth first, so every parent comes before its sub-pages. */
+function depthFirst(tree: PageTreeNode[]): PageTreeNode[] {
+  const nodes: PageTreeNode[] = [];
+  const stack = [...tree].reverse();
+  while (stack.length > 0) {
+    const node = stack.pop()!;
+    nodes.push(node);
+    for (let i = node.children.length - 1; i >= 0; i -= 1) stack.push(node.children[i]);
+  }
+  return nodes;
+}
+
 /**
  * The archive entries for `rows` (the viewer's readable live pages of one scope). `outsideTitles`
  * holds the titles of linked pages outside the export that the viewer can read; any other
@@ -75,7 +87,7 @@ export function buildVaultEntries(
   outsideTitles: Map<number, string>
 ): ZipInputEntry[] {
   const byId = new Map(rows.map((row) => [row.id, row]));
-  const nodes = buildPageTree(rows);
+  const nodes = depthFirst(buildPageTree(rows));
 
   // Depth first, so a parent's folder is known before its sub-pages are named.
   const folderOf = new Map<number, string>();
