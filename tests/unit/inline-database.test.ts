@@ -16,6 +16,8 @@ import {
   checkRowData,
   databaseFieldsSchema,
   isIsoDate,
+  isValidDatabaseId,
+  presentValues,
   planAddField,
   planRemoveField,
   planReplaceFields,
@@ -354,5 +356,54 @@ describe('shared validation', () => {
     expect(
       planReplaceFields(fields, [{ id: 'other', name: '제목', type: 'title' }, notes])
     ).toMatchObject({ ok: false, status: 400 });
+  });
+});
+
+describe('reserved ids', () => {
+  const reserved = ['__proto__', 'constructor', 'prototype'];
+
+  it('never accepts names every object has as property or option ids', () => {
+    for (const id of reserved) {
+      expect(isValidDatabaseId(id), id).toBe(false);
+      expect(
+        databaseFieldsSchema.safeParse([fields[0], { id, name: 'X', type: 'text' }]).success,
+        id
+      ).toBe(false);
+      expect(
+        databaseFieldsSchema.safeParse([
+          fields[0],
+          { id: 'sel', name: 'S', type: 'select', options: [{ id, name: 'o', color: 'gray' }] },
+        ]).success,
+        id
+      ).toBe(false);
+      expect(planAddField(fields, { id, name: 'X', type: 'text' }, () => id).ok, id).toBe(false);
+    }
+    expect(isValidDatabaseId('f_proto')).toBe(true);
+    expect(isValidDatabaseId('__proto__x')).toBe(true);
+  });
+
+  it('refuses row data keyed by __proto__ instead of dropping the cell', () => {
+    // JSON.parse makes "__proto__" an own key, as in a request body.
+    const data = JSON.parse('{"__proto__": "x", "title": "kept"}');
+    expect(checkRowData(fields, data)).toEqual({
+      ok: false,
+      message: 'data contains an unknown property',
+    });
+  });
+
+  it('builds row objects whose keys can never reach the prototype', () => {
+    // Even if such a key got through, it stays an own property: nothing is set on the prototype
+    // and nothing is dropped.
+    const values = JSON.parse('{"__proto__": "x", "title": "a", "notes": null}');
+    const present = presentValues(values);
+    expect(Object.getPrototypeOf(present)).toBe(Object.prototype);
+    expect(Object.prototype.hasOwnProperty.call(present, '__proto__')).toBe(true);
+    expect(Object.keys(present)).toEqual(['__proto__', 'title']);
+    expect(JSON.stringify(present)).toBe('{"__proto__":"x","title":"a"}');
+    expect(({} as any).x).toBeUndefined();
+
+    const checked = checkRowData(fields, { title: 'a', notes: null });
+    expect(checked).toEqual({ ok: true, values: { title: 'a', notes: null } });
+    expect(checked.ok && Object.getPrototypeOf(checked.values)).toBe(Object.prototype);
   });
 });

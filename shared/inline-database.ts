@@ -39,6 +39,7 @@ export const DATABASE_LIMITS = {
   /** |number| cells */
   numberMagnitude: 1e15,
   relationPropertyLength: 100,
+  relationsPerRow: 1000,
 } as const;
 
 export interface DatabaseOption {
@@ -81,7 +82,19 @@ export interface DatabaseSchemaRecord {
   canEdit: boolean;
 }
 
-const idSchema = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/, 'Invalid id');
+/**
+ * Property and option ids key row data and option lists, so names that mean something on every
+ * JavaScript object (`__proto__`, `constructor`, `prototype`) are never ids.
+ */
+const RESERVED_IDS = new Set(['__proto__', 'constructor', 'prototype']);
+
+export function isValidDatabaseId(value: unknown): value is string {
+  return (
+    typeof value === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(value) && !RESERVED_IDS.has(value)
+  );
+}
+
+const idSchema = z.string().refine(isValidDatabaseId, 'Invalid id');
 
 export const databaseNameSchema = z.string().trim().min(1).max(DATABASE_LIMITS.nameLength);
 
@@ -229,24 +242,34 @@ export function checkRowData(fields: DatabaseField[], data: unknown): RowDataChe
     return { ok: false, message: 'Too many values' };
   }
   const byId = new Map(fields.map((field) => [field.id, field]));
-  const values: Record<string, DatabaseCellValue | null> = {};
+  const checkedEntries: Array<[string, DatabaseCellValue | null]> = [];
   for (const [fieldId, value] of entries) {
     const field = byId.get(fieldId);
     if (!field) return { ok: false, message: 'data contains an unknown property' };
     const checked = checkCellValue(field, value);
     if (!checked.ok) return checked;
-    values[fieldId] = checked.value;
+    checkedEntries.push([fieldId, checked.value]);
   }
-  return { ok: true, values };
+  return { ok: true, values: ownEntries(checkedEntries) };
+}
+
+/**
+ * An object from key/value pairs whose keys came from input. `Object.fromEntries` defines each
+ * key as an own property, so even a key like `__proto__` can never reach the prototype (an
+ * assignment `object[key] = value` would set it, or silently drop the value). The object keeps
+ * the normal prototype, which the database driver expects.
+ */
+function ownEntries<T>(entries: Array<[string, T]>): Record<string, T> {
+  return Object.fromEntries(entries);
 }
 
 /** Values that are set, for a new row. */
 export function presentValues(values: Record<string, DatabaseCellValue | null>): DatabaseRowData {
-  const data: DatabaseRowData = {};
-  for (const [key, value] of Object.entries(values)) {
-    if (value !== null) data[key] = value;
-  }
-  return data;
+  return ownEntries(
+    Object.entries(values).filter(
+      (entry): entry is [string, DatabaseCellValue] => entry[1] !== null
+    )
+  );
 }
 
 /**

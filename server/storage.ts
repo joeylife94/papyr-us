@@ -85,6 +85,7 @@ import type { PageTreeRow } from './services/page-tree.js';
 import { MAX_INDEXED_LINKS, extractPageLinkIds, hasPageLinks } from '../shared/page-links.js';
 import { isReservedDailyNoteSlug } from '../shared/daily-notes.js';
 import {
+  DATABASE_LIMITS,
   presentValues,
   type DatabaseCellValue,
   type DatabaseField,
@@ -2374,24 +2375,63 @@ export class DBStorage {
 
   // ==================== Database Relations Operations ====================
 
+  /**
+   * Links a row to another row, or returns null when the source row already has `maxPerRow`
+   * relations. The count runs with the source row locked, so concurrent links keep the cap.
+   */
   async addRelation(
     fromSchemaId: number,
     fromRowId: number,
     propertyName: string,
     toSchemaId: number,
-    toRowId: number
-  ): Promise<DatabaseRelation> {
-    const [relation] = await this.db
-      .insert(databaseRelations)
-      .values({
-        fromSchemaId,
-        fromRowId,
-        propertyName,
-        toSchemaId,
-        toRowId,
-      })
-      .returning();
-    return relation;
+    toRowId: number,
+    maxPerRow: number = DATABASE_LIMITS.relationsPerRow
+  ): Promise<DatabaseRelation | null> {
+    return this.db.transaction(async (tx: any) => {
+      await tx
+        .select({ id: databaseRows.id })
+        .from(databaseRows)
+        .where(eq(databaseRows.id, fromRowId))
+        .for('update');
+      const [stats] = await tx
+        .select({ count: sql<number>`count(*)::int` })
+        .from(databaseRelations)
+        .where(eq(databaseRelations.fromRowId, fromRowId));
+      if (Number(stats?.count ?? 0) >= maxPerRow) return null;
+      const [relation] = await tx
+        .insert(databaseRelations)
+        .values({
+          fromSchemaId,
+          fromRowId,
+          propertyName,
+          toSchemaId,
+          toRowId,
+        })
+        .returning();
+      return relation;
+    });
+  }
+
+  /**
+   * A row's relations with the database each target row really belongs to (`targetSchemaId`,
+   * read from the row). The stored `to_schema_id` is not trusted for access decisions: relations
+   * written before #113 could pair any schema id with any row.
+   */
+  async getRelationsWithTargets(
+    rowId: number,
+    propertyName?: string
+  ): Promise<Array<DatabaseRelation & { targetSchemaId: number }>> {
+    const conditions = [eq(databaseRelations.fromRowId, rowId)];
+    if (propertyName) {
+      conditions.push(eq(databaseRelations.propertyName, propertyName));
+    }
+    const rows: Array<{ relation: DatabaseRelation; targetSchemaId: number }> = await this.db
+      .select({ relation: databaseRelations, targetSchemaId: databaseRows.schemaId })
+      .from(databaseRelations)
+      .innerJoin(databaseRows, eq(databaseRows.id, databaseRelations.toRowId))
+      .where(and(...conditions))
+      .orderBy(asc(databaseRelations.id));
+    return rows.map(({ relation, targetSchemaId }) => ({ ...relation, targetSchemaId }));
   }
 
   async getRelations(rowId: number, propertyName?: string): Promise<DatabaseRelation[]> {
@@ -2421,7 +2461,8 @@ export class DBStorage {
 
   /**
    * Calculate rollup value based on relations. `targetSchemaIds` limits the rollup to related
-   * rows of those databases (the ones the caller may read).
+   * rows that really belong to those databases (the ones the caller may read): the row's own
+   * schema decides, never the relation's stored `to_schema_id`.
    */
   async calculateRollup(
     rowId: number,
@@ -2433,38 +2474,53 @@ export class DBStorage {
     },
     targetSchemaIds?: number[]
   ) {
-    const relations = (await this.getRelations(rowId, config.relationField)).filter(
-      (relation) => !targetSchemaIds || targetSchemaIds.includes(relation.toSchemaId)
-    );
+    // Related rows through a subquery (each row once), so no list of ids is sent as parameters.
+    const relatedIds = this.db
+      .select({ id: databaseRelations.toRowId })
+      .from(databaseRelations)
+      .where(
+        and(
+          eq(databaseRelations.fromRowId, rowId),
+          eq(databaseRelations.propertyName, config.relationField)
+        )
+      );
+    const conditions = [inArray(databaseRows.id, relatedIds)];
+    if (targetSchemaIds) conditions.push(inArray(databaseRows.schemaId, targetSchemaIds));
 
-    if (relations.length === 0) {
-      return config.aggregation === 'count' ? 0 : null;
-    }
-
-    // Get related rows data
-    const relatedRowIds = relations.map((r) => r.toRowId);
-    const relatedRows: DatabaseRow[] = await this.db
-      .select()
-      .from(databaseRows)
-      .where(inArray(databaseRows.id, relatedRowIds));
+    const relatedRows: Array<Pick<DatabaseRow, 'data'>> =
+      targetSchemaIds?.length === 0
+        ? []
+        : await this.db
+            .select({ data: databaseRows.data })
+            .from(databaseRows)
+            .where(and(...conditions));
 
     const values = relatedRows
       .map((row) => (row.data as Record<string, unknown>)?.[config.targetField])
       .filter((v) => v !== null && v !== undefined);
+    if (values.length === 0) {
+      return config.aggregation === 'count' ? 0 : null;
+    }
+    // Numeric aggregations use the finite numbers only. Min and max loop instead of spreading:
+    // spreading a large list into Math.min/Math.max overflows the call stack.
+    const numbers = values.map(Number).filter((value) => Number.isFinite(value));
+    const sum = numbers.reduce((total, value) => total + value, 0);
 
     switch (config.aggregation) {
       case 'count':
         return values.length;
       case 'sum':
-        return values.reduce((sum: number, val) => sum + Number(val), 0);
+        return sum;
       case 'avg':
-        return values.length > 0
-          ? values.reduce((sum: number, val) => sum + Number(val), 0) / values.length
-          : null;
+        return numbers.length > 0 ? sum / numbers.length : null;
       case 'min':
-        return values.length > 0 ? Math.min(...values.map(Number)) : null;
+        return numbers.length > 0
+          ? numbers.reduce((least, value) => (value < least ? value : least))
+          : null;
       case 'max':
-        return values.length > 0 ? Math.max(...values.map(Number)) : null;
+        return numbers.length > 0
+          ? numbers.reduce((most, value) => (value > most ? value : most))
+          : null;
       case 'unique':
         return new Set(values.map((value) => JSON.stringify(value))).size;
       default:
