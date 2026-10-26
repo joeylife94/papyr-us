@@ -7,6 +7,7 @@ import logger from './logger.js';
 import { isRedisEnabled, getRedisClient, getSubscriberClient } from './redis.js';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { onPageAccessChanged } from './page-access-events.js';
+import { savePage, storagePageSaveStore } from './page-save.js';
 
 type SaveReason = 'debounce' | 'interval' | 'ttl' | 'eviction';
 
@@ -351,7 +352,14 @@ export class CollaborationManager {
     const startedAt = Date.now();
 
     try {
-      await this.storage.updateWikiPage(pageId, { blocks: session.latestBlocks });
+      // Same pipeline as REST autosave and Yjs (issue #103 E1/E6): derives `content`, groups
+      // versions per editing session and keeps the page's link index in step.
+      await savePage(
+        storagePageSaveStore(this.storage),
+        pageId,
+        { blocks: session.latestBlocks },
+        'autosave'
+      );
 
       session.dirty = false;
       session.metrics.savesSucceeded += 1;

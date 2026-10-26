@@ -70,6 +70,15 @@ async function createSchema() {
       created_at         TIMESTAMP NOT NULL DEFAULT NOW()
     )
   `);
+  // Written by the pipeline's link index (#103 E6); see page-links-index.test.ts.
+  await admin.query(`
+    CREATE TABLE ${SCHEMA}.page_links (
+      source_page_id INTEGER NOT NULL REFERENCES ${SCHEMA}.wiki_pages(id) ON DELETE CASCADE,
+      target_page_id INTEGER NOT NULL REFERENCES ${SCHEMA}.wiki_pages(id) ON DELETE CASCADE,
+      created_at     TIMESTAMP NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (source_page_id, target_page_id)
+    )
+  `);
   await admin.query(`
     CREATE OR REPLACE FUNCTION ${SCHEMA}.wiki_pages_search_vector_update() RETURNS trigger AS $$
     BEGIN

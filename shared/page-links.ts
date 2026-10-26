@@ -57,3 +57,19 @@ export function splitPageLinks(text: string): PageLinkSegment[] {
   if (last < text.length) segments.push({ type: 'text', text: text.slice(last) });
   return segments;
 }
+
+/** Most ids one link resolution request may carry (GET /api/pages/links/resolve). */
+export const MAX_PAGE_LINK_RESOLVE_IDS = 100;
+
+/** Whether `text` holds at least one link token. */
+export function hasPageLinks(text: string): boolean {
+  return new RegExp(PAGE_LINK_PATTERN.source).test(text);
+}
+
+/**
+ * `text` with every link token replaced by `render(pageId)`, for plain-text uses (TOC, excerpts,
+ * list previews). Pass a function returning '' to strip the tokens.
+ */
+export function replacePageLinks(text: string, render: (pageId: number) => string): string {
+  return text.replace(PAGE_LINK_PATTERN, (_token, id: string) => render(Number(id)));
+}
