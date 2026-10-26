@@ -90,6 +90,7 @@ import {
   type PageTreeNode,
   type TrashedPage,
 } from './services/page-tree.js';
+import type { VaultExportRow } from './services/vault-export.js';
 
 // Helper: detect if a string looks like a bcrypt hash
 function isBcryptHash(value: string): boolean {
@@ -2771,6 +2772,135 @@ export class DBStorage {
       if (isSlugUniqueViolation(error)) return { status: 'conflict' };
       throw error;
     }
+  }
+
+  // ---- Markdown vault export and import (#113 P2-D2); route rules in server/routes/vault.ts ----
+
+  /**
+   * Every live page of one workspace scope the viewer can read, with the fields the vault export
+   * writes (the tree fields as stored; `buildPageTree` applies the viewer's view of them).
+   */
+  async getVaultExportPages(viewer: PageViewer, teamId: number | null): Promise<VaultExportRow[]> {
+    return this.db
+      .select({
+        id: wikiPages.id,
+        title: wikiPages.title,
+        slug: wikiPages.slug,
+        icon: wikiPages.icon,
+        parentId: wikiPages.parentId,
+        position: wikiPages.position,
+        createdAt: wikiPages.createdAt,
+        updatedAt: wikiPages.updatedAt,
+        content: wikiPages.content,
+        tags: wikiPages.tags,
+      })
+      .from(wikiPages)
+      .where(this.readablePagesInScope(viewer, teamId));
+  }
+
+  /**
+   * Ids and titles of every live page of one scope the viewer can read, most recently updated
+   * first: the existing pages a vault import may link to.
+   */
+  async getReadablePageTitlesInScope(
+    viewer: PageViewer,
+    teamId: number | null
+  ): Promise<Array<{ id: number; title: string }>> {
+    return this.db
+      .select({ id: wikiPages.id, title: wikiPages.title })
+      .from(wikiPages)
+      .where(this.readablePagesInScope(viewer, teamId))
+      .orderBy(desc(wikiPages.updatedAt), desc(wikiPages.id));
+  }
+
+  /** `count` new page ids from the page id sequence (an import links pages before they exist). */
+  async reservePageIds(count: number): Promise<number[]> {
+    if (count <= 0) return [];
+    const result = await this.db.execute(
+      sql`SELECT nextval(pg_get_serial_sequence('wiki_pages', 'id'))::int AS id FROM generate_series(1, ${count})`
+    );
+    return result.rows.map((row: { id: number }) => Number(row.id));
+  }
+
+  /**
+   * Create the pages of a vault import in one transaction: either every page, its creator owner
+   * grant and its link index rows are stored, or nothing is. Pages are inserted in the given
+   * order (parents first) with ids from `reservePageIds`; a taken slug gets the next candidate,
+   * as in `createWikiPage`. Link targets that do not exist are skipped, as in `replacePageLinks`.
+   * Authorization is the caller's job.
+   */
+  async insertImportedPages(input: {
+    teamId: number | null;
+    userId: number;
+    author: string;
+    folder: string;
+    pages: Array<{
+      id: number;
+      title: string;
+      slug: string;
+      content: string;
+      tags: string[];
+      icon: string | null;
+      parentId: number | null;
+      linkTargets: number[];
+    }>;
+  }): Promise<Array<{ id: number; slug: string }>> {
+    if (input.pages.length === 0) return [];
+    return this.db.transaction(async (tx: any) => {
+      const created: Array<{ id: number; slug: string }> = [];
+      for (const page of input.pages) {
+        let row: { id: number; slug: string } | undefined;
+        const firstAttempt = isReservedDailyNoteSlug(page.slug) ? 1 : 0;
+        for (let attempt = firstAttempt; !row && attempt < MAX_SLUG_INSERT_ATTEMPTS; attempt += 1) {
+          [row] = await tx
+            .insert(wikiPages)
+            .values({
+              id: page.id,
+              title: page.title,
+              slug: buildUniqueSlugCandidate(page.slug, attempt),
+              content: page.content,
+              blocks: [],
+              folder: input.folder,
+              tags: page.tags,
+              author: input.author,
+              teamId: input.teamId,
+              parentId: page.parentId,
+              icon: page.icon,
+              isPublished: true,
+            })
+            .onConflictDoNothing({ target: wikiPages.slug })
+            .returning({ id: wikiPages.id, slug: wikiPages.slug });
+        }
+        if (!row) throw new Error('Failed to allocate a unique page slug');
+        created.push(row);
+      }
+
+      await tx.insert(pagePermissions).values(
+        input.pages.map((page) => ({
+          pageId: page.id,
+          entityType: 'user',
+          entityId: input.userId,
+          permission: 'owner',
+          grantedBy: input.userId,
+        }))
+      );
+
+      const links = input.pages.flatMap((page) =>
+        Array.from(new Set(page.linkTargets))
+          .filter((target) => Number.isInteger(target) && target > 0 && target !== page.id)
+          .slice(0, MAX_PAGE_LINK_TARGETS)
+          .map((target) => sql`(${page.id}::int, ${target}::int)`)
+      );
+      for (let i = 0; i < links.length; i += 1000) {
+        await tx.execute(sql`
+          INSERT INTO page_links (source_page_id, target_page_id)
+          SELECT link.source, link.target
+          FROM (VALUES ${sql.join(links.slice(i, i + 1000), sql`, `)}) AS link(source, target)
+          WHERE EXISTS (SELECT 1 FROM wiki_pages WHERE wiki_pages.id = link.target)
+          ON CONFLICT DO NOTHING`);
+      }
+      return created;
+    });
   }
 }
 
