@@ -136,11 +136,12 @@ const SLASH_COMMANDS: SlashCommandItem[] = [
     keywords: ['embed', 'youtube', 'figma', 'iframe', '임베드'],
   },
   {
+    // Opens the page link picker in the block (#103 E6) instead of adding a block.
     type: 'mention',
-    label: '멘션',
-    description: '사용자 또는 페이지 멘션',
+    label: '페이지 링크',
+    description: '다른 문서로 연결 (@ 또는 [[ 입력)',
     icon: <AtSign className="h-4 w-4" />,
-    keywords: ['mention', 'at', 'user', 'page', '멘션'],
+    keywords: ['mention', 'link', 'page', 'at', '멘션', '링크', '문서'],
   },
 ];
 

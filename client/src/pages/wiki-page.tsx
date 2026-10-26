@@ -25,6 +25,7 @@ import { BlockEditor } from '@/components/blocks/block-editor';
 import { PageProperties, PageTitle, SaveStatus } from '@/components/page/page-editor-parts';
 import { PageHeaderIcon } from '@/components/page/icon-picker';
 import { PageIcon } from '@/components/page/page-icon';
+import { Backlinks } from '@/components/page/backlinks';
 import { apiRequest } from '@/lib/queryClient';
 import { extractHeadings, estimateReadingTime } from '@/lib/markdown';
 import { blocksToContent, initialBlocksFor, parseTags } from '@/lib/page-content';
@@ -319,18 +320,19 @@ export default function WikiPageView() {
             <ReadOnlyPageBody page={page} actions={actions} breadcrumb={breadcrumb} />
           )}
 
+          {/* #103 E6: pages that link here, then the knowledge views under it (#111 §2, §5). */}
+          <Backlinks pageId={page.id} />
+          <section aria-label="문서 연결" className="mt-4 space-y-3">
+            <UnlinkedMentions pageId={page.id} pageTitle={page.title} />
+            <LocalGraphPanel pageId={page.id} />
+          </section>
+
           <section className="mt-12 border-t border-border pt-8">
             <Comments pageId={page.id} />
           </section>
 
           <section className="mt-12">
             <RelatedPages pageId={page.id} pageTitle={page.title} pageContent={content} />
-          </section>
-
-          {/* Knowledge views (#111 §2, §5): local graph and unlinked mentions. */}
-          <section aria-label="문서 연결" className="mt-8 space-y-3">
-            <LocalGraphPanel pageId={page.id} />
-            <UnlinkedMentions pageId={page.id} pageTitle={page.title} />
           </section>
         </article>
       </div>
@@ -535,6 +537,7 @@ function EditablePageBody({
           userId={getUserId()}
           userName={getUserName()}
           useYjs={true}
+          pageTeamId={page.teamId ?? null}
         />
       </div>
     </>

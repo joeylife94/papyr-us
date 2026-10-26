@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Block, BlockType } from '@shared/schema';
 import { HeadingBlock } from './heading-block';
 import { ParagraphBlock } from './paragraph-block';
@@ -54,6 +54,10 @@ import { UserCursors } from '@/components/collaboration/user-cursor';
 import { useFeatureFlags } from '@/features/FeatureFlagsContext';
 import { SlashCommandMenu } from './slash-command-menu';
 import { InlineFormattingToolbar } from './inline-formatting-toolbar';
+import {
+  PageLinkEditorContext,
+  type PageLinkEditorScope,
+} from '@/components/page/page-link-editing';
 
 interface BlockEditorProps {
   blocks: Block[];
@@ -63,6 +67,11 @@ interface BlockEditorProps {
   userId?: string;
   userName?: string;
   useYjs?: boolean; // Enable Yjs CRDT collaboration (default: false)
+  /**
+   * Team of the edited page, the scope of the page link picker (#103 E6); null for a team-less
+   * page. Omitted (a page not created yet): the `teamName` workspace, else team-less pages.
+   */
+  pageTeamId?: number | null;
 }
 
 export function BlockEditor({
@@ -73,6 +82,7 @@ export function BlockEditor({
   userId,
   userName,
   useYjs = false, // Default to false for backward compatibility
+  pageTeamId,
 }: BlockEditorProps) {
   const { flags } = useFeatureFlags();
   const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null);
@@ -114,6 +124,18 @@ export function BlockEditor({
     setSlashMenu((prev) => ({ ...prev, isOpen: false, filter: '' }));
   }, []);
 
+  // Page link picker scope (#103 E6), plus the slash command's request to open the picker.
+  const [linkPickerRequest, setLinkPickerRequest] =
+    useState<PageLinkEditorScope['pickerRequest']>(null);
+  const pageLinkScope = useMemo<PageLinkEditorScope>(
+    () => ({
+      team: pageTeamId !== undefined ? pageTeamId : (teamName ?? null),
+      pageId,
+      pickerRequest: linkPickerRequest,
+    }),
+    [pageTeamId, teamName, pageId, linkPickerRequest]
+  );
+
   const handleSlashSelect = useCallback(
     (type: BlockType) => {
       const blockIndex = blocks.findIndex((b) => b.id === slashMenu.blockId);
@@ -122,6 +144,17 @@ export function BlockEditor({
       // Remove the slash text from current block content
       const currentBlock = blocks[blockIndex];
       const cleanedContent = currentBlock.content.replace(/\/[^\s]*$/, '').trim();
+
+      if (type === 'mention') {
+        // "페이지 링크": type `@` in place of the command and open the page link picker there,
+        // exactly as if `@` had been typed (#103 E6). No separate mention block is created.
+        updateBlockRef.current(slashMenu.blockId, {
+          content: cleanedContent ? `${cleanedContent} @` : '@',
+        });
+        setLinkPickerRequest({ blockId: slashMenu.blockId, nonce: Date.now() });
+        handleSlashClose();
+        return;
+      }
 
       if (type === 'paragraph' && cleanedContent === '') {
         // If selecting paragraph on empty block, just keep it
@@ -633,7 +666,7 @@ export function BlockEditor({
     }
   };
 
-  return (
+  const editor = (
     <div
       ref={editorContainerRef}
       className="block-editor relative min-h-[400px] py-2 sm:py-4"
@@ -938,5 +971,9 @@ export function BlockEditor({
       {/* Inline Formatting Toolbar (appears on text selection) */}
       <InlineFormattingToolbar containerRef={editorContainerRef} />
     </div>
+  );
+
+  return (
+    <PageLinkEditorContext.Provider value={pageLinkScope}>{editor}</PageLinkEditorContext.Provider>
   );
 }

@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Block, BlockType } from '@shared/schema';
 import { Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { usePageLinkEditing } from '@/components/page/page-link-editing';
 
 interface ParagraphBlockProps {
   block: Block;
@@ -36,6 +37,18 @@ export function ParagraphBlock({
   const [content, setContent] = useState(block.content);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const slashStartRef = useRef<number | null>(null);
+  // Page links (#103 E6): `@` / `[[` picker and the chip preview while the block is not focused.
+  const pageLinks = usePageLinkEditing({
+    blockId: block.id,
+    content,
+    isFocused,
+    textareaRef,
+    onContentChange: (next) => {
+      setContent(next);
+      onUpdate({ content: next });
+    },
+    previewClassName: 'text-base leading-relaxed pr-8',
+  });
 
   // 포커스 시 자동 높이 조정
   useEffect(() => {
@@ -90,9 +103,12 @@ export function ParagraphBlock({
         onSlashFilter?.(filter);
       }
     }
+
+    pageLinks.handleInput(e, { suspended: slashStartRef.current !== null });
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (pageLinks.handleKeyDown(e)) return;
     if (e.key === 'Enter' && !e.shiftKey) {
       if (slashStartRef.current !== null) {
         // Let slash command menu handle Enter
@@ -141,7 +157,9 @@ export function ParagraphBlock({
         placeholder={placeholder}
         className="w-full resize-none border-none outline-none bg-transparent text-base text-foreground placeholder:text-muted-foreground pl-0 pr-8 leading-relaxed"
         rows={1}
+        {...pageLinks.textareaProps}
       />
+      {pageLinks.overlay}
 
       {/* 액션 버튼들 */}
       {isFocused && (
