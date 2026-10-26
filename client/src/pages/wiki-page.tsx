@@ -22,6 +22,7 @@ import { PageHistory } from '@/components/page-history';
 import { BlockEditor } from '@/components/blocks/block-editor';
 import { PageProperties, PageTitle, SaveStatus } from '@/components/page/page-editor-parts';
 import { PageIcon, PageIconPicker } from '@/components/page/page-icon';
+import { Backlinks } from '@/components/page/page-links';
 import { apiRequest, invalidatePageLists } from '@/lib/queryClient';
 import { extractHeadings, estimateReadingTime } from '@/lib/markdown';
 import { blocksToContent, initialBlocksFor, parseTags } from '@/lib/page-content';
@@ -323,6 +324,8 @@ export default function WikiPageView() {
             <ReadOnlyPageBody page={page} actions={actions} breadcrumb={breadcrumb} />
           )}
 
+          <Backlinks pageId={page.id} />
+
           <section className="mt-12 border-t border-border pt-8">
             <Comments pageId={page.id} />
           </section>
@@ -528,6 +531,7 @@ function EditablePageBody({
           userId={getUserId()}
           userName={getUserName()}
           useYjs={true}
+          linkTeamId={page.teamId}
         />
       </div>
     </>

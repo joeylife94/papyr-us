@@ -245,6 +245,7 @@ export default function NewPage({ teamName, initialFolder = 'docs', parentId }: 
               setTouched(true);
             }}
             teamName={teamName}
+            linkTeamId={resolvedTeamId || null}
             userId={getUserId()}
             userName={getUserName()}
           />

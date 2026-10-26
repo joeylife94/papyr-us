@@ -5,6 +5,47 @@ import remarkRehype from 'remark-rehype';
 import rehypeStringify from 'rehype-stringify';
 import rehypeHighlight from 'rehype-highlight';
 import matter from 'gray-matter';
+import { hasPageLinks, splitPageLinks } from '@shared/page-links';
+
+/**
+ * Page links (issue #103 E6): turn `[[page:<id>]]` tokens in text into empty
+ * `<span data-page-link="<id>">` placeholders, which MarkdownRenderer fills with link chips.
+ * Code spans and code blocks are not text nodes, so tokens there stay as written.
+ */
+function remarkPageLinks() {
+  return (tree: any) => {
+    const walk = (node: any) => {
+      if (!Array.isArray(node.children)) return;
+      const children: any[] = [];
+      for (const child of node.children) {
+        if (child.type === 'text' && hasPageLinks(child.value)) {
+          for (const segment of splitPageLinks(child.value)) {
+            children.push(
+              segment.kind === 'text'
+                ? { type: 'text', value: segment.text }
+                : {
+                    type: 'emphasis',
+                    children: [],
+                    data: {
+                      hName: 'span',
+                      hProperties: {
+                        dataPageLink: String(segment.pageId),
+                        className: ['page-link'],
+                      },
+                    },
+                  }
+            );
+          }
+        } else {
+          walk(child);
+          children.push(child);
+        }
+      }
+      node.children = children;
+    };
+    walk(tree);
+  };
+}
 
 // Parse markdown with frontmatter
 export function parseMarkdown(content: string) {
@@ -16,6 +57,7 @@ export function parseMarkdown(content: string) {
 export async function markdownToHtml(markdown: string): Promise<string> {
   const processor = remark()
     .use(remarkGfm)
+    .use(remarkPageLinks)
     .use(remarkRehype)
     .use(rehypeHighlight)
     .use(rehypeStringify);

@@ -56,8 +56,8 @@ export const queryClient = new QueryClient({
 
 /**
  * Refresh every cached page list after a page's title, icon, folder or place changed: the
- * document table and command palette (`/api/pages…`), per-folder lists (`/api/folders/:f/pages`)
- * and the sidebar page tree (`/api/page-tree…`). These queries never go stale on their own, so a
+ * document table and command palette (`/api/pages…`), per-folder lists (`/api/folders/:f/pages`),
+ * the sidebar page tree (`/api/page-tree…`), and link chips and backlinks. These queries never go stale on their own, so a
  * save has to invalidate them.
  */
 export function invalidatePageLists(client: QueryClient = queryClient) {
@@ -68,6 +68,9 @@ export function invalidatePageLists(client: QueryClient = queryClient) {
         typeof key === 'string' &&
         (key === '/api/pages' ||
           key.startsWith('/api/page-tree') ||
+          // Link chips and backlinks show titles and icons (issue #103 E6).
+          key.endsWith('/link-preview') ||
+          key.endsWith('/backlinks') ||
           (key.startsWith('/api/folders/') && key.endsWith('/pages')))
       );
     },

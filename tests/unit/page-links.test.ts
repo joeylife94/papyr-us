@@ -39,3 +39,15 @@ describe('page link tokens', () => {
     expect(splitPageLinks('plain')).toEqual([{ kind: 'text', text: 'plain' }]);
   });
 });
+
+describe('markdown rendering of page links', () => {
+  it('leaves an empty placeholder per link token and no title or id text', async () => {
+    const { markdownToHtml } = await import('../../client/src/lib/markdown');
+    const html = await markdownToHtml('See [[page:12]] and **[[page:7]]**.\n\n`[[page:3]]`');
+    expect(html).toContain('<span data-page-link="12" class="page-link"></span>');
+    expect(html).toContain('<strong><span data-page-link="7" class="page-link"></span></strong>');
+    // Code keeps the token as written.
+    expect(html).toContain('<code>[[page:3]]</code>');
+    expect(html).not.toContain('[[page:12]]');
+  });
+});
