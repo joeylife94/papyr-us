@@ -12,6 +12,7 @@ import { EmbedBlock } from './embed-block';
 import { MathBlock } from './math-block';
 import { SyncedBlock } from './synced-block';
 import { DividerBlock } from './divider-block';
+import { InlineDatabaseBlock } from '@/components/database/inline-database-block';
 import {
   Plus,
   Type,
@@ -710,6 +711,15 @@ export function BlockEditor({
               });
             }}
             readOnly={false}
+          />
+        );
+      // Inline database (#113 §4): schemaId and view config in properties, rows on the server.
+      case 'database_inline':
+        return (
+          <InlineDatabaseBlock
+            block={block}
+            pageId={pageId}
+            onUpdate={(updates) => updateBlock(block.id, updates)}
           />
         );
       default:
