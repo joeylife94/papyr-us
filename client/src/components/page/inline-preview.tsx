@@ -14,7 +14,7 @@ import {
   type InlineNode,
 } from '@/lib/inline-markdown';
 import { cn } from '@/lib/utils';
-import { PageLinkChip } from './page-link-chip';
+import { PageLinkChip } from './page-links';
 
 /**
  * Obsidian-style live preview for text blocks (#113 §2, generalizing the link preview of
@@ -225,8 +225,6 @@ export function useInlinePreview({ content, isFocused, textareaRef, className }:
     previewing && nodes ? (
       <div
         data-inline-preview=""
-        // The selector of the link-only preview it generalizes (#103 E6).
-        data-page-link-preview=""
         onMouseDown={edit}
         className={cn(
           'min-h-[1.625em] cursor-text whitespace-pre-wrap break-words text-foreground',

@@ -24,7 +24,7 @@ import multer from 'multer';
 import { buildRateLimiter, optionalAuth, type AuthRequest } from '../middleware.js';
 import type { DBStorage } from '../storage.js';
 import { resolvePageScope } from '../services/page-scope.js';
-import { pageLinkTargets } from '../services/page-save.js';
+import { extractPageLinkIds } from '../../shared/page-links.js';
 import { buildVaultEntries, outsideLinkIds, vaultArchiveName } from '../services/vault-export.js';
 import {
   VAULT_IMPORT_LIMITS,
@@ -223,7 +223,7 @@ export function registerVaultRoutes(app: Express, storage: DBStorage) {
         tags: page.tags,
         icon: page.icon,
         parentId: page.parent === null ? null : ids[page.parent],
-        linkTargets: pageLinkTargets(ids[index], { content: contents[index] }),
+        linkTargets: extractPageLinkIds(contents[index]).filter((id) => id !== ids[index]),
       }));
       const created = await storage.insertImportedPages({
         teamId: scope.teamId,

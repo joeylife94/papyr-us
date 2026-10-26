@@ -14,7 +14,7 @@
  *   resolved link becomes an id token, which renders the target's current title, so an alias
  *   (`[[Title|alias]]`) is dropped. An unresolved link becomes its alias or title as plain text.
  */
-import { formatPageLink } from '../../shared/page-links.js';
+import { pageLinkToken } from '../../shared/page-links.js';
 import { pageIconSchema } from '../../shared/schema.js';
 import {
   normalizeTags,
@@ -286,7 +286,7 @@ export function renderImportedBodies(
     const missing = new Set<string>();
     const content = replaceWikiLinks(page.body, (link) => {
       const id = resolve(link.target);
-      if (id !== null) return formatPageLink(id);
+      if (id !== null) return pageLinkToken(id);
       if (link.target && !missing.has(link.target)) {
         missing.add(link.target);
         unresolved.push({ path: page.path, target: link.target });

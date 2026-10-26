@@ -1,81 +1,63 @@
 /**
- * Page link tokens (issue #103 E6).
- *
- * A link to another page is stored in block content as `[[page:<id>]]`. It carries only the
- * target's id: the title (and icon) are resolved at render time through an access-checked API,
- * so renaming the target updates every link, and a reader who cannot read the target never sees
- * its title. The save pipeline indexes these tokens into `page_links`.
+ * Page links (issue #103 E6). A link is stored in block text as an id-only token, `[[page:123]]`.
+ * Titles are never stored in content: the link renders with the target's current title, so a
+ * rename shows up everywhere, and a viewer who cannot read the target sees no title at all.
  */
 
-/** Matches one link token; group 1 is the target page id. Use with `matchAll` (global flag). */
-export const PAGE_LINK_PATTERN = /\[\[page:(\d{1,9})\]\]/g;
+/** One link token; group 1 is the target id. Global: use with `matchAll` or `replace`. */
+export const PAGE_LINK_PATTERN = /\[\[page:(\d{1,10})\]\]/g;
+const TOKEN = PAGE_LINK_PATTERN;
 
-/** The token for a link to `pageId`. */
-export function formatPageLink(pageId: number): string {
+/** Most links indexed per page; anything beyond is still rendered, just not indexed. */
+export const MAX_INDEXED_LINKS = 500;
+
+/** Largest page id: `wiki_pages.id` is a Postgres `integer`. */
+export const MAX_PAGE_ID = 2_147_483_647;
+
+/**
+ * Whether a token's id can name a page. A token may carry up to ten digits, so ids beyond the
+ * column's range are dropped before they reach SQL, where they would fail the whole query.
+ */
+export function isPageId(id: number): boolean {
+  return Number.isSafeInteger(id) && id > 0 && id <= MAX_PAGE_ID;
+}
+
+export function pageLinkToken(pageId: number): string {
   return `[[page:${pageId}]]`;
 }
 
-/** Distinct target ids linked from `text`, in first-appearance order. */
-export function extractPageLinkIdsFromText(text: string): number[] {
+/** Distinct target ids in the order they first appear (valid page ids only, see `isPageId`). */
+export function extractPageLinkIds(content: string | null | undefined): number[] {
+  if (!content) return [];
   const ids: number[] = [];
   const seen = new Set<number>();
-  for (const match of text.matchAll(PAGE_LINK_PATTERN)) {
+  for (const match of content.matchAll(TOKEN)) {
     const id = Number(match[1]);
-    if (id > 0 && !seen.has(id)) {
+    if (isPageId(id) && !seen.has(id)) {
       seen.add(id);
       ids.push(id);
+      if (ids.length >= MAX_INDEXED_LINKS) break;
     }
   }
   return ids;
 }
 
-/** Distinct target ids linked from a block list (the `blocks` JSON of a page). */
-export function extractPageLinkIds(blocks: unknown): number[] {
-  if (!Array.isArray(blocks)) return [];
-  const text = blocks
-    .map((block) =>
-      block && typeof (block as { content?: unknown }).content === 'string'
-        ? (block as { content: string }).content
-        : ''
-    )
-    .join('\n');
-  return extractPageLinkIdsFromText(text);
-}
+export type PageLinkSegment = { kind: 'text'; text: string } | { kind: 'link'; pageId: number };
 
-/** Split `text` into plain-text and link segments, for renderers. */
-export type PageLinkSegment = { type: 'text'; text: string } | { type: 'link'; pageId: number };
-
+/** Text split into plain runs and link tokens, for rendering chips in place. */
 export function splitPageLinks(text: string): PageLinkSegment[] {
   const segments: PageLinkSegment[] = [];
   let last = 0;
-  for (const match of text.matchAll(PAGE_LINK_PATTERN)) {
-    const start = match.index ?? 0;
-    if (start > last) segments.push({ type: 'text', text: text.slice(last, start) });
-    segments.push({ type: 'link', pageId: Number(match[1]) });
-    last = start + match[0].length;
+  for (const match of text.matchAll(TOKEN)) {
+    const at = match.index ?? 0;
+    if (at > last) segments.push({ kind: 'text', text: text.slice(last, at) });
+    segments.push({ kind: 'link', pageId: Number(match[1]) });
+    last = at + match[0].length;
   }
-  if (last < text.length) segments.push({ type: 'text', text: text.slice(last) });
+  if (last < text.length) segments.push({ kind: 'text', text: text.slice(last) });
   return segments;
 }
 
-/**
- * Most distinct targets one page's link index keeps. Far above any real page, it bounds the
- * delete-and-reinsert work of a save and keeps the insert well under Postgres' parameter limit.
- */
-export const MAX_PAGE_LINK_TARGETS = 1000;
-
-/** Most ids one link resolution request may carry (GET /api/pages/links/resolve). */
-export const MAX_PAGE_LINK_RESOLVE_IDS = 100;
-
-/** Whether `text` holds at least one link token. */
-export function hasPageLinks(text: string): boolean {
-  return new RegExp(PAGE_LINK_PATTERN.source).test(text);
-}
-
-/**
- * `text` with every link token replaced by `render(pageId)`, for plain-text uses (TOC, excerpts,
- * list previews). Pass a function returning '' to strip the tokens.
- */
-export function replacePageLinks(text: string, render: (pageId: number) => string): string {
-  return text.replace(PAGE_LINK_PATTERN, (_token, id: string) => render(Number(id)));
+export function hasPageLinks(text: string | null | undefined): boolean {
+  return !!text && /\[\[page:\d{1,10}\]\]/.test(text);
 }

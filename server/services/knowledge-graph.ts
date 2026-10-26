@@ -10,7 +10,7 @@
  *   page the viewer can read);
  * - AI suggestions are untrusted: an edge to a page outside the node set is dropped.
  */
-import { PAGE_LINK_PATTERN } from '../../shared/page-links.js';
+import { splitPageLinks } from '../../shared/page-links.js';
 import logger from './logger.js';
 
 /** A readable page as the graph builder receives it. `content` is used here, never returned. */
@@ -83,9 +83,18 @@ const AI_MIN_RELEVANCE = 0.5;
 const MAX_AI_REASON_LENGTH = 300;
 
 const pageNodeId = (pageId: number) => `page-${pageId}`;
-/** A whole `[[page:<id>]]` token, and all tokens in a text. */
-const PAGE_LINK_TOKEN = new RegExp(`^${PAGE_LINK_PATTERN.source}$`);
-const PAGE_LINK_TOKENS = new RegExp(PAGE_LINK_PATTERN.source, 'g');
+/** Whether `text` is exactly one `[[page:<id>]]` token. */
+function isPageLinkToken(text: string): boolean {
+  const parts = splitPageLinks(text);
+  return parts.length === 1 && parts[0].kind === 'link';
+}
+
+/** `text` with every `[[page:<id>]]` token replaced by a space. */
+function withoutPageLinks(text: string): string {
+  return splitPageLinks(text)
+    .map((part) => (part.kind === 'text' ? part.text : ' '))
+    .join('');
+}
 
 /**
  * Titles referenced by legacy `[[Title]]` text links in `content`. Page link tokens
@@ -95,7 +104,7 @@ export function extractLegacyLinkTitles(content: string | null | undefined): str
   if (!content) return [];
   const titles: string[] = [];
   for (const match of content.matchAll(/\[\[([^\]]+)\]\]/g)) {
-    if (PAGE_LINK_TOKEN.test(match[0])) continue;
+    if (isPageLinkToken(match[0])) continue;
     const title = match[1].trim();
     if (title) titles.push(title);
   }
@@ -346,7 +355,7 @@ export function buildMentionSnippet(
   options: { offset?: number; contentLength?: number; length?: number } = {}
 ): string {
   const length = options.length ?? MENTION_SNIPPET_LENGTH;
-  const cleaned = excerpt.replace(PAGE_LINK_TOKENS, ' ').replace(/\s+/g, ' ');
+  const cleaned = withoutPageLinks(excerpt).replace(/\s+/g, ' ');
   const needle = title.trim().replace(/\s+/g, ' ');
   const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const index = needle ? cleaned.search(new RegExp(escaped, 'i')) : -1;

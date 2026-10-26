@@ -57,9 +57,11 @@ describe('#tags in rendered Markdown', () => {
 
   it('works next to page link tokens', async () => {
     expect(await render('#a [[page:3]] #b')).toBe(
-      '<p><tag:a> <span data-page-link-slot="3"></span> <tag:b></p>'
+      '<p><tag:a> <span data-page-link="3" class="page-link"></span> <tag:b></p>'
     );
-    expect(await render('[[page:3]]#no')).toBe('<p><span data-page-link-slot="3"></span>#no</p>');
+    expect(await render('[[page:3]]#no')).toBe(
+      '<p><span data-page-link="3" class="page-link"></span>#no</p>'
+    );
   });
 
   it('keeps unsafe link URLs out next to tags', async () => {

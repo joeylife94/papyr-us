@@ -154,12 +154,11 @@ const SLASH_COMMANDS: SlashCommandItem[] = [
     keywords: ['database', 'db', 'table', 'board', 'kanban', '데이터베이스', '보드', '칸반'],
   },
   {
-    // Opens the page link picker in the block (#103 E6) instead of adding a block.
     type: 'mention',
-    label: '페이지 링크',
-    description: '다른 문서로 연결 (@ 또는 [[ 입력)',
+    label: '멘션',
+    description: '사용자 또는 페이지 멘션',
     icon: <AtSign className="h-4 w-4" />,
-    keywords: ['mention', 'link', 'page', 'at', '멘션', '링크', '문서'],
+    keywords: ['mention', 'at', 'user', 'page', '멘션'],
   },
 ];
 

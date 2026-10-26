@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Block, BlockType } from '@shared/schema';
 import { Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { usePageLinkEditing } from '@/components/page/page-link-editing';
+import { useInlinePreview } from '@/components/page/inline-preview';
 
 interface HeadingBlockProps {
   block: Block;
@@ -50,11 +50,9 @@ export function HeadingBlock({
     const newContent = e.target.value;
     setContent(newContent);
     onUpdate({ content: newContent });
-    pageLinks.handleInput(e);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (pageLinks.handleKeyDown(e)) return;
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       onAddBlock('paragraph');
@@ -77,19 +75,6 @@ export function HeadingBlock({
     }
   };
 
-  // Page links (#103 E6): `@` / `[[` picker and the chip preview while the block is not focused.
-  const pageLinks = usePageLinkEditing({
-    blockId: block.id,
-    content,
-    isFocused,
-    textareaRef,
-    onContentChange: (next) => {
-      setContent(next);
-      onUpdate({ content: next });
-    },
-    previewClassName: `${getHeadingStyle()} pr-8`,
-  });
-
   const getPlaceholder = () => {
     switch (block.type) {
       case 'heading1':
@@ -102,6 +87,14 @@ export function HeadingBlock({
         return '제목';
     }
   };
+
+  // Inline Markdown, links and #tags render while the heading is not focused (#113 §2).
+  const preview = useInlinePreview({
+    content,
+    isFocused,
+    textareaRef,
+    className: `${getHeadingStyle()} pr-8`,
+  });
 
   return (
     <div
@@ -120,9 +113,9 @@ export function HeadingBlock({
         placeholder={getPlaceholder()}
         className={`w-full resize-none border-none outline-none bg-transparent ${getHeadingStyle()} text-foreground placeholder:text-muted-foreground pl-0 pr-8`}
         rows={1}
-        {...pageLinks.textareaProps}
+        style={preview.textareaStyle}
       />
-      {pageLinks.overlay}
+      {preview.element}
 
       {/* 액션 버튼들 */}
       {isFocused && (

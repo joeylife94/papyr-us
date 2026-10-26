@@ -181,7 +181,7 @@ test('vault round trip: export a tree as Markdown and import it into another tea
 
     // The imported FAQ opens with a working link to the imported Setup page.
     await page.goto(`/page/${faqPage.slug}`);
-    const chip = page.locator(`[data-page-body] a[data-page-link="${newSetup.id}"]`).first();
+    const chip = page.locator(`[data-page-body] a[data-page-link-target="${newSetup.id}"]`).first();
     await expect(chip).toBeVisible();
     await expect(chip).toContainText('Setup: Day 1');
     await chip.click();

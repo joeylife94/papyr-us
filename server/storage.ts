@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import {
   wikiPages,
+  pageLinks,
   type WikiPage,
   type InsertWikiPage,
   type UpdateWikiPage,
@@ -74,7 +75,6 @@ import {
   pagePermissions,
   publicLinks,
   teamMembers,
-  pageLinks,
 } from '../shared/schema.js';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { eq, like, and, or, sql, desc, asc, isNull, inArray, type SQL } from 'drizzle-orm';
@@ -82,8 +82,13 @@ import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 import type { RetrievedPageRow } from './services/retrieval.js';
 import type { PageTreeRow } from './services/page-tree.js';
+import {
+  MAX_INDEXED_LINKS,
+  extractPageLinkIds,
+  hasPageLinks,
+  isPageId,
+} from '../shared/page-links.js';
 import { isReservedDailyNoteSlug } from '../shared/daily-notes.js';
-import { MAX_PAGE_LINK_TARGETS } from '../shared/page-links.js';
 import {
   DATABASE_LIMITS,
   checkRowData,
@@ -129,17 +134,8 @@ function fitsDatabaseFields(storedFields: unknown, values: Record<string, unknow
 /** A caller without a session: only public or permission-free team-less pages are readable. */
 export const ANONYMOUS_PAGE_VIEWER: PageViewer = Object.freeze({ teamIds: [] as number[] });
 
-/** A page as the link picker, quick switcher and tree show it: never its content. */
-export interface PageTitleMatch {
-  id: number;
-  title: string;
-  slug: string;
-  icon: string | null;
-  teamId: number | null;
-  updatedAt: Date;
-}
-
 const MAX_SLUG_INSERT_ATTEMPTS = 100;
+/** Ids per query when resolving many link targets (`resolveReadablePageLinks`). */
 const RESOLVE_LINKS_BATCH = 1000;
 
 function isTeamPagesForeignKeyViolation(error: unknown): boolean {
@@ -243,19 +239,177 @@ export class DBStorage {
       }
     }
 
+    // A new page has no link rows yet, so only content with links needs indexing.
+    if (hasPageLinks(createdPage.content)) {
+      await this.replacePageLinks(createdPage.id, createdPage.content);
+    }
     return createdPage;
   }
 
   async updateWikiPage(id: number, page: UpdateWikiPage): Promise<WikiPage | undefined> {
+    // Only the daily-note route gives out daily note slugs (#111).
     if (page.slug !== undefined && isReservedDailyNoteSlug(page.slug)) {
       throw new Error('This slug is reserved for daily notes');
     }
-    const result = await this.db
-      .update(wikiPages)
-      .set(page)
-      .where(eq(wikiPages.id, id))
-      .returning();
-    return result[0];
+    if (page.content === undefined) {
+      const result = await this.db
+        .update(wikiPages)
+        .set(page)
+        .where(eq(wikiPages.id, id))
+        .returning();
+      return result[0];
+    }
+    // Every content write (REST, autosave, Yjs, restore) passes through here. The content and
+    // its link index change in one transaction: the row lock taken by the UPDATE orders
+    // concurrent saves of the same page, so the index always matches the content that won.
+    return this.db.transaction(async (tx: any) => {
+      const result = await tx.update(wikiPages).set(page).where(eq(wikiPages.id, id)).returning();
+      if (result[0]) await this.writePageLinks(tx, id, result[0].content);
+      return result[0];
+    });
+  }
+
+  /**
+   * Keep page_links in step with a page's content (issue #103 E6): the targets of its
+   * `[[page:<id>]]` tokens that exist, other than itself. Unknown ids are skipped, not refused:
+   * a token to a page that is gone still renders, as an inaccessible link.
+   */
+  async replacePageLinks(sourcePageId: number, content: string | null | undefined): Promise<void> {
+    await this.db.transaction((tx: any) => this.writePageLinks(tx, sourcePageId, content));
+  }
+
+  /**
+   * Rewrite a page's link rows inside the caller's transaction, in a savepoint: if the index
+   * cannot be written, the content still saves and the error is logged (a stale index only
+   * affects backlinks until the next save).
+   */
+  private async writePageLinks(
+    tx: any,
+    sourcePageId: number,
+    content: string | null | undefined
+  ): Promise<void> {
+    const targets = extractPageLinkIds(content).filter((id) => id !== sourcePageId);
+    try {
+      await tx.transaction(async (savepoint: any) => {
+        await savepoint.execute(sql`DELETE FROM page_links WHERE source_page_id = ${sourcePageId}`);
+        if (targets.length > 0) {
+          await savepoint.execute(sql`
+            INSERT INTO page_links (source_page_id, target_page_id)
+            SELECT ${sourcePageId}, id FROM wiki_pages
+             WHERE id IN (${sql.join(
+               targets.map((target) => sql`${target}`),
+               sql`, `
+             )})
+            ON CONFLICT DO NOTHING`);
+        }
+      });
+    } catch (error) {
+      console.error('Failed to update page links:', (error as Error)?.message);
+    }
+  }
+
+  /** Pages linking to `targetPageId` that the viewer may list, live ones only. */
+  async getReadableBacklinks(
+    userId: number | undefined,
+    targetPageId: number
+  ): Promise<Array<{ id: number; title: string; slug: string; icon: string | null }>> {
+    const viewer = await this.getPageViewer(userId);
+    return this.db
+      .select({
+        id: wikiPages.id,
+        title: wikiPages.title,
+        slug: wikiPages.slug,
+        icon: wikiPages.icon,
+      })
+      .from(pageLinks)
+      .innerJoin(wikiPages, eq(pageLinks.sourcePageId, wikiPages.id))
+      .where(
+        and(
+          eq(pageLinks.targetPageId, targetPageId),
+          isNull(wikiPages.deletedAt),
+          this.listableBy(viewer)
+        )
+      )
+      .orderBy(asc(wikiPages.title), asc(wikiPages.id))
+      .limit(200);
+  }
+
+  /**
+   * Titles of the pages among `ids` that are live and readable by the viewer, for exports that
+   * write links as titles (#113 vault and single-page export). An id missing from the result is
+   * deleted, unknown or unreadable; callers must not tell those apart. These are pages asked for
+   * by id, so the rule is GET /api/pages/:id's (`readableBy`, like the link preview), not the
+   * workspace listing scope.
+   */
+  async resolveReadablePageLinks(
+    viewer: PageViewer,
+    ids: number[]
+  ): Promise<Array<{ id: number; title: string; slug: string; icon: string | null }>> {
+    const unique = Array.from(new Set(ids.filter(isPageId)));
+    const found: Array<{ id: number; title: string; slug: string; icon: string | null }> = [];
+    // Batches keep every query far below Postgres' bind-parameter limit.
+    for (let at = 0; at < unique.length; at += RESOLVE_LINKS_BATCH) {
+      const rows = await this.db
+        .select({
+          id: wikiPages.id,
+          title: wikiPages.title,
+          slug: wikiPages.slug,
+          icon: wikiPages.icon,
+        })
+        .from(wikiPages)
+        .where(
+          and(
+            inArray(wikiPages.id, unique.slice(at, at + RESOLVE_LINKS_BATCH)),
+            isNull(wikiPages.deletedAt),
+            this.readableBy(viewer)
+          )
+        );
+      for (const row of rows) found.push(row);
+    }
+    return found;
+  }
+
+  /**
+   * Link picker and quick switcher results (issue #103 E6, #111): live pages the viewer may list
+   * whose title contains `query`, in one team or among personal pages. An exact title comes
+   * first, then titles starting with the query, then the most recently updated, so the switcher
+   * always sees an existing page of the typed name before it offers to create one.
+   */
+  async searchLinkTargets(
+    userId: number | undefined,
+    scope: { teamId?: number; personalOnly?: boolean },
+    query: string,
+    limit = 20
+  ): Promise<
+    Array<{ id: number; title: string; slug: string; icon: string | null; updatedAt: Date }>
+  > {
+    const viewer = await this.getPageViewer(userId);
+    const conditions: SQL[] = [isNull(wikiPages.deletedAt), this.listableBy(viewer)];
+    if (scope.teamId !== undefined) conditions.push(eq(wikiPages.teamId, scope.teamId));
+    if (scope.personalOnly) conditions.push(isNull(wikiPages.teamId));
+    const q = query.trim();
+    const order: SQL[] = [];
+    if (q) {
+      // LIKE wildcards in the query match literally.
+      const escaped = q.replace(/[\\%_]/g, (c) => `\\${c}`);
+      conditions.push(sql`${wikiPages.title} ILIKE ${'%' + escaped + '%'}`);
+      const lowered = q.toLowerCase();
+      const loweredEscaped = lowered.replace(/[\\%_]/g, (c) => `\\${c}`);
+      order.push(sql`CASE WHEN lower(${wikiPages.title}) = ${lowered} THEN 0
+        WHEN lower(${wikiPages.title}) LIKE ${loweredEscaped + '%'} THEN 1 ELSE 2 END`);
+    }
+    return this.db
+      .select({
+        id: wikiPages.id,
+        title: wikiPages.title,
+        slug: wikiPages.slug,
+        icon: wikiPages.icon,
+        updatedAt: wikiPages.updatedAt,
+      })
+      .from(wikiPages)
+      .where(and(...conditions))
+      .orderBy(...order, desc(wikiPages.updatedAt))
+      .limit(Math.min(Math.max(limit, 1), 50));
   }
 
   async deleteWikiPage(id: number): Promise<boolean> {
@@ -518,8 +672,8 @@ export class DBStorage {
   }
 
   /**
-   * `listableBy` for read paths outside this class (page tree, link picker, backlinks, link
-   * resolution, graph, #103 E5/E6): every page such a path returns must satisfy it.
+   * `listableBy` for read paths outside this class (the knowledge graph, local graph, unlinked
+   * mentions and daily notes, #111): every page such a path lists must satisfy it.
    */
   readablePageCondition(viewer: PageViewer): SQL {
     return this.listableBy(viewer);
@@ -527,7 +681,7 @@ export class DBStorage {
 
   /**
    * Live pages of one workspace scope (a team, or `null` for team-less pages) that the viewer can
-   * read: the base condition for the page tree, link picker, quick switcher and graph.
+   * read: the base condition of the #111 read paths.
    */
   readablePagesInScope(viewer: PageViewer, teamId: number | null): SQL {
     return and(
@@ -535,158 +689,6 @@ export class DBStorage {
       teamId === null ? isNull(wikiPages.teamId) : eq(wikiPages.teamId, teamId),
       this.listableBy(viewer)
     )!;
-  }
-
-  /**
-   * Readable pages of one scope whose title contains `query` (case-insensitive), for the link
-   * picker and the quick switcher (#103 E6, #111). Exact matches come first, then prefix
-   * matches, then the most recently updated; an empty query lists the most recently updated.
-   */
-  async searchReadablePageTitles(
-    viewer: PageViewer,
-    teamId: number | null,
-    options: { query?: string; limit?: number; excludeId?: number } = {}
-  ): Promise<PageTitleMatch[]> {
-    const query = (options.query ?? '').trim();
-    const limit = Math.min(Math.max(options.limit ?? 20, 1), 50);
-    const conditions: SQL[] = [this.readablePagesInScope(viewer, teamId)];
-    if (options.excludeId) conditions.push(sql`${wikiPages.id} <> ${options.excludeId}`);
-    const lowered = query.toLowerCase();
-    // ILIKE/LIKE treat % and _ as wildcards; a typed title must match literally.
-    const escaped = lowered.replace(/[\\%_]/g, (c) => `\\${c}`);
-    if (query) conditions.push(sql`${wikiPages.title} ILIKE ${`%${escaped}%`}`);
-    const order: SQL[] = query
-      ? [
-          sql`CASE WHEN lower(${wikiPages.title}) = ${lowered} THEN 0
-            WHEN lower(${wikiPages.title}) LIKE ${`${escaped}%`} THEN 1 ELSE 2 END`,
-        ]
-      : [];
-    return this.db
-      .select({
-        id: wikiPages.id,
-        title: wikiPages.title,
-        slug: wikiPages.slug,
-        icon: wikiPages.icon,
-        teamId: wikiPages.teamId,
-        updatedAt: wikiPages.updatedAt,
-      })
-      .from(wikiPages)
-      .where(and(...conditions))
-      .orderBy(...order, desc(wikiPages.updatedAt))
-      .limit(limit);
-  }
-
-  /**
-   * Link chips (#103 E6): the pages among `ids` that are live and readable by the viewer, with
-   * the fields a chip shows. An id missing from the result is deleted, unknown or unreadable;
-   * callers must not tell those apart.
-   *
-   * These are pages the viewer asked for by id, so the rule is GET /api/pages/:id's
-   * (`readableBy`), not the workspace listing scope: a team page with a public grant resolves
-   * for a reader outside that team, as opening it would.
-   */
-  async resolveReadablePageLinks(
-    viewer: PageViewer,
-    ids: number[]
-  ): Promise<Array<Pick<PageTitleMatch, 'id' | 'title' | 'slug' | 'icon'>>> {
-    const unique = Array.from(new Set(ids));
-    const found: Array<Pick<PageTitleMatch, 'id' | 'title' | 'slug' | 'icon'>> = [];
-    // Batches keep every query far below Postgres' bind-parameter limit, however many links a
-    // page holds.
-    for (let at = 0; at < unique.length; at += RESOLVE_LINKS_BATCH) {
-      const rows = await this.db
-        .select({
-          id: wikiPages.id,
-          title: wikiPages.title,
-          slug: wikiPages.slug,
-          icon: wikiPages.icon,
-        })
-        .from(wikiPages)
-        .where(
-          and(
-            inArray(wikiPages.id, unique.slice(at, at + RESOLVE_LINKS_BATCH)),
-            isNull(wikiPages.deletedAt),
-            this.readableBy(viewer)
-          )
-        );
-      for (const row of rows) found.push(row);
-    }
-    return found;
-  }
-
-  /**
-   * Backlinks (#103 E6): live pages the viewer can read whose body links to `pageId`, most
-   * recently updated first. `page_links` also indexes links to pages their author cannot read,
-   * so the source side is filtered here and the target side by the caller's page check.
-   */
-  async getReadableBacklinks(
-    viewer: PageViewer,
-    pageId: number,
-    limit = 100
-  ): Promise<Array<Omit<PageTitleMatch, 'teamId'>>> {
-    return this.db
-      .select({
-        id: wikiPages.id,
-        title: wikiPages.title,
-        slug: wikiPages.slug,
-        icon: wikiPages.icon,
-        updatedAt: wikiPages.updatedAt,
-      })
-      .from(wikiPages)
-      .where(
-        and(
-          sql`EXISTS (SELECT 1 FROM page_links pl WHERE pl.source_page_id = ${wikiPages.id} AND pl.target_page_id = ${pageId})`,
-          sql`${wikiPages.id} <> ${pageId}`,
-          isNull(wikiPages.deletedAt),
-          this.listableBy(viewer)
-        )
-      )
-      .orderBy(desc(wikiPages.updatedAt))
-      .limit(limit);
-  }
-
-  /**
-   * Replace the outgoing links of a page with `targetIds` in one transaction (the save
-   * pipeline's link index, #103 E6). Self-links and ids of pages that do not exist are skipped;
-   * trashed targets stay indexed so their backlinks return with them on restore. At most
-   * MAX_PAGE_LINK_TARGETS distinct targets are kept.
-   *
-   * `expectedContent` is the content the caller's write produced. When the locked row no longer
-   * holds it, a later write has landed and will sync its own links, so this older sync is
-   * skipped instead of overwriting them.
-   */
-  async replacePageLinks(
-    sourcePageId: number,
-    targetIds: number[],
-    options: { expectedContent?: string } = {}
-  ): Promise<void> {
-    const targets = Array.from(
-      new Set(targetIds.filter((id) => Number.isInteger(id) && id > 0 && id !== sourcePageId))
-    ).slice(0, MAX_PAGE_LINK_TARGETS);
-    await this.db.transaction(async (tx: any) => {
-      // Serializes concurrent syncs of one page (a REST autosave and a Yjs save can overlap).
-      // NO KEY UPDATE does not block the foreign-key checks of links from other pages.
-      const source = await tx.execute(
-        sql`SELECT id, content FROM wiki_pages WHERE id = ${sourcePageId} FOR NO KEY UPDATE`
-      );
-      if (source.rows.length === 0) return;
-      if (
-        options.expectedContent !== undefined &&
-        source.rows[0].content !== options.expectedContent
-      ) {
-        return;
-      }
-      await tx.execute(sql`DELETE FROM page_links WHERE source_page_id = ${sourcePageId}`);
-      if (targets.length === 0) return;
-      await tx.execute(sql`
-        INSERT INTO page_links (source_page_id, target_page_id)
-        SELECT ${sourcePageId}, id FROM wiki_pages
-        WHERE id IN (${sql.join(
-          targets.map((id) => sql`${id}`),
-          sql`, `
-        )})
-        ON CONFLICT DO NOTHING`);
-    });
   }
 
   async getReadableWikiPagesByFolder(folder: string, userId: number): Promise<WikiPage[]> {
@@ -2915,7 +2917,7 @@ export class DBStorage {
       const links = input.pages.flatMap((page) =>
         Array.from(new Set(page.linkTargets))
           .filter((target) => Number.isInteger(target) && target > 0 && target !== page.id)
-          .slice(0, MAX_PAGE_LINK_TARGETS)
+          .slice(0, MAX_INDEXED_LINKS)
           .map((target) => sql`(${page.id}::int, ${target}::int)`)
       );
       for (let i = 0; i < links.length; i += 1000) {

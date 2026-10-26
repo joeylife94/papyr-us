@@ -1,10 +1,8 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { markdownToHtml } from '@/lib/markdown';
+import { markdownToHtml, plainTextFallbackHtml } from '@/lib/markdown';
 import { INLINE_TAG_ATTRIBUTE } from '@/lib/rehype-inline-tags';
-import { PageLinkChip } from '@/components/page/page-link-chip';
-import { PAGE_LINK_SLOT_ATTRIBUTE } from '@/components/page/page-link-markdown';
+import { PageLinkPortals } from '@/components/page/page-links';
 
 interface MarkdownRendererProps {
   content: string;
@@ -13,23 +11,13 @@ interface MarkdownRendererProps {
   takenHeadingIds?: readonly string[];
 }
 
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
 export function MarkdownRenderer({
   content,
   className = '',
   takenHeadingIds,
 }: MarkdownRendererProps) {
   const [html, setHtml] = useState('');
-  const containerRef = useRef<HTMLDivElement>(null);
-  // Page link placeholders in the rendered HTML; each gets a chip (#103 E6).
-  const [linkSlots, setLinkSlots] = useState<HTMLElement[]>([]);
+  const [root, setRoot] = useState<HTMLDivElement | null>(null);
   const navigate = useNavigate();
 
   // A stable dependency for the list (a new array each render would re-render every time).
@@ -47,8 +35,8 @@ export function MarkdownRenderer({
       .catch((err) => {
         console.warn('Failed to render markdown:', err);
         if (!isCancelled) {
-          // Fall back to plain text display (escaped: page content is untrusted input)
-          setHtml(`<pre>${escapeHtml(content)}</pre>`);
+          // Fall back to plain text display, escaped (page content is untrusted)
+          setHtml(plainTextFallbackHtml(content));
         }
       });
 
@@ -57,16 +45,8 @@ export function MarkdownRenderer({
     };
   }, [content, takenKey]);
 
-  useLayoutEffect(() => {
-    const root = containerRef.current;
-    setLinkSlots(
-      root ? Array.from(root.querySelectorAll<HTMLElement>(`[${PAGE_LINK_SLOT_ATTRIBUTE}]`)) : []
-    );
-  }, [html]);
-
   // `#tag` links (#113) are plain anchors in the HTML; open them in the app, not by a reload.
   useEffect(() => {
-    const root = containerRef.current;
     if (!root) return;
     const openTag = (event: MouseEvent) => {
       if (event.defaultPrevented || event.button !== 0) return;
@@ -79,7 +59,7 @@ export function MarkdownRenderer({
     };
     root.addEventListener('click', openTag);
     return () => root.removeEventListener('click', openTag);
-  }, [html, navigate]);
+  }, [root, navigate]);
 
   if (!html) {
     return (
@@ -99,17 +79,12 @@ export function MarkdownRenderer({
   return (
     <>
       <div
-        ref={containerRef}
+        ref={setRoot}
         className={`prose prose-slate dark:prose-invert max-w-none ${className}`}
         dangerouslySetInnerHTML={{ __html: html }}
       />
-      {linkSlots.map((slot, index) =>
-        createPortal(
-          <PageLinkChip pageId={Number(slot.getAttribute(PAGE_LINK_SLOT_ATTRIBUTE))} />,
-          slot,
-          `${index}:${slot.getAttribute(PAGE_LINK_SLOT_ATTRIBUTE)}`
-        )
-      )}
+      {/* Page links (issue #103 E6) render as chips inside their placeholders. */}
+      <PageLinkPortals root={root} html={html} />
     </>
   );
 }

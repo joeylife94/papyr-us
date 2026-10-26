@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { remark } from 'remark';
+import remarkGfm from 'remark-gfm';
+import remarkRehype from 'remark-rehype';
+import rehypeStringify from 'rehype-stringify';
 import {
   buildVaultEntries,
+  contentWithLinkTitles,
   outsideLinkIds,
   singlePageMarkdown,
   vaultArchiveName,
@@ -129,6 +134,20 @@ describe('buildVaultEntries', () => {
     const now = new Date('2026-10-26T12:00:00Z');
     expect(vaultArchiveName(null, now)).toBe('papyrus-personal-2026-10-26.zip');
     expect(vaultArchiveName('design team', now)).toBe('papyrus-design-team-2026-10-26.zip');
+  });
+});
+
+describe('contentWithLinkTitles', () => {
+  it('shows linked titles as written in the HTML export', async () => {
+    const markdown = contentWithLinkTitles(
+      'A [[page:2]] B [[page:3]]',
+      new Map([[2, '*Q&A* [x](javascript:y) #1']])
+    );
+    // The same pipeline as GET /api/pages/:id/export?format=html.
+    const html = String(
+      await remark().use(remarkGfm).use(remarkRehype).use(rehypeStringify).process(markdown)
+    );
+    expect(html).toBe('<p>A *Q&#x26;A* [x](javascript:y) #1 B 접근할 수 없는 페이지</p>');
   });
 });
 

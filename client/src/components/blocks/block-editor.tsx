@@ -40,6 +40,8 @@ import {
 } from '@hello-pangea/dnd';
 import { cn } from '@/lib/utils';
 import { moveBlock as reorderBlocks, resolveDrop } from '@/lib/block-order';
+import { PageLinkPicker } from '@/components/page/page-links';
+import { pageLinkToken } from '@shared/page-links';
 import { matchMarkdownShortcut } from '@/lib/markdown-shortcuts';
 import { headingIdsByBlock } from '@/lib/markdown';
 import { Button } from '@/components/ui/button';
@@ -57,10 +59,6 @@ import { UserCursors } from '@/components/collaboration/user-cursor';
 import { useFeatureFlags } from '@/features/FeatureFlagsContext';
 import { SlashCommandMenu } from './slash-command-menu';
 import { InlineFormattingToolbar } from './inline-formatting-toolbar';
-import {
-  PageLinkEditorContext,
-  type PageLinkEditorScope,
-} from '@/components/page/page-link-editing';
 
 interface BlockEditorProps {
   blocks: Block[];
@@ -70,11 +68,8 @@ interface BlockEditorProps {
   userId?: string;
   userName?: string;
   useYjs?: boolean; // Enable Yjs CRDT collaboration (default: false)
-  /**
-   * Team of the edited page, the scope of the page link picker (#103 E6); null for a team-less
-   * page. Omitted (a page not created yet): the `teamName` workspace, else team-less pages.
-   */
-  pageTeamId?: number | null;
+  /** Team of the page being edited, for the `@` / `[[` link picker (issue #103 E6). */
+  linkTeamId?: number | null;
 }
 
 export function BlockEditor({
@@ -85,7 +80,7 @@ export function BlockEditor({
   userId,
   userName,
   useYjs = false, // Default to false for backward compatibility
-  pageTeamId,
+  linkTeamId = null,
 }: BlockEditorProps) {
   const { flags } = useFeatureFlags();
   const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null);
@@ -104,6 +99,14 @@ export function BlockEditor({
     caret: number;
   } | null>(null);
   const pendingCaretRef = useRef<{ blockId: string; position: number } | null>(null);
+
+  // Page link picker (issue #103 E6): which block, where, and the "@" / "[[" text it replaces.
+  const [linkPicker, setLinkPicker] = useState<{
+    blockId: string;
+    anchor: { top: number; left: number };
+    start: number;
+    length: number;
+  } | null>(null);
 
   // Slash command state
   const [slashMenu, setSlashMenu] = useState<{
@@ -130,18 +133,6 @@ export function BlockEditor({
     setSlashMenu((prev) => ({ ...prev, isOpen: false, filter: '' }));
   }, []);
 
-  // Page link picker scope (#103 E6), plus the slash command's request to open the picker.
-  const [linkPickerRequest, setLinkPickerRequest] =
-    useState<PageLinkEditorScope['pickerRequest']>(null);
-  const pageLinkScope = useMemo<PageLinkEditorScope>(
-    () => ({
-      team: pageTeamId !== undefined ? pageTeamId : (teamName ?? null),
-      pageId,
-      pickerRequest: linkPickerRequest,
-    }),
-    [pageTeamId, teamName, pageId, linkPickerRequest]
-  );
-
   const handleSlashSelect = useCallback(
     (type: BlockType) => {
       const blockIndex = blocks.findIndex((b) => b.id === slashMenu.blockId);
@@ -150,17 +141,6 @@ export function BlockEditor({
       // Remove the slash text from current block content
       const currentBlock = blocks[blockIndex];
       const cleanedContent = currentBlock.content.replace(/\/[^\s]*$/, '').trim();
-
-      if (type === 'mention') {
-        // "페이지 링크": type `@` in place of the command and open the page link picker there,
-        // exactly as if `@` had been typed (#103 E6). No separate mention block is created.
-        updateBlockRef.current(slashMenu.blockId, {
-          content: cleanedContent ? `${cleanedContent} @` : '@',
-        });
-        setLinkPickerRequest({ blockId: slashMenu.blockId, nonce: Date.now() });
-        handleSlashClose();
-        return;
-      }
 
       if (type === 'paragraph' && cleanedContent === '') {
         // If selecting paragraph on empty block, just keep it
@@ -594,6 +574,14 @@ export function BlockEditor({
               onSlashCommand={(rect) => handleSlashCommand(block.id, rect)}
               onSlashFilter={handleSlashFilter}
               onSlashClose={handleSlashClose}
+              onPageLinkTrigger={(rect, start, length) =>
+                setLinkPicker({
+                  blockId: block.id,
+                  anchor: { top: rect.top, left: rect.left },
+                  start,
+                  length,
+                })
+              }
               onMarkdownShortcut={(previous, next, caret) =>
                 applyMarkdownShortcut(block, previous, next, caret)
               }
@@ -766,7 +754,7 @@ export function BlockEditor({
     }
   };
 
-  const editor = (
+  return (
     <div
       ref={editorContainerRef}
       className="block-editor relative min-h-[400px] py-2 sm:py-4"
@@ -1061,6 +1049,32 @@ export function BlockEditor({
       )}
 
       {/* Slash Command Menu (Notion-style /) */}
+      {linkPicker && (
+        <PageLinkPicker
+          anchor={linkPicker.anchor}
+          teamId={linkTeamId}
+          excludeId={pageId}
+          onSelect={(target) => {
+            const block = blocks.find((b) => b.id === linkPicker.blockId);
+            if (block) {
+              // Replace the "@" / "[[" that opened the picker with the link token.
+              const text = block.content;
+              const content =
+                text.slice(0, linkPicker.start) +
+                `${pageLinkToken(target.id)} ` +
+                text.slice(linkPicker.start + linkPicker.length);
+              updateBlock(block.id, { content });
+            }
+            setLinkPicker(null);
+            setFocusedBlockId(linkPicker.blockId);
+          }}
+          onClose={() => {
+            setLinkPicker(null);
+            setFocusedBlockId(linkPicker.blockId);
+          }}
+        />
+      )}
+
       <SlashCommandMenu
         isOpen={slashMenu.isOpen}
         position={slashMenu.position}
@@ -1072,9 +1086,5 @@ export function BlockEditor({
       {/* Inline Formatting Toolbar (appears on text selection) */}
       <InlineFormattingToolbar containerRef={editorContainerRef} />
     </div>
-  );
-
-  return (
-    <PageLinkEditorContext.Provider value={pageLinkScope}>{editor}</PageLinkEditorContext.Provider>
   );
 }

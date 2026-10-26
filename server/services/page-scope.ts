@@ -1,7 +1,7 @@
 /**
- * Workspace scope of a page read path (#103 E5/E6, #111): one team, or the caller's team-less
- * (personal) pages. The page tree, link picker, quick switcher, daily notes and graph all take
- * `teamId` (a numeric id or a team name) the same way and resolve it here.
+ * Workspace scope of a #111 read path: one team, or the caller's team-less (personal) pages. The
+ * knowledge graph, local graph, unlinked mentions and daily notes take `teamId` (a numeric id or
+ * a team name) the same way and resolve it here.
  *
  * Unlike the legacy GET /api/pages listing, these paths fail closed: a team scope needs a
  * signed-in current member, and an unknown team name is refused like a team the caller is not
