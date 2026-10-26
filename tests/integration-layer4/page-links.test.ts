@@ -167,6 +167,27 @@ describe('page links (real Postgres)', () => {
     expect(await linksFrom(source.id)).toEqual([]);
   });
 
+  it('concurrent saves leave the index matching the content that won', async () => {
+    const a = await storage.createWikiPage(page('Race A', ALICE.email, 'a'), ALICE.id);
+    const b = await storage.createWikiPage(page('Race B', ALICE.email, 'b'), ALICE.id);
+    const source = await storage.createWikiPage(page('Race source', ALICE.email, ''), ALICE.id);
+    for (let round = 0; round < 5; round += 1) {
+      await Promise.all(
+        Array.from({ length: 8 }, (_, i) =>
+          storage.updateWikiPage(source.id, {
+            content: `round ${round} save ${i} [[page:${i % 2 === 0 ? a.id : b.id}]]`,
+          })
+        )
+      );
+      const { rows } = await scoped.query('SELECT content FROM wiki_pages WHERE id = $1', [
+        source.id,
+      ]);
+      const winner = rows[0].content as string;
+      const expected = winner.includes(`[[page:${a.id}]]`) ? [a.id] : [b.id];
+      expect(await linksFrom(source.id), `round ${round}: ${winner}`).toEqual(expected);
+    }
+  });
+
   it('lists backlinks and picker results only from pages the viewer may read', async () => {
     const target = await storage.createWikiPage(page('Shared Plan', ALICE.email, 'x'), ALICE.id);
     // Creating a page makes its creator the explicit owner, so personal pages are private.

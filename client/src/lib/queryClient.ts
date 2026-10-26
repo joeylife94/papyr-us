@@ -68,9 +68,10 @@ export function invalidatePageLists(client: QueryClient = queryClient) {
         typeof key === 'string' &&
         (key === '/api/pages' ||
           key.startsWith('/api/page-tree') ||
-          // Link chips and backlinks show titles and icons (issue #103 E6).
+          // Link chips, backlinks and link-picker results show titles and icons (issue #103 E6).
           key.endsWith('/link-preview') ||
           key.endsWith('/backlinks') ||
+          key.startsWith('/api/page-links/search') ||
           (key.startsWith('/api/folders/') && key.endsWith('/pages')))
       );
     },

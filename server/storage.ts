@@ -205,16 +205,22 @@ export class DBStorage {
   }
 
   async updateWikiPage(id: number, page: UpdateWikiPage): Promise<WikiPage | undefined> {
-    const result = await this.db
-      .update(wikiPages)
-      .set(page)
-      .where(eq(wikiPages.id, id))
-      .returning();
-    // Every content write (REST, autosave, Yjs, restore) passes through here.
-    if (result[0] && page.content !== undefined) {
-      await this.replacePageLinks(id, result[0].content);
+    if (page.content === undefined) {
+      const result = await this.db
+        .update(wikiPages)
+        .set(page)
+        .where(eq(wikiPages.id, id))
+        .returning();
+      return result[0];
     }
-    return result[0];
+    // Every content write (REST, autosave, Yjs, restore) passes through here. The content and
+    // its link index change in one transaction: the row lock taken by the UPDATE orders
+    // concurrent saves of the same page, so the index always matches the content that won.
+    return this.db.transaction(async (tx: any) => {
+      const result = await tx.update(wikiPages).set(page).where(eq(wikiPages.id, id)).returning();
+      if (result[0]) await this.writePageLinks(tx, id, result[0].content);
+      return result[0];
+    });
   }
 
   /**
@@ -223,26 +229,36 @@ export class DBStorage {
    * a token to a page that is gone still renders, as an inaccessible link.
    */
   async replacePageLinks(sourcePageId: number, content: string | null | undefined): Promise<void> {
+    await this.db.transaction((tx: any) => this.writePageLinks(tx, sourcePageId, content));
+  }
+
+  /**
+   * Rewrite a page's link rows inside the caller's transaction, in a savepoint: if the index
+   * cannot be written, the content still saves and the error is logged (a stale index only
+   * affects backlinks until the next save).
+   */
+  private async writePageLinks(
+    tx: any,
+    sourcePageId: number,
+    content: string | null | undefined
+  ): Promise<void> {
     const targets = extractPageLinkIds(content).filter((id) => id !== sourcePageId);
-    const client = await this.pool.connect();
     try {
-      await client.query('BEGIN');
-      await client.query('DELETE FROM page_links WHERE source_page_id = $1', [sourcePageId]);
-      if (targets.length > 0) {
-        await client.query(
-          `INSERT INTO page_links (source_page_id, target_page_id)
-           SELECT $1, id FROM wiki_pages WHERE id = ANY($2::int[])
-           ON CONFLICT DO NOTHING`,
-          [sourcePageId, targets]
-        );
-      }
-      await client.query('COMMIT');
+      await tx.transaction(async (savepoint: any) => {
+        await savepoint.execute(sql`DELETE FROM page_links WHERE source_page_id = ${sourcePageId}`);
+        if (targets.length > 0) {
+          await savepoint.execute(sql`
+            INSERT INTO page_links (source_page_id, target_page_id)
+            SELECT ${sourcePageId}, id FROM wiki_pages
+             WHERE id IN (${sql.join(
+               targets.map((target) => sql`${target}`),
+               sql`, `
+             )})
+            ON CONFLICT DO NOTHING`);
+        }
+      });
     } catch (error) {
-      await client.query('ROLLBACK').catch(() => undefined);
-      // The page itself is saved; a stale link index only affects backlinks until the next save.
       console.error('Failed to update page links:', (error as Error)?.message);
-    } finally {
-      client.release();
     }
   }
 
