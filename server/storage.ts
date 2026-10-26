@@ -548,6 +548,10 @@ export class DBStorage {
    * Link chips (#103 E6): the pages among `ids` that are live and readable by the viewer, with
    * the fields a chip shows. An id missing from the result is deleted, unknown or unreadable;
    * callers must not tell those apart.
+   *
+   * These are pages the viewer asked for by id, so the rule is GET /api/pages/:id's
+   * (`readableBy`), not the workspace listing scope: a team page with a public grant resolves
+   * for a reader outside that team, as opening it would.
    */
   async resolveReadablePageLinks(
     viewer: PageViewer,
@@ -562,7 +566,7 @@ export class DBStorage {
         icon: wikiPages.icon,
       })
       .from(wikiPages)
-      .where(and(inArray(wikiPages.id, ids), isNull(wikiPages.deletedAt), this.listableBy(viewer)));
+      .where(and(inArray(wikiPages.id, ids), isNull(wikiPages.deletedAt), this.readableBy(viewer)));
   }
 
   /**

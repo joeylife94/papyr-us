@@ -3,8 +3,9 @@
  * sees of the target comes from here, filtered for that reader:
  *
  * - GET /api/pages/links/resolve?ids=1,2,3 — titles for link chips. A target is accessible when
- *   it is live and `readablePageCondition(viewer)` holds; for any other id (deleted, unknown,
- *   unreadable) only `{ id, accessible: false }` is returned, so the three look the same.
+ *   it is live and the viewer could open it (the GET /api/pages/:id rule, public grants
+ *   included); for any other id (deleted, unknown, unreadable) only `{ id, accessible: false }`
+ *   is returned, so the three look the same.
  * - GET /api/pages/:id/backlinks — live pages the viewer can read that link to the page.
  * - GET /api/pages/:id/preview — icon, title and a short plain-text excerpt for the hover card.
  *   Link tokens in the excerpt become the titles of targets the viewer can read, or are dropped.
