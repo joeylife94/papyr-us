@@ -5,7 +5,9 @@
  *   - manual saves, REST autosaves and blocks-only (Yjs) saves replace a page's outgoing links;
  *   - self-links, duplicates and ids of pages that do not exist are never stored;
  *   - page creation and version restore index the body they write;
- *   - concurrent syncs of one page never merge two link sets;
+ *   - concurrent syncs of one page never merge two link sets, and a sync for a body that a later
+ *     write already replaced is skipped;
+ *   - at most MAX_PAGE_LINK_TARGETS distinct targets are kept per page;
  *   - backlinks and link resolution only return live pages the viewer can read, whichever end
  *     of a link is unreadable or trashed;
  *   - deleting a page for good removes its rows (ON DELETE CASCADE).
@@ -243,6 +245,30 @@ describe('page link index (real Postgres)', () => {
       const stored = await linksFrom(source);
       expect([first, second]).toContainEqual(stored);
     }
+  });
+
+  it('skips a sync whose write a later write already replaced', async () => {
+    const source = await createPage('src-stale', { content: 'newer body' });
+    const older = await createPage('t-stale-older');
+    const newer = await createPage('t-stale-newer');
+    await storage.replacePageLinks(source, [newer], { expectedContent: 'newer body' });
+
+    // An older save syncing late (its body is no longer the row's) leaves the newer links alone.
+    await storage.replacePageLinks(source, [older], { expectedContent: 'older body' });
+    expect(await linksFrom(source)).toEqual([newer]);
+  });
+
+  it('keeps at most MAX_PAGE_LINK_TARGETS distinct targets', async () => {
+    const { MAX_PAGE_LINK_TARGETS } = await import('../../shared/page-links.js');
+    const source = await createPage('src-cap');
+    const target = await createPage('t-cap');
+    const missing = Array.from({ length: MAX_PAGE_LINK_TARGETS }, (_, i) => 900000 + i);
+
+    await storage.replacePageLinks(source, [...missing, target]);
+    expect(await linksFrom(source)).toEqual([]);
+
+    await storage.replacePageLinks(source, [target, ...missing]);
+    expect(await linksFrom(source)).toEqual([target]);
   });
 
   it('backlinks list only live sources the viewer can read', async () => {

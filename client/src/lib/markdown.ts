@@ -8,6 +8,7 @@ import matter from 'gray-matter';
 // Relative imports: unit tests load this module without the Vite aliases.
 import { replacePageLinks } from '../../../shared/page-links';
 import { rehypePageLinkSlots } from '../components/page/page-link-markdown';
+import { rehypeSafeUrls } from './rehype-safe-urls';
 
 // Parse markdown with frontmatter
 export function parseMarkdown(content: string) {
@@ -15,13 +16,15 @@ export function parseMarkdown(content: string) {
   return { frontmatter, content: markdownContent };
 }
 
-// Convert markdown to HTML. Page link tokens become chip placeholders (#103 E6).
+// Convert markdown to HTML. Page link tokens become chip placeholders (#103 E6). Raw HTML is
+// dropped by remark-rehype; links and images keep only safe URL schemes.
 export async function markdownToHtml(markdown: string): Promise<string> {
   const processor = remark()
     .use(remarkGfm)
     .use(remarkRehype)
     .use(rehypePageLinkSlots)
     .use(rehypeHighlight)
+    .use(rehypeSafeUrls)
     .use(rehypeStringify);
 
   const result = await processor.process(markdown);

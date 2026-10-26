@@ -97,6 +97,7 @@ import { registerPageTitleSearchRoutes } from './routes/page-title-search.js';
 import { registerKnowledgeRoutes } from './routes/knowledge.js';
 import { buildKnowledgeGraph, suggestAiLinks } from './services/knowledge-graph.js';
 import { pageIconField } from '../shared/page-icon.js';
+import { isReservedDailyNoteSlug } from '../shared/daily-notes.js';
 import { registerDailyNoteRoutes } from './routes/daily-notes.js';
 import { registerPageLinkRoutes } from './routes/page-links.js';
 import { checkTreeParent, registerPageTreeRoutes } from './routes/page-tree.js';
@@ -870,6 +871,10 @@ export async function registerRoutes(
       try {
         const id = parseInt(req.params.id);
         const { parentId, position, ...updateData } = updatePageSchema.parse(req.body);
+        // Only the daily-note route gives out daily note slugs (#111).
+        if (updateData.slug !== undefined && isReservedDailyNoteSlug(updateData.slug)) {
+          return res.status(400).json({ message: 'This slug is reserved for daily notes' });
+        }
 
         // Get old page data for comparison and version snapshot
         const oldPage = await storage.getWikiPage(id);

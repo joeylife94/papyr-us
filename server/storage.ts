@@ -78,6 +78,8 @@ import { eq, like, and, or, sql, desc, asc, isNull, inArray, type SQL } from 'dr
 import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 import type { RetrievedPageRow } from './services/retrieval.js';
+import { isReservedDailyNoteSlug } from '../shared/daily-notes.js';
+import { MAX_PAGE_LINK_TARGETS } from '../shared/page-links.js';
 import {
   MAX_ANCESTOR_DEPTH,
   buildPageTree,
@@ -185,7 +187,10 @@ export class DBStorage {
   async createWikiPage(page: InsertWikiPage, creatorUserId?: number): Promise<WikiPage> {
     let createdPage: WikiPage | undefined;
 
-    for (let attempt = 0; attempt < MAX_SLUG_INSERT_ATTEMPTS; attempt += 1) {
+    // A daily note's slug (#111) is only created by findOrCreateDailyNote; any other create
+    // starts from the next candidate, as it would after a slug conflict.
+    const firstAttempt = isReservedDailyNoteSlug(page.slug) ? 1 : 0;
+    for (let attempt = firstAttempt; attempt < MAX_SLUG_INSERT_ATTEMPTS; attempt += 1) {
       const slug = buildUniqueSlugCandidate(page.slug, attempt);
       try {
         const result = await this.db
@@ -217,6 +222,9 @@ export class DBStorage {
   }
 
   async updateWikiPage(id: number, page: UpdateWikiPage): Promise<WikiPage | undefined> {
+    if (page.slug !== undefined && isReservedDailyNoteSlug(page.slug)) {
+      throw new Error('This slug is reserved for daily notes');
+    }
     const result = await this.db
       .update(wikiPages)
       .set(page)
@@ -605,19 +613,34 @@ export class DBStorage {
   /**
    * Replace the outgoing links of a page with `targetIds` in one transaction (the save
    * pipeline's link index, #103 E6). Self-links and ids of pages that do not exist are skipped;
-   * trashed targets stay indexed so their backlinks return with them on restore.
+   * trashed targets stay indexed so their backlinks return with them on restore. At most
+   * MAX_PAGE_LINK_TARGETS distinct targets are kept.
+   *
+   * `expectedContent` is the content the caller's write produced. When the locked row no longer
+   * holds it, a later write has landed and will sync its own links, so this older sync is
+   * skipped instead of overwriting them.
    */
-  async replacePageLinks(sourcePageId: number, targetIds: number[]): Promise<void> {
+  async replacePageLinks(
+    sourcePageId: number,
+    targetIds: number[],
+    options: { expectedContent?: string } = {}
+  ): Promise<void> {
     const targets = Array.from(
       new Set(targetIds.filter((id) => Number.isInteger(id) && id > 0 && id !== sourcePageId))
-    );
+    ).slice(0, MAX_PAGE_LINK_TARGETS);
     await this.db.transaction(async (tx: any) => {
       // Serializes concurrent syncs of one page (a REST autosave and a Yjs save can overlap).
       // NO KEY UPDATE does not block the foreign-key checks of links from other pages.
       const source = await tx.execute(
-        sql`SELECT id FROM wiki_pages WHERE id = ${sourcePageId} FOR NO KEY UPDATE`
+        sql`SELECT id, content FROM wiki_pages WHERE id = ${sourcePageId} FOR NO KEY UPDATE`
       );
       if (source.rows.length === 0) return;
+      if (
+        options.expectedContent !== undefined &&
+        source.rows[0].content !== options.expectedContent
+      ) {
+        return;
+      }
       await tx.execute(sql`DELETE FROM page_links WHERE source_page_id = ${sourcePageId}`);
       if (targets.length === 0) return;
       await tx.execute(sql`
@@ -2012,22 +2035,27 @@ export class DBStorage {
       .select({ teamId: wikiPages.teamId })
       .from(wikiPages)
       .where(eq(wikiPages.id, pageId));
+    const userTeamIds = await this.getUserTeamIds(userId);
     if (page?.teamId) {
       const teamId = Number(page.teamId);
-      if (!(await this.getUserTeamIds(userId)).includes(teamId)) return null;
+      if (!userTeamIds.includes(teamId)) return null;
       if (await this.isTeamManager(userId, teamId)) return 'owner';
     }
 
+    // The user's own grants, plus grants to a team they currently belong to, as in
+    // checkPagePermission (a team daily note's members edit through its team grant, #111).
+    const grantees = [
+      and(eq(pagePermissions.entityType, 'user'), eq(pagePermissions.entityId, userId)),
+    ];
+    if (userTeamIds.length > 0) {
+      grantees.push(
+        and(eq(pagePermissions.entityType, 'team'), inArray(pagePermissions.entityId, userTeamIds))
+      );
+    }
     const permissions = await this.db
       .select()
       .from(pagePermissions)
-      .where(
-        and(
-          eq(pagePermissions.pageId, pageId),
-          eq(pagePermissions.entityType, 'user'),
-          eq(pagePermissions.entityId, userId)
-        )
-      );
+      .where(and(eq(pagePermissions.pageId, pageId), or(...grantees)));
 
     if (permissions.length === 0) {
       return null;

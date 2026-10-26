@@ -289,7 +289,9 @@ describe('page link index on page writes', () => {
 
     expect(response.status).toBe(201);
     // Self-links are dropped before the index is written.
-    expect(storage.replacePageLinks).toHaveBeenCalledWith(11, [4]);
+    expect(storage.replacePageLinks).toHaveBeenCalledWith(11, [4], {
+      expectedContent: 'See [[page:4]]',
+    });
   });
 
   it('re-indexes links from the restored version', async () => {
@@ -312,7 +314,9 @@ describe('page link index on page writes', () => {
       .set('Cookie', [`accessToken=${token}`]);
 
     expect(response.status).toBe(200);
-    expect(storage.replacePageLinks).toHaveBeenCalledWith(5, [6]);
+    expect(storage.replacePageLinks).toHaveBeenCalledWith(5, [6], {
+      expectedContent: 'Old [[page:6]]',
+    });
     (storage as any).db = {};
   });
 });

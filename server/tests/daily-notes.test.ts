@@ -225,3 +225,16 @@ describe('POST /api/pages/daily', () => {
     expect(JSON.stringify(response.body)).not.toContain('secret_table');
   });
 });
+
+describe('daily note slugs are reserved', () => {
+  it('refuses to rename a page to a daily note slug before anything is written', async () => {
+    const response = await request(app)
+      .put('/api/pages/5')
+      .set('Cookie', [`accessToken=${token}`])
+      .send({ slug: `daily-${today}-t3` });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/reserved/);
+    expect(storage.updateWikiPage).not.toHaveBeenCalled();
+  });
+});
