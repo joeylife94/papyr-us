@@ -42,10 +42,29 @@ export interface DatabaseCellProps {
   /** Accessible name of the cell's control, e.g. "상태, 행 3: 디자인 검토". */
   label: string;
   readOnly: boolean;
-  onCommit: (value: DatabaseCellValue | null) => void;
+  /** Saves the value; may resolve once the save has settled (succeeded or rolled back). */
+  onCommit: (value: DatabaseCellValue | null) => void | Promise<void>;
   /** select / multi-select: adds an option to the property, resolving to its id. */
   onCreateOption?: (name: string) => Promise<string | null>;
   autoFocus?: boolean;
+}
+
+/**
+ * The value a control that saves on every change (checkbox, date) shows: the one just chosen
+ * until its save settles, then the stored one. Without it the controlled input would snap back
+ * to the old value until the optimistic update reaches the cache.
+ */
+function useCommittedValue<T>(stored: T, onCommit: (value: T) => void | Promise<void>) {
+  const [pending, setPending] = useState<{ value: T } | null>(null);
+  const latestCommit = useRef(0);
+  const commit = (value: T) => {
+    const token = ++latestCommit.current;
+    setPending({ value });
+    void Promise.resolve(onCommit(value)).finally(() => {
+      if (latestCommit.current === token) setPending(null);
+    });
+  };
+  return [pending ? pending.value : stored, commit] as const;
 }
 
 /** One property value: an inline editor for editors, plain text for readers. */
@@ -54,34 +73,46 @@ export function DatabaseCell(props: DatabaseCellProps) {
   if (readOnly) return <ReadOnlyCell field={field} value={value} label={props.label} />;
   switch (field.type) {
     case 'checkbox':
-      return (
-        <div className="flex h-full items-center px-2 py-1.5">
-          <input
-            type="checkbox"
-            aria-label={props.label}
-            checked={value === true}
-            onChange={(event) => props.onCommit(event.target.checked)}
-            className="h-4 w-4 cursor-pointer accent-[hsl(var(--highlight))]"
-          />
-        </div>
-      );
+      return <CheckboxCell {...props} />;
     case 'date':
-      return (
-        <input
-          type="date"
-          size={1}
-          aria-label={props.label}
-          value={typeof value === 'string' ? value : ''}
-          onChange={(event) => props.onCommit(event.target.value || null)}
-          className={cellInputClass}
-        />
-      );
+      return <DateCell {...props} />;
     case 'select':
     case 'multi_select':
       return <OptionCell {...props} />;
     default:
       return <TextCell {...props} />;
   }
+}
+
+function CheckboxCell({ value, label, onCommit }: DatabaseCellProps) {
+  const [checked, commit] = useCommittedValue<boolean>(value === true, onCommit);
+  return (
+    <div className="flex h-full items-center px-2 py-1.5">
+      <input
+        type="checkbox"
+        aria-label={label}
+        checked={checked}
+        onChange={(event) => commit(event.target.checked)}
+        className="h-4 w-4 cursor-pointer accent-[hsl(var(--highlight))]"
+      />
+    </div>
+  );
+}
+
+function DateCell({ value, label, onCommit }: DatabaseCellProps) {
+  const [date, commit] = useCommittedValue<string>(typeof value === 'string' ? value : '', (next) =>
+    onCommit(next || null)
+  );
+  return (
+    <input
+      type="date"
+      size={1}
+      aria-label={label}
+      value={date}
+      onChange={(event) => commit(event.target.value)}
+      className={cellInputClass}
+    />
+  );
 }
 
 function ReadOnlyCell({

@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Kanban, Plus, Table2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -43,11 +43,12 @@ import { DatabaseRowDialog } from './database-row-dialog';
 
 /** What the views do to the database; every call goes through the server (optimistically). */
 export interface DatabaseActions {
+  /** Resolves once the save has settled (a failure rolls back and shows a toast). */
   commitCell: (
     row: DatabaseRowRecord,
     field: DatabaseField,
     value: DatabaseCellValue | null
-  ) => void;
+  ) => Promise<void>;
   /** Adds an option to a select property; resolves to its id, or null when it failed. */
   createOption: (fieldId: string, name: string) => Promise<string | null>;
   moveRow: (rowId: number, move: CardMove) => void;
@@ -87,8 +88,12 @@ function valuesForFilter(
  * see the same views with every editing affordance hidden — the server enforces it either way.
  * The view configuration lives in the block (`onConfigChange`); readers can switch views and
  * sort locally without saving.
+ *
+ * Memoized: the editor re-renders every block on each edit and on every Yjs update of the block
+ * array, which must not re-render a whole table or board. Callers pass a `config` that keeps its
+ * identity while the block's properties are unchanged, and stable callbacks.
  */
-export function InlineDatabase({
+export const InlineDatabase = memo(function InlineDatabase({
   schemaId,
   config,
   readOnly,
@@ -148,7 +153,11 @@ export function InlineDatabase({
 
   const actions: DatabaseActions = {
     commitCell: (row, field, value) =>
-      mutations.updateRow.mutate({ rowId: row.id, values: { [field.id]: value } }),
+      mutations.updateRow.mutateAsync({ rowId: row.id, values: { [field.id]: value } }).then(
+        () => undefined,
+        // The mutation's own onError rolls back and reports it.
+        () => undefined
+      ),
     createOption: async (fieldId, name) => {
       const field = fieldsRef.current().find((candidate) => candidate.id === fieldId);
       if (!field) return null;
@@ -392,7 +401,7 @@ export function InlineDatabase({
       </p>
     </section>
   );
-}
+});
 
 /** The database name: an input for editors (saves on Enter or leaving it), a heading otherwise. */
 function DatabaseName({

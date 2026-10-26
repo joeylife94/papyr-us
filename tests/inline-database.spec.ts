@@ -240,9 +240,12 @@ test('inline database: properties, rows, sort, filter, board moves persist; view
     await page.keyboard.press('ArrowDown');
     await expect(page.getByRole('menuitem', { name: '다른 열로 이동' })).toBeFocused();
     await page.keyboard.press('ArrowRight');
-    // The other columns, in board order: 없음, 시작 전, 진행 중, 보류.
+    // The other columns, in board order: 없음, 시작 전, 진행 중, 보류. Radix moves menu focus
+    // one task after each arrow key, so each step is awaited before the next key, as a person
+    // would see it (two keys sent faster than that would both start from the same item).
     await expect(page.getByRole('menuitem', { name: '없음', exact: true })).toBeFocused();
     await page.keyboard.press('ArrowDown');
+    await expect(page.getByRole('menuitem', { name: '시작 전', exact: true })).toBeFocused();
     await page.keyboard.press('ArrowDown');
     await expect(page.getByRole('menuitem', { name: '진행 중', exact: true })).toBeFocused();
     await page.keyboard.press('Enter');
