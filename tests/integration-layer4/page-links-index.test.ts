@@ -318,6 +318,27 @@ describe('page link index (real Postgres)', () => {
     expect(await storage.resolveReadablePageLinks({ teamIds: [] }, [readable])).toEqual([]);
   });
 
+  it('link resolution follows the open-by-id rule: a public team page resolves for outsiders', async () => {
+    const publicTeamPage = await createPage('r-public-team-b', { teamId: TEAM_B });
+    const privateTeamPage = await createPage('r-private-team-b', { teamId: TEAM_B });
+    await admin.query(
+      `INSERT INTO ${SCHEMA}.page_permissions (page_id, entity_type, entity_id, permission)
+       VALUES ($1, 'public', NULL, 'viewer')`,
+      [publicTeamPage]
+    );
+
+    const forA = await storage.resolveReadablePageLinks(memberOfA, [
+      publicTeamPage,
+      privateTeamPage,
+    ]);
+    expect(forA.map((page: any) => page.id)).toEqual([publicTeamPage]);
+    const anonymous = await storage.resolveReadablePageLinks({ teamIds: [] }, [
+      publicTeamPage,
+      privateTeamPage,
+    ]);
+    expect(anonymous.map((page: any) => page.id)).toEqual([publicTeamPage]);
+  });
+
   it('removes the rows of a page deleted for good', async () => {
     const source = await createPage('src-gone');
     const target = await createPage('t-gone');
