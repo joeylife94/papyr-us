@@ -61,7 +61,7 @@ Status: ✅ shipped (on `main` or in an open PR), 🚧 phase 2 (#113), 🔜 late
 | ------------------------------------------------------------- | ------ | ------------------------ |
 | Page links by `@` / `[[`, rename-safe                         | ✅     | #103 E6                  |
 | Backlinks, unlinked mentions                                  | ✅     | #103 E6, #111            |
-| Hover preview of links                                        | ✅     | #111                     |
+| Hover preview of links                                        | 🔜     |                          |
 | Global graph on real links, local graph per page              | ✅     | #111                     |
 | Quick switcher (`Ctrl/Cmd+O`), command palette (`Ctrl/Cmd+K`) | ✅     | #111                     |
 | Daily notes                                                   | ✅     | #111                     |
@@ -79,12 +79,13 @@ Status: ✅ shipped (on `main` or in an open PR), 🚧 phase 2 (#113), 🔜 late
 
 ## Order of work
 
-1. **Phase 1:** icons (#114) and the page tree (#115), both on `main`; then #112: id-based links, backlinks, graph views, quick switcher, daily notes, Markdown shortcuts.
+1. **Phase 1:** icons (#114) and the page tree (#115), both on `main`; id-based links and backlinks (#118); then #112: graph views, quick switcher, daily notes, Markdown shortcuts.
 2. **Phase 2, #113:**
    - Markdown fidelity first: it is the base for the reader, export and import.
    - Live preview, vault export/import and inline databases in parallel.
 3. **Next:**
    - covers;
+   - link hover preview;
    - transclusion;
    - more database views and rows as pages;
    - tag pane.
