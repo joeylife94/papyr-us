@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { MarkdownRenderer } from '@/components/wiki/markdown-renderer';
 import { TableOfContents } from '@/components/layout/table-of-contents';
 import { Comments } from '@/components/wiki/comments';
 import { useToast } from '@/hooks/use-toast';
@@ -22,6 +21,7 @@ import { LocalGraphPanel } from '@/components/knowledge/local-graph';
 import { UnlinkedMentions } from '@/components/page/unlinked-mentions';
 import { PageHistory } from '@/components/page-history';
 import { BlockEditor } from '@/components/blocks/block-editor';
+import { PageReaderBody } from '@/components/database/page-reader-body';
 import { PageProperties, PageTitle, SaveStatus } from '@/components/page/page-editor-parts';
 import { PageIcon, PageIconPicker } from '@/components/page/page-icon';
 import { apiRequest, invalidatePageLists } from '@/lib/queryClient';
@@ -409,7 +409,7 @@ function ReadOnlyPageBody({ page, actions, breadcrumb }: BodyProps) {
         {actions}
       </header>
       <div className="min-w-0 max-w-full overflow-x-auto">
-        <MarkdownRenderer content={page.content} className="lg:prose-lg" />
+        <PageReaderBody page={page} className="lg:prose-lg" />
       </div>
     </>
   );
