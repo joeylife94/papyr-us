@@ -80,6 +80,7 @@ import bcrypt from 'bcryptjs';
 import type { RetrievedPageRow } from './services/retrieval.js';
 import type { PageTreeRow } from './services/page-tree.js';
 import { extractPageLinkIds, hasPageLinks } from '../shared/page-links.js';
+import { isReservedDailyNoteSlug } from '../shared/daily-notes.js';
 
 // Helper: detect if a string looks like a bcrypt hash
 function isBcryptHash(value: string): boolean {
@@ -169,7 +170,10 @@ export class DBStorage {
   async createWikiPage(page: InsertWikiPage, creatorUserId?: number): Promise<WikiPage> {
     let createdPage: WikiPage | undefined;
 
-    for (let attempt = 0; attempt < MAX_SLUG_INSERT_ATTEMPTS; attempt += 1) {
+    // A daily note's slug (#111) is only created by findOrCreateDailyNote; any other create
+    // starts from the next candidate, as it would after a slug conflict.
+    const firstAttempt = isReservedDailyNoteSlug(page.slug) ? 1 : 0;
+    for (let attempt = firstAttempt; attempt < MAX_SLUG_INSERT_ATTEMPTS; attempt += 1) {
       const slug = buildUniqueSlugCandidate(page.slug, attempt);
       try {
         const result = await this.db
@@ -205,6 +209,10 @@ export class DBStorage {
   }
 
   async updateWikiPage(id: number, page: UpdateWikiPage): Promise<WikiPage | undefined> {
+    // Only the daily-note route gives out daily note slugs (#111).
+    if (page.slug !== undefined && isReservedDailyNoteSlug(page.slug)) {
+      throw new Error('This slug is reserved for daily notes');
+    }
     if (page.content === undefined) {
       const result = await this.db
         .update(wikiPages)
@@ -289,24 +297,33 @@ export class DBStorage {
   }
 
   /**
-   * Link picker results (issue #103 E6): live pages the viewer may list whose title contains
-   * `query`, in one team or among personal pages, most recently updated first.
+   * Link picker and quick switcher results (issue #103 E6, #111): live pages the viewer may list
+   * whose title contains `query`, in one team or among personal pages. An exact title comes
+   * first, then titles starting with the query, then the most recently updated, so the switcher
+   * always sees an existing page of the typed name before it offers to create one.
    */
   async searchLinkTargets(
     userId: number | undefined,
     scope: { teamId?: number; personalOnly?: boolean },
     query: string,
     limit = 20
-  ): Promise<Array<{ id: number; title: string; slug: string; icon: string | null }>> {
+  ): Promise<
+    Array<{ id: number; title: string; slug: string; icon: string | null; updatedAt: Date }>
+  > {
     const viewer = await this.getPageViewer(userId);
     const conditions: SQL[] = [isNull(wikiPages.deletedAt), this.listableBy(viewer)];
     if (scope.teamId !== undefined) conditions.push(eq(wikiPages.teamId, scope.teamId));
     if (scope.personalOnly) conditions.push(isNull(wikiPages.teamId));
     const q = query.trim();
+    const order: SQL[] = [];
     if (q) {
       // LIKE wildcards in the query match literally.
       const escaped = q.replace(/[\\%_]/g, (c) => `\\${c}`);
       conditions.push(sql`${wikiPages.title} ILIKE ${'%' + escaped + '%'}`);
+      const lowered = q.toLowerCase();
+      const loweredEscaped = lowered.replace(/[\\%_]/g, (c) => `\\${c}`);
+      order.push(sql`CASE WHEN lower(${wikiPages.title}) = ${lowered} THEN 0
+        WHEN lower(${wikiPages.title}) LIKE ${loweredEscaped + '%'} THEN 1 ELSE 2 END`);
     }
     return this.db
       .select({
@@ -314,10 +331,11 @@ export class DBStorage {
         title: wikiPages.title,
         slug: wikiPages.slug,
         icon: wikiPages.icon,
+        updatedAt: wikiPages.updatedAt,
       })
       .from(wikiPages)
       .where(and(...conditions))
-      .orderBy(desc(wikiPages.updatedAt))
+      .orderBy(...order, desc(wikiPages.updatedAt))
       .limit(Math.min(Math.max(limit, 1), 50));
   }
 
@@ -580,6 +598,26 @@ export class DBStorage {
     return and(teamScope, this.readableBy(viewer))!;
   }
 
+  /**
+   * `listableBy` for read paths outside this class (the knowledge graph, local graph, unlinked
+   * mentions and daily notes, #111): every page such a path lists must satisfy it.
+   */
+  readablePageCondition(viewer: PageViewer): SQL {
+    return this.listableBy(viewer);
+  }
+
+  /**
+   * Live pages of one workspace scope (a team, or `null` for team-less pages) that the viewer can
+   * read: the base condition of the #111 read paths.
+   */
+  readablePagesInScope(viewer: PageViewer, teamId: number | null): SQL {
+    return and(
+      isNull(wikiPages.deletedAt),
+      teamId === null ? isNull(wikiPages.teamId) : eq(wikiPages.teamId, teamId),
+      this.listableBy(viewer)
+    )!;
+  }
+
   async getReadableWikiPagesByFolder(folder: string, userId: number): Promise<WikiPage[]> {
     const viewer = await this.getPageViewer(userId);
     return this.db
@@ -760,6 +798,179 @@ export class DBStorage {
       });
     });
     return Array.from(tagCounts.entries()).map(([name, count]) => ({ name, count }));
+  }
+
+  /**
+   * Source rows of the knowledge graph (#111 §1): live pages of the given teams the viewer can
+   * read (most recently updated first, capped), and the `page_links` rows whose both ends are
+   * among them. `content` feeds legacy `[[Title]]` edges and AI suggestions only; the graph
+   * response never carries it.
+   */
+  async getKnowledgeGraphSource(
+    viewer: PageViewer,
+    teamIds: number[],
+    limit = 2000
+  ): Promise<{
+    pages: Array<{
+      id: number;
+      title: string;
+      slug: string;
+      icon: string | null;
+      tags: string[] | null;
+      content: string | null;
+    }>;
+    links: Array<{ sourcePageId: number; targetPageId: number }>;
+  }> {
+    if (teamIds.length === 0) return { pages: [], links: [] };
+    // Equivalent to OR-ing readablePagesInScope over the teams, without repeating the ACL SQL.
+    const pages = await this.db
+      .select({
+        id: wikiPages.id,
+        title: wikiPages.title,
+        slug: wikiPages.slug,
+        icon: wikiPages.icon,
+        tags: wikiPages.tags,
+        content: wikiPages.content,
+      })
+      .from(wikiPages)
+      .where(
+        and(
+          isNull(wikiPages.deletedAt),
+          inArray(wikiPages.teamId, teamIds),
+          this.readablePageCondition(viewer)
+        )
+      )
+      .orderBy(desc(wikiPages.updatedAt))
+      .limit(limit);
+    if (pages.length === 0) return { pages, links: [] };
+    const ids = pages.map((page: { id: number }) => page.id);
+    const links = await this.db
+      .select({ sourcePageId: pageLinks.sourcePageId, targetPageId: pageLinks.targetPageId })
+      .from(pageLinks)
+      .where(and(inArray(pageLinks.sourcePageId, ids), inArray(pageLinks.targetPageId, ids)));
+    return { pages, links };
+  }
+
+  /**
+   * Readable neighbourhood of a page in `page_links` (#111 §2 local graph): pages it links to and
+   * pages linking to it, up to `depth` hops, then every link among those pages. Traversal only
+   * passes through live pages the viewer can read, so an unreadable or trashed page is neither
+   * shown nor used as a bridge. The centre page itself is the caller's (already checked) page.
+   */
+  async getLocalPageGraph(
+    viewer: PageViewer,
+    pageId: number,
+    depth: 1 | 2,
+    maxNodes = 150
+  ): Promise<{
+    neighbours: Array<{ id: number; title: string; slug: string; icon: string | null }>;
+    links: Array<{ sourcePageId: number; targetPageId: number }>;
+  }> {
+    const neighbours: Array<{ id: number; title: string; slug: string; icon: string | null }> = [];
+    const known = new Set<number>([pageId]);
+    let frontier = [pageId];
+    for (let level = 0; level < depth && frontier.length > 0 && known.size < maxNodes; level++) {
+      const rows = await this.db
+        .select({
+          id: wikiPages.id,
+          title: wikiPages.title,
+          slug: wikiPages.slug,
+          icon: wikiPages.icon,
+        })
+        .from(wikiPages)
+        .where(
+          and(
+            or(
+              inArray(
+                wikiPages.id,
+                this.db
+                  .select({ id: pageLinks.targetPageId })
+                  .from(pageLinks)
+                  .where(inArray(pageLinks.sourcePageId, frontier))
+              ),
+              inArray(
+                wikiPages.id,
+                this.db
+                  .select({ id: pageLinks.sourcePageId })
+                  .from(pageLinks)
+                  .where(inArray(pageLinks.targetPageId, frontier))
+              )
+            ),
+            sql`${wikiPages.id} NOT IN (${sql.join(
+              [...known].map((id) => sql`${id}`),
+              sql`, `
+            )})`,
+            isNull(wikiPages.deletedAt),
+            this.readablePageCondition(viewer)
+          )
+        )
+        .orderBy(asc(wikiPages.title), asc(wikiPages.id))
+        .limit(maxNodes - known.size);
+      frontier = [];
+      for (const row of rows) {
+        known.add(row.id);
+        neighbours.push(row);
+        frontier.push(row.id);
+      }
+    }
+    if (neighbours.length === 0) return { neighbours, links: [] };
+    const ids = [...known];
+    const links = await this.db
+      .select({ sourcePageId: pageLinks.sourcePageId, targetPageId: pageLinks.targetPageId })
+      .from(pageLinks)
+      .where(and(inArray(pageLinks.sourcePageId, ids), inArray(pageLinks.targetPageId, ids)));
+    return { neighbours, links };
+  }
+
+  /**
+   * Unlinked mentions of a page (#111 §5): live pages of the same scope (its team, or team-less
+   * pages) the viewer can read, whose content contains the page title (case-insensitive,
+   * literal) but which do not link to it in `page_links`. Each row carries a ~240-character
+   * content window around the first mention (`excerpt`, starting at character `offset`) for
+   * the snippet; titles shorter than two characters match nothing.
+   */
+  async getUnlinkedMentions(
+    viewer: PageViewer,
+    page: { id: number; title: string; teamId: number | null },
+    limit = 20
+  ): Promise<
+    Array<{
+      id: number;
+      title: string;
+      slug: string;
+      icon: string | null;
+      excerpt: string;
+      offset: number;
+      contentLength: number;
+    }>
+  > {
+    const title = page.title.trim();
+    if ([...title].length < 2) return [];
+    const lowered = title.toLowerCase();
+    // ILIKE/LIKE treat % and _ as wildcards; the title must match literally.
+    const escaped = lowered.replace(/[\\%_]/g, (c) => `\\${c}`);
+    const windowStart = sql`greatest(strpos(lower(${wikiPages.content}), ${lowered}) - 60, 1)`;
+    return this.db
+      .select({
+        id: wikiPages.id,
+        title: wikiPages.title,
+        slug: wikiPages.slug,
+        icon: wikiPages.icon,
+        excerpt: sql<string>`substring(${wikiPages.content} from ${windowStart} for 240)`,
+        offset: sql<number>`(${windowStart} - 1)::int`,
+        contentLength: sql<number>`char_length(${wikiPages.content})::int`,
+      })
+      .from(wikiPages)
+      .where(
+        and(
+          this.readablePagesInScope(viewer, page.teamId),
+          sql`${wikiPages.id} <> ${page.id}`,
+          sql`${wikiPages.content} ILIKE ${`%${escaped}%`}`,
+          sql`NOT EXISTS (SELECT 1 FROM ${pageLinks} WHERE ${pageLinks.sourcePageId} = ${wikiPages.id} AND ${pageLinks.targetPageId} = ${page.id})`
+        )
+      )
+      .orderBy(desc(wikiPages.updatedAt))
+      .limit(Math.min(Math.max(limit, 1), 50));
   }
 
   async getFolders(): Promise<string[]> {
@@ -1698,22 +1909,27 @@ export class DBStorage {
       .select({ teamId: wikiPages.teamId })
       .from(wikiPages)
       .where(eq(wikiPages.id, pageId));
+    const userTeamIds = await this.getUserTeamIds(userId);
     if (page?.teamId) {
       const teamId = Number(page.teamId);
-      if (!(await this.getUserTeamIds(userId)).includes(teamId)) return null;
+      if (!userTeamIds.includes(teamId)) return null;
       if (await this.isTeamManager(userId, teamId)) return 'owner';
     }
 
+    // The user's own grants, plus grants to a team they currently belong to, as in
+    // checkPagePermission (a team daily note's members edit through its team grant, #111).
+    const grantees = [
+      and(eq(pagePermissions.entityType, 'user'), eq(pagePermissions.entityId, userId)),
+    ];
+    if (userTeamIds.length > 0) {
+      grantees.push(
+        and(eq(pagePermissions.entityType, 'team'), inArray(pagePermissions.entityId, userTeamIds))
+      );
+    }
     const permissions = await this.db
       .select()
       .from(pagePermissions)
-      .where(
-        and(
-          eq(pagePermissions.pageId, pageId),
-          eq(pagePermissions.entityType, 'user'),
-          eq(pagePermissions.entityId, userId)
-        )
-      );
+      .where(and(eq(pagePermissions.pageId, pageId), or(...grantees)));
 
     if (permissions.length === 0) {
       return null;
@@ -2191,6 +2407,116 @@ export class DBStorage {
       ...block,
       referenceCount: references.filter((r: any) => r.syncedBlockId === block.id).length,
     }));
+  }
+
+  // ==================== Daily notes (#111) ====================
+
+  /**
+   * Find or create the daily note stored under `note.slug` (see shared/daily-notes.ts). A
+   * transaction-scoped advisory lock on the slug serializes concurrent opens, so two tabs
+   * opening the same note at once still get one page.
+   *
+   * A page found under the slug only counts as this scope's note when it belongs to the same
+   * team (team scope), or is team-less and owned by the user through the self-granted owner
+   * grant this method creates (personal scope). Anything else, such as a page another user
+   * created with that slug through the general API, is reported as `conflict` and never
+   * returned. A matching note in the trash is reported as `trashed`, not replaced.
+   *
+   * A new note gets the creator's owner grant like any created page; a team note also grants
+   * the team editor access, so every current member can write in the team's shared note.
+   */
+  async findOrCreateDailyNote(note: {
+    slug: string;
+    title: string;
+    folder: string;
+    tags: string[];
+    author: string;
+    teamId: number | null;
+    userId: number;
+  }): Promise<
+    | { status: 'found'; page: WikiPage }
+    | { status: 'created'; page: WikiPage }
+    | { status: 'trashed' }
+    | { status: 'conflict' }
+  > {
+    try {
+      return await this.db.transaction(async (tx: any) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${note.slug}, 0))`);
+
+        const [existing] = await tx.select().from(wikiPages).where(eq(wikiPages.slug, note.slug));
+        if (existing) {
+          let isScopeNote = false;
+          if (note.teamId !== null) {
+            isScopeNote = existing.teamId === note.teamId;
+          } else if (existing.teamId === null) {
+            const selfGrant = await tx
+              .select({ id: pagePermissions.id })
+              .from(pagePermissions)
+              .where(
+                and(
+                  eq(pagePermissions.pageId, existing.id),
+                  eq(pagePermissions.entityType, 'user'),
+                  eq(pagePermissions.entityId, note.userId),
+                  eq(pagePermissions.permission, 'owner'),
+                  eq(pagePermissions.grantedBy, note.userId)
+                )
+              );
+            isScopeNote = selfGrant.length > 0;
+          }
+          if (!isScopeNote) return { status: 'conflict' as const };
+          if (existing.deletedAt) return { status: 'trashed' as const };
+          return { status: 'found' as const, page: existing as WikiPage };
+        }
+
+        const [page] = await tx
+          .insert(wikiPages)
+          .values({
+            title: note.title,
+            slug: note.slug,
+            content: '',
+            // One empty paragraph, so the note opens with the caret in its body.
+            blocks: [
+              {
+                id: `block_${note.slug}`,
+                type: 'paragraph',
+                content: '',
+                properties: {},
+                order: 0,
+                children: [],
+              },
+            ],
+            folder: note.folder,
+            tags: note.tags,
+            author: note.author,
+            teamId: note.teamId,
+          })
+          .returning();
+        const grants: InsertPagePermission[] = [
+          {
+            pageId: page.id,
+            entityType: 'user',
+            entityId: note.userId,
+            permission: 'owner',
+            grantedBy: note.userId,
+          },
+        ];
+        if (note.teamId !== null) {
+          grants.push({
+            pageId: page.id,
+            entityType: 'team',
+            entityId: note.teamId,
+            permission: 'editor',
+            grantedBy: note.userId,
+          });
+        }
+        await tx.insert(pagePermissions).values(grants);
+        return { status: 'created' as const, page: page as WikiPage };
+      });
+    } catch (error) {
+      // A page created through the general API took the slug between the lookup and the insert.
+      if (isSlugUniqueViolation(error)) return { status: 'conflict' };
+      throw error;
+    }
   }
 }
 

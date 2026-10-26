@@ -19,6 +19,9 @@ interface ParagraphBlockProps {
   onSlashClose?: () => void;
   /** `@` or `[[` was typed (issue #103 E6): open the link picker for that span of text. */
   onPageLinkTrigger?: (rect: DOMRect, start: number, length: number) => void;
+  /** Markdown shortcuts (#111 §6): returns true when the editor converted the block. */
+  onMarkdownShortcut?: (previous: string, next: string, caret: number) => boolean;
+  placeholder?: string;
 }
 
 /** Focus or clicks on a link chip open the linked page instead of editing the block. */
@@ -37,6 +40,8 @@ export function ParagraphBlock({
   onSlashFilter,
   onSlashClose,
   onPageLinkTrigger,
+  onMarkdownShortcut,
+  placeholder = '단락을 입력하세요...',
 }: ParagraphBlockProps) {
   const [content, setContent] = useState(block.content);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -64,6 +69,9 @@ export function ParagraphBlock({
 
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newContent = e.target.value;
+    // Markdown shortcut ("# ", "- ", "[] " …): the block becomes another type instead.
+    if (onMarkdownShortcut?.(content, newContent, e.target.selectionStart)) return;
+
     setContent(newContent);
     onUpdate({ content: newContent });
 
@@ -169,7 +177,7 @@ export function ParagraphBlock({
         onKeyDown={handleKeyDown}
         onFocus={onFocus}
         onBlur={onBlur}
-        placeholder="단락을 입력하세요..."
+        placeholder={placeholder}
         className={cn(
           'w-full resize-none border-none outline-none bg-transparent text-base text-foreground placeholder:text-muted-foreground pl-0 pr-8 leading-relaxed',
           !isFocused && hasPageLinks(content) && 'hidden'

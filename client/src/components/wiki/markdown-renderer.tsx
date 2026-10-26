@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { markdownToHtml } from '@/lib/markdown';
+import { markdownToHtml, plainTextFallbackHtml } from '@/lib/markdown';
 import { PageLinkPortals } from '@/components/page/page-links';
 
 interface MarkdownRendererProps {
@@ -23,8 +23,8 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
       .catch((err) => {
         console.warn('Failed to render markdown:', err);
         if (!isCancelled) {
-          // Fall back to plain text display
-          setHtml(`<pre>${content}</pre>`);
+          // Fall back to plain text display, escaped (page content is untrusted)
+          setHtml(plainTextFallbackHtml(content));
         }
       });
 
