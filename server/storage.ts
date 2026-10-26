@@ -78,6 +78,14 @@ import { eq, like, and, or, sql, desc, asc, isNull, inArray, type SQL } from 'dr
 import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 import type { RetrievedPageRow } from './services/retrieval.js';
+import {
+  MAX_ANCESTOR_DEPTH,
+  buildPageTree,
+  planSiblingOrder,
+  type PageAncestor,
+  type PageMoveResult,
+  type PageTreeNode,
+} from './services/page-tree.js';
 
 // Helper: detect if a string looks like a bcrypt hash
 function isBcryptHash(value: string): boolean {
@@ -217,14 +225,19 @@ export class DBStorage {
     return result[0];
   }
 
-  async deleteWikiPage(id: number): Promise<boolean> {
-    // Soft delete: set deletedAt timestamp
+  /**
+   * Soft delete. `descendantIds` (the page's live subtree, #103 D5) go to the trash in the same
+   * statement with the same timestamp, which is how a restore finds what was trashed with it.
+   * Returns whether the page itself was trashed.
+   */
+  async deleteWikiPage(id: number, descendantIds: number[] = []): Promise<boolean> {
+    const ids = Array.from(new Set([id, ...descendantIds]));
     const result = await this.db
       .update(wikiPages)
       .set({ deletedAt: new Date() })
-      .where(and(eq(wikiPages.id, id), isNull(wikiPages.deletedAt)))
-      .returning();
-    return result.length > 0;
+      .where(and(inArray(wikiPages.id, ids), isNull(wikiPages.deletedAt)))
+      .returning({ id: wikiPages.id });
+    return result.some((row: { id: number }) => row.id === id);
   }
 
   /** Hard delete, only for a page that is already in the trash (soft-deleted). */
@@ -236,13 +249,15 @@ export class DBStorage {
     return result.length > 0;
   }
 
-  async restoreWikiPage(id: number): Promise<WikiPage | undefined> {
+  /** Restore a page, and `descendantIds` (what was trashed with it) in the same statement. */
+  async restoreWikiPage(id: number, descendantIds: number[] = []): Promise<WikiPage | undefined> {
+    const ids = Array.from(new Set([id, ...descendantIds]));
     const result = await this.db
       .update(wikiPages)
       .set({ deletedAt: null })
-      .where(eq(wikiPages.id, id))
+      .where(inArray(wikiPages.id, ids))
       .returning();
-    return result[0];
+    return result.find((page: WikiPage) => page.id === id);
   }
 
   async getTrashPages(teamId?: number): Promise<WikiPage[]> {
@@ -636,6 +651,241 @@ export class DBStorage {
         and(eq(wikiPages.parentId, parentId), isNull(wikiPages.deletedAt), this.listableBy(viewer))
       )
       .orderBy(desc(wikiPages.updatedAt));
+  }
+
+  // ---- Page tree (#103 E5, decisions D4/D5); route rules in server/routes/page-tree.ts ----
+
+  /**
+   * The sidebar tree of one workspace scope: every live page of the scope the viewer can read,
+   * never content, shaped by `buildPageTree` (a page whose parent the viewer cannot see is a
+   * root page, D4).
+   */
+  async getPageTree(
+    viewer: PageViewer,
+    teamId: number | null,
+    db: any = this.db
+  ): Promise<PageTreeNode[]> {
+    const rows = await db
+      .select({
+        id: wikiPages.id,
+        title: wikiPages.title,
+        slug: wikiPages.slug,
+        icon: wikiPages.icon,
+        parentId: wikiPages.parentId,
+        position: wikiPages.position,
+        createdAt: wikiPages.createdAt,
+        updatedAt: wikiPages.updatedAt,
+      })
+      .from(wikiPages)
+      .where(this.readablePagesInScope(viewer, teamId));
+    return buildPageTree(rows);
+  }
+
+  /**
+   * Ids of the live pages below a page at any depth, in the page's own workspace scope, whether
+   * or not a given caller can read them (D5 checks each one). A parent link from another scope
+   * is not followed: such a page is a root page of its own workspace.
+   */
+  async getLivePageDescendantIds(pageId: number): Promise<number[]> {
+    const result = await this.db.execute(sql`
+      WITH RECURSIVE root AS (
+        SELECT id, team_id FROM wiki_pages WHERE id = ${pageId}
+      ),
+      subtree(id) AS (
+        SELECT w.id FROM wiki_pages w JOIN root ON w.parent_id = root.id
+        WHERE w.deleted_at IS NULL AND w.team_id IS NOT DISTINCT FROM root.team_id
+        UNION
+        SELECT w.id FROM wiki_pages w JOIN subtree s ON w.parent_id = s.id CROSS JOIN root
+        WHERE w.deleted_at IS NULL AND w.team_id IS NOT DISTINCT FROM root.team_id
+      )
+      SELECT id FROM subtree WHERE id <> ${pageId}
+    `);
+    return this.resultIds(result);
+  }
+
+  /**
+   * Ids of the pages trashed together with a trashed page (its subtree at that moment, trashed
+   * by the same statement, see deleteWikiPage), without the page itself.
+   */
+  async getPagesTrashedWith(pageId: number): Promise<number[]> {
+    const result = await this.db.execute(sql`
+      WITH RECURSIVE root AS (
+        SELECT id, team_id, deleted_at FROM wiki_pages
+        WHERE id = ${pageId} AND deleted_at IS NOT NULL
+      ),
+      subtree(id) AS (
+        SELECT w.id FROM wiki_pages w JOIN root ON w.parent_id = root.id
+        WHERE w.deleted_at = root.deleted_at AND w.team_id IS NOT DISTINCT FROM root.team_id
+        UNION
+        SELECT w.id FROM wiki_pages w JOIN subtree s ON w.parent_id = s.id CROSS JOIN root
+        WHERE w.deleted_at = root.deleted_at AND w.team_id IS NOT DISTINCT FROM root.team_id
+      )
+      SELECT id FROM subtree WHERE id <> ${pageId}
+    `);
+    return this.resultIds(result);
+  }
+
+  /** Ids of every page above a page, following parent links through any page (loop-safe). */
+  async getPageAncestorIds(pageId: number, db: any = this.db): Promise<number[]> {
+    const result = await db.execute(sql`
+      WITH RECURSIVE chain(id, parent_id) AS (
+        SELECT id, parent_id FROM wiki_pages WHERE id = ${pageId}
+        UNION
+        SELECT w.id, w.parent_id FROM wiki_pages w JOIN chain c ON w.id = c.parent_id
+      )
+      SELECT id FROM chain WHERE id <> ${pageId}
+    `);
+    return this.resultIds(result);
+  }
+
+  /**
+   * The breadcrumb above a live page, root first: its ancestors as long as each is live, in the
+   * page's scope and readable by the viewer. The walk stops at the first one that is not, so
+   * nothing above a hidden page shows (D4).
+   */
+  async getReadablePageAncestors(viewer: PageViewer, pageId: number): Promise<PageAncestor[]> {
+    const [page] = await this.db
+      .select({ teamId: wikiPages.teamId })
+      .from(wikiPages)
+      .where(and(eq(wikiPages.id, pageId), isNull(wikiPages.deletedAt)));
+    if (!page) return [];
+    const chain = await this.db.execute(sql`
+      WITH RECURSIVE chain(id, parent_id, depth) AS (
+        SELECT id, parent_id, 0 FROM wiki_pages WHERE id = ${pageId}
+        UNION ALL
+        SELECT w.id, w.parent_id, c.depth + 1 FROM wiki_pages w JOIN chain c ON w.id = c.parent_id
+        WHERE c.depth < ${MAX_ANCESTOR_DEPTH}
+      )
+      SELECT id FROM chain WHERE depth > 0 ORDER BY depth
+    `);
+    const ids = this.resultIds(chain);
+    if (ids.length === 0) return [];
+    const readable: PageAncestor[] = await this.db
+      .select({
+        id: wikiPages.id,
+        title: wikiPages.title,
+        slug: wikiPages.slug,
+        icon: wikiPages.icon,
+      })
+      .from(wikiPages)
+      .where(
+        and(inArray(wikiPages.id, ids), this.readablePagesInScope(viewer, page.teamId ?? null))
+      );
+    const byId = new Map(readable.map((ancestor) => [ancestor.id, ancestor]));
+    const trail: PageAncestor[] = [];
+    const seen = new Set([pageId]);
+    for (const id of ids) {
+      const ancestor = byId.get(id);
+      if (!ancestor || seen.has(id)) break;
+      seen.add(id);
+      trail.push(ancestor);
+    }
+    return trail.reverse();
+  }
+
+  /**
+   * Move a live page under `parentId` (null: the workspace root) at `index` among the siblings
+   * the viewer sees there (see planSiblingOrder), renumbering the new and the old sibling list
+   * densely, in one transaction. Moves within a workspace are serialized and the parent and loop
+   * checks are repeated under that lock, so concurrent moves cannot build a loop. Authorization
+   * is the caller's job.
+   */
+  async movePage(
+    viewer: PageViewer,
+    pageId: number,
+    parentId: number | null,
+    index: number
+  ): Promise<PageMoveResult> {
+    return this.db.transaction(async (tx: any): Promise<PageMoveResult> => {
+      const livePage = async () =>
+        (
+          await tx
+            .select({ parentId: wikiPages.parentId, teamId: wikiPages.teamId })
+            .from(wikiPages)
+            .where(and(eq(wikiPages.id, pageId), isNull(wikiPages.deletedAt)))
+        )[0] as { parentId: number | null; teamId: number | null } | undefined;
+
+      const before = await livePage();
+      if (!before) return { status: 'not-found' };
+      const teamId = before.teamId ?? null;
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext('papyrus.page_tree'), ${teamId ?? 0})`
+      );
+      const page = await livePage();
+      if (!page || (page.teamId ?? null) !== teamId) return { status: 'not-found' };
+
+      if (parentId !== null) {
+        const [parent] = await tx
+          .select({ teamId: wikiPages.teamId })
+          .from(wikiPages)
+          .where(and(eq(wikiPages.id, parentId), isNull(wikiPages.deletedAt)));
+        if (!parent) return { status: 'parent-not-found' };
+        if ((parent.teamId ?? null) !== teamId) return { status: 'cross-team' };
+        if (parentId === pageId || (await this.getPageAncestorIds(parentId, tx)).includes(pageId)) {
+          return { status: 'cycle' };
+        }
+      }
+
+      const visible = (await this.getPageTree(viewer, teamId, tx))
+        .filter((node) => node.parentId === parentId)
+        .map((node) => node.id);
+      const order = planSiblingOrder(
+        await this.siblingIds(tx, teamId, parentId),
+        visible,
+        index,
+        pageId
+      );
+      await tx.update(wikiPages).set({ parentId }).where(eq(wikiPages.id, pageId));
+      await this.renumberSiblings(tx, order);
+      const oldParentId = page.parentId ?? null;
+      if (oldParentId !== parentId) {
+        await this.renumberSiblings(tx, await this.siblingIds(tx, teamId, oldParentId));
+      }
+      return { status: 'moved', page: { id: pageId, parentId } };
+    });
+  }
+
+  /** Live pages directly under `parentId` (null: root) in one scope, in sibling order. */
+  private async siblingIds(
+    db: any,
+    teamId: number | null,
+    parentId: number | null
+  ): Promise<number[]> {
+    const rows = await db
+      .select({ id: wikiPages.id })
+      .from(wikiPages)
+      .where(
+        and(
+          isNull(wikiPages.deletedAt),
+          parentId === null ? isNull(wikiPages.parentId) : eq(wikiPages.parentId, parentId),
+          teamId === null ? isNull(wikiPages.teamId) : eq(wikiPages.teamId, teamId)
+        )
+      )
+      .orderBy(
+        sql`${wikiPages.position} ASC NULLS LAST`,
+        asc(wikiPages.createdAt),
+        asc(wikiPages.id)
+      );
+    return rows.map((row: { id: number }) => row.id);
+  }
+
+  /** Store `ids` as positions 0..n-1 in one statement, touching only rows that change. */
+  private async renumberSiblings(db: any, ids: number[]): Promise<void> {
+    if (ids.length === 0) return;
+    const values = sql.join(
+      ids.map((id, position) => sql`(${id}::int, ${position}::int)`),
+      sql`, `
+    );
+    await db.execute(sql`
+      UPDATE wiki_pages AS w SET position = v.position
+      FROM (VALUES ${values}) AS v(id, position)
+      WHERE w.id = v.id AND w.position IS DISTINCT FROM v.position
+    `);
+  }
+
+  private resultIds(result: any): number[] {
+    const rows: Array<{ id: number | string }> = result?.rows ?? result ?? [];
+    return rows.map((row) => Number(row.id));
   }
 
   async getReadableTags(userId: number): Promise<Tag[]> {

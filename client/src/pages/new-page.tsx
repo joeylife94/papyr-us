@@ -10,11 +10,17 @@ import { blocksToContent, initialBlocksFor, parseTags, slugForTitle } from '@/li
 import { cn } from '@/lib/utils';
 import { resolvePageTeamId, type PageTeamRef } from '@/lib/page-team-scope';
 import { getUserId, getUserName } from '@/lib/user';
+import { PAGE_TREE_QUERY_KEY } from '@/components/layout/page-tree';
 import type { Block, WikiPage } from '@shared/schema';
 
 interface NewPageProps {
   teamName?: string;
   initialFolder?: string;
+}
+
+interface NewPageFormProps extends NewPageProps {
+  /** `?parent=<id>`: the new page becomes a sub-page of that page (#103 E5). */
+  parentId: number | null;
 }
 
 const CREATE_DELAY_MS = 600;
@@ -24,9 +30,18 @@ const RETRY_MAX_MS = 30000;
 /**
  * A new, untitled page (issue #103 E2). Nothing is stored until the first title or block input;
  * then the page is created with the current content and the view moves to `/page/:slug`, where
- * editing continues with autosave.
+ * editing continues with autosave. `?parent=<id>` (the page tree's "+") creates it as a sub-page;
+ * the server checks the parent (#103 E5).
  */
-export default function NewPage({ teamName, initialFolder = 'docs' }: NewPageProps) {
+export default function NewPage(props: NewPageProps) {
+  const { search } = useLocation();
+  const raw = new URLSearchParams(search).get('parent');
+  const parentId = raw && /^\d+$/.test(raw) && Number(raw) > 0 ? Number(raw) : null;
+  // A different parent is a different new page: start over instead of carrying the draft.
+  return <NewPageForm key={parentId ?? 'root'} {...props} parentId={parentId} />;
+}
+
+function NewPageForm({ teamName, initialFolder = 'docs', parentId }: NewPageFormProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
@@ -67,16 +82,46 @@ export default function NewPage({ teamName, initialFolder = 'docs' }: NewPagePro
   const resolvedTeamId = resolvePageTeamId(teamName, teams);
   const teamScopeUnavailable = !!teamName && !teamsLoading && (teamsError || !resolvedTeamId);
 
+  // A sub-page needs a parent in this workspace that the user may edit; say so before anything
+  // is typed (the server enforces it either way).
+  const { data: parentAccess, isError: accessError } = useQuery<{ canEdit: boolean }>({
+    queryKey: [`/api/pages/${parentId}/access`],
+    enabled: parentId !== null,
+  });
+  const { data: parentPage, isError: parentPageError } = useQuery<WikiPage>({
+    queryKey: [`/api/pages/${parentId}`],
+    enabled: parentId !== null,
+  });
+  const parentUnavailable =
+    parentId !== null &&
+    (accessError ||
+      parentPageError ||
+      parentAccess?.canEdit === false ||
+      (!!parentPage && (parentPage.teamId ?? null) !== (resolvedTeamId || null)));
+  const parentPending = parentId !== null && !parentUnavailable && (!parentAccess || !parentPage);
+
   const content = useMemo(() => blocksToContent(blocks), [blocks]);
   const hasInput = title.trim().length > 0 || content.trim().length > 0;
 
   useEffect(() => {
     if (!touched || !hasInput || creating.current) return;
     if (teamName && !resolvedTeamId) return;
+    if (parentPending || parentUnavailable) return;
     const timer = setTimeout(() => void createPage(), CREATE_DELAY_MS);
     return () => clearTimeout(timer);
     // createPage reads the latest values through `latest`.
-  }, [touched, hasInput, title, content, folder, tagsText, resolvedTeamId, teamName]);
+  }, [
+    touched,
+    hasInput,
+    title,
+    content,
+    folder,
+    tagsText,
+    resolvedTeamId,
+    teamName,
+    parentPending,
+    parentUnavailable,
+  ]);
 
   async function createPage() {
     if (creating.current) return;
@@ -92,6 +137,7 @@ export default function NewPage({ teamName, initialFolder = 'docs' }: NewPagePro
       tags: parseTags(sent.tagsText),
       author: user?.name || getUserName() || 'User',
       ...(resolvedTeamId ? { teamId: resolvedTeamId } : {}),
+      ...(parentId !== null ? { parentId } : {}),
     };
     try {
       const res = await fetch('/api/pages', {
@@ -145,6 +191,7 @@ export default function NewPage({ teamName, initialFolder = 'docs' }: NewPagePro
 
       queryClient.invalidateQueries({ queryKey: ['/api/pages'] });
       queryClient.invalidateQueries({ queryKey: [`/api/folders/${created.folder}/pages`] });
+      queryClient.invalidateQueries({ queryKey: [PAGE_TREE_QUERY_KEY] });
       navigate(`/page/${created.slug}`, { replace: true });
     } catch {
       creating.current = false;
@@ -159,6 +206,17 @@ export default function NewPage({ teamName, initialFolder = 'docs' }: NewPagePro
 
   if (teamName && teamsLoading) {
     return <div className="p-6 text-sm text-muted-foreground">워크스페이스를 불러오는 중…</div>;
+  }
+
+  if (parentUnavailable) {
+    return (
+      <div className="p-6" role="alert">
+        <h1 className="text-xl font-semibold text-foreground">하위 문서를 만들 수 없습니다</h1>
+        <p className="mt-2 text-sm text-foreground-secondary">
+          상위 문서를 찾을 수 없거나 이 문서를 편집할 권한이 없습니다.
+        </p>
+      </div>
+    );
   }
 
   if (teamScopeUnavailable) {
@@ -183,6 +241,16 @@ export default function NewPage({ teamName, initialFolder = 'docs' }: NewPagePro
               </Link>
             </li>
             <li aria-hidden="true">/</li>
+            {parentPage && (
+              <>
+                <li className="min-w-0 max-w-[16rem] truncate">
+                  <Link to={`/page/${parentPage.slug}`} className="hover:text-highlight">
+                    {parentPage.title}
+                  </Link>
+                </li>
+                <li aria-hidden="true">/</li>
+              </>
+            )}
             <li aria-current="page" className="text-foreground-secondary">
               새 문서
             </li>

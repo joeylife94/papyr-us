@@ -99,6 +99,7 @@ import { buildKnowledgeGraph, suggestAiLinks } from './services/knowledge-graph.
 import { pageIconField } from '../shared/page-icon.js';
 import { registerDailyNoteRoutes } from './routes/daily-notes.js';
 import { registerPageLinkRoutes } from './routes/page-links.js';
+import { checkTreeParent, registerPageTreeRoutes } from './routes/page-tree.js';
 import { featureFlags } from './features.js';
 
 interface MulterRequest extends Request {
@@ -610,6 +611,7 @@ export async function registerRoutes(
   registerKnowledgeRoutes(app, storage);
   registerDailyNoteRoutes(app, storage);
   registerPageLinkRoutes(app, storage);
+  registerPageTreeRoutes(app, storage);
 
   app.get('/api/pages', optionalAuth, async (req: AuthRequest, res) => {
     try {
@@ -809,6 +811,25 @@ export async function registerRoutes(
           }
         }
 
+        // Page tree rules (#103 E5): a new page goes at the end of its siblings (no position)
+        // and only under a live parent the caller can edit, in the same team scope.
+        if (pageData.position != null) {
+          return res.status(400).json({
+            message: 'A new page is placed after its siblings; use POST /api/pages/:id/move',
+          });
+        }
+        if (pageData.parentId != null) {
+          const parentCheck = await checkTreeParent(
+            storage,
+            req.user?.id,
+            pageData.parentId,
+            pageData.teamId ?? null
+          );
+          if (!parentCheck.ok) {
+            return res.status(parentCheck.status).json({ message: parentCheck.message });
+          }
+        }
+
         // Pass creator user ID for automatic owner permission assignment
         const creatorUserId = req.user?.id;
         const page = creatorUserId
@@ -848,10 +869,20 @@ export async function registerRoutes(
     async (req: AuthRequest, res) => {
       try {
         const id = parseInt(req.params.id);
-        const updateData = updatePageSchema.parse(req.body);
+        const { parentId, position, ...updateData } = updatePageSchema.parse(req.body);
 
         // Get old page data for comparison and version snapshot
         const oldPage = await storage.getWikiPage(id);
+
+        // The page's place in the tree changes only through the move route, which applies the
+        // tree rules (#103 E5); re-sending the current values is fine.
+        const changesParent = parentId !== undefined && parentId !== (oldPage?.parentId ?? null);
+        const changesPosition = position !== undefined && position !== (oldPage?.position ?? null);
+        if (changesParent || changesPosition) {
+          return res
+            .status(400)
+            .json({ message: 'Use POST /api/pages/:id/move to move a page in the page tree' });
+        }
 
         // Authorship counts as ownership, the team decides who may access the page, and trash
         // state is the owner's call, so changing any of them needs owner. A page can only move
@@ -869,6 +900,17 @@ export async function registerRoutes(
           const userTeamIds = req.user?.id ? await storage.getUserTeamIds(req.user.id) : [];
           if (!userTeamIds.includes(Number(updateData.teamId))) {
             return res.status(403).json({ message: 'You are not a member of the target team' });
+          }
+        }
+        // A sub-page stays in its parent's team (#103 E5): only a root page without live
+        // sub-pages changes team.
+        if (changesTeam) {
+          const hasSubPages = ((await storage.getLivePageDescendantIds(id)) ?? []).length > 0;
+          if (oldPage?.parentId != null || hasSubPages) {
+            return res.status(409).json({
+              message:
+                'Move the page to the workspace root and move its sub-pages out before changing its team',
+            });
           }
         }
 
@@ -1121,6 +1163,20 @@ export async function registerRoutes(
     }
   );
 
+  // A page with live sub-pages goes to the trash with its whole subtree, which needs the level the
+  // delete route requires (owner) on every page in it (#103 D5). The refusal names no page.
+  // Restoring brings back what was trashed with the page, under the same rule.
+  const ownsEveryPage = async (userId: number | undefined, pageIds: number[]) => {
+    for (const pageId of pageIds) {
+      if (!(await storage.checkPagePermission(userId, pageId, 'owner'))) return false;
+    }
+    return true;
+  };
+  const SUBTREE_NOT_DELETABLE = {
+    message: 'This page has sub-pages you cannot delete, so nothing was moved to the trash',
+    code: 'SUBTREE_NOT_DELETABLE',
+  };
+
   app.delete(
     '/api/pages/:id',
     requireAuthIfEnabled,
@@ -1132,7 +1188,12 @@ export async function registerRoutes(
         // Get page data before deletion
         const page = await storage.getWikiPage(id);
 
-        const deleted = await storage.deleteWikiPage(id);
+        const subPages = page ? ((await storage.getLivePageDescendantIds(id)) ?? []) : [];
+        if (!(await ownsEveryPage(req.user?.id, subPages))) {
+          return res.status(403).json(SUBTREE_NOT_DELETABLE);
+        }
+
+        const deleted = await storage.deleteWikiPage(id, subPages);
 
         if (!deleted) {
           return res.status(404).json({ message: 'Page not found' });
@@ -1152,7 +1213,7 @@ export async function registerRoutes(
           });
         }
 
-        res.json({ message: 'Page moved to trash' });
+        res.json({ message: 'Page moved to trash', subPages: subPages.length });
       } catch (error) {
         res.status(400).json({ message: 'Invalid page ID' });
       }
@@ -1173,7 +1234,8 @@ export async function registerRoutes(
     }
   });
 
-  // Restore a page from trash (undoes DELETE /api/pages/:id, so it needs the same owner level)
+  // Restore a page from trash (undoes DELETE /api/pages/:id, so it needs the same owner level),
+  // together with the sub-pages that were trashed with it (#103 D5)
   app.post(
     '/api/trash/:id/restore',
     requireAuthIfEnabled,
@@ -1181,7 +1243,14 @@ export async function registerRoutes(
     async (req: AuthRequest, res) => {
       try {
         const id = parseInt(req.params.id);
-        const restored = await storage.restoreWikiPage(id);
+        const subPages = (await storage.getPagesTrashedWith(id)) ?? [];
+        if (!(await ownsEveryPage(req.user?.id, subPages))) {
+          return res.status(403).json({
+            error: 'This page was trashed with sub-pages you cannot restore, so nothing changed',
+            code: 'SUBTREE_NOT_RESTORABLE',
+          });
+        }
+        const restored = await storage.restoreWikiPage(id, subPages);
         if (!restored) {
           return res.status(404).json({ error: 'Page not found in trash' });
         }
@@ -1251,6 +1320,14 @@ export async function registerRoutes(
         }
 
         const author = (req as any).user?.email || (req as any).user?.name || original.author;
+        // The copy joins the original's parent only under the tree rules (#103 E5); a reader
+        // who cannot edit that parent gets the copy at the workspace root.
+        const parentId =
+          original.parentId != null &&
+          (await checkTreeParent(storage, req.user?.id, original.parentId, original.teamId ?? null))
+            .ok
+            ? original.parentId
+            : null;
         const cloned = await storage.createWikiPage(
           {
             title: `${original.title} (Copy)`,
@@ -1260,7 +1337,7 @@ export async function registerRoutes(
             folder: original.folder,
             tags: original.tags,
             author,
-            parentId: original.parentId,
+            parentId,
             icon: original.icon,
             teamId: original.teamId,
             isPublished: false,
@@ -1375,10 +1452,36 @@ export async function registerRoutes(
       const denial = await bulkDenial(req.user?.id, pageIds, 'owner');
       if (denial) return res.status(denial.status).json({ error: denial.error });
 
-      let deleted = 0;
+      // Each listed page goes with its live subtree (#103 D5), so the caller must own every
+      // sub-page too. A listed page inside another listed page's subtree is trashed with it.
+      const subPagesOf = new Map<number, number[]>();
       for (const pageId of pageIds) {
-        const success = await storage.deleteWikiPage(pageId);
-        if (success) deleted++;
+        subPagesOf.set(pageId, (await storage.getLivePageDescendantIds(pageId)) ?? []);
+      }
+      const listed = new Set(pageIds);
+      const covered = new Set(Array.from(subPagesOf.values()).flat());
+      if (
+        !(await ownsEveryPage(
+          req.user?.id,
+          Array.from(covered).filter((id) => !listed.has(id))
+        ))
+      ) {
+        return res
+          .status(403)
+          .json({ error: SUBTREE_NOT_DELETABLE.message, code: SUBTREE_NOT_DELETABLE.code });
+      }
+
+      let deleted = 0;
+      const trashed = new Set<number>();
+      const topmostFirst = [...pageIds].sort(
+        (a, b) => Number(covered.has(a)) - Number(covered.has(b))
+      );
+      for (const pageId of topmostFirst) {
+        if (trashed.has(pageId)) continue;
+        const subPages = subPagesOf.get(pageId)!.filter((id) => !trashed.has(id));
+        const success = await storage.deleteWikiPage(pageId, subPages);
+        [pageId, ...subPages].forEach((id) => trashed.add(id));
+        if (success) deleted += 1 + subPages.filter((id) => listed.has(id)).length;
       }
 
       res.json({ deleted });

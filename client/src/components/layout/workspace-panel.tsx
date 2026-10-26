@@ -13,6 +13,7 @@ import {
   Users,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { documentQueryKeyFromPath } from '@/lib/active-workspace';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -20,8 +21,8 @@ import { SearchBar } from '@/components/wiki/search-bar';
 import { useToast } from '@/hooks/use-toast';
 import { useFeatureFlags } from '@/features/FeatureFlagsContext';
 import { DailyNoteButton } from '@/components/daily-note-button';
-import type { WikiPage } from '@shared/schema';
 import { useShellNav } from './shell-nav';
+import { PageTree } from './page-tree';
 
 interface WorkspacePanelProps {
   searchQuery: string;
@@ -32,21 +33,13 @@ interface WorkspacePanelProps {
   showTools?: boolean;
 }
 
-const DEFAULT_DIRECTORIES = [
-  { name: 'docs', displayName: 'Documentation', order: 1 },
-  { name: 'ideas', displayName: 'Ideas', order: 2 },
-  { name: 'members', displayName: 'Members', order: 3 },
-  { name: 'logs', displayName: 'Logs', order: 4 },
-  { name: 'archive', displayName: 'Archive', order: 5 },
-];
-
 const sectionLabel = 'px-2.5 pb-1.5 font-mono text-[11px] uppercase text-muted-foreground';
 const rowLink =
   'flex min-h-[34px] items-center gap-2 rounded-md px-2.5 text-[13.5px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
 /**
- * The workspace panel beside the rail: current workspace, search, the "페이지" section (the
- * folder list for now; issue #103 replaces it with the page tree), and the workspace list.
+ * The workspace panel beside the rail: current workspace, search, the "페이지" section (the page
+ * tree of the current workspace, #103 E5; folders stay a page property), and the workspace list.
  */
 export function WorkspacePanel({
   searchQuery,
@@ -59,25 +52,13 @@ export function WorkspacePanel({
   const workspace = scope.kind === 'team' ? scope.workspace : null;
   const { flags } = useFeatureFlags();
   const { toast } = useToast();
-  // Folders are a secondary browse path, so they start collapsed and are fetched on demand.
+  // Open workspaces in the workspace list.
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [passwordPrompt, setPasswordPrompt] = useState<{ teamName: string; teamId: number } | null>(
     null
   );
   const [passwordInput, setPasswordInput] = useState('');
   const [verifiedTeams, setVerifiedTeams] = useState<string[]>([]);
-
-  const { data: directories = DEFAULT_DIRECTORIES } = useQuery<any[]>({
-    queryKey: ['/api/admin/directories'],
-    enabled: flags.FEATURE_ADMIN,
-    initialData: DEFAULT_DIRECTORIES,
-    queryFn: async () => {
-      const adminPassword = sessionStorage.getItem('adminAuth') || '';
-      const response = await fetch(`/api/admin/directories?adminPassword=${adminPassword}`);
-      // Fall back to the static folders when the admin API is unavailable.
-      return response.ok ? response.json() : DEFAULT_DIRECTORIES;
-    },
-  });
 
   const {
     data: teams = [],
@@ -94,36 +75,16 @@ export function WorkspacePanel({
     retryDelay: 1000,
   });
 
-  // One query per fixed folder keeps the hook order stable.
-  const folderQueries: Record<string, ReturnType<typeof useQuery<WikiPage[]>>> = {
-    docs: useQuery<WikiPage[]>({ queryKey: ['/api/folders/docs/pages'], enabled: !!expanded.docs }),
-    ideas: useQuery<WikiPage[]>({
-      queryKey: ['/api/folders/ideas/pages'],
-      enabled: !!expanded.ideas,
-    }),
-    members: useQuery<WikiPage[]>({
-      queryKey: ['/api/folders/members/pages'],
-      enabled: !!expanded.members,
-    }),
-    logs: useQuery<WikiPage[]>({ queryKey: ['/api/folders/logs/pages'], enabled: !!expanded.logs }),
-    archive: useQuery<WikiPage[]>({
-      queryKey: ['/api/folders/archive/pages'],
-      enabled: !!expanded.archive,
-    }),
-  };
-
   const toggle = (key: string) => setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
 
-  const filterPages = (pages: WikiPage[], query: string) => {
-    const q = query.trim().toLowerCase();
-    if (!q) return pages;
-    return pages.filter(
-      (page) =>
-        page.title.toLowerCase().includes(q) ||
-        page.content.toLowerCase().includes(q) ||
-        page.tags.some((tag) => tag.toLowerCase().includes(q))
-    );
-  };
+  // The page tree shows the workspace of the route: a team, or the team-less pages ("내 문서").
+  // A document whose workspace is still loading shows nothing yet rather than the wrong tree.
+  const treeScope =
+    scope.kind === 'team'
+      ? { teamName: scope.workspace.name, createHref: scope.workspace.createPath }
+      : scope.kind === 'personal' || !documentQueryKeyFromPath(pathname)
+        ? { teamName: null, createHref: '/create' }
+        : null;
 
   const handleTeamClick = (team: any) => {
     if (team.password && !verifiedTeams.includes(team.name)) {
@@ -228,62 +189,24 @@ export function WorkspacePanel({
         <Plus className="h-4 w-4" aria-hidden="true" /> 새 문서 작성
       </Link>
 
-      {/* "페이지": the folder list stays here until #103 brings the page tree. */}
+      {/* "페이지": the page tree of the current workspace (#103 E5). */}
       <nav aria-label="페이지" className="flex flex-col">
         <h3 className={sectionLabel}>페이지</h3>
-        {directories.map((directory) => {
-          const isOpen = !!expanded[directory.name];
-          const pages = filterPages(folderQueries[directory.name]?.data || [], searchQuery);
-          if (searchQuery.trim() && isOpen && pages.length === 0) return null;
-          return (
-            <div key={directory.name}>
-              <button
-                type="button"
-                onClick={() => toggle(directory.name)}
-                aria-expanded={isOpen}
-                className={cn(
-                  rowLink,
-                  'w-full text-foreground-secondary hover:bg-raised hover:text-foreground'
-                )}
-              >
-                {isOpen ? (
-                  <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-                ) : (
-                  <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-                )}
-                <span className="flex-1 truncate text-left">{directory.displayName}</span>
-              </button>
-              {isOpen && (
-                <div className="ml-4 border-l border-border pl-1.5">
-                  {pages.map((page) => (
-                    <Link
-                      key={page.id}
-                      to={`/page/${page.slug}`}
-                      onClick={onNavigate}
-                      aria-current={pathname === `/page/${page.slug}` ? 'page' : undefined}
-                      className={cn(
-                        rowLink,
-                        pathname === `/page/${page.slug}`
-                          ? 'bg-raised font-semibold text-foreground'
-                          : 'text-foreground-secondary hover:bg-raised hover:text-foreground'
-                      )}
-                    >
-                      <FileText className="h-3.5 w-3.5 shrink-0 opacity-60" aria-hidden="true" />
-                      <span className="truncate">{page.title}</span>
-                    </Link>
-                  ))}
-                  {pages.length === 0 && (
-                    <p className="px-2.5 py-2 text-xs text-muted-foreground">
-                      {searchQuery.trim()
-                        ? '일치하는 문서가 없습니다'
-                        : '이 폴더에 문서가 없습니다'}
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
+        {treeScope ? (
+          <PageTree
+            key={treeScope.teamName !== null ? `team:${treeScope.teamName}` : 'personal'}
+            teamName={treeScope.teamName}
+            createHref={treeScope.createHref}
+            searchQuery={searchQuery}
+            onNavigate={onNavigate}
+          />
+        ) : (
+          <div className="space-y-1.5 px-1">
+            {[1, 2].map((i) => (
+              <div key={i} className="h-7 animate-pulse rounded-md bg-raised" />
+            ))}
+          </div>
+        )}
       </nav>
 
       {flags.FEATURE_TEAMS ? (

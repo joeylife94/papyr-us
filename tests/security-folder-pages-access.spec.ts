@@ -14,6 +14,7 @@ import {
   request as playwrightRequest,
   type APIRequestContext,
 } from '@playwright/test';
+import { Pool } from 'pg';
 import { createAuthenticatedApiContext, registerTestUser } from './e2e-helpers';
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:5003';
@@ -164,15 +165,31 @@ test.describe('Team data access control for folder pages and tags', () => {
         teamId: teamA.id,
         parentId: pageA.id,
       });
-      const childOfAByB = await createPage(ownerBRequest, {
+      // Since the page tree rules (#103 E5) the API refuses a child under a parent the caller
+      // cannot read, so this pre-E5 shape (an outsider's page under Team A's page) is written
+      // directly, to keep proving that listings filter such legacy data.
+      const outsiderChild = {
         title: `Outsider child ${marker.personal}`,
         slug: `sec-child-b-${stamp}`,
         content: `Outsider child content ${marker.personal}`,
         folder,
         tags: [],
         author: ownerB.email,
-        parentId: pageA.id,
+      };
+      const refusedChild = await ownerBRequest.post('/api/pages', {
+        data: { ...outsiderChild, slug: `sec-child-b-refused-${stamp}`, parentId: pageA.id },
       });
+      expect(refusedChild.status()).toBe(404);
+      const childOfAByB = await createPage(ownerBRequest, outsiderChild);
+      const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+      try {
+        await pool.query('UPDATE wiki_pages SET parent_id = $1 WHERE id = $2', [
+          pageA.id,
+          childOfAByB.id,
+        ]);
+      } finally {
+        await pool.end();
+      }
       const allPages = [pageA, pageAm, pageAOnly, pageB, personalB, childOfAByA, childOfAByB];
 
       // ── 1. Anonymous callers are rejected and receive no page data ──

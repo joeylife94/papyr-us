@@ -137,7 +137,7 @@ describe('Wiki Page Management API', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.message).toBe('Page moved to trash');
-      expect(storage.deleteWikiPage).toHaveBeenCalledWith(mockPage.id);
+      expect(storage.deleteWikiPage).toHaveBeenCalledWith(mockPage.id, []);
     });
   });
 

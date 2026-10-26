@@ -26,6 +26,8 @@ import { PageProperties, PageTitle, SaveStatus } from '@/components/page/page-ed
 import { PageHeaderIcon } from '@/components/page/icon-picker';
 import { PageIcon } from '@/components/page/page-icon';
 import { Backlinks } from '@/components/page/backlinks';
+import { PageAncestorCrumbs, PAGE_TREE_QUERY_KEY } from '@/components/layout/page-tree';
+import { ToastAction } from '@/components/ui/toast';
 import { apiRequest } from '@/lib/queryClient';
 import { extractHeadings, estimateReadingTime } from '@/lib/markdown';
 import { blocksToContent, initialBlocksFor, parseTags } from '@/lib/page-content';
@@ -161,17 +163,48 @@ export default function WikiPageView() {
 
   const handleDelete = async () => {
     if (!page) return;
-    const confirmed = window.confirm(`"${page.title}" 문서를 삭제할까요?`);
+    const confirmed = window.confirm(
+      `"${page.title}" 문서를 삭제할까요? 하위 문서가 있으면 함께 휴지통으로 옮겨집니다.`
+    );
     if (!confirmed) return;
-    try {
-      await apiRequest('DELETE', `/api/pages/${page.id}`);
+    const refreshLists = () => {
       queryClient.invalidateQueries({ queryKey: ['/api/pages'] });
-      toast({ title: '문서 삭제됨', description: '문서를 삭제했습니다.' });
+      queryClient.invalidateQueries({ queryKey: [PAGE_TREE_QUERY_KEY] });
+    };
+    // Restoring brings back the sub-pages that went to the trash with the page (#103 D5).
+    const undo = async () => {
+      try {
+        await apiRequest('POST', `/api/trash/${page.id}/restore`);
+        refreshLists();
+        navigate(`/page/${page.slug}`);
+      } catch {
+        toast({ title: '되돌리지 못했습니다', variant: 'destructive' });
+      }
+    };
+    try {
+      const response = await apiRequest('DELETE', `/api/pages/${page.id}`);
+      const result: { subPages?: number } = await response.json().catch(() => ({}));
+      refreshLists();
+      toast({
+        title: '문서 삭제됨',
+        description: result.subPages
+          ? `하위 문서 ${result.subPages}개와 함께 휴지통으로 옮겼습니다.`
+          : '문서를 삭제했습니다.',
+        action: (
+          <ToastAction altText="삭제 되돌리기" onClick={() => void undo()}>
+            되돌리기
+          </ToastAction>
+        ),
+      });
       navigate('/');
-    } catch {
+    } catch (error) {
+      // A page with sub-pages the user may not delete stays (D5); the server names no page.
+      const subtreeRefused = String((error as Error)?.message).includes('SUBTREE_NOT_DELETABLE');
       toast({
         title: '삭제 실패',
-        description: '문서를 삭제할 수 없습니다.',
+        description: subtreeRefused
+          ? '삭제할 권한이 없는 하위 문서가 있어 아무것도 삭제하지 않았습니다.'
+          : '문서를 삭제할 수 없습니다.',
         variant: 'destructive',
       });
     }
@@ -281,6 +314,7 @@ export default function WikiPageView() {
         <li aria-hidden="true">/</li>
         <li className="capitalize">{page.folder}</li>
         <li aria-hidden="true">/</li>
+        <PageAncestorCrumbs pageId={page.id} />
         <li
           aria-current="page"
           className="flex min-w-0 max-w-full items-center gap-1.5 text-foreground-secondary"
@@ -436,14 +470,19 @@ function EditablePageBody({
   const [icon, setIcon] = useState<string | null>(page.icon ?? null);
   const { data: folders = [] } = useQuery<string[]>({ queryKey: ['/api/folders'] });
 
+  const treeTitle = useRef(page.title);
   const { status, queue, flush, reset } = usePageAutosave(page.id, {
-    onSaved: (_result, saved) => {
-      // Lists and the folder tree show titles and folders; refresh them quietly.
+    onSaved: (result, saved) => {
+      // Lists show titles and folders; refresh them quietly. The page tree and breadcrumbs show
+      // titles and icons, so they refresh when either changed.
       queryClient.invalidateQueries({ queryKey: ['/api/pages'] });
       if ('icon' in saved) {
-        // The icon also shows in the page view (tab title, reader) and the page tree.
+        // The icon also shows in the page view (tab title, reader).
         queryClient.invalidateQueries({ queryKey: [`/api/pages/slug/${page.slug}`] });
-        queryClient.invalidateQueries({ queryKey: ['/api/pages/tree'] });
+      }
+      if ('icon' in saved || result.title !== treeTitle.current) {
+        treeTitle.current = result.title;
+        queryClient.invalidateQueries({ queryKey: [PAGE_TREE_QUERY_KEY] });
       }
     },
   });
