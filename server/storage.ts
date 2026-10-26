@@ -92,6 +92,12 @@ export interface PageViewer {
   teamIds: number[];
 }
 
+/** A trashed page as the trash list shows it: no body. */
+export type TrashedPage = Pick<
+  WikiPage,
+  'id' | 'title' | 'slug' | 'icon' | 'folder' | 'author' | 'teamId' | 'deletedAt' | 'updatedAt'
+>;
+
 /** A caller without a session: only public or permission-free team-less pages are readable. */
 export const ANONYMOUS_PAGE_VIEWER: PageViewer = Object.freeze({ teamIds: [] as number[] });
 
@@ -235,13 +241,28 @@ export class DBStorage {
     return result[0];
   }
 
-  async getTrashPages(teamId?: number): Promise<WikiPage[]> {
-    const conditions = [sql`${wikiPages.deletedAt} IS NOT NULL`];
+  /**
+   * The trash as one viewer may list it: trashed pages they can read (the listing rule, minus the
+   * live-page filter), newest first, optionally of one team. Never the body: a list does not need
+   * it, and a trashed page is only read through its own routes.
+   */
+  async getTrashPages(viewer: PageViewer, teamId?: number): Promise<TrashedPage[]> {
+    const conditions: SQL[] = [sql`${wikiPages.deletedAt} IS NOT NULL`, this.listableBy(viewer)];
     if (teamId) {
       conditions.push(eq(wikiPages.teamId, teamId));
     }
     return this.db
-      .select()
+      .select({
+        id: wikiPages.id,
+        title: wikiPages.title,
+        slug: wikiPages.slug,
+        icon: wikiPages.icon,
+        folder: wikiPages.folder,
+        author: wikiPages.author,
+        teamId: wikiPages.teamId,
+        deletedAt: wikiPages.deletedAt,
+        updatedAt: wikiPages.updatedAt,
+      })
       .from(wikiPages)
       .where(and(...conditions))
       .orderBy(desc(wikiPages.deletedAt));

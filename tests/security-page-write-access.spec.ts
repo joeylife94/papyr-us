@@ -9,7 +9,8 @@
  * - PUT /api/pages/:id: changing author, team or trash state needs owner, and a page can only
  *   move into a team the caller belongs to; editors keep saving content as before;
  * - restoring and permanently deleting a trashed page need owner, and only trashed pages can
- *   be permanently deleted;
+ *   be permanently deleted; the trash list shows a trashed page only to callers who can read
+ *   it, and never its content;
  * - markdown import needs membership of the target team, like POST /api/pages.
  */
 import { test, expect, type APIRequestContext } from '@playwright/test';
@@ -206,6 +207,18 @@ test.describe('Page write routes enforce page permissions', () => {
     const { page: trashed } = await createSharedPage();
     const { page: live } = await createSharedPage();
     expect((await ownerRequest.delete(`/api/pages/${trashed.id}`)).status()).toBe(200);
+
+    const trashOf = async (ctx: APIRequestContext) => {
+      const response = await ctx.get('/api/trash');
+      expect(response.status()).toBe(200);
+      return (await response.json()) as Array<Record<string, unknown>>;
+    };
+    const listed = (await trashOf(ownerRequest)).find((item) => item.id === trashed.id);
+    expect(listed).toMatchObject({ id: trashed.id, teamId: team });
+    expect(listed).not.toHaveProperty('content');
+    expect(listed).not.toHaveProperty('blocks');
+    expect((await trashOf(editorRequest)).some((item) => item.id === trashed.id)).toBe(true);
+    expect((await trashOf(outsiderRequest)).some((item) => item.id === trashed.id)).toBe(false);
 
     for (const ctx of [editorRequest, outsiderRequest]) {
       expect((await ctx.post(`/api/trash/${trashed.id}/restore`)).status()).toBe(403);
