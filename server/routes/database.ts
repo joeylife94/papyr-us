@@ -13,7 +13,11 @@
  * - a relation needs editor on the source row's page (the relation is part of the source
  *   database) and viewer on the target row's page (linking a row only records its id, so reading
  *   it is enough; the target database is not changed). Relation listings and rollups leave out
- *   targets the caller cannot read.
+ *   targets the caller cannot read, judged by the database each target row really belongs to
+ *   (relations stored before #113 may carry a `to_schema_id` that does not match their row).
+ * - A row has at most 1,000 relations (409 beyond). `propertyName` is a free label of up to 100
+ *   characters: inline databases have no relation property type yet, so it is not tied to a
+ *   property of the schema.
  *
  * Routes (all behind a session when auth is enforced):
  * - POST   /api/database/schemas                       { pageId, name, description?, fields } → 201 schema
@@ -49,6 +53,7 @@ import {
   checkRowData,
   databaseFieldsSchema,
   databaseNameSchema,
+  isValidDatabaseId,
   parseStoredFields,
   planAddField,
   planRemoveField,
@@ -80,7 +85,6 @@ const UNSUPPORTED_FORMAT = {
 };
 
 const positiveId = z.number().int().positive().max(2_147_483_647);
-const fieldIdPattern = /^[A-Za-z0-9_-]{1,64}$/;
 const descriptionSchema = z.string().max(DATABASE_LIMITS.descriptionLength).nullable();
 
 const createSchemaBody = z
@@ -343,7 +347,7 @@ export function registerDatabaseRoutes(app: Express, storage: DBStorage) {
 
   app.patch('/api/database/schemas/:id/fields/:fieldId', ...auth, async (req: AuthRequest, res) => {
     const { fieldId } = req.params;
-    if (!fieldIdPattern.test(fieldId)) {
+    if (!isValidDatabaseId(fieldId)) {
       return res.status(400).json({ message: 'Invalid property ID' });
     }
     const body = updateFieldBodySchema.safeParse(req.body);
@@ -356,7 +360,7 @@ export function registerDatabaseRoutes(app: Express, storage: DBStorage) {
     ...auth,
     async (req: AuthRequest, res) => {
       const { fieldId } = req.params;
-      if (!fieldIdPattern.test(fieldId)) {
+      if (!isValidDatabaseId(fieldId)) {
         return res.status(400).json({ message: 'Invalid property ID' });
       }
       await changeFields(req, res, (fields) => planRemoveField(fields, fieldId));
@@ -491,8 +495,15 @@ export function registerDatabaseRoutes(app: Express, storage: DBStorage) {
         fromRowId,
         body.data.propertyName,
         to.row.schemaId,
-        toRowId
+        toRowId,
+        DATABASE_LIMITS.relationsPerRow
       );
+      if (!relation) {
+        return refuse(res, {
+          status: 409,
+          message: `A row has at most ${DATABASE_LIMITS.relationsPerRow} relations`,
+        });
+      }
       res.status(201).json(relation);
     } catch (error) {
       fail(res, 'Failed to add relation', error);
@@ -512,14 +523,19 @@ export function registerDatabaseRoutes(app: Express, storage: DBStorage) {
     try {
       const access = await rowFor(storage, req.user?.id, rowId, 'viewer');
       if ('refusal' in access) return refuse(res, access.refusal);
-      const relations = await storage.getRelations(rowId, property);
+      // Filtered by the database each target row belongs to, never the stored to_schema_id.
+      const relations = await storage.getRelationsWithTargets(rowId, property);
       const readable = new Set(
         await readableSchemaIds(
           req.user?.id,
-          relations.map((relation) => relation.toSchemaId)
+          relations.map((relation) => relation.targetSchemaId)
         )
       );
-      res.json(relations.filter((relation) => readable.has(relation.toSchemaId)));
+      res.json(
+        relations
+          .filter((relation) => readable.has(relation.targetSchemaId))
+          .map(({ targetSchemaId, ...relation }) => ({ ...relation, toSchemaId: targetSchemaId }))
+      );
     } catch (error) {
       fail(res, 'Failed to load relations', error);
     }
@@ -549,10 +565,10 @@ export function registerDatabaseRoutes(app: Express, storage: DBStorage) {
       const access = await rowFor(storage, req.user?.id, rowId, 'viewer');
       if ('refusal' in access) return refuse(res, access.refusal);
       const { fieldName, relationField, targetField, aggregation } = body.data;
-      const relations = await storage.getRelations(rowId, relationField);
+      const relations = await storage.getRelationsWithTargets(rowId, relationField);
       const readable = await readableSchemaIds(
         req.user?.id,
-        relations.map((relation) => relation.toSchemaId)
+        relations.map((relation) => relation.targetSchemaId)
       );
       const value = await storage.calculateRollup(
         rowId,

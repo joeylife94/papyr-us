@@ -147,7 +147,14 @@ beforeEach(() => {
   }));
   s.updateDatabaseRow.mockImplementation(async (id: number) => ({ ok: true, row: row(id) }));
   s.addRelation.mockImplementation(async (...args: any[]) => ({ id: 200, args }));
-  s.getRelations.mockResolvedValue([relation(100, 11, 21), relation(103, 11, 31)]);
+  // Targets as joined from the rows themselves. 104 and 105 predate #113: their stored
+  // to_schema_id does not match the database their target row is in.
+  s.getRelationsWithTargets.mockResolvedValue([
+    { ...relation(100, 11, 21), targetSchemaId: 2 },
+    { ...relation(103, 11, 31), targetSchemaId: 3 },
+    { ...relation(104, 11, 21), toSchemaId: 2, toRowId: 31, targetSchemaId: 3 },
+    { ...relation(105, 11, 31), toSchemaId: 3, toRowId: 21, targetSchemaId: 2 },
+  ]);
   s.calculateRollup.mockResolvedValue(3);
 });
 
@@ -241,13 +248,16 @@ describe('reads need viewer on the owning page', () => {
     });
   });
 
-  it('relation listings leave out targets the caller cannot read', async () => {
+  it('relation listings leave out targets the caller cannot read, by the real target database', async () => {
     const response = await api.get('/api/database/rows/11/relations');
     expect(response.status).toBe(200);
-    expect(response.body.map((r: any) => r.id)).toEqual([100]);
+    expect(response.body.map((r: any) => r.id)).toEqual([100, 105]);
+    // The stored to_schema_id is replaced by the target row's database; no extra field leaks.
+    expect(response.body[1]).toMatchObject({ id: 105, toRowId: 21, toSchemaId: 2 });
+    expect(response.body[1]).not.toHaveProperty('targetSchemaId');
   });
 
-  it('rollups only aggregate readable targets', async () => {
+  it('rollups only aggregate readable targets, by the real target database', async () => {
     await api.post('/api/database/rows/11/rollup', {
       fieldName: 'total',
       relationField: 'related',
@@ -353,7 +363,18 @@ describe('writes need editor on the owning page', () => {
     });
     expect(ok.status).toBe(201);
     expect(storage.addRelation).toHaveBeenCalledTimes(1);
-    expect(storage.addRelation).toHaveBeenCalledWith(1, 11, 'related', 2, 21);
+    expect(storage.addRelation).toHaveBeenCalledWith(1, 11, 'related', 2, 21, 1000);
+  });
+
+  it('refuses a relation beyond the per-row limit', async () => {
+    (storage.addRelation as any).mockResolvedValue(null);
+    const response = await api.post('/api/database/relations', {
+      fromRowId: 11,
+      toRowId: 21,
+      propertyName: 'related',
+    });
+    expect(response.status).toBe(409);
+    expect(response.body).toEqual({ message: 'A row has at most 1000 relations' });
   });
 
   it('a relation cannot name a database its rows are not in', async () => {
@@ -482,6 +503,39 @@ describe('properties', () => {
       fields: fields.filter((field) => field.id !== 'title'),
     });
     expect(response.status).toBe(400);
+  });
+});
+
+describe('reserved ids', () => {
+  it.each(['__proto__', 'constructor', 'prototype'])('refuses %s as a property id', async (id) => {
+    expect(
+      (await api.post('/api/database/schemas/1/fields', { id, name: 'X', type: 'text' })).status
+    ).toBe(400);
+    expect((await api.patch(`/api/database/schemas/1/fields/${id}`, { name: 'X' })).status).toBe(
+      400
+    );
+    expect((await api.delete(`/api/database/schemas/1/fields/${id}`)).status).toBe(400);
+    const created = await api.post('/api/database/schemas', {
+      pageId: 10,
+      name: 'X',
+      fields: [
+        { id: 'title', name: '이름', type: 'title' },
+        { id, name: 'X', type: 'text' },
+      ],
+    });
+    expect(created.status).toBe(400);
+    expect(storage.mutateDatabaseFields).not.toHaveBeenCalled();
+    expect(storage.createDatabaseSchema).not.toHaveBeenCalled();
+  });
+
+  it('refuses row data keyed by __proto__ instead of dropping it', async () => {
+    const response = await request(app)
+      .patch('/api/database/rows/11')
+      .set('Cookie', [`accessToken=${token}`])
+      .set('Content-Type', 'application/json')
+      .send('{"data":{"__proto__":"x","title":"y"}}');
+    expect(response.status).toBe(400);
+    expect(storage.updateDatabaseRow).not.toHaveBeenCalled();
   });
 });
 

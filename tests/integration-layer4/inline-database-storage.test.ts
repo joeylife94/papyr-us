@@ -11,13 +11,19 @@
  *   - property changes run under the schema lock: concurrent additions both land, deleting a
  *     property removes its values from that database's rows only, and a type change that is not
  *     lossless is refused while values exist;
- *   - rollups only aggregate related rows of the databases they are allowed to read.
+ *   - rollups and relation listings judge a target by the database its row is really in, not
+ *     by the relation's stored to_schema_id, and only aggregate rows they may read;
+ *   - a row has at most N relations, also under concurrent links;
+ *   - min/max rollups over very many related rows (legacy data) neither overflow the call stack
+ *     nor the query's parameter limit.
  *
  * The tables live in their own schema so this file can run next to the other Layer 4 files.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import {
+  checkRowData,
+  presentValues,
   planAddField,
   planRemoveField,
   planUpdateField,
@@ -153,6 +159,19 @@ describe('inline database storage (real Postgres)', () => {
     ]);
     const stored = await storage.getDatabaseRow(row.id);
     expect(stored.data).toEqual({ title: 'renamed', points: 7 });
+
+    // The objects the route builds from validated input go to the driver as they are.
+    const checked = checkRowData(fields, { title: 'from input', notes: null, points: 2 });
+    if (!checked.ok) throw new Error(checked.message);
+    const created = await storage.createDatabaseRow(
+      schemaId,
+      null,
+      presentValues(checked.values),
+      10
+    );
+    expect(created.data).toEqual({ title: 'from input', points: 2 });
+    const updated = await storage.updateDatabaseRow(created.id, { values: checked.values });
+    expect(updated.row.data).toEqual({ title: 'from input', points: 2 });
   });
 
   it('moves rows before or after another row and renumbers the database', async () => {
@@ -271,4 +290,68 @@ describe('inline database storage (real Postgres)', () => {
     const relation = await storage.getDatabaseRelation(relations[0].id);
     expect(relation).toMatchObject({ fromRowId: from.id, toRowId: r1.id });
   });
+
+  it('judges relation targets by the row, not the stored to_schema_id', async () => {
+    const source = await createDatabase();
+    const readable = await createDatabase();
+    const hidden = await createDatabase();
+    const from = await storage.createDatabaseRow(source, null, { title: 's' }, 10);
+    const r1 = await storage.createDatabaseRow(readable, null, { title: 'r', points: 3 }, 10);
+    const h1 = await storage.createDatabaseRow(hidden, null, { title: 'h', points: 40 }, 10);
+    await storage.addRelation(source, from.id, 'related', readable, r1.id);
+    // A pre-#113 relation: it claims the readable database but points at a hidden row.
+    await admin.query(
+      `INSERT INTO ${SCHEMA}.database_relations
+         (from_schema_id, from_row_id, to_schema_id, to_row_id, property_name)
+       VALUES ($1, $2, $3, $4, 'related')`,
+      [source, from.id, readable, h1.id]
+    );
+    const config = { relationField: 'related', targetField: 'points', aggregation: 'sum' };
+
+    expect(await storage.calculateRollup(from.id, 'total', config, [readable])).toBe(3);
+    expect(await storage.calculateRollup(from.id, 'total', config, [readable, hidden])).toBe(43);
+    const listed = await storage.getRelationsWithTargets(from.id, 'related');
+    expect(listed.map((r: any) => [r.toRowId, r.toSchemaId, r.targetSchemaId])).toEqual([
+      [r1.id, readable, readable],
+      [h1.id, readable, hidden],
+    ]);
+  });
+
+  it('caps relations per row, also under concurrent links', async () => {
+    const source = await createDatabase();
+    const target = await createDatabase();
+    const from = await storage.createDatabaseRow(source, null, { title: 's' }, 10);
+    const to = await storage.createDatabaseRow(target, null, { title: 't' }, 10);
+    const results = await Promise.all(
+      Array.from({ length: 6 }, () => storage.addRelation(source, from.id, 'rel', target, to.id, 4))
+    );
+    expect(results.filter(Boolean)).toHaveLength(4);
+    expect(results.filter((relation) => relation === null)).toHaveLength(2);
+    expect(await storage.getRelations(from.id)).toHaveLength(4);
+  });
+
+  it('rolls up very many related rows (legacy data) without overflowing', async () => {
+    const source = await createDatabase();
+    const target = await createDatabase();
+    const from = await storage.createDatabaseRow(source, null, { title: 's' }, 10);
+    const count = 130_000;
+    await admin.query(
+      `INSERT INTO ${SCHEMA}.database_rows (schema_id, data, order_index)
+       SELECT $1, jsonb_build_object('points', n), n FROM generate_series(1, $2) AS n`,
+      [target, count]
+    );
+    await admin.query(
+      `INSERT INTO ${SCHEMA}.database_relations
+         (from_schema_id, from_row_id, to_schema_id, to_row_id, property_name)
+       SELECT $1, $2, $3, id, 'many' FROM ${SCHEMA}.database_rows WHERE schema_id = $3`,
+      [source, from.id, target]
+    );
+    const config = { relationField: 'many', targetField: 'points' };
+    const rollup = (aggregation: string) =>
+      storage.calculateRollup(from.id, 'x', { ...config, aggregation }, [target]);
+    expect(await rollup('min')).toBe(1);
+    expect(await rollup('max')).toBe(count);
+    expect(await rollup('count')).toBe(count);
+    expect(await rollup('sum')).toBe((count * (count + 1)) / 2);
+  }, 60_000);
 });
