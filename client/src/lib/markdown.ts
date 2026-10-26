@@ -5,6 +5,9 @@ import remarkRehype from 'remark-rehype';
 import rehypeStringify from 'rehype-stringify';
 import rehypeHighlight from 'rehype-highlight';
 import matter from 'gray-matter';
+// Relative imports: unit tests load this module without the Vite aliases.
+import { replacePageLinks } from '../../../shared/page-links';
+import { rehypePageLinkSlots } from '../components/page/page-link-markdown';
 
 // Parse markdown with frontmatter
 export function parseMarkdown(content: string) {
@@ -12,11 +15,12 @@ export function parseMarkdown(content: string) {
   return { frontmatter, content: markdownContent };
 }
 
-// Convert markdown to HTML
+// Convert markdown to HTML. Page link tokens become chip placeholders (#103 E6).
 export async function markdownToHtml(markdown: string): Promise<string> {
   const processor = remark()
     .use(remarkGfm)
     .use(remarkRehype)
+    .use(rehypePageLinkSlots)
     .use(rehypeHighlight)
     .use(rehypeStringify);
 
@@ -32,7 +36,9 @@ export function extractHeadings(content: string) {
 
   while ((match = headingRegex.exec(content)) !== null) {
     const level = match[1].length;
-    const text = match[2].trim();
+    // A page link token is an id, not text: leave it out of the table of contents (#103 E6).
+    const text = replacePageLinks(match[2], () => '').trim();
+    if (!text) continue;
     const id = text
       .toLowerCase()
       .replace(/[^\w\s-]/g, '')
@@ -54,7 +60,8 @@ export function estimateReadingTime(content: string): number {
 // Plain-text excerpt for document lists: drops common markdown syntax and only adds an
 // ellipsis when the text was actually shortened.
 export function toPlainTextPreview(content: string, maxLength = 160): string {
-  const text = content
+  // Page link tokens carry only an id; list previews leave them out (#103 E6).
+  const text = replacePageLinks(content, () => ' ')
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/`([^`]*)`/g, '$1')
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
