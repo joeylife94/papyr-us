@@ -101,6 +101,7 @@ import { eq, and, isNull } from 'drizzle-orm';
 import { ANONYMOUS_PAGE_VIEWER, DBStorage } from './storage.js';
 import { registerKnowledgeRoutes } from './routes/knowledge.js';
 import { buildKnowledgeGraph, suggestAiLinks } from './services/knowledge-graph.js';
+import { registerDailyNoteRoutes } from './routes/daily-notes.js';
 import { featureFlags } from './features.js';
 
 interface MulterRequest extends Request {
@@ -618,6 +619,7 @@ export async function registerRoutes(
   // Knowledge routes (#111). They are registered before /api/pages/:id so their fixed path
   // segments are never read as a page id.
   registerKnowledgeRoutes(app, storage);
+  registerDailyNoteRoutes(app, storage);
 
   app.get('/api/pages', optionalAuth, async (req: AuthRequest, res) => {
     try {
