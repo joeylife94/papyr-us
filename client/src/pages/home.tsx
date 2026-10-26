@@ -10,6 +10,7 @@ import { Book, Plus, User } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import type { WikiPage } from '@shared/schema';
+import { PageIcon } from '@/components/page/page-icon';
 
 interface HomeProps {
   searchQuery: string;
@@ -220,6 +221,7 @@ function PageRow({ page, searchQuery }: { page: WikiPage; searchQuery: string })
           to={`/page/${page.slug}`}
           className="truncate text-[15px] font-bold text-foreground after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:rounded-md focus-visible:after:ring-2 focus-visible:after:ring-ring"
         >
+          {page.icon && <PageIcon icon={page.icon} className="mr-1.5 text-[15px]" />}
           {renderHighlighted(page.title, searchQuery)}
         </Link>
         <p className="truncate text-[13px] text-muted-foreground">

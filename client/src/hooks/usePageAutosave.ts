@@ -7,6 +7,8 @@ export interface AutosavePatch {
   blocks?: Block[];
   tags?: string[];
   folder?: string;
+  /** One emoji, or null to remove the icon (issue #103 E4). */
+  icon?: string | null;
 }
 
 export type AutosaveStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'error';

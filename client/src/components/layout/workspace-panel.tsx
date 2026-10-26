@@ -21,6 +21,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useFeatureFlags } from '@/features/FeatureFlagsContext';
 import type { WikiPage } from '@shared/schema';
 import { useShellNav } from './shell-nav';
+import { PageIcon } from '@/components/page/page-icon';
 
 interface WorkspacePanelProps {
   searchQuery: string;
@@ -266,7 +267,7 @@ export function WorkspacePanel({
                           : 'text-foreground-secondary hover:bg-raised hover:text-foreground'
                       )}
                     >
-                      <FileText className="h-3.5 w-3.5 shrink-0 opacity-60" aria-hidden="true" />
+                      <PageIcon icon={page.icon} className="text-[14px]" />
                       <span className="truncate">{page.title}</span>
                     </Link>
                   ))}

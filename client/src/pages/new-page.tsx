@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { BlockEditor } from '@/components/blocks/block-editor';
 import { PageProperties, PageTitle } from '@/components/page/page-editor-parts';
+import { PageIconPicker } from '@/components/page/page-icon';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useActiveWorkspace } from '@/hooks/useActiveWorkspace';
@@ -43,13 +44,14 @@ export default function NewPage({ teamName, initialFolder = 'docs' }: NewPagePro
   );
   const [folder, setFolder] = useState(initialFolder);
   const [tagsText, setTagsText] = useState(template?.tags?.join(', ') ?? '');
+  const [icon, setIcon] = useState<string | null>(null);
   const [touched, setTouched] = useState(false);
   const [creatingState, setCreatingState] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
   const creating = useRef(false);
   const mounted = useRef(true);
-  const latest = useRef({ title, blocks, folder, tagsText });
-  latest.current = { title, blocks, folder, tagsText };
+  const latest = useRef({ title, blocks, folder, tagsText, icon });
+  latest.current = { title, blocks, folder, tagsText, icon };
 
   useEffect(() => {
     mounted.current = true;
@@ -68,7 +70,7 @@ export default function NewPage({ teamName, initialFolder = 'docs' }: NewPagePro
   const teamScopeUnavailable = !!teamName && !teamsLoading && (teamsError || !resolvedTeamId);
 
   const content = useMemo(() => blocksToContent(blocks), [blocks]);
-  const hasInput = title.trim().length > 0 || content.trim().length > 0;
+  const hasInput = title.trim().length > 0 || content.trim().length > 0 || icon !== null;
 
   useEffect(() => {
     if (!touched || !hasInput || creating.current) return;
@@ -76,7 +78,7 @@ export default function NewPage({ teamName, initialFolder = 'docs' }: NewPagePro
     const timer = setTimeout(() => void createPage(), CREATE_DELAY_MS);
     return () => clearTimeout(timer);
     // createPage reads the latest values through `latest`.
-  }, [touched, hasInput, title, content, folder, tagsText, resolvedTeamId, teamName]);
+  }, [touched, hasInput, title, content, folder, tagsText, icon, resolvedTeamId, teamName]);
 
   async function createPage() {
     if (creating.current) return;
@@ -90,6 +92,7 @@ export default function NewPage({ teamName, initialFolder = 'docs' }: NewPagePro
       blocks: sent.blocks,
       folder: sent.folder,
       tags: parseTags(sent.tagsText),
+      ...(sent.icon ? { icon: sent.icon } : {}),
       author: user?.name || getUserName() || 'User',
       ...(resolvedTeamId ? { teamId: resolvedTeamId } : {}),
     };
@@ -108,7 +111,7 @@ export default function NewPage({ teamName, initialFolder = 'docs' }: NewPagePro
       // is retried; the draft stays on screen until everything is stored. If the user leaves
       // meanwhile, one last best-effort save is sent.
       const snapshot = (v: typeof sent) =>
-        JSON.stringify([v.title.trim(), v.blocks, v.folder, v.tagsText]);
+        JSON.stringify([v.title.trim(), v.blocks, v.folder, v.tagsText, v.icon]);
       let stored = sent;
       let failures = 0;
       while (snapshot(latest.current) !== snapshot(stored)) {
@@ -123,6 +126,7 @@ export default function NewPage({ teamName, initialFolder = 'docs' }: NewPagePro
             blocks: now.blocks,
             folder: now.folder,
             tags: parseTags(now.tagsText),
+            icon: now.icon,
           }),
         }).then(
           (r) => r.ok,
@@ -203,6 +207,13 @@ export default function NewPage({ teamName, initialFolder = 'docs' }: NewPagePro
                 ? '문서를 만드는 중…'
                 : '입력을 시작하면 문서가 만들어집니다'}
           </p>
+          <PageIconPicker
+            icon={icon}
+            onChange={(next) => {
+              setIcon(next);
+              setTouched(true);
+            }}
+          />
           <PageTitle
             initialTitle={title}
             editable

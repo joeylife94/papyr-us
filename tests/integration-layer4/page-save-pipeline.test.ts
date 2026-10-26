@@ -52,6 +52,7 @@ async function createSchema() {
       is_published BOOLEAN NOT NULL DEFAULT TRUE,
       metadata     JSONB DEFAULT '{}',
       deleted_at   TIMESTAMP,
+      icon         TEXT,
       search_vector tsvector
     )
   `);
