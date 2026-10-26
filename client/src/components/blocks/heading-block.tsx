@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Block, BlockType } from '@shared/schema';
 import { Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useInlinePreview } from '@/components/page/inline-preview';
 
 interface HeadingBlockProps {
   block: Block;
@@ -87,6 +88,14 @@ export function HeadingBlock({
     }
   };
 
+  // Inline Markdown, links and #tags render while the heading is not focused (#113 §2).
+  const preview = useInlinePreview({
+    content,
+    isFocused,
+    textareaRef,
+    className: `${getHeadingStyle()} pr-8`,
+  });
+
   return (
     <div
       className={`relative group ${isFocused ? 'bg-primary/10 ' : ''} rounded-lg p-2 transition-colors`}
@@ -104,7 +113,9 @@ export function HeadingBlock({
         placeholder={getPlaceholder()}
         className={`w-full resize-none border-none outline-none bg-transparent ${getHeadingStyle()} text-foreground placeholder:text-muted-foreground pl-0 pr-8`}
         rows={1}
+        style={preview.textareaStyle}
       />
+      {preview.element}
 
       {/* 액션 버튼들 */}
       {isFocused && (

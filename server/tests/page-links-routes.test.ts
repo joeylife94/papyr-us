@@ -150,6 +150,14 @@ describe('GET /api/pages/:id/link-preview', () => {
     expect(bodies[1]).toEqual(bodies[0]);
     expect(bodies[2]).toEqual(bodies[0]);
   });
+
+  it('refuses an id beyond the page id column before any lookup', async () => {
+    for (const id of ['2147483648', '9999999999']) {
+      const res = await request(app).get(`/api/pages/${id}/link-preview`).set(as(READER));
+      expect(res.status, id).toBe(400);
+    }
+    expect(storage.getWikiPage).not.toHaveBeenCalled();
+  });
 });
 
 describe('GET /api/pages/:id/backlinks', () => {

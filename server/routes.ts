@@ -102,8 +102,13 @@ import { ANONYMOUS_PAGE_VIEWER, DBStorage } from './storage.js';
 import { registerKnowledgeRoutes } from './routes/knowledge.js';
 import { buildKnowledgeGraph, suggestAiLinks } from './services/knowledge-graph.js';
 import { isReservedDailyNoteSlug } from '../shared/daily-notes.js';
+import { isPageId } from '../shared/page-links.js';
 import { registerDailyNoteRoutes } from './routes/daily-notes.js';
+import { registerVaultRoutes } from './routes/vault.js';
+import { contentWithLinkTitles, singlePageMarkdown } from './services/vault-export.js';
+import { pageLinkTokenIds } from './services/vault-format.js';
 import { featureFlags } from './features.js';
+import { registerDatabaseRoutes } from './routes/database.js';
 
 interface MulterRequest extends Request {
   files?: any[];
@@ -115,6 +120,19 @@ interface MulterRequest extends Request {
 function normalizeTaskDueDate(body: Record<string, unknown>): Record<string, unknown> {
   if (!body || typeof body.dueDate !== 'string') return body;
   return { ...body, dueDate: body.dueDate === '' ? null : new Date(body.dueDate) };
+}
+
+/**
+ * `Content-Disposition: attachment` for any file name: an ASCII fallback plus the UTF-8 name
+ * (RFC 5987). A raw non-Latin-1 name, such as a Korean slug, is an invalid header value.
+ */
+export function attachmentDisposition(filename: string): string {
+  const fallback = filename.replace(/[^\x20-\x7e]|["\\]/g, '_');
+  const encoded = encodeURIComponent(filename).replace(
+    /['()*]/g,
+    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`
+  );
+  return `attachment; filename="${fallback}"; filename*=UTF-8''${encoded}`;
 }
 
 // Response body for a failed request. Validation failures keep their Zod issues, which only
@@ -621,6 +639,7 @@ export async function registerRoutes(
   // segments are never read as a page id.
   registerKnowledgeRoutes(app, storage);
   registerDailyNoteRoutes(app, storage);
+  registerVaultRoutes(app, storage);
 
   app.get('/api/pages', optionalAuth, async (req: AuthRequest, res) => {
     try {
@@ -1312,9 +1331,6 @@ export async function registerRoutes(
     async (req: AuthRequest, res) => {
       try {
         const id = parseInt(req.params.id);
-        const db = (storage as any).db;
-        if (!db) return res.status(500).json({ error: 'Database not available' });
-
         const original = await storage.getWikiPage(id);
         if (!original) {
           return res.status(404).json({ error: 'Page not found' });
@@ -1329,7 +1345,10 @@ export async function registerRoutes(
         }
 
         const author = (req as any).user?.email || (req as any).user?.name || original.author;
-        const cloned = await storage.createWikiPage(
+        // The copy gets its own copies of the page's inline databases (#113 §4), in the same
+        // transaction as the page.
+        const cloned = await storage.duplicateWikiPage(
+          id,
           {
             title: `${original.title} (Copy)`,
             slug,
@@ -2342,7 +2361,7 @@ export async function registerRoutes(
   // same answer, so a link reveals nothing about a page the caller cannot open.
   app.get('/api/pages/:id/link-preview', optionalAuth, async (req: AuthRequest, res) => {
     const id = parseInt(req.params.id, 10);
-    if (!Number.isInteger(id) || id <= 0) {
+    if (!isPageId(id)) {
       return res.status(400).json({ message: 'Invalid page ID' });
     }
     try {
@@ -4597,280 +4616,8 @@ export async function registerRoutes(
     }
   );
 
-  // ==================== Database Schema Routes ====================
-
-  // Create database schema
-  app.post('/api/database/schemas', requireAuthIfEnabled, async (req: AuthRequest, res) => {
-    try {
-      const { pageId, name, fields, primaryDisplay } = req.body;
-
-      if (!pageId || !name || !fields) {
-        return res.status(400).json({ error: 'pageId, name, and fields are required' });
-      }
-
-      const userId = req.user?.id;
-      if (!userId) {
-        return res.status(401).json({ error: 'User not authenticated' });
-      }
-
-      const schema = await storage.createDatabaseSchema(pageId, userId, {
-        name,
-        fields,
-        primaryDisplay,
-      });
-
-      res.status(201).json(schema);
-    } catch (error) {
-      console.error('Error creating database schema:', error);
-      res.status(500).json({ error: 'Failed to create database schema' });
-    }
-  });
-
-  // Get database schema
-  app.get('/api/database/schemas/:id', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid schema ID' });
-      }
-
-      const schema = await storage.getDatabaseSchema(id);
-      if (!schema) {
-        return res.status(404).json({ error: 'Schema not found' });
-      }
-
-      res.json(schema);
-    } catch (error) {
-      console.error('Error fetching database schema:', error);
-      res.status(500).json({ error: 'Failed to fetch database schema' });
-    }
-  });
-
-  // Update database schema
-  app.patch('/api/database/schemas/:id', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid schema ID' });
-      }
-
-      const { name, fields, primaryDisplay } = req.body;
-      const schema = await storage.updateDatabaseSchema(id, {
-        name,
-        fields,
-        primaryDisplay,
-      });
-
-      res.json(schema);
-    } catch (error) {
-      console.error('Error updating database schema:', error);
-      res.status(500).json({ error: 'Failed to update database schema' });
-    }
-  });
-
-  // Delete database schema
-  app.delete('/api/database/schemas/:id', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid schema ID' });
-      }
-
-      await storage.deleteDatabaseSchema(id);
-      res.status(204).send();
-    } catch (error) {
-      console.error('Error deleting database schema:', error);
-      res.status(500).json({ error: 'Failed to delete database schema' });
-    }
-  });
-
-  // ==================== Database Row Routes ====================
-
-  // Create database row
-  app.post('/api/database/rows', requireAuthIfEnabled, async (req: AuthRequest, res) => {
-    try {
-      const { schemaId, data } = req.body;
-
-      if (!schemaId || !data) {
-        return res.status(400).json({ error: 'schemaId and data are required' });
-      }
-
-      const userId = req.user?.id;
-      if (!userId) {
-        return res.status(401).json({ error: 'User not authenticated' });
-      }
-
-      const row = await storage.createDatabaseRow(schemaId, userId, data);
-      res.status(201).json(row);
-    } catch (error) {
-      console.error('Error creating database row:', error);
-      res.status(500).json({ error: 'Failed to create database row' });
-    }
-  });
-
-  // Get database row
-  app.get('/api/database/rows/:id', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid row ID' });
-      }
-
-      const row = await storage.getDatabaseRow(id);
-      if (!row) {
-        return res.status(404).json({ error: 'Row not found' });
-      }
-
-      res.json(row);
-    } catch (error) {
-      console.error('Error fetching database row:', error);
-      res.status(500).json({ error: 'Failed to fetch database row' });
-    }
-  });
-
-  // Get all rows for a schema
-  app.get('/api/database/schemas/:schemaId/rows', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const schemaId = parseInt(req.params.schemaId);
-      if (isNaN(schemaId)) {
-        return res.status(400).json({ error: 'Invalid schema ID' });
-      }
-
-      const rows = await storage.getDatabaseRows(schemaId);
-      res.json(rows);
-    } catch (error) {
-      console.error('Error fetching database rows:', error);
-      res.status(500).json({ error: 'Failed to fetch database rows' });
-    }
-  });
-
-  // Update database row
-  app.patch('/api/database/rows/:id', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid row ID' });
-      }
-
-      const { data } = req.body;
-      if (!data) {
-        return res.status(400).json({ error: 'data is required' });
-      }
-
-      const row = await storage.updateDatabaseRow(id, data);
-      res.json(row);
-    } catch (error) {
-      console.error('Error updating database row:', error);
-      res.status(500).json({ error: 'Failed to update database row' });
-    }
-  });
-
-  // Delete database row
-  app.delete('/api/database/rows/:id', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid row ID' });
-      }
-
-      await storage.deleteDatabaseRow(id);
-      res.status(204).send();
-    } catch (error) {
-      console.error('Error deleting database row:', error);
-      res.status(500).json({ error: 'Failed to delete database row' });
-    }
-  });
-
-  // ==================== Database Relations Routes ====================
-
-  // Add relation
-  app.post('/api/database/relations', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const { fromSchemaId, fromRowId, propertyName, toSchemaId, toRowId } = req.body;
-
-      if (!fromSchemaId || !fromRowId || !propertyName || !toSchemaId || !toRowId) {
-        return res.status(400).json({
-          error: 'fromSchemaId, fromRowId, propertyName, toSchemaId, and toRowId are required',
-        });
-      }
-
-      const relation = await storage.addRelation(
-        fromSchemaId,
-        fromRowId,
-        propertyName,
-        toSchemaId,
-        toRowId
-      );
-
-      res.status(201).json(relation);
-    } catch (error) {
-      console.error('Error adding relation:', error);
-      res.status(500).json({ error: 'Failed to add relation' });
-    }
-  });
-
-  // Get relations for a row
-  app.get('/api/database/rows/:rowId/relations', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const rowId = parseInt(req.params.rowId);
-      if (isNaN(rowId)) {
-        return res.status(400).json({ error: 'Invalid row ID' });
-      }
-
-      const propertyName = req.query.propertyName as string | undefined;
-      const relations = await storage.getRelations(rowId, propertyName);
-
-      res.json(relations);
-    } catch (error) {
-      console.error('Error fetching relations:', error);
-      res.status(500).json({ error: 'Failed to fetch relations' });
-    }
-  });
-
-  // Delete relation
-  app.delete('/api/database/relations/:id', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid relation ID' });
-      }
-
-      await storage.deleteRelation(id);
-      res.status(204).send();
-    } catch (error) {
-      console.error('Error deleting relation:', error);
-      res.status(500).json({ error: 'Failed to delete relation' });
-    }
-  });
-
-  // Calculate rollup
-  app.post('/api/database/rows/:rowId/rollup', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const rowId = parseInt(req.params.rowId);
-      if (isNaN(rowId)) {
-        return res.status(400).json({ error: 'Invalid row ID' });
-      }
-
-      const { fieldName, relationField, targetField, aggregation } = req.body;
-
-      if (!fieldName || !relationField || !targetField || !aggregation) {
-        return res.status(400).json({
-          error: 'fieldName, relationField, targetField, and aggregation are required',
-        });
-      }
-
-      const value = await storage.calculateRollup(rowId, fieldName, {
-        relationField,
-        targetField,
-        aggregation,
-      });
-
-      res.json({ value });
-    } catch (error) {
-      console.error('Error calculating rollup:', error);
-      res.status(500).json({ error: 'Failed to calculate rollup' });
-    }
-  });
+  // Inline databases (#113 §4): every route checks the owning page (P2-D4).
+  registerDatabaseRoutes(app, storage);
 
   // ==================== Synced Block Routes ====================
 
@@ -5376,25 +5123,23 @@ export async function registerRoutes(
 
         if (!page) return res.status(404).json({ error: 'Page not found' });
 
+        // Link tokens become titles of pages the viewer can read, never others' (#113 P2-D2).
+        const viewer = await storage.getPageViewer(req.user?.id);
+        const linked = await storage.resolveReadablePageLinks(
+          viewer,
+          pageLinkTokenIds(page.content || '')
+        );
+        const linkedTitles = new Map<number, string>(
+          linked.map((target) => [target.id, target.title])
+        );
+
         switch (format) {
           case 'markdown':
           case 'md': {
-            const frontmatter = [
-              '---',
-              `title: "${page.title.replace(/"/g, '\\"')}"`,
-              `slug: "${page.slug}"`,
-              `author: "${page.author}"`,
-              `folder: "${page.folder}"`,
-              `tags: [${page.tags.map((t) => `"${t}"`).join(', ')}]`,
-              `created: "${page.createdAt}"`,
-              `updated: "${page.updatedAt}"`,
-              '---',
-              '',
-            ].join('\n');
-
-            const markdown = frontmatter + (page.content || '');
+            const markdown = singlePageMarkdown(page, linkedTitles);
             res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
-            res.setHeader('Content-Disposition', `attachment; filename="${page.slug}.md"`);
+            // RFC 5987 encoding: a raw non-Latin-1 slug (e.g. Korean) is an invalid header.
+            res.setHeader('Content-Disposition', attachmentDisposition(`${page.slug}.md`));
             return res.send(markdown);
           }
 
@@ -5405,7 +5150,9 @@ export async function registerRoutes(
             const rehypeStringify = (await import('rehype-stringify')).default;
 
             const processor = remark().use(remarkGfm).use(remarkRehype).use(rehypeStringify);
-            const result = await processor.process(page.content || '');
+            const result = await processor.process(
+              contentWithLinkTitles(page.content || '', linkedTitles)
+            );
 
             const html = `<!DOCTYPE html>
 <html lang="en">
@@ -5433,7 +5180,8 @@ export async function registerRoutes(
 </html>`;
 
             res.setHeader('Content-Type', 'text/html; charset=utf-8');
-            res.setHeader('Content-Disposition', `attachment; filename="${page.slug}.html"`);
+            // RFC 5987 encoding: a raw non-Latin-1 slug (e.g. Korean) is an invalid header.
+            res.setHeader('Content-Disposition', attachmentDisposition(`${page.slug}.html`));
             return res.send(html);
           }
 
@@ -5452,7 +5200,8 @@ export async function registerRoutes(
             };
 
             res.setHeader('Content-Type', 'application/json; charset=utf-8');
-            res.setHeader('Content-Disposition', `attachment; filename="${page.slug}.json"`);
+            // RFC 5987 encoding: a raw non-Latin-1 slug (e.g. Korean) is an invalid header.
+            res.setHeader('Content-Disposition', attachmentDisposition(`${page.slug}.json`));
             return res.json(exportData);
           }
 

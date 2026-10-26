@@ -51,6 +51,9 @@ import {
   type PermissionLevel,
   type TeamMember,
   type TeamRole,
+  type DatabaseSchema,
+  type DatabaseRow,
+  type DatabaseRelation,
   databaseSchemas,
   databaseRows,
   databaseRelations,
@@ -79,8 +82,26 @@ import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 import type { RetrievedPageRow } from './services/retrieval.js';
 import type { PageTreeRow } from './services/page-tree.js';
-import { extractPageLinkIds, hasPageLinks } from '../shared/page-links.js';
+import {
+  MAX_INDEXED_LINKS,
+  extractPageLinkIds,
+  hasPageLinks,
+  isPageId,
+} from '../shared/page-links.js';
 import { isReservedDailyNoteSlug } from '../shared/daily-notes.js';
+import {
+  DATABASE_LIMITS,
+  checkRowData,
+  databaseBlockSchemaIds,
+  parseStoredFields,
+  presentValues,
+  remapDatabaseBlocks,
+  type DatabaseCellValue,
+  type DatabaseField,
+  type DatabaseRowData,
+  type FieldPlan,
+} from '../shared/inline-database.js';
+import type { VaultExportRow } from './services/vault-export.js';
 
 // Helper: detect if a string looks like a bcrypt hash
 function isBcryptHash(value: string): boolean {
@@ -95,10 +116,29 @@ export interface PageViewer {
   teamIds: number[];
 }
 
+/**
+ * Thrown by a row write whose values no longer fit the database's properties: a property was
+ * deleted or changed type after the caller validated against it. Nothing is written.
+ */
+export class DatabasePropertiesChanged extends Error {
+  constructor() {
+    super("The database's properties changed; reload and try again");
+    this.name = 'DatabasePropertiesChanged';
+  }
+}
+
+/** Whether row values still fit a database's stored properties (read under the schema lock). */
+function fitsDatabaseFields(storedFields: unknown, values: Record<string, unknown>): boolean {
+  const fields = parseStoredFields(storedFields);
+  return fields !== null && checkRowData(fields, values).ok;
+}
+
 /** A caller without a session: only public or permission-free team-less pages are readable. */
 export const ANONYMOUS_PAGE_VIEWER: PageViewer = Object.freeze({ teamIds: [] as number[] });
 
 const MAX_SLUG_INSERT_ATTEMPTS = 100;
+/** Ids per query when resolving many link targets (`resolveReadablePageLinks`). */
+const RESOLVE_LINKS_BATCH = 1000;
 
 function isTeamPagesForeignKeyViolation(error: unknown): boolean {
   const dbError = error as { code?: string; constraint?: string } | null;
@@ -167,20 +207,22 @@ export class DBStorage {
     return result[0];
   }
 
-  async createWikiPage(page: InsertWikiPage, creatorUserId?: number): Promise<WikiPage> {
-    let createdPage: WikiPage | undefined;
-
+  /**
+   * Inserts a page under its slug or, while that is taken, the next candidate
+   * (`buildUniqueSlugCandidate`). `insert` runs once per candidate; inside a transaction it must
+   * run in a savepoint, so a slug conflict leaves the transaction usable.
+   */
+  private async insertWithUniqueSlug(
+    baseSlug: string,
+    insert: (slug: string) => Promise<WikiPage | undefined>
+  ): Promise<WikiPage> {
     // A daily note's slug (#111) is only created by findOrCreateDailyNote; any other create
     // starts from the next candidate, as it would after a slug conflict.
-    const firstAttempt = isReservedDailyNoteSlug(page.slug) ? 1 : 0;
+    const firstAttempt = isReservedDailyNoteSlug(baseSlug) ? 1 : 0;
     for (let attempt = firstAttempt; attempt < MAX_SLUG_INSERT_ATTEMPTS; attempt += 1) {
-      const slug = buildUniqueSlugCandidate(page.slug, attempt);
       try {
-        const result = await this.db
-          .insert(wikiPages)
-          .values({ ...page, slug })
-          .returning();
-        createdPage = result[0];
+        const created = await insert(buildUniqueSlugCandidate(baseSlug, attempt));
+        if (created) return created;
         break;
       } catch (error) {
         if (!isSlugUniqueViolation(error) || attempt === MAX_SLUG_INSERT_ATTEMPTS - 1) {
@@ -188,10 +230,17 @@ export class DBStorage {
         }
       }
     }
+    throw new Error('Failed to allocate a unique page slug');
+  }
 
-    if (!createdPage) {
-      throw new Error('Failed to allocate a unique page slug');
-    }
+  async createWikiPage(page: InsertWikiPage, creatorUserId?: number): Promise<WikiPage> {
+    const createdPage = await this.insertWithUniqueSlug(page.slug, async (slug) => {
+      const result = await this.db
+        .insert(wikiPages)
+        .values({ ...page, slug })
+        .returning();
+      return result[0];
+    });
 
     if (creatorUserId) {
       try {
@@ -206,6 +255,128 @@ export class DBStorage {
       await this.replacePageLinks(createdPage.id, createdPage.content);
     }
     return createdPage;
+  }
+
+  /**
+   * Creates `page`, a copy of page `sourcePageId` (POST /api/pages/:id/duplicate), the way
+   * createWikiPage does, with copies of the source's inline databases (#113 §4), all in one
+   * transaction: a failure leaves no copy behind.
+   *
+   * A database belongs to its page, so a `database_inline` block of `page.blocks` whose database
+   * is owned by the source page points at a new database on the copy, with the same properties,
+   * the same rows and the relations between those rows; blocks that share a database share its
+   * copy. Relations to rows that are not copied stay behind (linking to a row needs editor on its
+   * page). Any other database block loses its `schemaId`, so nothing is read from a database of
+   * another page, and the editor creates a new, empty one. The source databases are share-locked
+   * while they are copied, so properties, rows and their order are copied as of one moment.
+   */
+  async duplicateWikiPage(
+    sourcePageId: number,
+    page: InsertWikiPage,
+    creatorUserId?: number
+  ): Promise<WikiPage> {
+    const referenced = databaseBlockSchemaIds(page.blocks);
+    return this.db.transaction(async (tx: any) => {
+      const sources: DatabaseSchema[] =
+        referenced.length === 0
+          ? []
+          : await tx
+              .select()
+              .from(databaseSchemas)
+              .where(
+                and(
+                  inArray(databaseSchemas.id, referenced),
+                  eq(databaseSchemas.pageId, sourcePageId)
+                )
+              )
+              .orderBy(asc(databaseSchemas.id))
+              .for('share');
+
+      // The page needs an id before its databases can, so it is inserted without database ids
+      // and pointed at the copies before the transaction commits.
+      const blocks = remapDatabaseBlocks(page.blocks, new Map());
+      let copy = await this.insertWithUniqueSlug(page.slug, (slug) =>
+        tx.transaction(async (savepoint: any) => {
+          const result = await savepoint
+            .insert(wikiPages)
+            .values({ ...page, slug, blocks })
+            .returning();
+          return result[0];
+        })
+      );
+
+      const schemaIds = new Map<number, number>();
+      for (const source of sources) {
+        const [created] = await tx
+          .insert(databaseSchemas)
+          .values({
+            pageId: copy.id,
+            name: source.name,
+            description: source.description,
+            fields: source.fields,
+          })
+          .returning({ id: databaseSchemas.id });
+        schemaIds.set(source.id, created.id);
+      }
+
+      if (schemaIds.size > 0) {
+        const schemaMap = [...schemaIds].map(([from, to]) => ({ from, to }));
+        // Row ids are drawn up front (in the source order), so the relations between copied
+        // rows are remapped in the same statement. A relation's ends are judged by the rows,
+        // not by its stored schema ids.
+        await tx.execute(sql`
+          WITH schema_map AS (
+            SELECT * FROM jsonb_to_recordset(${JSON.stringify(schemaMap)}::jsonb)
+              AS m("from" integer, "to" integer)
+          ),
+          row_map AS MATERIALIZED (
+            SELECT r.id AS old_id,
+                   nextval(pg_get_serial_sequence('database_rows', 'id'))::integer AS new_id,
+                   m."to" AS schema_id, r.data, r.order_index, r.created_by
+              FROM database_rows r
+              JOIN schema_map m ON m."from" = r.schema_id
+             ORDER BY r.schema_id, r.order_index, r.id
+          ),
+          copied_rows AS (
+            INSERT INTO database_rows (id, schema_id, data, order_index, created_by)
+            SELECT new_id, schema_id, data, order_index, created_by FROM row_map
+          )
+          INSERT INTO database_relations
+            (from_schema_id, from_row_id, to_schema_id, to_row_id, property_name)
+          SELECT f.schema_id, f.new_id, t.schema_id, t.new_id, rel.property_name
+            FROM database_relations rel
+            JOIN row_map f ON f.old_id = rel.from_row_id
+            JOIN row_map t ON t.old_id = rel.to_row_id
+           ORDER BY rel.id
+        `);
+        const result = await tx
+          .update(wikiPages)
+          .set({ blocks: remapDatabaseBlocks(page.blocks, schemaIds) })
+          .where(eq(wikiPages.id, copy.id))
+          .returning();
+        copy = result[0];
+      }
+
+      // As in createWikiPage, a failed owner grant is logged and does not undo the page.
+      if (creatorUserId) {
+        try {
+          await tx.transaction((savepoint: any) =>
+            savepoint.insert(pagePermissions).values({
+              pageId: copy.id,
+              entityType: 'user',
+              entityId: creatorUserId,
+              permission: 'owner',
+              grantedBy: creatorUserId,
+            })
+          );
+        } catch (error) {
+          console.error('Failed to set page owner permission:', error);
+        }
+      }
+
+      if (hasPageLinks(copy.content)) await this.writePageLinks(tx, copy.id, copy.content);
+      return copy;
+    });
   }
 
   async updateWikiPage(id: number, page: UpdateWikiPage): Promise<WikiPage | undefined> {
@@ -294,6 +465,41 @@ export class DBStorage {
       )
       .orderBy(asc(wikiPages.title), asc(wikiPages.id))
       .limit(200);
+  }
+
+  /**
+   * Titles of the pages among `ids` that are live and readable by the viewer, for exports that
+   * write links as titles (#113 vault and single-page export). An id missing from the result is
+   * deleted, unknown or unreadable; callers must not tell those apart. These are pages asked for
+   * by id, so the rule is GET /api/pages/:id's (`readableBy`, like the link preview), not the
+   * workspace listing scope.
+   */
+  async resolveReadablePageLinks(
+    viewer: PageViewer,
+    ids: number[]
+  ): Promise<Array<{ id: number; title: string; slug: string; icon: string | null }>> {
+    const unique = Array.from(new Set(ids.filter(isPageId)));
+    const found: Array<{ id: number; title: string; slug: string; icon: string | null }> = [];
+    // Batches keep every query far below Postgres' bind-parameter limit.
+    for (let at = 0; at < unique.length; at += RESOLVE_LINKS_BATCH) {
+      const rows = await this.db
+        .select({
+          id: wikiPages.id,
+          title: wikiPages.title,
+          slug: wikiPages.slug,
+          icon: wikiPages.icon,
+        })
+        .from(wikiPages)
+        .where(
+          and(
+            inArray(wikiPages.id, unique.slice(at, at + RESOLVE_LINKS_BATCH)),
+            isNull(wikiPages.deletedAt),
+            this.readableBy(viewer)
+          )
+        );
+      for (const row of rows) found.push(row);
+    }
+    return found;
   }
 
   /**
@@ -2108,39 +2314,37 @@ export class DBStorage {
   }
 
   // ==================== Database Schema Operations ====================
+  // Inline databases (#113 §4). These methods do not authorize: every /api/database route
+  // resolves the owning page (schema → page_id) and checks the caller's permission on it first.
 
   async createDatabaseSchema(
     pageId: number,
-    userId: number,
-    schema: {
-      name: string;
-      fields: any[];
-      primaryDisplay?: string;
-    }
-  ) {
+    schema: { name: string; description?: string | null; fields: DatabaseField[] }
+  ): Promise<DatabaseSchema> {
     const [newSchema] = await this.db
       .insert(databaseSchemas)
       .values({
         pageId,
-        createdBy: userId,
         name: schema.name,
+        description: schema.description ?? null,
         fields: schema.fields,
-        primaryDisplay: schema.primaryDisplay,
       })
       .returning();
     return newSchema;
   }
 
-  async getDatabaseSchema(schemaId: number) {
-    return await this.db.query.databaseSchemas.findFirst({
-      where: eq(databaseSchemas.id, schemaId),
-    });
+  async getDatabaseSchema(schemaId: number): Promise<DatabaseSchema | undefined> {
+    const [schema] = await this.db
+      .select()
+      .from(databaseSchemas)
+      .where(eq(databaseSchemas.id, schemaId));
+    return schema;
   }
 
   async updateDatabaseSchema(
     schemaId: number,
-    updates: { name?: string; fields?: any[]; primaryDisplay?: string }
-  ) {
+    updates: { name?: string; description?: string | null }
+  ): Promise<DatabaseSchema | undefined> {
     const [updated] = await this.db
       .update(databaseSchemas)
       .set({
@@ -2152,47 +2356,185 @@ export class DBStorage {
     return updated;
   }
 
+  /**
+   * Changes a schema's properties with the schema row locked, so concurrent property edits apply
+   * one after the other instead of overwriting each other. `plan` sees the locked schema and
+   * returns the new property list (see shared/inline-database.ts). Values of deleted properties
+   * are removed from every row in the same transaction; a type change that is not lossless is
+   * refused (409) while any row has a value for the property.
+   */
+  async mutateDatabaseFields(
+    schemaId: number,
+    plan: (schema: DatabaseSchema) => FieldPlan
+  ): Promise<
+    { ok: true; schema: DatabaseSchema } | { ok: false; status: 400 | 404 | 409; message: string }
+  > {
+    return this.db.transaction(async (tx: any) => {
+      const [schema] = await tx
+        .select()
+        .from(databaseSchemas)
+        .where(eq(databaseSchemas.id, schemaId))
+        .for('update');
+      if (!schema) return { ok: false, status: 404, message: 'Database not found' };
+      const outcome = plan(schema);
+      if (!outcome.ok) return outcome;
+      for (const fieldId of outcome.requireEmptyFieldIds) {
+        const [inUse] = await tx
+          .select({ id: databaseRows.id })
+          .from(databaseRows)
+          .where(and(eq(databaseRows.schemaId, schemaId), sql`${databaseRows.data} ? ${fieldId}`))
+          .limit(1);
+        if (inUse) {
+          return {
+            ok: false,
+            status: 409,
+            message: 'The property has values, so its type cannot change to this type',
+          };
+        }
+      }
+      for (const fieldId of outcome.removedFieldIds) {
+        await tx
+          .update(databaseRows)
+          .set({ data: sql`${databaseRows.data} - ${fieldId}::text` })
+          .where(and(eq(databaseRows.schemaId, schemaId), sql`${databaseRows.data} ? ${fieldId}`));
+      }
+      const [updated] = await tx
+        .update(databaseSchemas)
+        .set({ fields: outcome.fields, updatedAt: new Date() })
+        .where(eq(databaseSchemas.id, schemaId))
+        .returning();
+      return { ok: true, schema: updated };
+    });
+  }
+
   async deleteDatabaseSchema(schemaId: number) {
     await this.db.delete(databaseSchemas).where(eq(databaseSchemas.id, schemaId));
   }
 
   // ==================== Database Row Operations ====================
 
-  async createDatabaseRow(schemaId: number, userId: number, data: Record<string, any>) {
-    const [newRow] = await this.db
-      .insert(databaseRows)
-      .values({
-        schemaId,
-        createdBy: userId,
-        data,
-      })
-      .returning();
-    return newRow;
-  }
-
-  async getDatabaseRow(rowId: number) {
-    return await this.db.query.databaseRows.findFirst({
-      where: eq(databaseRows.id, rowId),
+  /**
+   * A new row at the end of its database, or null when the database already has `maxRows`
+   * rows. Creation is serialized per database (schema row lock) so the limit and the order hold,
+   * and `data` is checked against the locked properties (DatabasePropertiesChanged if a property
+   * changed since the caller validated it).
+   */
+  async createDatabaseRow(
+    schemaId: number,
+    userId: number | null,
+    data: DatabaseRowData,
+    maxRows: number
+  ): Promise<DatabaseRow | null> {
+    return this.db.transaction(async (tx: any) => {
+      const [schema] = await tx
+        .select({ fields: databaseSchemas.fields })
+        .from(databaseSchemas)
+        .where(eq(databaseSchemas.id, schemaId))
+        .for('update');
+      if (schema && !fitsDatabaseFields(schema.fields, data)) throw new DatabasePropertiesChanged();
+      const [stats] = await tx
+        .select({
+          count: sql<number>`count(*)::int`,
+          maxOrder: sql<number | null>`max(${databaseRows.orderIndex})`,
+        })
+        .from(databaseRows)
+        .where(eq(databaseRows.schemaId, schemaId));
+      if (Number(stats?.count ?? 0) >= maxRows) return null;
+      const [newRow] = await tx
+        .insert(databaseRows)
+        .values({
+          schemaId,
+          createdBy: userId,
+          data,
+          orderIndex: stats?.maxOrder == null ? 0 : Number(stats.maxOrder) + 1,
+        })
+        .returning();
+      return newRow;
     });
   }
 
-  async getDatabaseRows(schemaId: number) {
-    return await this.db.query.databaseRows.findMany({
-      where: eq(databaseRows.schemaId, schemaId),
-      orderBy: (rows: any, { desc }: any) => [desc(rows.createdAt)],
-    });
+  async getDatabaseRow(rowId: number): Promise<DatabaseRow | undefined> {
+    const [row] = await this.db.select().from(databaseRows).where(eq(databaseRows.id, rowId));
+    return row;
   }
 
-  async updateDatabaseRow(rowId: number, data: Record<string, any>) {
-    const [updated] = await this.db
-      .update(databaseRows)
-      .set({
-        data,
-        updatedAt: new Date(),
-      })
-      .where(eq(databaseRows.id, rowId))
-      .returning();
-    return updated;
+  /** A database's rows in their stored order. */
+  async getDatabaseRows(schemaId: number): Promise<DatabaseRow[]> {
+    return await this.db
+      .select()
+      .from(databaseRows)
+      .where(eq(databaseRows.schemaId, schemaId))
+      .orderBy(asc(databaseRows.orderIndex), asc(databaseRows.id));
+  }
+
+  /**
+   * Changes a row's cells and/or its place. `values` merges into the stored data (`null` clears
+   * a cell), so editors changing different cells of one row never undo each other. `place` moves
+   * the row right before or after another row of the same database and renumbers the database's
+   * order 0..n-1 in one statement, with the schema row locked. Cell changes hold the schema row
+   * with a share lock and are checked against its properties, so a concurrent property change or
+   * deletion comes first or after, never between (DatabasePropertiesChanged if they no longer
+   * fit).
+   */
+  async updateDatabaseRow(
+    rowId: number,
+    changes: {
+      values?: Record<string, DatabaseCellValue | null>;
+      place?: { beforeRowId: number } | { afterRowId: number };
+    }
+  ): Promise<{ ok: true; row: DatabaseRow } | { ok: false; status: 400 | 404; message: string }> {
+    return this.db.transaction(async (tx: any) => {
+      const [existing] = await tx.select().from(databaseRows).where(eq(databaseRows.id, rowId));
+      if (!existing) return { ok: false, status: 404, message: 'Database not found' };
+      const schemaId = existing.schemaId;
+      // Schema before rows, like every other database write, so locks are taken in one order.
+      const [schema] = await tx
+        .select({ fields: databaseSchemas.fields })
+        .from(databaseSchemas)
+        .where(eq(databaseSchemas.id, schemaId))
+        .for(changes.place ? 'update' : 'share');
+      const values = changes.values ?? {};
+      if (Object.keys(values).length > 0 && !fitsDatabaseFields(schema?.fields, values)) {
+        throw new DatabasePropertiesChanged();
+      }
+
+      if (changes.place) {
+        const ordered: Array<{ id: number }> = await tx
+          .select({ id: databaseRows.id })
+          .from(databaseRows)
+          .where(eq(databaseRows.schemaId, schemaId))
+          .orderBy(asc(databaseRows.orderIndex), asc(databaseRows.id));
+        const before = 'beforeRowId' in changes.place;
+        const anchorId =
+          'beforeRowId' in changes.place ? changes.place.beforeRowId : changes.place.afterRowId;
+        const ids = ordered.map((row) => row.id).filter((id) => id !== rowId);
+        const at = ids.indexOf(anchorId);
+        if (at === -1) {
+          return { ok: false, status: 400, message: 'The anchor row is not in this database' };
+        }
+        ids.splice(before ? at : at + 1, 0, rowId);
+        await tx.execute(sql`
+          UPDATE database_rows AS r
+          SET order_index = (v.ord - 1)::int
+          FROM jsonb_array_elements_text(${JSON.stringify(ids)}::jsonb) WITH ORDINALITY AS v(id, ord)
+          WHERE r.id = v.id::int AND r.schema_id = ${schemaId} AND r.order_index <> (v.ord - 1)
+        `);
+      }
+
+      const set: Record<string, unknown> = { updatedAt: new Date() };
+      const entries = Object.entries(changes.values ?? {});
+      if (entries.length > 0) {
+        const present = presentValues(changes.values ?? {});
+        const cleared = entries.filter(([, value]) => value === null).map(([key]) => key);
+        set.data = sql`(${databaseRows.data} || ${JSON.stringify(present)}::jsonb) - ARRAY(SELECT jsonb_array_elements_text(${JSON.stringify(cleared)}::jsonb))`;
+      }
+      const [row] = await tx
+        .update(databaseRows)
+        .set(set)
+        .where(eq(databaseRows.id, rowId))
+        .returning();
+      return { ok: true, row };
+    });
   }
 
   async deleteDatabaseRow(rowId: number) {
@@ -2201,35 +2543,85 @@ export class DBStorage {
 
   // ==================== Database Relations Operations ====================
 
+  /**
+   * Links a row to another row, or returns null when the source row already has `maxPerRow`
+   * relations. Links from one row are serialized by a transaction-scoped advisory lock on it, so
+   * concurrent links keep the cap. Not a row lock: the insert's foreign key checks take key-share
+   * locks on both rows and schemas, and a FOR UPDATE here deadlocked with a reverse link (B → A
+   * while A → B) or with a row move or property change in the source database.
+   */
   async addRelation(
     fromSchemaId: number,
     fromRowId: number,
     propertyName: string,
     toSchemaId: number,
-    toRowId: number
-  ) {
-    const [relation] = await this.db
-      .insert(databaseRelations)
-      .values({
-        fromSchemaId,
-        fromRowId,
-        propertyName,
-        toSchemaId,
-        toRowId,
-      })
-      .returning();
-    return relation;
+    toRowId: number,
+    maxPerRow: number = DATABASE_LIMITS.relationsPerRow
+  ): Promise<DatabaseRelation | null> {
+    return this.db.transaction(async (tx: any) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${`database-relations:${fromRowId}`}, 0))`
+      );
+      const [stats] = await tx
+        .select({ count: sql<number>`count(*)::int` })
+        .from(databaseRelations)
+        .where(eq(databaseRelations.fromRowId, fromRowId));
+      if (Number(stats?.count ?? 0) >= maxPerRow) return null;
+      const [relation] = await tx
+        .insert(databaseRelations)
+        .values({
+          fromSchemaId,
+          fromRowId,
+          propertyName,
+          toSchemaId,
+          toRowId,
+        })
+        .returning();
+      return relation;
+    });
   }
 
-  async getRelations(rowId: number, propertyName?: string) {
+  /**
+   * A row's relations with the database each target row really belongs to (`targetSchemaId`,
+   * read from the row). The stored `to_schema_id` is not trusted for access decisions: relations
+   * written before #113 could pair any schema id with any row.
+   */
+  async getRelationsWithTargets(
+    rowId: number,
+    propertyName?: string
+  ): Promise<Array<DatabaseRelation & { targetSchemaId: number }>> {
+    const conditions = [eq(databaseRelations.fromRowId, rowId)];
+    if (propertyName) {
+      conditions.push(eq(databaseRelations.propertyName, propertyName));
+    }
+    const rows: Array<{ relation: DatabaseRelation; targetSchemaId: number }> = await this.db
+      .select({ relation: databaseRelations, targetSchemaId: databaseRows.schemaId })
+      .from(databaseRelations)
+      .innerJoin(databaseRows, eq(databaseRows.id, databaseRelations.toRowId))
+      .where(and(...conditions))
+      .orderBy(asc(databaseRelations.id));
+    return rows.map(({ relation, targetSchemaId }) => ({ ...relation, targetSchemaId }));
+  }
+
+  async getRelations(rowId: number, propertyName?: string): Promise<DatabaseRelation[]> {
     const conditions = [eq(databaseRelations.fromRowId, rowId)];
     if (propertyName) {
       conditions.push(eq(databaseRelations.propertyName, propertyName));
     }
 
-    return await this.db.query.databaseRelations.findMany({
-      where: and(...conditions),
-    });
+    return await this.db
+      .select()
+      .from(databaseRelations)
+      .where(and(...conditions))
+      .orderBy(asc(databaseRelations.id));
+  }
+
+  async getDatabaseRelation(relationId: number): Promise<DatabaseRelation | undefined> {
+    const [relation] = await this.db
+      .select()
+      .from(databaseRelations)
+      .where(eq(databaseRelations.id, relationId));
+    return relation;
   }
 
   async deleteRelation(relationId: number) {
@@ -2237,7 +2629,9 @@ export class DBStorage {
   }
 
   /**
-   * Calculate rollup value based on relations
+   * Calculate rollup value based on relations. `targetSchemaIds` limits the rollup to related
+   * rows that really belong to those databases (the ones the caller may read): the row's own
+   * schema decides, never the relation's stored `to_schema_id`.
    */
   async calculateRollup(
     rowId: number,
@@ -2246,39 +2640,60 @@ export class DBStorage {
       relationField: string;
       targetField: string;
       aggregation: 'count' | 'sum' | 'avg' | 'min' | 'max' | 'unique';
-    }
+    },
+    targetSchemaIds?: number[]
   ) {
-    const relations = await this.getRelations(rowId, config.relationField);
+    // Related rows through a subquery (each row once), so no list of ids is sent as parameters.
+    const relatedIds = this.db
+      .select({ id: databaseRelations.toRowId })
+      .from(databaseRelations)
+      .where(
+        and(
+          eq(databaseRelations.fromRowId, rowId),
+          eq(databaseRelations.propertyName, config.relationField)
+        )
+      );
+    const conditions = [inArray(databaseRows.id, relatedIds)];
+    if (targetSchemaIds) conditions.push(inArray(databaseRows.schemaId, targetSchemaIds));
 
-    if (relations.length === 0) {
+    // Only the target property is read (`->` takes the row's own key, never an inherited one
+    // such as `constructor`), not every related row's whole data.
+    const relatedValues: Array<{ value: unknown }> =
+      targetSchemaIds?.length === 0
+        ? []
+        : await this.db
+            .select({ value: sql<unknown>`${databaseRows.data} -> ${config.targetField}` })
+            .from(databaseRows)
+            .where(and(...conditions));
+
+    const values = relatedValues
+      .map((row) => row.value)
+      .filter((v) => v !== null && v !== undefined);
+    if (values.length === 0) {
       return config.aggregation === 'count' ? 0 : null;
     }
-
-    // Get related rows data
-    const relatedRowIds = relations.map((r: any) => r.toRowId);
-    const relatedRows = await this.db.query.databaseRows.findMany({
-      where: sql`id = ANY(${relatedRowIds})`,
-    });
-
-    const values = relatedRows
-      .map((row: any) => row.data[config.targetField])
-      .filter((v: any) => v !== null && v !== undefined);
+    // Numeric aggregations use the finite numbers only. Min and max loop instead of spreading:
+    // spreading a large list into Math.min/Math.max overflows the call stack.
+    const numbers = values.map(Number).filter((value) => Number.isFinite(value));
+    const sum = numbers.reduce((total, value) => total + value, 0);
 
     switch (config.aggregation) {
       case 'count':
         return values.length;
       case 'sum':
-        return values.reduce((sum: number, val: any) => sum + Number(val), 0);
+        return sum;
       case 'avg':
-        return values.length > 0
-          ? values.reduce((sum: number, val: any) => sum + Number(val), 0) / values.length
-          : null;
+        return numbers.length > 0 ? sum / numbers.length : null;
       case 'min':
-        return values.length > 0 ? Math.min(...values.map(Number)) : null;
+        return numbers.length > 0
+          ? numbers.reduce((least, value) => (value < least ? value : least))
+          : null;
       case 'max':
-        return values.length > 0 ? Math.max(...values.map(Number)) : null;
+        return numbers.length > 0
+          ? numbers.reduce((most, value) => (value > most ? value : most))
+          : null;
       case 'unique':
-        return new Set(values).size;
+        return new Set(values.map((value) => JSON.stringify(value))).size;
       default:
         return null;
     }
@@ -2517,6 +2932,137 @@ export class DBStorage {
       if (isSlugUniqueViolation(error)) return { status: 'conflict' };
       throw error;
     }
+  }
+
+  // ---- Markdown vault export and import (#113 P2-D2); route rules in server/routes/vault.ts ----
+
+  /**
+   * Every live page of one workspace scope the viewer can read, with the fields the vault export
+   * writes (the tree fields as stored; `buildPageTree` applies the viewer's view of them).
+   */
+  async getVaultExportPages(viewer: PageViewer, teamId: number | null): Promise<VaultExportRow[]> {
+    return this.db
+      .select({
+        id: wikiPages.id,
+        title: wikiPages.title,
+        slug: wikiPages.slug,
+        icon: wikiPages.icon,
+        parentId: wikiPages.parentId,
+        position: wikiPages.position,
+        folder: wikiPages.folder,
+        teamId: wikiPages.teamId,
+        createdAt: wikiPages.createdAt,
+        updatedAt: wikiPages.updatedAt,
+        content: wikiPages.content,
+        tags: wikiPages.tags,
+      })
+      .from(wikiPages)
+      .where(this.readablePagesInScope(viewer, teamId));
+  }
+
+  /**
+   * Ids and titles of every live page of one scope the viewer can read, most recently updated
+   * first: the existing pages a vault import may link to.
+   */
+  async getReadablePageTitlesInScope(
+    viewer: PageViewer,
+    teamId: number | null
+  ): Promise<Array<{ id: number; title: string }>> {
+    return this.db
+      .select({ id: wikiPages.id, title: wikiPages.title })
+      .from(wikiPages)
+      .where(this.readablePagesInScope(viewer, teamId))
+      .orderBy(desc(wikiPages.updatedAt), desc(wikiPages.id));
+  }
+
+  /** `count` new page ids from the page id sequence (an import links pages before they exist). */
+  async reservePageIds(count: number): Promise<number[]> {
+    if (count <= 0) return [];
+    const result = await this.db.execute(
+      sql`SELECT nextval(pg_get_serial_sequence('wiki_pages', 'id'))::int AS id FROM generate_series(1, ${count})`
+    );
+    return result.rows.map((row: { id: number }) => Number(row.id));
+  }
+
+  /**
+   * Create the pages of a vault import in one transaction: either every page, its creator owner
+   * grant and its link index rows are stored, or nothing is. Pages are inserted in the given
+   * order (parents first) with ids from `reservePageIds`; a taken slug gets the next candidate,
+   * as in `createWikiPage`. Link targets that do not exist are skipped, as in `replacePageLinks`.
+   * Authorization is the caller's job.
+   */
+  async insertImportedPages(input: {
+    teamId: number | null;
+    userId: number;
+    author: string;
+    folder: string;
+    pages: Array<{
+      id: number;
+      title: string;
+      slug: string;
+      content: string;
+      tags: string[];
+      icon: string | null;
+      parentId: number | null;
+      linkTargets: number[];
+    }>;
+  }): Promise<Array<{ id: number; slug: string }>> {
+    if (input.pages.length === 0) return [];
+    return this.db.transaction(async (tx: any) => {
+      const created: Array<{ id: number; slug: string }> = [];
+      for (const page of input.pages) {
+        let row: { id: number; slug: string } | undefined;
+        const firstAttempt = isReservedDailyNoteSlug(page.slug) ? 1 : 0;
+        for (let attempt = firstAttempt; !row && attempt < MAX_SLUG_INSERT_ATTEMPTS; attempt += 1) {
+          [row] = await tx
+            .insert(wikiPages)
+            .values({
+              id: page.id,
+              title: page.title,
+              slug: buildUniqueSlugCandidate(page.slug, attempt),
+              content: page.content,
+              blocks: [],
+              folder: input.folder,
+              tags: page.tags,
+              author: input.author,
+              teamId: input.teamId,
+              parentId: page.parentId,
+              icon: page.icon,
+              isPublished: true,
+            })
+            .onConflictDoNothing({ target: wikiPages.slug })
+            .returning({ id: wikiPages.id, slug: wikiPages.slug });
+        }
+        if (!row) throw new Error('Failed to allocate a unique page slug');
+        created.push(row);
+      }
+
+      await tx.insert(pagePermissions).values(
+        input.pages.map((page) => ({
+          pageId: page.id,
+          entityType: 'user',
+          entityId: input.userId,
+          permission: 'owner',
+          grantedBy: input.userId,
+        }))
+      );
+
+      const links = input.pages.flatMap((page) =>
+        Array.from(new Set(page.linkTargets))
+          .filter((target) => Number.isInteger(target) && target > 0 && target !== page.id)
+          .slice(0, MAX_INDEXED_LINKS)
+          .map((target) => sql`(${page.id}::int, ${target}::int)`)
+      );
+      for (let i = 0; i < links.length; i += 1000) {
+        await tx.execute(sql`
+          INSERT INTO page_links (source_page_id, target_page_id)
+          SELECT link.source, link.target
+          FROM (VALUES ${sql.join(links.slice(i, i + 1000), sql`, `)}) AS link(source, target)
+          WHERE EXISTS (SELECT 1 FROM wiki_pages WHERE wiki_pages.id = link.target)
+          ON CONFLICT DO NOTHING`);
+      }
+      return created;
+    });
   }
 }
 

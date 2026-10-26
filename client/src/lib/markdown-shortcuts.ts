@@ -3,8 +3,8 @@ import type { BlockType } from '@shared/schema';
 /**
  * Markdown shortcuts in paragraph blocks (#111 §6): typing one of these prefixes at the very
  * start of a paragraph converts the block. Each prefix ends with the character that triggers
- * the conversion (a space, or the third backtick for code). There is no divider block, so `---`
- * is not offered.
+ * the conversion (a space, the third backtick for code, the third dash for a divider). A divider
+ * has no text, so `---` converts only an otherwise empty paragraph (#113 §1).
  */
 export const MARKDOWN_SHORTCUTS: ReadonlyArray<{ prefix: string; type: BlockType }> = [
   { prefix: '# ', type: 'heading1' },
@@ -17,6 +17,7 @@ export const MARKDOWN_SHORTCUTS: ReadonlyArray<{ prefix: string; type: BlockType
   { prefix: '[ ] ', type: 'checkbox' },
   { prefix: '> ', type: 'quote' },
   { prefix: '```', type: 'code' },
+  { prefix: '---', type: 'divider' },
 ];
 
 export interface MarkdownShortcutMatch {
@@ -48,5 +49,7 @@ export function matchMarkdownShortcut(
   const typed = next.slice(0, caret);
   const shortcut = MARKDOWN_SHORTCUTS.find(({ prefix }) => prefix === typed);
   if (!shortcut) return null;
-  return { type: shortcut.type, prefix: shortcut.prefix, content: next.slice(caret) };
+  const content = next.slice(caret);
+  if (shortcut.type === 'divider' && content !== '') return null;
+  return { type: shortcut.type, prefix: shortcut.prefix, content };
 }

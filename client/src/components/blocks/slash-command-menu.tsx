@@ -19,6 +19,8 @@ import {
   Heading1,
   Heading2,
   Heading3,
+  Minus,
+  Database,
 } from 'lucide-react';
 
 export interface SlashCommandItem {
@@ -94,6 +96,14 @@ const SLASH_COMMANDS: SlashCommandItem[] = [
     keywords: ['quote', 'blockquote', '인용', '인용구'],
   },
   {
+    // Divider (#113 §1): a horizontal rule, `---` in the page's Markdown.
+    type: 'divider',
+    label: '구분선',
+    description: '내용을 나누는 가로선 (--- 입력)',
+    icon: <Minus className="h-4 w-4" />,
+    keywords: ['divider', 'separator', 'hr', 'line', 'rule', '---', '구분선', '구분', '선'],
+  },
+  {
     type: 'callout',
     label: '콜아웃',
     description: '아이콘과 색상이 있는 강조 블록',
@@ -134,6 +144,14 @@ const SLASH_COMMANDS: SlashCommandItem[] = [
     description: '외부 콘텐츠 (YouTube, Figma 등)',
     icon: <Video className="h-4 w-4" />,
     keywords: ['embed', 'youtube', 'figma', 'iframe', '임베드'],
+  },
+  {
+    // An inline database owned by this page (#113 §4).
+    type: 'database_inline',
+    label: '데이터베이스',
+    description: '표와 보드로 보는 인라인 데이터베이스',
+    icon: <Database className="h-4 w-4" />,
+    keywords: ['database', 'db', 'table', 'board', 'kanban', '데이터베이스', '보드', '칸반'],
   },
   {
     type: 'mention',

@@ -83,6 +83,15 @@ test('link a page with @, see the chip and the backlink, and a rename everywhere
     const stored = await (await api.get(`/api/pages/${source.id}`)).json();
     expect(stored.content).toContain(`[[page:${target.id}]]`);
     expect(stored.content).not.toContain(renamed);
+
+    // Keyboard: Tab from the text being edited reaches the link row under it (the block stays
+    // in edit mode), and Enter opens the link.
+    await body.focus();
+    await page.keyboard.press('Tab');
+    const rowChip = page.locator('[data-page-body]').getByRole('link', { name: renamed });
+    await expect(rowChip).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(new RegExp(`/page/${target.slug}$`));
   } finally {
     await api.delete(`/api/pages/${source.id}`).catch(() => {});
     await api.delete(`/api/pages/${target.id}`).catch(() => {});
