@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { markdownToHtml } from '../../client/src/lib/markdown';
+import { extractHeadings, markdownToHtml } from '../../client/src/lib/markdown';
 
 // Issue #113 §2: the reader shows `#tags` as links to the tag's document list, with the same
 // rules as the editor preview. Display only: the page's stored tags do not change.
@@ -22,7 +22,13 @@ describe('#tags in rendered Markdown', () => {
     expect(await render('#회의 and **#bold** text')).toBe(
       '<p><tag:회의> and <strong><tag:bold></strong> text</p>'
     );
-    expect(await render('## Plan #draft')).toBe('<h2>Plan <tag:draft></h2>');
+    // Headings keep their table-of-contents anchor (#113 §1), and the TOC names the same id.
+    expect(await render('## Plan #draft')).toBe(
+      '<h2 id="heading-plan-draft">Plan <tag:draft></h2>'
+    );
+    expect(extractHeadings('## Plan #draft').map((heading) => heading.id)).toEqual([
+      'heading-plan-draft',
+    ]);
     expect(await render('- #a\n\n> #b')).toBe(
       '<ul>\n<li><tag:a></li>\n</ul>\n<blockquote>\n<p><tag:b></p>\n</blockquote>'
     );
