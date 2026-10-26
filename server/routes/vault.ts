@@ -42,6 +42,12 @@ import logger from '../services/logger.js';
 const MULTIPART_OVERHEAD_BYTES = 512 * 1024;
 /** Ids per link lookup when the export resolves links to pages outside it. */
 const LINK_LOOKUP_BATCH = 1000;
+/**
+ * The largest export built in one request. The archive is assembled in memory and the ZIP format
+ * used (no ZIP64) stops at 65,535 entries and 4 GB, so a bigger scope is refused with 413.
+ */
+const MAX_EXPORT_PAGES = 20_000;
+const MAX_EXPORT_CONTENT_BYTES = 256 * 1024 * 1024;
 /** Unresolved links listed in an import summary (the count covers all of them). */
 const MAX_UNRESOLVED_LISTED = 100;
 const IMPORT_FOLDER = 'docs';
@@ -124,6 +130,13 @@ export function registerVaultRoutes(app: Express, storage: DBStorage) {
       if (!scope.ok) return res.status(scope.status).json({ message: scope.message });
 
       const rows = await storage.getVaultExportPages(scope.viewer, scope.teamId);
+      const contentBytes = rows.reduce(
+        (total, row) => total + Buffer.byteLength(row.content ?? ''),
+        0
+      );
+      if (rows.length > MAX_EXPORT_PAGES || contentBytes > MAX_EXPORT_CONTENT_BYTES) {
+        return res.status(413).json({ message: 'This workspace is too large to export at once' });
+      }
       // Titles of linked pages outside the export, readable ones only (one batched lookup).
       const outside = outsideLinkIds(rows);
       const outsideTitles = new Map<number, string>();

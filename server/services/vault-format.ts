@@ -154,7 +154,16 @@ function parseScalar(raw: string): string | null {
   }
   // Block scalars, anchors, aliases and tags are not part of the subset.
   if (/^[|>&*!]/.test(text)) return null;
-  return text.replace(/\s+#.*$/, '').trim();
+  return stripComment(text).trim();
+}
+
+/**
+ * `text` without a trailing comment (a `#` after whitespace). One linear search: a pattern like
+ * `\s+#.*$` backtracks quadratically on long runs of spaces in untrusted files.
+ */
+function stripComment(text: string): string {
+  const comment = /\s#/.exec(text);
+  return comment ? text.slice(0, comment.index) : text;
 }
 
 /** Items of a `[a, "b, c", 'd']` flow list. */
@@ -189,6 +198,7 @@ function parseFlowList(raw: string): string[] | null {
 }
 
 const FRONTMATTER_KEY = /^([A-Za-z_][\w-]*)\s*:(?:\s+(.*))?$/;
+const MAX_FRONTMATTER_LINE = 4096;
 const BLOCK_LIST_ITEM = /^\s*-\s+(.*)$/;
 
 /**
@@ -213,6 +223,8 @@ export function parseFrontmatter(text: string): {
   const body = rest.slice(close.index + close[0].length).replace(/^\r?\n/, '');
   let listKey: string | null = null;
   for (const line of lines) {
+    // No frontmatter field we read needs a long line; skipping them bounds the parser's work.
+    if (line.length > MAX_FRONTMATTER_LINE) continue;
     if (!line.trim() || line.trimStart().startsWith('#')) continue;
     const item = listKey !== null ? BLOCK_LIST_ITEM.exec(line) : null;
     if (item && listKey !== null) {
@@ -299,35 +311,32 @@ export function mapOutsideCode(text: string, transform: (prose: string) => strin
 }
 
 function mapOutsideInlineCode(text: string, transform: (prose: string) => string): string {
+  // A code span closes at the next run of exactly as many backticks. Index every run once, with
+  // the next run of the same length, so unmatched runs cost nothing extra (linear overall).
+  const runs: Array<{ start: number; length: number }> = [];
+  for (let at = text.indexOf('`'); at >= 0; ) {
+    let length = 1;
+    while (text[at + length] === '`') length += 1;
+    runs.push({ start: at, length });
+    at = text.indexOf('`', at + length);
+  }
+  const nextSameLength = new Array<number>(runs.length).fill(-1);
+  const latest = new Map<number, number>();
+  for (let k = runs.length - 1; k >= 0; k -= 1) {
+    nextSameLength[k] = latest.get(runs[k].length) ?? -1;
+    latest.set(runs[k].length, k);
+  }
+
   let output = '';
   let last = 0;
-  let at = 0;
-  while (at < text.length) {
-    const open = text.indexOf('`', at);
-    if (open < 0) break;
-    let length = 1;
-    while (text[open + length] === '`') length += 1;
-    // The span closes at the next run of exactly as many backticks.
-    let search = open + length;
-    let close = -1;
-    while (search < text.length) {
-      const next = text.indexOf('`', search);
-      if (next < 0) break;
-      let run = 1;
-      while (text[next + run] === '`') run += 1;
-      if (run === length) {
-        close = next;
-        break;
-      }
-      search = next + run;
-    }
-    if (close < 0) {
-      at = open + length; // unmatched backticks are literal text
-      continue;
-    }
-    output += transform(text.slice(last, open)) + text.slice(open, close + length);
-    last = close + length;
-    at = last;
+  for (let k = 0; k < runs.length; k += 1) {
+    const closeAt = nextSameLength[k];
+    if (closeAt < 0) continue; // unmatched backticks are literal text
+    const open = runs[k];
+    const end = runs[closeAt].start + runs[closeAt].length;
+    output += transform(text.slice(last, open.start)) + text.slice(open.start, end);
+    last = end;
+    k = closeAt;
   }
   return output + transform(text.slice(last));
 }

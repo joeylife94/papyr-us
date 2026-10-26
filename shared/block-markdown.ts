@@ -485,7 +485,8 @@ export function markdownToBlocks(markdown: string, options: { idPrefix?: string 
     });
     from = frontmatter + 1;
   }
-  parsed.push(...parseMarkdown(lines, from));
+  // Not `push(...blocks)`: spreading a huge document's blocks overflows the call stack.
+  for (const block of parseMarkdown(lines, from)) parsed.push(block);
   if (parsed.length === 0) parsed.push({ type: 'paragraph', content: '', properties: {} });
 
   const prefix = options.idPrefix ?? 'block_md';

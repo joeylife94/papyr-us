@@ -88,8 +88,53 @@ function runLength(source: string, index: number, end: number, char: string): nu
   return cursor - index;
 }
 
+/**
+ * Backtick runs of `source[0, end)`, each with the index of the next run of the same length, built
+ * once per source and range. A code span closes at the next run of exactly its size, so this makes
+ * every lookup O(1) instead of rescanning the rest of the text for each unmatched run.
+ */
+interface CodeRuns {
+  source: string;
+  end: number;
+  runAt: Map<number, number>;
+  starts: number[];
+  nextSameLength: number[];
+}
+let codeRunsCache: CodeRuns | null = null;
+
+function codeRunsFor(source: string, end: number): CodeRuns {
+  if (codeRunsCache && codeRunsCache.source === source && codeRunsCache.end === end) {
+    return codeRunsCache;
+  }
+  const runAt = new Map<number, number>();
+  const starts: number[] = [];
+  const lengths: number[] = [];
+  for (let at = source.indexOf('`'); at >= 0 && at < end; ) {
+    const length = runLength(source, at, end, '`');
+    runAt.set(at, starts.length);
+    starts.push(at);
+    lengths.push(length);
+    at = source.indexOf('`', at + length);
+  }
+  const nextSameLength = new Array<number>(starts.length).fill(-1);
+  const latest = new Map<number, number>();
+  for (let k = starts.length - 1; k >= 0; k--) {
+    nextSameLength[k] = latest.get(lengths[k]) ?? -1;
+    latest.set(lengths[k], k);
+  }
+  codeRunsCache = { source, end, runAt, starts, nextSameLength };
+  return codeRunsCache;
+}
+
 /** Start of the backtick run of exactly `size` that closes a code span, or -1. */
 function findCodeClose(source: string, from: number, end: number, size: number): number {
+  // Callers pass the position right after a whole opening run: answer from the run index.
+  const runs = codeRunsFor(source, end);
+  const opener = runs.runAt.get(from - size);
+  if (opener !== undefined) {
+    const close = runs.nextSameLength[opener];
+    return close < 0 ? -1 : runs.starts[close];
+  }
   let cursor = from;
   while (cursor < end) {
     if (source[cursor] !== '`') {
@@ -142,10 +187,31 @@ interface LinkMatch {
   end: number;
 }
 
+let linkCloseCache: { source: string; from: number; at: number } | null = null;
+
+/**
+ * The next `](` at or after `index`. Consecutive `[` share one search (the answer cannot change
+ * until `index` passes it), so a text full of unmatched `[` stays linear.
+ */
+function nextLinkClose(source: string, index: number): number {
+  const cache = linkCloseCache;
+  if (
+    cache &&
+    cache.source === source &&
+    cache.from <= index &&
+    (cache.at < 0 || cache.at >= index)
+  ) {
+    return cache.at;
+  }
+  const at = source.indexOf('](', index);
+  linkCloseCache = { source, from: index, at };
+  return at;
+}
+
 /** `[text](destination "title")` starting at `index`, or null. */
 function matchLink(source: string, index: number, end: number): LinkMatch | null {
   const textLimit = Math.min(end, index + MAX_LINK_TEXT);
-  const closing = source.indexOf('](', index);
+  const closing = nextLinkClose(source, index);
   if (closing < 0 || closing >= textLimit) return null;
   let depth = 0;
   let cursor = index;
