@@ -105,6 +105,13 @@ describe('0019 page icon migration (real Postgres)', () => {
   });
 
   it('DBStorage reads, sets and clears the icon', async () => {
+    // DBStorage reads the current schema, which also has the later E5 column.
+    await scoped.query(
+      readFileSync(
+        new URL('../../drizzle/0020_add_wiki_pages_position.sql', import.meta.url),
+        'utf8'
+      )
+    );
     process.env.DATABASE_URL = scopedUrl;
     const { DBStorage } = await import('../../server/storage.js');
     storage = new DBStorage();

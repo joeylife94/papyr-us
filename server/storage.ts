@@ -77,6 +77,7 @@ import { eq, like, and, or, sql, desc, asc, isNull, inArray, type SQL } from 'dr
 import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 import type { RetrievedPageRow } from './services/retrieval.js';
+import type { PageTreeRow } from './services/page-tree.js';
 
 // Helper: detect if a string looks like a bcrypt hash
 function isBcryptHash(value: string): boolean {
@@ -485,6 +486,151 @@ export class DBStorage {
         and(eq(wikiPages.parentId, parentId), isNull(wikiPages.deletedAt), this.listableBy(viewer))
       )
       .orderBy(desc(wikiPages.updatedAt));
+  }
+
+  /**
+   * Rows for the page tree (issue #103 E5): live pages the viewer may list, optionally limited to
+   * one team or to personal (team-less) pages. Nesting and the hidden-parent rule live in
+   * server/services/page-tree.ts.
+   */
+  async getReadablePageTreeRows(
+    userId: number | undefined,
+    scope: { teamId?: number; personalOnly?: boolean } = {},
+    viewerOverride?: PageViewer
+  ): Promise<PageTreeRow[]> {
+    const viewer = viewerOverride ?? (await this.getPageViewer(userId));
+    const conditions: SQL[] = [isNull(wikiPages.deletedAt), this.listableBy(viewer)];
+    if (scope.teamId !== undefined) conditions.push(eq(wikiPages.teamId, scope.teamId));
+    if (scope.personalOnly) conditions.push(isNull(wikiPages.teamId));
+    return this.db
+      .select({
+        id: wikiPages.id,
+        title: wikiPages.title,
+        slug: wikiPages.slug,
+        icon: wikiPages.icon,
+        parentId: wikiPages.parentId,
+        position: wikiPages.position,
+        folder: wikiPages.folder,
+        teamId: wikiPages.teamId,
+        updatedAt: wikiPages.updatedAt,
+        createdAt: wikiPages.createdAt,
+      })
+      .from(wikiPages)
+      .where(and(...conditions))
+      .limit(5000);
+  }
+
+  /** Ids of every live descendant of a page, readable or not (for move and trash rules). */
+  async getLiveDescendantIds(pageId: number): Promise<number[]> {
+    const { rows } = await this.pool.query(
+      `WITH RECURSIVE sub AS (
+         SELECT id FROM wiki_pages WHERE parent_id = $1 AND deleted_at IS NULL
+         UNION
+         SELECT w.id FROM wiki_pages w JOIN sub ON w.parent_id = sub.id
+          WHERE w.deleted_at IS NULL
+       )
+       SELECT id FROM sub`,
+      [pageId]
+    );
+    return rows.map((r: { id: number }) => r.id).filter((id: number) => id !== pageId);
+  }
+
+  /**
+   * Ids of every descendant of a page, trashed ones included (restoring a trashed page brings
+   * its links back, so cycle checks must see through it).
+   */
+  async getAllDescendantIds(pageId: number): Promise<number[]> {
+    const { rows } = await this.pool.query(
+      `WITH RECURSIVE sub AS (
+         SELECT id FROM wiki_pages WHERE parent_id = $1
+         UNION
+         SELECT w.id FROM wiki_pages w JOIN sub ON w.parent_id = sub.id
+       )
+       SELECT id FROM sub`,
+      [pageId]
+    );
+    return rows.map((r: { id: number }) => r.id).filter((id: number) => id !== pageId);
+  }
+
+  /**
+   * The siblings the viewer can see under `parentId` (null = root) in one team or among personal
+   * pages, in tree order. Only these are renumbered on a move, so a move never writes to pages
+   * the viewer cannot read.
+   */
+  async getReadableSiblingIds(
+    userId: number | undefined,
+    parentId: number | null,
+    teamId: number | null
+  ): Promise<number[]> {
+    const viewer = await this.getPageViewer(userId);
+    const rows = await this.db
+      .select({ id: wikiPages.id })
+      .from(wikiPages)
+      .where(
+        and(
+          isNull(wikiPages.deletedAt),
+          parentId === null ? isNull(wikiPages.parentId) : eq(wikiPages.parentId, parentId),
+          teamId === null ? isNull(wikiPages.teamId) : eq(wikiPages.teamId, teamId),
+          this.listableBy(viewer)
+        )
+      )
+      .orderBy(
+        sql`${wikiPages.position} ASC NULLS LAST`,
+        asc(wikiPages.createdAt),
+        asc(wikiPages.id)
+      );
+    return rows.map((r: { id: number }) => r.id);
+  }
+
+  /** Put `pageId` under `parentId` and number `orderedIds` (its new siblings, itself included). */
+  async placePageInTree(
+    pageId: number,
+    parentId: number | null,
+    orderedIds: number[]
+  ): Promise<void> {
+    await this.db.transaction(async (tx: any) => {
+      await tx.update(wikiPages).set({ parentId }).where(eq(wikiPages.id, pageId));
+      for (const [index, id] of orderedIds.entries()) {
+        await tx.update(wikiPages).set({ position: index }).where(eq(wikiPages.id, id));
+      }
+    });
+  }
+
+  /** Trash several pages at one instant, so a later restore can tell they went together. */
+  async trashPages(ids: number[]): Promise<number> {
+    if (ids.length === 0) return 0;
+    const result = await this.db
+      .update(wikiPages)
+      .set({ deletedAt: new Date() })
+      .where(and(inArray(wikiPages.id, ids), isNull(wikiPages.deletedAt)))
+      .returning({ id: wikiPages.id });
+    return result.length;
+  }
+
+  /** A trashed page plus the descendants trashed in the same delete (same deleted_at). */
+  async getTrashedTogetherIds(pageId: number): Promise<number[]> {
+    const { rows } = await this.pool.query(
+      `WITH RECURSIVE sub AS (
+         SELECT id, deleted_at FROM wiki_pages WHERE id = $1
+         UNION
+         SELECT w.id, w.deleted_at FROM wiki_pages w JOIN sub ON w.parent_id = sub.id
+       )
+       SELECT id FROM sub
+        WHERE deleted_at IS NOT NULL
+          AND deleted_at = (SELECT deleted_at FROM wiki_pages WHERE id = $1)`,
+      [pageId]
+    );
+    return rows.map((r: { id: number }) => r.id);
+  }
+
+  async restorePages(ids: number[]): Promise<number> {
+    if (ids.length === 0) return 0;
+    const result = await this.db
+      .update(wikiPages)
+      .set({ deletedAt: null })
+      .where(inArray(wikiPages.id, ids))
+      .returning({ id: wikiPages.id });
+    return result.length;
   }
 
   async getReadableTags(userId: number): Promise<Tag[]> {

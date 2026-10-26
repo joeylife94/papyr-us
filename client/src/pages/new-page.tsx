@@ -17,6 +17,8 @@ import type { Block, WikiPage } from '@shared/schema';
 interface NewPageProps {
   teamName?: string;
   initialFolder?: string;
+  /** Create the page as a child of this page (issue #103 E5). */
+  parentId?: number;
 }
 
 const CREATE_DELAY_MS = 600;
@@ -28,7 +30,7 @@ const RETRY_MAX_MS = 30000;
  * then the page is created with the current content and the view moves to `/page/:slug`, where
  * editing continues with autosave.
  */
-export default function NewPage({ teamName, initialFolder = 'docs' }: NewPageProps) {
+export default function NewPage({ teamName, initialFolder = 'docs', parentId }: NewPageProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
@@ -96,6 +98,7 @@ export default function NewPage({ teamName, initialFolder = 'docs' }: NewPagePro
       ...(sent.icon ? { icon: sent.icon } : {}),
       author: user?.name || getUserName() || 'User',
       ...(resolvedTeamId ? { teamId: resolvedTeamId } : {}),
+      ...(parentId ? { parentId } : {}),
     };
     try {
       const res = await fetch('/api/pages', {

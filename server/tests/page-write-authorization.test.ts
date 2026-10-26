@@ -287,11 +287,12 @@ describe('Trash writes need owner', () => {
   it('restores a trashed page for its owner only', async () => {
     const denied = await request(app).post(`/api/trash/${PAGE_A}/restore`).set(as(EDITOR));
     expect(denied.status).toBe(403);
-    expect(storage.restoreWikiPage).not.toHaveBeenCalled();
+    expect(storage.restorePages).not.toHaveBeenCalled();
 
     const ok = await request(app).post(`/api/trash/${PAGE_A}/restore`).set(as(OWNER));
     expect(ok.status).toBe(200);
-    expect(storage.restoreWikiPage).toHaveBeenCalledWith(PAGE_A);
+    // The page comes back with whatever was trashed together with it (here, nothing else).
+    expect(storage.restorePages).toHaveBeenCalledWith([PAGE_A]);
   });
 
   it('permanently deletes a trashed page for its owner only', async () => {
