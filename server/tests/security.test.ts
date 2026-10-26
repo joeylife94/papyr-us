@@ -638,7 +638,7 @@ describe('4-4  AI and aggregate routes scope', () => {
     });
 
     it('GET /api/knowledge-graph — allows user to query their own team', async () => {
-      storage.searchWikiPages.mockResolvedValue({ pages: [] });
+      storage.getKnowledgeGraphSource.mockResolvedValue({ pages: [], links: [] });
       const res = await request(app)
         .get(`/api/knowledge-graph?teamId=${TEAM_A_ID}`)
         .set(auth(tokenA));
