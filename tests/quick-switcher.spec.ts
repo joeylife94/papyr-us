@@ -145,6 +145,60 @@ test('quick switcher opens existing pages and creates new ones in the current sc
   }
 });
 
+test('a choice made while the search is still loading is kept', async ({ page, request }) => {
+  const user = await registerTestUser(request, 'switcher-pending');
+  const api = await createAuthenticatedApiContext(user.email, user.password);
+  const stamp = Date.now();
+  const typed = `Pending Plan ${stamp}`;
+  // A page whose title contains the typed one: the first result once the search returns.
+  const partial = await api.post('/api/pages', {
+    data: {
+      title: `${typed} archive`,
+      slug: `pending-plan-archive-${stamp}`,
+      content: 'Archive body',
+      folder: 'docs',
+      author: user.email,
+      tags: [],
+    },
+  });
+  expect(partial.status()).toBe(201);
+
+  try {
+    await loginPageWithCookies(page, user.email, user.password);
+    await page.goto('/');
+    await expect(page.getByRole('link', { name: '새 문서 작성' }).first()).toBeVisible();
+
+    // Hold the search for the typed title until the choice has been made.
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    await page.route('**/api/page-links/search?*', async (route) => {
+      if (new URL(route.request().url()).searchParams.get('q') === typed) await held;
+      await route.continue();
+    });
+
+    await openWithShortcut(page);
+    await switcher(page).fill(typed);
+    const createOption = page.getByRole('option', { name: `새 문서: ${typed}` });
+    await expect(createOption).toBeVisible();
+    await page.keyboard.press('ArrowUp'); // wraps to the last option: "새 문서"
+    await expect(createOption).toHaveAttribute('aria-selected', 'true');
+    const createResponse = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === '/api/pages' && response.request().method() === 'POST'
+    );
+    await page.keyboard.press('Enter');
+    release();
+
+    // The typed title is created, not the page that only contains it opened.
+    const created = await (await createResponse).json();
+    expect(created.title).toBe(typed);
+    await expect(page).toHaveURL(new RegExp(`/page/${created.slug}$`));
+    await expect(page.getByTestId('page-title')).toHaveText(typed);
+  } finally {
+    await api.dispose();
+  }
+});
+
 test('quick switcher searches and creates inside the team of a team route', async ({
   page,
   request,
