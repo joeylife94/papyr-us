@@ -129,6 +129,7 @@ export interface PageTitleMatch {
 }
 
 const MAX_SLUG_INSERT_ATTEMPTS = 100;
+const RESOLVE_LINKS_BATCH = 1000;
 
 function isTeamPagesForeignKeyViolation(error: unknown): boolean {
   const dbError = error as { code?: string; constraint?: string } | null;
@@ -607,16 +608,29 @@ export class DBStorage {
     viewer: PageViewer,
     ids: number[]
   ): Promise<Array<Pick<PageTitleMatch, 'id' | 'title' | 'slug' | 'icon'>>> {
-    if (ids.length === 0) return [];
-    return this.db
-      .select({
-        id: wikiPages.id,
-        title: wikiPages.title,
-        slug: wikiPages.slug,
-        icon: wikiPages.icon,
-      })
-      .from(wikiPages)
-      .where(and(inArray(wikiPages.id, ids), isNull(wikiPages.deletedAt), this.readableBy(viewer)));
+    const unique = Array.from(new Set(ids));
+    const found: Array<Pick<PageTitleMatch, 'id' | 'title' | 'slug' | 'icon'>> = [];
+    // Batches keep every query far below Postgres' bind-parameter limit, however many links a
+    // page holds.
+    for (let at = 0; at < unique.length; at += RESOLVE_LINKS_BATCH) {
+      const rows = await this.db
+        .select({
+          id: wikiPages.id,
+          title: wikiPages.title,
+          slug: wikiPages.slug,
+          icon: wikiPages.icon,
+        })
+        .from(wikiPages)
+        .where(
+          and(
+            inArray(wikiPages.id, unique.slice(at, at + RESOLVE_LINKS_BATCH)),
+            isNull(wikiPages.deletedAt),
+            this.readableBy(viewer)
+          )
+        );
+      for (const row of rows) found.push(row);
+    }
+    return found;
   }
 
   /**

@@ -122,6 +122,19 @@ function normalizeTaskDueDate(body: Record<string, unknown>): Record<string, unk
   return { ...body, dueDate: body.dueDate === '' ? null : new Date(body.dueDate) };
 }
 
+/**
+ * `Content-Disposition: attachment` for any file name: an ASCII fallback plus the UTF-8 name
+ * (RFC 5987). A raw non-Latin-1 name, such as a Korean slug, is an invalid header value.
+ */
+export function attachmentDisposition(filename: string): string {
+  const fallback = filename.replace(/[^\x20-\x7e]|["\\]/g, '_');
+  const encoded = encodeURIComponent(filename).replace(
+    /['()*]/g,
+    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`
+  );
+  return `attachment; filename="${fallback}"; filename*=UTF-8''${encoded}`;
+}
+
 // Response body for a failed request. Validation failures keep their Zod issues, which only
 // describe the client's own input. Anything else (e.g. a database driver error carrying the
 // SQL text and parameters) is logged here and never sent to the client.
@@ -5195,7 +5208,8 @@ export async function registerRoutes(
           case 'md': {
             const markdown = singlePageMarkdown(page, linkedTitles);
             res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
-            res.setHeader('Content-Disposition', `attachment; filename="${page.slug}.md"`);
+            // RFC 5987 encoding: a raw non-Latin-1 slug (e.g. Korean) is an invalid header.
+            res.setHeader('Content-Disposition', attachmentDisposition(`${page.slug}.md`));
             return res.send(markdown);
           }
 
@@ -5236,7 +5250,8 @@ export async function registerRoutes(
 </html>`;
 
             res.setHeader('Content-Type', 'text/html; charset=utf-8');
-            res.setHeader('Content-Disposition', `attachment; filename="${page.slug}.html"`);
+            // RFC 5987 encoding: a raw non-Latin-1 slug (e.g. Korean) is an invalid header.
+            res.setHeader('Content-Disposition', attachmentDisposition(`${page.slug}.html`));
             return res.send(html);
           }
 
@@ -5255,7 +5270,8 @@ export async function registerRoutes(
             };
 
             res.setHeader('Content-Type', 'application/json; charset=utf-8');
-            res.setHeader('Content-Disposition', `attachment; filename="${page.slug}.json"`);
+            // RFC 5987 encoding: a raw non-Latin-1 slug (e.g. Korean) is an invalid header.
+            res.setHeader('Content-Disposition', attachmentDisposition(`${page.slug}.json`));
             return res.json(exportData);
           }
 
