@@ -12,7 +12,8 @@
  * - `bulleted_list`: `- `; `numbered_list`: `1. `, `2. ` … counting each run of consecutive
  *   items from 1, like the editor; `checkbox`: `- [ ] ` / `- [x] ` (`properties.checked`).
  *   Continuation lines are indented to the item's content column, so a multi-line item stays
- *   one item.
+ *   one item. A bulleted run right after a to-do run (or the reverse) uses `*` instead of `-`:
+ *   Markdown would otherwise merge the two into one loose list.
  * - `quote`: `> ` on every line (`>` on empty ones).
  * - `code`: a fenced block with `properties.language`. The fence is longer than any backtick run
  *   in the code, so the code can never close it.
@@ -99,7 +100,10 @@ function codeMarkdown(text: string, language: unknown): string {
   return text ? `${open}\n${text}\n${fence}` : `${open}\n${fence}`;
 }
 
-function blockMarkdown(block: unknown, listNumber: number): string {
+/** Bullet-style lists: a bulleted run next to a to-do run needs another marker to stay apart. */
+const BULLET_TYPES: ReadonlySet<string> = new Set(['bulleted_list', 'checkbox']);
+
+function blockMarkdown(block: unknown, listNumber: number, bullet: '-' | '*'): string {
   const text = blockText(block);
   switch (blockType(block)) {
     case 'heading1':
@@ -109,12 +113,12 @@ function blockMarkdown(block: unknown, listNumber: number): string {
     case 'heading3':
       return headingMarkdown(3, text);
     case 'bulleted_list':
-      return listItemMarkdown('-', 2, text);
+      return listItemMarkdown(bullet, 2, text);
     case 'numbered_list':
       return listItemMarkdown(`${listNumber}.`, `${listNumber}. `.length, text);
     case 'checkbox':
       // The to-do marker is part of the item's text; continuation lines align with `- `.
-      return listItemMarkdown(blockProperties(block).checked ? '- [x]' : '- [ ]', 2, text);
+      return listItemMarkdown(`${bullet} [${blockProperties(block).checked ? 'x' : ' '}]`, 2, text);
     case 'quote':
       return text
         .split('\n')
@@ -147,14 +151,23 @@ export function blocksToMarkdownWithRanges(blocks: readonly unknown[]): {
   const ranges: BlockMarkdownRange[] = [];
   let previousType: string | undefined;
   let listNumber = 0;
+  let bullet: '-' | '*' = '-';
   blocks.forEach((block, index) => {
     const type = blockType(block);
     const continuesList =
       index > 0 && type !== undefined && LIST_TYPES.has(type) && type === previousType;
     listNumber = type === 'numbered_list' ? (continuesList ? listNumber + 1 : 1) : 0;
+    if (!continuesList) {
+      const followsOtherBullets =
+        type !== undefined &&
+        BULLET_TYPES.has(type) &&
+        previousType !== undefined &&
+        BULLET_TYPES.has(previousType);
+      bullet = followsOtherBullets && bullet === '-' ? '*' : '-';
+    }
     if (index > 0) markdown += continuesList ? '\n' : '\n\n';
     const start = markdown.length;
-    markdown += blockMarkdown(block, listNumber);
+    markdown += blockMarkdown(block, listNumber, bullet);
     ranges.push({ start, end: markdown.length });
     previousType = type;
   });

@@ -94,7 +94,7 @@ describe('derivePageContent', () => {
       },
       { id: 'd', type: 'divider', content: '', properties: {}, order: 4, children: [] },
     ] as Block[];
-    const content = '## Plan\n\n- a\n- b\n\n- [x] ship\n\n---';
+    const content = '## Plan\n\n- a\n- b\n\n* [x] ship\n\n---';
     expect(derivePageContent(blocks)).toBe(content);
     expect(blocksToContent(blocks)).toBe(content);
   });
