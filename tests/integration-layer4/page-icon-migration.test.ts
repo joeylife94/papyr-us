@@ -1,19 +1,15 @@
 /**
- * Layer 4: page icons against real Postgres (issue #103 E4).
+ * Layer 4: the page icon migration against real Postgres (issue #103 E4).
  *
- * Invariants proven here:
- *   - drizzle/0019_add_page_icon.sql is additive: on a table as it was before the migration,
- *     every existing row keeps every value (updated_at and the FTS vector included), gains a
- *     null icon, and running the migration again changes nothing;
- *   - after the migrations, an icon-only autosave stores the emoji through the real save
- *     pipeline and DBStorage without recording a version; a title autosave still records one.
+ * drizzle/0019_add_wiki_pages_icon.sql must be additive: applied to a `wiki_pages` table in the
+ * pre-E4 shape, it adds a nullable `icon` column without a default, leaves every existing row and
+ * column as it was, and can run again without error. DBStorage then reads and writes the icon.
  *
- * The tables live in their own schema so this file can run next to the other Layer 4 files.
+ * The table lives in its own schema so this file can run next to the other Layer 4 files.
  */
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
-import { readFileSync } from 'fs';
-import path from 'path';
-import { Pool, type PoolClient } from 'pg';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { Pool } from 'pg';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 
@@ -28,30 +24,33 @@ const scopedUrl = (() => {
   url.searchParams.set('options', `-c search_path=${SCHEMA}`);
   return url.toString();
 })();
-
-const migration = (file: string) =>
-  readFileSync(path.resolve(__dirname, '../../drizzle', file), 'utf8');
+const MIGRATION = readFileSync(
+  new URL('../../drizzle/0019_add_wiki_pages_icon.sql', import.meta.url),
+  'utf8'
+);
 
 let admin: Pool;
+let scoped: Pool;
+let storage: any;
 
-/** Run a migration file exactly as written (unqualified table names) inside the test schema. */
-async function applyMigration(file: string) {
-  const client: PoolClient = await admin.connect();
-  try {
-    await client.query(`SET search_path TO ${SCHEMA}`);
-    await client.query(migration(file));
-  } finally {
-    await client.query('RESET search_path');
-    client.release();
-  }
+async function rowSnapshot(id: number) {
+  const { rows } = await scoped.query(
+    `SELECT id, title, slug, content, blocks, folder, tags, author, team_id, is_published,
+            metadata, deleted_at, created_at, updated_at
+       FROM wiki_pages WHERE id = $1`,
+    [id]
+  );
+  return rows[0];
 }
 
-/** wiki_pages and page_versions as they were before 0019 (no icon, no tree position). */
-async function createPreIconSchema() {
+beforeAll(async () => {
+  admin = new Pool({ connectionString: DATABASE_URL });
   await admin.query(`DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE`);
   await admin.query(`CREATE SCHEMA ${SCHEMA}`);
-  await admin.query(`
-    CREATE TABLE ${SCHEMA}.wiki_pages (
+  scoped = new Pool({ connectionString: scopedUrl });
+  // `wiki_pages` as it was before E4 (no icon column).
+  await scoped.query(`
+    CREATE TABLE wiki_pages (
       id           SERIAL PRIMARY KEY,
       title        TEXT NOT NULL,
       slug         TEXT NOT NULL UNIQUE,
@@ -66,147 +65,64 @@ async function createPreIconSchema() {
       updated_at   TIMESTAMP NOT NULL DEFAULT NOW(),
       is_published BOOLEAN NOT NULL DEFAULT TRUE,
       metadata     JSONB DEFAULT '{}',
-      deleted_at   TIMESTAMP,
-      search_vector tsvector
+      deleted_at   TIMESTAMP
     )
   `);
-  await admin.query(`
-    CREATE TABLE ${SCHEMA}.page_versions (
-      id                 SERIAL PRIMARY KEY,
-      page_id            INTEGER NOT NULL REFERENCES ${SCHEMA}.wiki_pages(id) ON DELETE CASCADE,
-      title              TEXT NOT NULL,
-      content            TEXT NOT NULL,
-      blocks             JSONB DEFAULT '[]',
-      author             TEXT NOT NULL,
-      version_number     INTEGER NOT NULL,
-      change_description TEXT,
-      created_at         TIMESTAMP NOT NULL DEFAULT NOW()
-    )
-  `);
-  await admin.query(`
-    CREATE OR REPLACE FUNCTION ${SCHEMA}.wiki_pages_search_vector_update() RETURNS trigger AS $$
-    BEGIN
-      NEW.search_vector :=
-        setweight(to_tsvector('simple', coalesce(NEW.title, '')), 'A') ||
-        setweight(to_tsvector('simple', coalesce(NEW.content, '')), 'B');
-      RETURN NEW;
-    END
-    $$ LANGUAGE plpgsql
-  `);
-  await admin.query(`
-    CREATE TRIGGER trg_wiki_pages_search_vector
-    BEFORE INSERT OR UPDATE OF title, content, tags ON ${SCHEMA}.wiki_pages
-    FOR EACH ROW EXECUTE FUNCTION ${SCHEMA}.wiki_pages_search_vector_update()
-  `);
-}
-
-async function rows() {
-  const { rows } = await admin.query(
-    `SELECT *, search_vector::text AS search_text FROM ${SCHEMA}.wiki_pages ORDER BY id`
-  );
-  return rows as Array<Record<string, unknown>>;
-}
-
-async function iconColumn() {
-  const { rows } = await admin.query(
-    `SELECT data_type, is_nullable, column_default FROM information_schema.columns
-      WHERE table_schema = $1 AND table_name = 'wiki_pages' AND column_name = 'icon'`,
-    [SCHEMA]
-  );
-  return rows[0];
-}
-
-beforeAll(async () => {
-  admin = new Pool({ connectionString: DATABASE_URL });
-  await createPreIconSchema();
 });
 
 afterAll(async () => {
+  await storage?.pool.end();
+  await scoped?.end();
   await admin.query(`DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE`);
   await admin.end();
 });
 
-describe('0019_add_page_icon.sql (real Postgres)', () => {
-  it('adds a nullable icon column and leaves existing rows intact', async () => {
-    await admin.query(
-      `INSERT INTO ${SCHEMA}.wiki_pages
-         (title, slug, content, blocks, folder, tags, author, parent_id, team_id, updated_at,
-          is_published, metadata, deleted_at)
-       VALUES
-         ('Handbook', 'handbook', 'alpha body', '[{"id":"b1","type":"paragraph","content":"alpha body"}]',
-          'docs', '{ops,guide}', 'alice', NULL, NULL, '2024-01-02 03:04:05', TRUE, '{"k":1}', NULL),
-         ('Child', 'child', 'beta', '[]', 'ideas', '{}', 'bob', 1, NULL, '2024-02-03 04:05:06',
-          FALSE, '{}', '2024-03-01 00:00:00')`
+describe('0019 page icon migration (real Postgres)', () => {
+  it('adds a nullable icon column, keeps existing rows, and is idempotent', async () => {
+    const { rows } = await scoped.query(
+      `INSERT INTO wiki_pages (title, slug, content, blocks, author, tags, team_id)
+       VALUES ('Handbook', 'handbook', 'body', '[{"id":"b1","type":"paragraph","content":"body"}]',
+               'alice', '{ops,proof}', 7)
+       RETURNING id`
     );
-    const before = await rows();
-    expect(before).toHaveLength(2);
-    expect(await iconColumn()).toBeUndefined();
+    const id = rows[0].id;
+    const before = await rowSnapshot(id);
 
-    await applyMigration('0019_add_page_icon.sql');
+    await scoped.query(MIGRATION);
+    await scoped.query(MIGRATION); // a second run is a no-op
 
-    expect(await iconColumn()).toEqual({
-      data_type: 'text',
-      is_nullable: 'YES',
-      column_default: null,
-    });
-    const after = await rows();
-    expect(after).toEqual(before.map((row) => ({ ...row, icon: null })));
+    const { rows: columns } = await scoped.query(
+      `SELECT data_type, is_nullable, column_default
+         FROM information_schema.columns
+        WHERE table_schema = $1 AND table_name = 'wiki_pages' AND column_name = 'icon'`,
+      [SCHEMA]
+    );
+    expect(columns).toEqual([{ data_type: 'text', is_nullable: 'YES', column_default: null }]);
 
-    // Re-running the migration is a no-op.
-    await applyMigration('0019_add_page_icon.sql');
-    expect(await rows()).toEqual(after);
+    expect(await rowSnapshot(id)).toEqual(before);
+    const { rows: icons } = await scoped.query(`SELECT icon FROM wiki_pages WHERE id = $1`, [id]);
+    expect(icons[0].icon).toBeNull();
   });
-});
 
-describe('icon saves after the migrations (real Postgres)', () => {
-  let storage: any;
-  let pipeline: typeof import('../../server/services/page-save.js');
-  let store: import('../../server/services/page-save.js').PageSaveStore;
-
-  beforeAll(async () => {
-    // DBStorage reads every column of the current schema, tree position (0020) included.
-    await applyMigration('0020_add_page_tree_position.sql');
+  it('DBStorage reads, sets and clears the icon', async () => {
+    // DBStorage reads the current schema, which also has the later E5 column.
+    await scoped.query(
+      readFileSync(
+        new URL('../../drizzle/0020_add_wiki_pages_position.sql', import.meta.url),
+        'utf8'
+      )
+    );
     process.env.DATABASE_URL = scopedUrl;
     const { DBStorage } = await import('../../server/storage.js');
     storage = new DBStorage();
-    pipeline = await import('../../server/services/page-save.js');
-    store = pipeline.storagePageSaveStore(storage);
-  });
 
-  afterEach(() => {
-    pipeline.resetEditSessions();
-  });
+    const page = await storage.getWikiPageBySlug('handbook');
+    expect(page.icon).toBeNull();
 
-  afterAll(async () => {
-    await storage?.pool.end();
-  });
+    await storage.updateWikiPage(page.id, { icon: '🚀' });
+    expect((await storage.getWikiPage(page.id)).icon).toBe('🚀');
 
-  const versionCount = async (pageId: number) =>
-    Number(
-      (
-        await admin.query(`SELECT count(*) FROM ${SCHEMA}.page_versions WHERE page_id = $1`, [
-          pageId,
-        ])
-      ).rows[0].count
-    );
-
-  it('stores an icon-only autosave without a version, and clears it with null', async () => {
-    const { rows } = await admin.query(
-      `SELECT id FROM ${SCHEMA}.wiki_pages WHERE slug = 'handbook'`
-    );
-    const id = rows[0].id;
-
-    await pipeline.savePage(store, id, { icon: '🧑🏽‍💻' }, 'autosave');
-    expect((await storage.getWikiPage(id)).icon).toBe('🧑🏽‍💻');
-    expect(await versionCount(id)).toBe(0);
-    expect(pipeline.hasOpenEditSession(id)).toBe(false);
-
-    await pipeline.savePage(store, id, { icon: null }, 'autosave');
-    expect((await storage.getWikiPage(id)).icon).toBeNull();
-    expect(await versionCount(id)).toBe(0);
-
-    // Control: a title autosave records the pre-session version as before.
-    await pipeline.savePage(store, id, { title: 'Handbook v2' }, 'autosave');
-    expect(await versionCount(id)).toBe(1);
+    await storage.updateWikiPage(page.id, { icon: null });
+    expect((await storage.getWikiPage(page.id)).icon).toBeNull();
   });
 });

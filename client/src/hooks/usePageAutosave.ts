@@ -7,7 +7,7 @@ export interface AutosavePatch {
   blocks?: Block[];
   tags?: string[];
   folder?: string;
-  /** One emoji, or null to clear it (#103 E4). */
+  /** One emoji, or null to remove the icon (issue #103 E4). */
   icon?: string | null;
 }
 
@@ -19,8 +19,8 @@ const RETRY_BASE_MS = 2000;
 const RETRY_MAX_MS = 30000;
 
 interface Options {
-  /** Called with the server's answer and the fields it stored, after each successful save. */
-  onSaved?: (result: { id: number; slug: string; title: string }, saved: AutosavePatch) => void;
+  /** Called with the server's answer after each successful save. */
+  onSaved?: (result: { id: number; slug: string; title: string }) => void;
 }
 
 /**
@@ -78,7 +78,7 @@ export function usePageAutosave(pageId: number | undefined, { onSaved }: Options
           failures.current = 0;
           setSavedAt(new Date());
           setStatus(hasPending.current ? 'pending' : 'saved');
-          onSavedRef.current?.(result, body);
+          onSavedRef.current?.(result);
         } catch {
           // Put the failed edits back under any newer ones so a retry sends both.
           pending.current = { ...body, ...pending.current };

@@ -119,8 +119,6 @@ describe('Wiki Page Management API', () => {
     it('TC-PAGE-007: should update an existing page', async () => {
       const updateData = { title: 'Updated Test Page' };
       const updatedPage = { ...mockPage, ...updateData };
-      // PUT edits live pages only (a page in the trash answers 404).
-      (storage.getWikiPage as vi.Mock).mockResolvedValue(mockPage);
       (storage.updateWikiPage as vi.Mock).mockResolvedValue(updatedPage);
 
       const response = await request(app).put(`/api/pages/${mockPage.id}`).send(updateData);
@@ -133,13 +131,14 @@ describe('Wiki Page Management API', () => {
 
   describe('DELETE /:id', () => {
     it('TC-PAGE-008: should move a page to trash', async () => {
-      (storage.deleteWikiPage as vi.Mock).mockResolvedValue({ success: true });
+      (storage.getWikiPage as vi.Mock).mockResolvedValue(mockPage);
 
       const response = await request(app).delete(`/api/pages/${mockPage.id}`);
 
       expect(response.status).toBe(200);
       expect(response.body.message).toBe('Page moved to trash');
-      expect(storage.deleteWikiPage).toHaveBeenCalledWith(mockPage.id, []);
+      // A page without children is trashed alone (the subtree is just the page, issue #103 E5).
+      expect(storage.trashPages).toHaveBeenCalledWith([mockPage.id]);
     });
   });
 

@@ -29,10 +29,15 @@ export function buildMockStorage(actualModule: any) {
     instance.checkPagePermission.mockResolvedValue(true);
   }
 
-  // The page tree lock (#103 E5) only serializes; in route tests it simply runs its callback.
-  if (instance.withPageTreeLock) {
-    instance.withPageTreeLock.mockImplementation((_teamId: unknown, run: () => unknown) => run());
-  }
+  // Page tree (issue #103 E5): by default a page has no children, so deletes and restores act on
+  // the page alone, as before. Tree tests override these.
+  instance.getLiveDescendantIds?.mockResolvedValue([]);
+  instance.getAllDescendantIds?.mockResolvedValue([]);
+  instance.getReadablePageTreeRows?.mockResolvedValue([]);
+  instance.getReadableSiblingIds?.mockResolvedValue([]);
+  instance.trashPages?.mockImplementation(async (ids: number[]) => ids.length);
+  instance.getTrashedTogetherIds?.mockImplementation(async (id: number) => [id]);
+  instance.restorePages?.mockImplementation(async (ids: number[]) => ids.length);
 
   return instance;
 }

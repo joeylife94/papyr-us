@@ -13,7 +13,6 @@ import {
   Users,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { documentQueryKeyFromPath } from '@/lib/active-workspace';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -23,6 +22,7 @@ import { useFeatureFlags } from '@/features/FeatureFlagsContext';
 import { DailyNoteButton } from '@/components/daily-note-button';
 import { useShellNav } from './shell-nav';
 import { PageTree } from './page-tree';
+import { resolvePageTeamId } from '@/lib/page-team-scope';
 
 interface WorkspacePanelProps {
   searchQuery: string;
@@ -39,7 +39,7 @@ const rowLink =
 
 /**
  * The workspace panel beside the rail: current workspace, search, the "페이지" section (the page
- * tree of the current workspace, #103 E5; folders stay a page property), and the workspace list.
+ * tree, issue #103 E5), and the workspace list.
  */
 export function WorkspacePanel({
   searchQuery,
@@ -52,7 +52,7 @@ export function WorkspacePanel({
   const workspace = scope.kind === 'team' ? scope.workspace : null;
   const { flags } = useFeatureFlags();
   const { toast } = useToast();
-  // Open workspaces in the workspace list.
+  // Which workspace entries in the list below are open.
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [passwordPrompt, setPasswordPrompt] = useState<{ teamName: string; teamId: number } | null>(
     null
@@ -75,16 +75,15 @@ export function WorkspacePanel({
     retryDelay: 1000,
   });
 
-  const toggle = (key: string) => setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
+  // The tree follows the active workspace: a team (by id) or the personal pages.
+  const workspaceTeamId = workspace ? resolvePageTeamId(workspace.name, teams) : '';
+  const treeUrl = workspace
+    ? workspaceTeamId
+      ? `/api/page-tree?teamId=${workspaceTeamId}`
+      : null
+    : '/api/page-tree?scope=personal';
 
-  // The page tree shows the workspace of the route: a team, or the team-less pages ("내 문서").
-  // A document whose workspace is still loading shows nothing yet rather than the wrong tree.
-  const treeScope =
-    scope.kind === 'team'
-      ? { teamName: scope.workspace.name, createHref: scope.workspace.createPath }
-      : scope.kind === 'personal' || !documentQueryKeyFromPath(pathname)
-        ? { teamName: null, createHref: '/create' }
-        : null;
+  const toggle = (key: string) => setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
 
   const handleTeamClick = (team: any) => {
     if (team.password && !verifiedTeams.includes(team.name)) {
@@ -189,24 +188,16 @@ export function WorkspacePanel({
         <Plus className="h-4 w-4" aria-hidden="true" /> 새 문서 작성
       </Link>
 
-      {/* "페이지": the page tree of the current workspace (#103 E5). */}
+      {/* "페이지": the page tree of the active workspace (issue #103 E5); it replaces the folder
+          list, while folders stay a page property and a filter on the document table. */}
       <nav aria-label="페이지" className="flex flex-col">
         <h3 className={sectionLabel}>페이지</h3>
-        {treeScope ? (
-          <PageTree
-            key={treeScope.teamName !== null ? `team:${treeScope.teamName}` : 'personal'}
-            teamName={treeScope.teamName}
-            createHref={treeScope.createHref}
-            searchQuery={searchQuery}
-            onNavigate={onNavigate}
-          />
-        ) : (
-          <div className="space-y-1.5 px-1">
-            {[1, 2].map((i) => (
-              <div key={i} className="h-7 animate-pulse rounded-md bg-raised" />
-            ))}
-          </div>
-        )}
+        <PageTree
+          treeUrl={treeUrl}
+          createHref={createHref}
+          searchQuery={searchQuery}
+          onNavigate={onNavigate}
+        />
       </nav>
 
       {flags.FEATURE_TEAMS ? (

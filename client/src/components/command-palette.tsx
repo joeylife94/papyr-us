@@ -227,7 +227,7 @@ export function CommandPalette() {
                 value={`${page.title} ${page.folder} ${page.tags.join(' ')}`}
                 onSelect={() => runCommand(() => navigate(`/page/${page.slug}`))}
               >
-                <PageIcon icon={page.icon} className="mr-2 h-4 w-4 text-sm" />
+                <PageIcon icon={page.icon} className="mr-2 h-4 w-4 text-[15px] opacity-100" />
                 <span>{page.title}</span>
                 <CommandShortcut className="text-xs text-muted-foreground">
                   {page.folder}

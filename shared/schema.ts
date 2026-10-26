@@ -13,6 +13,32 @@ import {
 import { createInsertSchema } from 'drizzle-zod';
 import { z } from 'zod';
 
+// Page icons (issue #103 E4). Kept in this file: drizzle-kit loads it as CommonJS and cannot
+// resolve a sibling import written the way the ESM server needs it.
+const emojiGraphemes =
+  typeof Intl !== 'undefined' && 'Segmenter' in Intl
+    ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+    : null;
+const PICTOGRAPHIC = /\p{Extended_Pictographic}|\p{Regional_Indicator}/u;
+const KEYCAP = /^[0-9#*]️?⃣$/u;
+
+/**
+ * Whether `value` is exactly one emoji: one grapheme cluster that is pictographic, a flag, or a
+ * keycap. Skin tones, ZWJ sequences and variation selectors stay one grapheme, so they pass; text,
+ * several emoji, or anything with surrounding characters does not.
+ */
+export function isSingleEmoji(value: string): boolean {
+  if (!value || value.length > 32 || value.trim() !== value) return false;
+  if (emojiGraphemes && [...emojiGraphemes.segment(value)].length !== 1) return false;
+  return PICTOGRAPHIC.test(value) || KEYCAP.test(value);
+}
+
+/** A page icon: one emoji. Callers add `.nullable()` where `null` clears it. */
+export const pageIconSchema = z
+  .string()
+  .max(32)
+  .refine(isSingleEmoji, { message: '아이콘은 이모지 하나여야 합니다' });
+
 // Block types for the new block-based editor
 export const blockTypes = [
   'heading1',
@@ -64,10 +90,9 @@ export const wikiPages = pgTable('wiki_pages', {
   tags: text('tags').array().notNull().default([]),
   author: text('author').notNull(),
   parentId: integer('parent_id'), // Nested pages: reference to parent page
-  // Order among siblings in the page tree (#103 E5); null sorts after positioned pages.
+  // Order among siblings in the page tree; null sorts after positioned siblings by creation time
+  // (drizzle/0020_add_wiki_pages_position.sql).
   position: integer('position'),
-  // Emoji shown wherever the page appears (#103 E4); null = no icon.
-  icon: text('icon'),
   // A team cannot be deleted while pages (trashed ones included) still belong to it: losing the
   // team would turn them into team-less pages with different access rules (see deleteTeam).
   teamId: integer('team_id').references(() => teams.id, { onDelete: 'restrict' }), // 팀 소속
@@ -76,13 +101,18 @@ export const wikiPages = pgTable('wiki_pages', {
   isPublished: boolean('is_published').notNull().default(true),
   deletedAt: timestamp('deleted_at'), // Soft delete: null = active, set = trashed
   metadata: jsonb('metadata').default({}), // for frontmatter data
+  icon: text('icon'), // Page icon: one emoji, null = none (drizzle/0019_add_wiki_pages_icon.sql)
 });
 
-export const insertWikiPageSchema = createInsertSchema(wikiPages).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
+export const insertWikiPageSchema = createInsertSchema(wikiPages)
+  .omit({
+    id: true,
+    createdAt: true,
+    updatedAt: true,
+    // Tree order changes only through POST /api/pages/:id/move (issue #103 E5).
+    position: true,
+  })
+  .extend({ icon: pageIconSchema.nullable().optional() });
 
 export const updateWikiPageSchema = insertWikiPageSchema.partial();
 

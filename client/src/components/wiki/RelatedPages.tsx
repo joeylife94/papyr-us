@@ -3,10 +3,8 @@ import { Link } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { PageIcon } from '@/components/page/page-icon';
 import { apiRequest } from '@/lib/queryClient';
 import { Sparkles, ArrowRight } from 'lucide-react';
-import type { WikiPage } from '@shared/schema';
 
 interface RelatedPagesProps {
   pageId: number;
@@ -15,21 +13,7 @@ interface RelatedPagesProps {
 }
 
 export function RelatedPages({ pageId, pageTitle, pageContent }: RelatedPagesProps) {
-  // The readable page list supplies icons for the AI suggestions below. Backlinks are the
-  // page_links-backed "이 문서를 링크한 문서" panel (#103 E6), not computed here.
-  const { data: pagesData, isLoading: pagesLoading } = useQuery<WikiPage[] | { pages: WikiPage[] }>(
-    {
-      queryKey: ['/api/pages'],
-    }
-  );
-
-  // Normalize: API returns { pages: [...], pagination: {...} }, not a raw array
-  const allPages: WikiPage[] | undefined = pagesData
-    ? Array.isArray(pagesData)
-      ? pagesData
-      : (pagesData as any).pages
-    : undefined;
-
+  // Backlinks are the page_links-backed "이 문서를 링크한 문서" panel (#103 E6), not computed here.
   // Fetch AI-recommended related pages
   const { data: aiRelated, isLoading: aiLoading } = useQuery<{
     relatedPages: Array<{
@@ -61,7 +45,7 @@ export function RelatedPages({ pageId, pageTitle, pageContent }: RelatedPagesPro
     enabled: !!pageId && !!pageTitle,
   });
 
-  if (pagesLoading || aiLoading) {
+  if (aiLoading) {
     return (
       <div className="space-y-6">
         <Card>
@@ -111,8 +95,6 @@ export function RelatedPages({ pageId, pageTitle, pageContent }: RelatedPagesPro
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
-                        {/* Icons come from the page list, never from the AI answer. */}
-                        <PageIcon icon={allPages?.find((p) => p.id === page.id)?.icon} />
                         <h4 className="font-medium text-foreground">{page.title}</h4>
                         <Badge variant="secondary" className="text-xs">
                           {Math.round(page.similarity * 100)}% 유사

@@ -46,14 +46,14 @@ async function createSchema() {
       tags         TEXT[] NOT NULL DEFAULT '{}',
       author       TEXT NOT NULL,
       parent_id    INTEGER,
-      position     INTEGER,
-      icon         TEXT,
       team_id      INTEGER,
       created_at   TIMESTAMP NOT NULL DEFAULT NOW(),
       updated_at   TIMESTAMP NOT NULL DEFAULT NOW(),
       is_published BOOLEAN NOT NULL DEFAULT TRUE,
       metadata     JSONB DEFAULT '{}',
       deleted_at   TIMESTAMP,
+      icon         TEXT,
+      position     INTEGER,
       search_vector tsvector
     )
   `);

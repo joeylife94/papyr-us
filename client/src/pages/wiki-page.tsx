@@ -23,12 +23,9 @@ import { UnlinkedMentions } from '@/components/page/unlinked-mentions';
 import { PageHistory } from '@/components/page-history';
 import { BlockEditor } from '@/components/blocks/block-editor';
 import { PageProperties, PageTitle, SaveStatus } from '@/components/page/page-editor-parts';
-import { PageHeaderIcon } from '@/components/page/icon-picker';
-import { PageIcon } from '@/components/page/page-icon';
+import { PageIcon, PageIconPicker } from '@/components/page/page-icon';
+import { apiRequest, invalidatePageLists } from '@/lib/queryClient';
 import { Backlinks } from '@/components/page/backlinks';
-import { PageAncestorCrumbs, PAGE_TREE_QUERY_KEY } from '@/components/layout/page-tree';
-import { ToastAction } from '@/components/ui/toast';
-import { apiRequest } from '@/lib/queryClient';
 import { extractHeadings, estimateReadingTime } from '@/lib/markdown';
 import { blocksToContent, initialBlocksFor, parseTags } from '@/lib/page-content';
 import { getUserId, getUserName } from '@/lib/user';
@@ -36,6 +33,18 @@ import { formatDistanceToNow } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { Share, User, Clock, Calendar, AlertTriangle, Sparkles, Trash2 } from 'lucide-react';
 import type { Block, WikiPage } from '@shared/schema';
+
+/** The server's reason for a refused delete (`403: {"message": …}`), or a generic one. */
+function deleteFailureReason(error: unknown): string {
+  const text = error instanceof Error ? error.message : '';
+  try {
+    const body = JSON.parse(text.slice(text.indexOf(':') + 1));
+    if (typeof body?.message === 'string') return body.message;
+  } catch {
+    // Not a JSON body: fall through to the generic message.
+  }
+  return '문서를 삭제할 수 없습니다.';
+}
 
 export default function WikiPageView() {
   const { slug } = useParams();
@@ -75,16 +84,6 @@ export default function WikiPageView() {
   const headings = useMemo(() => extractHeadings(content), [content]);
 
   const collaborationEnabled = flags.FEATURE_COLLABORATION && !!page && !!user;
-
-  // The browser tab shows the page, its icon first (#103 E4).
-  useEffect(() => {
-    if (!page) return;
-    const previous = document.title;
-    document.title = `${page.icon ? `${page.icon} ` : ''}${page.title} · Papyr.us`;
-    return () => {
-      document.title = previous;
-    };
-  }, [page?.title, page?.icon]);
 
   const {
     isConnected,
@@ -163,48 +162,22 @@ export default function WikiPageView() {
 
   const handleDelete = async () => {
     if (!page) return;
-    const confirmed = window.confirm(
-      `"${page.title}" 문서를 삭제할까요? 하위 문서가 있으면 함께 휴지통으로 옮겨집니다.`
-    );
+    const confirmed = window.confirm(`"${page.title}" 문서를 삭제할까요?`);
     if (!confirmed) return;
-    const refreshLists = () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/pages'] });
-      queryClient.invalidateQueries({ queryKey: [PAGE_TREE_QUERY_KEY] });
-    };
-    // Restoring brings back the sub-pages that went to the trash with the page (#103 D5).
-    const undo = async () => {
-      try {
-        await apiRequest('POST', `/api/trash/${page.id}/restore`);
-        refreshLists();
-        navigate(`/page/${page.slug}`);
-      } catch {
-        toast({ title: '되돌리지 못했습니다', variant: 'destructive' });
-      }
-    };
     try {
-      const response = await apiRequest('DELETE', `/api/pages/${page.id}`);
-      const result: { subPages?: number } = await response.json().catch(() => ({}));
-      refreshLists();
+      await apiRequest('DELETE', `/api/pages/${page.id}`);
+      // The sidebar tree and the lists drop the page and its subtree (issue #103 E5).
+      void invalidatePageLists(queryClient);
       toast({
         title: '문서 삭제됨',
-        description: result.subPages
-          ? `하위 문서 ${result.subPages}개와 함께 휴지통으로 옮겼습니다.`
-          : '문서를 삭제했습니다.',
-        action: (
-          <ToastAction altText="삭제 되돌리기" onClick={() => void undo()}>
-            되돌리기
-          </ToastAction>
-        ),
+        description: '문서를 하위 문서와 함께 휴지통으로 옮겼습니다.',
       });
       navigate('/');
     } catch (error) {
-      // A page with sub-pages the user may not delete stays (D5); the server names no page.
-      const subtreeRefused = String((error as Error)?.message).includes('SUBTREE_NOT_DELETABLE');
       toast({
         title: '삭제 실패',
-        description: subtreeRefused
-          ? '삭제할 권한이 없는 하위 문서가 있어 아무것도 삭제하지 않았습니다.'
-          : '문서를 삭제할 수 없습니다.',
+        // A subtree with pages the user may not delete is refused with a reason; show it.
+        description: deleteFailureReason(error),
         variant: 'destructive',
       });
     }
@@ -314,7 +287,6 @@ export default function WikiPageView() {
         <li aria-hidden="true">/</li>
         <li className="capitalize">{page.folder}</li>
         <li aria-hidden="true">/</li>
-        <PageAncestorCrumbs pageId={page.id} />
         <li
           aria-current="page"
           className="flex min-w-0 max-w-full items-center gap-1.5 text-foreground-secondary"
@@ -421,7 +393,7 @@ function ReadOnlyPageBody({ page, actions, breadcrumb }: BodyProps) {
     <>
       {breadcrumb(page.title, page.icon)}
       <header className="mb-8 space-y-4 border-b border-border pb-6">
-        <PageHeaderIcon icon={page.icon ?? null} />
+        {page.icon && <PageIcon icon={page.icon} className="block text-[44px]" />}
         <PageTitle initialTitle={page.title} editable={false} />
         <PageMeta page={page} content={page.content} />
         <div className="flex min-w-0 flex-wrap gap-2">
@@ -470,29 +442,12 @@ function EditablePageBody({
   const [icon, setIcon] = useState<string | null>(page.icon ?? null);
   const { data: folders = [] } = useQuery<string[]>({ queryKey: ['/api/folders'] });
 
-  const treeTitle = useRef(page.title);
   const { status, queue, flush, reset } = usePageAutosave(page.id, {
-    onSaved: (result, saved) => {
-      // Lists show titles and folders; refresh them quietly. The page tree and breadcrumbs show
-      // titles and icons, so they refresh when either changed.
-      queryClient.invalidateQueries({ queryKey: ['/api/pages'] });
-      if ('icon' in saved) {
-        // The icon also shows in the page view (tab title, reader).
-        queryClient.invalidateQueries({ queryKey: [`/api/pages/slug/${page.slug}`] });
-      }
-      if ('icon' in saved || result.title !== treeTitle.current) {
-        treeTitle.current = result.title;
-        queryClient.invalidateQueries({ queryKey: [PAGE_TREE_QUERY_KEY] });
-      }
+    onSaved: () => {
+      // Lists and the sidebar show titles, icons and folders; refresh them quietly.
+      void invalidatePageLists(queryClient);
     },
   });
-
-  // An editor-level change (#103 E4): saved right away through autosave, without a version.
-  const changeIcon = (next: string | null) => {
-    setIcon(next);
-    queue({ icon: next });
-    void flush();
-  };
 
   const content = useMemo(() => blocksToContent(blocks), [blocks]);
   useEffect(() => onContentChange(content), [content, onContentChange]);
@@ -510,6 +465,7 @@ function EditablePageBody({
     setBlocks(initialBlocksFor(page));
     setFolder(page.folder);
     setTagsText(page.tags.join(', '));
+    setIcon(page.icon ?? null);
     // Only when the token changes; `page` is the refetched page by then.
   }, [reloadToken]);
 
@@ -531,11 +487,17 @@ function EditablePageBody({
   return (
     <>
       {breadcrumb(title, icon)}
-      <header className="group/page-header mb-6 space-y-4">
+      <header className="mb-6 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <PageHeaderIcon icon={icon} onChange={changeIcon} />
           <SaveStatus status={status} />
         </div>
+        <PageIconPicker
+          icon={icon}
+          onChange={(next) => {
+            setIcon(next);
+            queue({ icon: next });
+          }}
+        />
         <PageTitle
           key={reloadToken}
           initialTitle={page.title}

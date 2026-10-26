@@ -287,11 +287,12 @@ describe('Trash writes need owner', () => {
   it('restores a trashed page for its owner only', async () => {
     const denied = await request(app).post(`/api/trash/${PAGE_A}/restore`).set(as(EDITOR));
     expect(denied.status).toBe(403);
-    expect(storage.restoreWikiPage).not.toHaveBeenCalled();
+    expect(storage.restorePages).not.toHaveBeenCalled();
 
     const ok = await request(app).post(`/api/trash/${PAGE_A}/restore`).set(as(OWNER));
     expect(ok.status).toBe(200);
-    expect(storage.restoreWikiPage).toHaveBeenCalledWith(PAGE_A, []);
+    // The page comes back with whatever was trashed together with it (here, nothing else).
+    expect(storage.restorePages).toHaveBeenCalledWith([PAGE_A]);
   });
 
   it('permanently deletes a trashed page for its owner only', async () => {
@@ -370,6 +371,48 @@ describe('In-place editing endpoints (issue #103 E1/E2) use the single-page leve
         .send({ title: 'x', ...body });
       expect(res.status).toBe(400);
     }
+    expect(storage.updateWikiPage).not.toHaveBeenCalled();
+  });
+
+  it('autosave sets or clears the page icon (issue #103 E4) and accepts only one emoji', async () => {
+    const set = await request(app)
+      .put(`/api/pages/${PAGE_A}/autosave`)
+      .set(as(EDITOR))
+      .send({ icon: '🚀' });
+    expect(set.status).toBe(200);
+    expect(storage.updateWikiPage).toHaveBeenCalledWith(PAGE_A, { icon: '🚀' });
+
+    const cleared = await request(app)
+      .put(`/api/pages/${PAGE_A}/autosave`)
+      .set(as(EDITOR))
+      .send({ icon: null });
+    expect(cleared.status).toBe(200);
+    expect(storage.updateWikiPage).toHaveBeenLastCalledWith(PAGE_A, { icon: null });
+
+    storage.updateWikiPage.mockClear();
+    for (const icon of ['rocket', '🚀🚀', '<img src=x>', '', 42]) {
+      const res = await request(app)
+        .put(`/api/pages/${PAGE_A}/autosave`)
+        .set(as(EDITOR))
+        .send({ icon });
+      expect(res.status).toBe(400);
+    }
+    expect(storage.updateWikiPage).not.toHaveBeenCalled();
+
+    const denied = await request(app)
+      .put(`/api/pages/${PAGE_A}/autosave`)
+      .set(as(OUTSIDER))
+      .send({ icon: '🔥' });
+    expect(denied.status).toBe(403);
+    expect(storage.updateWikiPage).not.toHaveBeenCalled();
+  });
+
+  it('manual PUT validates the icon with the same rule', async () => {
+    const bad = await request(app)
+      .put(`/api/pages/${PAGE_A}`)
+      .set(as(EDITOR))
+      .send({ icon: 'not an emoji' });
+    expect(bad.status).toBe(400);
     expect(storage.updateWikiPage).not.toHaveBeenCalled();
   });
 

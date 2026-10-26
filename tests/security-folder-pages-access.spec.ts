@@ -14,7 +14,6 @@ import {
   request as playwrightRequest,
   type APIRequestContext,
 } from '@playwright/test';
-import { Pool } from 'pg';
 import { createAuthenticatedApiContext, registerTestUser } from './e2e-helpers';
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:5003';
@@ -154,7 +153,7 @@ test.describe('Team data access control for folder pages and tags', () => {
         data: { entityType: 'user', entityId: ownerBMe.id, permission: 'owner' },
       });
       expect(restrict.status()).toBe(201);
-      // Child pages under Team A's page: one by Team A, one owner-only page by an outsider.
+      // A child page under Team A's page, by Team A.
       const childOfAByA = await createPage(ownerARequest, {
         title: `Team A child ${marker.a}`,
         slug: `sec-child-a-${stamp}`,
@@ -165,10 +164,10 @@ test.describe('Team data access control for folder pages and tags', () => {
         teamId: teamA.id,
         parentId: pageA.id,
       });
-      // Since the page tree rules (#103 E5) the API refuses a child under a parent the caller
-      // cannot read, so this pre-E5 shape (an outsider's page under Team A's page) is written
-      // directly, to keep proving that listings filter such legacy data.
-      const outsiderChild = {
+      // An outsider cannot attach a page under Team A's page (issue #103 E5: a child shares its
+      // parent's team and needs editor on the parent), so their owner-only page stays at the
+      // root; every listing check below still runs against it.
+      const outsiderChildData = {
         title: `Outsider child ${marker.personal}`,
         slug: `sec-child-b-${stamp}`,
         content: `Outsider child content ${marker.personal}`,
@@ -176,20 +175,12 @@ test.describe('Team data access control for folder pages and tags', () => {
         tags: [],
         author: ownerB.email,
       };
-      const refusedChild = await ownerBRequest.post('/api/pages', {
-        data: { ...outsiderChild, slug: `sec-child-b-refused-${stamp}`, parentId: pageA.id },
+      const attach = await ownerBRequest.post('/api/pages', {
+        data: { ...outsiderChildData, parentId: pageA.id },
       });
-      expect(refusedChild.status()).toBe(404);
-      const childOfAByB = await createPage(ownerBRequest, outsiderChild);
-      const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-      try {
-        await pool.query('UPDATE wiki_pages SET parent_id = $1 WHERE id = $2', [
-          pageA.id,
-          childOfAByB.id,
-        ]);
-      } finally {
-        await pool.end();
-      }
+      expect(attach.status(), 'outsider attaches a page under Team A').toBe(403);
+      expect(await attach.text()).not.toContain(marker.a);
+      const childOfAByB = await createPage(ownerBRequest, outsiderChildData);
       const allPages = [pageA, pageAm, pageAOnly, pageB, personalB, childOfAByA, childOfAByB];
 
       // ── 1. Anonymous callers are rejected and receive no page data ──

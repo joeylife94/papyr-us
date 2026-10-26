@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { TableView } from '@/components/views/table-view';
 import { GalleryView } from '@/components/views/gallery-view';
 import { useToast } from '@/hooks/use-toast';
+import { invalidatePageLists } from '@/lib/queryClient';
 import { PAGE_COLUMNS, getStatusColor } from './constants';
 import type { TabProps } from './types';
 
@@ -39,6 +40,8 @@ export function PagesTab({ teamName, viewMode, galleryMode, onGalleryModeChange 
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/pages', teamName] });
+      // The sidebar tree drops the page and its subtree too (issue #103 E5).
+      void invalidatePageLists(queryClient);
       toast({ title: '페이지 삭제 완료' });
     },
     onError: () => toast({ title: '삭제 실패', variant: 'destructive' }),

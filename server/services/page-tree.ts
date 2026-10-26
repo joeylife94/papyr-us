@@ -1,15 +1,16 @@
 /**
- * Page tree rules (#103 E5, decisions D4/D5) that do not need the database: how the rows a viewer
- * can read become their tree, and where a moved page lands among its siblings.
+ * The page tree (issue #103 E5): pages nest through `parent_id` and are ordered among their
+ * siblings by `position`. This module holds the rules; DBStorage supplies the queries.
  *
- * The tree a viewer sees is built only from pages they can read. A page whose parent is not among
- * them (unreadable, trashed, another workspace, or gone) is shown at the root, with no sign that
- * it has a parent: its `parentId` is null and its `position` is its place among the root pages
- * (D4). Positions in a response are always 0..n-1 per sibling list, so gaps left by pages the
- * viewer cannot read never show.
+ * Server rules (decisions D4/D5 on #103):
+ * - a child is in the same team as its parent, or both are personal (team-less);
+ * - moving a page needs editor on the page and on the new parent; cycles are refused;
+ * - the tree lists only pages the viewer can read, and a readable page whose parent is not
+ *   readable is shown at the root with no hint that a parent exists;
+ * - trashing a page trashes its whole subtree, only if the caller may delete every page in it;
+ *   restoring the page restores the pages that were trashed with it.
  */
 
-/** A readable page as the tree query loads it (never content). */
 export interface PageTreeRow {
   id: number;
   title: string;
@@ -17,187 +18,185 @@ export interface PageTreeRow {
   icon: string | null;
   parentId: number | null;
   position: number | null;
-  createdAt: Date;
-  updatedAt: Date;
+  folder: string;
+  teamId: number | null;
+  updatedAt: Date | string;
+  createdAt: Date | string;
 }
 
-/** A page in the tree response: `parentId`/`position` as this viewer sees them. */
 export interface PageTreeNode {
   id: number;
   title: string;
   slug: string;
   icon: string | null;
+  /** The parent as the viewer sees it: null at the root, including when the parent is hidden. */
   parentId: number | null;
-  position: number;
-  updatedAt: Date;
-}
-
-/** A breadcrumb entry above a page (GET /api/pages/:id/ancestors). */
-export interface PageAncestor {
-  id: number;
-  title: string;
-  slug: string;
-  icon: string | null;
-}
-
-/** What DBStorage.movePage did; the route maps it to a status code. */
-export type PageMoveResult =
-  | { status: 'moved'; page: { id: number; parentId: number | null } }
-  | { status: 'not-found' | 'parent-not-found' | 'cross-team' | 'cycle' };
-
-/** A page in the trash listing (GET /api/trash): never content. */
-export interface TrashedPage {
-  id: number;
-  title: string;
-  slug: string;
-  icon: string | null;
-  folder: string;
-  author: string;
-  teamId: number | null;
-  deletedAt: Date | null;
-  updatedAt: Date;
-}
-
-/** Name of the advisory lock that serializes page tree writes within one workspace scope. */
-export const PAGE_TREE_LOCK_NAME = 'papyrus.page_tree';
-
-/** Highest sibling index the move route accepts (larger values are a client bug). */
-export const MAX_TREE_INDEX = 100_000;
-
-/** How far up the breadcrumb walks; deeper chains are cut (they only exist in broken data). */
-export const MAX_ANCESTOR_DEPTH = 64;
-
-interface Orderable {
-  id: number;
   position: number | null;
-  createdAt: Date;
+  folder: string;
+  updatedAt: Date | string;
+  children: PageTreeNode[];
 }
 
-/** Sibling order: stored position (unpositioned pages last), then creation, then id. */
-export function compareSiblingOrder(a: Orderable, b: Orderable): number {
+const time = (value: Date | string) => new Date(value).getTime();
+
+/** Sibling order: explicit position first (nulls last), then creation time, then id. */
+export function compareSiblings(
+  a: Pick<PageTreeRow, 'id' | 'position' | 'createdAt'>,
+  b: Pick<PageTreeRow, 'id' | 'position' | 'createdAt'>
+): number {
   if (a.position !== b.position) {
     if (a.position === null) return 1;
     if (b.position === null) return -1;
     return a.position - b.position;
   }
-  const created = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-  return created !== 0 ? created : a.id - b.id;
+  return time(a.createdAt) - time(b.createdAt) || a.id - b.id;
 }
 
 /**
- * The tree of `rows` (the pages one viewer can read in one scope), depth first: each page is
- * followed by its sub-pages, siblings in order.
- *
- * - A parent outside `rows` makes the page a root page; its stored position is relative to
- *   siblings the viewer may not see, so it sorts like an unpositioned page.
- * - Parent links that loop (only possible in data written before the tree rules) are cut at
- *   the first page of the loop in sibling order, so every readable page is shown once.
+ * Nest the readable rows into a tree. A row whose parent is not among the rows (unreadable,
+ * trashed, or gone) becomes a root and reports `parentId: null`, so nothing about the hidden
+ * parent leaks. Rows caught in a parent cycle (possible only in old data) are attached at the
+ * root as well, so no readable page is ever dropped.
  */
 export function buildPageTree(rows: PageTreeRow[]): PageTreeNode[] {
   const byId = new Map(rows.map((row) => [row.id, row]));
-  const parentOf = new Map<number, number | null>();
-  const sortKey = new Map<number, Orderable>();
+  const childrenOf = new Map<number, PageTreeRow[]>();
+  const roots: PageTreeRow[] = [];
   for (const row of rows) {
-    const parentId =
-      row.parentId !== null && row.parentId !== row.id && byId.has(row.parentId)
-        ? row.parentId
-        : null;
-    parentOf.set(row.id, parentId);
-    sortKey.set(row.id, {
-      id: row.id,
-      position: parentId === null && row.parentId !== null ? null : row.position,
-      createdAt: row.createdAt,
-    });
+    if (row.parentId !== null && row.parentId !== row.id && byId.has(row.parentId)) {
+      const list = childrenOf.get(row.parentId) ?? [];
+      list.push(row);
+      childrenOf.set(row.parentId, list);
+    } else {
+      roots.push(row);
+    }
   }
-
-  // Ordered children lists, rebuilt when a loop is cut.
-  let children = new Map<number | null, number[]>();
-  const rebuild = () => {
-    const groups = new Map<number | null, Orderable[]>();
-    for (const row of rows) {
-      const parentId = parentOf.get(row.id)!;
-      const group = groups.get(parentId) ?? [];
-      group.push(sortKey.get(row.id)!);
-      groups.set(parentId, group);
-    }
-    children = new Map();
-    for (const [parentId, group] of groups) {
-      children.set(
-        parentId,
-        group.sort(compareSiblingOrder).map((key) => key.id)
-      );
-    }
-  };
-  rebuild();
 
   const visited = new Set<number>();
-  const mark = (id: number) => {
-    const stack = [id];
-    while (stack.length) {
-      const current = stack.pop()!;
-      if (visited.has(current)) continue;
-      visited.add(current);
-      stack.push(...(children.get(current) ?? []));
-    }
+  const toNode = (row: PageTreeRow, parentId: number | null): PageTreeNode => {
+    visited.add(row.id);
+    const children = (childrenOf.get(row.id) ?? [])
+      .filter((child) => !visited.has(child.id))
+      .sort(compareSiblings)
+      .map((child) => toNode(child, row.id));
+    return {
+      id: row.id,
+      title: row.title,
+      slug: row.slug,
+      icon: row.icon,
+      parentId,
+      position: row.position,
+      folder: row.folder,
+      updatedAt: row.updatedAt,
+      children,
+    };
   };
-  for (const id of children.get(null) ?? []) mark(id);
 
-  // Whatever is still unvisited hangs off a loop: lift the first such page to the root.
-  while (visited.size < rows.length) {
-    const first = rows
-      .filter((row) => !visited.has(row.id))
-      .map((row) => sortKey.get(row.id)!)
-      .sort(compareSiblingOrder)[0];
-    parentOf.set(first.id, null);
-    sortKey.set(first.id, { ...first, position: null });
-    rebuild();
-    mark(first.id);
+  const tree = roots.sort(compareSiblings).map((row) => toNode(row, null));
+  // Whatever is still unvisited sits in a cycle: break it at the root, in a stable order.
+  for (const row of [...rows].sort(compareSiblings)) {
+    if (!visited.has(row.id)) tree.push(toNode(row, null));
   }
-
-  const result: PageTreeNode[] = [];
-  const emit = (parentId: number | null) => {
-    (children.get(parentId) ?? []).forEach((id, index) => {
-      const row = byId.get(id)!;
-      result.push({
-        id: row.id,
-        title: row.title,
-        slug: row.slug,
-        icon: row.icon,
-        parentId,
-        position: index,
-        updatedAt: row.updatedAt,
-      });
-      emit(id);
-    });
-  };
-  emit(null);
-  return result;
+  return tree;
 }
 
 /**
- * The new order of a sibling list after `pageId` moves into it at `index`.
- *
- * `index` counts the siblings the viewer sees (`visibleIds`, in their tree order, without the
- * moved page); `siblingIds` is the stored list (every live sibling, readable or not, in sibling
- * order). The page goes right before the sibling the viewer saw at `index`; when that one is not
- * a stored sibling (a page shown at the root because its own parent is hidden), before the next
- * one that is; at the end when there is none. Siblings the viewer cannot see keep their order.
+ * The sibling order after placing `movedId` right after `afterId` (or first when `afterId` is
+ * null). `siblings` is the current order and may or may not contain `movedId`.
  */
-export function planSiblingOrder(
-  siblingIds: number[],
-  visibleIds: number[],
-  index: number,
-  pageId: number
+export function orderWithMove(
+  siblings: number[],
+  movedId: number,
+  afterId: number | null
 ): number[] {
-  const stored = siblingIds.filter((id) => id !== pageId);
-  const visible = visibleIds.filter((id) => id !== pageId);
-  let insertAt = stored.length;
-  for (let i = Math.max(0, index); i < visible.length; i += 1) {
-    const at = stored.indexOf(visible[i]);
-    if (at !== -1) {
-      insertAt = at;
-      break;
+  const rest = siblings.filter((id) => id !== movedId);
+  const index = afterId === null ? 0 : rest.indexOf(afterId) + 1;
+  rest.splice(index, 0, movedId);
+  return rest;
+}
+
+export interface TreeRuleError {
+  status: 400 | 403 | 404;
+  message: string;
+}
+
+/** What the rules need to know about a page. */
+export interface TreePage {
+  id: number;
+  teamId: number | null;
+  parentId: number | null;
+  deletedAt?: Date | string | null;
+}
+
+export interface PageTreeStore {
+  getPage(id: number): Promise<TreePage | undefined>;
+  canEdit(userId: number | undefined, pageId: number): Promise<boolean>;
+  canRead(userId: number | undefined, pageId: number): Promise<boolean>;
+  canOwn(userId: number | undefined, pageId: number): Promise<boolean>;
+  /** Ids of every live (not trashed) descendant, unreadable ones included. */
+  getLiveDescendantIds(pageId: number): Promise<number[]>;
+  /**
+   * Ids of every descendant, trashed ones included: a trashed page can be restored, so a link
+   * through it still counts when checking for cycles.
+   */
+  getAllDescendantIds(pageId: number): Promise<number[]>;
+}
+
+const PARENT_REFUSED: TreeRuleError = {
+  status: 403,
+  message: '이 문서를 상위 문서로 지정할 수 없습니다',
+};
+
+/**
+ * Whether `parentId` may become the parent of a page in team `teamId` (the page itself when
+ * `pageId` is set). A missing, trashed, or non-editable parent gets the same 403, so the answer
+ * does not reveal whether a page id exists.
+ */
+export async function checkParent(
+  store: PageTreeStore,
+  userId: number | undefined,
+  parentId: number,
+  page: { id?: number; teamId: number | null }
+): Promise<TreeRuleError | null> {
+  if (page.id !== undefined && parentId === page.id) {
+    return { status: 400, message: '문서를 자기 자신 아래로 옮길 수 없습니다' };
+  }
+  const parent = await store.getPage(parentId);
+  if (!parent || parent.deletedAt || !(await store.canEdit(userId, parentId))) {
+    return PARENT_REFUSED;
+  }
+  if ((parent.teamId ?? null) !== (page.teamId ?? null)) {
+    return { status: 403, message: '다른 워크스페이스의 문서 아래로 옮길 수 없습니다' };
+  }
+  if (page.id !== undefined) {
+    const descendants = await store.getAllDescendantIds(page.id);
+    if (descendants.includes(parentId)) {
+      return { status: 400, message: '문서를 자신의 하위 문서 아래로 옮길 수 없습니다' };
     }
   }
-  return [...stored.slice(0, insertAt), pageId, ...stored.slice(insertAt)];
+  return null;
+}
+
+/**
+ * The pages a delete of `pageId` trashes (the page and its live descendants), or the reason it
+ * is refused: every one of them needs owner, as deleting a single page does.
+ */
+export async function subtreeForTrash(
+  store: PageTreeStore,
+  userId: number | undefined,
+  pageId: number
+): Promise<{ ids: number[] } | { error: TreeRuleError }> {
+  const ids = [pageId, ...(await store.getLiveDescendantIds(pageId))];
+  for (const id of ids.slice(1)) {
+    if (!(await store.canOwn(userId, id))) {
+      return {
+        error: {
+          status: 403,
+          message:
+            '삭제할 권한이 없는 하위 문서가 있어 삭제할 수 없습니다. 하위 문서를 먼저 옮기거나 소유자에게 요청하세요.',
+        },
+      };
+    }
+  }
+  return { ids };
 }
