@@ -79,7 +79,9 @@ const OWNER = { id: 1, email: 'owner@example.com', teams: [TEAM_A, TEAM_B] };
 const EDITOR = { id: 2, email: 'editor@example.com', teams: [TEAM_A] };
 const VIEWER = { id: 3, email: 'viewer@example.com', teams: [TEAM_A] };
 const PARTIAL = { id: 4, email: 'partial@example.com', teams: [TEAM_A] };
-const USERS = [OWNER, EDITOR, VIEWER, PARTIAL];
+// Not a member of any team, but holds an editor grant on a team page (public or cross-team).
+const GUEST = { id: 5, email: 'guest@example.com', teams: [] as number[] };
+const USERS = [OWNER, EDITOR, VIEWER, PARTIAL, GUEST];
 
 // Team A: ROOT > CHILD > GRANDCHILD, plus SIBLING at the root. Team B: OTHER. Personal: MINE.
 const ROOT = 100;
@@ -106,6 +108,7 @@ const GRANTS: Record<number, Record<number, Level>> = {
   [VIEWER.id]: all('viewer', TEAM_A_PAGES),
   // Owns the top of the subtree but only edits the grandchild.
   [PARTIAL.id]: { [ROOT]: 'owner', [CHILD]: 'owner', [GRANDCHILD]: 'editor', [SIBLING]: 'owner' },
+  [GUEST.id]: { [ROOT]: 'editor' },
 };
 
 const fullPage = (id: number) => ({
@@ -163,6 +166,7 @@ beforeEach(() => {
     walk(id);
     return out;
   });
+  storage.getAllDescendantIds.mockImplementation((id: number) => storage.getLiveDescendantIds(id));
   storage.getReadableSiblingIds.mockImplementation(
     async (_userId: number, parentId: number | null, teamId: number | null) =>
       Object.values(PAGES)
@@ -259,6 +263,15 @@ describe('POST /api/pages with a parent', () => {
       parentId: ROOT,
       teamId: TEAM_A,
     });
+  });
+
+  it('a non-member with an editor grant cannot create in the team by omitting teamId', async () => {
+    const res = await request(app)
+      .post('/api/pages')
+      .set(as(GUEST))
+      .send({ ...body, parentId: ROOT });
+    expect(res.status).toBe(403);
+    expect(storage.createWikiPage).not.toHaveBeenCalled();
   });
 
   it('refuses a parent the caller cannot edit or in another team', async () => {

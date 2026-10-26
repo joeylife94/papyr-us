@@ -262,6 +262,12 @@ describe('page tree (real Postgres)', () => {
     expect(subtree.sort()).toEqual([ids.teamRoot, ids.teamChild].sort());
     expect(await storage.trashPages(subtree)).toBe(2);
 
+    // Cycle checks see through trashed pages; trash rules only take live ones.
+    expect((await storage.getAllDescendantIds(ids.teamRoot)).sort()).toEqual(
+      [ids.teamChild, ids.teamGrandchild].sort()
+    );
+    expect(await storage.getLiveDescendantIds(ids.teamRoot)).toEqual([]);
+
     const together = await storage.getTrashedTogetherIds(ids.teamRoot);
     expect(together.sort()).toEqual([ids.teamRoot, ids.teamChild].sort());
     expect(await storage.getTrashedTogetherIds(ids.teamSibling)).toEqual([]); // not trashed

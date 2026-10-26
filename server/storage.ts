@@ -536,6 +536,23 @@ export class DBStorage {
   }
 
   /**
+   * Ids of every descendant of a page, trashed ones included (restoring a trashed page brings
+   * its links back, so cycle checks must see through it).
+   */
+  async getAllDescendantIds(pageId: number): Promise<number[]> {
+    const { rows } = await this.pool.query(
+      `WITH RECURSIVE sub AS (
+         SELECT id FROM wiki_pages WHERE parent_id = $1
+         UNION
+         SELECT w.id FROM wiki_pages w JOIN sub ON w.parent_id = sub.id
+       )
+       SELECT id FROM sub`,
+      [pageId]
+    );
+    return rows.map((r: { id: number }) => r.id).filter((id: number) => id !== pageId);
+  }
+
+  /**
    * The siblings the viewer can see under `parentId` (null = root) in one team or among personal
    * pages, in tree order. Only these are renumbered on a move, so a move never writes to pages
    * the viewer cannot read.

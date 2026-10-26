@@ -184,6 +184,24 @@ test('page tree rules hold against the database: team boundary, cycles, hidden p
     });
     expect(crossCreate.status()).toBe(403);
 
+    // A public editor grant on a team page does not let an outsider create pages in the team by
+    // leaving out teamId (the child would inherit the team).
+    const grant = await api.post(`/api/pages/${teamPage.id}/permissions`, {
+      data: { entityType: 'public', permission: 'editor' },
+    });
+    expect(grant.status()).toBe(201);
+    const outsiderChild = await otherApi.post('/api/pages', {
+      data: {
+        title: 'outsider',
+        slug: `outsider-${stamp}`,
+        content: '',
+        folder: 'docs',
+        author: 'u',
+        parentId: teamPage.id,
+      },
+    });
+    expect(outsiderChild.status()).toBe(403);
+
     // Cycle: a page cannot move below its own child.
     const cycle = await api.post(`/api/pages/${personalA.id}/move`, {
       data: { parentId: personalB.id },

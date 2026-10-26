@@ -135,6 +135,11 @@ export interface PageTreeStore {
   canOwn(userId: number | undefined, pageId: number): Promise<boolean>;
   /** Ids of every live (not trashed) descendant, unreadable ones included. */
   getLiveDescendantIds(pageId: number): Promise<number[]>;
+  /**
+   * Ids of every descendant, trashed ones included: a trashed page can be restored, so a link
+   * through it still counts when checking for cycles.
+   */
+  getAllDescendantIds(pageId: number): Promise<number[]>;
 }
 
 const PARENT_REFUSED: TreeRuleError = {
@@ -164,7 +169,7 @@ export async function checkParent(
     return { status: 403, message: '다른 워크스페이스의 문서 아래로 옮길 수 없습니다' };
   }
   if (page.id !== undefined) {
-    const descendants = await store.getLiveDescendantIds(page.id);
+    const descendants = await store.getAllDescendantIds(page.id);
     if (descendants.includes(parentId)) {
       return { status: 400, message: '문서를 자신의 하위 문서 아래로 옮길 수 없습니다' };
     }

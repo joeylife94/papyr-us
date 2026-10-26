@@ -89,6 +89,19 @@ function fakeStore(pages: TreePage[], rights: { edit?: number[]; own?: number[] 
     canEdit: async (_u, id) => (rights.edit ?? pages.map((p) => p.id)).includes(id),
     canRead: async (_u, id) => byId.has(id),
     canOwn: async (_u, id) => (rights.own ?? pages.map((p) => p.id)).includes(id),
+    getAllDescendantIds: async (id) => {
+      const out: number[] = [];
+      const walk = (parent: number) => {
+        for (const p of pages) {
+          if (p.parentId === parent && !out.includes(p.id)) {
+            out.push(p.id);
+            walk(p.id);
+          }
+        }
+      };
+      walk(id);
+      return out;
+    },
     getLiveDescendantIds: async (id) => {
       const out: number[] = [];
       const walk = (parent: number) => {
@@ -130,6 +143,18 @@ describe('checkParent', () => {
   it('refuses cycles: the page itself or one of its descendants (400)', async () => {
     expect((await checkParent(fakeStore(pages), 1, 1, { id: 1, teamId: 7 }))?.status).toBe(400);
     expect((await checkParent(fakeStore(pages), 1, 3, { id: 1, teamId: 7 }))?.status).toBe(400);
+  });
+
+  it('sees cycles through a trashed page (restoring it would close the loop)', async () => {
+    // A > B (trashed) > C, with C restored on its own: C may not become A's parent.
+    const withTrash: TreePage[] = [
+      { id: 11, teamId: 7, parentId: null },
+      { id: 12, teamId: 7, parentId: 11, deletedAt: new Date() },
+      { id: 13, teamId: 7, parentId: 12 },
+    ];
+    expect((await checkParent(fakeStore(withTrash), 1, 13, { id: 11, teamId: 7 }))?.status).toBe(
+      400
+    );
   });
 
   it('answers a missing, trashed or non-editable parent the same way (403)', async () => {

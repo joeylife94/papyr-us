@@ -144,6 +144,7 @@ export async function registerRoutes(
     canRead: (userId, id) => storage.checkPagePermission(userId, id, 'viewer'),
     canOwn: (userId, id) => storage.checkPagePermission(userId, id, 'owner'),
     getLiveDescendantIds: (id) => storage.getLiveDescendantIds(id),
+    getAllDescendantIds: (id) => storage.getAllDescendantIds(id),
   };
   setSessionClosedHandler(({ page, tagsAtStart }) => {
     triggerWorkflows('page_updated', {
@@ -814,6 +815,15 @@ export async function registerRoutes(
             teamId: (pageData.teamId as number | null | undefined) ?? null,
           });
           if (refused) return res.status(refused.status).json({ message: refused.message });
+          // requireTeamMembership only saw the team in the body. An inherited team needs the same
+          // check: an editor grant on a team page (public or to another team) must not let a
+          // non-member create pages in that team.
+          if (pageData.teamId != null) {
+            const userTeamIds = req.user?.id ? await storage.getUserTeamIds(req.user.id) : [];
+            if (!userTeamIds.includes(Number(pageData.teamId))) {
+              return res.status(403).json({ message: 'You are not a member of this team' });
+            }
+          }
         }
 
         // Pass creator user ID for automatic owner permission assignment
@@ -891,9 +901,10 @@ export async function registerRoutes(
           if (refused) return res.status(refused.status).json({ message: refused.message });
         }
         if (changesTeam) {
-          if ((await storage.getLiveDescendantIds(id)).length > 0) {
+          // Trashed children count too: restoring them would put them under another team.
+          if ((await storage.getAllDescendantIds(id)).length > 0) {
             return res.status(409).json({
-              message: '하위 문서가 있는 문서는 다른 워크스페이스로 옮길 수 없습니다',
+              message: '하위 문서(휴지통 포함)가 있는 문서는 다른 워크스페이스로 옮길 수 없습니다',
             });
           }
           if (!changesParent && oldPage?.parentId != null) {

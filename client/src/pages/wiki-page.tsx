@@ -31,6 +31,18 @@ import { ko } from 'date-fns/locale';
 import { Share, User, Clock, Calendar, AlertTriangle, Sparkles, Trash2 } from 'lucide-react';
 import type { Block, WikiPage } from '@shared/schema';
 
+/** The server's reason for a refused delete (`403: {"message": …}`), or a generic one. */
+function deleteFailureReason(error: unknown): string {
+  const text = error instanceof Error ? error.message : '';
+  try {
+    const body = JSON.parse(text.slice(text.indexOf(':') + 1));
+    if (typeof body?.message === 'string') return body.message;
+  } catch {
+    // Not a JSON body: fall through to the generic message.
+  }
+  return '문서를 삭제할 수 없습니다.';
+}
+
 export default function WikiPageView() {
   const { slug } = useParams();
   const navigate = useNavigate();
@@ -151,13 +163,18 @@ export default function WikiPageView() {
     if (!confirmed) return;
     try {
       await apiRequest('DELETE', `/api/pages/${page.id}`);
-      queryClient.invalidateQueries({ queryKey: ['/api/pages'] });
-      toast({ title: '문서 삭제됨', description: '문서를 삭제했습니다.' });
+      // The sidebar tree and the lists drop the page and its subtree (issue #103 E5).
+      void invalidatePageLists(queryClient);
+      toast({
+        title: '문서 삭제됨',
+        description: '문서를 하위 문서와 함께 휴지통으로 옮겼습니다.',
+      });
       navigate('/');
-    } catch {
+    } catch (error) {
       toast({
         title: '삭제 실패',
-        description: '문서를 삭제할 수 없습니다.',
+        // A subtree with pages the user may not delete is refused with a reason; show it.
+        description: deleteFailureReason(error),
         variant: 'destructive',
       });
     }
