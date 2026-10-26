@@ -78,6 +78,7 @@ import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 import type { RetrievedPageRow } from './services/retrieval.js';
 import type { PageTreeRow } from './services/page-tree.js';
+import { postgresErrorOf } from './db-errors.js';
 
 // Helper: detect if a string looks like a bcrypt hash
 function isBcryptHash(value: string): boolean {
@@ -98,12 +99,12 @@ export const ANONYMOUS_PAGE_VIEWER: PageViewer = Object.freeze({ teamIds: [] as 
 const MAX_SLUG_INSERT_ATTEMPTS = 100;
 
 function isTeamPagesForeignKeyViolation(error: unknown): boolean {
-  const dbError = error as { code?: string; constraint?: string } | null;
+  const dbError = postgresErrorOf(error);
   return dbError?.code === '23503' && dbError.constraint === 'wiki_pages_team_id_teams_id_fk';
 }
 
 function isSlugUniqueViolation(error: unknown): boolean {
-  const dbError = error as { code?: string; constraint?: string } | null;
+  const dbError = postgresErrorOf(error);
   if (dbError?.code !== '23505') return false;
   return !dbError.constraint || dbError.constraint.toLowerCase().includes('slug');
 }

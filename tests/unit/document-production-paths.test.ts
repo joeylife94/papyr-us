@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
+import { DrizzleQueryError } from 'drizzle-orm';
 import { buildUniqueSlugCandidate, DBStorage } from '../../server/storage';
 
 // Cover the two production regressions: alias resolution and duplicate slug insertion.
@@ -38,10 +39,33 @@ describe('document production paths', () => {
     };
 
     const created = await storage.createWikiPage(pageInput as any);
-    expect(inserted.map((value) => value.slug)).toEqual([
-      'duplicate-title',
-      'duplicate-title-2',
-    ]);
+    expect(inserted.map((value) => value.slug)).toEqual(['duplicate-title', 'duplicate-title-2']);
+    expect(created.slug).toBe('duplicate-title-2');
+  });
+
+  it('also retries when the violation comes wrapped, as drizzle-orm throws it', async () => {
+    const inserted: string[] = [];
+    const storage = Object.create(DBStorage.prototype) as DBStorage;
+    (storage as any).db = {
+      insert: vi.fn(() => ({
+        values: vi.fn((value: { slug: string }) => ({
+          returning: vi.fn(async () => {
+            inserted.push(value.slug);
+            if (inserted.length === 1) {
+              const pgError = Object.assign(new Error('duplicate key value'), {
+                code: '23505',
+                constraint: 'wiki_pages_slug_unique',
+              });
+              throw new DrizzleQueryError('insert into "wiki_pages" ...', [], pgError);
+            }
+            return [{ id: 8, ...value }];
+          }),
+        })),
+      })),
+    };
+
+    const created = await storage.createWikiPage(pageInput as any);
+    expect(inserted).toEqual(['duplicate-title', 'duplicate-title-2']);
     expect(created.slug).toBe('duplicate-title-2');
   });
 
