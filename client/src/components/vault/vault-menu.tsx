@@ -12,8 +12,8 @@ import { downloadVault, exportFailureMessage } from './vault-api';
 import { VaultImportDialog } from './vault-import-dialog';
 
 interface VaultMenuProps {
-  /** Team name of the workspace, or null for the team-less pages (the page tree's scope). */
-  teamName: string | null;
+  /** Team id of the workspace, or null for the team-less pages (the page tree's scope). */
+  teamId: number | null;
   /** Workspace name shown to the user. */
   scopeLabel: string;
   className?: string;
@@ -23,7 +23,7 @@ interface VaultMenuProps {
  * Workspace menu in the workspace panel header (#113 P2-D2): exports the workspace's pages as a
  * Markdown vault (`.zip`) and imports a vault or Markdown files into it.
  */
-export function VaultMenu({ teamName, scopeLabel, className }: VaultMenuProps) {
+export function VaultMenu({ teamId, scopeLabel, className }: VaultMenuProps) {
   const { toast } = useToast();
   const [importOpen, setImportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -32,7 +32,7 @@ export function VaultMenu({ teamName, scopeLabel, className }: VaultMenuProps) {
     if (exporting) return;
     setExporting(true);
     try {
-      const fileName = await downloadVault(teamName);
+      const fileName = await downloadVault(teamId);
       toast({
         title: '내보냈습니다',
         description: `${scopeLabel} 문서를 ${fileName}로 저장했습니다.`,
@@ -80,7 +80,7 @@ export function VaultMenu({ teamName, scopeLabel, className }: VaultMenuProps) {
       <VaultImportDialog
         open={importOpen}
         onOpenChange={setImportOpen}
-        teamName={teamName}
+        teamId={teamId}
         scopeLabel={scopeLabel}
       />
     </>

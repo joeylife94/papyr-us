@@ -1,6 +1,6 @@
 /**
  * /api/database/* (#113 §4, P2-D4): every route resolves the page that owns the data and needs
- * viewer on it to read, editor to write. Unknown ids and databases on missing, trashed or
+ * viewer on it to read, editor to write (a new relation needs editor on both pages). Unknown ids and databases on missing, trashed or
  * unreadable pages answer the same 404. Bodies are validated (properties, cell values keyed by
  * property id, limits) and errors never leak internals. The real-database proof is
  * tests/security-inline-database.spec.ts.
@@ -124,7 +124,7 @@ beforeEach(() => {
     [1, 2, 3, 4].includes(id) ? schema(id) : undefined
   );
   s.getDatabaseRow.mockImplementation(async (id: number) =>
-    [11, 21, 31, 41].includes(id) ? row(id) : undefined
+    [11, 12, 21, 31, 41].includes(id) ? row(id) : undefined
   );
   s.getDatabaseRelation.mockImplementation(async (id: number) => relations[id]);
   s.createDatabaseSchema.mockImplementation(async (pageId: number, input: any) => ({
@@ -345,7 +345,7 @@ describe('writes need editor on the owning page', () => {
     expectNoWrites();
   });
 
-  it('a relation needs read access to its target', async () => {
+  it('a relation needs editor on both pages', async () => {
     for (const toRowId of [31, 41, 99]) {
       const response = await api.post('/api/database/relations', {
         fromRowId: 11,
@@ -355,22 +355,30 @@ describe('writes need editor on the owning page', () => {
       expect(response.status, `to ${toRowId}`).toBe(404);
       expect(response.body).toEqual(NOT_FOUND);
     }
-    // A readable (viewer-only) target is enough.
-    const ok = await api.post('/api/database/relations', {
+    // Reading the target is not enough (#113 §4).
+    const viewerOnly = await api.post('/api/database/relations', {
       fromRowId: 11,
       toRowId: 21,
       propertyName: 'related',
     });
+    expect(viewerOnly.status).toBe(403);
+    expect(storage.addRelation).not.toHaveBeenCalled();
+
+    const ok = await api.post('/api/database/relations', {
+      fromRowId: 11,
+      toRowId: 12,
+      propertyName: 'related',
+    });
     expect(ok.status).toBe(201);
     expect(storage.addRelation).toHaveBeenCalledTimes(1);
-    expect(storage.addRelation).toHaveBeenCalledWith(1, 11, 'related', 2, 21, 1000);
+    expect(storage.addRelation).toHaveBeenCalledWith(1, 11, 'related', 1, 12, 1000);
   });
 
   it('refuses a relation beyond the per-row limit', async () => {
     (storage.addRelation as any).mockResolvedValue(null);
     const response = await api.post('/api/database/relations', {
       fromRowId: 11,
-      toRowId: 21,
+      toRowId: 12,
       propertyName: 'related',
     });
     expect(response.status).toBe(409);
@@ -381,7 +389,7 @@ describe('writes need editor on the owning page', () => {
     const response = await api.post('/api/database/relations', {
       fromRowId: 11,
       fromSchemaId: 3,
-      toRowId: 21,
+      toRowId: 12,
       propertyName: 'related',
     });
     expect(response.status).toBe(404);

@@ -100,7 +100,12 @@ test('vault round trip: export a tree as Markdown and import it into another tea
     await expect(exportItem).toBeVisible();
     await expect(page.getByRole('menuitem', { name: 'Markdown 가져오기' })).toBeVisible();
     await shot(page, '01-workspace-menu-light');
+    const exportRequest = page.waitForRequest(
+      (request) => new URL(request.url()).pathname === '/api/vault/export'
+    );
     const [download] = await Promise.all([page.waitForEvent('download'), exportItem.click()]);
+    // The scope goes by team id, never by name (a team named "42" is not team 42).
+    expect(new URL((await exportRequest).url()).searchParams.get('teamId')).toBe(String(source.id));
     expect(download.suggestedFilename()).toMatch(
       new RegExp(`^papyrus-vault-src-${stamp}-\\d{4}-\\d{2}-\\d{2}\\.zip$`)
     );
@@ -137,7 +142,9 @@ test('vault round trip: export a tree as Markdown and import it into another tea
         response.request().method() === 'POST'
     );
     await submit.click();
-    expect((await imported).status()).toBe(201);
+    const importResponse = await imported;
+    expect(importResponse.status()).toBe(201);
+    expect(new URL(importResponse.url()).searchParams.get('teamId')).toBe(String(target.id));
     await expect(dialog.getByRole('status')).toContainText('문서 3개를 가져왔습니다.');
     await shot(page, '02-import-summary-light');
 

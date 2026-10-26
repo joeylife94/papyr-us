@@ -10,11 +10,11 @@
  *   are indistinguishable from unknown ones (like a parent page in the page tree, #103 E5);
  * - a caller who can read the page but not edit it gets 403 on writes (401 without a session);
  * - creating a schema needs editor on a live page (`pageId`; 404 `Page not found` otherwise);
- * - a relation needs editor on the source row's page (the relation is part of the source
- *   database) and viewer on the target row's page (linking a row only records its id, so reading
- *   it is enough; the target database is not changed). Relation listings and rollups leave out
- *   targets the caller cannot read, judged by the database each target row really belongs to
- *   (relations stored before #113 may carry a `to_schema_id` that does not match their row).
+ * - creating a relation needs editor on both rows' pages (#113 §4); removing one needs editor on
+ *   the source row's page only, so a relation to a page that later became read-only can still be
+ *   taken out of the source database. Relation listings and rollups leave out targets the caller
+ *   cannot read, judged by the database each target row really belongs to (relations stored
+ *   before #113 may carry a `to_schema_id` that does not match their row).
  * - A row has at most 1,000 relations (409 beyond). `propertyName` is a free label of up to 100
  *   characters: inline databases have no relation property type yet, so it is not tied to a
  *   property of the schema.
@@ -481,7 +481,7 @@ export function registerDatabaseRoutes(app: Express, storage: DBStorage) {
     try {
       const from = await rowFor(storage, req.user?.id, fromRowId, 'editor');
       if ('refusal' in from) return refuse(res, from.refusal);
-      const to = await rowFor(storage, req.user?.id, toRowId, 'viewer');
+      const to = await rowFor(storage, req.user?.id, toRowId, 'editor');
       if ('refusal' in to) return refuse(res, to.refusal);
       // Optional schema ids must name the rows' own databases.
       if (

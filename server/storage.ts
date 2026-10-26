@@ -2380,7 +2380,10 @@ export class DBStorage {
 
   /**
    * Links a row to another row, or returns null when the source row already has `maxPerRow`
-   * relations. The count runs with the source row locked, so concurrent links keep the cap.
+   * relations. Links from one row are serialized by a transaction-scoped advisory lock on it, so
+   * concurrent links keep the cap. Not a row lock: the insert's foreign key checks take key-share
+   * locks on both rows and schemas, and a FOR UPDATE here deadlocked with a reverse link (B → A
+   * while A → B) or with a row move or property change in the source database.
    */
   async addRelation(
     fromSchemaId: number,
@@ -2391,11 +2394,9 @@ export class DBStorage {
     maxPerRow: number = DATABASE_LIMITS.relationsPerRow
   ): Promise<DatabaseRelation | null> {
     return this.db.transaction(async (tx: any) => {
-      await tx
-        .select({ id: databaseRows.id })
-        .from(databaseRows)
-        .where(eq(databaseRows.id, fromRowId))
-        .for('update');
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${`database-relations:${fromRowId}`}, 0))`
+      );
       const [stats] = await tx
         .select({ count: sql<number>`count(*)::int` })
         .from(databaseRelations)
@@ -2490,16 +2491,18 @@ export class DBStorage {
     const conditions = [inArray(databaseRows.id, relatedIds)];
     if (targetSchemaIds) conditions.push(inArray(databaseRows.schemaId, targetSchemaIds));
 
-    const relatedRows: Array<Pick<DatabaseRow, 'data'>> =
+    // Only the target property is read (`->` takes the row's own key, never an inherited one
+    // such as `constructor`), not every related row's whole data.
+    const relatedValues: Array<{ value: unknown }> =
       targetSchemaIds?.length === 0
         ? []
         : await this.db
-            .select({ data: databaseRows.data })
+            .select({ value: sql<unknown>`${databaseRows.data} -> ${config.targetField}` })
             .from(databaseRows)
             .where(and(...conditions));
 
-    const values = relatedRows
-      .map((row) => (row.data as Record<string, unknown>)?.[config.targetField])
+    const values = relatedValues
+      .map((row) => row.value)
       .filter((v) => v !== null && v !== undefined);
     if (values.length === 0) {
       return config.aggregation === 'count' ? 0 : null;

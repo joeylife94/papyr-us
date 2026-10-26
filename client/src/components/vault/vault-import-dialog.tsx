@@ -21,8 +21,8 @@ import {
 interface VaultImportDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Team name of the workspace, or null for the team-less pages. */
-  teamName: string | null;
+  /** Team id of the workspace, or null for the team-less pages. */
+  teamId: number | null;
   /** Workspace name shown to the user. */
   scopeLabel: string;
 }
@@ -40,7 +40,7 @@ function formatSize(bytes: number): string {
 export function VaultImportDialog({
   open,
   onOpenChange,
-  teamName,
+  teamId,
   scopeLabel,
 }: VaultImportDialogProps) {
   const queryClient = useQueryClient();
@@ -64,7 +64,7 @@ export function VaultImportDialog({
     setError(null);
     setSummary(null);
     try {
-      const result = await importVault(teamName, files);
+      const result = await importVault(teamId, files);
       setSummary(result);
       setFiles([]);
       if (inputRef.current) inputRef.current.value = '';

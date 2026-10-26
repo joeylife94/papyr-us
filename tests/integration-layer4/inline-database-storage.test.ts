@@ -13,7 +13,9 @@
  *     lossless is refused while values exist;
  *   - rollups and relation listings judge a target by the database its row is really in, not
  *     by the relation's stored to_schema_id, and only aggregate rows they may read;
- *   - a row has at most N relations, also under concurrent links;
+ *   - a row has at most N relations, also under concurrent links, and links in both directions
+ *     at once do not deadlock;
+ *   - a rollup reads only the related rows' own property, never an inherited key;
  *   - min/max rollups over very many related rows (legacy data) neither overflow the call stack
  *     nor the query's parameter limit.
  *
@@ -328,6 +330,62 @@ describe('inline database storage (real Postgres)', () => {
     expect(results.filter(Boolean)).toHaveLength(4);
     expect(results.filter((relation) => relation === null)).toHaveLength(2);
     expect(await storage.getRelations(from.id)).toHaveLength(4);
+  });
+
+  it('links in both directions at once without deadlocking', async () => {
+    const left = await createDatabase();
+    const right = await createDatabase();
+    const a = await storage.createDatabaseRow(left, null, { title: 'a' }, 10);
+    const b = await storage.createDatabaseRow(right, null, { title: 'b' }, 10);
+
+    // What a concurrent B → A link does: lock B, then key-share A for the foreign key check.
+    const other = await admin.connect();
+    try {
+      await other.query('BEGIN');
+      await other.query(`SELECT id FROM ${SCHEMA}.database_rows WHERE id = $1 FOR UPDATE`, [b.id]);
+      const linking = storage.addRelation(left, a.id, 'rel', right, b.id);
+      // Wait until A → B is blocked on B's foreign key check.
+      for (let tries = 0; tries < 100; tries += 1) {
+        const { rows } = await admin.query(
+          `SELECT count(*)::int AS n FROM pg_locks WHERE NOT granted AND pid <> pg_backend_pid()`
+        );
+        if (rows[0].n > 0) break;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      // A row lock on A (FOR UPDATE) made this wait on A → B, which waits on B: a deadlock.
+      await other.query(`SELECT id FROM ${SCHEMA}.database_rows WHERE id = $1 FOR KEY SHARE`, [
+        a.id,
+      ]);
+      await other.query('COMMIT');
+      expect(await linking).toMatchObject({ fromRowId: a.id, toRowId: b.id });
+    } finally {
+      other.release();
+    }
+
+    const both = await Promise.all([
+      storage.addRelation(left, a.id, 'rel', right, b.id),
+      storage.addRelation(right, b.id, 'rel', left, a.id),
+    ]);
+    expect(both.every(Boolean)).toBe(true);
+  });
+
+  it('rolls up only a property the related rows have themselves', async () => {
+    const source = await createDatabase();
+    const target = await createDatabase();
+    const from = await storage.createDatabaseRow(source, null, { title: 's' }, 10);
+    for (const points of [1, 2]) {
+      const to = await storage.createDatabaseRow(target, null, { title: 't', points }, 10);
+      await storage.addRelation(source, from.id, 'rel', target, to.id);
+    }
+    const rollup = (targetField: string, aggregation: string) =>
+      storage.calculateRollup(from.id, 'x', { relationField: 'rel', targetField, aggregation });
+
+    expect(await rollup('points', 'sum')).toBe(3);
+    expect(await rollup('points', 'count')).toBe(2);
+    for (const inherited of ['constructor', '__proto__', 'toString']) {
+      expect(await rollup(inherited, 'count')).toBe(0);
+      expect(await rollup(inherited, 'unique')).toBe(null);
+    }
   });
 
   it('rolls up very many related rows (legacy data) without overflowing', async () => {
