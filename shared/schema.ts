@@ -7,6 +7,8 @@ import {
   timestamp,
   jsonb,
   varchar,
+  primaryKey,
+  index,
 } from 'drizzle-orm/pg-core';
 import { createInsertSchema } from 'drizzle-zod';
 import { z } from 'zod';
@@ -117,6 +119,25 @@ export const updateWikiPageSchema = insertWikiPageSchema.partial();
 export type InsertWikiPage = z.infer<typeof insertWikiPageSchema>;
 export type UpdateWikiPage = z.infer<typeof updateWikiPageSchema>;
 export type WikiPage = typeof wikiPages.$inferSelect;
+
+// Page links (issue #103 E6): which pages a page links to, from the `[[page:<id>]]` tokens in its
+// content (shared/page-links.ts). Kept in step by DBStorage on every content write; backlinks
+// read it. Rows go when either page is deleted for good (drizzle/0021_add_page_links.sql).
+export const pageLinks = pgTable(
+  'page_links',
+  {
+    sourcePageId: integer('source_page_id')
+      .notNull()
+      .references(() => wikiPages.id, { onDelete: 'cascade' }),
+    targetPageId: integer('target_page_id')
+      .notNull()
+      .references(() => wikiPages.id, { onDelete: 'cascade' }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.sourcePageId, table.targetPageId] }),
+    index('idx_page_links_target').on(table.targetPageId),
+  ]
+);
 
 // Page version history
 export const pageVersions = pgTable('page_versions', {

@@ -38,6 +38,8 @@ import {
 } from '@hello-pangea/dnd';
 import { cn } from '@/lib/utils';
 import { moveBlock as reorderBlocks, resolveDrop } from '@/lib/block-order';
+import { PageLinkPicker } from '@/components/page/page-links';
+import { pageLinkToken } from '@shared/page-links';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -62,6 +64,8 @@ interface BlockEditorProps {
   userId?: string;
   userName?: string;
   useYjs?: boolean; // Enable Yjs CRDT collaboration (default: false)
+  /** Team of the page being edited, for the `@` / `[[` link picker (issue #103 E6). */
+  linkTeamId?: number | null;
 }
 
 export function BlockEditor({
@@ -72,12 +76,21 @@ export function BlockEditor({
   userId,
   userName,
   useYjs = false, // Default to false for backward compatibility
+  linkTeamId = null,
 }: BlockEditorProps) {
   const { flags } = useFeatureFlags();
   const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null);
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const addBlockRef = useRef<(index: number, type?: BlockType) => void>(() => {});
   const updateBlockRef = useRef<(blockId: string, updates: Partial<Block>) => void>(() => {});
+
+  // Page link picker (issue #103 E6): which block, where, and the "@" / "[[" text it replaces.
+  const [linkPicker, setLinkPicker] = useState<{
+    blockId: string;
+    anchor: { top: number; left: number };
+    start: number;
+    length: number;
+  } | null>(null);
 
   // Slash command state
   const [slashMenu, setSlashMenu] = useState<{
@@ -425,6 +438,14 @@ export function BlockEditor({
               onSlashCommand={(rect) => handleSlashCommand(block.id, rect)}
               onSlashFilter={handleSlashFilter}
               onSlashClose={handleSlashClose}
+              onPageLinkTrigger={(rect, start, length) =>
+                setLinkPicker({
+                  blockId: block.id,
+                  anchor: { top: rect.top, left: rect.left },
+                  start,
+                  length,
+                })
+              }
             />
           </div>
         );
@@ -837,6 +858,32 @@ export function BlockEditor({
       )}
 
       {/* Slash Command Menu (Notion-style /) */}
+      {linkPicker && (
+        <PageLinkPicker
+          anchor={linkPicker.anchor}
+          teamId={linkTeamId}
+          excludeId={pageId}
+          onSelect={(target) => {
+            const block = blocks.find((b) => b.id === linkPicker.blockId);
+            if (block) {
+              // Replace the "@" / "[[" that opened the picker with the link token.
+              const text = block.content;
+              const content =
+                text.slice(0, linkPicker.start) +
+                `${pageLinkToken(target.id)} ` +
+                text.slice(linkPicker.start + linkPicker.length);
+              updateBlock(block.id, { content });
+            }
+            setLinkPicker(null);
+            setFocusedBlockId(linkPicker.blockId);
+          }}
+          onClose={() => {
+            setLinkPicker(null);
+            setFocusedBlockId(linkPicker.blockId);
+          }}
+        />
+      )}
+
       <SlashCommandMenu
         isOpen={slashMenu.isOpen}
         position={slashMenu.position}

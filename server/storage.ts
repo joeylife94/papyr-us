@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import {
   wikiPages,
+  pageLinks,
   type WikiPage,
   type InsertWikiPage,
   type UpdateWikiPage,
@@ -78,6 +79,7 @@ import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 import type { RetrievedPageRow } from './services/retrieval.js';
 import type { PageTreeRow } from './services/page-tree.js';
+import { extractPageLinkIds, hasPageLinks } from '../shared/page-links.js';
 
 // Helper: detect if a string looks like a bcrypt hash
 function isBcryptHash(value: string): boolean {
@@ -195,16 +197,128 @@ export class DBStorage {
       }
     }
 
+    // A new page has no link rows yet, so only content with links needs indexing.
+    if (hasPageLinks(createdPage.content)) {
+      await this.replacePageLinks(createdPage.id, createdPage.content);
+    }
     return createdPage;
   }
 
   async updateWikiPage(id: number, page: UpdateWikiPage): Promise<WikiPage | undefined> {
-    const result = await this.db
-      .update(wikiPages)
-      .set(page)
-      .where(eq(wikiPages.id, id))
-      .returning();
-    return result[0];
+    if (page.content === undefined) {
+      const result = await this.db
+        .update(wikiPages)
+        .set(page)
+        .where(eq(wikiPages.id, id))
+        .returning();
+      return result[0];
+    }
+    // Every content write (REST, autosave, Yjs, restore) passes through here. The content and
+    // its link index change in one transaction: the row lock taken by the UPDATE orders
+    // concurrent saves of the same page, so the index always matches the content that won.
+    return this.db.transaction(async (tx: any) => {
+      const result = await tx.update(wikiPages).set(page).where(eq(wikiPages.id, id)).returning();
+      if (result[0]) await this.writePageLinks(tx, id, result[0].content);
+      return result[0];
+    });
+  }
+
+  /**
+   * Keep page_links in step with a page's content (issue #103 E6): the targets of its
+   * `[[page:<id>]]` tokens that exist, other than itself. Unknown ids are skipped, not refused:
+   * a token to a page that is gone still renders, as an inaccessible link.
+   */
+  async replacePageLinks(sourcePageId: number, content: string | null | undefined): Promise<void> {
+    await this.db.transaction((tx: any) => this.writePageLinks(tx, sourcePageId, content));
+  }
+
+  /**
+   * Rewrite a page's link rows inside the caller's transaction, in a savepoint: if the index
+   * cannot be written, the content still saves and the error is logged (a stale index only
+   * affects backlinks until the next save).
+   */
+  private async writePageLinks(
+    tx: any,
+    sourcePageId: number,
+    content: string | null | undefined
+  ): Promise<void> {
+    const targets = extractPageLinkIds(content).filter((id) => id !== sourcePageId);
+    try {
+      await tx.transaction(async (savepoint: any) => {
+        await savepoint.execute(sql`DELETE FROM page_links WHERE source_page_id = ${sourcePageId}`);
+        if (targets.length > 0) {
+          await savepoint.execute(sql`
+            INSERT INTO page_links (source_page_id, target_page_id)
+            SELECT ${sourcePageId}, id FROM wiki_pages
+             WHERE id IN (${sql.join(
+               targets.map((target) => sql`${target}`),
+               sql`, `
+             )})
+            ON CONFLICT DO NOTHING`);
+        }
+      });
+    } catch (error) {
+      console.error('Failed to update page links:', (error as Error)?.message);
+    }
+  }
+
+  /** Pages linking to `targetPageId` that the viewer may list, live ones only. */
+  async getReadableBacklinks(
+    userId: number | undefined,
+    targetPageId: number
+  ): Promise<Array<{ id: number; title: string; slug: string; icon: string | null }>> {
+    const viewer = await this.getPageViewer(userId);
+    return this.db
+      .select({
+        id: wikiPages.id,
+        title: wikiPages.title,
+        slug: wikiPages.slug,
+        icon: wikiPages.icon,
+      })
+      .from(pageLinks)
+      .innerJoin(wikiPages, eq(pageLinks.sourcePageId, wikiPages.id))
+      .where(
+        and(
+          eq(pageLinks.targetPageId, targetPageId),
+          isNull(wikiPages.deletedAt),
+          this.listableBy(viewer)
+        )
+      )
+      .orderBy(asc(wikiPages.title), asc(wikiPages.id))
+      .limit(200);
+  }
+
+  /**
+   * Link picker results (issue #103 E6): live pages the viewer may list whose title contains
+   * `query`, in one team or among personal pages, most recently updated first.
+   */
+  async searchLinkTargets(
+    userId: number | undefined,
+    scope: { teamId?: number; personalOnly?: boolean },
+    query: string,
+    limit = 20
+  ): Promise<Array<{ id: number; title: string; slug: string; icon: string | null }>> {
+    const viewer = await this.getPageViewer(userId);
+    const conditions: SQL[] = [isNull(wikiPages.deletedAt), this.listableBy(viewer)];
+    if (scope.teamId !== undefined) conditions.push(eq(wikiPages.teamId, scope.teamId));
+    if (scope.personalOnly) conditions.push(isNull(wikiPages.teamId));
+    const q = query.trim();
+    if (q) {
+      // LIKE wildcards in the query match literally.
+      const escaped = q.replace(/[\\%_]/g, (c) => `\\${c}`);
+      conditions.push(sql`${wikiPages.title} ILIKE ${'%' + escaped + '%'}`);
+    }
+    return this.db
+      .select({
+        id: wikiPages.id,
+        title: wikiPages.title,
+        slug: wikiPages.slug,
+        icon: wikiPages.icon,
+      })
+      .from(wikiPages)
+      .where(and(...conditions))
+      .orderBy(desc(wikiPages.updatedAt))
+      .limit(Math.min(Math.max(limit, 1), 50));
   }
 
   async deleteWikiPage(id: number): Promise<boolean> {

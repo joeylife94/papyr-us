@@ -3,9 +3,7 @@ import { Link } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { apiRequest } from '@/lib/queryClient';
-import { Link2, Sparkles, ArrowRight } from 'lucide-react';
-import type { WikiPage } from '@shared/schema';
+import { Sparkles, ArrowRight } from 'lucide-react';
 
 interface RelatedPagesProps {
   pageId: number;
@@ -13,28 +11,11 @@ interface RelatedPagesProps {
   pageContent: string;
 }
 
-interface BacklinkPage {
-  id: number;
-  title: string;
-  slug: string;
-  content: string;
-}
-
+/**
+ * AI-recommended related pages. Backlinks ("이 문서를 링크한 문서") come from the page_links index
+ * instead (components/page/backlinks.tsx, issue #103 E6).
+ */
 export function RelatedPages({ pageId, pageTitle, pageContent }: RelatedPagesProps) {
-  // Fetch backlinks (pages that link to this page)
-  const { data: pagesData, isLoading: pagesLoading } = useQuery<WikiPage[] | { pages: WikiPage[] }>(
-    {
-      queryKey: ['/api/pages'],
-    }
-  );
-
-  // Normalize: API returns { pages: [...], pagination: {...} }, not a raw array
-  const allPages: WikiPage[] | undefined = pagesData
-    ? Array.isArray(pagesData)
-      ? pagesData
-      : (pagesData as any).pages
-    : undefined;
-
   // Fetch AI-recommended related pages
   const { data: aiRelated, isLoading: aiLoading } = useQuery<{
     relatedPages: Array<{
@@ -66,28 +47,7 @@ export function RelatedPages({ pageId, pageTitle, pageContent }: RelatedPagesPro
     enabled: !!pageId && !!pageTitle,
   });
 
-  // Calculate backlinks
-  const backlinks: BacklinkPage[] = allPages
-    ? allPages
-        .filter((p) => {
-          if (p.id === pageId) return false;
-          // Check if content contains [[PageTitle]] or [text](slug)
-          const titlePattern = new RegExp(`\\[\\[${pageTitle}\\]\\]`, 'i');
-          const slugPattern = new RegExp(
-            `\\]\\([^)]*${pageTitle.toLowerCase().replace(/\s+/g, '-')}\\)`,
-            'i'
-          );
-          return titlePattern.test(p.content) || slugPattern.test(p.content);
-        })
-        .map((p) => ({
-          id: p.id,
-          title: p.title,
-          slug: p.slug,
-          content: p.content,
-        }))
-    : [];
-
-  if (pagesLoading || aiLoading) {
+  if (aiLoading) {
     return (
       <div className="space-y-6">
         <Card>
@@ -106,51 +66,14 @@ export function RelatedPages({ pageId, pageTitle, pageContent }: RelatedPagesPro
     );
   }
 
-  const hasBacklinks = backlinks.length > 0;
   const hasAIRelated = aiRelated && aiRelated.relatedPages && aiRelated.relatedPages.length > 0;
 
-  if (!hasBacklinks && !hasAIRelated) {
+  if (!hasAIRelated) {
     return null;
   }
 
   return (
     <div className="space-y-6">
-      {/* Backlinks Section */}
-      {hasBacklinks && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <Link2 className="h-5 w-5 text-info" />
-              백링크 ({backlinks.length})
-              <Badge variant="outline" className="ml-2">
-                이 페이지를 참조
-              </Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {backlinks.map((page) => (
-                <Link
-                  key={page.id}
-                  to={`/page/${page.slug}`}
-                  className="block p-3 rounded-lg border border-border hover:border-info/30 hover:bg-muted transition-colors"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <h4 className="font-medium text-foreground mb-1">{page.title}</h4>
-                      <p className="text-sm text-muted-foreground line-clamp-2">
-                        {page.content.substring(0, 150)}...
-                      </p>
-                    </div>
-                    <ArrowRight className="h-4 w-4 text-muted-foreground mt-1 ml-2 flex-shrink-0" />
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       {/* AI-Recommended Related Pages */}
       {hasAIRelated && (
         <Card>
