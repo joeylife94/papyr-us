@@ -15,7 +15,12 @@ export function jsonEqual(a: unknown, b: unknown): boolean {
   }
   if (!isPlainObject(a) || !isPlainObject(b)) return false;
   const keys = definedKeys(a);
-  return keys.length === definedKeys(b).length && keys.every((key) => jsonEqual(a[key], b[key]));
+  // Own keys only: JSON.parse makes `__proto__` an own key, while `b.__proto__` would read the
+  // inherited prototype, so a plain `b[key]` could match a key that `b` does not have.
+  return (
+    keys.length === definedKeys(b).length &&
+    keys.every((key) => Object.prototype.hasOwnProperty.call(b, key) && jsonEqual(a[key], b[key]))
+  );
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

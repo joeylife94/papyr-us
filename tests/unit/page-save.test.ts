@@ -93,6 +93,14 @@ describe('jsonEqual', () => {
     expect(jsonEqual('1', 1)).toBe(false);
   });
 
+  it('compares only own keys, so a parsed `__proto__` key never matches the inherited prototype', () => {
+    const parsed = (json: string) => JSON.parse(json) as unknown;
+    expect(jsonEqual(parsed('{"__proto__":{}}'), { existing: 1 })).toBe(false);
+    expect(jsonEqual({ existing: 1 }, parsed('{"__proto__":{}}'))).toBe(false);
+    expect(jsonEqual(parsed('{"__proto__":{"a":1}}'), parsed('{"__proto__":{"a":1}}'))).toBe(true);
+    expect(jsonEqual(parsed('{"__proto__":{"a":1}}'), parsed('{"__proto__":{"a":2}}'))).toBe(false);
+  });
+
   it('treats non-JSON objects such as dates as different unless they are the same object', () => {
     const date = new Date(0);
     expect(jsonEqual(date, date)).toBe(true);
@@ -273,6 +281,13 @@ describe('savePage', () => {
     expect(snapshots).toHaveLength(0);
     expect(current().tags).toEqual(['ops', 'new']);
     expect(current().folder).toBe('guides');
+  });
+
+  it('writes an update whose JSON carries a `__proto__` key instead of taking it for a no-op', async () => {
+    const { store, updates } = makeStore(makePage({ metadata: { existing: 1 } }));
+    const metadata = JSON.parse('{"__proto__":{}}');
+    await savePage(store, 1, { metadata }, 'manual');
+    expect(updates).toEqual([{ metadata }]);
   });
 
   it('a manual save with an unchanged body still keeps a version when the title changes', async () => {
