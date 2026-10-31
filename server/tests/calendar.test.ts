@@ -97,4 +97,32 @@ describe('Calendar Event Management API', () => {
 
     expect(response.status).toBe(204);
   });
+
+  // The 400 body keeps an `errors` array of Zod issues. Zod 4 removed ZodError.errors, so the
+  // handlers read ZodError.issues; without that the field silently drops out of the response.
+  it('TC-CAL-006: should return Zod issues in errors when creating an invalid event', async () => {
+    const response = await request(app)
+      .post('/api/calendar')
+      .send({ startDate: '2024-09-01T14:00:00.000Z', teamId });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toBe('Invalid event data');
+    expect(Array.isArray(response.body.errors)).toBe(true);
+    expect(response.body.errors.map((issue: any) => issue.path)).toContainEqual(['title']);
+    expect(storage.createCalendarEvent).not.toHaveBeenCalled();
+  });
+
+  it('TC-CAL-007: should return Zod issues in errors when updating with invalid data', async () => {
+    (storage.getCalendarEvent as vi.Mock).mockResolvedValue(mockEvent);
+
+    const response = await request(app)
+      .patch(`/api/calendar/event/${mockEvent.id}`)
+      .send({ title: 123 });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toBe('Invalid event data');
+    expect(Array.isArray(response.body.errors)).toBe(true);
+    expect(response.body.errors.map((issue: any) => issue.path)).toContainEqual(['title']);
+    expect(storage.updateCalendarEvent).not.toHaveBeenCalled();
+  });
 });
