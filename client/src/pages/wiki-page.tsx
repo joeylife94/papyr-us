@@ -232,7 +232,12 @@ export default function WikiPageView() {
   // on delete is an accepted E2E locator.
   const actions = (
     <div role="group" aria-label="문서 작업" className="flex flex-wrap items-center gap-2">
-      <PageHistory pageId={page.id} currentTitle={page.title} onRestored={handleRestored} />
+      <PageHistory
+        pageId={page.id}
+        currentTitle={page.title}
+        currentUpdatedAt={page.updatedAt}
+        onRestored={handleRestored}
+      />
       <Button
         variant={showAICopilot ? 'default' : 'outline'}
         size="sm"

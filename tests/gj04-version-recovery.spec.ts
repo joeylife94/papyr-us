@@ -62,12 +62,18 @@ test('GJ-04: edit, inspect history, restore prior version, and persist restored 
   await page.reload({ waitUntil: 'networkidle' });
   await expect(page.getByRole('heading', { name: updatedTitle })).toBeVisible();
 
-  // The recovery surface must expose the prior version through the real history UI.
+  // The recovery surface must expose the prior version through the real history UI:
+  // the version list (with the current document marked) and the selected version's preview.
+  const versionsBefore = await (await request.get(`/api/pages/${pageId}/versions`)).json();
   await page.getByRole('button', { name: /버전 기록/ }).click();
-  await expect(page.getByText(originalTitle, { exact: true })).toBeVisible();
+  const history = page.getByRole('dialog', { name: '버전 기록' });
+  const versionList = history.getByRole('navigation', { name: '버전 목록' });
+  await expect(versionList.getByText('현재 문서')).toBeVisible();
+  await versionList.getByRole('button', { name: new RegExp(originalTitle) }).click();
+  const preview = history.getByRole('region', { name: '버전 미리보기' });
+  await expect(preview.getByRole('heading', { name: originalTitle })).toBeVisible();
 
-  // Restore the prior version through the existing UI recovery action.
-  page.once('dialog', (dialog) => dialog.accept());
+  // Restore is deliberate: an AlertDialog explains it, then the server restores.
   const restoreResponsePromise = page.waitForResponse(
     (response) =>
       response.url().includes(`/api/pages/${pageId}/versions/`) &&
@@ -75,8 +81,28 @@ test('GJ-04: edit, inspect history, restore prior version, and persist restored 
       response.request().method() === 'POST' &&
       response.ok()
   );
-  await page.getByRole('button', { name: '복원' }).first().click();
-  await restoreResponsePromise;
+  await preview.getByRole('button', { name: '이 버전으로 복원' }).click();
+  const confirm = page.getByRole('alertdialog');
+  await expect(confirm).toContainText('복원 전');
+  await confirm.getByRole('button', { name: '복원', exact: true }).click();
+  const restoreResponse = await restoreResponsePromise;
+  expect((await restoreResponse.json()).title).toBe(originalTitle);
+
+  // Restore semantics are unchanged: the state before the restore is kept as a new version, and
+  // no earlier version is lost. (Other checkpoints may appear meanwhile, e.g. from a realtime
+  // save, so count the restore checkpoints rather than all versions.)
+  type Version = { id: number; title: string; changeDescription: string | null };
+  const versionsAfter: Version[] = await (
+    await request.get(`/api/pages/${pageId}/versions`)
+  ).json();
+  const restoreCheckpoints = (list: Version[]) =>
+    list.filter((v) => v.changeDescription === 'Before restore');
+  expect(restoreCheckpoints(versionsAfter)).toHaveLength(
+    restoreCheckpoints(versionsBefore).length + 1
+  );
+  expect(restoreCheckpoints(versionsAfter)[0].title).toBe(updatedTitle);
+  const afterIds = new Set(versionsAfter.map((v) => v.id));
+  expect((versionsBefore as Version[]).every((v) => afterIds.has(v.id))).toBe(true);
 
   // Reopen from fresh navigation and verify the restored state is durable, not just cached UI state.
   await page.goto('/');

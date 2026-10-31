@@ -126,7 +126,7 @@ test('Issue 76: capture genuine workspace, reader, history, dark mode, and mobil
   await actions.getByRole('button', { name: /버전 기록/ }).click();
   const historyDialog = page.getByRole('dialog');
   await expect(historyDialog).toBeVisible();
-  await expect(historyDialog.getByRole('button', { name: '복원' }).first()).toBeVisible();
+  await expect(historyDialog.getByRole('button', { name: '이 버전으로 복원' })).toBeVisible();
   // Wait for the sheet's slide-in to finish so the capture shows the settled surface.
   const viewportWidth = page.viewportSize()?.width ?? 0;
   await expect
