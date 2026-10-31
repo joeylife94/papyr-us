@@ -89,8 +89,9 @@ test('GJ-04: edit, inspect history, restore prior version, and persist restored 
   expect((await restoreResponse.json()).title).toBe(originalTitle);
 
   // Restore semantics are unchanged: the state before the restore is kept as a new version, and
-  // no earlier version is lost. (Other checkpoints may appear meanwhile, e.g. from a realtime
-  // save, so count the restore checkpoints rather than all versions.)
+  // no earlier version is lost. Reloading the page recorded nothing, even when realtime
+  // collaboration syncs the blocks on load: the restore checkpoint is the only new version, and
+  // it is the only one holding the updated state.
   type Version = { id: number; title: string; changeDescription: string | null };
   const versionsAfter: Version[] = await (
     await request.get(`/api/pages/${pageId}/versions`)
@@ -101,6 +102,10 @@ test('GJ-04: edit, inspect history, restore prior version, and persist restored 
     restoreCheckpoints(versionsBefore).length + 1
   );
   expect(restoreCheckpoints(versionsAfter)[0].title).toBe(updatedTitle);
+  expect(versionsAfter).toHaveLength(versionsBefore.length + 1);
+  expect(versionsAfter.filter((v) => v.title === updatedTitle)).toEqual([
+    restoreCheckpoints(versionsAfter)[0],
+  ]);
   const afterIds = new Set(versionsAfter.map((v) => v.id));
   expect((versionsBefore as Version[]).every((v) => afterIds.has(v.id))).toBe(true);
 
