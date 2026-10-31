@@ -22,4 +22,10 @@ describe('document list preview text', () => {
   it('omits fenced code blocks', () => {
     expect(toPlainTextPreview('Before\n```ts\nconst x = 1;\n```\nAfter')).toBe('Before After');
   });
+
+  it('names page links without their id token', () => {
+    expect(toPlainTextPreview('Agenda follows [[page:42]] and [[page:7]].')).toBe(
+      'Agenda follows [링크] and [링크].'
+    );
+  });
 });
