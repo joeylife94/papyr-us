@@ -12,8 +12,12 @@ import {
   type PageSaveStore,
   type SessionClosedEvent,
 } from '../../server/services/page-save';
+import { jsonEqual } from '../../shared/json-equal';
 
 const IDLE = 1000;
+
+/** The stored blocks of `makePage()` as a client sends them back: same values, other key order. */
+const SAME_BLOCKS = [{ content: 'v0', type: 'paragraph', id: 'b0' }];
 
 function makePage(overrides: Partial<WikiPage> = {}): WikiPage {
   return {
@@ -69,6 +73,31 @@ describe('derivePageContent', () => {
     expect(derivePageContent([{ type: 'image' }, { content: 'x' }])).toBe('\n\nx');
     expect(derivePageContent(undefined)).toBe('');
     expect(derivePageContent({})).toBe('');
+  });
+});
+
+describe('jsonEqual', () => {
+  it('compares values as jsonb stores them: key order and undefined members do not matter', () => {
+    expect(jsonEqual({ a: 1, b: [1, { c: 'x' }] }, { b: [1, { c: 'x' }], a: 1 })).toBe(true);
+    expect(jsonEqual({ a: 1, b: undefined }, { a: 1 })).toBe(true);
+    expect(jsonEqual(['ops'], ['ops'])).toBe(true);
+    expect(jsonEqual(null, null)).toBe(true);
+  });
+
+  it('reports any difference in values, array order or shape', () => {
+    expect(jsonEqual({ a: 1 }, { a: 2 })).toBe(false);
+    expect(jsonEqual({ a: 1 }, { a: 1, b: null })).toBe(false);
+    expect(jsonEqual([1, 2], [2, 1])).toBe(false);
+    expect(jsonEqual([], {})).toBe(false);
+    expect(jsonEqual(null, [])).toBe(false);
+    expect(jsonEqual('1', 1)).toBe(false);
+  });
+
+  it('treats non-JSON objects such as dates as different unless they are the same object', () => {
+    const date = new Date(0);
+    expect(jsonEqual(date, date)).toBe(true);
+    expect(jsonEqual(new Date(0), new Date(0))).toBe(false);
+    expect(jsonEqual(new Date(0), {})).toBe(false);
   });
 });
 
@@ -188,6 +217,77 @@ describe('savePage', () => {
       { content: 'v0', description: 'Before editing session' },
       { content: 'latest', description: 'Before restore' },
     ]);
+  });
+
+  it('a no-op autosave (the editor echoing synced blocks) records no version, session or write', async () => {
+    const { store, snapshots, updates, current } = makeStore(makePage());
+    const stored = current();
+    // Yjs can hand back members set to undefined; JSON and jsonb drop them.
+    const echo = [{ ...SAME_BLOCKS[0], properties: undefined }];
+    const saved = await savePage(store, 1, { blocks: echo, title: 'Handbook' }, 'autosave');
+
+    expect(saved).toEqual({ before: stored, after: stored });
+    expect(snapshots).toHaveLength(0);
+    expect(updates).toHaveLength(0);
+    expect(hasOpenEditSession(1)).toBe(false);
+  });
+
+  it('a no-op manual save records no version and skips the write', async () => {
+    const { store, snapshots, updates } = makeStore(makePage());
+    await savePage(
+      store,
+      1,
+      { title: 'Handbook', content: 'v0', blocks: SAME_BLOCKS, tags: ['ops'] },
+      'manual'
+    );
+    expect(snapshots).toHaveLength(0);
+    expect(updates).toHaveLength(0);
+  });
+
+  it('a real change after a no-op autosave records exactly one version', async () => {
+    const { store, snapshots, current } = makeStore(makePage());
+    await savePage(store, 1, { blocks: SAME_BLOCKS }, 'autosave');
+    expect(snapshots).toHaveLength(0);
+    await savePage(store, 1, { blocks: [{ content: 'edited' }] }, 'autosave');
+    await savePage(store, 1, { blocks: [{ content: 'edited' }] }, 'autosave');
+
+    expect(snapshots).toEqual([{ content: 'v0', description: 'Before editing session' }]);
+    expect(current().content).toBe('edited');
+    expect(hasOpenEditSession(1)).toBe(true);
+  });
+
+  it('a no-op autosave does not push back the idle deadline of an open session', async () => {
+    const { store } = makeStore(makePage());
+    await savePage(store, 1, { blocks: [{ content: 'one' }] }, 'autosave');
+    await vi.advanceTimersByTimeAsync(IDLE - 100);
+    await savePage(store, 1, { blocks: [{ content: 'one' }] }, 'autosave');
+    await vi.advanceTimersByTimeAsync(200);
+    expect(closed.map((e) => e.reason)).toEqual(['idle']);
+  });
+
+  it('an unchanged body with other changes saves them without a version', async () => {
+    const { store, snapshots, current } = makeStore(makePage());
+    await savePage(store, 1, { blocks: SAME_BLOCKS, tags: ['ops', 'new'] }, 'autosave');
+    await savePage(store, 1, { content: 'v0', folder: 'guides' }, 'manual');
+
+    expect(snapshots).toHaveLength(0);
+    expect(current().tags).toEqual(['ops', 'new']);
+    expect(current().folder).toBe('guides');
+  });
+
+  it('a manual save with an unchanged body still keeps a version when the title changes', async () => {
+    const { store, snapshots, current } = makeStore(makePage({ title: 'Original' }));
+    await savePage(store, 1, { title: 'Renamed', content: 'v0', blocks: SAME_BLOCKS }, 'manual');
+    expect(snapshots).toEqual([{ content: 'v0', description: 'Version' }]);
+    expect(current().title).toBe('Renamed');
+  });
+
+  it('a no-op manual save still closes an open autosave session', async () => {
+    const { store, snapshots } = makeStore(makePage());
+    await savePage(store, 1, { blocks: [{ content: 'auto' }] }, 'autosave');
+    await savePage(store, 1, { content: 'auto' }, 'manual');
+    expect(closed.map((e) => e.reason)).toEqual(['manual-save']);
+    expect(snapshots.map((s) => s.description)).toEqual(['Before editing session']);
   });
 
   it('a failed snapshot does not block the save', async () => {
