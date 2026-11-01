@@ -122,7 +122,7 @@ export default function CalendarPage({ teamId }: CalendarPageProps) {
     return Math.min(maxPriority + 1, 5); // Cap at 5
   };
 
-  const form = useForm<EventFormData>({
+  const form = useForm<z.input<typeof eventFormSchema>, unknown, EventFormData>({
     resolver: zodResolver(eventFormSchema),
     defaultValues: {
       title: '',
