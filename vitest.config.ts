@@ -1,3 +1,4 @@
+import path from 'path';
 import { defineConfig } from 'vitest/config';
 
 /**
@@ -24,6 +25,10 @@ import { defineConfig } from 'vitest/config';
  *   - server/tests/search-fts.test.ts → tombstone file, test moved to integration/
  */
 export default defineConfig({
+  resolve: {
+    // Client modules (e.g. the markdown smoke test) import shared code like vite.config.ts does.
+    alias: { '@shared': path.resolve(__dirname, './shared') },
+  },
   test: {
     globals: true,
     environment: 'node',
