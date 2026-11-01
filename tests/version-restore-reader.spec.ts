@@ -33,17 +33,30 @@ test('restoring a version refreshes the open reader without a reload', async ({
   await expect(title(updatedTitle)).toBeVisible();
 
   await page.getByRole('button', { name: /버전 기록/ }).click();
-  await expect(page.getByText(originalTitle, { exact: true })).toBeVisible();
-  page.once('dialog', (dialog) => dialog.accept());
+  const historyDialog = page.getByRole('dialog', { name: '버전 기록' });
+  // The newest version is selected and previewed when the history opens.
+  const preview = historyDialog.getByRole('region', { name: '버전 미리보기' });
+  await expect(preview.getByRole('heading', { name: originalTitle })).toBeVisible();
+  await expect(preview.getByTestId('version-preview')).toContainText('v1 body');
   const restored = page.waitForResponse(
     (r) => r.url().endsWith('/restore') && r.request().method() === 'POST' && r.ok()
   );
-  await page.getByRole('button', { name: '복원' }).first().click();
+  await preview.getByRole('button', { name: '이 버전으로 복원' }).click();
+  // Cancel keeps everything as it was; confirm restores.
+  await page.getByRole('alertdialog').getByRole('button', { name: '취소' }).click();
+  await expect(page.getByRole('alertdialog')).toBeHidden();
+  await preview.getByRole('button', { name: '이 버전으로 복원' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: '복원', exact: true }).click();
   await restored;
+  // The pre-restore state now leads the list.
+  await expect(
+    historyDialog
+      .getByRole('navigation', { name: '버전 목록' })
+      .getByRole('button', { name: new RegExp(`${updatedTitle}.*복원 전`) })
+  ).toBeVisible();
 
   // No navigation or reload: once the history dialog is closed, the open reader must show
   // the restored state.
-  const historyDialog = page.getByRole('dialog', { name: '버전 기록' });
   await historyDialog.getByRole('button', { name: 'Close' }).click();
   await expect(historyDialog).toBeHidden();
   await expect(title(originalTitle)).toBeVisible();
