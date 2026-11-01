@@ -358,11 +358,11 @@ export function estimateReadingTime(content: string): number {
 // Plain-text excerpt for document lists: drops common markdown syntax and only adds an
 // ellipsis when the text was actually shortened.
 export function toPlainTextPreview(content: string, maxLength = 160): string {
-  // Page link tokens carry only an id; list previews leave them out (#103 E6).
-  const text = splitPageLinks(content)
-    .map((part) => (part.kind === 'text' ? part.text : ' '))
-    .join('')
+  const text = content
     .replace(/```[\s\S]*?```/g, ' ')
+    // Page links (issue #103 E6) store only an id; a preview names them without the title,
+    // which would need a lookup the viewer may not be allowed.
+    .replace(/\[\[page:\d{1,10}\]\]/g, '[링크]')
     .replace(/`([^`]*)`/g, '$1')
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
