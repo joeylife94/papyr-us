@@ -1758,7 +1758,7 @@ export async function registerRoutes(
           if (error.name === 'ZodError') {
             return res.status(400).json({
               message: 'Invalid event data',
-              errors: error.errors,
+              errors: error.issues,
             });
           }
           res.status(400).json({ message: 'Invalid event data' });
@@ -1837,7 +1837,7 @@ export async function registerRoutes(
         if (error.name === 'ZodError') {
           return res.status(400).json({
             message: 'Invalid event data',
-            errors: error.errors,
+            errors: error.issues,
           });
         }
         res.status(400).json({ message: 'Invalid event data' });

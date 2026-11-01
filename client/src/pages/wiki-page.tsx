@@ -27,6 +27,7 @@ import { apiRequest, invalidatePageLists } from '@/lib/queryClient';
 import { extractHeadings, estimateReadingTime } from '@/lib/markdown';
 import { blocksToContent, initialBlocksFor, parseTags } from '@/lib/page-content';
 import { getUserId, getUserName } from '@/lib/user';
+import { jsonEqual } from '@shared/json-equal';
 import { formatDistanceToNow } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { Share, User, Clock, Calendar, AlertTriangle, Sparkles, Trash2 } from 'lucide-react';
@@ -435,6 +436,9 @@ function EditablePageBody({
   const queryClient = useQueryClient();
   const [title, setTitle] = useState(page.title);
   const [blocks, setBlocks] = useState<Block[]>(() => initialBlocksFor(page));
+  // The blocks last shown, read synchronously: the Yjs sync hands back the blocks the page
+  // already has, and saving that echo would be a no-op autosave.
+  const blocksRef = useRef(blocks);
   const [folder, setFolder] = useState(page.folder);
   const [tagsText, setTagsText] = useState(page.tags.join(', '));
   const [icon, setIcon] = useState<string | null>(page.icon ?? null);
@@ -460,7 +464,8 @@ function EditablePageBody({
     }
     reset();
     setTitle(page.title);
-    setBlocks(initialBlocksFor(page));
+    blocksRef.current = initialBlocksFor(page);
+    setBlocks(blocksRef.current);
     setFolder(page.folder);
     setTagsText(page.tags.join(', '));
     setIcon(page.icon ?? null);
@@ -528,6 +533,8 @@ function EditablePageBody({
         <BlockEditor
           blocks={blocks}
           onChange={(next) => {
+            if (jsonEqual(next, blocksRef.current)) return;
+            blocksRef.current = next;
             setBlocks(next);
             queue({ blocks: next });
           }}
