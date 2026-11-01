@@ -51,7 +51,7 @@
   },
   "dependencies": {
     "@hello-pangea/dnd": "^18.0.1",
-    "@hookform/resolvers": "^3.10.0",
+    "@hookform/resolvers": "^5.4.0",
     "@jridgewell/trace-mapping": "^0.3.25",
     "@neondatabase/serverless": "^0.10.4",
     "@radix-ui/react-accordion": "^1.2.4",
@@ -101,7 +101,7 @@
     "diff-match-patch": "^1.0.5",
     "dotenv": "^17.2.1",
     "drizzle-orm": "^0.45.2",
-    "drizzle-zod": "^0.7.0",
+    "drizzle-zod": "^0.8.3",
     "embla-carousel-react": "^8.6.0",
     "express": "^4.21.2",
     "express-rate-limit": "^7.5.1",
@@ -117,10 +117,10 @@
     "lucide-react": "^0.453.0",
     "memorystore": "^1.6.7",
     "mime-types": "^2.1.35",
-    "multer": "^2.3.0",
+    "multer": "^2.5.0",
     "next-themes": "^0.4.6",
     "nodemailer": "^10.0.16",
-    "openai": "^5.6.0",
+    "openai": "^6.49.0",
     "passport": "^0.7.0",
     "passport-github2": "^0.1.12",
     "passport-google-oauth20": "^2.0.0",
@@ -156,8 +156,7 @@
     "y-protocols": "^1.0.6",
     "y-websocket": "^3.0.0",
     "yjs": "^13.6.27",
-    "zod": "^3.25.76",
-    "zod-validation-error": "^3.4.0"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.1",
