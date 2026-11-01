@@ -4,9 +4,9 @@
  * Every write of a page's title/content/blocks goes through here, whether it comes from the
  * REST editor (manual save), REST autosave, or the Yjs collaboration server:
  *
- * - `content` is derived from `blocks` on the server, in the same format the editor used to
- *   produce in the browser, so the reader, TOC, FTS (`search_vector` trigger) and AI search
- *   always match what was last edited, including Yjs saves.
+ * - `content` is derived from `blocks` on the server as Markdown (shared/page-content.ts, the
+ *   same function the editor uses in the browser), so the reader, TOC, FTS (`search_vector`
+ *   trigger) and AI search always match what was last edited, including Yjs saves.
  * - Manual saves keep their existing behavior: one version snapshot (the pre-save state) per
  *   save, and the caller fires workflows.
  * - Autosaves are grouped into editing sessions. The first autosave of a session snapshots the
@@ -24,6 +24,7 @@
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { jsonEqual } from '../../shared/json-equal.js';
+import { blocksToMarkdown } from '../../shared/page-content.js';
 import { pageVersions, type UpdateWikiPage, type WikiPage } from '../../shared/schema.js';
 import logger from './logger.js';
 
@@ -79,18 +80,12 @@ export function hasOpenEditSession(pageId: number): boolean {
 }
 
 /**
- * The Markdown-ish `content` for a block list: block contents joined by blank lines, exactly
- * what the editor computed in the browser before E1.
+ * The Markdown `content` for a block list (shared/page-content.ts): headings, checkbox and list
+ * items, quotes and code keep their block type as Markdown, so the reader, the version preview
+ * and the table of contents show it. The editor derives the same text in the browser.
  */
 export function derivePageContent(blocks: unknown): string {
-  if (!Array.isArray(blocks)) return '';
-  return blocks
-    .map((block) =>
-      block && typeof (block as { content?: unknown }).content === 'string'
-        ? (block as { content: string }).content
-        : ''
-    )
-    .join('\n\n');
+  return blocksToMarkdown(blocks);
 }
 
 function touchesBody(update: UpdateWikiPage) {

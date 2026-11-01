@@ -28,4 +28,10 @@ describe('document list preview text', () => {
       'Agenda follows [링크] and [링크].'
     );
   });
+
+  it('reads checkbox items as their text', () => {
+    expect(toPlainTextPreview('## Weekly\n\n- [ ] Review tasks\n\n- [x] Ship it')).toBe(
+      'Weekly Review tasks Ship it'
+    );
+  });
 });
