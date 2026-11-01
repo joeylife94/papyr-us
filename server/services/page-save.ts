@@ -14,11 +14,16 @@
  *   after `idleMs` without saves, on an explicit checkpoint (leaving the page), on a manual
  *   save, or before a restore. Workflows for an autosaved session fire when it closes.
  * - A restore snapshots the current state first, so restoring never loses the latest edit.
+ * - A version is only kept when the save changes the title or body (content derived from blocks,
+ *   or blocks) compared with the stored page. A save that changes nothing at all, such as the
+ *   editor echoing blocks it has just synced, records no version, opens or extends no session,
+ *   and skips the write.
  *
  * Session state lives in this process (the app runs as a single instance); after a restart the
  * next autosave simply starts a new session, which can only add a version, never lose one.
  */
 import { and, eq, sql } from 'drizzle-orm';
+import { jsonEqual } from '../../shared/json-equal.js';
 import { pageVersions, type UpdateWikiPage, type WikiPage } from '../../shared/schema.js';
 import logger from './logger.js';
 
@@ -92,9 +97,15 @@ function touchesBody(update: UpdateWikiPage) {
   return update.content !== undefined || update.blocks !== undefined;
 }
 
-/** Fields a version records; an autosave session keeps a version once one of them changes. */
-function touchesVersionedFields(update: UpdateWikiPage) {
-  return touchesBody(update) || update.title !== undefined;
+/** Fields a version records; a version is kept once one of them changes. */
+const VERSIONED_FIELDS = ['title', 'content', 'blocks'];
+
+/** The fields of `update` whose value differs from what `page` stores. */
+function changedFields(page: WikiPage, update: UpdateWikiPage): string[] {
+  const stored = page as Record<string, unknown>;
+  return Object.entries(update)
+    .filter(([key, value]) => value !== undefined && !jsonEqual(value, stored[key]))
+    .map(([key]) => key);
 }
 
 async function closeSession(pageId: number, reason: SessionClosedEvent['reason']) {
@@ -145,14 +156,18 @@ export async function savePage(
     data.content = derivePageContent(data.blocks);
   }
 
+  const changed = before ? changedFields(before, data) : [];
+  const changesVersionedFields = changed.some((field) => VERSIONED_FIELDS.includes(field));
+
   if (!before) {
     // Nothing to snapshot.
   } else if (mode === 'manual') {
+    // A manual save closes the autosave session even when it changes nothing, as before.
     await closeSession(pageId, 'manual-save');
-    if (touchesBody(data)) {
+    if (touchesBody(data) && changesVersionedFields) {
       await snapshotSafely(store, before, `Version`);
     }
-  } else {
+  } else if (changed.length > 0) {
     let session = sessions.get(pageId);
     if (session) {
       clearTimeout(session.idleTimer);
@@ -168,11 +183,15 @@ export async function savePage(
     }
     // The first change to the title or body in a session keeps the state before it as a version,
     // even when the session started with a tags/folder-only save.
-    if (!session.snapshotTaken && touchesVersionedFields(data)) {
+    if (!session.snapshotTaken && changesVersionedFields) {
       session.snapshotTaken = true;
       await snapshotSafely(store, before, 'Before editing session');
     }
   }
+
+  // Nothing would change (e.g. the editor echoing blocks it has just synced): skip the write and
+  // answer with the stored page, which is what the write would have returned.
+  if (before && changed.length === 0) return { before, after: before };
 
   const after = await store.updatePage(pageId, data);
   if (!after) return undefined;

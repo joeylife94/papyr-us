@@ -6,7 +6,9 @@
  *   - autosaves in one editing session record exactly one version (the pre-session state);
  *   - a checkpoint closes the session, so the next autosave records the next version;
  *   - a blocks-only save (what Yjs sends) updates `content`, and therefore FTS;
- *   - a restore keeps the current state as a version before it is overwritten.
+ *   - a restore keeps the current state as a version before it is overwritten;
+ *   - a save that changes nothing (the editor echoing synced blocks) records no version and
+ *     leaves the row unwritten, and the next real change records exactly one.
  *
  * The tables live in their own schema so this file can run next to the other Layer 4 files.
  */
@@ -181,6 +183,35 @@ describe('page save pipeline (real Postgres)', () => {
       [1, 'm0', 'Version 1'],
       [2, 'm1', 'Version 2'],
     ]);
+  });
+
+  it('a no-op save records no version and skips the write; the next real change records one', async () => {
+    const id = await createPage('no-op-save', 'unchanged body');
+    // xmin changes with every UPDATE of the row, so an unchanged xmin proves nothing was written.
+    const rowVersion = async () => {
+      const { rows } = await admin.query(
+        `SELECT xmin::text FROM ${SCHEMA}.wiki_pages WHERE id = $1`,
+        [id]
+      );
+      return rows[0].xmin;
+    };
+    const written = await rowVersion();
+
+    // What the editor sends after a Yjs sync: the stored blocks, keys in another order than jsonb's.
+    const echo = [{ content: 'unchanged body', type: 'paragraph', id: 'b1' }];
+    await pipeline.savePage(store, id, { title: 'Page no-op-save', blocks: echo }, 'autosave');
+    await pipeline.savePage(store, id, { content: 'unchanged body', blocks: echo }, 'manual');
+    expect(await versions(id)).toEqual([]);
+    expect(pipeline.hasOpenEditSession(id)).toBe(false);
+    expect(await rowVersion()).toBe(written);
+
+    const edited = [{ ...echo[0], content: 'real edit' }];
+    await pipeline.savePage(store, id, { blocks: edited }, 'autosave');
+    await pipeline.savePage(store, id, { blocks: edited }, 'autosave');
+    expect(
+      (await versions(id)).map((v) => [v.version_number, v.content, v.change_description])
+    ).toEqual([[1, 'unchanged body', 'Before editing session']]);
+    expect((await storage.getWikiPage(id)).content).toBe('real edit');
   });
 
   it('a restore keeps the latest state as a version before it is overwritten', async () => {
