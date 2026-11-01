@@ -75,7 +75,7 @@ export default function AdminPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const directoryForm = useForm<DirectoryFormData>({
+  const directoryForm = useForm<z.input<typeof directoryFormSchema>, unknown, DirectoryFormData>({
     resolver: zodResolver(directoryFormSchema),
     defaultValues: {
       name: '',
@@ -86,7 +86,7 @@ export default function AdminPage() {
     },
   });
 
-  const teamForm = useForm<TeamFormData>({
+  const teamForm = useForm<z.input<typeof teamFormSchema>, unknown, TeamFormData>({
     resolver: zodResolver(teamFormSchema),
     defaultValues: {
       name: '',
