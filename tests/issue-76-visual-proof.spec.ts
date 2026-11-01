@@ -1,11 +1,19 @@
 import { mkdirSync } from 'node:fs';
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import {
   createAuthenticatedApiContext,
   loginPageWithCookies,
   registerTestUser,
 } from './e2e-helpers';
 
+/**
+ * Review package for #101 (B · Graphite) and #103 (Notion-grade editing), P7 of #101. It also
+ * covers #75's buyer-facing capture: a team workspace with a document, the version history before
+ * a restore, and the restored document verified after fresh navigation and an API read.
+ *
+ * Every surface is the real UI on synthetic data. The workflow checks each file, writes
+ * SHA256SUMS and PROVENANCE.txt, and uploads the folder.
+ */
 const PROOF_DIR = 'issue-76-proof';
 const MOBILE_VIEWPORT = { width: 390, height: 844 };
 
@@ -19,32 +27,86 @@ async function expectNoHorizontalOverflow(page: Page, surface: string) {
   );
 }
 
-test('Issue 76: capture genuine workspace, reader, history, dark mode, and mobile surfaces', async ({
+/** Let open/close animations finish so captures show the settled surface. */
+async function settle(page: Page) {
+  await page.evaluate(() =>
+    Promise.all(document.getAnimations().map((animation) => animation.finished.catch(() => null)))
+  );
+}
+
+/**
+ * A full-page capture grows the viewport to the page height first, so sticky shell parts (rail,
+ * workspace panel) span the whole image as they span the window for a user, instead of ending at
+ * the original viewport height.
+ */
+async function capture(page: Page, name: string, fullPage = true) {
+  await settle(page);
+  const viewport = page.viewportSize();
+  if (fullPage && viewport) {
+    const height = await page.evaluate(() => document.documentElement.scrollHeight);
+    await page.setViewportSize({ width: viewport.width, height: Math.min(height, 4000) });
+    await settle(page);
+  }
+  await page.screenshot({ path: `${PROOF_DIR}/${name}.png` });
+  if (fullPage && viewport) await page.setViewportSize(viewport);
+}
+
+type BlockSpec = { type: string; content: string };
+
+/** Blocks with stable ids, and the content the save pipeline derives from them. */
+function blocksDoc(items: BlockSpec[], key: string) {
+  const blocks = items.map((item, index) => ({
+    id: `proof_${key}_${index}`,
+    type: item.type,
+    content: item.content,
+    properties: {},
+    order: index,
+    children: [],
+  }));
+  return { blocks, content: blocks.map((block) => block.content).join('\n\n') };
+}
+
+async function createPage(
+  api: APIRequestContext,
+  data: Record<string, unknown>
+): Promise<{ id: number; slug: string; title: string }> {
+  const response = await api.post('/api/pages', { data });
+  expect(response.status(), `create ${data.title}`).toBe(201);
+  return response.json();
+}
+
+test('P7 review package: workspace, editing and reading, history and restore, themes, mobile', async ({
   page,
+  browser,
   request,
 }) => {
-  test.setTimeout(180_000);
+  test.setTimeout(300_000);
   mkdirSync(PROOF_DIR, { recursive: true });
   await page.emulateMedia({ colorScheme: 'light' });
 
   const stamp = Date.now();
-  const credentials = await registerTestUser(request, `issue76-${stamp}`);
-  await loginPageWithCookies(page, credentials.email, credentials.password);
-  const authRequest = await createAuthenticatedApiContext(credentials.email, credentials.password);
+  const owner = await registerTestUser(request, `proof-${stamp}`);
+  const member = await registerTestUser(request, `proof-member-${stamp}`);
+  await loginPageWithCookies(page, owner.email, owner.password);
+  const api = await createAuthenticatedApiContext(owner.email, owner.password);
 
-  const teamName = `issue76-team-${stamp}`;
+  const teamName = `proof-team-${stamp}`;
   const teamDisplayName = 'Product Design Workspace';
-  const createTeamResponse = await authRequest.post('/api/teams', {
+  const teamResponse = await api.post('/api/teams', {
     data: {
       name: teamName,
       displayName: teamDisplayName,
-      description: 'Synthetic UI proof workspace',
+      description: 'Synthetic proof workspace',
     },
   });
-  expect(createTeamResponse.status()).toBe(201);
-  const team = await createTeamResponse.json();
+  expect(teamResponse.status()).toBe(201);
+  const team = await teamResponse.json();
+  const admit = await api.post(`/api/teams/${team.id}/memberships`, {
+    data: { email: member.email },
+  });
+  expect(admit.status()).toBe(201);
 
-  // Workspace selection through the real sidebar team selector.
+  // ── 01 · Empty workspace, entered through the real sidebar team selector ──
   await page.goto('/');
   const teamButton = page.getByRole('button', { name: new RegExp(teamDisplayName) });
   await expect(teamButton).toBeVisible({ timeout: 15000 });
@@ -54,60 +116,105 @@ test('Issue 76: capture genuine workspace, reader, history, dark mode, and mobil
   await expect(
     page.getByRole('heading', { name: `${teamName} 팀 문서`, level: 1, exact: true })
   ).toBeVisible();
-
-  // Workspace context and the empty state are explicit; creation remains the primary action.
   await expect(
     page.getByRole('link', { name: `현재 워크스페이스: ${teamDisplayName}` })
   ).toBeVisible();
   await expect(page.getByRole('heading', { name: '아직 문서가 없습니다' })).toBeVisible();
   const createButton = page.getByRole('button', { name: '새 문서 작성' });
   await expect(createButton).toBeVisible();
-  await page.screenshot({ path: `${PROOF_DIR}/01-workspace-empty-desktop.png`, fullPage: true });
+  await capture(page, '01-workspace-empty-desktop');
 
-  // The create entry point still resolves to the team-scoped editor.
+  // The create entry point opens a new, untitled page in place (#103 E2).
   await createButton.click();
   await expect(page).toHaveURL(`/teams/${teamName}/create`);
-  // In-place editing (#103 E2): a new, untitled page waiting for its first input.
   await expect(page.getByTestId('page-title')).toHaveAttribute('contenteditable', 'true');
   await page.goBack();
   await expect(page).toHaveURL(`/teams/${teamName}/pages`);
 
+  // ── Synthetic workspace content: a small page tree with icons, links and a backlink ──
+  const inTeam = { folder: 'docs', author: owner.name, teamId: team.id };
+  const handbook = await createPage(api, {
+    ...inTeam,
+    title: 'Team Handbook',
+    slug: `team-handbook-${stamp}`,
+    icon: '📚',
+    tags: ['handbook'],
+    ...blocksDoc([{ type: 'paragraph', content: 'How this team works.' }], 'handbook'),
+  });
+  await createPage(api, {
+    ...inTeam,
+    title: 'Onboarding',
+    slug: `onboarding-${stamp}`,
+    icon: '👋',
+    parentId: handbook.id,
+    tags: [],
+    ...blocksDoc([{ type: 'paragraph', content: 'First week checklist.' }], 'onboarding'),
+  });
+  const decisions = await createPage(api, {
+    ...inTeam,
+    title: 'Decision log',
+    slug: `decision-log-${stamp}`,
+    icon: '📝',
+    parentId: handbook.id,
+    tags: ['decisions'],
+    ...blocksDoc([{ type: 'paragraph', content: 'Decisions and their reasons.' }], 'decisions'),
+  });
   const pageTitle = 'Operations Handbook';
-  const createdResponse = await authRequest.post('/api/pages', {
-    data: {
-      title: pageTitle,
-      content:
-        'Guidelines for a small team to share decisions and recover prior documents.\n\n## Weekly rhythm\n\n- Review tasks\n- Document decisions',
-      slug: `operations-handbook-${stamp}`,
-      folder: 'docs',
-      author: credentials.name,
-      tags: ['operations', 'proof'],
-      teamId: team.id,
+  const originalItems: BlockSpec[] = [
+    {
+      type: 'paragraph',
+      content: 'Guidelines for a small team to share decisions and recover prior documents.',
     },
+    { type: 'heading2', content: 'Weekly rhythm' },
+    { type: 'checkbox', content: 'Review tasks every Monday' },
+    { type: 'checkbox', content: 'Record decisions in the log' },
+    { type: 'paragraph', content: `Decisions live in [[page:${decisions.id}]].` },
+  ];
+  const original = blocksDoc(originalItems, 'ops');
+  const ops = await createPage(api, {
+    ...inTeam,
+    title: pageTitle,
+    slug: `operations-handbook-${stamp}`,
+    icon: '🧭',
+    tags: ['operations', 'proof'],
+    ...original,
   });
-  expect(createdResponse.status()).toBe(201);
-  const created = await createdResponse.json();
-
-  // A real update produces a prior version for the existing history/recovery surface.
-  const updatedResponse = await authRequest.put(`/api/pages/${created.id}`, {
-    data: {
-      content:
-        'Guidelines for a small team to share decisions and recover prior documents.\n\n## Weekly rhythm\n\n- Review tasks\n- Document decisions\n\n## Recovery\n\nPrior versions stay available from the version history.',
-    },
+  await createPage(api, {
+    ...inTeam,
+    title: 'Weekly sync notes',
+    slug: `weekly-sync-${stamp}`,
+    icon: '🗓️',
+    tags: ['meetings'],
+    ...blocksDoc([{ type: 'paragraph', content: `Agenda follows [[page:${ops.id}]].` }], 'weekly'),
   });
-  expect(updatedResponse.status()).toBe(200);
 
+  // A real update leaves the original as a version for the history and restore surfaces.
+  const updated = blocksDoc(
+    [
+      ...originalItems,
+      { type: 'heading2', content: 'Recovery' },
+      { type: 'paragraph', content: 'Prior versions stay available from the version history.' },
+    ],
+    'ops'
+  );
+  const updateResponse = await api.put(`/api/pages/${ops.id}`, {
+    data: { blocks: updated.blocks },
+  });
+  expect(updateResponse.status()).toBe(200);
+
+  // ── 02 · Populated workspace: document table and sidebar page tree ──
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await expect(page.locator('#main-content').getByText(pageTitle, { exact: true })).toBeVisible();
-  await page.screenshot({
-    path: `${PROOF_DIR}/02-workspace-populated-desktop.png`,
-    fullPage: true,
-  });
+  const main = page.locator('#main-content');
+  await expect(main.getByRole('link', { name: pageTitle, exact: true })).toBeVisible();
+  const tree = page.getByRole('tree', { name: '페이지 트리' });
+  await expect(tree.getByRole('treeitem', { name: 'Team Handbook' })).toBeVisible();
+  await capture(page, '02-workspace-populated-desktop');
 
-  // Reader: open from the workspace list, keep workspace context, expose one action group.
-  await page.locator('#main-content').getByText(pageTitle, { exact: true }).click();
-  await expect(page).toHaveURL(`/page/${created.slug}`);
+  // ── 03 · Page view for an editor: in-place title, properties, blocks, links, backlinks ──
+  await main.getByRole('link', { name: pageTitle, exact: true }).click();
+  await expect(page).toHaveURL(`/page/${ops.slug}`);
   await expect(page.getByRole('heading', { name: pageTitle, level: 1 })).toBeVisible();
+  await expect(page.getByTestId('page-title')).toHaveAttribute('contenteditable', 'true');
   const breadcrumb = page.getByRole('navigation', { name: '문서 경로' });
   await expect(breadcrumb.getByRole('link', { name: teamDisplayName })).toHaveAttribute(
     'href',
@@ -117,61 +224,107 @@ test('Issue 76: capture genuine workspace, reader, history, dark mode, and mobil
     page.getByRole('link', { name: `현재 워크스페이스: ${teamDisplayName}` })
   ).toBeVisible();
   const actions = page.getByRole('group', { name: '문서 작업' });
-  // The page itself is the editor: the title edits in place.
-  await expect(page.getByTestId('page-title')).toHaveAttribute('contenteditable', 'true');
   await expect(actions.getByRole('button', { name: /버전 기록/ })).toBeVisible();
-  await page.screenshot({ path: `${PROOF_DIR}/03-document-reader-desktop.png`, fullPage: true });
+  const body = page.locator('[data-page-body]');
+  await expect(body.getByRole('link', { name: 'Decision log' })).toBeVisible();
+  await expect(
+    page.getByTestId('backlinks').getByRole('link', { name: 'Weekly sync notes' })
+  ).toBeVisible();
+  // Show the block gutter (drag handle and "+") on one block.
+  await body.locator('[data-block-row]').nth(1).hover();
+  await capture(page, '03-page-editing-desktop');
 
-  // Existing history/recovery path stays reachable from the reader action group.
+  // ── 04 · Version history: list with the current document marked, preview of a version ──
   await actions.getByRole('button', { name: /버전 기록/ }).click();
-  const historyDialog = page.getByRole('dialog');
-  await expect(historyDialog).toBeVisible();
-  await expect(historyDialog.getByRole('button', { name: '이 버전으로 복원' })).toBeVisible();
-  // Wait for the sheet's slide-in to finish so the capture shows the settled surface.
-  const viewportWidth = page.viewportSize()?.width ?? 0;
-  await expect
-    .poll(async () => {
-      const box = await historyDialog.boundingBox();
-      return box ? Math.round(box.x + box.width) : Number.POSITIVE_INFINITY;
-    })
-    .toBeLessThanOrEqual(viewportWidth);
-  await page.screenshot({ path: `${PROOF_DIR}/04-version-history-desktop.png` });
-  await page.keyboard.press('Escape');
-  await expect(historyDialog).toBeHidden();
+  const history = page.getByRole('dialog', { name: '버전 기록' });
+  const versionList = history.getByRole('navigation', { name: '버전 목록' });
+  await expect(versionList.getByText('현재 문서')).toBeVisible();
+  const preview = history.getByRole('region', { name: '버전 미리보기' });
+  await expect(preview.getByTestId('version-preview')).toContainText('Record decisions');
+  await expect(preview.getByTestId('version-preview')).not.toContainText('Recovery');
+  await capture(page, '04-version-history-desktop', false);
+
+  // ── 05 · Restore is deliberate: the confirmation says what will happen ──
+  await preview.getByRole('button', { name: '이 버전으로 복원' }).click();
+  const confirm = page.getByRole('alertdialog');
+  await expect(confirm).toContainText('복원 전');
+  await capture(page, '05-version-restore-confirm-desktop', false);
+  const restoreResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/restore`) && response.request().method() === 'POST' && response.ok()
+  );
+  await confirm.getByRole('button', { name: '복원', exact: true }).click();
+  expect((await (await restoreResponse).json()).content).toBe(original.content);
+  await history.getByRole('button', { name: 'Close' }).click();
+  await expect(history).toBeHidden();
+
+  // ── 06 · Restored document, after fresh navigation and an API read (#75) ──
+  await page.goto('/');
+  await page.goto(`/page/${ops.slug}`);
+  await expect(page.getByRole('heading', { name: pageTitle, level: 1 })).toBeVisible();
+  await expect(body).not.toContainText('Recovery');
+  const restored = await (await api.get(`/api/pages/${ops.id}`)).json();
+  expect(restored.content).toBe(original.content);
+  const versionsAfter = await (await api.get(`/api/pages/${ops.id}/versions`)).json();
+  expect(versionsAfter[0].changeDescription).toBe('Before restore');
+  await capture(page, '06-version-restored-desktop');
 
   // The old edit route opens the page itself, and the shell keeps the document's workspace.
-  await page.goto(`/edit/${created.id}`);
-  await expect(page).toHaveURL(`/page/${created.slug}`);
+  await page.goto(`/edit/${ops.id}`);
+  await expect(page).toHaveURL(`/page/${ops.slug}`);
   await expect(
     page.getByRole('group', { name: '현재 워크스페이스' }).getByText(teamDisplayName)
   ).toBeVisible();
-  await expect(page).toHaveURL(`/page/${created.slug}`);
-  await expect(page.getByRole('group', { name: '문서 작업' })).toBeVisible();
 
-  const toDark = page.getByRole('button', { name: '다크 모드로 전환' });
-  await expect(toDark).toBeVisible();
-  await toDark.click();
+  // ── 07 · Page view for a teammate who may read but not edit ──
+  const memberContext = await browser.newContext();
+  const memberPage = await memberContext.newPage();
+  await memberPage.emulateMedia({ colorScheme: 'light' });
+  await loginPageWithCookies(memberPage, member.email, member.password);
+  await memberPage.goto(`/page/${ops.slug}`);
+  await expect(memberPage.getByRole('heading', { name: pageTitle, level: 1 })).toBeVisible();
+  await expect(memberPage.getByTestId('page-title')).toHaveAttribute('contenteditable', 'false');
+  await expect(memberPage.getByTestId('page-icon-button')).toHaveCount(0);
+  await expect(
+    memberPage.getByTestId('backlinks').getByRole('link', { name: 'Weekly sync notes' })
+  ).toBeVisible();
+  await capture(memberPage, '07-page-reading-desktop');
+  await memberContext.close();
+
+  // ── 08–10 · Dark theme: workspace, page, history ──
+  await page.getByRole('button', { name: '다크 모드로 전환' }).click();
   await expect(page.locator('html')).toHaveClass(/dark/);
-  await page.screenshot({ path: `${PROOF_DIR}/05-document-reader-dark.png`, fullPage: true });
+  await page.goto(`/teams/${teamName}/pages`);
+  await expect(main.getByRole('link', { name: pageTitle, exact: true })).toBeVisible();
+  await capture(page, '08-workspace-dark');
+  await page.goto(`/page/${ops.slug}`);
+  await expect(body.getByRole('link', { name: 'Decision log' })).toBeVisible();
+  await capture(page, '09-page-editing-dark');
+  await actions.getByRole('button', { name: /버전 기록/ }).click();
+  await expect(
+    history.getByRole('region', { name: '버전 미리보기' }).getByTestId('version-preview')
+  ).toBeVisible();
+  await capture(page, '10-version-history-dark', false);
+  await page.keyboard.press('Escape');
+  await expect(history).toBeHidden();
   await page.getByRole('button', { name: '라이트 모드로 전환' }).click();
   await expect(page.locator('html')).not.toHaveClass(/dark/);
 
-  // Mobile surfaces: workspace list, reader, and navigation drawer without horizontal overflow.
+  // ── 11–13 · Mobile: workspace, page, navigation drawer with the page tree ──
   await page.setViewportSize(MOBILE_VIEWPORT);
   await page.goto(`/teams/${teamName}/pages`);
-  await expect(page.locator('#main-content').getByText(pageTitle, { exact: true })).toBeVisible();
+  await expect(main.getByRole('link', { name: pageTitle, exact: true })).toBeVisible();
   await expectNoHorizontalOverflow(page, 'Mobile workspace');
-  await page.screenshot({ path: `${PROOF_DIR}/06-mobile-workspace.png`, fullPage: true });
+  await capture(page, '11-mobile-workspace');
 
-  await page.goto(`/page/${created.slug}`);
+  await page.goto(`/page/${ops.slug}`);
   await expect(page.getByRole('heading', { name: pageTitle, level: 1 })).toBeVisible();
   await expect(page.getByRole('group', { name: '문서 작업' })).toBeVisible();
-  await expectNoHorizontalOverflow(page, 'Mobile reader');
-  await page.screenshot({ path: `${PROOF_DIR}/07-mobile-reader.png`, fullPage: true });
+  await expectNoHorizontalOverflow(page, 'Mobile page');
+  await capture(page, '12-mobile-page');
 
   await page.getByRole('button', { name: '메뉴 열기' }).click();
   await expect(page.getByRole('navigation', { name: '주요 메뉴' })).toBeVisible();
-  // Wait for the drawer's slide-in to finish before asserting layout and capturing.
   const drawer = page.getByRole('complementary', { name: '워크스페이스 패널' });
   await expect
     .poll(async () => Math.round((await drawer.boundingBox())?.x ?? -1))
@@ -179,8 +332,9 @@ test('Issue 76: capture genuine workspace, reader, history, dark mode, and mobil
   await expect(
     page.getByRole('group', { name: '현재 워크스페이스' }).getByText(teamDisplayName)
   ).toBeVisible();
+  await expect(drawer.getByRole('tree', { name: '페이지 트리' })).toBeVisible();
   await expectNoHorizontalOverflow(page, 'Mobile navigation');
-  await page.screenshot({ path: `${PROOF_DIR}/08-mobile-navigation.png` });
+  await capture(page, '13-mobile-navigation', false);
 
-  await authRequest.dispose();
+  await api.dispose();
 });

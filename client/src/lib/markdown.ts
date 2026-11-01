@@ -98,6 +98,9 @@ export function estimateReadingTime(content: string): number {
 export function toPlainTextPreview(content: string, maxLength = 160): string {
   const text = content
     .replace(/```[\s\S]*?```/g, ' ')
+    // Page links (issue #103 E6) store only an id; a preview names them without the title,
+    // which would need a lookup the viewer may not be allowed.
+    .replace(/\[\[page:\d{1,10}\]\]/g, '[링크]')
     .replace(/`([^`]*)`/g, '$1')
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
