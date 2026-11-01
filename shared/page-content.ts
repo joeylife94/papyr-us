@@ -44,8 +44,14 @@ function blockToMarkdown(block: BlockLike): string {
         .join('\n');
     case 'code': {
       const language = typeof properties.language === 'string' ? properties.language : '';
-      // A fence longer than any backtick run inside the code.
-      const longest = Math.max(2, ...(text.match(/`+/g) ?? []).map((run) => run.length));
+      // A fence longer than any backtick run inside the code. Counted in one pass: spreading
+      // every run into Math.max overflows the call stack on code with very many runs.
+      let longest = 2;
+      let run = 0;
+      for (const char of text) {
+        run = char === '`' ? run + 1 : 0;
+        if (run > longest) longest = run;
+      }
       const fence = '`'.repeat(longest + 1);
       return `${fence}${language}\n${text}\n${fence}`;
     }

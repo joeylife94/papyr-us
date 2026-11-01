@@ -43,6 +43,13 @@ describe('blocksToMarkdown', () => {
     expect(blocksToMarkdown([block('code', 'use ``` here')])).toBe('````\nuse ``` here\n````');
   });
 
+  it('handles code with very many backtick runs without overflowing the stack', () => {
+    const code = '`x` '.repeat(70_000);
+    const markdown = blocksToMarkdown([block('code', code)]);
+    expect(markdown.startsWith('```\n')).toBe(true);
+    expect(markdown.endsWith('\n```')).toBe(true);
+  });
+
   it('keeps multi-line items together and headings on one line', () => {
     expect(blocksToMarkdown([block('bulleted_list', 'first\nsecond')])).toBe('- first\n  second');
     expect(blocksToMarkdown([block('heading2', 'split\nheading')])).toBe('## split heading');
