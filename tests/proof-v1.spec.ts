@@ -21,7 +21,10 @@ async function createTeam(request: APIRequestContext, name: string, displayName:
 }
 
 test.describe('v1.0 fresh proof package', () => {
-  test('captures synthetic team workspace and created document proof', async ({ page, request }) => {
+  test('captures synthetic team workspace and created document proof', async ({
+    page,
+    request,
+  }) => {
     mkdirSync(PROOF_DIR, { recursive: true });
 
     const stamp = Date.now();
@@ -72,7 +75,12 @@ test.describe('v1.0 fresh proof package', () => {
 
     await page.getByRole('button', { name: '새 문서 작성' }).click();
     await expect(page).toHaveURL(new RegExp(`/teams/${teamName}/create`));
-    await page.getByLabel('Title').fill(pageTitle);
+    // In-place editing (#103 E2): the page is created on first input; there is no save button.
+    const createResponsePromise = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === '/api/pages' && response.request().method() === 'POST'
+    );
+    await page.getByTestId('page-title').fill(pageTitle);
 
     const addParagraph = page.getByRole('button', { name: '단락', exact: true });
     await expect(addParagraph).toBeVisible({ timeout: 10000 });
@@ -82,11 +90,6 @@ test.describe('v1.0 fresh proof package', () => {
     await expect(textarea).toBeVisible({ timeout: 10000 });
     await textarea.fill('Synthetic proof content for the accepted Papyr.us v1.0 browser path.');
 
-    const createResponsePromise = page.waitForResponse(
-      (response) =>
-        response.url().includes('/api/pages') && response.request().method() === 'POST'
-    );
-    await page.getByRole('button', { name: 'Create Page' }).click();
     const createResponse = await createResponsePromise;
     const createResponseBody = await createResponse.text();
     expect(

@@ -287,11 +287,12 @@ describe('Trash writes need owner', () => {
   it('restores a trashed page for its owner only', async () => {
     const denied = await request(app).post(`/api/trash/${PAGE_A}/restore`).set(as(EDITOR));
     expect(denied.status).toBe(403);
-    expect(storage.restoreWikiPage).not.toHaveBeenCalled();
+    expect(storage.restorePages).not.toHaveBeenCalled();
 
     const ok = await request(app).post(`/api/trash/${PAGE_A}/restore`).set(as(OWNER));
     expect(ok.status).toBe(200);
-    expect(storage.restoreWikiPage).toHaveBeenCalledWith(PAGE_A);
+    // The page comes back with whatever was trashed together with it (here, nothing else).
+    expect(storage.restorePages).toHaveBeenCalledWith([PAGE_A]);
   });
 
   it('permanently deletes a trashed page for its owner only', async () => {
@@ -324,5 +325,101 @@ describe('Markdown import needs membership of the target team', () => {
       .send({ content: '# Notes', teamId: TEAM_A });
     expect(res.status).toBe(201);
     expect(storage.createWikiPage).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('In-place editing endpoints (issue #103 E1/E2) use the single-page levels', () => {
+  it('reports edit rights to editors and owners, and nothing to callers who cannot view', async () => {
+    const editor = await request(app).get(`/api/pages/${PAGE_A}/access`).set(as(EDITOR));
+    expect(editor.status).toBe(200);
+    expect(editor.body).toEqual({ canEdit: true });
+
+    const owner = await request(app).get(`/api/pages/${PAGE_A}/access`).set(as(OWNER));
+    expect(owner.body).toEqual({ canEdit: true });
+
+    const outsider = await request(app).get(`/api/pages/${PAGE_A}/access`).set(as(OUTSIDER));
+    expect(outsider.status).toBe(403);
+  });
+
+  it('autosaves for editors and refuses callers without edit rights', async () => {
+    const ok = await request(app)
+      .put(`/api/pages/${PAGE_A}/autosave`)
+      .set(as(EDITOR))
+      .send({ title: 'Renamed' });
+    expect(ok.status).toBe(200);
+    expect(storage.updateWikiPage).toHaveBeenCalledWith(PAGE_A, { title: 'Renamed' });
+
+    storage.updateWikiPage.mockClear();
+    const denied = await request(app)
+      .put(`/api/pages/${PAGE_A}/autosave`)
+      .set(as(OUTSIDER))
+      .send({ title: 'Hijack' });
+    expect(denied.status).toBe(403);
+    expect(storage.updateWikiPage).not.toHaveBeenCalled();
+  });
+
+  it('autosave cannot change team, author, trash state or slug (those stay owner-only on PUT)', async () => {
+    for (const body of [
+      { teamId: TEAM_C },
+      { author: 'someone else' },
+      { deletedAt: new Date().toISOString() },
+      { slug: 'other' },
+    ]) {
+      const res = await request(app)
+        .put(`/api/pages/${PAGE_A}/autosave`)
+        .set(as(EDITOR))
+        .send({ title: 'x', ...body });
+      expect(res.status).toBe(400);
+    }
+    expect(storage.updateWikiPage).not.toHaveBeenCalled();
+  });
+
+  it('autosave sets or clears the page icon (issue #103 E4) and accepts only one emoji', async () => {
+    const set = await request(app)
+      .put(`/api/pages/${PAGE_A}/autosave`)
+      .set(as(EDITOR))
+      .send({ icon: '🚀' });
+    expect(set.status).toBe(200);
+    expect(storage.updateWikiPage).toHaveBeenCalledWith(PAGE_A, { icon: '🚀' });
+
+    const cleared = await request(app)
+      .put(`/api/pages/${PAGE_A}/autosave`)
+      .set(as(EDITOR))
+      .send({ icon: null });
+    expect(cleared.status).toBe(200);
+    expect(storage.updateWikiPage).toHaveBeenLastCalledWith(PAGE_A, { icon: null });
+
+    storage.updateWikiPage.mockClear();
+    for (const icon of ['rocket', '🚀🚀', '<img src=x>', '', 42]) {
+      const res = await request(app)
+        .put(`/api/pages/${PAGE_A}/autosave`)
+        .set(as(EDITOR))
+        .send({ icon });
+      expect(res.status).toBe(400);
+    }
+    expect(storage.updateWikiPage).not.toHaveBeenCalled();
+
+    const denied = await request(app)
+      .put(`/api/pages/${PAGE_A}/autosave`)
+      .set(as(OUTSIDER))
+      .send({ icon: '🔥' });
+    expect(denied.status).toBe(403);
+    expect(storage.updateWikiPage).not.toHaveBeenCalled();
+  });
+
+  it('manual PUT validates the icon with the same rule', async () => {
+    const bad = await request(app)
+      .put(`/api/pages/${PAGE_A}`)
+      .set(as(EDITOR))
+      .send({ icon: 'not an emoji' });
+    expect(bad.status).toBe(400);
+    expect(storage.updateWikiPage).not.toHaveBeenCalled();
+  });
+
+  it('checkpoints only for callers with edit rights', async () => {
+    const ok = await request(app).post(`/api/pages/${PAGE_A}/checkpoint`).set(as(EDITOR));
+    expect(ok.status).toBe(200);
+    const denied = await request(app).post(`/api/pages/${PAGE_A}/checkpoint`).set(as(OUTSIDER));
+    expect(denied.status).toBe(403);
   });
 });

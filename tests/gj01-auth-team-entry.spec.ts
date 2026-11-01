@@ -65,10 +65,15 @@ test.describe('GJ-01 authentication and team entry', () => {
 
     await page.getByRole('button', { name: '새 문서 작성' }).click();
     await expect(page).toHaveURL(new RegExp(`/teams/${team.name}/create`));
-    await expect(page.getByRole('heading', { name: `${team.name} 팀 새 문서 작성` })).toBeVisible();
+    await expect(page.getByTestId('page-title')).toBeVisible();
+    // In-place editing (#103 E2): the page is created on first input; there is no save button.
+    const createResponsePromise = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === '/api/pages' && response.request().method() === 'POST'
+    );
 
     const title = `GJ01 Team Page ${stamp}`;
-    await page.getByLabel('Title').fill(title);
+    await page.getByTestId('page-title').fill(title);
 
     const addParagraph = page.getByRole('button', { name: '단락', exact: true });
     await expect(addParagraph).toBeVisible({ timeout: 10000 });
@@ -78,13 +83,6 @@ test.describe('GJ-01 authentication and team entry', () => {
     await expect(textarea).toBeVisible({ timeout: 10000 });
     await textarea.fill('GJ-01 team-scoped content created through the browser proof path.');
 
-    const createResponsePromise = page.waitForResponse(
-      (response) =>
-        response.url().includes('/api/pages') &&
-        response.request().method() === 'POST' &&
-        response.status() === 201
-    );
-    await page.getByRole('button', { name: 'Create Page' }).click();
     const createResponse = await createResponsePromise;
     const createdPage = await createResponse.json();
 

@@ -68,7 +68,8 @@ export default function CollaborationTest() {
           </div>
 
           {/* 블록 에디터 */}
-          <div className="border rounded-lg">
+          {/* Left padding on wide screens leaves room for the block drag gutter. */}
+          <div className="border rounded-lg px-3 sm:pl-16 sm:pr-4">
             <BlockEditor
               blocks={blocks}
               onChange={setBlocks}

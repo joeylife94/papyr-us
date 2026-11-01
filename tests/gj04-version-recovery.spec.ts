@@ -26,19 +26,17 @@ test('GJ-04: edit, inspect history, restore prior version, and persist restored 
 
   // Establish the prior state through the real browser editor.
   await page.goto('/create');
-  await expect(page.getByRole('heading', { name: 'Create New Page' })).toBeVisible();
-  await page.getByLabel('Title').fill(originalTitle);
+  await expect(page.getByTestId('page-title')).toBeVisible();
+  // In-place editing (#103 E2): the page is created on first input; there is no save button.
+  const createResponsePromise = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === '/api/pages' && response.request().method() === 'POST'
+  );
+  await page.getByTestId('page-title').fill(originalTitle);
   // The editor requires body content, so the document is created with a paragraph block.
   await page.getByRole('button', { name: '단락', exact: true }).click();
   await page.locator('textarea').first().fill(`GJ-04 recovery content ${stamp}`);
 
-  const createResponsePromise = page.waitForResponse(
-    (response) =>
-      response.url().includes('/api/pages') &&
-      response.request().method() === 'POST' &&
-      response.status() === 201
-  );
-  await page.getByRole('button', { name: 'Create Page' }).click();
   const createResponse = await createResponsePromise;
   const created = await createResponse.json();
 
@@ -48,29 +46,34 @@ test('GJ-04: edit, inspect history, restore prior version, and persist restored 
   const slug = String(created.slug);
 
   // Create a distinct newer state and verify it is durable before recovery.
-  await page.locator('button[title="Edit Page"]').click();
-  await expect(page.getByRole('heading', { name: 'Edit Page' })).toBeVisible();
-  await page.getByLabel('Title').fill(updatedTitle);
+  // Edit in place: the title autosaves.
+  await expect(page).toHaveURL(new RegExp(`/page/${slug}$`));
 
   const updateResponsePromise = page.waitForResponse(
     (response) =>
-      response.url().includes(`/api/pages/${pageId}`) &&
+      response.url().includes(`/api/pages/${pageId}/autosave`) &&
       response.request().method() === 'PUT' &&
       response.status() === 200
   );
-  await page.getByRole('button', { name: 'Update Page' }).click();
+  await page.getByTestId('page-title').fill(updatedTitle);
   await updateResponsePromise;
 
   await expect(page.getByRole('heading', { name: updatedTitle })).toBeVisible();
   await page.reload({ waitUntil: 'networkidle' });
   await expect(page.getByRole('heading', { name: updatedTitle })).toBeVisible();
 
-  // The recovery surface must expose the prior version through the real history UI.
+  // The recovery surface must expose the prior version through the real history UI:
+  // the version list (with the current document marked) and the selected version's preview.
+  const versionsBefore = await (await request.get(`/api/pages/${pageId}/versions`)).json();
   await page.getByRole('button', { name: /버전 기록/ }).click();
-  await expect(page.getByText(originalTitle, { exact: true })).toBeVisible();
+  const history = page.getByRole('dialog', { name: '버전 기록' });
+  const versionList = history.getByRole('navigation', { name: '버전 목록' });
+  await expect(versionList.getByText('현재 문서')).toBeVisible();
+  await versionList.getByRole('button', { name: new RegExp(originalTitle) }).click();
+  const preview = history.getByRole('region', { name: '버전 미리보기' });
+  await expect(preview.getByRole('heading', { name: originalTitle })).toBeVisible();
 
-  // Restore the prior version through the existing UI recovery action.
-  page.once('dialog', (dialog) => dialog.accept());
+  // Restore is deliberate: an AlertDialog explains it, then the server restores.
   const restoreResponsePromise = page.waitForResponse(
     (response) =>
       response.url().includes(`/api/pages/${pageId}/versions/`) &&
@@ -78,8 +81,33 @@ test('GJ-04: edit, inspect history, restore prior version, and persist restored 
       response.request().method() === 'POST' &&
       response.ok()
   );
-  await page.getByRole('button', { name: '복원' }).first().click();
-  await restoreResponsePromise;
+  await preview.getByRole('button', { name: '이 버전으로 복원' }).click();
+  const confirm = page.getByRole('alertdialog');
+  await expect(confirm).toContainText('복원 전');
+  await confirm.getByRole('button', { name: '복원', exact: true }).click();
+  const restoreResponse = await restoreResponsePromise;
+  expect((await restoreResponse.json()).title).toBe(originalTitle);
+
+  // Restore semantics are unchanged: the state before the restore is kept as a new version, and
+  // no earlier version is lost. Reloading the page recorded nothing, even when realtime
+  // collaboration syncs the blocks on load: the restore checkpoint is the only new version, and
+  // it is the only one holding the updated state.
+  type Version = { id: number; title: string; changeDescription: string | null };
+  const versionsAfter: Version[] = await (
+    await request.get(`/api/pages/${pageId}/versions`)
+  ).json();
+  const restoreCheckpoints = (list: Version[]) =>
+    list.filter((v) => v.changeDescription === 'Before restore');
+  expect(restoreCheckpoints(versionsAfter)).toHaveLength(
+    restoreCheckpoints(versionsBefore).length + 1
+  );
+  expect(restoreCheckpoints(versionsAfter)[0].title).toBe(updatedTitle);
+  expect(versionsAfter).toHaveLength(versionsBefore.length + 1);
+  expect(versionsAfter.filter((v) => v.title === updatedTitle)).toEqual([
+    restoreCheckpoints(versionsAfter)[0],
+  ]);
+  const afterIds = new Set(versionsAfter.map((v) => v.id));
+  expect((versionsBefore as Version[]).every((v) => afterIds.has(v.id))).toBe(true);
 
   // Reopen from fresh navigation and verify the restored state is durable, not just cached UI state.
   await page.goto('/');

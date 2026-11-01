@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { markdownToHtml } from '@/lib/markdown';
+import { PageLinkPortals } from '@/components/page/page-links';
 
 interface MarkdownRendererProps {
   content: string;
@@ -8,6 +9,7 @@ interface MarkdownRendererProps {
 
 export function MarkdownRenderer({ content, className = '' }: MarkdownRendererProps) {
   const [html, setHtml] = useState('');
+  const [root, setRoot] = useState<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let isCancelled = false;
@@ -47,9 +49,14 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
   }
 
   return (
-    <div
-      className={`prose prose-slate dark:prose-invert max-w-none ${className}`}
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    <>
+      <div
+        ref={setRoot}
+        className={`prose prose-slate dark:prose-invert max-w-none ${className}`}
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+      {/* Page links (issue #103 E6) render as chips inside their placeholders. */}
+      <PageLinkPortals root={root} html={html} />
+    </>
   );
 }

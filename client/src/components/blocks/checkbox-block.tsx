@@ -87,7 +87,7 @@ export function CheckboxBlock({
         <button
           type="button"
           onClick={handleCheckboxToggle}
-          className={`mt-1 flex-shrink-0 ${isChecked ? 'text-success' : 'text-muted-foreground'} hover:text-success transition-colors`}
+          className={`mt-0.5 flex h-6 w-6 !min-h-0 !min-w-0 flex-shrink-0 items-center justify-center ${isChecked ? 'text-success' : 'text-muted-foreground'} hover:text-success transition-colors`}
         >
           {isChecked ? <CheckSquare className="h-5 w-5" /> : <Square className="h-5 w-5" />}
         </button>
@@ -101,7 +101,7 @@ export function CheckboxBlock({
           onFocus={onFocus}
           onBlur={onBlur}
           placeholder="할 일을 입력하세요..."
-          className={`flex-1 resize-none border-none outline-none bg-transparent text-base placeholder:text-muted-foreground leading-relaxed ${
+          className={`flex-1 resize-none border-none outline-none bg-transparent pl-0 py-0.5 text-base placeholder:text-muted-foreground leading-relaxed ${
             isChecked ? 'text-muted-foreground line-through' : 'text-foreground'
           }`}
           rows={1}

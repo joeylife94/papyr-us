@@ -1,4 +1,4 @@
-import { Routes, Route, Outlet, useParams, useLocation } from 'react-router-dom';
+import { Routes, Route, Outlet, useParams, useLocation, useSearchParams } from 'react-router-dom';
 import React, { useState, Suspense } from 'react';
 import { queryClient } from './lib/queryClient';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -6,8 +6,10 @@ import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { ThemeProvider } from '@/hooks/use-theme';
 import { AuthProvider } from '@/hooks/useAuth';
-import { Header } from '@/components/layout/header';
-import { Sidebar } from '@/components/layout/sidebar';
+import { AppRail } from '@/components/layout/app-rail';
+import { WorkspacePanel } from '@/components/layout/workspace-panel';
+import { MobileShell } from '@/components/layout/mobile-shell';
+import { useMediaQuery } from '@/hooks/use-responsive';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { CommandPalette } from '@/components/command-palette';
 
@@ -16,7 +18,8 @@ import Home from '@/pages/home';
 import WikiPageView from '@/pages/wiki-page';
 import CalendarPage from '@/pages/calendar';
 import CalendarPageWrapper from '@/components/CalendarPageWrapper';
-import PageEditor from '@/pages/page-editor';
+import NewPage from '@/pages/new-page';
+import EditRedirect from '@/pages/edit-redirect';
 import AdminPage from '@/pages/admin';
 import Members from '@/pages/members';
 import FileManager from '@/pages/file-manager';
@@ -40,13 +43,27 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 
 // Helper components to handle route params
 
-const PageEditorWrapper = () => {
-  const { pageId, folder, teamName } = useParams<{
-    pageId: string;
-    folder: string;
-    teamName: string;
-  }>();
-  return <PageEditor pageId={pageId} initialFolder={folder} teamName={teamName} />;
+// In-place editing (issue #103 E2): new pages are created on first input, and the old edit
+// route opens the page itself.
+const NewPageWrapper = () => {
+  const { folder, teamName } = useParams<{ folder: string; teamName: string }>();
+  const [searchParams] = useSearchParams();
+  // "+" in the page tree opens a new child page (issue #103 E5).
+  const parent = Number(searchParams.get('parent'));
+  const parentId = Number.isInteger(parent) && parent > 0 ? parent : undefined;
+  return (
+    <NewPage
+      key={`${teamName ?? ''}/${folder ?? ''}/${parentId ?? ''}`}
+      initialFolder={folder}
+      teamName={teamName}
+      parentId={parentId}
+    />
+  );
+};
+
+const EditRedirectWrapper = () => {
+  const { pageId } = useParams<{ pageId: string }>();
+  return <EditRedirect pageId={pageId} />;
 };
 
 const MembersWrapper = () => {
@@ -80,39 +97,41 @@ function AppLayout() {
   const { pathname } = useLocation();
   const isDocumentRoute =
     /^\/(page|edit|create)(\/|$)/.test(pathname) || /^\/teams\/[^/]+\/create$/.test(pathname);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-
-  const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
-  const closeSidebar = () => setIsSidebarOpen(false);
+  // Desktop gets the icon rail + workspace panel; narrower screens get the mobile shell.
+  // Only one shell is mounted so landmarks and controls are never duplicated.
+  const isDesktop = useMediaQuery('(min-width: 1024px)');
 
   return (
     <div className="min-h-screen bg-background">
-      <Header
-        onToggleSidebar={toggleSidebar}
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-      />
+      <a href="#main-content" className="skip-link">
+        본문으로 건너뛰기
+      </a>
       <CommandPalette />
 
-      <div className="flex pt-16">
-        <Sidebar
-          isOpen={isSidebarOpen}
-          onClose={closeSidebar}
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-        />
-
-        <main id="main-content" className="min-w-0 flex-1 lg:ml-72">
-          <div
-            className={`mx-auto w-full px-4 py-6 md:px-8 md:py-8 ${isDocumentRoute ? 'max-w-[1180px]' : 'max-w-[1480px]'}`}
+      {isDesktop ? (
+        <>
+          <AppRail />
+          <aside
+            aria-label="워크스페이스 패널"
+            className="fixed inset-y-0 left-[60px] z-30 w-[240px] overflow-y-auto border-r border-border bg-panel"
           >
-            <Suspense fallback={<div>Loading page...</div>}>
-              <Outlet />
-            </Suspense>
-          </div>
-        </main>
-      </div>
+            <WorkspacePanel searchQuery={searchQuery} onSearchChange={setSearchQuery} />
+          </aside>
+        </>
+      ) : (
+        <MobileShell searchQuery={searchQuery} onSearchChange={setSearchQuery} />
+      )}
+
+      <main id="main-content" className={isDesktop ? 'min-w-0 pl-[300px]' : 'min-w-0 pb-20 pt-14'}>
+        <div
+          className={`mx-auto w-full px-4 py-6 md:px-8 md:py-8 ${isDocumentRoute ? 'max-w-[1180px]' : 'max-w-[1480px]'}`}
+        >
+          <Suspense fallback={<div>Loading page...</div>}>
+            <Outlet />
+          </Suspense>
+        </div>
+      </main>
     </div>
   );
 }
@@ -142,10 +161,10 @@ function App() {
                           </FeatureGate>
                         }
                       />
-                      <Route path="/edit/:pageId" element={<PageEditorWrapper />} />
-                      <Route path="/create" element={<PageEditorWrapper />} />
-                      <Route path="/create/:folder" element={<PageEditorWrapper />} />
-                      <Route path="/teams/:teamName/create" element={<PageEditorWrapper />} />
+                      <Route path="/edit/:pageId" element={<EditRedirectWrapper />} />
+                      <Route path="/create" element={<NewPageWrapper />} />
+                      <Route path="/create/:folder" element={<NewPageWrapper />} />
+                      <Route path="/teams/:teamName/create" element={<NewPageWrapper />} />
                       <Route
                         path="/admin"
                         element={

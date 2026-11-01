@@ -86,8 +86,8 @@ test.describe('[S5] 로그아웃 후 보호 페이지 접근 차단', () => {
         // Strict mode 위반 방지: 컨텍스트 메뉴([role="menu"]) 내로 범위 한정
         const dropdownMenu = page.locator('[role="menu"]');
         const logoutMenuItem = dropdownMenu
-          .getByRole('menuitem', { name: /log out/i })
-          .or(dropdownMenu.getByText(/log out/i));
+          .getByRole('menuitem', { name: /로그아웃|log out/i })
+          .or(dropdownMenu.getByText(/로그아웃|log out/i));
         await expect(logoutMenuItem.first()).toBeVisible({ timeout: 5_000 });
         await logoutMenuItem.first().click();
       } else {
@@ -195,6 +195,10 @@ test.describe('[S5] 로그아웃 후 보호 페이지 접근 차단', () => {
 
       // ERR_ABORTED 방지: 현재 페이지의 네트워크 활동이 완전히 멈춘 뒤 이동
       await page.waitForLoadState('networkidle').catch(() => null);
+      // 만료된 세션을 감지한 현재 페이지가 스스로 /login 으로 이동하는 중이면, 그 이동이 끝난 뒤에
+      // /create 로 간다. 두 이동이 겹치면 아래 goto 가 ERR_ABORTED 로 끊긴다.
+      await page.waitForURL(/\/login/, { timeout: 5_000 }).catch(() => null);
+      await page.waitForLoadState('domcontentloaded').catch(() => null);
 
       await page.addInitScript(() => {
         Object.defineProperty(window, '__PLAYWRIGHT__', {

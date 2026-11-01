@@ -2,6 +2,7 @@ import * as Y from 'yjs';
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import { DBStorage } from '../storage.js';
 import logger from './logger.js';
+import { savePage, storagePageSaveStore } from './page-save.js';
 import jwt from 'jsonwebtoken';
 import { config } from '../config.js';
 import { onPageAccessChanged } from './page-access-events.js';
@@ -83,6 +84,27 @@ function getCollabConfig(): CollabConfig {
     rateLimitSavesPerMin,
     maxUpdateBytes,
   };
+}
+
+/** Transaction origin for server-side reloads: broadcast to clients, but not a new edit to save. */
+const RELOAD_ORIGIN = 'papyrus:reload-from-db';
+
+/** The block list a Yjs document should hold for a page (seeded from content when it has none). */
+function blocksForPage(page: { id: number; blocks?: unknown; content?: string | null }): any[] {
+  if (Array.isArray(page.blocks) && page.blocks.length > 0) return page.blocks as any[];
+  if (page.content) {
+    return [
+      {
+        id: `block_seed_${page.id}`,
+        type: 'paragraph',
+        content: page.content,
+        properties: {},
+        order: 0,
+        children: [],
+      },
+    ];
+  }
+  return [];
 }
 
 function parseDocumentId(
@@ -221,29 +243,16 @@ export class YjsCollaborationManager {
 
     // Load persisted state before attaching update listeners.
     const page = await this.storage.getWikiPage(pageId);
-    if (page && page.blocks && Array.isArray(page.blocks) && page.blocks.length > 0) {
-      const yblocks = ydoc.getArray('blocks');
-      yblocks.delete(0, yblocks.length);
-      yblocks.push(page.blocks as any[]);
+    // Pages saved without blocks (API- or template-created) open as one paragraph holding the
+    // content, seeded once per document so collaborators share a block instead of an empty array.
+    const initialBlocks = page ? blocksForPage(page) : [];
+    if (initialBlocks.length > 0) {
+      ydoc.getArray('blocks').push(initialBlocks);
       logger.info('Loaded Yjs document state from database', {
         documentId,
         pageId,
-        blockCount: (page.blocks as any[]).length,
+        blockCount: initialBlocks.length,
       });
-    } else if (page && page.content) {
-      // Pages saved without blocks (API- or template-created) open in the editor as one
-      // paragraph holding the content. Seed the same block here, once per document, so
-      // collaborators edit a shared block instead of an empty array that drops their edits.
-      ydoc.getArray('blocks').push([
-        {
-          id: `block_seed_${pageId}`,
-          type: 'paragraph',
-          content: page.content,
-          properties: {},
-          order: 0,
-          children: [],
-        },
-      ]);
     }
 
     const state: DocState = {
@@ -269,7 +278,9 @@ export class YjsCollaborationManager {
           });
         }
 
-        // Persistence: debounced save + periodic snapshots while active.
+        // Persistence: debounced save + periodic snapshots while active. A reload from the
+        // database is already persisted, so it is broadcast but not saved again.
+        if (origin === RELOAD_ORIGIN) return;
         this.markDirty(documentId);
       },
       metrics: {
@@ -457,6 +468,29 @@ export class YjsCollaborationManager {
     this.scheduleDebouncedSave(doc);
   }
 
+  /**
+   * Replace the blocks of every loaded document for `pageId` with what the database now holds
+   * (after a restore), so connected editors see the restored page and a later save cannot write
+   * the pre-restore blocks back.
+   */
+  async reloadFromDatabase(pageId: number): Promise<number> {
+    const docs = Array.from(this.docs.values()).filter((d) => d.pageId === pageId);
+    if (docs.length === 0) return 0;
+    const page = await this.storage.getWikiPage(pageId);
+    if (!page) return 0;
+    const blocks = blocksForPage(page);
+    for (const doc of docs) {
+      doc.ydoc.transact(() => {
+        const yblocks = doc.ydoc.getArray('blocks');
+        yblocks.delete(0, yblocks.length);
+        if (blocks.length > 0) yblocks.push(blocks);
+      }, RELOAD_ORIGIN);
+      doc.dirty = false;
+    }
+    logger.info('Reloaded Yjs documents from database', { pageId, documents: docs.length });
+    return docs.length;
+  }
+
   async saveDoc(documentId: string, reason: SaveReason): Promise<void> {
     const doc = this.docs.get(documentId);
     if (!doc) return;
@@ -475,7 +509,9 @@ export class YjsCollaborationManager {
       const yblocks = doc.ydoc.getArray('blocks');
       const blocks = yblocks.toArray();
 
-      await this.storage.updateWikiPage(doc.pageId, { blocks });
+      // Same pipeline as REST autosave (issue #103 E1): keeps `content` (reader, FTS, AI search)
+      // in step with the blocks and groups saves into one version per editing session.
+      await savePage(storagePageSaveStore(this.storage), doc.pageId, { blocks }, 'autosave');
 
       doc.dirty = false;
       doc.metrics.savesSucceeded += 1;
@@ -535,6 +571,19 @@ export class YjsCollaborationManager {
 
 // Exposed for diagnostics/testing
 let yjsManager: YjsCollaborationManager | null = null;
+
+/** After a restore: push the restored blocks into any open collaborative document. */
+export async function reloadCollaborativeDocs(pageId: number): Promise<void> {
+  if (!yjsManager) return;
+  try {
+    await yjsManager.reloadFromDatabase(pageId);
+  } catch (error) {
+    logger.error('Failed to reload collaborative documents after restore', {
+      pageId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}
 
 /**
  * Setup Yjs collaboration with Socket.IO

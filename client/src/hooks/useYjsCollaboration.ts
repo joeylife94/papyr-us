@@ -330,6 +330,19 @@ export function useYjsCollaboration({
     });
   }, []);
 
+  // Move a block (issue #103 E3): delete and re-insert it in one transaction, so every
+  // collaborator applies the reorder as a single update. `to` is the index in the resulting list.
+  const moveBlock = useCallback((from: number, to: number) => {
+    const yblocks = yblocksRef.current;
+    if (!yblocks || from === to || from >= yblocks.length || to >= yblocks.length) return;
+
+    ydocRef.current?.transact(() => {
+      const block = yblocks.get(from);
+      yblocks.delete(from, 1);
+      yblocks.insert(to, [block]);
+    });
+  }, []);
+
   // Update cursor position
   const updateCursor = useCallback((cursor: { x: number; y: number; blockId?: string }) => {
     const awareness = awarenessRef.current;
@@ -378,6 +391,7 @@ export function useYjsCollaboration({
     insertBlock,
     updateBlock,
     deleteBlock,
+    moveBlock,
     updateCursor,
     saveToDatabase,
   };
