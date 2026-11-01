@@ -329,7 +329,9 @@ export function PageTree({ treeUrl, createHref, searchQuery, onNavigate }: PageT
                           aria-hidden="true"
                           title="드래그해서 옮기기"
                           data-testid="tree-drag-handle"
-                          className="flex h-6 w-4 shrink-0 cursor-grab items-center justify-center text-muted-foreground opacity-0 transition-opacity group-hover/tree:opacity-100 active:cursor-grabbing [@media(hover:none)]:opacity-50"
+                          // The dnd library gives the grip role="button"; !min-* keeps the legacy
+                          // mobile rule (44px buttons) from widening every row's indent.
+                          className="flex h-6 w-4 !min-h-0 !min-w-0 shrink-0 cursor-grab items-center justify-center text-muted-foreground opacity-0 transition-opacity group-hover/tree:opacity-100 active:cursor-grabbing [@media(hover:none)]:opacity-50"
                         >
                           <GripVertical className="h-3.5 w-3.5" />
                         </span>

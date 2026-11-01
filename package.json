@@ -35,7 +35,7 @@
     "start:e2e": "cross-env PORT=5003 dotenv -e .env.test -- tsx server/index.ts",
     "e2e": "dotenv -e .env.test -- npm run test:setup && dotenv -e .env.test -- npx playwright test",
     "test:e2e": "node scripts/run-e2e-layer5.mjs",
-    "test:gj": "playwright test tests/gj01-auth-team-entry.spec.ts tests/gj02-document-lifecycle.spec.ts tests/gj03-authorization-boundary.spec.ts tests/gj04-version-recovery.spec.ts tests/gj07-inline-ai-assistance.spec.ts tests/task-team-scope.spec.ts tests/calendar-team-scope.spec.ts tests/block-reorder.spec.ts tests/page-icon.spec.ts tests/page-tree.spec.ts --project=chromium --workers=1",
+    "test:gj": "playwright test tests/gj01-auth-team-entry.spec.ts tests/gj02-document-lifecycle.spec.ts tests/gj03-authorization-boundary.spec.ts tests/gj04-version-recovery.spec.ts tests/gj07-inline-ai-assistance.spec.ts tests/task-team-scope.spec.ts tests/calendar-team-scope.spec.ts tests/block-reorder.spec.ts tests/page-icon.spec.ts tests/page-tree.spec.ts tests/page-links.spec.ts --project=chromium --workers=1",
     "test:p0": "playwright test tests/p0 --project=chromium --workers=1",
     "test:visual": "node scripts/run-visual-layer6.mjs",
     "test:visual:update": "node scripts/update-visual-baselines.mjs",

@@ -65,7 +65,9 @@ describe('Realtime notifications over Socket.IO', () => {
         `Test setup error: FEATURE_NOTIFICATIONS is disabled (got ${JSON.stringify(flags)})`
       );
     }
-  });
+    // The hook imports the whole route module graph and starts a server; under a full parallel
+    // run that alone can pass the default 10 s, so it gets the same headroom as afterAll.
+  }, 30000);
 
   afterAll(async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
