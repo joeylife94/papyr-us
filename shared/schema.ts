@@ -72,7 +72,7 @@ export const blockSchema = z.object({
   id: z.string(),
   type: z.enum(blockTypes),
   content: z.string().default(''),
-  properties: z.record(z.any()).default({}),
+  properties: z.record(z.string(), z.any()).default({}),
   order: z.number(),
   parentId: z.string().optional(),
   children: z.array(z.string()).default([]), // child block IDs
