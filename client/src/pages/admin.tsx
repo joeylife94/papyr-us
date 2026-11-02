@@ -66,7 +66,8 @@ type TeamFormData = z.infer<typeof teamFormSchema>;
 
 export default function AdminPage() {
   const navigate = useNavigate();
-  const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
+  const { isAuthenticated, isLoading: isAuthLoading, user } = useAuth();
+  const userId: number | undefined = user?.id;
   const [activeTab, setActiveTab] = useState<'directories' | 'teams'>('directories');
   const [editingDirectory, setEditingDirectory] = useState<Directory | null>(null);
   const [editingTeam, setEditingTeam] = useState<Team | null>(null);
@@ -110,22 +111,26 @@ export default function AdminPage() {
   }, []);
 
   // Admins use their own account: the server decides whether it is a platform admin
-  // (ADMIN_EMAILS). There is no shared admin password (issue #124 X0).
+  // (ADMIN_EMAILS). There is no shared admin password (issue #124 X0). The answer is keyed by
+  // account and asked again on every visit, so it never outlives the account it was given to
+  // (switching accounts in the same tab does not reload the page).
   const { data: adminSession, isLoading: isAdminCheckLoading } = useQuery<{ admin: boolean }>({
-    queryKey: ['/api/admin/session'],
+    queryKey: ['/api/admin/session', userId],
     queryFn: async () => {
       const response = await fetch('/api/admin/session');
       if (response.status === 403) return { admin: false };
       if (!response.ok) throw new Error('Failed to check admin access');
       return response.json();
     },
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && userId != null,
+    staleTime: 0,
+    gcTime: 0,
     retry: false,
   });
   const isAdmin = adminSession?.admin === true;
 
   const { data: directories = [], refetch: refetchDirectories } = useQuery<Directory[]>({
-    queryKey: ['/api/admin/directories'],
+    queryKey: ['/api/admin/directories', userId],
     queryFn: async () => {
       const response = await fetch('/api/admin/directories');
       if (!response.ok) throw new Error('Failed to fetch directories');

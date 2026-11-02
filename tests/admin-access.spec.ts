@@ -65,6 +65,65 @@ test('a signed-out visitor is sent to sign in, and shared-password routes are go
   expect(withHeader.status()).toBe(403);
 });
 
+test('switching accounts in the same tab never reuses the previous account’s admin answer', async ({
+  page,
+  request,
+}) => {
+  await ensureAdminAccount(request);
+  const member = await registerTestUser(request, 'switch-member');
+
+  const signInWithForm = async (email: string, password: string) => {
+    await expect(page.getByRole('heading', { name: 'Login' })).toBeVisible();
+    await page.getByLabel('Email').fill(email);
+    await page.getByLabel('Password').fill(password);
+    const signedIn = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === '/api/auth/login' && response.ok()
+    );
+    await page.getByRole('button', { name: 'Login with Email' }).click();
+    await signedIn;
+    await expect(page.getByTestId('user-menu')).toBeVisible();
+  };
+  const openAdminFromMenu = async () => {
+    await page.getByTestId('user-menu').click();
+    await page.getByRole('menuitem', { name: '설정' }).click();
+    await expect(page).toHaveURL(/\/admin$/);
+  };
+  const signOutFromAdmin = async () => {
+    await page.getByRole('button', { name: /Back to (Wiki|Home)/ }).click();
+    const signedOut = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === '/api/auth/logout'
+    );
+    await page.getByTestId('user-menu').click();
+    await page.getByRole('menuitem', { name: '로그아웃' }).click();
+    await signedOut;
+    await page.waitForURL(/\/login/);
+  };
+
+  // A single page load: every step after it is client-side navigation, as for a real user.
+  let pageLoads = 0;
+  page.on('load', () => pageLoads++);
+  await page.goto('/login');
+
+  await signInWithForm(ADMIN_EMAIL, ADMIN_ACCOUNT_PASSWORD);
+  await openAdminFromMenu();
+  await expect(page.getByRole('heading', { name: 'Admin Panel' })).toBeVisible();
+
+  await signOutFromAdmin();
+  await signInWithForm(member.email, member.password);
+  await openAdminFromMenu();
+  await expect(page.getByTestId('admin-access-message')).toHaveText(
+    /Your account is not a platform admin/
+  );
+  await expect(page.getByRole('heading', { name: 'Admin Panel' })).toHaveCount(0);
+
+  // And back: the admin is not held out by the member's answer either.
+  await signOutFromAdmin();
+  await signInWithForm(ADMIN_EMAIL, ADMIN_ACCOUNT_PASSWORD);
+  await openAdminFromMenu();
+  await expect(page.getByRole('heading', { name: 'Admin Panel' })).toBeVisible();
+  expect(pageLoads).toBe(1);
+});
+
 test('an account listed in ADMIN_EMAILS opens the admin panel with its own session', async ({
   page,
   request,
