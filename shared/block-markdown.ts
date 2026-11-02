@@ -8,7 +8,8 @@
  *
  * Blocks → Markdown:
  * - `heading1`–`heading3`: `#`, `##`, `###`. A Markdown heading is one line, so line breaks in
- *   the text become single spaces (and the text is trimmed).
+ *   the text become single spaces (and the text is trimmed). Text that already starts with
+ *   heading marks (`## Title`) is kept as typed, as on main since #123.
  * - `bulleted_list`: `- `; `numbered_list`: `1. `, `2. ` … counting each run of consecutive
  *   items from 1, like the editor; `checkbox`: `- [ ] ` / `- [x] ` (`properties.checked`).
  *   Continuation lines are indented to the item's content column, so a multi-line item stays
@@ -19,7 +20,8 @@
  *   in the code, so the code can never close it.
  * - `divider`: `---`.
  * - `paragraph` and every other type: its text unchanged.
- * - An empty heading, list item, to-do or quote keeps its bare marker (`##`, `-`, `- [ ]`, `>`).
+ * - An empty heading or code block derives nothing (#123); an empty list item, to-do or quote
+ *   keeps its bare marker (`-`, `- [ ]`, `>`).
  *
  * Blocks are joined by a blank line, except consecutive items of the same list type, which are
  * joined by one newline so Markdown sees one list. A page made only of paragraphs (and other
@@ -73,8 +75,9 @@ function headingMarkdown(level: number, text: string): string {
     .map((part) => part.trim())
     .filter((part) => part.length > 0)
     .join(' ');
-  const marker = '#'.repeat(level);
-  return line ? `${marker} ${line}` : marker;
+  if (!line) return '';
+  // Text that already carries Markdown heading marks is kept as typed.
+  return /^#{1,6}\s/.test(line) ? line : `${'#'.repeat(level)} ${line}`;
 }
 
 /** A list item: the marker on the first line, the following lines indented by `indent`. */
@@ -94,10 +97,10 @@ function fenceLanguage(language: unknown): string {
 }
 
 function codeMarkdown(text: string, language: unknown): string {
+  if (!text.trim()) return '';
   const longestRun = (text.match(/`+/g) ?? []).reduce((max, run) => Math.max(max, run.length), 0);
   const fence = '`'.repeat(Math.max(3, longestRun + 1));
-  const open = fence + fenceLanguage(language);
-  return text ? `${open}\n${text}\n${fence}` : `${open}\n${fence}`;
+  return `${fence}${fenceLanguage(language)}\n${text}\n${fence}`;
 }
 
 /** Bullet-style lists: a bulleted run next to a to-do run needs another marker to stay apart. */
@@ -143,12 +146,13 @@ export interface BlockMarkdownRange {
  * `blocksToMarkdown`, plus each block's range in the result, so a position in `content` (a
  * heading found by the table of contents) can be mapped back to its block.
  */
-export function blocksToMarkdownWithRanges(blocks: readonly unknown[]): {
+export function blocksToMarkdownWithRanges(blocks: unknown): {
   markdown: string;
   ranges: BlockMarkdownRange[];
 } {
   let markdown = '';
   const ranges: BlockMarkdownRange[] = [];
+  if (!Array.isArray(blocks)) return { markdown, ranges };
   let previousType: string | undefined;
   let listNumber = 0;
   let bullet: '-' | '*' = '-';
@@ -175,7 +179,7 @@ export function blocksToMarkdownWithRanges(blocks: readonly unknown[]): {
 }
 
 /** The Markdown `content` of a block list (see the module comment for the mapping). */
-export function blocksToMarkdown(blocks: readonly unknown[]): string {
+export function blocksToMarkdown(blocks: unknown): string {
   return blocksToMarkdownWithRanges(blocks).markdown;
 }
 

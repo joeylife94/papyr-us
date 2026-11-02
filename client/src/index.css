@@ -249,6 +249,30 @@
   @apply bg-muted font-semibold;
 }
 
+/* Checkbox blocks render as GFM task lists: show the box, not a bullet beside it. Only the
+   checkbox items lose their bullet; ordinary items in the same list keep theirs. */
+.prose li.task-list-item {
+  @apply my-1.5 list-none;
+}
+
+/* A list of checkbox items only sits flush with the text, as in the editor. */
+.prose ul.contains-task-list:not(:has(> li:not(.task-list-item))) {
+  @apply pl-0;
+}
+
+.prose ul.contains-task-list:not(:has(> li:not(.task-list-item))) > li {
+  @apply pl-0;
+}
+
+/* Blocks are joined by blank lines, so items render as a loose list (text wrapped in <p>). */
+.prose li.task-list-item > p {
+  @apply my-0;
+}
+
+.prose li.task-list-item input[type='checkbox'] {
+  @apply my-0 ml-0 mr-2 align-middle accent-current;
+}
+
 /* Smooth transitions */
 * {
   transition:
