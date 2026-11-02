@@ -115,7 +115,7 @@ describe('blocksToMarkdown', () => {
     expect(blocksToMarkdown([block('heading2', ' Two\nlines \n')])).toBe('## Two lines');
   });
 
-  it('writes bare markers for empty structural blocks', () => {
+  it('writes bare markers for empty list items and quotes, and nothing for empty headings and code', () => {
     expect(
       blocksToMarkdown([
         block('heading2'),
@@ -126,7 +126,7 @@ describe('blocksToMarkdown', () => {
         block('quote'),
         block('code'),
       ])
-    ).toBe(['##', '-', 'x', '- [ ]', 'y', '>', '```\n```'].join('\n\n'));
+    ).toBe(['', '-', 'x', '- [ ]', 'y', '>', ''].join('\n\n'));
   });
 
   it('fences code with a longer fence than any backtick run inside it', () => {
@@ -403,20 +403,32 @@ function randomBlock(next: () => number) {
   }
 }
 
+/** Empty headings and code derive nothing (#123), so the round trip leaves them out. */
+const derivable = (blocks: Array<{ type: string; content: string }>) =>
+  blocks.filter(
+    (b) => !(/^heading[123]$/.test(b.type) || b.type === 'code') || b.content.trim() !== ''
+  );
+
 describe('round trip', () => {
   it('markdownToBlocks(blocksToMarkdown(blocks)) keeps types, text, checked and language', () => {
     const next = random(113);
     for (let run = 0; run < 400; run++) {
       const blocks = Array.from({ length: 1 + Math.floor(next() * 8) }, () => randomBlock(next));
       const markdown = blocksToMarkdown(blocks);
-      expect(essence(markdownToBlocks(markdown)), markdown).toEqual(essence(blocks));
+      // Content with nothing derivable opens as one empty paragraph, like any empty content.
+      const kept = derivable(blocks);
+      expect(essence(markdownToBlocks(markdown)), markdown).toEqual(
+        essence(kept.length > 0 ? kept : [{ type: 'paragraph', content: '' }])
+      );
     }
   });
 
   it('derived Markdown is a fixed point: deriving the parsed blocks gives it back', () => {
     const next = random(7);
     for (let run = 0; run < 200; run++) {
-      const blocks = Array.from({ length: 1 + Math.floor(next() * 8) }, () => randomBlock(next));
+      const blocks = derivable(
+        Array.from({ length: 1 + Math.floor(next() * 8) }, () => randomBlock(next))
+      );
       const markdown = blocksToMarkdown(blocks);
       expect(blocksToMarkdown(markdownToBlocks(markdown))).toBe(markdown);
     }

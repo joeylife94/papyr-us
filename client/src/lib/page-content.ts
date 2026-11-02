@@ -3,9 +3,10 @@ import type { Block } from '@shared/schema';
 import { blocksToMarkdown, markdownToBlocks } from '../../../shared/block-markdown';
 
 /**
- * The Markdown page content for a block list (#113 §1). The server derives `content` with the
- * same function on save (server/services/page-save.ts); the client uses it for the live table of
- * contents and reading time while editing, and sends it when creating a page.
+ * The Markdown page content for a block list (#113 §1, shared/block-markdown.ts). The server
+ * derives `content` with the same function on save (server/services/page-save.ts); the client
+ * uses it for a new page's first save and for the live table of contents and reading time while
+ * editing.
  */
 export function blocksToContent(blocks: Block[]): string {
   return blocksToMarkdown(blocks);
