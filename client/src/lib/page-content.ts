@@ -1,14 +1,13 @@
 import type { Block } from '@shared/schema';
+import { blocksToMarkdown } from '@shared/page-content';
 
 /**
- * The Markdown-ish page content for a block list: block contents joined by blank lines. The
- * server derives `content` the same way on save (server/services/page-save.ts); the client uses
- * it for the live table of contents and reading time while editing.
+ * The Markdown page content for a block list (shared/page-content.ts). The server derives
+ * `content` the same way on save (server/services/page-save.ts); the client uses it for a new
+ * page's first save and for the live table of contents and reading time while editing.
  */
 export function blocksToContent(blocks: Block[]): string {
-  return blocks
-    .map((block) => (typeof block?.content === 'string' ? block.content : ''))
-    .join('\n\n');
+  return blocksToMarkdown(blocks);
 }
 
 /** Blocks for a page, seeding one paragraph from `content` when it has none (API/template pages). */

@@ -1,4 +1,5 @@
 import { mkdirSync } from 'node:fs';
+import { blocksToMarkdown } from '../shared/page-content';
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import {
   createAuthenticatedApiContext,
@@ -63,7 +64,8 @@ function blocksDoc(items: BlockSpec[], key: string) {
     order: index,
     children: [],
   }));
-  return { blocks, content: blocks.map((block) => block.content).join('\n\n') };
+  // The same Markdown the save pipeline derives from these blocks (shared/page-content.ts).
+  return { blocks, content: blocksToMarkdown(blocks) };
 }
 
 async function createPage(
@@ -242,6 +244,11 @@ test('P7 review package: workspace, editing and reading, history and restore, th
   const preview = history.getByRole('region', { name: '버전 미리보기' });
   await expect(preview.getByTestId('version-preview')).toContainText('Record decisions');
   await expect(preview.getByTestId('version-preview')).not.toContainText('Recovery');
+  // The preview keeps block types: the heading and the checkbox items.
+  await expect(
+    preview.getByTestId('version-preview').getByRole('heading', { name: 'Weekly rhythm' })
+  ).toBeVisible();
+  await expect(preview.getByTestId('version-preview').getByRole('checkbox')).toHaveCount(2);
   await capture(page, '04-version-history-desktop', false);
 
   // ── 05 · Restore is deliberate: the confirmation says what will happen ──
@@ -287,6 +294,18 @@ test('P7 review package: workspace, editing and reading, history and restore, th
   await expect(memberPage.getByTestId('page-icon-button')).toHaveCount(0);
   await expect(
     memberPage.getByTestId('backlinks').getByRole('link', { name: 'Weekly sync notes' })
+  ).toBeVisible();
+  // The reader shows the same structure the editor does: a heading, read-only checkboxes, the
+  // link chip, and the heading in the table of contents.
+  await expect(memberPage.getByRole('heading', { name: 'Weekly rhythm', level: 2 })).toBeVisible();
+  const readerBoxes = memberPage.locator('article').getByRole('checkbox');
+  await expect(readerBoxes).toHaveCount(2);
+  await expect(readerBoxes.first()).toBeDisabled();
+  await expect(
+    memberPage.locator('article').getByRole('link', { name: 'Decision log' })
+  ).toBeVisible();
+  await expect(
+    memberPage.getByRole('navigation', { name: 'Table of contents' }).getByText('Weekly rhythm')
   ).toBeVisible();
   await capture(memberPage, '07-page-reading-desktop');
   await memberContext.close();
