@@ -120,6 +120,8 @@ export function toPlainTextPreview(content: string, maxLength = 160): string {
     .replace(/`([^`]*)`/g, '$1')
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    // Checkbox items: drop the list marker and the box together.
+    .replace(/^\s{0,3}[-*+]\s+\[[ xX]\]\s+/gm, '')
     .replace(/^\s{0,3}(#{1,6}|>|[-*+]|\d+\.)\s+/gm, '')
     .replace(/(\*\*|__|~~|\*)(\S(?:[\s\S]*?\S)?)\1/g, '$2')
     .replace(/\s+/g, ' ')
