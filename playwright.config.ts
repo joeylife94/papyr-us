@@ -115,7 +115,8 @@ export default defineConfig({
 
   webServer: {
     // server/index.ts loads .env.test when present, while CI-provided variables remain authoritative
-    command: `cross-env PORT=${e2ePort} NODE_ENV=test ENFORCE_AUTH_WRITES=true tsx server/index.ts`,
+    // ADMIN_EMAILS names the platform admin account that tests/admin-access.spec.ts signs in with.
+    command: `cross-env PORT=${e2ePort} NODE_ENV=test ENFORCE_AUTH_WRITES=true ADMIN_EMAILS=e2e-platform-admin@example.com tsx server/index.ts`,
     url: e2eBaseUrl,
     // Playwright owns the E2E server lifecycle to prevent duplicate processes and port conflicts.
     reuseExistingServer: false,

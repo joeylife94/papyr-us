@@ -42,10 +42,8 @@ const TEST_JWT_SECRET = 'team-auth-test-secret';
 vi.mock('../config', () => ({
   config: {
     jwtSecret: 'team-auth-test-secret',
-    adminPassword: 'test-admin',
     adminEmails: ['admin@example.com'],
     enforceAuthForWrites: true,
-    allowAdminPassword: false,
     rateLimitEnabled: false,
     rateLimitWindowMs: 60_000,
     rateLimitMax: 1000,

@@ -117,7 +117,6 @@ Global Admin → Team Owner → Team Admin → Team Member → Page Viewer
 | 항목                    | 프로덕션 필수 조건 |
 | ----------------------- | ------------------ |
 | `JWT_SECRET`            | 기본값 사용 불가   |
-| `ADMIN_PASSWORD`        | 12자 이상          |
 | `DATABASE_URL`          | 필수 설정          |
 | `LOCAL_DEV_UNSAFE_CORS` | `true` 사용 금지   |
 | `COLLAB_REQUIRE_AUTH`   | `0` 사용 금지      |
@@ -142,10 +141,8 @@ Global Admin → Team Owner → Team Admin → Team Member → Page Viewer
 
 ### 감사 로그 (Audit Log)
 
-- 인증 이벤트 (로그인, 실패, 로그아웃)
-- 데이터 변경 (페이지, 팀, 권한)
-- 관리자 작업
-- 보안 이벤트 (Rate Limit 초과, 권한 거부)
+- **아직 없습니다.** 인증·권한·페이지·관리자 이벤트를 남기는 감사 로그는 [#124](https://github.com/joeylife94/papyr-us/issues/124) X2에서 구현합니다. (연결되지 않은 채 남아 있던 `server/services/audit-log.ts`는 X0에서 삭제했습니다.)
+- 지금 남는 기록은 애플리케이션 로그뿐입니다(예: 관리자 접근 거부 시 `Denied admin access`).
 
 ---
 
@@ -155,7 +152,6 @@ Global Admin → Team Owner → Team Admin → Team Member → Page Viewer
 | ---------------------- | ------------- | ---------------- |
 | `enforceAuthForWrites` | ✅ 기본 활성  | ❌ 기본 비활성   |
 | `rateLimitEnabled`     | ✅ 기본 활성  | ❌ 기본 비활성   |
-| `allowAdminPassword`   | ❌ 비활성     | ✅ 편의상 활성   |
 | CSP `unsafe-eval`      | ❌ 제거       | ✅ Dev tools용   |
 | Cookie `secure`        | ✅ HTTPS only | ❌ HTTP 허용     |
 | Error stack trace      | ❌ 비노출     | ✅ 디버깅용 노출 |
@@ -167,7 +163,7 @@ Global Admin → Team Owner → Team Admin → Team Member → Page Viewer
 ### 배포 전 필수 확인
 
 - [ ] `JWT_SECRET`을 랜덤 256-bit 이상으로 설정
-- [ ] `ADMIN_PASSWORD`를 강력한 비밀번호로 설정
+- [ ] `ADMIN_EMAILS`에 실제 관리자 계정 이메일만 설정 (공유 관리자 비밀번호는 없음)
 - [ ] `DATABASE_URL` SSL 연결 확인
 - [ ] `CORS_ALLOWED_ORIGINS`에 실제 도메인만 설정
 - [ ] `LOCAL_DEV_UNSAFE_CORS=true` 제거 확인

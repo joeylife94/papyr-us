@@ -14,7 +14,7 @@ vi.mock('../services/ai.js', () => ({
   isAIAvailable: vi.fn(() => false),
 }));
 
-import { registerOperationalRoutes } from '../operational.js';
+import { markShuttingDown, registerOperationalRoutes, resetShutdownState } from '../operational.js';
 
 let uploadsDir: string;
 const originalEnv = { ...process.env };
@@ -31,6 +31,7 @@ afterEach(async () => {
   process.env = { ...originalEnv };
   await fs.rm(uploadsDir, { recursive: true, force: true });
   vi.clearAllMocks();
+  resetShutdownState();
 });
 
 function createApp(query: () => Promise<unknown>) {
@@ -77,5 +78,35 @@ describe('operational endpoints', () => {
     expect(response.status).toBe(503);
     expect(response.body.status).toBe('degraded');
     expect(response.body.database).toBe('degraded');
+  });
+
+  it('reports a ready instance through /ready with a minimal body', async () => {
+    const response = await request(createApp(async () => ({ rows: [] }))).get('/ready');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ status: 'ready' });
+  });
+
+  it('is not ready while PostgreSQL is unavailable', async () => {
+    const response = await request(
+      createApp(async () => {
+        throw new Error('database unavailable');
+      })
+    ).get('/ready');
+
+    expect(response.status).toBe(503);
+    expect(response.body).toMatchObject({ status: 'not_ready', database: 'degraded' });
+  });
+
+  it('stops taking traffic once shutdown starts, while /health still reports dependencies', async () => {
+    const app = createApp(async () => ({ rows: [] }));
+    markShuttingDown();
+
+    const ready = await request(app).get('/ready');
+    const health = await request(app).get('/health');
+
+    expect(ready.status).toBe(503);
+    expect(ready.body).toEqual({ status: 'not_ready', reason: 'shutting_down' });
+    expect(health.status).toBe(200);
   });
 });

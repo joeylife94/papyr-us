@@ -78,10 +78,8 @@ jobs:
           POSTGRES_PASSWORD=firebat_ci_database_password
           POSTGRES_DB=papyr
           JWT_SECRET=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-          ADMIN_PASSWORD=FirebatAdminGuard!123
           ADMIN_EMAILS=firebat-ci@example.com
           ENFORCE_AUTH_WRITES=true
-          ALLOW_ADMIN_PASSWORD=false
           RATE_LIMIT_ENABLED=false
           PAPYR_MODE=team
           FEATURE_TEAMS=true

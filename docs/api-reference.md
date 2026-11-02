@@ -237,7 +237,7 @@
 
 | Method | Endpoint                     | Auth  | Description   |
 | ------ | ---------------------------- | ----- | ------------- |
-| POST   | `/api/admin/auth`            | Admin | 관리자 인증   |
+| GET    | `/api/admin/session`         | Admin | 관리자 확인   |
 | GET    | `/api/admin/directories`     | Admin | 디렉토리 목록 |
 | POST   | `/api/admin/directories`     | Admin | 디렉토리 생성 |
 | PATCH  | `/api/admin/directories/:id` | Admin | 디렉토리 수정 |

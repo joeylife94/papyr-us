@@ -3,15 +3,15 @@ import request from 'supertest';
 import type { Express } from 'express';
 import express from 'express';
 import http from 'http';
+import jwt from 'jsonwebtoken';
 import { registerRoutes } from '../routes';
 
-// Mock the config to have a predictable admin password and allow password fallback in this suite
+// Platform admins are accounts whose email is in ADMIN_EMAILS; there is no shared admin password
+// (issue #124 X0).
 vi.mock('../config', () => ({
   config: {
-    adminPassword: 'test-admin-password',
-    allowAdminPassword: true,
-    adminEmails: [],
-    jwtSecret: 'your-default-secret',
+    adminEmails: ['admin@example.com'],
+    jwtSecret: 'admin-test-secret',
   },
 }));
 
@@ -27,6 +27,12 @@ import { storage } from '../storage.js';
 let app: Express;
 let server: http.Server;
 
+const ADMIN = { id: 1, email: 'admin@example.com', isActive: true };
+const MEMBER = { id: 2, email: 'member@example.com', isActive: true };
+const bearer = (claims: Record<string, unknown>) =>
+  `Bearer ${jwt.sign(claims, 'admin-test-secret', { expiresIn: '1h' })}`;
+const adminToken = () => bearer({ id: ADMIN.id, email: ADMIN.email, role: 'admin' });
+
 beforeAll(async () => {
   app = express();
   app.use(express.json());
@@ -35,67 +41,150 @@ beforeAll(async () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  (storage.getUserAccount as vi.Mock).mockImplementation(
+    async (id: number) => [ADMIN, MEMBER].find((account) => account.id === id) ?? undefined
+  );
 });
 
-afterAll((done) => {
-  server.close(done);
+afterAll(async () => {
+  await new Promise<void>((resolve) => server.close(() => resolve()));
 });
 
-describe('Admin & Directory Management API', () => {
-  const adminPassword = 'test-admin-password';
-  const mockDirectory = {
-    id: 1,
-    name: 'protected-docs',
-    displayName: 'Protected Documents',
-  };
-
-  it('TC-ADM-001: should authenticate as admin successfully', async () => {
-    const response = await request(app).post('/api/admin/auth').send({ password: adminPassword });
+describe('Platform admin access', () => {
+  it('confirms an ADMIN_EMAILS account through /api/admin/session', async () => {
+    const response = await request(app)
+      .get('/api/admin/session')
+      .set('Authorization', adminToken());
 
     expect(response.status).toBe(200);
-    expect(response.body.success).toBe(true);
+    expect(response.body).toEqual({ admin: true });
+    expect(storage.getUserAccount).toHaveBeenCalledWith(ADMIN.id);
   });
 
-  it('TC-ADM-001: should fail admin authentication with wrong password', async () => {
+  it('no longer offers the shared-password login', async () => {
     const response = await request(app)
       .post('/api/admin/auth')
-      .send({ password: 'wrong-password' });
+      .send({ password: 'test-admin-password' });
 
-    expect(response.status).toBe(401);
+    expect(response.status).toBe(404);
   });
 
-  it('TC-ADM-002: should create a new directory as admin', async () => {
+  it('refuses a shared admin password in a header, the query, or the body', async () => {
+    const viaHeader = await request(app)
+      .get('/api/admin/directories')
+      .set('x-admin-password', 'test-admin-password');
+    const viaQuery = await request(app)
+      .get('/api/admin/directories')
+      .query({ adminPassword: 'test-admin-password' });
+    const viaBody = await request(app)
+      .delete('/api/admin/directories/1')
+      .send({ adminPassword: 'test-admin-password', password: 'test-admin-password' });
+
+    expect([viaHeader.status, viaQuery.status, viaBody.status]).toEqual([403, 403, 403]);
+    expect(storage.getDirectories).not.toHaveBeenCalled();
+    expect(storage.deleteDirectory).not.toHaveBeenCalled();
+  });
+
+  it('does not trust role or email claims in the token on their own', async () => {
+    // The shape the removed password login issued: an admin role and no user id.
+    const passwordToken = await request(app)
+      .get('/api/admin/session')
+      .set('Authorization', bearer({ role: 'admin', via: 'password' }));
+    // A member whose token claims the admin role and an admin email.
+    const claimedAdmin = await request(app)
+      .get('/api/admin/session')
+      .set('Authorization', bearer({ id: MEMBER.id, email: ADMIN.email, role: 'admin' }));
+
+    expect(passwordToken.status).toBe(403);
+    expect(claimedAdmin.status).toBe(403);
+  });
+
+  it('refuses a deactivated admin account and an account that no longer exists', async () => {
+    (storage.getUserAccount as vi.Mock).mockResolvedValueOnce({ ...ADMIN, isActive: false });
+    const deactivated = await request(app)
+      .get('/api/admin/session')
+      .set('Authorization', adminToken());
+
+    (storage.getUserAccount as vi.Mock).mockResolvedValueOnce(undefined);
+    const deleted = await request(app).get('/api/admin/session').set('Authorization', adminToken());
+
+    expect(deactivated.status).toBe(403);
+    expect(deleted.status).toBe(403);
+  });
+
+  it('refuses a signed-in member and a visitor without a token', async () => {
+    const member = await request(app)
+      .get('/api/admin/session')
+      .set('Authorization', bearer({ id: MEMBER.id, email: MEMBER.email, role: 'user' }));
+    const anonymous = await request(app).get('/api/admin/session');
+
+    expect(member.status).toBe(403);
+    expect(anonymous.status).toBe(403);
+  });
+
+  it('fails closed when the account lookup fails', async () => {
+    (storage.getUserAccount as vi.Mock).mockRejectedValueOnce(new Error('db down'));
+
+    const response = await request(app)
+      .get('/api/admin/directories')
+      .set('Authorization', adminToken());
+
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({ message: 'Admin check failed' });
+    expect(storage.getDirectories).not.toHaveBeenCalled();
+  });
+});
+
+describe('Admin directory management', () => {
+  const mockDirectory = { id: 1, name: 'protected-docs', displayName: 'Protected Documents' };
+
+  it('TC-ADM-002: creates a directory as a platform admin', async () => {
     const newDirData = { name: 'new-dir', displayName: 'New Directory' };
     (storage.createDirectory as vi.Mock).mockResolvedValue({ ...newDirData, id: 2 });
 
     const response = await request(app)
       .post('/api/admin/directories')
-      .send({ ...newDirData, adminPassword });
+      .set('Authorization', adminToken())
+      .send(newDirData);
 
     expect(response.status).toBe(201);
     expect(response.body).toHaveProperty('id', 2);
   });
 
-  it('TC-ADM-003: should get all directories as admin', async () => {
+  it('TC-ADM-003: lists directories as a platform admin', async () => {
     (storage.getDirectories as vi.Mock).mockResolvedValue([mockDirectory]);
 
-    const response = await request(app).get('/api/admin/directories').query({ adminPassword });
+    const response = await request(app)
+      .get('/api/admin/directories')
+      .set('Authorization', adminToken());
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual([mockDirectory]);
   });
 
-  it('TC-ADM-005: should delete a directory as admin', async () => {
+  it('TC-ADM-004: updates a directory, ignoring a stray adminPassword field', async () => {
+    (storage.updateDirectory as vi.Mock).mockResolvedValue({ ...mockDirectory, displayName: 'X' });
+
+    const response = await request(app)
+      .patch(`/api/admin/directories/${mockDirectory.id}`)
+      .set('Authorization', adminToken())
+      .send({ displayName: 'X', adminPassword: 'old-client' });
+
+    expect(response.status).toBe(200);
+    expect(storage.updateDirectory).toHaveBeenCalledWith(mockDirectory.id, { displayName: 'X' });
+  });
+
+  it('TC-ADM-005: deletes a directory as a platform admin', async () => {
     (storage.deleteDirectory as vi.Mock).mockResolvedValue(true);
 
     const response = await request(app)
       .delete(`/api/admin/directories/${mockDirectory.id}`)
-      .send({ adminPassword });
+      .set('Authorization', adminToken());
 
     expect(response.status).toBe(204);
   });
 
-  it('TC-ADM-006: should verify a password-protected directory', async () => {
+  it('TC-ADM-006: verifies a password-protected directory', async () => {
     (storage.verifyDirectoryPassword as vi.Mock).mockResolvedValue(true);
     const payload = { directoryName: 'protected-docs', password: 'dir-password' };
 

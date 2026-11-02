@@ -29,25 +29,29 @@ const storage: any = (storageModule as any).storage;
 
 let app: Express;
 let server: http.Server;
-const OLD_ENV = { ...process.env };
 
 beforeAll(async () => {
-  process.env.ALLOW_ADMIN_PASSWORD = 'false';
   app = express();
   app.use(express.json());
   ({ httpServer: server } = await registerRoutes(app, storage));
 });
 
 afterAll(async () => {
-  process.env = { ...OLD_ENV };
   await new Promise<void>((resolve) => server.close(() => resolve()));
 });
 
-describe('Smoke: admin password fallback toggle', () => {
-  it('denies /api/admin/directories when only adminPassword is provided and toggle is false', async () => {
-    const res = await request(app)
+describe('Smoke: no shared admin password', () => {
+  // Issue #124 X0: the password fallback and its ALLOW_ADMIN_PASSWORD toggle are gone; only a
+  // platform admin account passes requireAdmin.
+  it('denies /api/admin/directories when only an admin password is provided', async () => {
+    const viaQuery = await request(app)
       .get('/api/admin/directories')
       .query({ adminPassword: 'test-admin-password' });
-    expect(res.status).toBe(403);
+    const viaHeader = await request(app)
+      .get('/api/admin/directories')
+      .set('x-admin-password', 'test-admin-password');
+
+    expect(viaQuery.status).toBe(403);
+    expect(viaHeader.status).toBe(403);
   });
 });
