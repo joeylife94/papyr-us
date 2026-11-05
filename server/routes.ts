@@ -100,6 +100,7 @@ import passport from 'passport';
 import { eq, and, isNull } from 'drizzle-orm';
 import { ANONYMOUS_PAGE_VIEWER, DBStorage } from './storage.js';
 import { featureFlags } from './features.js';
+import { postgresErrorOf } from './db-errors.js';
 
 interface MulterRequest extends Request {
   files?: any[];
@@ -362,7 +363,7 @@ export async function registerRoutes(
         stack: error instanceof Error ? error.stack : undefined,
       });
       // Handle unique constraint violation for PostgreSQL (code 23505)
-      if (error.code === '23505') {
+      if (postgresErrorOf(error)?.code === '23505') {
         return res.status(409).json({ message: 'User with this email already exists' });
       }
       res.status(500).json({ message: 'Server error during registration' });
