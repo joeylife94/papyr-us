@@ -104,6 +104,7 @@ import { buildKnowledgeGraph, suggestAiLinks } from './services/knowledge-graph.
 import { isReservedDailyNoteSlug } from '../shared/daily-notes.js';
 import { registerDailyNoteRoutes } from './routes/daily-notes.js';
 import { featureFlags } from './features.js';
+import { postgresErrorOf } from './db-errors.js';
 
 interface MulterRequest extends Request {
   files?: any[];
@@ -366,7 +367,7 @@ export async function registerRoutes(
         stack: error instanceof Error ? error.stack : undefined,
       });
       // Handle unique constraint violation for PostgreSQL (code 23505)
-      if (error.code === '23505') {
+      if (postgresErrorOf(error)?.code === '23505') {
         return res.status(409).json({ message: 'User with this email already exists' });
       }
       res.status(500).json({ message: 'Server error during registration' });
@@ -1225,12 +1226,14 @@ export async function registerRoutes(
 
   // ==================== Trash / Recycle Bin API ====================
 
-  // List trashed pages
+  // List trashed pages: only those the caller can read, without their content (it listed every
+  // trashed page in the instance, body included, to any signed-in user).
   app.get('/api/trash', requireAuthIfEnabled, async (req: AuthRequest, res) => {
     try {
-      const teamId = req.query.teamId ? parseInt(req.query.teamId as string) : undefined;
-      const pages = await storage.getTrashPages(teamId);
-      res.json(pages);
+      const teamParam = Number.parseInt(String(req.query.teamId ?? ''), 10);
+      const teamId = Number.isInteger(teamParam) && teamParam > 0 ? teamParam : undefined;
+      const viewer = await storage.getPageViewer(req.user?.id);
+      res.json(await storage.getTrashPages(viewer, teamId));
     } catch (error) {
       logger.error('Error fetching trash:', { error });
       res.status(500).json({ error: 'Failed to fetch trash' });

@@ -4,6 +4,7 @@
  * end-to-end behaviour is proven by tests/security-team-delete-keeps-pages.spec.ts.
  */
 import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { DrizzleQueryError } from 'drizzle-orm';
 
 let DBStorageProto: any;
 
@@ -56,6 +57,20 @@ describe('deleteTeam', () => {
           code: '23503',
           constraint: 'wiki_pages_team_id_teams_id_fk',
         });
+      },
+    });
+    expect(await storage.deleteTeam(1)).toBe('has-pages');
+  });
+
+  it('also recognizes the foreign key when the error comes wrapped, as drizzle-orm throws it', async () => {
+    const { storage } = createStorage({
+      pages: [],
+      deleteResult: () => {
+        const pgError = Object.assign(new Error('violates foreign key constraint'), {
+          code: '23503',
+          constraint: 'wiki_pages_team_id_teams_id_fk',
+        });
+        throw new DrizzleQueryError('delete from "teams" ...', [], pgError);
       },
     });
     expect(await storage.deleteTeam(1)).toBe('has-pages');
