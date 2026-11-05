@@ -177,6 +177,39 @@ export async function checkParent(
   return null;
 }
 
+/** What creating a page needs to know beyond the tree: the teams the caller belongs to. */
+export interface NewPageStore extends PageTreeStore {
+  getUserTeamIds(userId: number): Promise<number[]>;
+}
+
+const NOT_A_MEMBER: TreeRuleError = { status: 403, message: 'You are not a member of this team' };
+
+/**
+ * Whether the caller may create a page in team `teamId` under `parentId` (null for a top-level
+ * or personal page). This is the rule of POST /api/pages; duplicating a page creates its copy in
+ * the source's team and under the source's parent, so it applies the same rule.
+ * - a page under a parent needs checkParent: a live parent the caller may edit, in the same team;
+ * - a page in a team needs membership of that team.
+ * `authEnforced` false means writes may come without a signed-in user (development). Like
+ * requireTeamMembership, a top-level team page then needs no membership when nobody is signed
+ * in. A child page in a team is still refused, since a caller who is not signed in is in no team.
+ */
+export async function checkNewPage(
+  store: NewPageStore,
+  userId: number | undefined,
+  page: { teamId: number | null; parentId: number | null },
+  { authEnforced }: { authEnforced: boolean }
+): Promise<TreeRuleError | null> {
+  if (page.parentId !== null) {
+    const refused = await checkParent(store, userId, page.parentId, { teamId: page.teamId });
+    if (refused) return refused;
+  }
+  if (page.teamId === null) return null;
+  if (!userId && !authEnforced && page.parentId === null) return null;
+  const teamIds = userId ? await store.getUserTeamIds(userId) : [];
+  return teamIds.includes(page.teamId) ? null : NOT_A_MEMBER;
+}
+
 /**
  * The pages a delete of `pageId` trashes (the page and its live descendants), or the reason it
  * is refused: every one of them needs owner, as deleting a single page does.
