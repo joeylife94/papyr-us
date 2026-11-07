@@ -1504,7 +1504,9 @@ export async function registerRoutes(
 
   // ==================== Markdown Import API ====================
 
-  // Like POST /api/pages, a page can only be imported into a team the caller belongs to
+  // Like POST /api/pages, a page can only be imported into a team the caller belongs to. The
+  // body names the team; the page goes into that team as requireTeamMembership resolved and
+  // checked it (a query naming another team is refused there), never a raw conversion of it.
   app.post(
     '/api/pages/import/markdown',
     requireAuthIfEnabled,
@@ -1514,6 +1516,11 @@ export async function registerRoutes(
         const { title, content, folder, tags, teamId } = req.body;
         if (!content || typeof content !== 'string') {
           return res.status(400).json({ error: 'content (string) required' });
+        }
+        const pageTeamId = teamId ? req.checkedTeamId : undefined;
+        if (teamId && pageTeamId === undefined) {
+          // Only without a signed-in user in development: the named team does not exist
+          return res.status(404).json({ error: 'Team not found' });
         }
 
         const pageTitle =
@@ -1541,7 +1548,7 @@ export async function registerRoutes(
             folder: folder || 'docs',
             tags: Array.isArray(tags) ? tags : [],
             author,
-            teamId: teamId ? Number(teamId) : undefined,
+            teamId: pageTeamId,
             isPublished: true,
           },
           (req as any).user?.id
@@ -1682,11 +1689,13 @@ export async function registerRoutes(
     // Calendar Events API
     app.get('/api/calendar', optionalAuth, requireTeamMembership, async (req: AuthRequest, res) => {
       try {
-        const teamId = req.query.teamId as string | undefined;
+        // The team requireTeamMembership resolved and checked. Converting the raw value here
+        // turned a team name into NaN, which getCalendarEvents reads as "every team".
+        const teamId = req.checkedTeamId;
 
         // If no teamId specified, scope to user's teams to prevent full data leak
         let events: CalendarEvent[];
-        if (!teamId) {
+        if (teamId === undefined) {
           const userTeamIds = (req as any).userTeamIds as number[] | undefined;
           if (userTeamIds && userTeamIds.length > 0) {
             const allEvents = await Promise.all(
@@ -1697,7 +1706,7 @@ export async function registerRoutes(
             events = [];
           }
         } else {
-          events = await storage.getCalendarEvents(Number(teamId));
+          events = await storage.getCalendarEvents(teamId);
         }
 
         // Ensure compatibility with new fields - add defaults if missing
@@ -1721,8 +1730,10 @@ export async function registerRoutes(
       requireTeamMembership,
       async (req: AuthRequest, res) => {
         try {
-          const teamId = req.params.teamId;
-          const events = await storage.getCalendarEvents(Number(teamId));
+          // The team requireTeamMembership resolved and checked (see GET /api/calendar). It is
+          // undefined only for an unknown team name in development without a user: no events.
+          const teamId = req.checkedTeamId;
+          const events = teamId === undefined ? [] : await storage.getCalendarEvents(teamId);
 
           // Ensure compatibility with new fields - add defaults if missing
           const safeEvents = events.map((event) => ({
@@ -2450,19 +2461,23 @@ export async function registerRoutes(
     }
   });
 
-  // File Upload API
+  // File Upload API. The team is a multipart field, so the membership check runs after the
+  // multipart parser (files stay in memory until the handler saves them); before it, the check
+  // saw no body and a file could be saved under any team.
   app.post(
     '/api/upload',
     rlUpload,
     requireAuthIfEnabled,
-    requireTeamMembership,
     upload.array('files', 5),
+    requireTeamMembership,
     async (req: any, res) => {
       try {
         if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
           return res.status(400).json({ message: 'No files uploaded' });
         }
 
+        // Stored as sent (an id or a name, as before); requireTeamMembership checked that it
+        // names the caller's team and the same team as any query teamId.
         const teamId = req.body.teamId;
         const uploadedFiles = await Promise.all(
           req.files.map((file: any) => processUploadedFile(file, teamId))
@@ -3630,23 +3645,12 @@ export async function registerRoutes(
   // Members API (unified, team-aware)
   app.get('/api/members', optionalAuth, requireTeamMembership, async (req: AuthRequest, res) => {
     try {
-      let teamId: number | undefined;
-
-      if (req.query.teamId) {
-        const teamIdParam = req.query.teamId as string;
-
-        // Check if it's a number (team ID) or string (team name)
-        if (!isNaN(parseInt(teamIdParam))) {
-          teamId = parseInt(teamIdParam);
-        } else {
-          // It's a team name, find the team ID
-          const team = await storage.getTeamByName(teamIdParam);
-          if (team) {
-            teamId = team.id;
-          } else {
-            return res.status(404).json({ error: 'Team not found' });
-          }
-        }
+      // The team requireTeamMembership resolved and checked. Converting the raw value here could
+      // read a team name such as `20-team` as team 20, a team that was never checked.
+      const teamId = req.checkedTeamId;
+      if (req.query.teamId && teamId === undefined) {
+        // Only without a signed-in user in development: the named team does not exist
+        return res.status(404).json({ error: 'Team not found' });
       }
 
       // If no teamId specified, scope to user's teams to prevent full data leak
@@ -4165,18 +4169,8 @@ export async function registerRoutes(
       requireAuthIfEnabled,
       async (req, res) => {
         try {
-          const teamIdParam = req.query.teamId as string | undefined;
-          let teamId: number | undefined;
-          if (teamIdParam) {
-            if (!isNaN(parseInt(teamIdParam))) {
-              teamId = parseInt(teamIdParam);
-            } else {
-              const team = await storage.getTeamByName(teamIdParam);
-              if (team) {
-                teamId = team.id;
-              }
-            }
-          }
+          // The team requireTeamMembership resolved and checked (see GET /api/members)
+          const teamId = (req as AuthRequest).checkedTeamId;
 
           // If no teamId specified, scope to user's teams to prevent full data leak
           if (!teamId) {
@@ -4426,18 +4420,8 @@ export async function registerRoutes(
     requireTeamMembership,
     async (req: AuthRequest, res) => {
       try {
-        let teamId: number | undefined;
-        if (req.query.teamId) {
-          const teamIdParam = req.query.teamId as string;
-          if (!isNaN(parseInt(teamIdParam))) {
-            teamId = parseInt(teamIdParam);
-          } else {
-            const team = await storage.getTeamByName(teamIdParam);
-            if (team) {
-              teamId = team.id;
-            }
-          }
-        }
+        // The team requireTeamMembership resolved and checked (see GET /api/members)
+        const teamId = req.checkedTeamId;
         const createdBy = req.query.createdBy ? parseInt(req.query.createdBy as string) : undefined;
         const entityType = req.query.entityType as string | undefined;
         const isPublic =
