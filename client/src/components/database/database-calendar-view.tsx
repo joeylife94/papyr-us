@@ -300,7 +300,7 @@ export function DatabaseCalendarView({
           }}
           {...dragProps(row)}
           className={cn(
-            'block w-full !min-h-0 !min-w-0 truncate rounded border border-border bg-card px-1.5 py-0.5 text-left text-xs font-medium text-foreground shadow-sm hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            'w-full !min-h-0 !min-w-0 whitespace-normal break-keep break-words rounded border border-border bg-card px-1.5 py-0.5 text-left text-xs font-medium text-foreground shadow-sm line-clamp-2 hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
             canEdit && 'cursor-grab active:cursor-grabbing',
             (isMoving || dragging === row.id) && 'opacity-60 ring-2 ring-highlight'
           )}
@@ -312,7 +312,13 @@ export function DatabaseCalendarView({
   };
 
   return (
-    <div ref={rootRef} className="space-y-2" data-testid="database-calendar">
+    // A size container: "날짜 없음" sits beside the grid when the database is wide enough (the
+    // page column, not the viewport, decides) and below it otherwise.
+    <div
+      ref={rootRef}
+      className="space-y-2 [container-type:inline-size]"
+      data-testid="database-calendar"
+    >
       <div className="flex flex-wrap items-center gap-1">
         <h4
           id={monthId}
@@ -352,13 +358,13 @@ export function DatabaseCalendarView({
         </button>
       </div>
 
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
+      <div className="flex flex-col gap-3 [@container(min-width:40rem)]:flex-row [@container(min-width:40rem)]:items-start">
         <div className="min-w-0 flex-1 overflow-x-auto">
           <div
             role="grid"
             aria-labelledby={monthId}
             aria-readonly={canEdit ? undefined : true}
-            className="min-w-[36rem] overflow-hidden rounded-md border border-border text-sm"
+            className="min-w-[28rem] overflow-hidden rounded-md border border-border text-sm"
           >
             <div
               role="row"
@@ -438,7 +444,7 @@ export function DatabaseCalendarView({
 
         <section
           aria-labelledby={undatedId}
-          className="shrink-0 rounded-md border border-border bg-muted/30 p-2 lg:w-60"
+          className="shrink-0 rounded-md border border-border bg-muted/30 p-2 [@container(min-width:40rem)]:w-44"
           data-testid="database-calendar-undated"
         >
           <h4 id={undatedId} className="mb-2 text-xs font-semibold text-foreground-secondary">
