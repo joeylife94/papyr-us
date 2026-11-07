@@ -188,10 +188,12 @@ export type TeamReference = { id: number } | { name: string };
 
 /**
  * Reads one `teamId` value. A falsy value (undefined, null, '', 0, false) names no team, as
- * before. A positive integer, or a string of digits, is an id; any other string is a team name.
- * Anything else (a repeated query parameter, an object, a fraction) is not a team reference.
- * Ids are read strictly so a value such as `10e1` cannot pass as team 10 here and act on team
- * 100 in a handler that converts it with Number().
+ * before. A positive integer, or a string of digits, is an id. Any other string is a team name,
+ * unless parseInt() or Number() would read a number from it (`10e1`, `20-team`, ` 10`, `-5`,
+ * `0x10`, `Infinity`): such a value is not a team reference. Handlers that convert the raw
+ * value themselves must reach the same team as this check, so a name can never be read as a
+ * different id elsewhere. Anything else (a repeated query parameter, an object, a fraction) is
+ * not a team reference either.
  */
 export function parseTeamReference(raw: unknown): TeamReference | null | 'invalid' {
   if (!raw) return null;
@@ -199,9 +201,12 @@ export function parseTeamReference(raw: unknown): TeamReference | null | 'invali
     return Number.isSafeInteger(raw) && raw > 0 ? { id: raw } : 'invalid';
   }
   if (typeof raw !== 'string') return 'invalid';
-  if (!/^\d+$/.test(raw)) return { name: raw };
-  const id = Number(raw);
-  return Number.isSafeInteger(id) && id > 0 ? { id } : 'invalid';
+  if (/^\d+$/.test(raw)) {
+    const id = Number(raw);
+    return Number.isSafeInteger(id) && id > 0 ? { id } : 'invalid';
+  }
+  if (!Number.isNaN(Number.parseInt(raw, 10)) || !Number.isNaN(Number(raw))) return 'invalid';
+  return { name: raw };
 }
 
 /** Where a request may name its team, in the order they are read. */

@@ -3641,23 +3641,12 @@ export async function registerRoutes(
   // Members API (unified, team-aware)
   app.get('/api/members', optionalAuth, requireTeamMembership, async (req: AuthRequest, res) => {
     try {
-      let teamId: number | undefined;
-
-      if (req.query.teamId) {
-        const teamIdParam = req.query.teamId as string;
-
-        // Check if it's a number (team ID) or string (team name)
-        if (!isNaN(parseInt(teamIdParam))) {
-          teamId = parseInt(teamIdParam);
-        } else {
-          // It's a team name, find the team ID
-          const team = await storage.getTeamByName(teamIdParam);
-          if (team) {
-            teamId = team.id;
-          } else {
-            return res.status(404).json({ error: 'Team not found' });
-          }
-        }
+      // The team requireTeamMembership resolved and checked. Converting the raw value here could
+      // read a team name such as `20-team` as team 20, a team that was never checked.
+      const teamId = req.checkedTeamId;
+      if (req.query.teamId && teamId === undefined) {
+        // Only without a signed-in user in development: the named team does not exist
+        return res.status(404).json({ error: 'Team not found' });
       }
 
       // If no teamId specified, scope to user's teams to prevent full data leak
@@ -4176,18 +4165,8 @@ export async function registerRoutes(
       requireAuthIfEnabled,
       async (req, res) => {
         try {
-          const teamIdParam = req.query.teamId as string | undefined;
-          let teamId: number | undefined;
-          if (teamIdParam) {
-            if (!isNaN(parseInt(teamIdParam))) {
-              teamId = parseInt(teamIdParam);
-            } else {
-              const team = await storage.getTeamByName(teamIdParam);
-              if (team) {
-                teamId = team.id;
-              }
-            }
-          }
+          // The team requireTeamMembership resolved and checked (see GET /api/members)
+          const teamId = (req as AuthRequest).checkedTeamId;
 
           // If no teamId specified, scope to user's teams to prevent full data leak
           if (!teamId) {
@@ -4437,18 +4416,8 @@ export async function registerRoutes(
     requireTeamMembership,
     async (req: AuthRequest, res) => {
       try {
-        let teamId: number | undefined;
-        if (req.query.teamId) {
-          const teamIdParam = req.query.teamId as string;
-          if (!isNaN(parseInt(teamIdParam))) {
-            teamId = parseInt(teamIdParam);
-          } else {
-            const team = await storage.getTeamByName(teamIdParam);
-            if (team) {
-              teamId = team.id;
-            }
-          }
-        }
+        // The team requireTeamMembership resolved and checked (see GET /api/members)
+        const teamId = req.checkedTeamId;
         const createdBy = req.query.createdBy ? parseInt(req.query.createdBy as string) : undefined;
         const entityType = req.query.entityType as string | undefined;
         const isPublic =

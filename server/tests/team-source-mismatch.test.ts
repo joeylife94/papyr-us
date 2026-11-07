@@ -89,7 +89,8 @@ const storage: any = (storageModule as any).storage;
 
 const OWN = 10; // team "alpha": the caller is a member
 const OTHER = 20; // team "beta": the caller is not
-const TEAMS: Record<string, number> = { alpha: OWN, beta: OTHER };
+// `20-alpha` is also the caller's team: a name parseInt() would read as team 20 (OTHER)
+const TEAMS: Record<string, number> = { alpha: OWN, beta: OTHER, '20-alpha': OWN };
 const CALLER = { id: 1, email: 'caller@example.com' };
 
 const auth = () => ({
@@ -342,9 +343,21 @@ describe('team references are read strictly', () => {
     expect(parseTeamReference(7)).toEqual({ id: 7 });
     expect(parseTeamReference('7')).toEqual({ id: 7 });
     expect(parseTeamReference('alpha')).toEqual({ name: 'alpha' });
-    // Not an id: these used to pass as team 10 through parseInt
-    expect(parseTeamReference('10e1')).toEqual({ name: '10e1' });
-    expect(parseTeamReference('10abc')).toEqual({ name: '10abc' });
+    // Neither an id nor a name: parseInt() or Number() reads a number from them, so a handler
+    // converting the raw value would reach another team than the one checked by name
+    for (const numeric of [
+      '10e1',
+      '10abc',
+      '20-alpha',
+      ' 10',
+      '-5',
+      '+5',
+      '0x10',
+      '1.5',
+      'Infinity',
+    ]) {
+      expect(parseTeamReference(numeric)).toBe('invalid');
+    }
     expect(parseTeamReference(['10', '20'])).toBe('invalid');
     expect(parseTeamReference({ id: 10 })).toBe('invalid');
     expect(parseTeamReference(10.5)).toBe('invalid');
@@ -389,7 +402,8 @@ describe('markdown import puts the page into the checked team', () => {
   it('refuses a value that only looks like its own team id', async () => {
     // parseInt read `10e1` as team 10 and the handler's Number() as team 100
     const res = await importPage('', `${OWN}e1`);
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ message: 'Invalid teamId' });
     expect(storage.createWikiPage).not.toHaveBeenCalled();
   });
 
@@ -418,7 +432,7 @@ describe('calendar reads use the checked team id', () => {
 
   it('refuses a value that only looks like its own team id', async () => {
     const res = await request(app).get(`/api/calendar/${OWN}e1`).set(auth());
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(400);
     expect(storage.getCalendarEvents).not.toHaveBeenCalled();
   });
 
@@ -483,6 +497,45 @@ describe('creating tasks, workflows and saved views in the checked team still wo
       .send({ ...viewBody, teamId: OWN });
     expect(res.status).toBe(201);
     expect(storage.createSavedView).toHaveBeenCalledWith(expect.objectContaining({ teamId: OWN }));
+  });
+});
+
+describe('a team name that parseInt() reads as another team id', () => {
+  // The caller's team 10 is named `20-alpha`. Handlers that converted the raw value with
+  // parseInt() read it as team 20, which the middleware never checked.
+  it.each([
+    [
+      'GET /api/members',
+      () => request(app).get('/api/members?teamId=20-alpha'),
+      () => storage.getMembers,
+    ],
+    [
+      'GET /api/workflows',
+      () => request(app).get('/api/workflows?teamId=20-alpha'),
+      () => storage.getWorkflows,
+    ],
+    [
+      'GET /api/saved-views',
+      () => request(app).get('/api/saved-views?teamId=20-alpha'),
+      () => storage.getSavedViews,
+    ],
+    [
+      'GET /api/tasks',
+      () => request(app).get('/api/tasks?teamId=20-alpha'),
+      () => storage.getTasks,
+    ],
+  ] as const)('%s refuses it', async (_route, send, lister) => {
+    const res = await send().set(auth());
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ message: 'Invalid teamId' });
+    expect(lister()).not.toHaveBeenCalled();
+  });
+
+  it('GET /api/members reads the checked team, named by id or by name', async () => {
+    storage.getMembers.mockResolvedValue([]);
+    expect((await request(app).get(`/api/members?teamId=${OWN}`).set(auth())).status).toBe(200);
+    expect((await request(app).get('/api/members?teamId=alpha').set(auth())).status).toBe(200);
+    expect(storage.getMembers.mock.calls).toEqual([[OWN], [OWN]]);
   });
 });
 
