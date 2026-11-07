@@ -26,9 +26,10 @@ describe('blocksToMarkdown', () => {
         '# Handbook',
         '## Weekly rhythm',
         '### Details',
-        '- [ ] Review tasks',
-        '- [x] Ship it',
-        '- One',
+        // Consecutive items of one list type form one list (#113 §1). A bulleted run right after
+        // a to-do run uses `*`, or Markdown would merge "One" into the to-do list.
+        '- [ ] Review tasks\n- [x] Ship it',
+        '* One',
         '1. Two',
         '> Line a\n> Line b',
         'Plain text',

@@ -301,8 +301,9 @@ test('P7 review package: workspace, editing and reading, history and restore, th
   const readerBoxes = memberPage.locator('article').getByRole('checkbox');
   await expect(readerBoxes).toHaveCount(2);
   await expect(readerBoxes.first()).toBeDisabled();
+  // The chip in the page text; the local graph panel (#111) also lists the linked page.
   await expect(
-    memberPage.locator('article').getByRole('link', { name: 'Decision log' })
+    memberPage.locator('article a[data-page-link-state]').filter({ hasText: 'Decision log' })
   ).toBeVisible();
   await expect(
     memberPage.getByRole('navigation', { name: 'Table of contents' }).getByText('Weekly rhythm')

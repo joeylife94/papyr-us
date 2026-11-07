@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Block, BlockType } from '@shared/schema';
 import { HeadingBlock } from './heading-block';
 import { ParagraphBlock } from './paragraph-block';
@@ -11,6 +11,8 @@ import { CalloutBlock } from './callout-block';
 import { EmbedBlock } from './embed-block';
 import { MathBlock } from './math-block';
 import { SyncedBlock } from './synced-block';
+import { DividerBlock } from './divider-block';
+import { InlineDatabaseBlock } from '@/components/database/inline-database-block';
 import {
   Plus,
   Type,
@@ -40,6 +42,8 @@ import { cn } from '@/lib/utils';
 import { moveBlock as reorderBlocks, resolveDrop } from '@/lib/block-order';
 import { PageLinkPicker } from '@/components/page/page-links';
 import { pageLinkToken } from '@shared/page-links';
+import { matchMarkdownShortcut } from '@/lib/markdown-shortcuts';
+import { headingIdsByBlock } from '@/lib/markdown';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -82,7 +86,19 @@ export function BlockEditor({
   const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null);
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const addBlockRef = useRef<(index: number, type?: BlockType) => void>(() => {});
+  const insertDividerRef = useRef<(index: number, replace: boolean, text?: string) => void>(
+    () => {}
+  );
   const updateBlockRef = useRef<(blockId: string, updates: Partial<Block>) => void>(() => {});
+  // Markdown shortcuts (#111 §6): the last conversion, which Ctrl/Cmd+Z can undo until the next
+  // edit, and where to put the caret once a converted block has rendered.
+  const lastShortcutRef = useRef<{
+    blockId: string;
+    converted: string;
+    literal: string;
+    caret: number;
+  } | null>(null);
+  const pendingCaretRef = useRef<{ blockId: string; position: number } | null>(null);
 
   // Page link picker (issue #103 E6): which block, where, and the "@" / "[[" text it replaces.
   const [linkPicker, setLinkPicker] = useState<{
@@ -128,6 +144,13 @@ export function BlockEditor({
 
       if (type === 'paragraph' && cleanedContent === '') {
         // If selecting paragraph on empty block, just keep it
+        handleSlashClose();
+        return;
+      }
+
+      if (type === 'divider') {
+        // 구분선 (#113 §1): an empty block becomes the divider, otherwise it goes below the text.
+        insertDividerRef.current(blockIndex, cleanedContent === '', cleanedContent);
         handleSlashClose();
         return;
       }
@@ -226,6 +249,7 @@ export function BlockEditor({
   // 블록 추가 함수
   const addBlock = useCallback(
     (index: number, type: BlockType = 'paragraph') => {
+      lastShortcutRef.current = null;
       const newBlock: Block = {
         id: `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         type,
@@ -271,6 +295,7 @@ export function BlockEditor({
   // 블록 삭제 함수
   const deleteBlock = useCallback(
     (blockId: string) => {
+      lastShortcutRef.current = null;
       if (useYjs && yjsCollaboration.isSynced) {
         // Yjs CRDT: Find index and delete
         const index = blocks.findIndex((b) => b.id === blockId);
@@ -302,6 +327,8 @@ export function BlockEditor({
   // 블록 업데이트 함수
   const updateBlock = useCallback(
     (blockId: string, updates: Partial<Block>) => {
+      // Any edit ends the window in which Ctrl/Cmd+Z undoes a markdown shortcut.
+      lastShortcutRef.current = null;
       if (useYjs && yjsCollaboration.isSynced) {
         // Yjs CRDT: Find index and update
         const index = blocks.findIndex((b) => b.id === blockId);
@@ -356,10 +383,114 @@ export function BlockEditor({
     [blocks, onChange, useYjs, yjsCollaboration]
   );
 
+  // Divider (#113 §1): the block at `index` becomes a divider (`replace`) or one is inserted below
+  // it (`text`, if given, replaces that block's text in the same change: the slash command's
+  // cleaned text), and typing continues in a new paragraph under the divider. One change for all
+  // blocks, so no edit overwrites another.
+  const insertDivider = (index: number, replace: boolean, text?: string) => {
+    lastShortcutRef.current = null;
+    const stamp = `${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+    const fresh = (id: string, type: BlockType): Block => ({
+      id,
+      type,
+      content: '',
+      properties: {},
+      order: 0,
+      children: [],
+    });
+    const paragraph = fresh(`block_${stamp}`, 'paragraph');
+    const at = replace ? index : index + 1;
+    if (useYjs && yjsCollaboration.isSynced) {
+      if (replace) {
+        yjsCollaboration.updateBlock(index, { type: 'divider', content: '', properties: {} });
+      } else {
+        if (text !== undefined) yjsCollaboration.updateBlock(index, { content: text });
+        yjsCollaboration.insertBlock(at, fresh(`block_${stamp}_divider`, 'divider'));
+      }
+      yjsCollaboration.insertBlock(at + 1, paragraph);
+    } else {
+      const divider = replace
+        ? { ...blocks[index], type: 'divider' as const, content: '', properties: {} }
+        : fresh(`block_${stamp}_divider`, 'divider');
+      const next = [...blocks];
+      if (!replace && text !== undefined) next[index] = { ...next[index], content: text };
+      next.splice(at, replace ? 1 : 0, divider, paragraph);
+      const ordered = next.map((block, order) =>
+        block.order === order ? block : { ...block, order }
+      );
+      onChange(ordered);
+      if (pageId && collaboration.isConnected) {
+        collaboration.sendDocumentChange({
+          pageId,
+          blockId: paragraph.id,
+          type: 'insert',
+          data: { blocks: ordered },
+        });
+      }
+    }
+    setFocusedBlockId(paragraph.id);
+  };
+
+  // Markdown shortcuts (#111 §6). The conversion goes through updateBlock, like the slash menu,
+  // so it autosaves and reaches collaborators through Yjs.
+  const blockSnapshot = (block: Pick<Block, 'type' | 'content' | 'properties'>) =>
+    JSON.stringify([block.type, block.content, block.properties ?? {}]);
+
+  const applyMarkdownShortcut = (block: Block, previous: string, next: string, caret: number) => {
+    const match = matchMarkdownShortcut(previous, next, caret);
+    if (!match) return false;
+    if (match.type === 'divider') {
+      // `---` (#113 §1): a divider, then a new paragraph to keep typing in.
+      const index = blocks.findIndex((b) => b.id === block.id);
+      if (index === -1) return false;
+      insertDivider(index, true);
+      return true;
+    }
+    updateBlock(block.id, { type: match.type, content: match.content });
+    lastShortcutRef.current = {
+      blockId: block.id,
+      converted: blockSnapshot({ ...block, type: match.type, content: match.content }),
+      literal: next,
+      caret,
+    };
+    pendingCaretRef.current = { blockId: block.id, position: 0 };
+    return true;
+  };
+
+  // Ctrl/Cmd+Z right after a conversion, before any other edit: back to the literal text.
+  const undoMarkdownShortcut = (event: React.KeyboardEvent, block: Block | undefined) => {
+    const last = lastShortcutRef.current;
+    if (!last || !block || last.blockId !== block.id) return false;
+    if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return false;
+    if (event.key.toLowerCase() !== 'z') return false;
+    if (blockSnapshot(block) !== last.converted) {
+      lastShortcutRef.current = null;
+      return false;
+    }
+    event.preventDefault();
+    updateBlock(block.id, { type: 'paragraph', content: last.literal });
+    pendingCaretRef.current = { blockId: block.id, position: last.caret };
+    return true;
+  };
+
+  // A converted (or restored) block is a new component; put the caret where the text continues.
+  useEffect(() => {
+    const pending = pendingCaretRef.current;
+    if (!pending) return;
+    const field = editorContainerRef.current?.querySelector<HTMLTextAreaElement>(
+      `[data-block-row="${CSS.escape(pending.blockId)}"] textarea`
+    );
+    if (!field) return;
+    pendingCaretRef.current = null;
+    field.focus();
+    field.setSelectionRange(pending.position, pending.position);
+  }, [blocks]);
+
   // Screen reader feedback for Alt+↑/↓ moves (drags announce through the dnd library).
   const [moveAnnouncement, setMoveAnnouncement] = useState('');
 
   const handleRowKeyDown = (event: React.KeyboardEvent, index: number) => {
+    if (undoMarkdownShortcut(event, blocks[index])) return;
     if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
     event.preventDefault();
@@ -401,6 +532,11 @@ export function BlockEditor({
   // Keep refs in sync so handleSlashSelect can call these without circular dependency
   addBlockRef.current = addBlock;
   updateBlockRef.current = updateBlock;
+  insertDividerRef.current = insertDivider;
+
+  // Table of contents anchors while editing (#113 §1): a row holding a heading carries the id
+  // the TOC (built from the same derived content) scrolls to.
+  const headingAnchors = useMemo(() => headingIdsByBlock(blocks), [blocks]);
 
   // 블록 렌더링 함수
   const renderBlock = (block: Block, index: number) => {
@@ -446,9 +582,40 @@ export function BlockEditor({
                   length,
                 })
               }
+              onMarkdownShortcut={(previous, next, caret) =>
+                applyMarkdownShortcut(block, previous, next, caret)
+              }
             />
           </div>
         );
+      case 'bulleted_list':
+      case 'numbered_list': {
+        // List items edit like paragraphs behind a marker. Enter continues the list; Enter on an
+        // empty item turns it back into a paragraph.
+        let number = 1;
+        while (index - number >= 0 && blocks[index - number].type === 'numbered_list') number++;
+        return (
+          <div key={`list-${block.id}`} className="flex items-start">
+            <span
+              aria-hidden="true"
+              className="w-6 shrink-0 select-none pt-2 text-right leading-relaxed text-muted-foreground"
+            >
+              {block.type === 'bulleted_list' ? '•' : `${number}.`}
+            </span>
+            <div className="min-w-0 flex-1">
+              <ParagraphBlock
+                {...commonProps}
+                placeholder="목록"
+                onAddBlock={() =>
+                  block.content === ''
+                    ? updateBlock(block.id, { type: 'paragraph' })
+                    : addBlock(index + 1, block.type)
+                }
+              />
+            </div>
+          </div>
+        );
+      }
       case 'checkbox':
         return <CheckboxBlock {...commonProps} />;
       case 'image':
@@ -490,6 +657,19 @@ export function BlockEditor({
             readOnly={false}
           />
         );
+      case 'divider': {
+        // Deleting with the keyboard keeps focus in the page: on the block above, else below.
+        const neighbour = blocks[index - 1] ?? blocks[index + 1];
+        return (
+          <DividerBlock
+            {...commonProps}
+            onDelete={() => {
+              deleteBlock(block.id);
+              setFocusedBlockId(neighbour ? neighbour.id : null);
+            }}
+          />
+        );
+      }
       case 'synced_block':
         return (
           <SyncedBlock
@@ -519,6 +699,15 @@ export function BlockEditor({
               });
             }}
             readOnly={false}
+          />
+        );
+      // Inline database (#113 §4): schemaId and view config in properties, rows on the server.
+      case 'database_inline':
+        return (
+          <InlineDatabaseBlock
+            block={block}
+            pageId={pageId}
+            onUpdate={(updates) => updateBlock(block.id, updates)}
           />
         );
       default:
@@ -744,7 +933,9 @@ export function BlockEditor({
                         <div
                           ref={dragProvided.innerRef}
                           {...dragProvided.draggableProps}
+                          id={headingAnchors.get(block.id)}
                           data-block-row={block.id}
+                          data-block-type={block.type}
                           onKeyDown={(event) => handleRowKeyDown(event, index)}
                           className={cn(
                             // The gutter hangs into the left margin so text lines up near the title.

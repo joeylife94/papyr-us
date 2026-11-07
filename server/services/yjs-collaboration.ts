@@ -3,6 +3,7 @@ import { Server as SocketIOServer, Socket } from 'socket.io';
 import { DBStorage } from '../storage.js';
 import logger from './logger.js';
 import { savePage, storagePageSaveStore } from './page-save.js';
+import { markdownToBlocks } from '../../shared/block-markdown.js';
 import jwt from 'jsonwebtoken';
 import { config } from '../config.js';
 import { onPageAccessChanged } from './page-access-events.js';
@@ -89,20 +90,14 @@ function getCollabConfig(): CollabConfig {
 /** Transaction origin for server-side reloads: broadcast to clients, but not a new edit to save. */
 const RELOAD_ORIGIN = 'papyrus:reload-from-db';
 
-/** The block list a Yjs document should hold for a page (seeded from content when it has none). */
+/**
+ * The block list a Yjs document should hold for a page. A page without blocks is seeded from its
+ * Markdown content (#113 §1), with the same ids the browser gives it (client initialBlocksFor).
+ */
 function blocksForPage(page: { id: number; blocks?: unknown; content?: string | null }): any[] {
   if (Array.isArray(page.blocks) && page.blocks.length > 0) return page.blocks as any[];
   if (page.content) {
-    return [
-      {
-        id: `block_seed_${page.id}`,
-        type: 'paragraph',
-        content: page.content,
-        properties: {},
-        order: 0,
-        children: [],
-      },
-    ];
+    return markdownToBlocks(page.content, { idPrefix: `block_seed_${page.id}` });
   }
   return [];
 }
@@ -243,8 +238,9 @@ export class YjsCollaborationManager {
 
     // Load persisted state before attaching update listeners.
     const page = await this.storage.getWikiPage(pageId);
-    // Pages saved without blocks (API- or template-created) open as one paragraph holding the
-    // content, seeded once per document so collaborators share a block instead of an empty array.
+    // Pages saved without blocks (API-, template- or import-created) open as the blocks their
+    // Markdown content describes, seeded once per document so collaborators share the same blocks
+    // instead of an empty array.
     const initialBlocks = page ? blocksForPage(page) : [];
     if (initialBlocks.length > 0) {
       ydoc.getArray('blocks').push(initialBlocks);

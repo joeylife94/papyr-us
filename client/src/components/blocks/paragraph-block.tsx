@@ -2,8 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Block, BlockType } from '@shared/schema';
 import { Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { PageLinkChip, TextWithPageLinks } from '@/components/page/page-links';
-import { cn } from '@/lib/utils';
+import { PageLinkChip } from '@/components/page/page-links';
+import { useInlinePreview } from '@/components/page/inline-preview';
 import { extractPageLinkIds, hasPageLinks } from '@shared/page-links';
 
 interface ParagraphBlockProps {
@@ -19,6 +19,9 @@ interface ParagraphBlockProps {
   onSlashClose?: () => void;
   /** `@` or `[[` was typed (issue #103 E6): open the link picker for that span of text. */
   onPageLinkTrigger?: (rect: DOMRect, start: number, length: number) => void;
+  /** Markdown shortcuts (#111 §6): returns true when the editor converted the block. */
+  onMarkdownShortcut?: (previous: string, next: string, caret: number) => boolean;
+  placeholder?: string;
 }
 
 /** Focus or clicks on a link chip open the linked page instead of editing the block. */
@@ -37,10 +40,20 @@ export function ParagraphBlock({
   onSlashFilter,
   onSlashClose,
   onPageLinkTrigger,
+  onMarkdownShortcut,
+  placeholder = '단락을 입력하세요...',
 }: ParagraphBlockProps) {
   const [content, setContent] = useState(block.content);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const slashStartRef = useRef<number | null>(null);
+  // Out of focus, links, inline Markdown and #tags render in place (#103 E6, #113 §2); the
+  // textarea stays the editing surface and the block's one keyboard stop.
+  const preview = useInlinePreview({
+    content,
+    isFocused,
+    textareaRef,
+    className: 'pr-8 text-base leading-relaxed',
+  });
 
   // 포커스 시 자동 높이 조정
   useEffect(() => {
@@ -64,6 +77,9 @@ export function ParagraphBlock({
 
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newContent = e.target.value;
+    // Markdown shortcut ("# ", "- ", "[] " …): the block becomes another type instead.
+    if (onMarkdownShortcut?.(content, newContent, e.target.selectionStart)) return;
+
     setContent(newContent);
     onUpdate({ content: newContent });
 
@@ -144,22 +160,15 @@ export function ParagraphBlock({
     <div
       className={`relative group ${isFocused ? 'bg-primary/10 ' : ''} rounded-lg p-2 transition-colors`}
       onFocus={(event) => !isOnPageLink(event.target) && onFocus()}
-      onBlur={onBlur}
+      // Focus moving within the block (to a chip in the link row below, or the delete button)
+      // keeps it focused, so keyboard users can reach those links. React's blur bubbles, so this
+      // also handles the textarea's.
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) onBlur();
+      }}
     >
-      {/* Page links show as chips while the block is not being edited (issue #103 E6). */}
-      {!isFocused && hasPageLinks(content) && (
-        <div
-          tabIndex={0}
-          role="textbox"
-          aria-label="단락 (편집하려면 선택)"
-          data-testid="paragraph-preview"
-          onFocus={(event) => !isOnPageLink(event.target) && onFocus()}
-          onClick={(event) => !isOnPageLink(event.target) && onFocus()}
-          className="min-h-[1.5rem] cursor-text whitespace-pre-wrap break-words pr-8 text-base leading-relaxed text-foreground outline-none"
-        >
-          <TextWithPageLinks text={content} />
-        </div>
-      )}
+      {/* The rendered text while the block is not being edited (see useInlinePreview). */}
+      {preview.element && <div data-testid="paragraph-preview">{preview.element}</div>}
 
       {/* 단락 입력 (블록 핸들은 에디터의 왼쪽 여백에 있다) */}
       <textarea
@@ -168,13 +177,10 @@ export function ParagraphBlock({
         onChange={handleContentChange}
         onKeyDown={handleKeyDown}
         onFocus={onFocus}
-        onBlur={onBlur}
-        placeholder="단락을 입력하세요..."
-        className={cn(
-          'w-full resize-none border-none outline-none bg-transparent text-base text-foreground placeholder:text-muted-foreground pl-0 pr-8 leading-relaxed',
-          !isFocused && hasPageLinks(content) && 'hidden'
-        )}
+        placeholder={placeholder}
+        className="w-full resize-none border-none outline-none bg-transparent text-base text-foreground placeholder:text-muted-foreground pl-0 pr-8 leading-relaxed"
         rows={1}
+        style={preview.textareaStyle}
       />
 
       {/* While editing, the raw [[page:<id>]] tokens are named underneath. */}

@@ -198,7 +198,8 @@
 }
 
 .prose pre {
-  @apply bg-muted rounded-lg p-4 overflow-x-auto border border-border;
+  /* The text color too: the typography default is light text meant for a dark background. */
+  @apply bg-muted text-foreground rounded-lg p-4 overflow-x-auto border border-border;
 }
 
 .prose code {
@@ -220,6 +221,15 @@
 
 .prose li {
   @apply mb-1;
+}
+
+/* To-dos (#113 §1, `- [ ]` in page Markdown): the checkbox is the item's marker. */
+.prose li.task-list-item {
+  @apply list-none;
+}
+
+.prose li.task-list-item input[type='checkbox'] {
+  @apply mr-2 align-middle accent-primary;
 }
 
 .prose a {

@@ -4,9 +4,9 @@
  * Every write of a page's title/content/blocks goes through here, whether it comes from the
  * REST editor (manual save), REST autosave, or the Yjs collaboration server:
  *
- * - `content` is derived from `blocks` on the server as Markdown (shared/page-content.ts, the
- *   same function the editor uses in the browser), so the reader, TOC, FTS (`search_vector`
- *   trigger) and AI search always match what was last edited, including Yjs saves.
+ * - `content` is derived from `blocks` on the server as Markdown (#113 §1), the same string the
+ *   editor derives in the browser, so the reader, TOC, FTS (`search_vector` trigger) and AI
+ *   search always match what was last edited, including Yjs saves.
  * - Manual saves keep their existing behavior: one version snapshot (the pre-save state) per
  *   save, and the caller fires workflows.
  * - Autosaves are grouped into editing sessions. The first autosave of a session snapshots the
@@ -24,8 +24,8 @@
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { jsonEqual } from '../../shared/json-equal.js';
-import { blocksToMarkdown } from '../../shared/page-content.js';
 import { pageVersions, type UpdateWikiPage, type WikiPage } from '../../shared/schema.js';
+import { blocksToMarkdown } from '../../shared/block-markdown.js';
 import logger from './logger.js';
 
 /** Idle time after which an autosave session closes (decision D2 on #103). */
@@ -80,11 +80,13 @@ export function hasOpenEditSession(pageId: number): boolean {
 }
 
 /**
- * The Markdown `content` for a block list (shared/page-content.ts): headings, checkbox and list
- * items, quotes and code keep their block type as Markdown, so the reader, the version preview
- * and the table of contents show it. The editor derives the same text in the browser.
+ * The Markdown `content` for a block list (#113 §1): headings, lists, to-dos, quotes, code and
+ * dividers as Markdown, other blocks as their text, joined by blank lines. The browser derives
+ * the same string with the same function (shared/block-markdown.ts), and a page made only of
+ * paragraphs derives exactly what the editor produced before (texts joined by blank lines).
  */
 export function derivePageContent(blocks: unknown): string {
+  if (!Array.isArray(blocks)) return '';
   return blocksToMarkdown(blocks);
 }
 

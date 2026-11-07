@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Block, BlockType } from '@shared/schema';
 import { Trash2, CheckSquare, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useInlinePreview } from '@/components/page/inline-preview';
 
 interface CheckboxBlockProps {
   block: Block;
@@ -25,6 +26,14 @@ export function CheckboxBlock({
   const [content, setContent] = useState(block.content);
   const [isChecked, setIsChecked] = useState(block.properties?.checked || false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const checkedText = isChecked ? 'text-muted-foreground line-through' : 'text-foreground';
+  // Inline Markdown, links and #tags render while the item is not focused (#113 §2).
+  const preview = useInlinePreview({
+    content,
+    isFocused,
+    textareaRef,
+    className: `flex-1 py-0.5 text-base leading-relaxed ${checkedText}`,
+  });
 
   // 포커스 시 자동 높이 조정
   useEffect(() => {
@@ -64,15 +73,16 @@ export function CheckboxBlock({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    // Ctrl/Cmd+Enter toggles the item; Space types a space (the to-do text needs one).
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      handleCheckboxToggle();
+    } else if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       onAddBlock('checkbox');
     } else if (e.key === 'Backspace' && content === '') {
       e.preventDefault();
       onDelete();
-    } else if (e.key === ' ' && e.target === textareaRef.current) {
-      e.preventDefault();
-      handleCheckboxToggle();
     }
   };
 
@@ -87,6 +97,8 @@ export function CheckboxBlock({
         <button
           type="button"
           onClick={handleCheckboxToggle}
+          aria-label="할 일 완료"
+          aria-pressed={!!isChecked}
           className={`mt-0.5 flex h-6 w-6 !min-h-0 !min-w-0 flex-shrink-0 items-center justify-center ${isChecked ? 'text-success' : 'text-muted-foreground'} hover:text-success transition-colors`}
         >
           {isChecked ? <CheckSquare className="h-5 w-5" /> : <Square className="h-5 w-5" />}
@@ -101,11 +113,11 @@ export function CheckboxBlock({
           onFocus={onFocus}
           onBlur={onBlur}
           placeholder="할 일을 입력하세요..."
-          className={`flex-1 resize-none border-none outline-none bg-transparent pl-0 py-0.5 text-base placeholder:text-muted-foreground leading-relaxed ${
-            isChecked ? 'text-muted-foreground line-through' : 'text-foreground'
-          }`}
+          className={`flex-1 resize-none border-none outline-none bg-transparent pl-0 py-0.5 text-base placeholder:text-muted-foreground leading-relaxed ${checkedText}`}
           rows={1}
+          style={preview.textareaStyle}
         />
+        {preview.element}
 
         {/* 액션 버튼들 */}
         {isFocused && (

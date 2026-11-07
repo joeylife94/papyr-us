@@ -1,10 +1,12 @@
 /**
- * Route-level access control for page listings (folder pages, tags, list, tree, children).
+ * Route-level access control for page listings (folder names, folder pages, tags, list, tree,
+ * children).
  *
- * Write enforcement is deliberately OFF here: folder pages and tags expose page titles,
- * content and tags, so they must fail closed without relying on ENFORCE_AUTH_WRITES. The
- * team/permission filtering itself runs in storage SQL and is proven end to end by
- * tests/security-folder-pages-access.spec.ts against a real database.
+ * Write enforcement is deliberately OFF here: folder names, folder pages and tags expose page
+ * titles, content and tags, so they must fail closed without relying on ENFORCE_AUTH_WRITES. The
+ * team/permission filtering itself runs in storage SQL and is proven against a real database by
+ * tests/integration-layer4/folder-listing.test.ts and end to end by
+ * tests/security-folder-pages-access.spec.ts and tests/security-folders.spec.ts.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
@@ -63,6 +65,7 @@ afterAll((done) => {
 });
 
 describe.each([
+  { path: '/api/folders', method: 'getReadableFolders' },
   { path: '/api/folders/docs/pages', method: 'getReadableWikiPagesByFolder' },
   { path: '/api/tags', method: 'getReadableTags' },
 ])('GET $path', ({ path, method }) => {
@@ -241,4 +244,33 @@ it('passes the requested folder and caller to the scoped folder query', async ()
     .set('Cookie', [`accessToken=${token}`]);
 
   expect(storage.getReadableWikiPagesByFolder).toHaveBeenCalledWith('ideas', 7);
+});
+
+describe('GET /api/folders (#130)', () => {
+  it('returns only the folder names of the caller-scoped query', async () => {
+    (storage.getReadableFolders as any).mockResolvedValue(['docs', 'ideas']);
+
+    const response = await request(app)
+      .get('/api/folders')
+      .set('Cookie', [`accessToken=${token}`]);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual(['docs', 'ideas']);
+    expect(storage.getReadableFolders).toHaveBeenCalledWith(7);
+  });
+
+  it('keeps no unscoped folder query a route could fall back to', () => {
+    expect((storage as any).getFolders).toBeUndefined();
+  });
+
+  it('answers a storage failure with a fixed message and no folder names', async () => {
+    (storage.getReadableFolders as any).mockRejectedValue(new Error('team-b-secret-folder'));
+
+    const response = await request(app)
+      .get('/api/folders')
+      .set('Cookie', [`accessToken=${token}`]);
+
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({ message: 'Server error' });
+  });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildPageTree,
+  checkNewPage,
   checkParent,
   compareSiblings,
   orderWithMove,
@@ -164,6 +165,67 @@ describe('checkParent', () => {
     expect(missing).toEqual(trashed);
     expect(trashed).toEqual(readOnly);
     expect(readOnly?.status).toBe(403);
+  });
+});
+
+describe('checkNewPage (POST /api/pages and the copy a duplicate creates)', () => {
+  const pages: TreePage[] = [
+    { id: 1, teamId: 7, parentId: null },
+    { id: 2, teamId: null, parentId: null },
+  ];
+  // User 1 is in team 7, user 2 in team 8 only; both may edit every page unless `edit` narrows it.
+  const store = (rights: { edit?: number[] } = {}) => ({
+    ...fakeStore(pages, rights),
+    getUserTeamIds: async (userId: number) => (userId === 1 ? [7] : userId === 2 ? [8] : []),
+  });
+  const enforced = { authEnforced: true };
+
+  it('needs membership of the team for a top-level team page', async () => {
+    expect(await checkNewPage(store(), 1, { teamId: 7, parentId: null }, enforced)).toBeNull();
+    expect(await checkNewPage(store(), 2, { teamId: 7, parentId: null }, enforced)).toEqual({
+      status: 403,
+      message: 'You are not a member of this team',
+    });
+  });
+
+  it('needs an editable parent in the same team, and membership, for a child page', async () => {
+    expect(await checkNewPage(store(), 1, { teamId: 7, parentId: 1 }, enforced)).toBeNull();
+    const readOnlyParent = await checkNewPage(
+      store({ edit: [2] }),
+      1,
+      { teamId: 7, parentId: 1 },
+      enforced
+    );
+    expect(readOnlyParent).toEqual(await checkParent(store({ edit: [2] }), 1, 1, { teamId: 7 }));
+    expect(readOnlyParent?.status).toBe(403);
+    // An editor of the parent outside its team still may not create pages in the team.
+    expect((await checkNewPage(store(), 2, { teamId: 7, parentId: 1 }, enforced))?.message).toBe(
+      'You are not a member of this team'
+    );
+    expect((await checkNewPage(store(), 1, { teamId: null, parentId: 1 }, enforced))?.status).toBe(
+      403
+    );
+  });
+
+  it('lets anyone create a personal page, under an editable personal parent too', async () => {
+    for (const userId of [1, 2, undefined]) {
+      expect(await checkNewPage(store(), userId, { teamId: null, parentId: null }, enforced)).toBe(
+        null
+      );
+      expect(await checkNewPage(store(), userId, { teamId: null, parentId: 2 }, enforced)).toBe(
+        null
+      );
+    }
+  });
+
+  it('without a signed-in caller, allows a top-level team page only when auth is not enforced', async () => {
+    const page = { teamId: 7, parentId: null };
+    expect((await checkNewPage(store(), undefined, page, enforced))?.status).toBe(403);
+    expect(await checkNewPage(store(), undefined, page, { authEnforced: false })).toBeNull();
+    const child = { teamId: 7, parentId: 1 };
+    expect((await checkNewPage(store(), undefined, child, { authEnforced: false }))?.status).toBe(
+      403
+    );
   });
 });
 

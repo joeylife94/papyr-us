@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { MarkdownRenderer } from '@/components/wiki/markdown-renderer';
 import { TableOfContents } from '@/components/layout/table-of-contents';
 import { Comments } from '@/components/wiki/comments';
 import { useToast } from '@/hooks/use-toast';
@@ -18,8 +17,11 @@ import { TypingIndicator } from '@/components/collaboration/TypingIndicator';
 import { CollaboratorPresence } from '@/components/collaboration/CollaboratorPresence';
 import { AICopilotSidebar } from '@/components/ai/AICopilotSidebar';
 import { RelatedPages } from '@/components/wiki/RelatedPages';
+import { LocalGraphPanel } from '@/components/knowledge/local-graph';
+import { UnlinkedMentions } from '@/components/page/unlinked-mentions';
 import { PageHistory } from '@/components/page-history';
 import { BlockEditor } from '@/components/blocks/block-editor';
+import { PageReaderBody } from '@/components/database/page-reader-body';
 import { PageProperties, PageTitle, SaveStatus } from '@/components/page/page-editor-parts';
 import { PageIcon, PageIconPicker } from '@/components/page/page-icon';
 import { Backlinks } from '@/components/page/page-links';
@@ -332,6 +334,12 @@ export default function WikiPageView() {
 
           <Backlinks pageId={page.id} />
 
+          {/* Knowledge views (#111 §2, §5): unlinked mentions under the backlinks, local graph. */}
+          <section aria-label="문서 연결" className="mt-8 space-y-3">
+            <UnlinkedMentions pageId={page.id} pageTitle={page.title} />
+            <LocalGraphPanel pageId={page.id} />
+          </section>
+
           <section className="mt-12 border-t border-border pt-8">
             <Comments pageId={page.id} />
           </section>
@@ -408,7 +416,7 @@ function ReadOnlyPageBody({ page, actions, breadcrumb }: BodyProps) {
         {actions}
       </header>
       <div className="min-w-0 max-w-full overflow-x-auto">
-        <MarkdownRenderer content={page.content} className="lg:prose-lg" />
+        <PageReaderBody page={page} className="lg:prose-lg" />
       </div>
     </>
   );

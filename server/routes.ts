@@ -85,10 +85,11 @@ import {
 } from './services/page-save.js';
 import {
   buildPageTree,
+  checkNewPage,
   checkParent,
   orderWithMove,
   subtreeForTrash,
-  type PageTreeStore,
+  type NewPageStore,
 } from './services/page-tree.js';
 import logger from './services/logger.js';
 import { ExternalIntegrationError } from './services/resilience.js';
@@ -100,7 +101,18 @@ import jwt from 'jsonwebtoken';
 import passport from 'passport';
 import { eq, and, isNull } from 'drizzle-orm';
 import { ANONYMOUS_PAGE_VIEWER, DBStorage } from './storage.js';
+import { registerKnowledgeRoutes } from './routes/knowledge.js';
+import { buildKnowledgeGraph, suggestAiLinks } from './services/knowledge-graph.js';
+import { isReservedDailyNoteSlug } from '../shared/daily-notes.js';
+import { isPageId } from '../shared/page-links.js';
+import { registerDailyNoteRoutes } from './routes/daily-notes.js';
+import { registerVaultRoutes } from './routes/vault.js';
+import { contentWithLinkTitles, singlePageMarkdown } from './services/vault-export.js';
+import { pageLinkTokenIds } from './services/vault-format.js';
 import { featureFlags } from './features.js';
+import { postgresErrorOf } from './db-errors.js';
+import { registerDatabaseRoutes } from './routes/database.js';
+import { registerSyncedBlockRoutes } from './routes/synced-blocks.js';
 
 interface MulterRequest extends Request {
   files?: any[];
@@ -112,6 +124,19 @@ interface MulterRequest extends Request {
 function normalizeTaskDueDate(body: Record<string, unknown>): Record<string, unknown> {
   if (!body || typeof body.dueDate !== 'string') return body;
   return { ...body, dueDate: body.dueDate === '' ? null : new Date(body.dueDate) };
+}
+
+/**
+ * `Content-Disposition: attachment` for any file name: an ASCII fallback plus the UTF-8 name
+ * (RFC 5987). A raw non-Latin-1 name, such as a Korean slug, is an invalid header value.
+ */
+export function attachmentDisposition(filename: string): string {
+  const fallback = filename.replace(/[^\x20-\x7e]|["\\]/g, '_');
+  const encoded = encodeURIComponent(filename).replace(
+    /['()*]/g,
+    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`
+  );
+  return `attachment; filename="${fallback}"; filename*=UTF-8''${encoded}`;
 }
 
 // Response body for a failed request. Validation failures keep their Zod issues, which only
@@ -139,14 +164,21 @@ export async function registerRoutes(
   // editing session fire once, when the session closes, instead of on every autosave.
   const pageSaveStore = storagePageSaveStore(storage as any);
   // Page tree rules (issue #103 E5) read pages and permissions through the same storage.
-  const pageTreeStore: PageTreeStore = {
+  const pageTreeStore: NewPageStore = {
     getPage: (id) => storage.getWikiPage(id),
     canEdit: (userId, id) => storage.checkPagePermission(userId, id, 'editor'),
     canRead: (userId, id) => storage.checkPagePermission(userId, id, 'viewer'),
     canOwn: (userId, id) => storage.checkPagePermission(userId, id, 'owner'),
     getLiveDescendantIds: (id) => storage.getLiveDescendantIds(id),
     getAllDescendantIds: (id) => storage.getAllDescendantIds(id),
+    getUserTeamIds: (userId) => storage.getUserTeamIds(userId),
   };
+  // Who may create a page in a team and under a parent: POST /api/pages, and the copy that
+  // POST /api/pages/:id/duplicate creates, so the two cannot drift apart.
+  const checkPagePlace = (
+    userId: number | undefined,
+    page: { teamId: number | null; parentId: number | null }
+  ) => checkNewPage(pageTreeStore, userId, page, { authEnforced: config.enforceAuthForWrites });
   setSessionClosedHandler(({ page, tagsAtStart }) => {
     triggerWorkflows('page_updated', {
       id: page.id,
@@ -332,7 +364,7 @@ export async function registerRoutes(
         stack: error instanceof Error ? error.stack : undefined,
       });
       // Handle unique constraint violation for PostgreSQL (code 23505)
-      if (error.code === '23505') {
+      if (postgresErrorOf(error)?.code === '23505') {
         return res.status(409).json({ message: 'User with this email already exists' });
       }
       res.status(500).json({ message: 'Server error during registration' });
@@ -583,6 +615,12 @@ export async function registerRoutes(
   }
 
   // Wiki Pages API
+  // Knowledge routes (#111). They are registered before /api/pages/:id so their fixed path
+  // segments are never read as a page id.
+  registerKnowledgeRoutes(app, storage);
+  registerDailyNoteRoutes(app, storage);
+  registerVaultRoutes(app, storage);
+
   app.get('/api/pages', optionalAuth, async (req: AuthRequest, res) => {
     try {
       const teamIdParam = req.query.teamId as string;
@@ -777,24 +815,19 @@ export async function registerRoutes(
           }
         }
 
-        // A child page (issue #103 E5) joins its parent's team and needs editor on the parent.
+        // A child page (issue #103 E5) joins its parent's team.
         if (pageData.parentId != null) {
           const parent = await storage.getWikiPage(pageData.parentId);
           if (pageData.teamId == null && parent?.teamId != null) pageData.teamId = parent.teamId;
-          const refused = await checkParent(pageTreeStore, req.user?.id, pageData.parentId, {
-            teamId: (pageData.teamId as number | null | undefined) ?? null,
-          });
-          if (refused) return res.status(refused.status).json({ message: refused.message });
-          // requireTeamMembership only saw the team in the body. An inherited team needs the same
-          // check: an editor grant on a team page (public or to another team) must not let a
-          // non-member create pages in that team.
-          if (pageData.teamId != null) {
-            const userTeamIds = req.user?.id ? await storage.getUserTeamIds(req.user.id) : [];
-            if (!userTeamIds.includes(Number(pageData.teamId))) {
-              return res.status(403).json({ message: 'You are not a member of this team' });
-            }
-          }
         }
+        // The page's own team and parent decide, not only the team requireTeamMembership saw in the
+        // request: an inherited team, or a query teamId that differs from the body's, needs the
+        // same membership. A child page also needs editor on its parent.
+        const refused = await checkPagePlace(req.user?.id, {
+          teamId: pageData.teamId == null ? null : Number(pageData.teamId),
+          parentId: pageData.parentId ?? null,
+        });
+        if (refused) return res.status(refused.status).json({ message: refused.message });
 
         // Pass creator user ID for automatic owner permission assignment
         const creatorUserId = req.user?.id;
@@ -834,6 +867,10 @@ export async function registerRoutes(
       try {
         const id = parseInt(req.params.id);
         const updateData = updateWikiPageSchema.parse(req.body);
+        // Only the daily-note route gives out daily note slugs (#111).
+        if (updateData.slug !== undefined && isReservedDailyNoteSlug(updateData.slug)) {
+          return res.status(400).json({ message: 'This slug is reserved for daily notes' });
+        }
 
         // Get old page data for comparison and version snapshot
         const oldPage = await storage.getWikiPage(id);
@@ -1182,12 +1219,14 @@ export async function registerRoutes(
 
   // ==================== Trash / Recycle Bin API ====================
 
-  // List trashed pages
+  // List trashed pages: only those the caller can read, without their content (it listed every
+  // trashed page in the instance, body included, to any signed-in user).
   app.get('/api/trash', requireAuthIfEnabled, async (req: AuthRequest, res) => {
     try {
-      const teamId = req.query.teamId ? parseInt(req.query.teamId as string) : undefined;
-      const pages = await storage.getTrashPages(teamId);
-      res.json(pages);
+      const teamParam = Number.parseInt(String(req.query.teamId ?? ''), 10);
+      const teamId = Number.isInteger(teamParam) && teamParam > 0 ? teamParam : undefined;
+      const viewer = await storage.getPageViewer(req.user?.id);
+      res.json(await storage.getTrashPages(viewer, teamId));
     } catch (error) {
       logger.error('Error fetching trash:', { error });
       res.status(500).json({ error: 'Failed to fetch trash' });
@@ -1269,13 +1308,17 @@ export async function registerRoutes(
     async (req: AuthRequest, res) => {
       try {
         const id = parseInt(req.params.id);
-        const db = (storage as any).db;
-        if (!db) return res.status(500).json({ error: 'Database not available' });
-
         const original = await storage.getWikiPage(id);
         if (!original) {
           return res.status(404).json({ error: 'Page not found' });
         }
+        // The copy goes into the source's team and under its parent, so besides reading the
+        // source it needs what POST /api/pages needs to create a page there.
+        const refused = await checkPagePlace(req.user?.id, {
+          teamId: original.teamId ?? null,
+          parentId: original.parentId ?? null,
+        });
+        if (refused) return res.status(refused.status).json({ message: refused.message });
 
         // Generate unique slug
         const baseSlug = `${original.slug}-copy`;
@@ -1286,7 +1329,10 @@ export async function registerRoutes(
         }
 
         const author = (req as any).user?.email || (req as any).user?.name || original.author;
-        const cloned = await storage.createWikiPage(
+        // The copy gets its own copies of the page's inline databases (#113 §4), in the same
+        // transaction as the page.
+        const cloned = await storage.duplicateWikiPage(
+          id,
           {
             title: `${original.title} (Copy)`,
             slug,
@@ -1560,20 +1606,24 @@ export async function registerRoutes(
   });
 
   // Folder and Tag APIs
-  app.get('/api/folders', async (req, res) => {
+  // Folder names, folder listings and tag counts are derived from page titles, content and
+  // tags, so they follow the page read boundary: always authenticated (fail closed regardless
+  // of ENFORCE_AUTH_WRITES), limited to the caller's teams plus team-less pages, and never
+  // including a page whose explicit permissions deny the caller viewer access. A folder
+  // holding only other teams' pages answers exactly like an unknown folder: 200 [], and
+  // GET /api/folders leaves it out (#130).
+  app.get('/api/folders', authMiddleware, async (req: AuthRequest, res) => {
+    if (!req.user?.id) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
     try {
-      const folders = await storage.getFolders();
+      const folders = await storage.getReadableFolders(req.user.id);
       res.json(folders);
     } catch (error) {
       res.status(500).json({ message: 'Server error' });
     }
   });
 
-  // Folder listings and tag counts are derived from page titles, content and tags, so they
-  // follow the page read boundary: always authenticated (fail closed regardless of
-  // ENFORCE_AUTH_WRITES), limited to the caller's teams plus team-less pages, and never
-  // including a page whose explicit permissions deny the caller viewer access. A folder
-  // holding only other teams' pages answers exactly like an unknown folder: 200 [].
   app.get('/api/folders/:folder/pages', authMiddleware, async (req: AuthRequest, res) => {
     if (!req.user?.id) {
       return res.status(401).json({ message: 'Authentication required' });
@@ -2299,7 +2349,7 @@ export async function registerRoutes(
   // same answer, so a link reveals nothing about a page the caller cannot open.
   app.get('/api/pages/:id/link-preview', optionalAuth, async (req: AuthRequest, res) => {
     const id = parseInt(req.params.id, 10);
-    if (!Number.isInteger(id) || id <= 0) {
+    if (!isPageId(id)) {
       return res.status(400).json({ message: 'Invalid page ID' });
     }
     try {
@@ -3970,195 +4020,51 @@ export async function registerRoutes(
     }
   });
 
-  // Knowledge Graph API
+  // Knowledge Graph API (#111 §1): readable pages of the caller's teams (or one team), with
+  // page-link, legacy [[Title]], tag and optional AI edges. Never carries page content.
   app.get(
     '/api/knowledge-graph',
     requireAuthIfEnabled,
     requireTeamMembership,
     async (req: AuthRequest, res) => {
       try {
-        const teamId = req.query.teamId as string | undefined;
+        const teamParam = typeof req.query.teamId === 'string' ? req.query.teamId : undefined;
         const includeAILinks = req.query.includeAI === 'true';
 
         // Use team IDs already resolved by requireTeamMembership middleware
         const userTeamIds: number[] = (req as any).userTeamIds ?? [];
 
-        // If a specific teamId is requested, verify the user is a member
-        if (teamId && !userTeamIds.map(String).includes(teamId)) {
-          return res.status(403).json({ message: 'You are not a member of this team' });
+        // A team may be named like everywhere else; requireTeamMembership already refused
+        // unknown names and teams the caller is not in.
+        let teamId: number | undefined;
+        if (teamParam) {
+          teamId = /^\d+$/.test(teamParam)
+            ? Number(teamParam)
+            : (await storage.getTeamByName(teamParam))?.id;
+          if (!teamId || !userTeamIds.includes(teamId)) {
+            return res.status(403).json({ message: 'You are not a member of this team' });
+          }
         }
 
         // Build the set of team IDs to query ? never falls through to undefined / full-DB scan
-        const effectiveTeamIds: string[] = teamId ? [teamId] : userTeamIds.map(String);
+        const effectiveTeamIds: number[] = teamId ? [teamId] : userTeamIds;
 
         // If user belongs to no teams, return an empty graph immediately
-        if (effectiveTeamIds.length === 0) {
+        if (effectiveTeamIds.length === 0 || !req.user?.id) {
           return res.json({ nodes: [], links: [] });
         }
 
-        // Aggregate pages across all authorized teams, always passing an explicit teamId
-        const pageResults = await Promise.all(
-          effectiveTeamIds.map((tid) =>
-            storage.searchWikiPages({ query: '', limit: 1000, offset: 0, teamId: tid })
-          )
-        );
-        const pages = pageResults.flatMap((r: any) => r.pages);
+        const viewer = await storage.getPageViewer(req.user.id);
+        const { pages, links } = await storage.getKnowledgeGraphSource(viewer, effectiveTeamIds);
+        const aiLinks =
+          includeAILinks && pages.length > 0
+            ? await suggestAiLinks(pages, aiService.findRelatedPages)
+            : [];
 
-        // Build nodes and links
-        const nodes: any[] = [];
-        const links: any[] = [];
-        const tagMap = new Map<string, Set<number>>();
-
-        // Create nodes for pages
-        pages.forEach((page: any) => {
-          const connections = 0; // Will be calculated later
-          const isOrphan = connections === 0;
-
-          nodes.push({
-            id: `page-${page.id}`,
-            name: page.title,
-            type: isOrphan ? 'orphan' : 'page',
-            val: 10, // Base size
-            color: isOrphan ? '#EF4444' : '#3B82F6',
-            pageId: page.id,
-            slug: page.slug,
-            connections: 0,
-            tags: page.tags,
-            content: page.content,
-          });
-
-          // Track tags
-          page.tags?.forEach((tag: string) => {
-            if (!tagMap.has(tag)) {
-              tagMap.set(tag, new Set());
-            }
-            tagMap.get(tag)!.add(page.id);
-          });
-
-          // Find content links (simple [[link]] detection)
-          const linkRegex = /\[\[([^\]]+)\]\]/g;
-          const matches = page.content.matchAll(linkRegex);
-          for (const match of matches) {
-            const linkedTitle = match[1];
-            const linkedPage = pages.find(
-              (p: any) => p.title.toLowerCase() === linkedTitle.toLowerCase()
-            );
-            if (linkedPage && linkedPage.id !== page.id) {
-              links.push({
-                source: `page-${page.id}`,
-                target: `page-${linkedPage.id}`,
-                type: 'content',
-                strength: 2,
-              });
-            }
-          }
-        });
-
-        // Create tag nodes and links
-        tagMap.forEach((pageIds, tag) => {
-          if (pageIds.size > 1) {
-            nodes.push({
-              id: `tag-${tag}`,
-              name: `#${tag}`,
-              type: 'tag',
-              val: pageIds.size * 5,
-              color: '#F59E0B',
-              connections: pageIds.size,
-            });
-
-            // Link pages with same tag
-            const pageIdArray = Array.from(pageIds);
-            pageIdArray.forEach((pageId) => {
-              links.push({
-                source: `page-${pageId}`,
-                target: `tag-${tag}`,
-                type: 'tag',
-                strength: 1,
-              });
-            });
-          }
-        });
-
-        // Add AI-recommended links if requested
-        if (includeAILinks && pages.length > 0) {
-          try {
-            // Get AI service
-            const aiModule = await import('./services/ai.js');
-
-            // Analyze a sample of pages (max 20 to avoid rate limits)
-            const samplePages = pages
-              .filter((p: any) => p.content && p.content.length > 100)
-              .sort(() => Math.random() - 0.5)
-              .slice(0, 20);
-
-            for (const page of samplePages) {
-              try {
-                const relatedPages = await aiModule.findRelatedPages(
-                  page.content,
-                  page.title,
-                  pages.filter((p: any) => p.id !== page.id) // Exclude current page
-                );
-
-                if (relatedPages && relatedPages.length > 0) {
-                  relatedPages.slice(0, 3).forEach((related: any) => {
-                    // Only add if not already connected
-                    const existingLink = links.find(
-                      (l) =>
-                        (l.source === `page-${page.id}` && l.target === `page-${related.pageId}`) ||
-                        (l.target === `page-${page.id}` && l.source === `page-${related.pageId}`)
-                    );
-
-                    if (!existingLink && related.relevance > 0.5) {
-                      links.push({
-                        source: `page-${page.id}`,
-                        target: `page-${related.pageId}`,
-                        type: 'ai-recommended',
-                        strength: 1,
-                        relevance: related.relevance,
-                        reason: related.reason,
-                      });
-                    }
-                  });
-                }
-              } catch (aiError) {
-                console.error(`AI link generation failed for page ${page.id}:`, aiError);
-              }
-            }
-          } catch (aiError) {
-            console.error('AI link generation failed:', aiError);
-          }
-        }
-
-        // Calculate connections for each node
-        nodes.forEach((node) => {
-          const nodeLinks = links.filter(
-            (link) => link.source === node.id || link.target === node.id
-          );
-          node.connections = nodeLinks.length;
-          node.val = 10 + node.connections * 3;
-
-          // Update orphan status
-          if (node.type === 'page' && node.connections === 0) {
-            node.type = 'orphan';
-            node.color = '#EF4444';
-          } else if (node.type === 'orphan' && node.connections > 0) {
-            node.type = 'page';
-            node.color = '#3B82F6';
-          }
-        });
-
-        // Remove content field from nodes to reduce response size
-        nodes.forEach((node) => {
-          delete node.content;
-        });
-
-        res.json({ nodes, links });
+        res.json(buildKnowledgeGraph(pages, links, { aiLinks }));
       } catch (error) {
-        console.error('Knowledge graph error:', error);
-        res.status(500).json({
-          message: 'Failed to generate knowledge graph',
-          error: (error as Error).message,
-        });
+        logger.error('Knowledge graph failed', { error: (error as Error)?.message });
+        res.status(500).json({ message: 'Failed to generate knowledge graph' });
       }
     }
   );
@@ -4673,367 +4579,11 @@ export async function registerRoutes(
     }
   );
 
-  // ==================== Database Schema Routes ====================
+  // Inline databases (#113 §4): every route checks the owning page (P2-D4).
+  registerDatabaseRoutes(app, storage);
 
-  // Create database schema
-  app.post('/api/database/schemas', requireAuthIfEnabled, async (req: AuthRequest, res) => {
-    try {
-      const { pageId, name, fields, primaryDisplay } = req.body;
-
-      if (!pageId || !name || !fields) {
-        return res.status(400).json({ error: 'pageId, name, and fields are required' });
-      }
-
-      const userId = req.user?.id;
-      if (!userId) {
-        return res.status(401).json({ error: 'User not authenticated' });
-      }
-
-      const schema = await storage.createDatabaseSchema(pageId, userId, {
-        name,
-        fields,
-        primaryDisplay,
-      });
-
-      res.status(201).json(schema);
-    } catch (error) {
-      console.error('Error creating database schema:', error);
-      res.status(500).json({ error: 'Failed to create database schema' });
-    }
-  });
-
-  // Get database schema
-  app.get('/api/database/schemas/:id', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid schema ID' });
-      }
-
-      const schema = await storage.getDatabaseSchema(id);
-      if (!schema) {
-        return res.status(404).json({ error: 'Schema not found' });
-      }
-
-      res.json(schema);
-    } catch (error) {
-      console.error('Error fetching database schema:', error);
-      res.status(500).json({ error: 'Failed to fetch database schema' });
-    }
-  });
-
-  // Update database schema
-  app.patch('/api/database/schemas/:id', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid schema ID' });
-      }
-
-      const { name, fields, primaryDisplay } = req.body;
-      const schema = await storage.updateDatabaseSchema(id, {
-        name,
-        fields,
-        primaryDisplay,
-      });
-
-      res.json(schema);
-    } catch (error) {
-      console.error('Error updating database schema:', error);
-      res.status(500).json({ error: 'Failed to update database schema' });
-    }
-  });
-
-  // Delete database schema
-  app.delete('/api/database/schemas/:id', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid schema ID' });
-      }
-
-      await storage.deleteDatabaseSchema(id);
-      res.status(204).send();
-    } catch (error) {
-      console.error('Error deleting database schema:', error);
-      res.status(500).json({ error: 'Failed to delete database schema' });
-    }
-  });
-
-  // ==================== Database Row Routes ====================
-
-  // Create database row
-  app.post('/api/database/rows', requireAuthIfEnabled, async (req: AuthRequest, res) => {
-    try {
-      const { schemaId, data } = req.body;
-
-      if (!schemaId || !data) {
-        return res.status(400).json({ error: 'schemaId and data are required' });
-      }
-
-      const userId = req.user?.id;
-      if (!userId) {
-        return res.status(401).json({ error: 'User not authenticated' });
-      }
-
-      const row = await storage.createDatabaseRow(schemaId, userId, data);
-      res.status(201).json(row);
-    } catch (error) {
-      console.error('Error creating database row:', error);
-      res.status(500).json({ error: 'Failed to create database row' });
-    }
-  });
-
-  // Get database row
-  app.get('/api/database/rows/:id', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid row ID' });
-      }
-
-      const row = await storage.getDatabaseRow(id);
-      if (!row) {
-        return res.status(404).json({ error: 'Row not found' });
-      }
-
-      res.json(row);
-    } catch (error) {
-      console.error('Error fetching database row:', error);
-      res.status(500).json({ error: 'Failed to fetch database row' });
-    }
-  });
-
-  // Get all rows for a schema
-  app.get('/api/database/schemas/:schemaId/rows', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const schemaId = parseInt(req.params.schemaId);
-      if (isNaN(schemaId)) {
-        return res.status(400).json({ error: 'Invalid schema ID' });
-      }
-
-      const rows = await storage.getDatabaseRows(schemaId);
-      res.json(rows);
-    } catch (error) {
-      console.error('Error fetching database rows:', error);
-      res.status(500).json({ error: 'Failed to fetch database rows' });
-    }
-  });
-
-  // Update database row
-  app.patch('/api/database/rows/:id', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid row ID' });
-      }
-
-      const { data } = req.body;
-      if (!data) {
-        return res.status(400).json({ error: 'data is required' });
-      }
-
-      const row = await storage.updateDatabaseRow(id, data);
-      res.json(row);
-    } catch (error) {
-      console.error('Error updating database row:', error);
-      res.status(500).json({ error: 'Failed to update database row' });
-    }
-  });
-
-  // Delete database row
-  app.delete('/api/database/rows/:id', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid row ID' });
-      }
-
-      await storage.deleteDatabaseRow(id);
-      res.status(204).send();
-    } catch (error) {
-      console.error('Error deleting database row:', error);
-      res.status(500).json({ error: 'Failed to delete database row' });
-    }
-  });
-
-  // ==================== Database Relations Routes ====================
-
-  // Add relation
-  app.post('/api/database/relations', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const { fromSchemaId, fromRowId, propertyName, toSchemaId, toRowId } = req.body;
-
-      if (!fromSchemaId || !fromRowId || !propertyName || !toSchemaId || !toRowId) {
-        return res.status(400).json({
-          error: 'fromSchemaId, fromRowId, propertyName, toSchemaId, and toRowId are required',
-        });
-      }
-
-      const relation = await storage.addRelation(
-        fromSchemaId,
-        fromRowId,
-        propertyName,
-        toSchemaId,
-        toRowId
-      );
-
-      res.status(201).json(relation);
-    } catch (error) {
-      console.error('Error adding relation:', error);
-      res.status(500).json({ error: 'Failed to add relation' });
-    }
-  });
-
-  // Get relations for a row
-  app.get('/api/database/rows/:rowId/relations', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const rowId = parseInt(req.params.rowId);
-      if (isNaN(rowId)) {
-        return res.status(400).json({ error: 'Invalid row ID' });
-      }
-
-      const propertyName = req.query.propertyName as string | undefined;
-      const relations = await storage.getRelations(rowId, propertyName);
-
-      res.json(relations);
-    } catch (error) {
-      console.error('Error fetching relations:', error);
-      res.status(500).json({ error: 'Failed to fetch relations' });
-    }
-  });
-
-  // Delete relation
-  app.delete('/api/database/relations/:id', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid relation ID' });
-      }
-
-      await storage.deleteRelation(id);
-      res.status(204).send();
-    } catch (error) {
-      console.error('Error deleting relation:', error);
-      res.status(500).json({ error: 'Failed to delete relation' });
-    }
-  });
-
-  // Calculate rollup
-  app.post('/api/database/rows/:rowId/rollup', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const rowId = parseInt(req.params.rowId);
-      if (isNaN(rowId)) {
-        return res.status(400).json({ error: 'Invalid row ID' });
-      }
-
-      const { fieldName, relationField, targetField, aggregation } = req.body;
-
-      if (!fieldName || !relationField || !targetField || !aggregation) {
-        return res.status(400).json({
-          error: 'fieldName, relationField, targetField, and aggregation are required',
-        });
-      }
-
-      const value = await storage.calculateRollup(rowId, fieldName, {
-        relationField,
-        targetField,
-        aggregation,
-      });
-
-      res.json({ value });
-    } catch (error) {
-      console.error('Error calculating rollup:', error);
-      res.status(500).json({ error: 'Failed to calculate rollup' });
-    }
-  });
-
-  // ==================== Synced Block Routes ====================
-
-  // Create synced block
-  app.post('/api/synced-blocks', requireAuthIfEnabled, async (req: AuthRequest, res) => {
-    try {
-      const { originalBlockId, content } = req.body;
-
-      if (!originalBlockId || !content) {
-        return res.status(400).json({ error: 'originalBlockId and content are required' });
-      }
-
-      const userId = req.user?.id;
-      if (!userId) {
-        return res.status(401).json({ error: 'User not authenticated' });
-      }
-
-      const syncedBlock = await storage.createSyncedBlock(originalBlockId, userId, content);
-      res.status(201).json(syncedBlock);
-    } catch (error) {
-      console.error('Error creating synced block:', error);
-      res.status(500).json({ error: 'Failed to create synced block' });
-    }
-  });
-
-  // Get synced block
-  app.get('/api/synced-blocks/:originalBlockId', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const { originalBlockId } = req.params;
-
-      const syncedBlock = await storage.getSyncedBlock(originalBlockId);
-      if (!syncedBlock) {
-        return res.status(404).json({ error: 'Synced block not found' });
-      }
-
-      res.json(syncedBlock);
-    } catch (error) {
-      console.error('Error fetching synced block:', error);
-      res.status(500).json({ error: 'Failed to fetch synced block' });
-    }
-  });
-
-  // List all synced blocks (for picker)
-  app.get('/api/synced-blocks', requireAuthIfEnabled, async (req: AuthRequest, res) => {
-    try {
-      const userId = req.user?.id;
-      if (!userId) {
-        return res.json([]);
-      }
-      const blocks = await storage.getUserSyncedBlocks(userId);
-      res.json(blocks);
-    } catch (error) {
-      console.error('Error listing synced blocks:', error);
-      res.json([]);
-    }
-  });
-
-  // Update synced block content
-  app.patch('/api/synced-blocks/:originalBlockId', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const { originalBlockId } = req.params;
-      const { content } = req.body;
-
-      if (!content) {
-        return res.status(400).json({ error: 'content is required' });
-      }
-
-      const syncedBlock = await storage.updateSyncedBlockContent(originalBlockId, content);
-      res.json(syncedBlock);
-    } catch (error) {
-      console.error('Error updating synced block:', error);
-      res.status(500).json({ error: 'Failed to update synced block' });
-    }
-  });
-
-  // Delete synced block
-  app.delete('/api/synced-blocks/:originalBlockId', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const { originalBlockId } = req.params;
-
-      await storage.deleteSyncedBlock(originalBlockId);
-      res.status(204).send();
-    } catch (error) {
-      console.error('Error deleting synced block:', error);
-      res.status(500).json({ error: 'Failed to delete synced block' });
-    }
-  });
+  // Synced blocks: every route checks the block's owning page, like inline databases.
+  registerSyncedBlockRoutes(app, storage);
 
   // ==================== AI Assistant Routes ====================
 
@@ -5452,25 +5002,23 @@ export async function registerRoutes(
 
         if (!page) return res.status(404).json({ error: 'Page not found' });
 
+        // Link tokens become titles of pages the viewer can read, never others' (#113 P2-D2).
+        const viewer = await storage.getPageViewer(req.user?.id);
+        const linked = await storage.resolveReadablePageLinks(
+          viewer,
+          pageLinkTokenIds(page.content || '')
+        );
+        const linkedTitles = new Map<number, string>(
+          linked.map((target) => [target.id, target.title])
+        );
+
         switch (format) {
           case 'markdown':
           case 'md': {
-            const frontmatter = [
-              '---',
-              `title: "${page.title.replace(/"/g, '\\"')}"`,
-              `slug: "${page.slug}"`,
-              `author: "${page.author}"`,
-              `folder: "${page.folder}"`,
-              `tags: [${page.tags.map((t) => `"${t}"`).join(', ')}]`,
-              `created: "${page.createdAt}"`,
-              `updated: "${page.updatedAt}"`,
-              '---',
-              '',
-            ].join('\n');
-
-            const markdown = frontmatter + (page.content || '');
+            const markdown = singlePageMarkdown(page, linkedTitles);
             res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
-            res.setHeader('Content-Disposition', `attachment; filename="${page.slug}.md"`);
+            // RFC 5987 encoding: a raw non-Latin-1 slug (e.g. Korean) is an invalid header.
+            res.setHeader('Content-Disposition', attachmentDisposition(`${page.slug}.md`));
             return res.send(markdown);
           }
 
@@ -5481,7 +5029,9 @@ export async function registerRoutes(
             const rehypeStringify = (await import('rehype-stringify')).default;
 
             const processor = remark().use(remarkGfm).use(remarkRehype).use(rehypeStringify);
-            const result = await processor.process(page.content || '');
+            const result = await processor.process(
+              contentWithLinkTitles(page.content || '', linkedTitles)
+            );
 
             const html = `<!DOCTYPE html>
 <html lang="en">
@@ -5509,7 +5059,8 @@ export async function registerRoutes(
 </html>`;
 
             res.setHeader('Content-Type', 'text/html; charset=utf-8');
-            res.setHeader('Content-Disposition', `attachment; filename="${page.slug}.html"`);
+            // RFC 5987 encoding: a raw non-Latin-1 slug (e.g. Korean) is an invalid header.
+            res.setHeader('Content-Disposition', attachmentDisposition(`${page.slug}.html`));
             return res.send(html);
           }
 
@@ -5528,7 +5079,8 @@ export async function registerRoutes(
             };
 
             res.setHeader('Content-Type', 'application/json; charset=utf-8');
-            res.setHeader('Content-Disposition', `attachment; filename="${page.slug}.json"`);
+            // RFC 5987 encoding: a raw non-Latin-1 slug (e.g. Korean) is an invalid header.
+            res.setHeader('Content-Disposition', attachmentDisposition(`${page.slug}.json`));
             return res.json(exportData);
           }
 

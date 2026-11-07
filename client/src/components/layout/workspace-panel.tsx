@@ -19,6 +19,8 @@ import { Input } from '@/components/ui/input';
 import { SearchBar } from '@/components/wiki/search-bar';
 import { useToast } from '@/hooks/use-toast';
 import { useFeatureFlags } from '@/features/FeatureFlagsContext';
+import { DailyNoteButton } from '@/components/daily-note-button';
+import { VaultMenu } from '@/components/vault/vault-menu';
 import { useShellNav } from './shell-nav';
 import { PageTree } from './page-tree';
 import { resolvePageTeamId } from '@/lib/page-team-scope';
@@ -141,13 +143,13 @@ export function WorkspacePanel({
     <div className="flex flex-col gap-5 px-3 py-4">
       {/* Current workspace; hidden where the route is not workspace-scoped. */}
       {scope.kind !== 'unknown' && (
-        <div role="group" aria-label="현재 워크스페이스" className="px-1">
+        <div role="group" aria-label="현재 워크스페이스" className="flex items-center gap-1 px-1">
           {workspace ? (
             <Link
               to={workspace.documentsPath}
               onClick={onNavigate}
               aria-label={`현재 워크스페이스: ${workspace.displayName}`}
-              className="flex min-h-11 items-center gap-2.5 rounded-lg px-1.5 transition-colors hover:bg-raised"
+              className="flex min-h-11 min-w-0 flex-1 items-center gap-2.5 rounded-lg px-1.5 transition-colors hover:bg-raised"
             >
               <span
                 aria-hidden="true"
@@ -163,10 +165,18 @@ export function WorkspacePanel({
               </span>
             </Link>
           ) : (
-            <div className="px-1.5">
+            <div className="min-w-0 flex-1 px-1.5">
               <p className="text-[11px] text-muted-foreground">워크스페이스</p>
               <p className="truncate text-sm font-bold text-foreground">내 문서</p>
             </div>
+          )}
+          <DailyNoteButton onNavigate={onNavigate} />
+          {/* Markdown vault export and import of the tree's workspace (#113 P2-D2). */}
+          {treeUrl && (
+            <VaultMenu
+              teamId={workspaceTeamId === '' ? null : workspaceTeamId}
+              scopeLabel={workspace ? workspace.displayName : '내 문서'}
+            />
           )}
         </div>
       )}

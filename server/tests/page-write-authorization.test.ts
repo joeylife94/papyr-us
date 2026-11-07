@@ -10,7 +10,11 @@
  * - PUT /api/pages/:id: changing author, team or trash state needs owner, and a page can only
  *   move into a team the caller belongs to;
  * - restoring and permanently deleting a trashed page need owner;
- * - markdown import needs membership of the target team, like POST /api/pages.
+ * - the trash list is asked for with the caller's viewer, so it holds only pages they can read
+ *   (the SQL filter is proven in tests/integration-layer4/trash-listing.test.ts);
+ * - markdown import needs membership of the target team, like POST /api/pages;
+ * - POST /api/pages needs membership of the team the page is created in, even when the query
+ *   names another team (requireTeamMembership reads the query before the body).
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import request from 'supertest';
@@ -303,6 +307,48 @@ describe('Trash writes need owner', () => {
     const ok = await request(app).delete(`/api/trash/${PAGE_A}`).set(as(OWNER));
     expect(ok.status).toBe(200);
     expect(storage.permanentlyDeleteWikiPage).toHaveBeenCalledWith(PAGE_A);
+  });
+});
+
+describe('Trash listing is the caller’s', () => {
+  it('lists the trash for the caller’s viewer and an optional team', async () => {
+    const viewer = { userId: EDITOR.id, email: EDITOR.email, teamIds: EDITOR.teams };
+    storage.getPageViewer.mockResolvedValue(viewer);
+    storage.getTrashPages.mockResolvedValue([{ id: PAGE_A, title: 'Plan' }]);
+
+    const all = await request(app).get('/api/trash').set(as(EDITOR));
+    expect(all.status).toBe(200);
+    expect(all.body).toEqual([{ id: PAGE_A, title: 'Plan' }]);
+    expect(storage.getPageViewer).toHaveBeenCalledWith(EDITOR.id);
+    expect(storage.getTrashPages).toHaveBeenCalledWith(viewer, undefined);
+
+    await request(app).get(`/api/trash?teamId=${TEAM_A}`).set(as(EDITOR));
+    expect(storage.getTrashPages).toHaveBeenLastCalledWith(viewer, TEAM_A);
+    // A malformed team id lists the whole (still filtered) trash instead of querying team NaN.
+    await request(app).get('/api/trash?teamId=abc').set(as(EDITOR));
+    expect(storage.getTrashPages).toHaveBeenLastCalledWith(viewer, undefined);
+  });
+});
+
+describe('POST /api/pages needs membership of the team the page goes into', () => {
+  const body = { title: 'Notes', slug: 'notes', content: '', folder: 'docs', author: 'a' };
+
+  it("creates a page in the caller's own team", async () => {
+    const res = await request(app)
+      .post('/api/pages')
+      .set(as(EDITOR))
+      .send({ ...body, teamId: TEAM_A });
+    expect(res.status).toBe(201);
+    expect(storage.createWikiPage).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a body team the caller is not in, even with their own team in the query', async () => {
+    const res = await request(app)
+      .post(`/api/pages?teamId=${TEAM_B}`)
+      .set(as(OUTSIDER))
+      .send({ ...body, teamId: TEAM_A });
+    expect(res.status).toBe(403);
+    expect(storage.createWikiPage).not.toHaveBeenCalled();
   });
 });
 
