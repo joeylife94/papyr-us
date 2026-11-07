@@ -12,6 +12,12 @@
  * skipped. It never evaluates tags, anchors, aliases or other YAML features.
  */
 import { isPageId } from '../../shared/page-links.js';
+import {
+  PAGE_COVER_DEFAULT_OFFSET_Y,
+  PAGE_COVER_PRESET_IDS,
+  pageCoverSchema,
+  type PageCover,
+} from '../../shared/schema.js';
 
 /** Shown instead of a link whose target the exporting viewer cannot read (never its title). */
 export const INACCESSIBLE_PAGE_LABEL = '접근할 수 없는 페이지';
@@ -251,6 +257,47 @@ export function parseFrontmatter(text: string): {
     }
   }
   return { data: fields, body };
+}
+
+// ---- Page cover (issue #134) ----
+
+/**
+ * The frontmatter of a cover: `cover` is the preset id or the image path, and an image adds its
+ * vertical position as `cover_offset_y` (0–100).
+ */
+export function coverFrontmatter(cover: PageCover | null): Array<[string, FrontmatterValue]> {
+  if (!cover) return [];
+  if (cover.type === 'preset') return [['cover', cover.id]];
+  return [
+    ['cover', cover.path],
+    ['cover_offset_y', String(cover.offsetY)],
+  ];
+}
+
+/**
+ * The cover named by frontmatter: a preset id, or the path of an image uploaded to this instance
+ * (P3-D1). Anything else, such as an external URL or a vault attachment, is `dropped`; no cover
+ * key at all is not.
+ */
+export function coverFromFrontmatter(
+  value: FrontmatterValue | undefined,
+  offsetY: FrontmatterValue | undefined
+): { cover: PageCover | null; dropped: boolean } {
+  if (value === undefined) return { cover: null, dropped: false };
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (Array.isArray(value) ? value.length === 0 : !text) return { cover: null, dropped: false };
+  const candidate = (PAGE_COVER_PRESET_IDS as readonly string[]).includes(text)
+    ? { type: 'preset', id: text }
+    : {
+        type: 'image',
+        path: text,
+        offsetY:
+          typeof offsetY === 'string' && /^\d{1,3}$/.test(offsetY.trim())
+            ? Math.min(Number(offsetY.trim()), 100)
+            : PAGE_COVER_DEFAULT_OFFSET_Y,
+      };
+  const parsed = pageCoverSchema.safeParse(candidate);
+  return parsed.success ? { cover: parsed.data, dropped: false } : { cover: null, dropped: true };
 }
 
 const MAX_TAGS = 50;

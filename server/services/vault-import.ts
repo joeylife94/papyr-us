@@ -8,7 +8,9 @@
  *   `__MACOSX/` are ignored; other non-Markdown files and oversized notes are reported as skipped.
  * - Hierarchy follows folders: `A.md` + `A/B.md` makes B a sub-page of A; a folder without a
  *   matching note becomes an empty page named after the folder. Parents come before children.
- * - Frontmatter gives `title` (else the file name), `tags` and `icon` (one emoji, else none).
+ * - Frontmatter gives `title` (else the file name), `tags`, `icon` (one emoji, else none) and
+ *   `cover` (a preset id or this instance's uploaded image path, else none; another value is
+ *   reported in `droppedCovers`, issue #134).
  * - Wikilinks resolve after every page has an id: within the import first (path, file name or
  *   title; exact, then case-insensitive), then among the readable live pages of the scope. A
  *   resolved link becomes an id token, which renders the target's current title, so an alias
@@ -21,8 +23,9 @@
  */
 import { pageLinkToken } from '../../shared/page-links.js';
 import { pageEmbedToken } from '../../shared/page-embeds.js';
-import { pageIconSchema } from '../../shared/schema.js';
+import { pageIconSchema, type PageCover } from '../../shared/schema.js';
 import {
+  coverFromFrontmatter,
   normalizeTags,
   parseFrontmatter,
   replaceWikiLinks,
@@ -77,6 +80,7 @@ export interface PlannedPage {
   title: string;
   tags: string[];
   icon: string | null;
+  cover: PageCover | null;
   /** Markdown body as imported, links still as written. */
   body: string;
   /** Index of the parent page in the plan, or null for a root page. */
@@ -86,6 +90,8 @@ export interface PlannedPage {
 export interface VaultImportPlan {
   pages: PlannedPage[];
   skipped: Array<{ path: string; reason: VaultSkipReason }>;
+  /** Notes imported without the cover their frontmatter named (not a preset or image here). */
+  droppedCovers: Array<{ path: string }>;
 }
 
 /**
@@ -132,6 +138,7 @@ function frontmatterTitle(value: unknown): string | null {
  */
 export function planVaultImport(files: VaultSourceFile[]): VaultImportPlan {
   const skipped: VaultImportPlan['skipped'] = [];
+  const droppedCovers: VaultImportPlan['droppedCovers'] = [];
   const pages = new Map<string, Omit<PlannedPage, 'parent'> & { segments: string[] }>();
 
   for (const file of files) {
@@ -156,6 +163,8 @@ export function planVaultImport(files: VaultSourceFile[]): VaultImportPlan {
       continue;
     }
     const { data, body } = parseFrontmatter(utf8.decode(file.read()));
+    const cover = coverFromFrontmatter(data.cover, data.cover_offset_y);
+    if (cover.dropped) droppedCovers.push({ path: file.path });
     pages.set(key.toLowerCase(), {
       key,
       path: file.path,
@@ -165,6 +174,7 @@ export function planVaultImport(files: VaultSourceFile[]): VaultImportPlan {
         segments[segments.length - 1].slice(0, VAULT_IMPORT_LIMITS.maxTitleLength),
       tags: normalizeTags(data.tags ?? data.tag),
       icon: pageIconSchema.safeParse(data.icon).success ? (data.icon as string) : null,
+      cover: cover.cover,
       body,
     });
   }
@@ -182,6 +192,7 @@ export function planVaultImport(files: VaultSourceFile[]): VaultImportPlan {
         title: segments[segments.length - 1].slice(0, VAULT_IMPORT_LIMITS.maxTitleLength),
         tags: [],
         icon: null,
+        cover: null,
         body: '',
       });
     }
@@ -203,6 +214,7 @@ export function planVaultImport(files: VaultSourceFile[]): VaultImportPlan {
           : null,
     })),
     skipped,
+    droppedCovers,
   };
 }
 

@@ -190,6 +190,36 @@ describe('GET /api/vault/export', () => {
   });
 });
 
+describe('vault export and covers (#134)', () => {
+  it('writes a valid cover to the frontmatter and leaves an invalid one out', async () => {
+    const image = '/api/uploads/images/1730000000000-0123456789abcdef-photo.png';
+    (storage.getVaultExportPages as any).mockResolvedValue([
+      { ...exportRow(1, 'Preset', null), metadata: { cover: { type: 'preset', id: 'forest' } } },
+      {
+        ...exportRow(2, 'Image', null),
+        metadata: { cover: { type: 'image', path: image, offsetY: 15 } },
+      },
+      {
+        ...exportRow(3, 'Legacy', null),
+        metadata: { cover: { type: 'image', path: 'https://x.example/a.png', offsetY: 1 } },
+      },
+    ]);
+    const response = await request(app)
+      .get('/api/vault/export')
+      .set('Cookie', cookie)
+      .buffer(true)
+      .parse(binary);
+    expect(response.status).toBe(200);
+    const files = archiveFiles(response.body);
+    expect(parseFrontmatter(files.get('Preset.md')!).data.cover).toBe('forest');
+    expect(parseFrontmatter(files.get('Image.md')!).data).toMatchObject({
+      cover: image,
+      cover_offset_y: '15',
+    });
+    expect(files.get('Legacy.md')).not.toContain('cover');
+  });
+});
+
 describe('GET /api/pages/:id/export', () => {
   it('writes readable link targets as [[Name]] and hides the rest', async () => {
     (storage.checkPagePermission as any).mockResolvedValue(true);
@@ -310,6 +340,7 @@ describe('POST /api/vault/import', () => {
       skipped: [{ path: 'image.png', reason: 'not-markdown' }],
       unresolvedLinks: [{ path: 'A.md', target: 'Nope' }],
       unresolvedLinkCount: 1,
+      droppedCovers: [],
     });
   });
 
@@ -353,8 +384,38 @@ describe('POST /api/vault/import', () => {
       skipped: [{ path: 'a.png', reason: 'not-markdown' }],
       unresolvedLinks: [],
       unresolvedLinkCount: 0,
+      droppedCovers: [],
     });
     expect(storage.insertImportedPages).not.toHaveBeenCalled();
+  });
+
+  it('imports preset and uploaded image covers and reports the others as dropped (#134)', async () => {
+    const image = '/api/uploads/images/1730000000000-0123456789abcdef-photo.png';
+    const note = (cover: string, extra = '') => `---\ncover: ${cover}${extra}\n---\nbody`;
+    const archive = zipOf([
+      { name: 'Preset.md', data: note('ocean') },
+      { name: 'Image.md', data: note(`"${image}"`, '\ncover_offset_y: "30"') },
+      { name: 'External.md', data: note('"https://tracker.example/pixel.png"') },
+      { name: 'Attachment.md', data: note('"[[banner.png]]"') },
+      { name: 'Traversal.md', data: note('/api/uploads/images/../../secret.png') },
+      { name: 'Plain.md', data: 'no frontmatter' },
+    ]);
+
+    const response = await upload().attach('files', archive, 'vault.zip');
+
+    expect(response.status).toBe(201);
+    const input = (storage.insertImportedPages as any).mock.calls[0][0];
+    const coverOf = (title: string) => input.pages.find((page: any) => page.title === title).cover;
+    expect(coverOf('Preset')).toEqual({ type: 'preset', id: 'ocean' });
+    expect(coverOf('Image')).toEqual({ type: 'image', path: image, offsetY: 30 });
+    for (const title of ['External', 'Attachment', 'Traversal', 'Plain']) {
+      expect(coverOf(title), title).toBeNull();
+    }
+    expect(response.body.droppedCovers).toEqual([
+      { path: 'External.md' },
+      { path: 'Attachment.md' },
+      { path: 'Traversal.md' },
+    ]);
   });
 
   it.each([

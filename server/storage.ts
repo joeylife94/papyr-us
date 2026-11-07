@@ -55,6 +55,7 @@ import {
   type DatabaseRow,
   type DatabaseRelation,
   type SyncedBlock,
+  type PageCover,
   databaseSchemas,
   databaseRows,
   databaseRelations,
@@ -2983,6 +2984,8 @@ export class DBStorage {
         updatedAt: wikiPages.updatedAt,
         content: wikiPages.content,
         tags: wikiPages.tags,
+        // The export writes the page cover (issue #134) from here.
+        metadata: wikiPages.metadata,
       })
       .from(wikiPages)
       .where(this.readablePagesInScope(viewer, teamId));
@@ -3031,6 +3034,8 @@ export class DBStorage {
       content: string;
       tags: string[];
       icon: string | null;
+      /** A validated cover (issue #134), stored as the page's only metadata key. */
+      cover: PageCover | null;
       parentId: number | null;
       linkTargets: number[];
     }>;
@@ -3056,6 +3061,7 @@ export class DBStorage {
               teamId: input.teamId,
               parentId: page.parentId,
               icon: page.icon,
+              metadata: page.cover ? { cover: page.cover } : {},
               isPublished: true,
             })
             .onConflictDoNothing({ target: wikiPages.slug })

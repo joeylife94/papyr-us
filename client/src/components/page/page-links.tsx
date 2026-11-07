@@ -12,18 +12,20 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { PageIcon } from '@/components/page/page-icon';
+import { PageLinkCard, type PageLinkCardPage } from '@/components/page/page-link-card';
 import { cn } from '@/lib/utils';
 import { splitPageLinks } from '@shared/page-links';
 
-type LinkPreview =
-  | { id: number; accessible: true; title: string; slug: string; icon: string | null }
-  | { id: number; accessible: false };
+type LinkPreview = ({ accessible: true } & PageLinkCardPage) | { id: number; accessible: false };
 
 /**
  * One `[[page:<id>]]` link (issue #103 E6): the target's current icon and title, or
  * "접근할 수 없는 페이지" when it is deleted or the viewer cannot read it (no title is shown).
  * `focusable={false}` (editor previews, #113) keeps the link out of the tab order and keeps focus
  * where it is when the link is pressed; a click still opens the page.
+ * A readable link shows its preview card on hover or keyboard focus (issue #133, `PageLinkCard`);
+ * an inaccessible one has none. Both come from the same cached link preview query, which page
+ * saves refresh (`invalidatePageLists`).
  */
 export function PageLinkChip({
   pageId,
@@ -61,22 +63,24 @@ export function PageLinkChip({
     );
   }
   return (
-    <Link
-      to={`/page/${data.slug}`}
-      onClick={(event) => event.stopPropagation()}
-      tabIndex={focusable ? undefined : -1}
-      onMouseDown={focusable ? undefined : (event) => event.preventDefault()}
-      data-page-link-state="ok"
-      data-page-link-target={data.id}
-      className={cn(
-        base,
-        'font-medium text-highlight underline-offset-2 hover:bg-highlight/10 hover:underline',
-        className
-      )}
-    >
-      <PageIcon icon={data.icon} className="self-center text-[0.95em]" />
-      <span className="truncate">{data.title}</span>
-    </Link>
+    <PageLinkCard page={data} focusable={focusable}>
+      <Link
+        to={`/page/${data.slug}`}
+        onClick={(event) => event.stopPropagation()}
+        tabIndex={focusable ? undefined : -1}
+        onMouseDown={focusable ? undefined : (event) => event.preventDefault()}
+        data-page-link-state="ok"
+        data-page-link-target={data.id}
+        className={cn(
+          base,
+          'font-medium text-highlight underline-offset-2 hover:bg-highlight/10 hover:underline',
+          className
+        )}
+      >
+        <PageIcon icon={data.icon} className="self-center text-[0.95em]" />
+        <span className="truncate">{data.title}</span>
+      </Link>
+    </PageLinkCard>
   );
 }
 

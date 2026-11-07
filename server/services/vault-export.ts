@@ -4,17 +4,20 @@
  *
  * - Paths follow the page tree as the viewer sees it (`buildPageTree`, D4): a root page is
  *   `Title.md`; a page with sub-pages is `Title.md` plus a folder `Title/` holding them.
- * - Each file has YAML frontmatter (`title`, `tags`, `icon`, `created`, `updated`,
- *   `papyrus_id`), then the page's `content` with every link token rewritten for the vault:
- *   a page in the export becomes `[[Name]]` (`[[folder/Name]]` when names repeat), a readable
- *   page outside it its plain title, anything else `INACCESSIBLE_PAGE_LABEL`. Titles of pages
- *   the viewer cannot read never reach the archive. An embed (`![[page:<id>]]`, #135) of a page
- *   in the export becomes `![[Name]]`; one of any other page is written like a link to it (the
- *   plain title or the label). Only the title is written, never the embedded page's content.
+ * - Each file has YAML frontmatter (`title`, `tags`, `icon`, `cover` and `cover_offset_y`,
+ *   `created`, `updated`, `papyrus_id`), then the page's `content` with every link token
+ *   rewritten for the vault: a page in the export becomes `[[Name]]` (`[[folder/Name]]` when
+ *   names repeat), a readable page outside it its plain title, anything else
+ *   `INACCESSIBLE_PAGE_LABEL`. Titles of pages the viewer cannot read never reach the archive.
+ *   An embed (`![[page:<id>]]`, #135) of a page in the export becomes `![[Name]]`; one of any
+ *   other page is written like a link to it (the plain title or the label). Only the title
+ *   is written, never the embedded page's content.
  */
 import { buildPageTree, type PageTreeNode, type PageTreeRow } from './page-tree.js';
+import { readPageCover } from '../../shared/schema.js';
 import {
   FolderNames,
+  coverFrontmatter,
   INACCESSIBLE_PAGE_LABEL,
   pageLinkTokenIds,
   renderPageLinkTokens,
@@ -29,6 +32,8 @@ import type { ZipInputEntry } from './zip.js';
 export interface VaultExportRow extends PageTreeRow {
   content: string;
   tags: string[];
+  /** Stored page metadata; only a valid `cover` is written (issue #134). */
+  metadata?: unknown;
 }
 
 /** Ids that `rows` link to (outside code) but that are not part of the export. */
@@ -52,6 +57,7 @@ export function pageFrontmatter(page: {
   title: string;
   tags?: string[] | null;
   icon?: string | null;
+  metadata?: unknown;
   createdAt: Date | string;
   updatedAt: Date | string;
 }): Array<[string, FrontmatterValue]> {
@@ -60,6 +66,7 @@ export function pageFrontmatter(page: {
     ['tags', Array.isArray(page.tags) ? page.tags : []],
   ];
   if (page.icon) fields.push(['icon', page.icon]);
+  fields.push(...coverFrontmatter(readPageCover(page.metadata)));
   fields.push(
     ['created', isoDate(page.createdAt)],
     ['updated', isoDate(page.updatedAt)],

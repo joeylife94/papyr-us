@@ -46,6 +46,8 @@ import {
   comments,
   users,
   pageIconSchema,
+  pageCoverSchema,
+  sanitizePageMetadata,
   type CalendarEvent,
   type Task,
 } from '../shared/schema.js';
@@ -104,6 +106,7 @@ import { registerKnowledgeRoutes } from './routes/knowledge.js';
 import { buildKnowledgeGraph, suggestAiLinks } from './services/knowledge-graph.js';
 import { isReservedDailyNoteSlug } from '../shared/daily-notes.js';
 import { isPageId } from '../shared/page-links.js';
+import { draftPageExcerpt, excerptLinkIds, renderPageExcerpt } from '../shared/page-excerpt.js';
 import { registerDailyNoteRoutes } from './routes/daily-notes.js';
 import { registerVaultRoutes } from './routes/vault.js';
 import { contentWithLinkTitles, singlePageMarkdown } from './services/vault-export.js';
@@ -1011,6 +1014,9 @@ export async function registerRoutes(
       folder: z.string().min(1).optional(),
       // Page icon (issue #103 E4): one emoji, or null to remove it.
       icon: pageIconSchema.nullable().optional(),
+      // Page cover (issue #134): a preset or an image uploaded here, or null to remove it. Stored
+      // as metadata.cover; the page's other metadata is kept.
+      cover: pageCoverSchema.nullable().optional(),
     })
     .strict();
 
@@ -1375,7 +1381,8 @@ export async function registerRoutes(
             parentId: original.parentId,
             teamId: original.teamId,
             isPublished: false,
-            metadata: original.metadata as any,
+            // The copy keeps the cover only if it is valid (issue #134), as a write would.
+            metadata: sanitizePageMetadata(original.metadata) as any,
           },
           (req as any).user?.id
         );
@@ -2390,6 +2397,9 @@ export async function registerRoutes(
   // read it, otherwise only `accessible: false`. Missing, trashed and unreadable targets get the
   // same answer, so a link reveals nothing about a page the caller cannot open. Embeds
   // (`![[page:<id>]]`, #135) use the same rule (routes/page-embeds.ts).
+  // A readable target also gets its hover card (issue #133): a plain-text excerpt of its content
+  // and its last update time. Links inside the excerpt are named only for pages the caller may
+  // read by id (the rule of this route), others read "[링크]".
   app.get('/api/pages/:id/link-preview', optionalAuth, async (req: AuthRequest, res) => {
     const id = parseInt(req.params.id, 10);
     if (!isPageId(id)) {
@@ -2398,12 +2408,23 @@ export async function registerRoutes(
     try {
       const page = await readableLinkTarget(storage, req.user?.id, id);
       if (!page) return res.json({ id, accessible: false });
+      const draft = draftPageExcerpt(page.content);
+      const linkIds = excerptLinkIds(draft);
+      const titles = new Map<number, string>();
+      if (linkIds.length > 0) {
+        const viewer = await storage.getPageViewer(req.user?.id);
+        for (const target of await storage.resolveReadablePageLinks(viewer, linkIds)) {
+          titles.set(target.id, target.title);
+        }
+      }
       res.json({
         id,
         accessible: true,
         title: page.title,
         slug: page.slug,
         icon: page.icon ?? null,
+        excerpt: renderPageExcerpt(draft, titles),
+        updatedAt: page.updatedAt,
       });
     } catch (error) {
       logger.error('Link preview failed', { pageId: id, error: (error as Error)?.message });
