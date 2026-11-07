@@ -6,6 +6,7 @@ import rehypeStringify from 'rehype-stringify';
 import rehypeHighlight from 'rehype-highlight';
 import matter from 'gray-matter';
 import { hasPageLinks, splitPageLinks } from '@shared/page-links';
+import { rehypeSafeUrls } from './rehype-safe-urls';
 
 /**
  * Page links (issue #103 E6): turn `[[page:<id>]]` tokens in text into empty
@@ -47,19 +48,34 @@ function remarkPageLinks() {
   };
 }
 
+/**
+ * What the reader shows when `markdownToHtml` fails: the page text as escaped plain text. Page
+ * content is untrusted; inserting it unescaped would run any HTML it holds.
+ */
+export function plainTextFallbackHtml(content: string): string {
+  const escaped = content
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+  return `<pre>${escaped}</pre>`;
+}
+
 // Parse markdown with frontmatter
 export function parseMarkdown(content: string) {
   const { data: frontmatter, content: markdownContent } = matter(content);
   return { frontmatter, content: markdownContent };
 }
 
-// Convert markdown to HTML
+// Convert markdown to HTML. Raw HTML is dropped by remark-rehype; links and images keep only safe
+// URL schemes (a `javascript:` link would otherwise run in the reader).
 export async function markdownToHtml(markdown: string): Promise<string> {
   const processor = remark()
     .use(remarkGfm)
     .use(remarkPageLinks)
     .use(remarkRehype)
     .use(rehypeHighlight)
+    .use(rehypeSafeUrls)
     .use(rehypeStringify);
 
   const result = await processor.process(markdown);

@@ -64,15 +64,16 @@ export function CheckboxBlock({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    // Ctrl/Cmd+Enter toggles the item; Space types a space (the to-do text needs one).
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      handleCheckboxToggle();
+    } else if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       onAddBlock('checkbox');
     } else if (e.key === 'Backspace' && content === '') {
       e.preventDefault();
       onDelete();
-    } else if (e.key === ' ' && e.target === textareaRef.current) {
-      e.preventDefault();
-      handleCheckboxToggle();
     }
   };
 
@@ -87,6 +88,8 @@ export function CheckboxBlock({
         <button
           type="button"
           onClick={handleCheckboxToggle}
+          aria-label="할 일 완료"
+          aria-pressed={!!isChecked}
           className={`mt-0.5 flex h-6 w-6 !min-h-0 !min-w-0 flex-shrink-0 items-center justify-center ${isChecked ? 'text-success' : 'text-muted-foreground'} hover:text-success transition-colors`}
         >
           {isChecked ? <CheckSquare className="h-5 w-5" /> : <Square className="h-5 w-5" />}

@@ -40,6 +40,7 @@ import { cn } from '@/lib/utils';
 import { moveBlock as reorderBlocks, resolveDrop } from '@/lib/block-order';
 import { PageLinkPicker } from '@/components/page/page-links';
 import { pageLinkToken } from '@shared/page-links';
+import { matchMarkdownShortcut } from '@/lib/markdown-shortcuts';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -83,6 +84,15 @@ export function BlockEditor({
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const addBlockRef = useRef<(index: number, type?: BlockType) => void>(() => {});
   const updateBlockRef = useRef<(blockId: string, updates: Partial<Block>) => void>(() => {});
+  // Markdown shortcuts (#111 §6): the last conversion, which Ctrl/Cmd+Z can undo until the next
+  // edit, and where to put the caret once a converted block has rendered.
+  const lastShortcutRef = useRef<{
+    blockId: string;
+    converted: string;
+    literal: string;
+    caret: number;
+  } | null>(null);
+  const pendingCaretRef = useRef<{ blockId: string; position: number } | null>(null);
 
   // Page link picker (issue #103 E6): which block, where, and the "@" / "[[" text it replaces.
   const [linkPicker, setLinkPicker] = useState<{
@@ -226,6 +236,7 @@ export function BlockEditor({
   // 블록 추가 함수
   const addBlock = useCallback(
     (index: number, type: BlockType = 'paragraph') => {
+      lastShortcutRef.current = null;
       const newBlock: Block = {
         id: `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         type,
@@ -271,6 +282,7 @@ export function BlockEditor({
   // 블록 삭제 함수
   const deleteBlock = useCallback(
     (blockId: string) => {
+      lastShortcutRef.current = null;
       if (useYjs && yjsCollaboration.isSynced) {
         // Yjs CRDT: Find index and delete
         const index = blocks.findIndex((b) => b.id === blockId);
@@ -302,6 +314,8 @@ export function BlockEditor({
   // 블록 업데이트 함수
   const updateBlock = useCallback(
     (blockId: string, updates: Partial<Block>) => {
+      // Any edit ends the window in which Ctrl/Cmd+Z undoes a markdown shortcut.
+      lastShortcutRef.current = null;
       if (useYjs && yjsCollaboration.isSynced) {
         // Yjs CRDT: Find index and update
         const index = blocks.findIndex((b) => b.id === blockId);
@@ -356,10 +370,59 @@ export function BlockEditor({
     [blocks, onChange, useYjs, yjsCollaboration]
   );
 
+  // Markdown shortcuts (#111 §6). The conversion goes through updateBlock, like the slash menu,
+  // so it autosaves and reaches collaborators through Yjs.
+  const blockSnapshot = (block: Pick<Block, 'type' | 'content' | 'properties'>) =>
+    JSON.stringify([block.type, block.content, block.properties ?? {}]);
+
+  const applyMarkdownShortcut = (block: Block, previous: string, next: string, caret: number) => {
+    const match = matchMarkdownShortcut(previous, next, caret);
+    if (!match) return false;
+    updateBlock(block.id, { type: match.type, content: match.content });
+    lastShortcutRef.current = {
+      blockId: block.id,
+      converted: blockSnapshot({ ...block, type: match.type, content: match.content }),
+      literal: next,
+      caret,
+    };
+    pendingCaretRef.current = { blockId: block.id, position: 0 };
+    return true;
+  };
+
+  // Ctrl/Cmd+Z right after a conversion, before any other edit: back to the literal text.
+  const undoMarkdownShortcut = (event: React.KeyboardEvent, block: Block | undefined) => {
+    const last = lastShortcutRef.current;
+    if (!last || !block || last.blockId !== block.id) return false;
+    if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return false;
+    if (event.key.toLowerCase() !== 'z') return false;
+    if (blockSnapshot(block) !== last.converted) {
+      lastShortcutRef.current = null;
+      return false;
+    }
+    event.preventDefault();
+    updateBlock(block.id, { type: 'paragraph', content: last.literal });
+    pendingCaretRef.current = { blockId: block.id, position: last.caret };
+    return true;
+  };
+
+  // A converted (or restored) block is a new component; put the caret where the text continues.
+  useEffect(() => {
+    const pending = pendingCaretRef.current;
+    if (!pending) return;
+    const field = editorContainerRef.current?.querySelector<HTMLTextAreaElement>(
+      `[data-block-row="${CSS.escape(pending.blockId)}"] textarea`
+    );
+    if (!field) return;
+    pendingCaretRef.current = null;
+    field.focus();
+    field.setSelectionRange(pending.position, pending.position);
+  }, [blocks]);
+
   // Screen reader feedback for Alt+↑/↓ moves (drags announce through the dnd library).
   const [moveAnnouncement, setMoveAnnouncement] = useState('');
 
   const handleRowKeyDown = (event: React.KeyboardEvent, index: number) => {
+    if (undoMarkdownShortcut(event, blocks[index])) return;
     if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
     event.preventDefault();
@@ -446,9 +509,40 @@ export function BlockEditor({
                   length,
                 })
               }
+              onMarkdownShortcut={(previous, next, caret) =>
+                applyMarkdownShortcut(block, previous, next, caret)
+              }
             />
           </div>
         );
+      case 'bulleted_list':
+      case 'numbered_list': {
+        // List items edit like paragraphs behind a marker. Enter continues the list; Enter on an
+        // empty item turns it back into a paragraph.
+        let number = 1;
+        while (index - number >= 0 && blocks[index - number].type === 'numbered_list') number++;
+        return (
+          <div key={`list-${block.id}`} className="flex items-start">
+            <span
+              aria-hidden="true"
+              className="w-6 shrink-0 select-none pt-2 text-right leading-relaxed text-muted-foreground"
+            >
+              {block.type === 'bulleted_list' ? '•' : `${number}.`}
+            </span>
+            <div className="min-w-0 flex-1">
+              <ParagraphBlock
+                {...commonProps}
+                placeholder="목록"
+                onAddBlock={() =>
+                  block.content === ''
+                    ? updateBlock(block.id, { type: 'paragraph' })
+                    : addBlock(index + 1, block.type)
+                }
+              />
+            </div>
+          </div>
+        );
+      }
       case 'checkbox':
         return <CheckboxBlock {...commonProps} />;
       case 'image':
@@ -745,6 +839,7 @@ export function BlockEditor({
                           ref={dragProvided.innerRef}
                           {...dragProvided.draggableProps}
                           data-block-row={block.id}
+                          data-block-type={block.type}
                           onKeyDown={(event) => handleRowKeyDown(event, index)}
                           className={cn(
                             // The gutter hangs into the left margin so text lines up near the title.

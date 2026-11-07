@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -27,10 +27,24 @@ import {
   Moon,
   Sun,
   BookOpen,
+  CalendarDays,
+  ArrowRightLeft,
 } from 'lucide-react';
 import type { WikiPage } from '@shared/schema';
-import { PageIcon } from '@/components/page/page-icon';
 import { useTheme } from '@/hooks/use-theme';
+import { openQuickSwitcher } from '@/components/quick-switcher';
+import { PageIcon } from '@/components/page/page-icon';
+import { useOpenDailyNote } from '@/hooks/useDailyNote';
+import { scopeTeamParam } from '@/lib/page-scope';
+
+interface TitleMatch {
+  id: number;
+  title: string;
+  slug: string;
+  icon: string | null;
+}
+
+const SEARCH_DEBOUNCE_MS = 200;
 
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
@@ -51,12 +65,57 @@ export function CommandPalette() {
 
   const pages = pagesData?.pages || [];
 
+  // Beyond the recent pages, typed text also searches every readable page title of the current
+  // scope on the server (#111), through the same endpoint as the quick switcher.
+  const { openDailyNote, scope } = useOpenDailyNote();
+  const teamParam = scopeTeamParam(scope);
+  const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search.trim()), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [search]);
+  useEffect(() => {
+    if (!open) setSearch('');
+  }, [open]);
+  const { data: titleData } = useQuery<TitleMatch[]>({
+    queryKey: ['/api/page-links/search', teamParam, debouncedSearch, 'palette'],
+    queryFn: async () => {
+      const params = new URLSearchParams({ q: debouncedSearch });
+      if (teamParam) params.set('teamId', teamParam);
+      const res = await fetch(`/api/page-links/search?${params}`, { credentials: 'include' });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: open && !!debouncedSearch && scope.status === 'ready',
+    staleTime: 0,
+  });
+  const recentIds = new Set(pages.slice(0, 10).map((page) => page.id));
+  const searchedPages = debouncedSearch
+    ? (titleData ?? []).filter((page) => !recentIds.has(page.id)).slice(0, 10)
+    : [];
+
   // Global keyboard shortcut: Cmd/Ctrl + K
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
         setOpen((prev) => !prev);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Alt+Shift+D: today's note (#111). `code`, since Option+Shift+D types a symbol on macOS.
+  const openDailyNoteRef = useRef(openDailyNote);
+  openDailyNoteRef.current = openDailyNote;
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyD') {
+        e.preventDefault();
+        setOpen(false);
+        void openDailyNoteRef.current();
       }
     };
     document.addEventListener('keydown', handleKeyDown);
@@ -70,7 +129,11 @@ export function CommandPalette() {
 
   return (
     <CommandDialog open={open} onOpenChange={setOpen}>
-      <CommandInput placeholder="페이지 검색, 명령어 실행... (Ctrl+K)" />
+      <CommandInput
+        placeholder="페이지 검색, 명령어 실행... (Ctrl+K)"
+        value={search}
+        onValueChange={setSearch}
+      />
       <CommandList>
         <CommandEmpty>결과를 찾을 수 없습니다.</CommandEmpty>
 
@@ -80,6 +143,16 @@ export function CommandPalette() {
             <Plus className="mr-2 h-4 w-4" />
             <span>새 페이지 만들기</span>
             <CommandShortcut>⌘N</CommandShortcut>
+          </CommandItem>
+          <CommandItem onSelect={() => runCommand(openQuickSwitcher)}>
+            <ArrowRightLeft className="mr-2 h-4 w-4" />
+            <span>빠른 전환</span>
+            <CommandShortcut>⌘O</CommandShortcut>
+          </CommandItem>
+          <CommandItem onSelect={() => runCommand(() => void openDailyNote())}>
+            <CalendarDays className="mr-2 h-4 w-4" />
+            <span>오늘의 노트</span>
+            <CommandShortcut>⌥⇧D</CommandShortcut>
           </CommandItem>
           <CommandItem onSelect={() => runCommand(() => navigate('/ai-search'))}>
             <Brain className="mr-2 h-4 w-4" />
@@ -159,6 +232,22 @@ export function CommandPalette() {
                 <CommandShortcut className="text-xs text-muted-foreground">
                   {page.folder}
                 </CommandShortcut>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
+
+        {/* Server title search (#111) */}
+        {searchedPages.length > 0 && (
+          <CommandGroup heading="페이지 검색">
+            {searchedPages.map((page) => (
+              <CommandItem
+                key={`search-${page.id}`}
+                value={`${page.title} search-${page.id}`}
+                onSelect={() => runCommand(() => navigate(`/page/${page.slug}`))}
+              >
+                <PageIcon icon={page.icon} className="mr-2 w-4 text-center" />
+                <span>{page.title}</span>
               </CommandItem>
             ))}
           </CommandGroup>

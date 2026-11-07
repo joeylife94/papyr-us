@@ -5,7 +5,8 @@
  *   - the migration is additive and idempotent (a new table and index, existing rows untouched);
  *   - creating and updating a page keeps page_links in step with its `[[page:<id>]]` tokens,
  *     skipping unknown ids and self-links; rows go when a page is deleted for good;
- *   - backlinks and the link picker list only pages the viewer may read, never trashed ones.
+ *   - backlinks and the link picker list only pages the viewer may read, never trashed ones;
+ *   - the picker (and the #111 quick switcher) ranks an exact title first, then prefixes.
  *
  * The tables live in their own schema so this file can run next to the other Layer 4 files.
  */
@@ -229,5 +230,16 @@ describe('page links (real Postgres)', () => {
     ).toBe(0);
     // LIKE wildcards in a query match literally.
     expect(await storage.searchLinkTargets(ALICE.id, { personalOnly: true }, '%')).toEqual([]);
+  });
+
+  it('ranks an exact title first, then titles starting with the query (#111 switcher)', async () => {
+    // Created oldest first, so recency alone would list the exact title last.
+    const exact = await storage.createWikiPage(page('Roadmap', ALICE.email), ALICE.id);
+    const prefix = await storage.createWikiPage(page('Roadmap notes', ALICE.email), ALICE.id);
+    const contains = await storage.createWikiPage(page('Old roadmap', ALICE.email), ALICE.id);
+
+    const found = await storage.searchLinkTargets(ALICE.id, { personalOnly: true }, 'ROADMAP');
+    expect(found.map((p: any) => p.id)).toEqual([exact.id, prefix.id, contains.id]);
+    expect(found[0].updatedAt).toBeInstanceOf(Date);
   });
 });

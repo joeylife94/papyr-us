@@ -51,14 +51,20 @@ function createStorage(options: {
     ...p,
   }));
   // The fake db cannot read drizzle where-clauses, so it answers for the current caller: a users
-  // lookup returns the caller, and getUserPagePermission sees only the caller's user grants.
+  // lookup returns the caller, and getUserPagePermission sees only the caller's own grants and
+  // grants to the caller's teams.
   let caller: number | undefined;
   let callerGrantsOnly = false;
   const rowsFor = (table: unknown) => {
     if (table === wikiPages) return [pageRow];
     if (table === pagePermissions) {
+      const callerTeams = caller ? (options.teamsByUser[caller] ?? []) : [];
       return callerGrantsOnly
-        ? permissionRows.filter((p) => p.entityType === 'user' && p.entityId === caller)
+        ? permissionRows.filter(
+            (p) =>
+              (p.entityType === 'user' && p.entityId === caller) ||
+              (p.entityType === 'team' && p.entityId !== null && callerTeams.includes(p.entityId))
+          )
         : permissionRows;
     }
     if (table === users) return [AUTHOR, TEAMMATE, OUTSIDER].filter((user) => user.id === caller);
@@ -153,6 +159,20 @@ describe('team page access follows current team membership', () => {
       permissions: [
         ...teamPage.permissions,
         { entityType: 'user', entityId: TEAMMATE.id, permission: 'editor' },
+      ],
+      teamsByUser: { [TEAMMATE.id]: [TEAM_A] },
+    });
+    expect(await allowedLevels(storage, TEAMMATE.id)).toEqual(['viewer', 'commenter', 'editor']);
+    expect(await storage.getUserPagePermission(TEAMMATE.id, PAGE_ID)).toBe('editor');
+  });
+
+  it('lets a member edit through a grant to their own team, in REST and collaboration', async () => {
+    // Team daily notes (#111) give the whole team editor this way.
+    const storage = createStorage({
+      page: teamPage.page,
+      permissions: [
+        ...teamPage.permissions,
+        { entityType: 'team', entityId: TEAM_A, permission: 'editor' },
       ],
       teamsByUser: { [TEAMMATE.id]: [TEAM_A] },
     });

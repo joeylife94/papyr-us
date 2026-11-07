@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Quote, Trash2, Edit3, Check, X } from 'lucide-react';
 
@@ -14,6 +13,10 @@ interface QuoteBlockProps {
   onAddBlock: (type?: any) => void;
 }
 
+/**
+ * A quote. The quoted text is edited in place, like a paragraph (so a `> ` markdown shortcut can
+ * keep typing into it, #111 §6); author and source are edited from the hover button.
+ */
 export function QuoteBlock({
   block,
   isFocused,
@@ -23,17 +26,54 @@ export function QuoteBlock({
   onDelete,
   onAddBlock,
 }: QuoteBlockProps) {
-  const content = block.content || '';
+  const [content, setContent] = useState<string>(block.content || '');
   const source = block.properties?.source || '';
   const author = block.properties?.author || '';
   const [isEditing, setIsEditing] = useState(false);
-  const [editContent, setEditContent] = useState(content);
   const [editSource, setEditSource] = useState(source || '');
   const [editAuthor, setEditAuthor] = useState(author || '');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const adjustHeight = () => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+    }
+  };
+
+  useEffect(() => {
+    if (isFocused && textareaRef.current) {
+      textareaRef.current.focus();
+      adjustHeight();
+    }
+  }, [isFocused]);
+
+  useEffect(() => {
+    adjustHeight();
+  }, [content]);
+
+  // Follow changes made elsewhere (a collaborator, a restore).
+  useEffect(() => {
+    if ((block.content || '') !== content) setContent(block.content || '');
+  }, [block.content]);
+
+  const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setContent(e.target.value);
+    onUpdate({ content: e.target.value });
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      onAddBlock('paragraph');
+    } else if (e.key === 'Backspace' && content === '') {
+      e.preventDefault();
+      onDelete();
+    }
+  };
 
   const handleSave = () => {
     onUpdate({
-      content: editContent,
       properties: {
         ...block.properties,
         source: editSource || undefined,
@@ -44,82 +84,76 @@ export function QuoteBlock({
   };
 
   const handleCancel = () => {
-    setEditContent(content);
     setEditSource(source || '');
     setEditAuthor(author || '');
     setIsEditing(false);
   };
 
-  if (isEditing) {
-    return (
-      <div className="group relative border-l-4 border-primary bg-muted/30 p-4 rounded-r-lg">
-        <div className="flex items-start gap-3">
-          <Quote className="h-5 w-5 text-highlight mt-1 flex-shrink-0" />
-          <div className="flex-1 space-y-3">
-            <Textarea
-              value={editContent}
-              onChange={(e) => setEditContent(e.target.value)}
-              placeholder="인용문을 입력하세요..."
-              className="min-h-[80px] resize-none border-0 bg-transparent p-0 text-base font-medium italic focus-visible:ring-0"
-            />
+  return (
+    <div
+      className="group relative rounded-r-lg border-l-4 border-primary bg-muted/30 py-3 pl-4 pr-20 transition-colors hover:bg-muted/50"
+      onFocus={onFocus}
+      onBlur={onBlur}
+    >
+      <div className="flex items-start gap-3">
+        <Quote className="mt-1 h-5 w-5 flex-shrink-0 text-highlight" aria-hidden="true" />
+        <div className="min-w-0 flex-1">
+          <textarea
+            ref={textareaRef}
+            value={content}
+            onChange={handleContentChange}
+            onKeyDown={handleKeyDown}
+            placeholder="인용문을 입력하세요..."
+            className="w-full resize-none border-none bg-transparent p-0 text-base font-medium italic leading-relaxed text-foreground outline-none placeholder:text-muted-foreground"
+            rows={1}
+          />
 
-            <div className="space-y-2">
+          {isEditing ? (
+            <div className="mt-2 space-y-2">
               <Input
                 value={editAuthor}
                 onChange={(e) => setEditAuthor(e.target.value)}
                 placeholder="작성자 (선택사항)"
-                className="h-8 text-sm border-0 bg-transparent p-0 focus-visible:ring-0"
+                className="h-8 border-0 bg-transparent p-0 text-sm focus-visible:ring-0"
               />
               <Input
                 value={editSource}
                 onChange={(e) => setEditSource(e.target.value)}
                 placeholder="출처 (선택사항)"
-                className="h-8 text-sm border-0 bg-transparent p-0 focus-visible:ring-0"
+                className="h-8 border-0 bg-transparent p-0 text-sm focus-visible:ring-0"
               />
+              <div className="flex items-center gap-2">
+                <Button size="sm" onClick={handleSave} className="h-8">
+                  <Check className="mr-1 h-4 w-4" />
+                  저장
+                </Button>
+                <Button size="sm" variant="outline" onClick={handleCancel} className="h-8">
+                  <X className="mr-1 h-4 w-4" />
+                  취소
+                </Button>
+              </div>
             </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 mt-3">
-          <Button size="sm" onClick={handleSave} className="h-8">
-            <Check className="h-4 w-4 mr-1" />
-            저장
-          </Button>
-          <Button size="sm" variant="outline" onClick={handleCancel} className="h-8">
-            <X className="h-4 w-4 mr-1" />
-            취소
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="group relative border-l-4 border-primary bg-muted/30 p-4 rounded-r-lg hover:bg-muted/50 transition-colors">
-      <div className="flex items-start gap-3">
-        <Quote className="h-5 w-5 text-highlight mt-1 flex-shrink-0" />
-        <div className="flex-1">
-          <blockquote className="text-base font-medium italic text-foreground mb-2">
-            "{content}"
-          </blockquote>
-
-          {(author || source) && (
-            <div className="text-sm text-muted-foreground">
-              {author && <span className="font-medium">— {author}</span>}
-              {author && source && <span className="mx-2">•</span>}
-              {source && <span>{source}</span>}
-            </div>
+          ) : (
+            (author || source) && (
+              <div className="mt-1 text-sm text-muted-foreground">
+                {author && <span className="font-medium">— {author}</span>}
+                {author && source && <span className="mx-2">•</span>}
+                {source && <span>{source}</span>}
+              </div>
+            )
           )}
         </div>
       </div>
 
       {/* 편집 버튼들 */}
-      <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="absolute right-2 top-2 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
         <div className="flex items-center gap-1">
           <Button
             size="sm"
             variant="ghost"
             onClick={() => setIsEditing(true)}
+            aria-label="작성자와 출처 편집"
+            title="작성자와 출처 편집"
             className="h-8 w-8 p-0"
           >
             <Edit3 className="h-4 w-4" />
@@ -128,6 +162,8 @@ export function QuoteBlock({
             size="sm"
             variant="ghost"
             onClick={onDelete}
+            aria-label="인용 삭제"
+            title="인용 삭제"
             className="h-8 w-8 p-0 text-destructive hover:text-destructive"
           >
             <Trash2 className="h-4 w-4" />
