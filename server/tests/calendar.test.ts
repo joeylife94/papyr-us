@@ -59,10 +59,15 @@ describe('Calendar Event Management API', () => {
   it('TC-CAL-002: should retrieve all calendar events for a team', async () => {
     const events = [mockEvent, { ...mockEvent, id: 2, title: 'Design Review' }];
     (storage.getCalendarEvents as vi.Mock).mockResolvedValue(events);
+    // A team named in the path is read by its id (a name used to become NaN: every team)
+    (storage.getTeamByName as vi.Mock).mockImplementation(async (name: string) =>
+      name === teamId ? { id: 7, name } : undefined
+    );
 
     const response = await request(app).get(`/api/calendar/${teamId}`);
 
     expect(response.status).toBe(200);
+    expect(storage.getCalendarEvents).toHaveBeenCalledWith(7);
     // The route handler adds default values, so we need to check for a match
     expect(response.body[0].title).toBe(events[0].title);
     expect(response.body.length).toBe(2);
