@@ -638,14 +638,11 @@ export class DBStorage {
         .replace(/[:&|!()]/g, ' ')
         .replace(/\s+/g, ' ');
 
-    // Build select with optional rank column
-    const selectColumns: any = { ...wikiPages };
-    if (useFts && hasQuery && params.sort === 'rank') {
-      const q = sanitizeQuery(params.query!);
-      selectColumns.rank = sql<number>`ts_rank(search_vector, plainto_tsquery('simple', ${q}))`;
-    }
+    // The full-text query, with the search text as a bound parameter.
+    const tsQuery =
+      useFts && hasQuery ? sql`plainto_tsquery('simple', ${sanitizeQuery(params.query!)})` : null;
 
-    const query = this.db.select(selectColumns).from(wikiPages);
+    const query = this.db.select({ ...wikiPages }).from(wikiPages);
     const countQuery = this.db.select({ count: sql`count(*)` }).from(wikiPages);
 
     const conditions = [];
@@ -654,9 +651,8 @@ export class DBStorage {
     conditions.push(isNull(wikiPages.deletedAt));
 
     if (hasQuery) {
-      if (useFts) {
-        const q = sanitizeQuery(params.query!);
-        conditions.push(sql`search_vector @@ plainto_tsquery('simple', ${q})`);
+      if (tsQuery) {
+        conditions.push(sql`search_vector @@ ${tsQuery}`);
       } else {
         // Fallback to LIKE search on title and content
         conditions.push(
@@ -696,12 +692,13 @@ export class DBStorage {
     const total = Number(totalResult[0].count);
 
     // Apply ordering and pagination
-    if (useFts && hasQuery && params.sort === 'rank') {
-      // Rank by relevance (ts_rank) when using FTS - already in SELECT
+    if (tsQuery && params.sort === 'rank') {
+      // Relevance first, newest first among equals (#131). The rank is an ORDER BY expression
+      // only: it is not selected, so rows keep the shape of the other sorts.
       query
         .limit(params.limit || 20)
         .offset(params.offset || 0)
-        .orderBy(sql`rank DESC`);
+        .orderBy(desc(sql`ts_rank(search_vector, ${tsQuery})`), desc(wikiPages.updatedAt));
     } else {
       // Default: order by update time
       query
@@ -1259,11 +1256,18 @@ export class DBStorage {
       .limit(Math.min(Math.max(limit, 1), 50));
   }
 
-  async getFolders(): Promise<string[]> {
+  /**
+   * Folder names the caller may see (#130), sorted by name: folders holding at least one live page
+   * the caller may list, the rule of `getReadableWikiPagesByFolder`. A folder holding only other
+   * teams' pages, pages whose explicit permissions deny the caller, or trashed pages is left out.
+   */
+  async getReadableFolders(userId: number): Promise<string[]> {
+    const viewer = await this.getPageViewer(userId);
     const result = await this.db
       .selectDistinct({ folder: wikiPages.folder })
       .from(wikiPages)
-      .where(isNull(wikiPages.deletedAt));
+      .where(and(isNull(wikiPages.deletedAt), this.listableBy(viewer)))
+      .orderBy(asc(wikiPages.folder));
     return result.map((r: { folder: string }) => r.folder);
   }
 
