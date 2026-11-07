@@ -118,6 +118,18 @@ describe('page_embed blocks and Markdown', () => {
     ]);
   });
 
+  it('reads a hard break that ends an embed line, or the line before it, as a line break', () => {
+    const blocks = markdownToBlocks('Intro\\\n![[page:5]]\\\nOutro  \n![[page:6]]  \nEnd\\');
+    expect(blocks.map((b) => [b.type, b.content, b.properties])).toEqual([
+      ['paragraph', 'Intro', {}],
+      ['page_embed', '', { pageId: 5 }],
+      ['paragraph', 'Outro  ', {}],
+      ['page_embed', '', { pageId: 6 }],
+      // A backslash ending the paragraph is text, kept as written.
+      ['paragraph', 'End\\', {}],
+    ]);
+  });
+
   it('leaves embed tokens that are not alone on a top-level line as text', () => {
     const cases: Array<[string, string, string]> = [
       ['see ![[page:5]] here', 'paragraph', 'see ![[page:5]] here'],
@@ -186,6 +198,18 @@ describe('reader rendering of embeds', () => {
       'a\n![[page:1]]\n![[page:2]]\n---',
       '![[page:1]]\nb\n---',
       '![[page:1]] ![[page:2]]',
+      // Hard breaks (two spaces or a backslash) end an embed line like any line break.
+      '![[page:1]]  \ntext',
+      'a\n![[page:1]]  \nb',
+      '![[page:1]]\t\t\ntext',
+      '![[page:1]]  ',
+      '![[page:1]]\\\ntext',
+      'a\n![[page:1]]\\\nb',
+      // A backslash ending a paragraph is text, and an escaped one is not a break.
+      '![[page:1]]\\',
+      'a\n![[page:1]]\\',
+      '![[page:1]]\\\\\ntext',
+      'a\\\n![[page:1]]\nb',
     ];
     for (const markdown of inputs) {
       const fromBlocks = markdownToBlocks(markdown)
@@ -194,6 +218,16 @@ describe('reader rendering of embeds', () => {
       const html = await markdownToHtml(markdown);
       const fromReader = Array.from(html.matchAll(/data-page-embed="(\d+)"/g), (m) => Number(m[1]));
       expect(fromReader, markdown).toEqual(fromBlocks);
+    }
+  });
+
+  it('shows an embed line that ends in a hard break as the embed, not as a link', async () => {
+    for (const markdown of ['![[page:12]]  \nOutro', 'Intro\n![[page:12]]\\\nOutro']) {
+      const html = await markdownToHtml(markdown);
+      expect(html, markdown).toContain('<div data-page-embed="12" class="page-embed"></div>');
+      expect(html, markdown).not.toContain('data-page-link');
+      expect(html, markdown).not.toContain('<br>');
+      expect(html, markdown).toContain('<p>Outro</p>');
     }
   });
 

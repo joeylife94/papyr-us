@@ -71,10 +71,19 @@ function paragraphLines(children: readonly ElementContent[]): ElementContent[][]
   return lines;
 }
 
-/** The page id when a line is only an embed token (in one or more text nodes), else null. */
+const isHardBreak = (node: ElementContent) => node.type === 'element' && node.tagName === 'br';
+
+/**
+ * The page id when a line is only an embed token (in one or more text nodes), else null. A hard
+ * break ending the line (two spaces or a backslash before the line break) is only a line break,
+ * as the block editor reads it (shared/block-markdown.ts).
+ */
 function embedLineId(line: readonly ElementContent[]): number | null {
-  if (line.length === 0 || line.some((node) => node.type !== 'text')) return null;
-  return embedTokenPageId(line.map((node) => (node.type === 'text' ? node.value : '')).join(''));
+  let end = line.length;
+  while (end > 0 && isHardBreak(line[end - 1])) end--;
+  const content = line.slice(0, end);
+  if (content.length === 0 || content.some((node) => node.type !== 'text')) return null;
+  return embedTokenPageId(content.map((node) => (node.type === 'text' ? node.value : '')).join(''));
 }
 
 /** A paragraph holding `lines` (joined by line breaks), or null when they hold nothing. */

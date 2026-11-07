@@ -257,7 +257,8 @@ const indentOf = (line: string) => line.length - line.trimStart().length;
  * A paragraph's lines as blocks: each line holding only an embed token becomes a `page_embed`
  * block (#135) and the text around it paragraphs, as the reader splits it. Continuation lines
  * count whatever their indentation (Markdown drops it); the first line only with up to three
- * spaces (four make it code).
+ * spaces (four make it code). A hard break ending the line is only a line break: trailing spaces
+ * (always allowed), or a backslash on any line but the paragraph's last (where it is text).
  */
 function paragraphBlocks(lines: readonly string[]): ParsedBlock[] {
   const blocks: ParsedBlock[] = [];
@@ -267,13 +268,21 @@ function paragraphBlocks(lines: readonly string[]): ParsedBlock[] {
     run = [];
   };
   lines.forEach((line, index) => {
-    const id = embedLinePageId(line, { continuation: index > 0 });
+    // A line ending in one backslash (not an escaped one) before another line: a hard break.
+    const unbroken =
+      index < lines.length - 1 && /(?:^|[^\\])\\$/.test(line) ? line.slice(0, -1) : line;
+    const id = embedLinePageId(unbroken, { continuation: index > 0 });
     if (id === null) {
       run.push(line);
-    } else {
-      flush();
-      blocks.push({ type: 'page_embed', content: '', properties: { pageId: id } });
+      return;
     }
+    // The break before the embed ends that paragraph now; as its last line it would be text.
+    if (run.length > 0) {
+      const last = run[run.length - 1];
+      if (/(?:^|[^\\])\\$/.test(last)) run[run.length - 1] = last.slice(0, -1);
+    }
+    flush();
+    blocks.push({ type: 'page_embed', content: '', properties: { pageId: id } });
   });
   flush();
   return blocks;
