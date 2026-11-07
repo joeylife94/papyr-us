@@ -10,6 +10,7 @@ describe('invalidatePageLists', () => {
       '/api/page-tree?scope=personal',
       '/api/folders/docs/pages',
       '/api/pages/7/link-preview',
+      '/api/pages/7/embed',
       '/api/pages/7/backlinks',
       '/api/page-links/search?q=plan',
     ];

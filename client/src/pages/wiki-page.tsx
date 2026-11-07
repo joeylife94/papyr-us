@@ -24,6 +24,7 @@ import { BlockEditor } from '@/components/blocks/block-editor';
 import { PageReaderBody } from '@/components/database/page-reader-body';
 import { PageProperties, PageTitle, SaveStatus } from '@/components/page/page-editor-parts';
 import { PageIcon, PageIconPicker } from '@/components/page/page-icon';
+import { AddPageCoverButton, EditablePageCover, PageCover } from '@/components/page/page-cover';
 import { Backlinks } from '@/components/page/page-links';
 import { PageTagLinks } from '@/components/page/page-tag-links';
 import { apiRequest, invalidatePageLists } from '@/lib/queryClient';
@@ -34,7 +35,12 @@ import { jsonEqual } from '@shared/json-equal';
 import { formatDistanceToNow } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { Share, User, Clock, Calendar, AlertTriangle, Sparkles, Trash2 } from 'lucide-react';
-import type { Block, WikiPage } from '@shared/schema';
+import {
+  readPageCover,
+  type Block,
+  type PageCover as PageCoverValue,
+  type WikiPage,
+} from '@shared/schema';
 
 /** The server's reason for a refused delete (`403: {"message": …}`), or a generic one. */
 function deleteFailureReason(error: unknown): string {
@@ -401,6 +407,7 @@ function ReadOnlyPageBody({ page, actions, breadcrumb }: BodyProps) {
     <>
       {breadcrumb(page.title, page.icon)}
       <header className="mb-8 space-y-4 border-b border-border pb-6">
+        <PageCover cover={readPageCover(page.metadata)} />
         {page.icon && <PageIcon icon={page.icon} className="block text-[44px]" />}
         <PageTitle initialTitle={page.title} editable={false} />
         <PageMeta page={page} content={page.content} />
@@ -448,6 +455,7 @@ function EditablePageBody({
   const [folder, setFolder] = useState(page.folder);
   const [tagsText, setTagsText] = useState(page.tags.join(', '));
   const [icon, setIcon] = useState<string | null>(page.icon ?? null);
+  const [cover, setCover] = useState<PageCoverValue | null>(() => readPageCover(page.metadata));
   const { data: folders = [] } = useQuery<string[]>({ queryKey: ['/api/folders'] });
 
   const { status, queue, flush, reset } = usePageAutosave(page.id, {
@@ -475,6 +483,7 @@ function EditablePageBody({
     setFolder(page.folder);
     setTagsText(page.tags.join(', '));
     setIcon(page.icon ?? null);
+    setCover(readPageCover(page.metadata));
     // Only when the token changes; `page` is the refetched page by then.
   }, [reloadToken]);
 
@@ -489,6 +498,12 @@ function EditablePageBody({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [flush]);
 
+  // Page cover (issue #134): saved like the icon, through autosave.
+  const changeCover = (next: PageCoverValue | null) => {
+    setCover(next);
+    queue({ cover: next });
+  };
+
   const focusFirstBlock = () => {
     document.querySelector<HTMLTextAreaElement>('[data-page-body] textarea')?.focus();
   };
@@ -500,13 +515,19 @@ function EditablePageBody({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <SaveStatus status={status} />
         </div>
-        <PageIconPicker
-          icon={icon}
-          onChange={(next) => {
-            setIcon(next);
-            queue({ icon: next });
-          }}
-        />
+        {cover && (
+          <EditablePageCover cover={cover} teamId={page.teamId ?? null} onChange={changeCover} />
+        )}
+        <div className="flex flex-wrap items-end gap-1">
+          <PageIconPicker
+            icon={icon}
+            onChange={(next) => {
+              setIcon(next);
+              queue({ icon: next });
+            }}
+          />
+          {!cover && <AddPageCoverButton teamId={page.teamId ?? null} onChange={changeCover} />}
+        </div>
         <PageTitle
           key={reloadToken}
           initialTitle={page.title}

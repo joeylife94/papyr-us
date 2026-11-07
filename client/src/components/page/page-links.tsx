@@ -12,18 +12,20 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { PageIcon } from '@/components/page/page-icon';
+import { PageLinkCard, type PageLinkCardPage } from '@/components/page/page-link-card';
 import { cn } from '@/lib/utils';
 import { splitPageLinks } from '@shared/page-links';
 
-type LinkPreview =
-  | { id: number; accessible: true; title: string; slug: string; icon: string | null }
-  | { id: number; accessible: false };
+type LinkPreview = ({ accessible: true } & PageLinkCardPage) | { id: number; accessible: false };
 
 /**
  * One `[[page:<id>]]` link (issue #103 E6): the target's current icon and title, or
  * "접근할 수 없는 페이지" when it is deleted or the viewer cannot read it (no title is shown).
  * `focusable={false}` (editor previews, #113) keeps the link out of the tab order and keeps focus
  * where it is when the link is pressed; a click still opens the page.
+ * A readable link shows its preview card on hover or keyboard focus (issue #133, `PageLinkCard`);
+ * an inaccessible one has none. Both come from the same cached link preview query, which page
+ * saves refresh (`invalidatePageLists`).
  */
 export function PageLinkChip({
   pageId,
@@ -61,22 +63,24 @@ export function PageLinkChip({
     );
   }
   return (
-    <Link
-      to={`/page/${data.slug}`}
-      onClick={(event) => event.stopPropagation()}
-      tabIndex={focusable ? undefined : -1}
-      onMouseDown={focusable ? undefined : (event) => event.preventDefault()}
-      data-page-link-state="ok"
-      data-page-link-target={data.id}
-      className={cn(
-        base,
-        'font-medium text-highlight underline-offset-2 hover:bg-highlight/10 hover:underline',
-        className
-      )}
-    >
-      <PageIcon icon={data.icon} className="self-center text-[0.95em]" />
-      <span className="truncate">{data.title}</span>
-    </Link>
+    <PageLinkCard page={data} focusable={focusable}>
+      <Link
+        to={`/page/${data.slug}`}
+        onClick={(event) => event.stopPropagation()}
+        tabIndex={focusable ? undefined : -1}
+        onMouseDown={focusable ? undefined : (event) => event.preventDefault()}
+        data-page-link-state="ok"
+        data-page-link-target={data.id}
+        className={cn(
+          base,
+          'font-medium text-highlight underline-offset-2 hover:bg-highlight/10 hover:underline',
+          className
+        )}
+      >
+        <PageIcon icon={data.icon} className="self-center text-[0.95em]" />
+        <span className="truncate">{data.title}</span>
+      </Link>
+    </PageLinkCard>
   );
 }
 
@@ -96,15 +100,25 @@ export function TextWithPageLinks({ text }: { text: string }) {
 }
 
 /**
+ * The placeholders matching `selector` in the HTML a markdown renderer put in `root`, without
+ * those of documents nested in it (an embedded page, #135, renders its own).
+ */
+export function slotsOf(root: HTMLElement | null, selector: string): Element[] {
+  if (!root) return [];
+  return Array.from(root.querySelectorAll(selector)).filter(
+    (element) => element.closest('[data-markdown-root]') === root
+  );
+}
+
+/**
  * Chips for the `span[data-page-link]` placeholders that the markdown renderer leaves in its
  * HTML (lib/markdown.ts), rendered into them through portals.
  */
 export function PageLinkPortals({ root, html }: { root: HTMLElement | null; html: string }) {
   const [slots, setSlots] = useState<Array<{ element: Element; pageId: number }>>([]);
   useEffect(() => {
-    if (!root) return setSlots([]);
     setSlots(
-      Array.from(root.querySelectorAll('span[data-page-link]')).map((element) => ({
+      slotsOf(root, 'span[data-page-link]').map((element) => ({
         element,
         pageId: Number(element.getAttribute('data-page-link')),
       }))
@@ -168,6 +182,8 @@ export function Backlinks({ pageId }: { pageId: number }) {
 interface PickerProps {
   /** Where to show the picker (the text area being typed in). */
   anchor: { top: number; left: number };
+  /** What picking does: link the page (default) or embed it (`![[`, "/페이지 임베드", #135). */
+  mode?: 'link' | 'embed';
   /** Team of the page being edited; personal pages search personal pages. */
   teamId?: number | null;
   /** The source page itself, left out of the results. */
@@ -178,9 +194,17 @@ interface PickerProps {
 
 /**
  * The link picker opened by typing `@` or `[[` (issue #103 E6): a combobox over readable pages
- * of the current workspace, searched by title. Arrows move, Enter links, Esc closes.
+ * of the current workspace, searched by title. Arrows move, Enter links, Esc closes. In embed
+ * mode (#135) it picks the page to embed.
  */
-export function PageLinkPicker({ anchor, teamId, excludeId, onSelect, onClose }: PickerProps) {
+export function PageLinkPicker({
+  anchor,
+  mode = 'link',
+  teamId,
+  excludeId,
+  onSelect,
+  onClose,
+}: PickerProps) {
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
   useEffect(() => {
@@ -208,7 +232,11 @@ export function PageLinkPicker({ anchor, teamId, excludeId, onSelect, onClose }:
         }
       }}
     >
-      <Command label="링크할 문서 선택" shouldFilter={false} loop>
+      <Command
+        label={mode === 'embed' ? '임베드할 문서 선택' : '링크할 문서 선택'}
+        shouldFilter={false}
+        loop
+      >
         <CommandInput
           autoFocus
           value={query}
@@ -228,7 +256,7 @@ export function PageLinkPicker({ anchor, teamId, excludeId, onSelect, onClose }:
             <CommandEmpty>일치하는 문서가 없습니다</CommandEmpty>
           )}
           {options.length > 0 && (
-            <CommandGroup heading="문서 링크">
+            <CommandGroup heading={mode === 'embed' ? '페이지 임베드' : '문서 링크'}>
               {options.map((page) => (
                 <CommandItem
                   key={page.id}

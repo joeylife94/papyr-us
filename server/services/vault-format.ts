@@ -3,14 +3,21 @@
  * no database: file names, YAML frontmatter, and the link syntax at the boundary.
  *
  * Inside Papyr.us a link is an id token (`[[page:<id>]]`); in a vault it is an Obsidian
- * wikilink to a file name (`[[Name]]`, or `[[folder/Name]]` when names repeat). Code keeps its
+ * wikilink to a file name (`[[Name]]`, or `[[folder/Name]]` when names repeat). An embed (#135)
+ * is the same with a `!` in front on both sides (`![[page:<id>]]`, `![[Name]]`). Code keeps its
  * text unchanged in both directions, like the reader does (fenced blocks and inline code spans).
  *
  * The frontmatter parser reads a small, safe YAML subset: `key: value` lines with plain, single-
  * or double-quoted scalars, `[a, b]` flow lists and `- item` block lists. Anything else is
  * skipped. It never evaluates tags, anchors, aliases or other YAML features.
  */
-import { PAGE_LINK_PATTERN, isPageId } from '../../shared/page-links.js';
+import { isPageId } from '../../shared/page-links.js';
+import {
+  PAGE_COVER_DEFAULT_OFFSET_Y,
+  PAGE_COVER_PRESET_IDS,
+  pageCoverSchema,
+  type PageCover,
+} from '../../shared/schema.js';
 
 /** Shown instead of a link whose target the exporting viewer cannot read (never its title). */
 export const INACCESSIBLE_PAGE_LABEL = '접근할 수 없는 페이지';
@@ -252,6 +259,47 @@ export function parseFrontmatter(text: string): {
   return { data: fields, body };
 }
 
+// ---- Page cover (issue #134) ----
+
+/**
+ * The frontmatter of a cover: `cover` is the preset id or the image path, and an image adds its
+ * vertical position as `cover_offset_y` (0–100).
+ */
+export function coverFrontmatter(cover: PageCover | null): Array<[string, FrontmatterValue]> {
+  if (!cover) return [];
+  if (cover.type === 'preset') return [['cover', cover.id]];
+  return [
+    ['cover', cover.path],
+    ['cover_offset_y', String(cover.offsetY)],
+  ];
+}
+
+/**
+ * The cover named by frontmatter: a preset id, or the path of an image uploaded to this instance
+ * (P3-D1). Anything else, such as an external URL or a vault attachment, is `dropped`; no cover
+ * key at all is not.
+ */
+export function coverFromFrontmatter(
+  value: FrontmatterValue | undefined,
+  offsetY: FrontmatterValue | undefined
+): { cover: PageCover | null; dropped: boolean } {
+  if (value === undefined) return { cover: null, dropped: false };
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (Array.isArray(value) ? value.length === 0 : !text) return { cover: null, dropped: false };
+  const candidate = (PAGE_COVER_PRESET_IDS as readonly string[]).includes(text)
+    ? { type: 'preset', id: text }
+    : {
+        type: 'image',
+        path: text,
+        offsetY:
+          typeof offsetY === 'string' && /^\d{1,3}$/.test(offsetY.trim())
+            ? Math.min(Number(offsetY.trim()), 100)
+            : PAGE_COVER_DEFAULT_OFFSET_Y,
+      };
+  const parsed = pageCoverSchema.safeParse(candidate);
+  return parsed.success ? { cover: parsed.data, dropped: false } : { cover: null, dropped: true };
+}
+
 const MAX_TAGS = 50;
 const MAX_TAG_LENGTH = 100;
 
@@ -381,16 +429,25 @@ function mapOutsideInlineCode(text: string, transform: (prose: string) => string
 
 // ---- Links at the boundary ----
 
-/** `text` with every page link token outside code replaced by `render(pageId)`. */
-export function renderPageLinkTokens(text: string, render: (pageId: number) => string): string {
+// A link token, or an embed token when group 1 holds its `!`; group 2 is the id.
+const LINK_OR_EMBED_TOKEN = /(!?)\[\[page:(\d{1,10})\]\]/g;
+
+/**
+ * `text` with every page link token outside code replaced by `render(pageId, embed)`. An embed
+ * token (`![[page:<id>]]`, #135) is replaced as a whole, its `!` included, with `embed` true.
+ */
+export function renderPageLinkTokens(
+  text: string,
+  render: (pageId: number, embed: boolean) => string
+): string {
   return mapOutsideCode(text, (prose) =>
-    prose.replace(new RegExp(PAGE_LINK_PATTERN.source, 'g'), (_token, id: string) =>
-      render(Number(id))
+    prose.replace(LINK_OR_EMBED_TOKEN, (_token, bang: string, id: string) =>
+      render(Number(id), bang === '!')
     )
   );
 }
 
-/** The valid page ids of link tokens outside code, in first-appearance order. */
+/** The valid page ids of link and embed tokens outside code, in first-appearance order. */
 export function pageLinkTokenIds(text: string): number[] {
   const ids: number[] = [];
   const seen = new Set<number>();
@@ -446,14 +503,20 @@ export function wikiLinkTarget(name: string): string {
 }
 
 /**
- * `text` with every wikilink outside code replaced by `replace(link)`. Embeds (`![[...]]`) are
- * left as written: transclusion is not supported yet.
+ * `text` with every wikilink outside code replaced by `replace(link)`, and every embed
+ * (`![[...]]`, #135) by `replaceEmbed(link, written)` (`written` is the embed as it appears).
+ * Without `replaceEmbed`, embeds are left as written.
  */
-export function replaceWikiLinks(text: string, replace: (link: WikiLink) => string): string {
+export function replaceWikiLinks(
+  text: string,
+  replace: (link: WikiLink) => string,
+  replaceEmbed?: (link: WikiLink, written: string) => string
+): string {
   return mapOutsideCode(text, (prose) =>
-    prose.replace(WIKI_LINK, (whole, bang: string, inner: string) =>
-      bang ? whole : replace(parseWikiLink(inner))
-    )
+    prose.replace(WIKI_LINK, (whole, bang: string, inner: string) => {
+      if (!bang) return replace(parseWikiLink(inner));
+      return replaceEmbed ? replaceEmbed(parseWikiLink(inner), whole) : whole;
+    })
   );
 }
 

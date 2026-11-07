@@ -4,6 +4,7 @@ import { markdownToHtml, plainTextFallbackHtml } from '@/lib/markdown';
 import { INLINE_TAG_ATTRIBUTE } from '@/lib/rehype-inline-tags';
 import { useTagScopePath } from '@/hooks/useTagScopePath';
 import { PageLinkPortals } from '@/components/page/page-links';
+import { PageEmbedPortals } from '@/components/page/page-embed';
 
 interface MarkdownRendererProps {
   content: string;
@@ -12,6 +13,8 @@ interface MarkdownRendererProps {
   takenHeadingIds?: readonly string[];
   /** Prefix for this part's footnote ids, on a page rendered in parts (see markdownToHtml). */
   footnoteIdPrefix?: string;
+  /** The content of an embedded page (#135): no heading anchors (see markdownToHtml). */
+  embedded?: boolean;
 }
 
 export function MarkdownRenderer({
@@ -19,6 +22,7 @@ export function MarkdownRenderer({
   className = '',
   takenHeadingIds,
   footnoteIdPrefix,
+  embedded = false,
 }: MarkdownRendererProps) {
   const [html, setHtml] = useState('');
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
@@ -36,6 +40,7 @@ export function MarkdownRenderer({
       takenHeadingIds: takenKey ? takenKey.split('\n') : [],
       footnoteIdPrefix,
       tagScopePath,
+      embedded,
     })
       .then((htmlContent) => {
         if (!isCancelled) {
@@ -53,7 +58,7 @@ export function MarkdownRenderer({
     return () => {
       isCancelled = true;
     };
-  }, [content, takenKey, footnoteIdPrefix, tagScopePath]);
+  }, [content, takenKey, footnoteIdPrefix, tagScopePath, embedded]);
 
   // `#tag` links (#113) are plain anchors in the HTML; open them in the app, not by a reload.
   useEffect(() => {
@@ -90,11 +95,14 @@ export function MarkdownRenderer({
     <>
       <div
         ref={setRoot}
+        data-markdown-root=""
         className={`prose prose-slate dark:prose-invert max-w-none ${className}`}
         dangerouslySetInnerHTML={{ __html: html }}
       />
-      {/* Page links (issue #103 E6) render as chips inside their placeholders. */}
+      {/* Page links (issue #103 E6) render as chips inside their placeholders, embeds (#135)
+          as the embedded page. */}
       <PageLinkPortals root={root} html={html} />
+      <PageEmbedPortals root={root} html={html} />
     </>
   );
 }
