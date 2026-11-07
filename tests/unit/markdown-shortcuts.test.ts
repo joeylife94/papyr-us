@@ -19,6 +19,7 @@ describe('matchMarkdownShortcut', () => {
     ['[ ]', ' ', 'checkbox', '[ ] '],
     ['>', ' ', 'quote', '> '],
     ['``', '`', 'code', '```'],
+    ['--', '-', 'divider', '---'],
   ])('converts "%s" + "%s" to %s', (previous, char, blockType, prefix) => {
     expect(type(previous, char)).toEqual({ type: blockType, prefix, content: '' });
   });
@@ -36,6 +37,18 @@ describe('matchMarkdownShortcut', () => {
       prefix: '- ',
       content: '\n두 줄',
     });
+  });
+
+  it('converts `---` to a divider only in an otherwise empty paragraph (#113)', () => {
+    // A divider has no text, so text after the caret keeps the paragraph as it is.
+    expect(type('--', '-')).toEqual({ type: 'divider', prefix: '---', content: '' });
+    expect(type('--text', '-', 2)).toBeNull();
+    expect(type('-- ', '-', 2)).toBeNull();
+    expect(type('--\nmore', '-', 2)).toBeNull();
+    expect(type('a--', '-')).toBeNull();
+    expect(type('---', '-')).toBeNull();
+    // Pasting the whole rule is not typing it.
+    expect(matchMarkdownShortcut('', '---', 3)).toBeNull();
   });
 
   it('does not convert a prefix that is not at the very start of the block', () => {
@@ -64,7 +77,7 @@ describe('matchMarkdownShortcut', () => {
   it('ignores text that is not a shortcut', () => {
     expect(type('', ' ')).toBeNull();
     expect(type('#', '#')).toBeNull();
-    expect(type('--', '-')).toBeNull();
+    expect(type('-', '-')).toBeNull();
     expect(type('2.', ' ')).toBeNull();
     expect(type('[x]', ' ')).toBeNull();
     expect(type('`', '`')).toBeNull();

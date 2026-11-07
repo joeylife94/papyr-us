@@ -20,6 +20,7 @@ import { SearchBar } from '@/components/wiki/search-bar';
 import { useToast } from '@/hooks/use-toast';
 import { useFeatureFlags } from '@/features/FeatureFlagsContext';
 import { DailyNoteButton } from '@/components/daily-note-button';
+import { VaultMenu } from '@/components/vault/vault-menu';
 import { useShellNav } from './shell-nav';
 import { PageTree } from './page-tree';
 import { resolvePageTeamId } from '@/lib/page-team-scope';
@@ -170,6 +171,13 @@ export function WorkspacePanel({
             </div>
           )}
           <DailyNoteButton onNavigate={onNavigate} />
+          {/* Markdown vault export and import of the tree's workspace (#113 P2-D2). */}
+          {treeUrl && (
+            <VaultMenu
+              teamId={workspaceTeamId === '' ? null : workspaceTeamId}
+              scopeLabel={workspace ? workspace.displayName : '내 문서'}
+            />
+          )}
         </div>
       )}
 

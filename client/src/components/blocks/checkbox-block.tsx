@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Block, BlockType } from '@shared/schema';
 import { Trash2, CheckSquare, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useInlinePreview } from '@/components/page/inline-preview';
 
 interface CheckboxBlockProps {
   block: Block;
@@ -25,6 +26,14 @@ export function CheckboxBlock({
   const [content, setContent] = useState(block.content);
   const [isChecked, setIsChecked] = useState(block.properties?.checked || false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const checkedText = isChecked ? 'text-muted-foreground line-through' : 'text-foreground';
+  // Inline Markdown, links and #tags render while the item is not focused (#113 §2).
+  const preview = useInlinePreview({
+    content,
+    isFocused,
+    textareaRef,
+    className: `flex-1 py-0.5 text-base leading-relaxed ${checkedText}`,
+  });
 
   // 포커스 시 자동 높이 조정
   useEffect(() => {
@@ -104,11 +113,11 @@ export function CheckboxBlock({
           onFocus={onFocus}
           onBlur={onBlur}
           placeholder="할 일을 입력하세요..."
-          className={`flex-1 resize-none border-none outline-none bg-transparent pl-0 py-0.5 text-base placeholder:text-muted-foreground leading-relaxed ${
-            isChecked ? 'text-muted-foreground line-through' : 'text-foreground'
-          }`}
+          className={`flex-1 resize-none border-none outline-none bg-transparent pl-0 py-0.5 text-base placeholder:text-muted-foreground leading-relaxed ${checkedText}`}
           rows={1}
+          style={preview.textareaStyle}
         />
+        {preview.element}
 
         {/* 액션 버튼들 */}
         {isFocused && (

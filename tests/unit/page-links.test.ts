@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   extractPageLinkIds,
   hasPageLinks,
+  isPageId,
   MAX_INDEXED_LINKS,
+  MAX_PAGE_ID,
   pageLinkToken,
   splitPageLinks,
 } from '../../shared/page-links';
@@ -21,6 +23,16 @@ describe('page link tokens', () => {
       expect(hasPageLinks(text), text).toBe(text === '[[page:0]]');
     }
     expect(extractPageLinkIds(null)).toEqual([]);
+  });
+
+  it('drops ids beyond the page id column, keeping the valid ones', () => {
+    expect(isPageId(MAX_PAGE_ID)).toBe(true);
+    for (const id of [0, -1, 1.5, MAX_PAGE_ID + 1, 9_999_999_999, Number.NaN]) {
+      expect(isPageId(id), String(id)).toBe(false);
+    }
+    expect(
+      extractPageLinkIds(`[[page:9999999999]] [[page:2147483648]] [[page:${MAX_PAGE_ID}]]`)
+    ).toEqual([MAX_PAGE_ID]);
   });
 
   it('caps how many links are indexed for one page', () => {

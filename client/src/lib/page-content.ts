@@ -1,16 +1,22 @@
 import type { Block } from '@shared/schema';
-import { blocksToMarkdown } from '@shared/page-content';
+// Relative import: unit tests load this module without the Vite aliases.
+import { blocksToMarkdown, markdownToBlocks } from '../../../shared/block-markdown';
 
 /**
- * The Markdown page content for a block list (shared/page-content.ts). The server derives
- * `content` the same way on save (server/services/page-save.ts); the client uses it for a new
- * page's first save and for the live table of contents and reading time while editing.
+ * The Markdown page content for a block list (#113 §1, shared/block-markdown.ts). The server
+ * derives `content` with the same function on save (server/services/page-save.ts); the client
+ * uses it for a new page's first save and for the live table of contents and reading time while
+ * editing.
  */
 export function blocksToContent(blocks: Block[]): string {
   return blocksToMarkdown(blocks);
 }
 
-/** Blocks for a page, seeding one paragraph from `content` when it has none (API/template pages). */
+/**
+ * Blocks for a page. A page saved without blocks (API, template, import) opens as the blocks its
+ * Markdown content describes (#113 §1); the ids match the collaboration server's seed for the
+ * page (server/services/yjs-collaboration.ts). A page without content opens empty.
+ */
 export function initialBlocksFor(page: {
   id?: number;
   blocks?: unknown;
@@ -18,16 +24,9 @@ export function initialBlocksFor(page: {
 }): Block[] {
   if (Array.isArray(page.blocks) && page.blocks.length > 0) return page.blocks as Block[];
   if (page.content) {
-    return [
-      {
-        id: page.id ? `block_seed_${page.id}` : `block_${Date.now()}`,
-        type: 'paragraph',
-        content: page.content,
-        properties: {},
-        order: 0,
-        children: [],
-      } as Block,
-    ];
+    return markdownToBlocks(page.content, {
+      idPrefix: page.id ? `block_seed_${page.id}` : `block_${Date.now()}`,
+    });
   }
   return [];
 }

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Quote, Trash2, Edit3, Check, X } from 'lucide-react';
+import { useInlinePreview } from '@/components/page/inline-preview';
 
 interface QuoteBlockProps {
   block: any;
@@ -33,6 +34,13 @@ export function QuoteBlock({
   const [editSource, setEditSource] = useState(source || '');
   const [editAuthor, setEditAuthor] = useState(author || '');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Inline Markdown, links and #tags render while the quote is not focused (#113 §2).
+  const preview = useInlinePreview({
+    content,
+    isFocused,
+    textareaRef,
+    className: 'text-base font-medium italic leading-relaxed',
+  });
 
   const adjustHeight = () => {
     if (textareaRef.current) {
@@ -106,7 +114,9 @@ export function QuoteBlock({
             placeholder="인용문을 입력하세요..."
             className="w-full resize-none border-none bg-transparent p-0 text-base font-medium italic leading-relaxed text-foreground outline-none placeholder:text-muted-foreground"
             rows={1}
+            style={preview.textareaStyle}
           />
+          {preview.element}
 
           {isEditing ? (
             <div className="mt-2 space-y-2">

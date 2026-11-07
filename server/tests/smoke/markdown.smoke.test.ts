@@ -17,10 +17,11 @@ describe('smoke: markdown utils', () => {
   it('extractHeadings finds headings with correct levels and ids', () => {
     const md = `# Title One\n\nSome text\n\n## Subtitle Two\n### Third`;
     const headings = extractHeadings(md);
+    // Ids are prefixed (#113 §1) so heading ids from page text never collide with app ids.
     expect(headings.map((h) => ({ level: h.level, id: h.id, text: h.text }))).toEqual([
-      { level: 1, id: 'title-one', text: 'Title One' },
-      { level: 2, id: 'subtitle-two', text: 'Subtitle Two' },
-      { level: 3, id: 'third', text: 'Third' },
+      { level: 1, id: 'heading-title-one', text: 'Title One' },
+      { level: 2, id: 'heading-subtitle-two', text: 'Subtitle Two' },
+      { level: 3, id: 'heading-third', text: 'Third' },
     ]);
   });
 
