@@ -1205,11 +1205,18 @@ export class DBStorage {
       .limit(Math.min(Math.max(limit, 1), 50));
   }
 
-  async getFolders(): Promise<string[]> {
+  /**
+   * Folder names the caller may see (#130), sorted by name: folders holding at least one live page
+   * the caller may list, the rule of `getReadableWikiPagesByFolder`. A folder holding only other
+   * teams' pages, pages whose explicit permissions deny the caller, or trashed pages is left out.
+   */
+  async getReadableFolders(userId: number): Promise<string[]> {
+    const viewer = await this.getPageViewer(userId);
     const result = await this.db
       .selectDistinct({ folder: wikiPages.folder })
       .from(wikiPages)
-      .where(isNull(wikiPages.deletedAt));
+      .where(and(isNull(wikiPages.deletedAt), this.listableBy(viewer)))
+      .orderBy(asc(wikiPages.folder));
     return result.map((r: { folder: string }) => r.folder);
   }
 
