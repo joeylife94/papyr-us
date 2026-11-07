@@ -169,6 +169,7 @@ export const blockTypes = [
   'rollup', // ✨ 집계 필드
   'formula', // ✨ 계산 필드
   'divider', // 구분선 (#113, `---` in the page's Markdown)
+  'page_embed', // 페이지 임베드 (#135): another page shown in place, `![[page:<id>]]`
 ] as const;
 
 export type BlockType = (typeof blockTypes)[number];

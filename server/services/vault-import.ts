@@ -15,8 +15,14 @@
  *   title; exact, then case-insensitive), then among the readable live pages of the scope. A
  *   resolved link becomes an id token, which renders the target's current title, so an alias
  *   (`[[Title|alias]]`) is dropped. An unresolved link becomes its alias or title as plain text.
+ * - Embeds (`![[Title]]`, `![[Title|alias]]`, `![[path/Title]]`, #135) resolve the same way to
+ *   an embed token (`![[page:<id>]]`). An embed of a heading or block (`![[Title#Heading]]`)
+ *   becomes a link to the page: embedding part of a page is not supported. An unresolved embed
+ *   is kept as written (most are attachments such as `![[image.png]]`, which are not imported);
+ *   one that names a note is reported with the unresolved links.
  */
 import { pageLinkToken } from '../../shared/page-links.js';
+import { pageEmbedToken } from '../../shared/page-embeds.js';
 import { pageIconSchema, type PageCover } from '../../shared/schema.js';
 import {
   coverFromFrontmatter,
@@ -218,6 +224,9 @@ export interface ScopePageTitle {
   title: string;
 }
 
+/** A target with a file extension (`.md` is already stripped): an attachment, not a note. */
+const ATTACHMENT_TARGET = /\.[A-Za-z0-9]{1,10}$/;
+
 function setFirst<K, V>(map: Map<K, V>, key: K, value: V) {
   if (!map.has(key)) map.set(key, value);
 }
@@ -296,15 +305,27 @@ export function renderImportedBodies(
   const unresolved: Array<{ path: string; target: string }> = [];
   const contents = plan.pages.map((page) => {
     const missing = new Set<string>();
-    const content = replaceWikiLinks(page.body, (link) => {
-      const id = resolve(link.target);
-      if (id !== null) return pageLinkToken(id);
-      if (link.target && !missing.has(link.target)) {
-        missing.add(link.target);
-        unresolved.push({ path: page.path, target: link.target });
+    const report = (target: string) => {
+      if (target && !missing.has(target)) {
+        missing.add(target);
+        unresolved.push({ path: page.path, target });
       }
-      return wikiLinkText(link);
-    });
+    };
+    const content = replaceWikiLinks(
+      page.body,
+      (link) => {
+        const id = resolve(link.target);
+        if (id !== null) return pageLinkToken(id);
+        report(link.target);
+        return wikiLinkText(link);
+      },
+      (link, written) => {
+        const id = resolve(link.target);
+        if (id !== null) return link.heading ? pageLinkToken(id) : pageEmbedToken(id);
+        if (!ATTACHMENT_TARGET.test(link.target)) report(link.target);
+        return written;
+      }
+    );
     return content;
   });
   return { contents, unresolved };

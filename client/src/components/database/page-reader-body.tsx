@@ -3,13 +3,22 @@ import { markdownParts } from '@/lib/markdown';
 import { blocksToContent } from '@/lib/page-content';
 import { readDatabaseProperties } from '@/lib/inline-database';
 import type { Block } from '@shared/schema';
+import { EmbedScopeProvider } from '@/components/page/page-embed';
+import { SyncedBlock } from '@/components/blocks/synced-block';
 import { InlineDatabase } from './inline-database';
 
-type Segment = { kind: 'markdown'; blocks: Block[] } | { kind: 'database'; block: Block };
+type Segment =
+  | { kind: 'markdown'; blocks: Block[] }
+  | { kind: 'database'; block: Block }
+  | { kind: 'synced'; block: Block };
+
+/** Blocks the reader renders from the blocks themselves: content cannot carry them. */
+const isSegmentBlock = (block: Block | undefined) =>
+  block?.type === 'database_inline' || block?.type === 'synced_block';
 
 /**
- * The page body split around its database blocks, in page order. Runs of other blocks stay one
- * Markdown segment each; a database block without a database yet is left out.
+ * The page body split around its database and synced blocks, in page order. Runs of other
+ * blocks stay one Markdown segment each; a database block without a database yet is left out.
  */
 export function splitDatabaseSegments(blocks: Block[]): Segment[] {
   const segments: Segment[] = [];
@@ -18,6 +27,10 @@ export function splitDatabaseSegments(blocks: Block[]): Segment[] {
       if (readDatabaseProperties(block.properties).schemaId) {
         segments.push({ kind: 'database', block });
       }
+      continue;
+    }
+    if (block?.type === 'synced_block') {
+      segments.push({ kind: 'synced', block });
       continue;
     }
     const last = segments[segments.length - 1];
@@ -32,9 +45,27 @@ export function splitDatabaseSegments(blocks: Block[]): Segment[] {
  * rows, so a page with database blocks renders in place from its blocks: each run of other
  * blocks as Markdown (the same derivation the editor and server use, `blocksToContent`), each
  * database block as the read-only database, which loads its rows with the reader's own access.
- * Pages without database blocks render `content` exactly as before.
+ * Pages without database blocks render `content` exactly as before. Synced blocks (#135) render
+ * the same way: a reference shows its original live with the reader's own access ("접근할 수
+ * 없는 블록" when they may not read it), an original its own content.
+ *
+ * Embeds (`![[page:<id>]]`, #135) in any part share one budget and know this page (cycles).
  */
 export function PageReaderBody({
+  page,
+  className,
+}: {
+  page: { id?: number; content: string; blocks?: unknown };
+  className?: string;
+}) {
+  return (
+    <EmbedScopeProvider pageId={page.id}>
+      <ReaderParts page={page} className={className} />
+    </EmbedScopeProvider>
+  );
+}
+
+function ReaderParts({
   page,
   className,
 }: {
@@ -42,9 +73,7 @@ export function PageReaderBody({
   className?: string;
 }) {
   const blocks = Array.isArray(page.blocks) ? (page.blocks as Block[]) : [];
-  const segments = blocks.some((block) => block?.type === 'database_inline')
-    ? splitDatabaseSegments(blocks)
-    : null;
+  const segments = blocks.some(isSegmentBlock) ? splitDatabaseSegments(blocks) : null;
 
   if (!segments) return <MarkdownRenderer content={page.content} className={className} />;
 
@@ -69,6 +98,24 @@ export function PageReaderBody({
               footnoteIdPrefix={part.footnoteIdPrefix}
             />
           ) : null;
+        }
+        if (segment.kind === 'synced') {
+          const properties = segment.block.properties ?? {};
+          return (
+            <SyncedBlock
+              key={segment.block.id}
+              originalBlockId={
+                typeof properties.originalBlockId === 'string'
+                  ? properties.originalBlockId
+                  : undefined
+              }
+              isOriginal={properties.isOriginal === true}
+              syncedContent={
+                Array.isArray(properties.syncedContent) ? properties.syncedContent : []
+              }
+              readOnly
+            />
+          );
         }
         return (
           <InlineDatabase

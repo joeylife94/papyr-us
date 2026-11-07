@@ -21,6 +21,7 @@ import {
   Heading3,
   Minus,
   Database,
+  FileInput,
 } from 'lucide-react';
 
 export interface SlashCommandItem {
@@ -144,6 +145,22 @@ const SLASH_COMMANDS: SlashCommandItem[] = [
     description: '외부 콘텐츠 (YouTube, Figma 등)',
     icon: <Video className="h-4 w-4" />,
     keywords: ['embed', 'youtube', 'figma', 'iframe', '임베드'],
+  },
+  {
+    // Another page shown in place, read-only and live (#135); opens the page picker.
+    type: 'page_embed',
+    label: '페이지 임베드',
+    description: '다른 문서를 이 자리에 보여줍니다',
+    icon: <FileInput className="h-4 w-4" />,
+    keywords: [
+      'page embed',
+      'embed',
+      'transclusion',
+      'page',
+      '페이지 임베드',
+      '페이지임베드',
+      '임베드',
+    ],
   },
   {
     // An inline database owned by this page (#113 §4).

@@ -14,6 +14,8 @@
  *   after `idleMs` without saves, on an explicit checkpoint (leaving the page), on a manual
  *   save, or before a restore. Workflows for an autosaved session fire when it closes.
  * - A restore snapshots the current state first, so restoring never loses the latest edit.
+ * - A synced block reference stores only its `originalBlockId` (#135): a copy of the original's
+ *   content in its `syncedContent` is dropped (`withoutSyncedCopies`), whoever sent it.
  * - A version is only kept when the save changes the title or body (content derived from blocks,
  *   or blocks) compared with the stored page. A save that changes nothing at all, such as the
  *   editor echoing blocks it has just synced, records no version, opens or extends no session,
@@ -103,6 +105,34 @@ export function derivePageContent(blocks: unknown): string {
   return blocksToMarkdown(blocks);
 }
 
+/**
+ * `blocks` without the copies synced block references used to keep of their original (#135).
+ * A reference shows the original live, fetched with each viewer's own access, so a copy saved
+ * here would show readers of this page content they may not be allowed to read at the source.
+ * Originals (`properties.isOriginal`) keep their own content. Returns `blocks` itself when no
+ * block carries a copy.
+ */
+export function withoutSyncedCopies<T>(blocks: T): T {
+  if (!Array.isArray(blocks)) return blocks;
+  let changed = false;
+  const result = blocks.map((block) => {
+    const properties = block?.properties;
+    if (
+      block?.type !== 'synced_block' ||
+      !properties ||
+      typeof properties !== 'object' ||
+      properties.isOriginal === true ||
+      !('syncedContent' in properties)
+    ) {
+      return block;
+    }
+    changed = true;
+    const { syncedContent: _copy, ...rest } = properties as Record<string, unknown>;
+    return { ...block, properties: rest };
+  });
+  return (changed ? result : blocks) as T;
+}
+
 function touchesBody(update: UpdateWikiPage) {
   return update.content !== undefined || update.blocks !== undefined;
 }
@@ -161,6 +191,7 @@ export async function savePage(
 
   const { cover, ...fields } = update;
   const data: UpdateWikiPage = { ...fields };
+  if (data.blocks !== undefined) data.blocks = withoutSyncedCopies(data.blocks);
   // A cover change rewrites the stored metadata with only that key changed. Like an icon, it is
   // not part of a version (versions keep the title and body).
   if (cover !== undefined) {

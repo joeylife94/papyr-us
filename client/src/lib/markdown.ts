@@ -8,6 +8,7 @@ import matter from 'gray-matter';
 import type { Element, ElementContent, Root, RootContent } from 'hast';
 import type { Root as MdastRoot } from 'mdast';
 import { hasPageLinks, splitPageLinks } from '@shared/page-links';
+import { embedTokenPageId } from '@shared/page-embeds';
 import { blocksToMarkdownWithRanges } from '@shared/block-markdown';
 import { rehypeInlineTags } from './rehype-inline-tags';
 import { rehypeSafeUrls } from './rehype-safe-urls';
@@ -52,6 +53,112 @@ function replacePageLinkTokens(node: Root | Element) {
  */
 function rehypePageLinks() {
   return (tree: Root) => replacePageLinkTokens(tree);
+}
+
+/** A paragraph's inline content split into lines (text nodes split at their line breaks). */
+function paragraphLines(children: readonly ElementContent[]): ElementContent[][] {
+  const lines: ElementContent[][] = [[]];
+  for (const child of children) {
+    if (child.type !== 'text' || !child.value.includes('\n')) {
+      lines[lines.length - 1].push(child);
+      continue;
+    }
+    child.value.split('\n').forEach((part, index) => {
+      if (index > 0) lines.push([]);
+      if (part) lines[lines.length - 1].push({ type: 'text', value: part });
+    });
+  }
+  return lines;
+}
+
+const isHardBreak = (node: ElementContent) => node.type === 'element' && node.tagName === 'br';
+
+/**
+ * The page id when a line is only an embed token (in one or more text nodes), else null. A hard
+ * break ending the line (two spaces or a backslash before the line break) is only a line break,
+ * as the block editor reads it (shared/block-markdown.ts).
+ */
+function embedLineId(line: readonly ElementContent[]): number | null {
+  let end = line.length;
+  while (end > 0 && isHardBreak(line[end - 1])) end--;
+  const content = line.slice(0, end);
+  if (content.length === 0 || content.some((node) => node.type !== 'text')) return null;
+  return embedTokenPageId(content.map((node) => (node.type === 'text' ? node.value : '')).join(''));
+}
+
+/** A paragraph holding `lines` (joined by line breaks), or null when they hold nothing. */
+function paragraphOf(paragraph: Element, lines: ElementContent[][]): Element | null {
+  // A hard break or blank text at either end belonged to the embed line next to it.
+  const isFiller = (node: ElementContent | undefined) =>
+    !!node &&
+    ((node.type === 'element' && node.tagName === 'br') ||
+      (node.type === 'text' && node.value.trim() === ''));
+  const children: ElementContent[] = [];
+  lines.forEach((line, index) => {
+    if (index > 0) children.push({ type: 'text', value: '\n' });
+    for (const node of line) children.push(node);
+  });
+  while (isFiller(children[0])) children.shift();
+  while (isFiller(children[children.length - 1])) children.pop();
+  if (children.length === 0) return null;
+  return { ...paragraph, children, position: undefined };
+}
+
+/** The empty slot MarkdownRenderer fills with the embedded page (`PageEmbed`). */
+function embedSlot(pageId: number): Element {
+  return {
+    type: 'element',
+    tagName: 'div',
+    properties: { dataPageEmbed: String(pageId), className: ['page-embed'] },
+    children: [],
+  };
+}
+
+/**
+ * Page embeds (#135): a line holding only an embed token (`![[page:<id>]]`) in a paragraph of
+ * the document (not in a list, quote or heading, as the block editor reads it) becomes an empty
+ * `<div data-page-embed="<id>">` slot, splitting the paragraph around it. Every other embed
+ * token is left to `rehypePageLinks`, which shows it as a link. Runs after `rehypeInlineTags`
+ * (which reads text positions) and before `rehypePageLinks`.
+ */
+function rehypePageEmbeds() {
+  return (tree: Root) => {
+    const children: RootContent[] = [];
+    for (const child of tree.children) {
+      if (child.type !== 'element' || child.tagName !== 'p') {
+        children.push(child);
+        continue;
+      }
+      const lines = paragraphLines(child.children);
+      const ids = lines.map(embedLineId);
+      if (ids.every((id) => id === null)) {
+        children.push(child);
+        continue;
+      }
+      const pieces: Element[] = [];
+      let run: ElementContent[][] = [];
+      const flush = () => {
+        const paragraph = run.length > 0 ? paragraphOf(child, run) : null;
+        if (paragraph) pieces.push(paragraph);
+        run = [];
+      };
+      lines.forEach((line, index) => {
+        const id = ids[index];
+        if (id === null) {
+          run.push(line);
+        } else {
+          flush();
+          pieces.push(embedSlot(id));
+        }
+      });
+      flush();
+      pieces.forEach((piece, index) => {
+        if (index > 0) children.push({ type: 'text', value: '\n' });
+        children.push(piece);
+      });
+    }
+    tree.children = children;
+  };
 }
 
 /**
@@ -101,9 +208,16 @@ function rehypeFootnoteLabelId(options: { id?: string }) {
 // `javascript:` link would otherwise run in the reader).
 // When a page renders in parts (see `markdownParts`): `takenHeadingIds` are the ids of headings
 // earlier in the page, `footnoteIdPrefix` keeps this part's footnote ids apart from the others'.
+// A line holding only an embed token becomes an embed slot (#135). An `embedded` document (the
+// content of an embedded page) gives its headings no ids: the table of contents and the
+// embedding page's own anchors never point into it.
 export async function markdownToHtml(
   markdown: string,
-  options: { takenHeadingIds?: readonly string[]; footnoteIdPrefix?: string } = {}
+  options: {
+    takenHeadingIds?: readonly string[];
+    footnoteIdPrefix?: string;
+    embedded?: boolean;
+  } = {}
 ): Promise<string> {
   // The default prefix without `footnoteIdPrefix`, so whole pages render as they always have.
   const footnoteIds = `user-content-${options.footnoteIdPrefix ?? ''}`;
@@ -114,8 +228,9 @@ export async function markdownToHtml(
       id: options.footnoteIdPrefix ? `${footnoteIds}footnote-label` : undefined,
     })
     .use(rehypeInlineTags)
+    .use(rehypePageEmbeds)
     .use(rehypePageLinks)
-    .use(rehypeHeadingIds, { taken: options.takenHeadingIds })
+    .use(rehypeHeadingIds, { taken: options.takenHeadingIds, skip: options.embedded })
     .use(rehypeHighlight)
     .use(rehypeSafeUrls)
     .use(rehypeStringify);
@@ -190,9 +305,10 @@ export function createHeadingSlugger(taken: Iterable<string> = []): (text: strin
   };
 }
 
-/** Rehype plugin: give each non-empty heading its table-of-contents anchor id. */
-export function rehypeHeadingIds(options: { taken?: readonly string[] } = {}) {
+/** Rehype plugin: give each non-empty heading its table-of-contents anchor id (not with `skip`). */
+export function rehypeHeadingIds(options: { taken?: readonly string[]; skip?: boolean } = {}) {
   return (tree: HastNode) => {
+    if (options.skip) return;
     const slug = createHeadingSlugger(options.taken);
     for (const heading of collectHeadings(tree)) {
       heading.node.properties = { ...heading.node.properties, id: slug(heading.text) };
@@ -360,9 +476,9 @@ export function estimateReadingTime(content: string): number {
 export function toPlainTextPreview(content: string, maxLength = 160): string {
   const text = content
     .replace(/```[\s\S]*?```/g, ' ')
-    // Page links (issue #103 E6) store only an id; a preview names them without the title,
-    // which would need a lookup the viewer may not be allowed.
-    .replace(/\[\[page:\d{1,10}\]\]/g, '[링크]')
+    // Page links (issue #103 E6) and embeds (#135) store only an id; a preview names them
+    // without the title, which would need a lookup the viewer may not be allowed.
+    .replace(/!?\[\[page:\d{1,10}\]\]/g, '[링크]')
     .replace(/`([^`]*)`/g, '$1')
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
