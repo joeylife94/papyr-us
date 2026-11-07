@@ -111,6 +111,7 @@ import { pageLinkTokenIds } from './services/vault-format.js';
 import { featureFlags } from './features.js';
 import { postgresErrorOf } from './db-errors.js';
 import { registerDatabaseRoutes } from './routes/database.js';
+import { registerSyncedBlockRoutes } from './routes/synced-blocks.js';
 
 interface MulterRequest extends Request {
   files?: any[];
@@ -4632,92 +4633,8 @@ export async function registerRoutes(
   // Inline databases (#113 §4): every route checks the owning page (P2-D4).
   registerDatabaseRoutes(app, storage);
 
-  // ==================== Synced Block Routes ====================
-
-  // Create synced block
-  app.post('/api/synced-blocks', requireAuthIfEnabled, async (req: AuthRequest, res) => {
-    try {
-      const { originalBlockId, content } = req.body;
-
-      if (!originalBlockId || !content) {
-        return res.status(400).json({ error: 'originalBlockId and content are required' });
-      }
-
-      const userId = req.user?.id;
-      if (!userId) {
-        return res.status(401).json({ error: 'User not authenticated' });
-      }
-
-      const syncedBlock = await storage.createSyncedBlock(originalBlockId, userId, content);
-      res.status(201).json(syncedBlock);
-    } catch (error) {
-      console.error('Error creating synced block:', error);
-      res.status(500).json({ error: 'Failed to create synced block' });
-    }
-  });
-
-  // Get synced block
-  app.get('/api/synced-blocks/:originalBlockId', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const { originalBlockId } = req.params;
-
-      const syncedBlock = await storage.getSyncedBlock(originalBlockId);
-      if (!syncedBlock) {
-        return res.status(404).json({ error: 'Synced block not found' });
-      }
-
-      res.json(syncedBlock);
-    } catch (error) {
-      console.error('Error fetching synced block:', error);
-      res.status(500).json({ error: 'Failed to fetch synced block' });
-    }
-  });
-
-  // List all synced blocks (for picker)
-  app.get('/api/synced-blocks', requireAuthIfEnabled, async (req: AuthRequest, res) => {
-    try {
-      const userId = req.user?.id;
-      if (!userId) {
-        return res.json([]);
-      }
-      const blocks = await storage.getUserSyncedBlocks(userId);
-      res.json(blocks);
-    } catch (error) {
-      console.error('Error listing synced blocks:', error);
-      res.json([]);
-    }
-  });
-
-  // Update synced block content
-  app.patch('/api/synced-blocks/:originalBlockId', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const { originalBlockId } = req.params;
-      const { content } = req.body;
-
-      if (!content) {
-        return res.status(400).json({ error: 'content is required' });
-      }
-
-      const syncedBlock = await storage.updateSyncedBlockContent(originalBlockId, content);
-      res.json(syncedBlock);
-    } catch (error) {
-      console.error('Error updating synced block:', error);
-      res.status(500).json({ error: 'Failed to update synced block' });
-    }
-  });
-
-  // Delete synced block
-  app.delete('/api/synced-blocks/:originalBlockId', requireAuthIfEnabled, async (req, res) => {
-    try {
-      const { originalBlockId } = req.params;
-
-      await storage.deleteSyncedBlock(originalBlockId);
-      res.status(204).send();
-    } catch (error) {
-      console.error('Error deleting synced block:', error);
-      res.status(500).json({ error: 'Failed to delete synced block' });
-    }
-  });
+  // Synced blocks: every route checks the block's owning page, like inline databases.
+  registerSyncedBlockRoutes(app, storage);
 
   // ==================== AI Assistant Routes ====================
 

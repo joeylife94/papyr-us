@@ -54,6 +54,7 @@ import {
   type DatabaseSchema,
   type DatabaseRow,
   type DatabaseRelation,
+  type SyncedBlock,
   databaseSchemas,
   databaseRows,
   databaseRelations,
@@ -146,6 +147,8 @@ export const ANONYMOUS_PAGE_VIEWER: PageViewer = Object.freeze({ teamIds: [] as 
 const MAX_SLUG_INSERT_ATTEMPTS = 100;
 /** Ids per query when resolving many link targets (`resolveReadablePageLinks`). */
 const RESOLVE_LINKS_BATCH = 1000;
+/** Most synced blocks the picker list returns (`getReadableSyncedBlocks`). */
+const SYNCED_BLOCK_LIST_LIMIT = 200;
 
 function isTeamPagesForeignKeyViolation(error: unknown): boolean {
   const dbError = postgresErrorOf(error);
@@ -2722,39 +2725,54 @@ export class DBStorage {
   }
 
   // ==================== Synced Block Operations ====================
+  // A synced block belongs to the page in `page_id` and is deleted with it. These methods do not
+  // check access: the routes check the owning page (server/routes/synced-blocks.ts).
 
-  async createSyncedBlock(originalBlockId: string, userId: number, content: any[]) {
-    const [syncedBlock] = await this.db
+  /**
+   * Create the synced block `originalBlockId` on `pageId`. Ids are unique across the instance:
+   * an id already in use returns undefined and writes nothing.
+   */
+  async createSyncedBlock(
+    pageId: number,
+    originalBlockId: string,
+    content: unknown[]
+  ): Promise<SyncedBlock | undefined> {
+    const [created] = await this.db
       .insert(syncedBlocks)
-      .values({
-        originalBlockId,
-        createdBy: userId,
-        content,
-      })
+      .values({ pageId, originalBlockId, content })
+      .onConflictDoNothing({ target: syncedBlocks.originalBlockId })
       .returning();
-    return syncedBlock;
+    return created;
   }
 
-  async getSyncedBlock(originalBlockId: string) {
-    return await this.db.query.syncedBlocks.findFirst({
-      where: eq(syncedBlocks.originalBlockId, originalBlockId),
-    });
+  async getSyncedBlock(originalBlockId: string): Promise<SyncedBlock | undefined> {
+    const [block] = await this.db
+      .select()
+      .from(syncedBlocks)
+      .where(eq(syncedBlocks.originalBlockId, originalBlockId));
+    return block;
   }
 
-  async updateSyncedBlockContent(originalBlockId: string, content: any[]) {
+  /** Replace a synced block's content; undefined when the block no longer exists. */
+  async updateSyncedBlockContent(
+    originalBlockId: string,
+    content: unknown[]
+  ): Promise<SyncedBlock | undefined> {
     const [updated] = await this.db
       .update(syncedBlocks)
-      .set({
-        content,
-        lastSyncedAt: new Date(),
-      })
+      .set({ content, updatedAt: new Date() })
       .where(eq(syncedBlocks.originalBlockId, originalBlockId))
       .returning();
     return updated;
   }
 
-  async deleteSyncedBlock(originalBlockId: string) {
-    await this.db.delete(syncedBlocks).where(eq(syncedBlocks.originalBlockId, originalBlockId));
+  /** Delete a synced block (its references go with it); false when it no longer exists. */
+  async deleteSyncedBlock(originalBlockId: string): Promise<boolean> {
+    const deleted = await this.db
+      .delete(syncedBlocks)
+      .where(eq(syncedBlocks.originalBlockId, originalBlockId))
+      .returning({ id: syncedBlocks.id });
+    return deleted.length > 0;
   }
 
   /**
@@ -2783,67 +2801,51 @@ export class DBStorage {
   }
 
   /**
-   * Get all synced blocks accessible to user
+   * The synced block picker: blocks whose owning page is live and listable by `viewer` (the rule
+   * of the page lists, `listableBy`), most recently updated first, at most `limit`.
+   * `referenceCount` only counts references on live pages the viewer may list, so it says
+   * nothing about other pages.
    */
-  async getUserSyncedBlocks(userId: number) {
-    // Get user info first
-    const user = await this.db.query.users.findFirst({
-      where: eq(users.id, userId),
-    });
+  async getReadableSyncedBlocks(
+    viewer: PageViewer,
+    limit = SYNCED_BLOCK_LIST_LIMIT
+  ): Promise<Array<SyncedBlock & { referenceCount: number }>> {
+    const blocks: SyncedBlock[] = await this.db
+      .select({
+        id: syncedBlocks.id,
+        originalBlockId: syncedBlocks.originalBlockId,
+        pageId: syncedBlocks.pageId,
+        content: syncedBlocks.content,
+        createdAt: syncedBlocks.createdAt,
+        updatedAt: syncedBlocks.updatedAt,
+      })
+      .from(syncedBlocks)
+      .innerJoin(wikiPages, eq(syncedBlocks.pageId, wikiPages.id))
+      .where(and(isNull(wikiPages.deletedAt), this.listableBy(viewer)))
+      .orderBy(desc(syncedBlocks.updatedAt), desc(syncedBlocks.id))
+      .limit(limit);
+    if (blocks.length === 0) return [];
 
-    if (!user) return [];
-
-    // Get pages where user is author
-    const authorPages = await this.db.query.wikiPages.findMany({
-      where: eq(wikiPages.author, user.email),
-    });
-
-    // Get pages where user has explicit permission
-    const permissionedPages = await this.db
-      .select({ pageId: pagePermissions.pageId })
-      .from(pagePermissions)
-      .where(and(eq(pagePermissions.entityType, 'user'), eq(pagePermissions.entityId, userId)));
-
-    // Get pages accessible through team membership
-    const userTeamIds = await this.getUserTeamIds(userId);
-    let teamPages: { pageId: number }[] = [];
-    if (userTeamIds.length > 0) {
-      teamPages = await this.db
-        .select({ pageId: pagePermissions.pageId })
-        .from(pagePermissions)
-        .where(
-          and(
-            eq(pagePermissions.entityType, 'team'),
-            sql`${pagePermissions.entityId} = ANY(${userTeamIds})`
-          )
-        );
-    }
-
-    // Combine all accessible page IDs
-    const allPageIds = [
-      ...authorPages.map((p: any) => p.id),
-      ...permissionedPages.map((p: { pageId: number }) => p.pageId),
-      ...teamPages.map((p: { pageId: number }) => p.pageId),
-    ];
-    const pageIds = Array.from(new Set(allPageIds));
-
-    if (pageIds.length === 0) return [];
-
-    const references = await this.db.query.syncedBlockReferences.findMany({
-      where: sql`page_id = ANY(${pageIds})`,
-    });
-
-    const syncedBlockIds = Array.from(new Set(references.map((r: any) => r.syncedBlockId)));
-
-    const blocks = await this.db.query.syncedBlocks.findMany({
-      where: sql`id = ANY(${syncedBlockIds})`,
-    });
-
-    // Count references for each block
-    return blocks.map((block: any) => ({
-      ...block,
-      referenceCount: references.filter((r: any) => r.syncedBlockId === block.id).length,
-    }));
+    const counts: Array<{ syncedBlockId: number; count: number }> = await this.db
+      .select({
+        syncedBlockId: syncedBlockReferences.syncedBlockId,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(syncedBlockReferences)
+      .innerJoin(wikiPages, eq(syncedBlockReferences.pageId, wikiPages.id))
+      .where(
+        and(
+          inArray(
+            syncedBlockReferences.syncedBlockId,
+            blocks.map((block) => block.id)
+          ),
+          isNull(wikiPages.deletedAt),
+          this.listableBy(viewer)
+        )
+      )
+      .groupBy(syncedBlockReferences.syncedBlockId);
+    const countOf = new Map(counts.map((row) => [row.syncedBlockId, Number(row.count)]));
+    return blocks.map((block) => ({ ...block, referenceCount: countOf.get(block.id) ?? 0 }));
   }
 
   // ==================== Daily notes (#111) ====================
