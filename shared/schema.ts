@@ -39,6 +39,111 @@ export const pageIconSchema = z
   .max(32)
   .refine(isSingleEmoji, { message: '아이콘은 이모지 하나여야 합니다' });
 
+// Page covers (issue #134). Kept in this file for the same reason as the icon above.
+//
+// Decision P3-D1: no external image URLs. A cover is one of the built-in presets below, or an
+// image uploaded to this instance (served by GET /api/uploads/images/:filename behind auth). It is
+// stored as `wiki_pages.metadata.cover`; a page without a cover has no `cover` key.
+
+/** The built-in covers. Ids are stored; the client paints only the CSS listed here. */
+export const PAGE_COVER_PRESET_IDS = [
+  'graphite',
+  'dawn',
+  'sunset',
+  'ocean',
+  'forest',
+  'lavender',
+  'sand',
+  'slate',
+  'rose',
+  'mint',
+] as const;
+
+export type PageCoverPresetId = (typeof PAGE_COVER_PRESET_IDS)[number];
+
+export const PAGE_COVER_PRESETS: Record<PageCoverPresetId, { label: string; background: string }> =
+  {
+    graphite: { label: '그래파이트', background: 'linear-gradient(135deg, #52525b, #18181b)' },
+    dawn: { label: '새벽', background: 'linear-gradient(135deg, #fbc2eb, #a6c1ee)' },
+    sunset: { label: '노을', background: 'linear-gradient(135deg, #f6d365, #fda085)' },
+    ocean: { label: '바다', background: 'linear-gradient(135deg, #2193b0, #6dd5ed)' },
+    forest: { label: '숲', background: 'linear-gradient(135deg, #134e5e, #71b280)' },
+    lavender: { label: '라벤더', background: 'linear-gradient(135deg, #e0c3fc, #8ec5fc)' },
+    sand: { label: '모래', background: '#e7dcc8' },
+    slate: { label: '슬레이트', background: '#cbd5e1' },
+    rose: { label: '장미', background: '#fecdd3' },
+    mint: { label: '민트', background: '#bbf7d0' },
+  };
+
+/**
+ * The path of an image uploaded to this instance, exactly as the upload service names it
+ * (`<timestamp>-<16 hex>-<safe base name>.<image extension>`, server/services/upload.ts). No
+ * scheme, host, query, fragment, encoding or other path segment can match.
+ */
+export const PAGE_COVER_IMAGE_PATH =
+  /^\/api\/uploads\/images\/\d{10,16}-[0-9a-f]{16}-[A-Za-z0-9_-]{0,50}\.(?:png|jpe?g|gif|webp)$/i;
+
+/** Vertical position of an image cover (CSS `object-position` y, in percent) when none is set. */
+export const PAGE_COVER_DEFAULT_OFFSET_Y = 50;
+
+const pageCoverPresetSchema = z
+  .object({
+    type: z.literal('preset'),
+    id: z.enum(PAGE_COVER_PRESET_IDS, { message: '알 수 없는 기본 커버입니다' }),
+  })
+  .strict();
+
+const pageCoverImageSchema = z
+  .object({
+    type: z.literal('image'),
+    path: z
+      .string()
+      .max(200)
+      .regex(PAGE_COVER_IMAGE_PATH, { message: '커버 이미지는 이 서버에 올린 이미지여야 합니다' }),
+    offsetY: z.number().int().min(0).max(100),
+  })
+  .strict();
+
+/** A page cover: a preset id, or an image uploaded here with its vertical offset (0–100). */
+export const pageCoverSchema = z.discriminatedUnion('type', [
+  pageCoverPresetSchema,
+  pageCoverImageSchema,
+]);
+
+export type PageCover = z.infer<typeof pageCoverSchema>;
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function hasCoverKey(metadata: unknown): metadata is Record<string, unknown> {
+  return isPlainObject(metadata) && Object.prototype.hasOwnProperty.call(metadata, 'cover');
+}
+
+/** The page's cover from its stored `metadata`, or null when it has none or it is not valid. */
+export function readPageCover(metadata: unknown): PageCover | null {
+  if (!hasCoverKey(metadata)) return null;
+  const parsed = pageCoverSchema.safeParse(metadata.cover);
+  return parsed.success ? parsed.data : null;
+}
+
+/**
+ * `metadata` with its cover set to `cover`, or without a `cover` key when `cover` is null. Other
+ * keys are kept; metadata that is not an object becomes one.
+ */
+export function withPageCover(metadata: unknown, cover: PageCover | null): Record<string, unknown> {
+  const next: Record<string, unknown> = isPlainObject(metadata) ? { ...metadata } : {};
+  if (cover) next.cover = cover;
+  else delete next.cover;
+  return next;
+}
+
+/** `metadata` without a `cover` that is not valid (a copy keeps only what a write would accept). */
+export function sanitizePageMetadata(metadata: unknown): unknown {
+  if (!hasCoverKey(metadata) || readPageCover(metadata)) return metadata;
+  return withPageCover(metadata, null);
+}
+
 // Block types for the new block-based editor
 export const blockTypes = [
   'heading1',
@@ -105,7 +210,9 @@ export const wikiPages = pgTable('wiki_pages', {
   icon: text('icon'), // Page icon: one emoji, null = none (drizzle/0019_add_wiki_pages_icon.sql)
 });
 
-export const insertWikiPageSchema = createInsertSchema(wikiPages)
+const wikiPageInsertColumns = createInsertSchema(wikiPages);
+
+export const insertWikiPageSchema = wikiPageInsertColumns
   .omit({
     id: true,
     createdAt: true,
@@ -113,7 +220,19 @@ export const insertWikiPageSchema = createInsertSchema(wikiPages)
     // Tree order changes only through POST /api/pages/:id/move (issue #103 E5).
     position: true,
   })
-  .extend({ icon: pageIconSchema.nullable().optional() });
+  .extend({
+    icon: pageIconSchema.nullable().optional(),
+    // Any JSON as before, but a `cover` key must hold a valid cover (issue #134).
+    metadata: wikiPageInsertColumns.shape.metadata.superRefine((metadata, ctx) => {
+      if (!hasCoverKey(metadata)) return;
+      const parsed = pageCoverSchema.safeParse(metadata.cover);
+      if (!parsed.success) {
+        for (const issue of parsed.error.issues) {
+          ctx.addIssue({ code: 'custom', message: issue.message, path: ['cover', ...issue.path] });
+        }
+      }
+    }),
+  });
 
 export const updateWikiPageSchema = insertWikiPageSchema.partial();
 

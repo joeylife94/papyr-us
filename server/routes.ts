@@ -46,6 +46,8 @@ import {
   comments,
   users,
   pageIconSchema,
+  pageCoverSchema,
+  sanitizePageMetadata,
   type CalendarEvent,
   type Task,
 } from '../shared/schema.js';
@@ -1010,6 +1012,9 @@ export async function registerRoutes(
       folder: z.string().min(1).optional(),
       // Page icon (issue #103 E4): one emoji, or null to remove it.
       icon: pageIconSchema.nullable().optional(),
+      // Page cover (issue #134): a preset or an image uploaded here, or null to remove it. Stored
+      // as metadata.cover; the page's other metadata is kept.
+      cover: pageCoverSchema.nullable().optional(),
     })
     .strict();
 
@@ -1374,7 +1379,8 @@ export async function registerRoutes(
             parentId: original.parentId,
             teamId: original.teamId,
             isPublished: false,
-            metadata: original.metadata as any,
+            // The copy keeps the cover only if it is valid (issue #134), as a write would.
+            metadata: sanitizePageMetadata(original.metadata) as any,
           },
           (req as any).user?.id
         );

@@ -24,7 +24,13 @@
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { jsonEqual } from '../../shared/json-equal.js';
-import { pageVersions, type UpdateWikiPage, type WikiPage } from '../../shared/schema.js';
+import {
+  pageVersions,
+  withPageCover,
+  type PageCover,
+  type UpdateWikiPage,
+  type WikiPage,
+} from '../../shared/schema.js';
 import { blocksToMarkdown } from '../../shared/block-markdown.js';
 import logger from './logger.js';
 
@@ -32,6 +38,13 @@ import logger from './logger.js';
 export const AUTOSAVE_SESSION_IDLE_MS = 2 * 60 * 1000;
 
 export type SaveMode = 'manual' | 'autosave';
+
+/**
+ * What a save may change: page fields, plus `cover` (issue #134), which is written into
+ * `metadata.cover` with the page's other metadata kept (null removes the key). The caller has
+ * validated it (`pageCoverSchema`).
+ */
+export type PageSaveUpdate = UpdateWikiPage & { cover?: PageCover | null };
 
 export interface PageSaveStore {
   getPage(id: number): Promise<WikiPage | undefined>;
@@ -138,7 +151,7 @@ function armIdleTimer(pageId: number) {
 export async function savePage(
   store: PageSaveStore,
   pageId: number,
-  update: UpdateWikiPage,
+  update: PageSaveUpdate,
   mode: SaveMode
 ): Promise<{ before: WikiPage | undefined; after: WikiPage } | undefined> {
   // Routes only reach here after the page permission check found the page. If it still cannot
@@ -146,7 +159,16 @@ export async function savePage(
   // before the pipeline existed.
   const before = await store.getPage(pageId);
 
-  const data: UpdateWikiPage = { ...update };
+  const { cover, ...fields } = update;
+  const data: UpdateWikiPage = { ...fields };
+  // A cover change rewrites the stored metadata with only that key changed. Like an icon, it is
+  // not part of a version (versions keep the title and body).
+  if (cover !== undefined) {
+    data.metadata = withPageCover(
+      data.metadata ?? before?.metadata,
+      cover
+    ) as UpdateWikiPage['metadata'];
+  }
   // Autosaves (REST or Yjs) always derive content from blocks. A manual save keeps any content
   // the client sent alongside its blocks, as the editor has always sent both.
   if (data.blocks !== undefined && (mode === 'autosave' || data.content === undefined)) {
