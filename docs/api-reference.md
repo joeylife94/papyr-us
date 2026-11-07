@@ -334,8 +334,8 @@
 | ------ | ---------------------- | ----------- | ----------------------------------------- |
 | GET    | `/health`              | -           | 헬스 체크 (uptime, version, db 연결 상태) |
 | GET    | `/api/features`        | -           | Feature flags (클라이언트 런타임 설정)    |
-| GET    | `/api/folders`         | -           | 폴더 목록                                 |
-| GET    | `/api/tags`            | -           | 태그 목록                                 |
+| GET    | `/api/folders`         | JWT         | 읽을 수 있는 페이지가 있는 폴더 목록      |
+| GET    | `/api/tags`            | JWT         | 읽을 수 있는 페이지의 태그 목록           |
 | GET    | `/api/page-tree`       | Optional    | 페이지 트리 (네스팅 구조)                 |
 | GET    | `/api/knowledge-graph` | Conditional | 지식 그래프 데이터                        |
 | GET    | `/api/saved-views`     | Optional    | 저장된 뷰 목록                            |
