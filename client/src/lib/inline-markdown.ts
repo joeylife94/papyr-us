@@ -14,6 +14,7 @@
  */
 // Relative import: unit tests load this module without the Vite aliases.
 import { isSafeUrl } from './rehype-safe-urls';
+import { isTagBoundary, readTagName } from '@shared/tags';
 
 export type InlineNode =
   | { type: 'text'; text: string; from: number }
@@ -26,40 +27,15 @@ export type InlineNode =
 
 // ── Tags ────────────────────────────────────────────────────────────────────────────────────
 
-const TAG_CHARACTER = /^[\p{L}\p{N}\p{M}_\-/]$/u;
-const LETTER = /\p{L}/u;
-/**
- * What a `#tag` may follow besides the start of the text: whitespace, opening brackets and
- * quotes, Markdown markers and a few separators. Anything else (a letter, `/`, `&`, `]`…) means
- * the `#` is inside a word, a URL or an entity.
- */
-const TAG_BOUNDARY = /^[\s([{"'“‘«「『【〈《*_~,，、;>|]$/u;
-
-/** Whether a `#` after `previous` (undefined: start of the text) may start a tag. */
-export function isTagBoundary(previous: string | undefined): boolean {
-  return previous === undefined || TAG_BOUNDARY.test(previous);
-}
+// The grammar lives in shared/tags.ts: the server's tag pane (#137) reads tags the same way.
+export { isTagBoundary, readTagName };
 
 /**
- * The name of the tag whose `#` is at `index`, or null. A name is Unicode letters, digits, `_`,
- * `-` and `/` with at least one letter (`#113` stays text, like an issue number). The caller
- * checks the character before the `#` with `isTagBoundary`.
+ * Where a tag chip leads: the tag pane with that tag selected (#137). `scopePath` is the
+ * workspace the chip is shown in: '' for personal pages, `/teams/<name>` for a team's.
  */
-export function readTagName(text: string, index: number, end = text.length): string | null {
-  if (text[index] !== '#') return null;
-  let cursor = index + 1;
-  while (cursor < end) {
-    const char = String.fromCodePoint(text.codePointAt(cursor)!);
-    if (!TAG_CHARACTER.test(char)) break;
-    cursor += char.length;
-  }
-  const name = text.slice(index + 1, Math.min(cursor, end));
-  return LETTER.test(name) ? name : null;
-}
-
-/** Where a tag chip leads: the document list filtered by that tag. */
-export function tagHref(tag: string): string {
-  return `/?tag=${encodeURIComponent(tag)}`;
+export function tagHref(tag: string, scopePath = ''): string {
+  return `${scopePath}/tags/${encodeURIComponent(tag)}`;
 }
 
 /** Look of a `#tag` chip, shared by the editor preview, the reader and the tag filter. */
