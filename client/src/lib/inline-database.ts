@@ -1,11 +1,13 @@
 /**
- * Inline database views (#113 §4): the view configuration a `database_inline` block stores in
- * `block.properties`, and the pure logic of the table and board views (filter, sort, board
- * columns, card moves, optimistic row updates). Rows and properties come from the server; the
- * block only carries `schemaId` and how it is viewed.
+ * Inline database views (#113 §4, #136): the view configuration a `database_inline` block stores
+ * in `block.properties`, and the pure logic of the views (filter, sort, board columns, card
+ * moves, optimistic row updates). Rows and properties come from the server; the block only
+ * carries `schemaId` and how it is viewed. The calendar's date logic is in `database-calendar`.
  */
 import {
+  DATABASE_LIMITS,
   DATABASE_OPTION_COLORS,
+  isValidDatabaseId,
   type DatabaseCellValue,
   type DatabaseField,
   type DatabaseOption,
@@ -14,7 +16,20 @@ import {
   type DatabaseRowRecord,
 } from '../../../shared/inline-database';
 
-export type DatabaseViewKind = 'table' | 'board';
+/** Every view kind, in tab order. */
+export const DATABASE_VIEW_KINDS = ['table', 'board', 'gallery', 'calendar'] as const;
+export type DatabaseViewKind = (typeof DATABASE_VIEW_KINDS)[number];
+
+/** Views a database gets from the view menu (#136); table and board are always there. */
+export const ADDABLE_VIEW_KINDS = ['gallery', 'calendar'] as const;
+export type AddableViewKind = (typeof ADDABLE_VIEW_KINDS)[number];
+
+export const VIEW_LABELS: Record<DatabaseViewKind, string> = {
+  table: '표',
+  board: '보드',
+  gallery: '갤러리',
+  calendar: '캘린더',
+};
 
 export const FILTER_OPERATORS = [
   'contains',
@@ -48,12 +63,25 @@ export interface DatabaseViewConfig {
   filter: DatabaseFilter | null;
   /** board only: the select property the columns come from */
   groupBy?: string | null;
+  /** gallery only: the properties its cards show under the title ("표시할 속성") */
+  cardFields?: string[];
+  /** calendar only: the date property that places rows on days ("날짜 속성") */
+  dateField?: string | null;
+}
+
+export interface DatabaseViews {
+  table: DatabaseViewConfig;
+  board: DatabaseViewConfig;
+  /** present once added from the view menu */
+  gallery?: DatabaseViewConfig;
+  calendar?: DatabaseViewConfig;
 }
 
 export interface InlineDatabaseProperties {
   schemaId: number | null;
+  /** always a view the block has */
   activeView: DatabaseViewKind;
-  views: { table: DatabaseViewConfig; board: DatabaseViewConfig };
+  views: DatabaseViews;
 }
 
 export const DEFAULT_DATABASE_NAME = '새 데이터베이스';
@@ -122,26 +150,86 @@ function readFilter(value: unknown): DatabaseFilter | null {
   return { fieldId: value.fieldId, operator, value: filterValue };
 }
 
-function readView(value: unknown, board: boolean): DatabaseViewConfig {
+/** Distinct well-formed property ids, at most as many as a database has properties. */
+function readFieldIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const ids = value.filter(isValidDatabaseId);
+  return [...new Set(ids)].slice(0, DATABASE_LIMITS.fields);
+}
+
+function readView(value: unknown, kind: DatabaseViewKind): DatabaseViewConfig {
   const view = isRecord(value) ? value : {};
   const config: DatabaseViewConfig = { sort: readSort(view.sort), filter: readFilter(view.filter) };
-  if (board) config.groupBy = typeof view.groupBy === 'string' ? view.groupBy : null;
+  if (kind === 'board') config.groupBy = typeof view.groupBy === 'string' ? view.groupBy : null;
+  if (kind === 'gallery') config.cardFields = readFieldIds(view.cardFields);
+  if (kind === 'calendar') {
+    config.dateField = isValidDatabaseId(view.dateField) ? view.dateField : null;
+  }
   return config;
 }
 
-/** The view configuration in a block's properties, with defaults for anything missing. */
+/**
+ * The view configuration in a block's properties, with defaults for anything missing. Table and
+ * board always exist; gallery and calendar exist once added (their key holds an object), so
+ * blocks saved before #136 read exactly as before. The active view is one the block has.
+ */
 export function readDatabaseProperties(properties: unknown): InlineDatabaseProperties {
   const props = isRecord(properties) ? properties : {};
   const schemaId =
     typeof props.schemaId === 'number' && Number.isInteger(props.schemaId) && props.schemaId > 0
       ? props.schemaId
       : null;
-  const views = isRecord(props.views) ? props.views : {};
-  return {
-    schemaId,
-    activeView: props.activeView === 'board' ? 'board' : 'table',
-    views: { table: readView(views.table, false), board: readView(views.board, true) },
+  const stored = isRecord(props.views) ? props.views : {};
+  const views: DatabaseViews = {
+    table: readView(stored.table, 'table'),
+    board: readView(stored.board, 'board'),
   };
+  for (const kind of ADDABLE_VIEW_KINDS) {
+    if (isRecord(stored[kind])) views[kind] = readView(stored[kind], kind);
+  }
+  const activeView = DATABASE_VIEW_KINDS.find((kind) => kind === props.activeView && views[kind]);
+  return { schemaId, activeView: activeView ?? 'table', views };
+}
+
+/** The views a block has, in tab order. */
+export function viewKinds(config: InlineDatabaseProperties): DatabaseViewKind[] {
+  return DATABASE_VIEW_KINDS.filter((kind) => !!config.views[kind]);
+}
+
+/** The configuration of the active view. */
+export function activeViewConfig(config: InlineDatabaseProperties): DatabaseViewConfig {
+  return config.views[config.activeView] ?? config.views.table;
+}
+
+/**
+ * `config` with a gallery or calendar view added and shown. A new gallery shows the first three
+ * properties after the title; a new calendar uses the first date property.
+ */
+export function addView(
+  config: InlineDatabaseProperties,
+  kind: AddableViewKind,
+  fields: DatabaseField[]
+): InlineDatabaseProperties {
+  const view: DatabaseViewConfig = { sort: null, filter: null };
+  if (kind === 'gallery') {
+    view.cardFields = fields
+      .filter((field) => field.type !== 'title')
+      .slice(0, 3)
+      .map((field) => field.id);
+  } else {
+    view.dateField = fields.find((field) => field.type === 'date')?.id ?? null;
+  }
+  return { ...config, activeView: kind, views: { ...config.views, [kind]: view } };
+}
+
+/** `config` without a gallery or calendar view; the table shows when it was the active one. */
+export function removeView(
+  config: InlineDatabaseProperties,
+  kind: AddableViewKind
+): InlineDatabaseProperties {
+  const views = { ...config.views };
+  delete views[kind];
+  return { ...config, activeView: config.activeView === kind ? 'table' : config.activeView, views };
 }
 
 // ── Values ───────────────────────────────────────────────────────────────────────────────
@@ -357,6 +445,26 @@ export function viewRows(
     fields,
     view.sort
   );
+}
+
+// ── Gallery and calendar ─────────────────────────────────────────────────────────────────
+
+/** The properties a gallery's cards show, in property order; the title is always shown. */
+export function galleryCardFields(
+  fields: DatabaseField[],
+  cardFields: string[] | undefined
+): DatabaseField[] {
+  const chosen = new Set(cardFields ?? []);
+  return fields.filter((field) => field.type !== 'title' && chosen.has(field.id));
+}
+
+/** The date property a calendar places rows by: the configured one, else the first one. */
+export function calendarDateField(
+  fields: DatabaseField[],
+  dateField: string | null | undefined
+): DatabaseField | undefined {
+  const dates = fields.filter((field) => field.type === 'date');
+  return dates.find((field) => field.id === dateField) ?? dates[0];
 }
 
 // ── Board ────────────────────────────────────────────────────────────────────────────────

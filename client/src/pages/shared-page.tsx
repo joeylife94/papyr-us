@@ -2,10 +2,12 @@ import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { MarkdownRenderer } from '@/components/wiki/markdown-renderer';
+import { PageCover } from '@/components/page/page-cover';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Lock } from 'lucide-react';
+import { readPageCover } from '@shared/schema';
 
 interface SharedPageResponse {
   page: {
@@ -13,6 +15,7 @@ interface SharedPageResponse {
     title: string;
     content: string;
     updatedAt?: string;
+    metadata?: unknown;
   };
   permission: string;
   isPublicLink: boolean;
@@ -98,6 +101,8 @@ export default function SharedPage() {
   return (
     <div className="min-h-screen">
       <div className="max-w-4xl mx-auto px-4 py-12">
+        {/* A preset always shows; an uploaded image only if this viewer may load it (#134). */}
+        <PageCover cover={readPageCover(data.page.metadata)} className="mb-6" />
         <h1 className="text-3xl font-bold text-foreground mb-6">{data.page.title}</h1>
         <div className="prose prose-slate dark:prose-invert max-w-none">
           <MarkdownRenderer content={data.page.content} />

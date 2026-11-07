@@ -173,6 +173,21 @@ export function VaultImportDialog({
                     </ul>
                   </div>
                 )}
+                {summary.droppedCovers.length > 0 && (
+                  <div>
+                    <p className="text-foreground-secondary">
+                      커버 없이 가져온 문서 {summary.droppedCovers.length}개 (기본 커버나 이 서버에
+                      올린 이미지가 아님)
+                    </p>
+                    <ul className="mt-1 max-h-32 space-y-0.5 overflow-y-auto text-xs text-muted-foreground">
+                      {summary.droppedCovers.map((item) => (
+                        <li key={item.path} className="break-all">
+                          {item.path}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </>
             )}
           </div>
