@@ -19,6 +19,9 @@
  * - `code`: a fenced block with `properties.language`. The fence is longer than any backtick run
  *   in the code, so the code can never close it.
  * - `divider`: `---`.
+ * - `page_embed` (#135): the embed token `![[page:<id>]]` of `properties.pageId`, and nothing
+ *   else: the target's text is never part of this page's content (decision P3-D2). A block
+ *   without a valid page id derives nothing.
  * - `paragraph` and every other type: its text unchanged.
  * - An empty heading or code block derives nothing (#123); an empty list item, to-do or quote
  *   keeps its bare marker (`-`, `- [ ]`, `>`).
@@ -29,7 +32,8 @@
  *
  * Markdown → blocks understands those constructs (ATX headings, deeper levels as `heading3`, and
  * setext headings; `-`/`*`/`+` and ordered lists; `- [ ]`/`- [x]` tasks; `>` quotes, lazy lines
- * included; fenced code with its language; `---`/`***`/`___` dividers). Everything else becomes
+ * included; fenced code with its language; `---`/`***`/`___` dividers; a line holding only an
+ * embed token, which also ends a paragraph, as the reader shows it). Everything else becomes
  * paragraphs split on blank lines, with their text verbatim, so constructs the editor has no
  * block for (tables, HTML, indented code, math) still render the same after the next save.
  * Inline Markdown and page link tokens (`[[page:<id>]]`) are never touched. Nested list items
@@ -41,6 +45,8 @@
  * Pure: no DOM and no Node-only APIs (imported by the server and the client).
  */
 import type { Block, BlockType } from './schema.js';
+import { embedLinePageId, pageEmbedToken } from './page-embeds.js';
+import { isPageId } from './page-links.js';
 
 /** Block types whose consecutive items form one Markdown list. */
 const LIST_TYPES: ReadonlySet<string> = new Set(['bulleted_list', 'numbered_list', 'checkbox']);
@@ -103,6 +109,17 @@ function codeMarkdown(text: string, language: unknown): string {
   return `${fence}${fenceLanguage(language)}\n${text}\n${fence}`;
 }
 
+/** The embed token of a `page_embed` block, or '' without a valid page id. */
+function pageEmbedMarkdown(pageId: unknown): string {
+  const id =
+    typeof pageId === 'number'
+      ? pageId
+      : typeof pageId === 'string' && /^\d{1,10}$/.test(pageId)
+        ? Number(pageId)
+        : NaN;
+  return isPageId(id) ? pageEmbedToken(id) : '';
+}
+
 /** Bullet-style lists: a bulleted run next to a to-do run needs another marker to stay apart. */
 const BULLET_TYPES: ReadonlySet<string> = new Set(['bulleted_list', 'checkbox']);
 
@@ -131,6 +148,8 @@ function blockMarkdown(block: unknown, listNumber: number, bullet: '-' | '*'): s
       return codeMarkdown(text, blockProperties(block).language);
     case 'divider':
       return '---';
+    case 'page_embed':
+      return pageEmbedMarkdown(blockProperties(block).pageId);
     default:
       return text;
   }
@@ -233,6 +252,32 @@ const TASK_PREFIX = /^\[([ xX])\](?:[ \t]+(.*))?$/;
 
 const isBlank = (line: string) => line.trim() === '';
 const indentOf = (line: string) => line.length - line.trimStart().length;
+
+/**
+ * A paragraph's lines as blocks: each line holding only an embed token becomes a `page_embed`
+ * block (#135) and the text around it paragraphs, as the reader splits it. Continuation lines
+ * count whatever their indentation (Markdown drops it); the first line only with up to three
+ * spaces (four make it code).
+ */
+function paragraphBlocks(lines: readonly string[]): ParsedBlock[] {
+  const blocks: ParsedBlock[] = [];
+  let run: string[] = [];
+  const flush = () => {
+    if (run.length > 0) blocks.push({ type: 'paragraph', content: run.join('\n'), properties: {} });
+    run = [];
+  };
+  lines.forEach((line, index) => {
+    const id = embedLinePageId(line, { continuation: index > 0 });
+    if (id === null) {
+      run.push(line);
+    } else {
+      flush();
+      blocks.push({ type: 'page_embed', content: '', properties: { pageId: id } });
+    }
+  });
+  flush();
+  return blocks;
+}
 
 interface ListStart {
   type: 'bulleted_list' | 'numbered_list' | 'checkbox';
@@ -460,7 +505,8 @@ function parseMarkdown(lines: readonly string[], from: number): ParsedBlock[] {
         properties: {},
       });
     } else {
-      blocks.push({ type: 'paragraph', content: paragraph.join('\n'), properties: {} });
+      // Embed lines split the paragraph (#135); a setext heading keeps them as its text.
+      for (const block of paragraphBlocks(paragraph)) blocks.push(block);
     }
   }
 

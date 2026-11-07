@@ -3,14 +3,15 @@
  * no database: file names, YAML frontmatter, and the link syntax at the boundary.
  *
  * Inside Papyr.us a link is an id token (`[[page:<id>]]`); in a vault it is an Obsidian
- * wikilink to a file name (`[[Name]]`, or `[[folder/Name]]` when names repeat). Code keeps its
+ * wikilink to a file name (`[[Name]]`, or `[[folder/Name]]` when names repeat). An embed (#135)
+ * is the same with a `!` in front on both sides (`![[page:<id>]]`, `![[Name]]`). Code keeps its
  * text unchanged in both directions, like the reader does (fenced blocks and inline code spans).
  *
  * The frontmatter parser reads a small, safe YAML subset: `key: value` lines with plain, single-
  * or double-quoted scalars, `[a, b]` flow lists and `- item` block lists. Anything else is
  * skipped. It never evaluates tags, anchors, aliases or other YAML features.
  */
-import { PAGE_LINK_PATTERN, isPageId } from '../../shared/page-links.js';
+import { isPageId } from '../../shared/page-links.js';
 
 /** Shown instead of a link whose target the exporting viewer cannot read (never its title). */
 export const INACCESSIBLE_PAGE_LABEL = '접근할 수 없는 페이지';
@@ -381,16 +382,25 @@ function mapOutsideInlineCode(text: string, transform: (prose: string) => string
 
 // ---- Links at the boundary ----
 
-/** `text` with every page link token outside code replaced by `render(pageId)`. */
-export function renderPageLinkTokens(text: string, render: (pageId: number) => string): string {
+// A link token, or an embed token when group 1 holds its `!`; group 2 is the id.
+const LINK_OR_EMBED_TOKEN = /(!?)\[\[page:(\d{1,10})\]\]/g;
+
+/**
+ * `text` with every page link token outside code replaced by `render(pageId, embed)`. An embed
+ * token (`![[page:<id>]]`, #135) is replaced as a whole, its `!` included, with `embed` true.
+ */
+export function renderPageLinkTokens(
+  text: string,
+  render: (pageId: number, embed: boolean) => string
+): string {
   return mapOutsideCode(text, (prose) =>
-    prose.replace(new RegExp(PAGE_LINK_PATTERN.source, 'g'), (_token, id: string) =>
-      render(Number(id))
+    prose.replace(LINK_OR_EMBED_TOKEN, (_token, bang: string, id: string) =>
+      render(Number(id), bang === '!')
     )
   );
 }
 
-/** The valid page ids of link tokens outside code, in first-appearance order. */
+/** The valid page ids of link and embed tokens outside code, in first-appearance order. */
 export function pageLinkTokenIds(text: string): number[] {
   const ids: number[] = [];
   const seen = new Set<number>();
@@ -446,14 +456,20 @@ export function wikiLinkTarget(name: string): string {
 }
 
 /**
- * `text` with every wikilink outside code replaced by `replace(link)`. Embeds (`![[...]]`) are
- * left as written: transclusion is not supported yet.
+ * `text` with every wikilink outside code replaced by `replace(link)`, and every embed
+ * (`![[...]]`, #135) by `replaceEmbed(link, written)` (`written` is the embed as it appears).
+ * Without `replaceEmbed`, embeds are left as written.
  */
-export function replaceWikiLinks(text: string, replace: (link: WikiLink) => string): string {
+export function replaceWikiLinks(
+  text: string,
+  replace: (link: WikiLink) => string,
+  replaceEmbed?: (link: WikiLink, written: string) => string
+): string {
   return mapOutsideCode(text, (prose) =>
-    prose.replace(WIKI_LINK, (whole, bang: string, inner: string) =>
-      bang ? whole : replace(parseWikiLink(inner))
-    )
+    prose.replace(WIKI_LINK, (whole, bang: string, inner: string) => {
+      if (!bang) return replace(parseWikiLink(inner));
+      return replaceEmbed ? replaceEmbed(parseWikiLink(inner), whole) : whole;
+    })
   );
 }
 

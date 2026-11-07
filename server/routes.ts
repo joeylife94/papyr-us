@@ -112,6 +112,7 @@ import { featureFlags } from './features.js';
 import { postgresErrorOf } from './db-errors.js';
 import { registerDatabaseRoutes } from './routes/database.js';
 import { registerSyncedBlockRoutes } from './routes/synced-blocks.js';
+import { readableLinkTarget, registerPageEmbedRoutes } from './routes/page-embeds.js';
 
 interface MulterRequest extends Request {
   files?: any[];
@@ -2376,19 +2377,16 @@ export async function registerRoutes(
 
   // What a `[[page:<id>]]` link shows: the target's current title and icon when the caller may
   // read it, otherwise only `accessible: false`. Missing, trashed and unreadable targets get the
-  // same answer, so a link reveals nothing about a page the caller cannot open.
+  // same answer, so a link reveals nothing about a page the caller cannot open. Embeds
+  // (`![[page:<id>]]`, #135) use the same rule (routes/page-embeds.ts).
   app.get('/api/pages/:id/link-preview', optionalAuth, async (req: AuthRequest, res) => {
     const id = parseInt(req.params.id, 10);
     if (!isPageId(id)) {
       return res.status(400).json({ message: 'Invalid page ID' });
     }
     try {
-      const page = await storage.getWikiPage(id);
-      const readable =
-        !!page &&
-        !page.deletedAt &&
-        (await storage.checkPagePermission(req.user?.id, id, 'viewer'));
-      if (!readable) return res.json({ id, accessible: false });
+      const page = await readableLinkTarget(storage, req.user?.id, id);
+      if (!page) return res.json({ id, accessible: false });
       res.json({
         id,
         accessible: true,
@@ -4639,6 +4637,7 @@ export async function registerRoutes(
 
   // Synced blocks: every route checks the block's owning page, like inline databases.
   registerSyncedBlockRoutes(app, storage);
+  registerPageEmbedRoutes(app, storage);
 
   // ==================== AI Assistant Routes ====================
 
