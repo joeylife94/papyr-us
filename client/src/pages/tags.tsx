@@ -14,6 +14,7 @@ import {
   buildTagTree,
   filterTagTree,
   flattenTagTree,
+  matchesTagFilter,
   tagFromPanePath,
   tagPanePath,
   type TagSort,
@@ -173,7 +174,10 @@ export default function TagsPage() {
                 onChange={(e) => setFilter(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key !== 'Enter' || e.nativeEvent.isComposing || e.keyCode === 229) return;
-                  const first = flattenTagTree(shown)[0];
+                  // The first tag that matches itself, not a parent shown on its way.
+                  const first = flattenTagTree(shown).find((node) =>
+                    matchesTagFilter(node.name, filter)
+                  );
                   if (filtering && first) {
                     e.preventDefault();
                     navigate(tagPath(first.name));

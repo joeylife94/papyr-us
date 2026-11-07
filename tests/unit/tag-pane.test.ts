@@ -3,6 +3,7 @@ import {
   buildTagTree,
   filterTagTree,
   flattenTagTree,
+  matchesTagFilter,
   tagFromPanePath,
   tagPanePath,
   tagScopePath,
@@ -95,7 +96,11 @@ describe('tag tree', () => {
     expect(names(filterTagTree(tree, '#proj'))).toEqual([['project', ['alpha', 'beta']]]);
     expect(names(filterTagTree(tree, 'nothing'))).toEqual([]);
     expect(filterTagTree(tree, '  ')).toHaveLength(tree.length);
-    // Display order, depth first: what Enter in the filter box picks from.
+    // Display order, depth first: Enter in the filter box opens the first tag that matches
+    // itself (here `project/alpha` for "alp", not its parent).
+    const narrowed = flattenTagTree(filterTagTree(tree, 'alp'));
+    expect(narrowed.map((node) => node.name)).toEqual(['project', 'project/alpha']);
+    expect(narrowed.find((node) => matchesTagFilter(node.name, 'alp'))?.name).toBe('project/alpha');
     expect(flattenTagTree(filterTagTree(tree, 'a')).map((node) => node.name)).toEqual([
       'idea',
       'project',

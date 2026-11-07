@@ -81,17 +81,26 @@ export function buildTagTree(tags: readonly TagCount[], sort: TagSort): TagTreeN
   return roots;
 }
 
+/** The filter box's text as the tag paths it matches: case-insensitive, `#` optional. */
+function filterNeedle(query: string): string {
+  return query.trim().replace(/^#/, '').toLocaleLowerCase();
+}
+
+/** Whether the tag path `name` matches the filter box's text (an empty text matches all). */
+export function matchesTagFilter(name: string, query: string): boolean {
+  return name.toLocaleLowerCase().includes(filterNeedle(query));
+}
+
 /**
  * The tree narrowed to tags whose path contains `query` (case-insensitive), with the parents
  * that lead to them. An empty query keeps everything.
  */
 export function filterTagTree(nodes: readonly TagTreeNode[], query: string): TagTreeNode[] {
-  const needle = query.trim().replace(/^#/, '').toLocaleLowerCase();
-  if (!needle) return [...nodes];
+  if (!filterNeedle(query)) return [...nodes];
   const keep = (list: readonly TagTreeNode[]): TagTreeNode[] =>
     list.flatMap((node) => {
       const children = keep(node.children);
-      if (children.length > 0 || node.name.toLocaleLowerCase().includes(needle)) {
+      if (children.length > 0 || matchesTagFilter(node.name, query)) {
         return [{ ...node, children }];
       }
       return [];
