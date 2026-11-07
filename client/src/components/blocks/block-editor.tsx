@@ -45,6 +45,7 @@ import { PageLinkPicker } from '@/components/page/page-links';
 import { EmbedScopeProvider } from '@/components/page/page-embed';
 import { pageLinkToken } from '@shared/page-links';
 import { matchMarkdownShortcut } from '@/lib/markdown-shortcuts';
+import { planPageEmbedInsertion } from '@/lib/page-embed-insert';
 import { headingIdsByBlock } from '@/lib/markdown';
 import { Button } from '@/components/ui/button';
 import {
@@ -453,50 +454,34 @@ export function BlockEditor({
   // Page embed (#135): `text` (the block's text without the "![[" or "/…" that asked for the
   // embed) stays in the block and the embed goes below it, or the empty block becomes the embed.
   // The embed block stores only the target's id. One change for all blocks, like insertDivider.
-  const insertPageEmbed = (blockId: string, text: string, pageId: number) => {
+  const insertPageEmbed = (blockId: string, text: string, targetPageId: number) => {
     lastShortcutRef.current = null;
-    const index = blocks.findIndex((b) => b.id === blockId);
-    if (index === -1) return;
-    const replace = text.trim() === '';
-    const stamp = `${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
-    const embed: Block = {
-      id: replace ? blockId : `block_${stamp}_embed`,
-      type: 'page_embed',
-      content: '',
-      properties: { pageId },
-      order: 0,
-      children: [],
-    };
+    // The target's id goes in the embed block; the legacy collaboration event names this page.
+    const insertion = planPageEmbedInsertion({
+      blocks,
+      blockId,
+      text,
+      targetPageId,
+      pageId,
+      stamp: `${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+    });
+    if (!insertion) return;
+    const { index, replace, embed } = insertion;
     if (useYjs && yjsCollaboration.isSynced) {
       if (replace) {
         yjsCollaboration.updateBlock(index, {
           type: 'page_embed',
           content: '',
-          properties: { pageId },
+          properties: embed.properties,
         });
       } else {
         yjsCollaboration.updateBlock(index, { content: text });
         yjsCollaboration.insertBlock(index + 1, embed);
       }
     } else {
-      const next = [...blocks];
-      if (replace) {
-        next[index] = { ...next[index], ...embed };
-      } else {
-        next[index] = { ...next[index], content: text };
-        next.splice(index + 1, 0, embed);
-      }
-      const ordered = next.map((block, order) =>
-        block.order === order ? block : { ...block, order }
-      );
-      onChange(ordered);
-      if (pageId && collaboration.isConnected) {
-        collaboration.sendDocumentChange({
-          pageId,
-          blockId: embed.id,
-          type: replace ? 'update' : 'insert',
-          data: { blocks: ordered },
-        });
+      onChange(insertion.blocks);
+      if (insertion.change && collaboration.isConnected) {
+        collaboration.sendDocumentChange(insertion.change);
       }
     }
     setFocusedBlockId(embed.id);
