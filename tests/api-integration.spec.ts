@@ -29,12 +29,18 @@ async function registerUser(request: APIRequestContext, prefix = 'api') {
 }
 
 test.describe('Health Check API', () => {
-  test('should return healthy status with ok', async ({ request }) => {
+  test('should return healthy status', async ({ request }) => {
     const response = await request.get('/health');
     expect(response.status()).toBe(200);
 
     const body = await response.json();
-    expect(body.status).toBe('ok');
+    expect(body.status).toBe('healthy');
+  });
+
+  test('should report the instance ready for traffic', async ({ request }) => {
+    const response = await request.get('/ready');
+    expect(response.status()).toBe(200);
+    expect(await response.json()).toEqual({ status: 'ready' });
   });
 });
 
@@ -143,14 +149,12 @@ test.describe('Admin Authorization – 403/200', () => {
     expect(resp.status()).toBe(403);
   });
 
-  test('admin endpoint returns 200 with admin password header', async ({ request }) => {
-    // In test/dev mode ALLOW_ADMIN_PASSWORD=true (default for non-production)
-    // and ADMIN_PASSWORD is set in .env.test
-    const adminPassword = process.env.ADMIN_PASSWORD || 'test-admin-password';
+  test('admin endpoint ignores a shared admin password header', async ({ request }) => {
+    // There is no shared admin password (issue #124 X0): only a platform admin account passes.
     const resp = await request.get('/api/admin/directories', {
-      headers: { 'x-admin-password': adminPassword },
+      headers: { 'x-admin-password': 'test-admin-password' },
     });
-    expect(resp.status()).toBe(200);
+    expect(resp.status()).toBe(403);
   });
 });
 

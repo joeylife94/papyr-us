@@ -3,6 +3,7 @@ import { createServer, type Server as HttpServer } from 'http';
 import { Server as SocketIoServer } from 'socket.io';
 import {
   authMiddleware,
+  isPlatformAdmin,
   requireAdmin,
   writeAuthGate,
   buildRateLimiter,
@@ -251,38 +252,7 @@ export async function registerRoutes(
   // Optional global write guard (no-op unless ENFORCE_AUTH_WRITES=true)
   app.use(writeAuthGate);
 
-  // --- Health Check ---
-  app.get('/health', async (req, res) => {
-    const uptime = process.uptime();
-    const now = new Date();
-    const version = process.env.npm_package_version || '0.0.0';
-    const memUsage = process.memoryUsage();
-
-    // Check database connectivity
-    let dbStatus = 'unknown';
-    try {
-      const pool = (storage as any).pool;
-      if (pool) {
-        await pool.query('SELECT 1');
-        dbStatus = 'connected';
-      }
-    } catch {
-      dbStatus = 'disconnected';
-    }
-
-    res.json({
-      status: dbStatus === 'connected' ? 'healthy' : 'degraded',
-      time: now.toISOString(),
-      uptimeSeconds: Math.round(uptime),
-      version,
-      database: dbStatus,
-      memory: {
-        heapUsedMB: Math.round(memUsage.heapUsed / 1024 / 1024),
-        heapTotalMB: Math.round(memUsage.heapTotal / 1024 / 1024),
-        rssMB: Math.round(memUsage.rss / 1024 / 1024),
-      },
-    });
-  });
+  // /health and /ready are served by registerOperationalRoutes (operational.ts).
 
   // --- Feature Flags (client runtime config) ---
   // Source of truth is server env; client reads flags from this endpoint.
@@ -1997,9 +1967,9 @@ export async function registerRoutes(
         return res.status(404).json({ message: 'Comment not found' });
       }
 
-      // Owner-based authorization: only the comment author or an admin may edit
+      // Owner-based authorization: only the comment author or a platform admin may edit
       const isOwner = existing.authorUserId != null && existing.authorUserId === userId;
-      const isAdmin = (req.user as any)?.role === 'admin';
+      const isAdmin = !isOwner && (await isPlatformAdmin(storage, req.user));
       if (!isOwner && !isAdmin) {
         return res
           .status(403)
@@ -2031,9 +2001,9 @@ export async function registerRoutes(
         return res.status(404).json({ message: 'Comment not found' });
       }
 
-      // Owner-based authorization: comment author, page editor, or admin may delete
+      // Owner-based authorization: comment author, page editor, or platform admin may delete
       const isOwner = existing.authorUserId != null && existing.authorUserId === userId;
-      const isAdmin = (req.user as any)?.role === 'admin';
+      const isAdmin = !isOwner && (await isPlatformAdmin(storage, req.user));
       let isPageEditor = false;
       if (!isOwner && !isAdmin) {
         isPageEditor = await storage.checkPagePermission(userId, existing.pageId, 'editor');
@@ -2630,33 +2600,10 @@ export async function registerRoutes(
   );
 
   if (featureFlags.FEATURE_ADMIN) {
-    // Admin Authentication
-    app.post('/api/admin/auth', rlAdmin, async (req, res) => {
-      try {
-        const { password } = req.body;
-        if (password === config.adminPassword) {
-          // Issue a short-lived admin token via httpOnly cookie only
-          const token = jwt.sign(
-            { role: 'admin', via: 'password' },
-            (config as any).jwtSecret || 'your-default-secret',
-            {
-              expiresIn: '2h',
-            }
-          );
-          res
-            .cookie('accessToken', token, {
-              httpOnly: true,
-              secure: config.isProduction,
-              sameSite: 'strict',
-              maxAge: 2 * 60 * 60 * 1000,
-            })
-            .json({ success: true });
-        } else {
-          res.status(401).json({ message: 'Invalid password' });
-        }
-      } catch (error) {
-        res.status(500).json({ message: 'Server error' });
-      }
+    // Whether the signed-in user is a platform admin (the admin panel asks before showing itself).
+    // Admins sign in with their own account; there is no shared admin password (issue #124 X0).
+    app.get('/api/admin/session', rlAdmin, requireAdmin, (_req, res) => {
+      res.json({ admin: true });
     });
 
     // Directory password verification
@@ -2682,8 +2629,7 @@ export async function registerRoutes(
 
     app.post('/api/admin/directories', rlAdmin, requireAdmin, async (req, res) => {
       try {
-        const { adminPassword, ...directoryData } = req.body; // adminPassword ignored by middleware
-        const validatedData = insertDirectorySchema.parse(directoryData);
+        const validatedData = insertDirectorySchema.parse(req.body);
         const directory = await storage.createDirectory(validatedData);
         res.status(201).json(directory);
       } catch (error) {
@@ -2693,9 +2639,8 @@ export async function registerRoutes(
 
     app.patch('/api/admin/directories/:id', rlAdmin, requireAdmin, async (req, res) => {
       try {
-        const { adminPassword, ...updateData } = req.body;
         const id = parseInt(req.params.id);
-        const validatedData = updateDirectorySchema.parse(updateData);
+        const validatedData = updateDirectorySchema.parse(req.body);
         const directory = await storage.updateDirectory(id, validatedData);
         if (!directory) {
           return res.status(404).json({ message: 'Directory not found' });

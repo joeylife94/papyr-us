@@ -16,7 +16,7 @@ initSentry();
 
 import express from 'express';
 import { registerRoutes } from './routes.js';
-import { registerOperationalRoutes } from './operational.js';
+import { markShuttingDown, registerOperationalRoutes } from './operational.js';
 import { registerTeamMembershipRoutes } from './team-membership-routes.js';
 import { serveStaticAssets, serveIndex } from './static.js';
 import {
@@ -114,6 +114,7 @@ setupSecurity(app);
   // Graceful shutdown logic
   const shutdown = (signal: string) => {
     log(`[SHUTDOWN] Received ${signal}. Shutting down gracefully...`);
+    markShuttingDown();
     // Force exit after 10 seconds if graceful close hangs (e.g. WebSocket connections)
     const forceTimer = setTimeout(() => {
       log('[SHUTDOWN] Forced exit after timeout.', 'error');

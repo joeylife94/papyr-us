@@ -570,8 +570,22 @@ describe('4-4  AI and aggregate routes scope', () => {
       storage.checkPagePermission.mockResolvedValue(true);
       // The query layer wrongly leaks a team B page; the response must not.
       storage.retrieveTeamScopedPages.mockResolvedValue([
-        { pageId: 1, teamId: TEAM_A_ID, slug: 'a-doc', title: 'A doc', snippet: 'mine', score: 0.9 },
-        { pageId: 2, teamId: TEAM_B_ID, slug: 'b-doc', title: 'B doc', snippet: 'secret', score: 0.8 },
+        {
+          pageId: 1,
+          teamId: TEAM_A_ID,
+          slug: 'a-doc',
+          title: 'A doc',
+          snippet: 'mine',
+          score: 0.9,
+        },
+        {
+          pageId: 2,
+          teamId: TEAM_B_ID,
+          slug: 'b-doc',
+          title: 'B doc',
+          snippet: 'secret',
+          score: 0.8,
+        },
       ]);
       const res = await request(app)
         .post('/api/ai/search')
@@ -596,7 +610,10 @@ describe('4-4  AI and aggregate routes scope', () => {
     });
 
     it('POST /api/ai/search — rejects an empty query', async () => {
-      const res = await request(app).post('/api/ai/search').set(auth(tokenA)).send({ query: '   ' });
+      const res = await request(app)
+        .post('/api/ai/search')
+        .set(auth(tokenA))
+        .send({ query: '   ' });
       expect(res.status).toBe(400);
       expect(storage.retrieveTeamScopedPages).not.toHaveBeenCalled();
     });

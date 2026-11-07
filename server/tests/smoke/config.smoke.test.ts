@@ -45,11 +45,22 @@ describe('smoke: config defaults', () => {
       REPL_ID: undefined,
       // Provide required production vars so validateProductionConfig() doesn't call process.exit(1)
       JWT_SECRET: 'a-secure-test-secret-for-unit-tests-only-not-real',
-      ADMIN_PASSWORD: 'TestPassword123!',
       DATABASE_URL: 'postgresql://test:test@localhost/testdb',
+      // There is no shared admin password to require (issue #124 X0).
+      ADMIN_PASSWORD: undefined,
     });
     expect(config.isProduction).toBe(true);
     expect(config.host).toBe('0.0.0.0');
+  });
+
+  it('warns that ADMIN_PASSWORD is no longer used when it is still set', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await loadConfigWithEnv({ NODE_ENV: 'development', ADMIN_PASSWORD: 'left-over' });
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/ADMIN_PASSWORD .* no longer used/));
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('host is 0.0.0.0 on Replit even if not production', async () => {

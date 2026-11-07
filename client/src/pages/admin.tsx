@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
@@ -27,6 +27,7 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/useAuth';
 import { Directory, InsertDirectory, Team, InsertTeam } from '@shared/schema';
 
 const directoryFormSchema = z.object({
@@ -65,8 +66,8 @@ type TeamFormData = z.infer<typeof teamFormSchema>;
 
 export default function AdminPage() {
   const navigate = useNavigate();
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [authPassword, setAuthPassword] = useState('');
+  const { isAuthenticated, isLoading: isAuthLoading, user } = useAuth();
+  const userId: number | undefined = user?.id;
   const [activeTab, setActiveTab] = useState<'directories' | 'teams'>('directories');
   const [editingDirectory, setEditingDirectory] = useState<Directory | null>(null);
   const [editingTeam, setEditingTeam] = useState<Team | null>(null);
@@ -100,70 +101,42 @@ export default function AdminPage() {
     },
   });
 
-  // Check authentication on page load
+  // The removed password flow kept the shared password in sessionStorage; drop any leftover copy.
   useEffect(() => {
-    const stored = sessionStorage.getItem('adminAuth');
-    if (stored) {
-      // Verify stored password with server
-      fetch('/api/admin/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: stored }),
-      })
-        .then((response) => {
-          if (response.ok) {
-            setIsAuthenticated(true);
-          } else {
-            sessionStorage.removeItem('adminAuth');
-          }
-        })
-        .catch(() => {
-          // Network error — keep stored auth for retry on next load
-          console.warn('Admin auth check failed — server may be unreachable');
-        });
+    try {
+      sessionStorage.removeItem('adminAuth');
+    } catch {
+      // Storage unavailable: nothing to clear
     }
   }, []);
 
-  const handleAuth = async () => {
-    try {
-      const response = await fetch('/api/admin/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: authPassword }),
-      });
-
-      if (response.ok) {
-        setIsAuthenticated(true);
-        sessionStorage.setItem('adminAuth', authPassword);
-        toast({
-          title: 'Authentication successful',
-          description: 'Welcome to the admin panel',
-        });
-      } else {
-        toast({
-          title: 'Authentication failed',
-          description: 'Invalid password',
-          variant: 'destructive',
-        });
-      }
-    } catch (error) {
-      toast({
-        title: 'Error',
-        description: 'Failed to authenticate',
-        variant: 'destructive',
-      });
-    }
-  };
+  // Admins use their own account: the server decides whether it is a platform admin
+  // (ADMIN_EMAILS). There is no shared admin password (issue #124 X0). The answer is keyed by
+  // account and asked again on every visit, so it never outlives the account it was given to
+  // (switching accounts in the same tab does not reload the page).
+  const { data: adminSession, isLoading: isAdminCheckLoading } = useQuery<{ admin: boolean }>({
+    queryKey: ['/api/admin/session', userId],
+    queryFn: async () => {
+      const response = await fetch('/api/admin/session');
+      if (response.status === 403) return { admin: false };
+      if (!response.ok) throw new Error('Failed to check admin access');
+      return response.json();
+    },
+    enabled: isAuthenticated && userId != null,
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+  });
+  const isAdmin = adminSession?.admin === true;
 
   const { data: directories = [], refetch: refetchDirectories } = useQuery<Directory[]>({
-    queryKey: ['/api/admin/directories'],
+    queryKey: ['/api/admin/directories', userId],
     queryFn: async () => {
-      const storedPassword = sessionStorage.getItem('adminAuth') || '';
-      const response = await fetch(`/api/admin/directories?adminPassword=${storedPassword}`);
+      const response = await fetch('/api/admin/directories');
       if (!response.ok) throw new Error('Failed to fetch directories');
       return response.json();
     },
-    enabled: isAuthenticated,
+    enabled: isAdmin,
   });
 
   const { data: teams = [], refetch: refetchTeams } = useQuery<Team[]>({
@@ -173,16 +146,15 @@ export default function AdminPage() {
       if (!response.ok) throw new Error('Failed to fetch teams');
       return response.json();
     },
-    enabled: isAuthenticated,
+    enabled: isAdmin,
   });
 
   const createDirectoryMutation = useMutation({
     mutationFn: async (data: InsertDirectory) => {
-      const storedPassword = sessionStorage.getItem('adminAuth') || '';
       const response = await fetch('/api/admin/directories', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...data, adminPassword: storedPassword }),
+        body: JSON.stringify(data),
       });
       if (!response.ok) throw new Error('Failed to create directory');
       return response.json();
@@ -207,11 +179,10 @@ export default function AdminPage() {
 
   const updateDirectoryMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: Partial<Directory> }) => {
-      const storedPassword = sessionStorage.getItem('adminAuth') || '';
       const response = await fetch(`/api/admin/directories/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...data, adminPassword: storedPassword }),
+        body: JSON.stringify(data),
       });
       if (!response.ok) throw new Error('Failed to update directory');
       return response.json();
@@ -237,11 +208,8 @@ export default function AdminPage() {
 
   const deleteDirectoryMutation = useMutation({
     mutationFn: async (id: number) => {
-      const storedPassword = sessionStorage.getItem('adminAuth') || '';
       const response = await fetch(`/api/admin/directories/${id}`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ adminPassword: storedPassword }),
       });
       if (!response.ok) throw new Error('Failed to delete directory');
     },
@@ -426,7 +394,8 @@ export default function AdminPage() {
     }
   };
 
-  if (!isAuthenticated) {
+  if (!isAdmin) {
+    const isChecking = isAuthLoading || (isAuthenticated && isAdminCheckLoading);
     return (
       <div className="min-h-screen flex items-center justify-center p-6">
         <Card className="w-full max-w-md shadow-lg">
@@ -435,19 +404,23 @@ export default function AdminPage() {
               <Lock className="w-6 h-6 text-highlight" />
             </div>
             <CardTitle className="text-2xl">Admin Access</CardTitle>
-            <p className="text-foreground-secondary">Enter the admin password to continue</p>
+            <p className="text-foreground-secondary" data-testid="admin-access-message">
+              {isChecking
+                ? 'Checking your access…'
+                : isAuthenticated
+                  ? 'Your account is not a platform admin. An operator can add your email to ADMIN_EMAILS.'
+                  : 'Sign in with an admin account to continue.'}
+            </p>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Input
-              type="password"
-              placeholder="Admin password"
-              value={authPassword}
-              onChange={(e) => setAuthPassword(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleAuth()}
-            />
-            <Button onClick={handleAuth} className="w-full">
-              Login
-            </Button>
+            {!isChecking && !isAuthenticated && (
+              <Button
+                onClick={() => navigate(`/login?redirect=${encodeURIComponent('/admin')}`)}
+                className="w-full"
+              >
+                Sign in
+              </Button>
+            )}
             <Button variant="outline" onClick={() => navigate('/')} className="w-full">
               Back to Home
             </Button>

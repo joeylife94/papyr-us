@@ -40,7 +40,6 @@ read_env_value() {
 
 replace_placeholder '__POSTGRES_PASSWORD__' "$(openssl rand -hex 24)"
 replace_placeholder '__JWT_SECRET__' "$(openssl rand -hex 32)"
-replace_placeholder '__ADMIN_PASSWORD__' "$(openssl rand -hex 24)"
 chmod 600 .env.firebat
 
 if grep -q '__[A-Z_]*__' .env.firebat; then
@@ -52,13 +51,12 @@ POSTGRES_USER=$(read_env_value POSTGRES_USER .env.firebat)
 POSTGRES_PASSWORD=$(read_env_value POSTGRES_PASSWORD .env.firebat)
 POSTGRES_DB=$(read_env_value POSTGRES_DB .env.firebat)
 JWT_SECRET=$(read_env_value JWT_SECRET .env.firebat)
-ADMIN_PASSWORD=$(read_env_value ADMIN_PASSWORD .env.firebat)
 HOST_PORT=$(read_env_value HOST_PORT .env.firebat)
 FIREBAT_SEED_ADMIN_NAME=$(read_env_value FIREBAT_SEED_ADMIN_NAME .env.firebat)
 FIREBAT_SEED_ADMIN_EMAIL=$(read_env_value FIREBAT_SEED_ADMIN_EMAIL .env.firebat)
 FIREBAT_SEED_ADMIN_PASSWORD=$(read_env_value FIREBAT_SEED_ADMIN_PASSWORD .env.firebat)
 
-for variable in POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB JWT_SECRET ADMIN_PASSWORD; do
+for variable in POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB JWT_SECRET; do
   eval "value=\${$variable:-}"
   if [ -z "$value" ]; then
     printf '[FAIL] required variable is empty: %s\n' "$variable" >&2

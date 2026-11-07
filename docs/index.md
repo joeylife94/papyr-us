@@ -166,14 +166,13 @@ Docker를 선호한다면: `docker-compose up --build`
 
 ### 인프라 & 배포
 
-| 문서                                                       | 설명                                     |
-| ---------------------------------------------------------- | ---------------------------------------- |
-| [render-deployment-guide.md](./render-deployment-guide.md) | Render.com 배포 가이드                   |
-| [ubuntu-deployment-guide.md](./ubuntu-deployment-guide.md) | Ubuntu 서버 직접 배포                    |
-| [monitoring-guide.md](./monitoring-guide.md)               | Sentry, Prometheus, Winston, 백업        |
-| [sso-guide.md](./sso-guide.md)                             | Google/GitHub/Azure AD/OIDC SSO          |
-| [i18n-guide.md](./i18n-guide.md)                           | 다국어 지원 (EN, KO, JA, ZH, ES, DE, FR) |
-| [setup-local-postgres.md](./setup-local-postgres.md)       | 로컬 PostgreSQL 설정                     |
+| 문서                                                       | 설명                              |
+| ---------------------------------------------------------- | --------------------------------- |
+| [render-deployment-guide.md](./render-deployment-guide.md) | Render.com 배포 가이드            |
+| [ubuntu-deployment-guide.md](./ubuntu-deployment-guide.md) | Ubuntu 서버 직접 배포             |
+| [monitoring-guide.md](./monitoring-guide.md)               | Sentry, Prometheus, Winston, 백업 |
+| [sso-guide.md](./sso-guide.md)                             | 이메일·Google·GitHub 로그인       |
+| [setup-local-postgres.md](./setup-local-postgres.md)       | 로컬 PostgreSQL 설정              |
 
 ### 테스트 & QA
 

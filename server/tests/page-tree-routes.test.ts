@@ -26,10 +26,8 @@ const TEST_SECRET = 'page-tree-test-secret';
 vi.mock('../config', () => ({
   config: {
     jwtSecret: 'page-tree-test-secret',
-    adminPassword: 'test-admin',
     adminEmails: [],
     enforceAuthForWrites: true,
-    allowAdminPassword: false,
     rateLimitEnabled: false,
     rateLimitWindowMs: 60_000,
     rateLimitMax: 1000,

@@ -27,13 +27,10 @@ afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
 });
 
-describe('Legacy route-bundle health endpoint', () => {
-  it('GET /health reports dependency status, version, and uptime', async () => {
-    const res = await request(app).get('/health');
-    expect(res.status).toBe(200);
-    expect(res.body).toHaveProperty('status', 'degraded');
-    expect(res.body).toHaveProperty('database', 'unknown');
-    expect(typeof res.body.version).toBe('string');
-    expect(typeof res.body.uptimeSeconds).toBe('number');
+describe('Route bundle health endpoints', () => {
+  // Issue #124 X0: /health and /ready exist once, in operational.ts (see operational.test.ts).
+  it('leaves /health and /ready to the operational routes', async () => {
+    expect((await request(app).get('/health')).status).toBe(404);
+    expect((await request(app).get('/ready')).status).toBe(404);
   });
 });

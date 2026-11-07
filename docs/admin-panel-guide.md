@@ -4,15 +4,15 @@
 
 ### 접근 방법 (권장 순서)
 
-1. 헤더 우측의 톱니바퀴(Settings) 아이콘 클릭
-2. 권장: 관리자 계정으로 로그인하여 JWT 기반 인증을 사용합니다. (관리자 계정은 `ADMIN_EMAILS`에 등록되어 있어야 합니다)
-3. 임시/하위 호환: 단기 관리자 비밀번호를 사용하는 흐름이 존재하지만, 운영 환경에서는 사용을 지양하세요.
+1. 관리자 계정으로 로그인합니다. 관리자 계정은 이메일이 `ADMIN_EMAILS`에 등록된 활성 계정입니다.
+2. 헤더 우측의 톱니바퀴(Settings) 아이콘을 누르거나 `/admin`으로 이동합니다.
+3. 로그인하지 않았으면 "Sign in" 버튼이, 관리자가 아닌 계정이면 "Your account is not a platform admin" 안내가 보입니다.
 
 ### 보안 기능
 
-- JWT(권장) 및 단기 관리자 비밀번호(하위 호환)
-- 세션 기반 인증 유지(클라이언트에서 로컬 스토리지/세션 저장 방식에 따라 동작함)
-- 무단 접근 방지(관리자 라우트는 서버에서 `requireAdmin`으로 보호됨)
+- 관리자는 자기 계정으로 로그인합니다. 공유 관리자 비밀번호는 없습니다(#124 X0에서 제거).
+- 패널은 `GET /api/admin/session`으로 서버에 관리자 여부를 물은 뒤에만 열립니다. 브라우저 저장소에 관리자 비밀번호나 토큰을 두지 않습니다.
+- 관리자 라우트는 서버에서 `requireAdmin`으로 보호됩니다. 판정 방식은 [rbac-guide.md](./rbac-guide.md)를 보세요.
 
 ## 디렉토리 생성
 
@@ -130,49 +130,28 @@
 
 ## 클라이언트 사용 예시 (관리자 API)
 
-1. JWT 기반(권장)
+관리자 계정으로 로그인해 받은 액세스 토큰(또는 `accessToken` 쿠키)을 사용합니다.
 
 ```bash
-curl -H "Authorization: Bearer <관리자_JWT>" https://your-app.example.com/api/admin/directories
+curl -H "Authorization: Bearer <관리자 계정의 액세스 토큰>" https://your-app.example.com/api/admin/directories
 ```
 
-2. 비밀번호로 단기 관리자 토큰 발급 (서버: `/api/admin/auth`)
-
-```bash
-curl -X POST -H "Content-Type: application/json" -d '{"password":"<ADMIN_PASSWORD>"}' https://your-app.example.com/api/admin/auth
-# 응답으로 { "success": true, "token": "<TOKEN>" } 형태의 단기 토큰이 반환됩니다.
-```
-
-발급된 토큰 사용 예:
-
-```bash
-curl -H "Authorization: Bearer <TOKEN>" https://your-app.example.com/api/admin/directories
-```
-
-3. 하위 호환: 헤더/쿼리 기반 (권장하지 않음)
-
-```bash
-curl -H "x-admin-password: <ADMIN_PASSWORD>" https://your-app.example.com/api/admin/directories
-curl https://your-app.example.com/api/admin/directories?adminPassword=<ADMIN_PASSWORD>
-```
+`x-admin-password` 헤더, `adminPassword` 쿼리/바디, `POST /api/admin/auth`는 더 이상 동작하지 않습니다.
 
 ## 문제 해결(트러블슈팅)
 
 관리자 접근이 거부될 때 확인할 체크리스트:
 
-- 요청 헤더의 `Authorization` 형식이 `Bearer <토큰>`인지 확인하세요.
-- JWT를 사용한다면 토큰 페이로드에 `role: 'admin'` 또는 `email`이 `ADMIN_EMAILS`에 포함되어 있는지 확인하세요. (디코드: `jwt.decode`로 확인 가능)
-- 비밀번호 기반 접근을 사용 중이라면 서버 구성에서 `allowAdminPassword`(또는 `ALLOW_ADMIN_PASSWORD`)가 `true`로 설정되어 있는지와 `adminPassword` 값이 일치하는지 확인하세요.
-- 서버 로그에서 `Denied admin access` 메시지가 있는지 확인하고, 타임스탬프와 IP를 함께 확인하세요.
-- `requireAdmin` 미들웨어는 토큰 해독을 먼저 시도한 뒤(성공 시 req.user 설정), role/email 확인, 이후 비밀번호 폴백을 적용합니다. 이 순서를 이해하면 문제 원인 파악에 도움이 됩니다.
-- 로컬에서 재현 시, Playwright나 다른 테스트 도구가 서버를 재시작하며 동작하는지 여부도 체크하세요(웹서버 재사용 설정 때문에 포트 충돌이 발생할 수 있습니다).
+- 로그인한 계정의 **현재 이메일**이 서버의 `ADMIN_EMAILS`에 있는지, 그리고 `ADMIN_EMAILS`를 바꾼 뒤 서버를 재시작했는지 확인하세요.
+- 계정이 비활성(`is_active = false`)이면 거부됩니다.
+- 토큰 안의 `role`/`email` 값은 판정에 쓰이지 않습니다. 토큰을 디코드해서 `role: 'admin'`이 보여도 위 두 조건이 맞지 않으면 403입니다.
+- 서버 로그의 `Denied admin access` 메시지와 타임스탬프, IP를 확인하세요. `500 Admin check failed`는 계정 조회(DB)가 실패한 경우입니다.
 
 ## 스크린샷 / 캡션 교체 권장
 
 현재 문서 내부에 인라인 스크린샷 참조가 적은 상태입니다. 다만 관리자 UI에 "관리자 비밀번호 입력"만을 강조하는 기존 스크린샷이 있다면 아래 작업을 권장합니다:
 
-- 스크린샷 캡션을 "JWT 기반 관리자 로그인 권장 — 비밀번호 기반은 하위 호환용"으로 변경하세요.
-- 스크린샷이 오래된 UI를 보여주면, 최신 관리자 로그인 흐름(우측 상단 Settings 아이콘 → 로그인 또는 관리자 계정으로 로그인)으로 재촬영하여 교체하세요.
+- 비밀번호 입력 화면을 보여주는 스크린샷은 더 이상 맞지 않습니다. 관리자 계정으로 로그인한 뒤 `/admin`을 여는 현재 흐름으로 재촬영해 교체하세요.
 - 교체 대상 이미지 파일을 찾으려면 레포지토리 내 `docs/` 폴더와 `docs/assets/` (또는 유사 폴더)를 검색해 주세요. 지금은 문서에 직접 삽입된 이미지가 발견되지 않아, 별도 이미지 목록을 생성했습니다.
 
 ### 자리표시자(문서 삽입 예시)
@@ -181,7 +160,7 @@ curl https://your-app.example.com/api/admin/directories?adminPassword=<ADMIN_PAS
 
 ```markdown
 ![관리자 로그인](./assets/admin-login-20251016.png)
-_관리자 로그인 (JWT 기반 권장)_
+_관리자 계정으로 로그인한 뒤 `/admin` 열기_
 
 ![디렉토리 생성](./assets/admin-login-20251016.png)
 _디렉토리 생성: 디렉토리 이름, 표시 이름, 비밀번호(선택)_
@@ -193,7 +172,7 @@ _디렉토리 생성: 디렉토리 이름, 표시 이름, 비밀번호(선택)_
 
 1. RBAC(현재 문서화됨) 완전 도입 및 역할별 권한 세분화
 2. 디렉토리별 세부 권한 설정(읽기/쓰기/관리)
-3. 감사 로그 및 활동 추적(immutable logs)
+3. 감사 로그 및 활동 추적(immutable logs) — #124 X2
 4. 자동 백업 및 주기적 복원 검증
 5. 사용자 그룹 관리 및 권한 전파 정책
 

@@ -25,9 +25,6 @@ function validateProductionConfig() {
     if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'your-default-secret') {
       errors.push('JWT_SECRET must be set to a secure random value in production');
     }
-    if (!process.env.ADMIN_PASSWORD || process.env.ADMIN_PASSWORD.length < 12) {
-      errors.push('ADMIN_PASSWORD must be set to a strong password (min 12 chars) in production');
-    }
     if (!process.env.DATABASE_URL) {
       errors.push('DATABASE_URL must be set in production');
     }
@@ -61,6 +58,14 @@ function validateProductionConfig() {
           'Remove COLLAB_REQUIRE_AUTH=0 from your staging/preview/CI environment.'
       );
     }
+  }
+
+  // The shared admin password was removed (issue #124 X0). Say so instead of silently ignoring it.
+  if (process.env.ADMIN_PASSWORD || process.env.ALLOW_ADMIN_PASSWORD) {
+    console.warn(
+      'ADMIN_PASSWORD and ALLOW_ADMIN_PASSWORD are no longer used. ' +
+        'Admins sign in with their own account listed in ADMIN_EMAILS.'
+    );
   }
 
   if (errors.length > 0) {
@@ -97,19 +102,8 @@ export const config = {
   githubClientId: process.env.GITHUB_CLIENT_ID || '',
   githubClientSecret: process.env.GITHUB_CLIENT_SECRET || '',
 
-  // Admin configuration - REQUIRED in production
-  get adminPassword(): string {
-    const password = process.env.ADMIN_PASSWORD;
-    if (!password && this.isProduction) {
-      throw new Error('ADMIN_PASSWORD is required in production');
-    }
-    // Only allow weak default in development for convenience
-    if (!password) {
-      console.warn('\u26a0\ufe0f  Using default admin password - DO NOT USE IN PRODUCTION');
-    }
-    return password || 'dev-admin-password';
-  },
-  // Comma-separated list of admin emails for RBAC
+  // Platform admins: comma-separated emails of user accounts that may use the admin APIs
+  // (isPlatformAdmin in middleware.ts). There is no shared admin password.
   adminEmails: (process.env.ADMIN_EMAILS || '')
     .split(',')
     .map((e) => e.trim().toLowerCase())
@@ -125,13 +119,6 @@ export const config = {
     if (v === '0' || v === 'false' || v === 'no') return false;
     // default: enabled in production, disabled otherwise
     return this.isProduction;
-  },
-  get allowAdminPassword() {
-    const v = (process.env.ALLOW_ADMIN_PASSWORD || '').toLowerCase();
-    if (v === '1' || v === 'true' || v === 'yes') return true;
-    if (v === '0' || v === 'false' || v === 'no') return false;
-    // default: disallow in production, allow in non-production for dev convenience
-    return !this.isProduction;
   },
 
   // Rate limiting (basic, in-memory)

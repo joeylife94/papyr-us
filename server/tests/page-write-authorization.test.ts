@@ -29,10 +29,8 @@ const TEST_SECRET = 'page-write-test-secret';
 vi.mock('../config', () => ({
   config: {
     jwtSecret: 'page-write-test-secret',
-    adminPassword: 'test-admin',
     adminEmails: ['admin@example.com'],
     enforceAuthForWrites: true,
-    allowAdminPassword: false,
     rateLimitEnabled: false,
     rateLimitWindowMs: 60_000,
     rateLimitMax: 1000,

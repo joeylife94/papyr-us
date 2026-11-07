@@ -1458,6 +1458,18 @@ export class DBStorage {
     return bcrypt.compare(password, team.password);
   }
 
+  /** The account behind a token's user id, for checks made at request time (issue #124 X0). */
+  async getUserAccount(
+    userId: number
+  ): Promise<{ id: number; email: string; isActive: boolean } | undefined> {
+    const [account] = await this.db
+      .select({ id: users.id, email: users.email, isActive: users.isActive })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    return account;
+  }
+
   /**
    * Get all team IDs that a user belongs to.
    * First checks the team_members RBAC table; falls back to legacy members table.
