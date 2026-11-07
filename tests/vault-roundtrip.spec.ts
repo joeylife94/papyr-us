@@ -9,7 +9,8 @@ import { readZip } from '../server/services/zip';
 
 // Issue #113 P2-D2: a small page tree with links, tags and an icon is exported from one team as
 // a Markdown vault from the workspace menu, then imported into another team from the same menu.
-// Titles, hierarchy, tags, icons and links survive, and links point at the imported pages.
+// Titles, hierarchy, tags, icons, covers (#134) and links survive, and links point at the
+// imported pages.
 
 const SHOTS = process.env.VAULT_SHOTS_DIR;
 
@@ -75,7 +76,11 @@ test('vault round trip: export a tree as Markdown and import it into another tea
     return (await response.json()) as { id: number; slug: string };
   };
 
-  const guide = await create('Guide', 'Start here.', { tags: ['guide', 'docs'], icon: '📘' });
+  const guide = await create('Guide', 'Start here.', {
+    tags: ['guide', 'docs'],
+    icon: '📘',
+    metadata: { cover: { type: 'preset', id: 'forest' } },
+  });
   const setup = await create('Setup: Day 1', `Back to [[page:${guide.id}]].`, {
     parentId: guide.id,
     tags: ['setup'],
@@ -121,6 +126,7 @@ test('vault round trip: export a tree as Markdown and import it into another tea
     expect(Array.from(files.keys()).sort()).toEqual(['FAQ.md', 'Guide.md', 'Guide/Setup Day 1.md']);
     expect(files.get('FAQ.md')).toContain('See [[Setup Day 1]] and [[Guide]].');
     expect(files.get('Guide.md')).toContain('icon: "📘"');
+    expect(files.get('Guide.md')).toContain('cover: "forest"');
     expect(files.get('Guide/Setup Day 1.md')).toContain('title: "Setup: Day 1"');
 
     // ── Import into the target team from its workspace menu ──
@@ -171,6 +177,8 @@ test('vault round trip: export a tree as Markdown and import it into another tea
     );
     expect(guidePage.tags).toEqual(['guide', 'docs']);
     expect(guidePage.icon).toBe('📘');
+    expect(guidePage.metadata).toEqual({ cover: { type: 'preset', id: 'forest' } });
+    expect(setupPage.metadata).toEqual({});
     expect(setupPage.tags).toEqual(['setup']);
     expect(guidePage.content).toBe(`Start here, then [[page:${newSetup.id}]].\n`);
     expect(setupPage.content).toBe(`Back to [[page:${newGuide.id}]].\n`);

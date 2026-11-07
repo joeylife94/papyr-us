@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Block } from '@shared/schema';
+import type { Block, PageCover } from '@shared/schema';
 
 /** Fields the autosave endpoint accepts (see PUT /api/pages/:id/autosave). */
 export interface AutosavePatch {
@@ -9,6 +9,8 @@ export interface AutosavePatch {
   folder?: string;
   /** One emoji, or null to remove the icon (issue #103 E4). */
   icon?: string | null;
+  /** A preset or uploaded image cover, or null to remove it (issue #134). */
+  cover?: PageCover | null;
 }
 
 export type AutosaveStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
