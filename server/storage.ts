@@ -83,6 +83,7 @@ import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 import type { RetrievedPageRow } from './services/retrieval.js';
 import type { PageTreeRow } from './services/page-tree.js';
+import type { TagPaneRow } from './services/tag-pane.js';
 import { postgresErrorOf } from './db-errors.js';
 import {
   MAX_INDEXED_LINKS,
@@ -1029,6 +1030,60 @@ export class DBStorage {
       });
     });
     return Array.from(tagCounts.entries()).map(([name, count]) => ({ name, count }));
+  }
+
+  /**
+   * Pages the tag pane (#137) reads: live pages of one scope (a team, or `null` for team-less
+   * pages) the viewer can list (`readablePagesInScope`), most recently updated first, at most
+   * `limit`. No body; `getTagPaneContent` loads the content in batches.
+   */
+  async getTagPaneRows(
+    viewer: PageViewer,
+    teamId: number | null,
+    limit: number
+  ): Promise<TagPaneRow[]> {
+    return this.db
+      .select({
+        id: wikiPages.id,
+        title: wikiPages.title,
+        slug: wikiPages.slug,
+        icon: wikiPages.icon,
+        teamId: wikiPages.teamId,
+        updatedAt: wikiPages.updatedAt,
+        tags: wikiPages.tags,
+      })
+      .from(wikiPages)
+      .where(this.readablePagesInScope(viewer, teamId))
+      .orderBy(desc(wikiPages.updatedAt), desc(wikiPages.id))
+      .limit(limit);
+  }
+
+  /**
+   * The first `maxChars` characters of the content of the given pages, for their inline `#tags`
+   * (#137). The scope and read rule are applied again, so a page that left them since
+   * `getTagPaneRows` gives nothing. Pages whose content has no `#` followed by a character that
+   * can start a tag name (only headings, say) are skipped.
+   */
+  async getTagPaneContent(
+    viewer: PageViewer,
+    teamId: number | null,
+    ids: number[],
+    maxChars: number
+  ): Promise<Array<{ id: number; content: string }>> {
+    if (ids.length === 0) return [];
+    return this.db
+      .select({
+        id: wikiPages.id,
+        content: sql<string>`left(${wikiPages.content}, ${maxChars})`,
+      })
+      .from(wikiPages)
+      .where(
+        and(
+          inArray(wikiPages.id, ids),
+          this.readablePagesInScope(viewer, teamId),
+          sql`${wikiPages.content} ~ '#[^[:space:]#]'`
+        )
+      );
   }
 
   /**
