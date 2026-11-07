@@ -117,6 +117,13 @@ export function getServerConfig() {
 
 interface AuthRequest extends Request {
   user?: any;
+  /**
+   * Set by requireTeamMembership: the id of the one team the request names (undefined when it
+   * names none), checked for membership when a user is signed in. Handlers act on this team.
+   */
+  checkedTeamId?: number;
+  /** Set by requireTeamMembership: the signed-in user's team ids (empty without a user). */
+  userTeamIds?: number[];
 }
 
 function extractBearerToken(authorizationHeader: string | undefined): string | undefined {
@@ -176,9 +183,95 @@ export function optionalAuth(req: AuthRequest, _res: Response, next: NextFunctio
   next();
 }
 
+/** A team named by a request: its id, or a name to look up. */
+export type TeamReference = { id: number } | { name: string };
+
 /**
- * Verify user belongs to the team referenced in the request.
- * Extracts teamId from params.teamId, query.teamId, or body.teamId.
+ * Reads one `teamId` value. A falsy value (undefined, null, '', 0, false) names no team, as
+ * before. A positive integer, or a string of digits, is an id. Any other string is a team name,
+ * unless parseInt() or Number() would read a number from it (`10e1`, `20-team`, ` 10`, `-5`,
+ * `0x10`, `Infinity`): such a value is not a team reference. Handlers that convert the raw
+ * value themselves must reach the same team as this check, so a name can never be read as a
+ * different id elsewhere. Anything else (a repeated query parameter, an object, a fraction) is
+ * not a team reference either.
+ */
+export function parseTeamReference(raw: unknown): TeamReference | null | 'invalid' {
+  if (!raw) return null;
+  if (typeof raw === 'number') {
+    return Number.isSafeInteger(raw) && raw > 0 ? { id: raw } : 'invalid';
+  }
+  if (typeof raw !== 'string') return 'invalid';
+  if (/^\d+$/.test(raw)) {
+    const id = Number(raw);
+    return Number.isSafeInteger(id) && id > 0 ? { id } : 'invalid';
+  }
+  if (!Number.isNaN(Number.parseInt(raw, 10)) || !Number.isNaN(Number(raw))) return 'invalid';
+  return { name: raw };
+}
+
+/** Where a request may name its team, in the order they are read. */
+const TEAM_SOURCES = ['params', 'query', 'body'] as const;
+
+export type RequestTeam =
+  | { ok: true; teamId: number | undefined }
+  | { ok: false; status: 400 | 404; message: string };
+
+/**
+ * The one team a request names. `params.teamId`, `query.teamId` and `body.teamId` may each name
+ * it. Every one present must be a team reference (400 otherwise), and all of them must be the
+ * same team once names are resolved (400 `teamId mismatch` otherwise), so whichever one a
+ * handler reads is the team that was checked. An unknown name is refused with 404, unless
+ * `allowUnknownName` (development without a signed-in user, where no membership is checked):
+ * the team id is then undefined. `teamId` is undefined when the request names no team.
+ */
+export async function resolveRequestTeam(
+  req: Request,
+  getTeamByName: (name: string) => Promise<{ id: number } | undefined>,
+  { allowUnknownName }: { allowUnknownName: boolean }
+): Promise<RequestTeam> {
+  const named = new Set<string>();
+  const resolved = new Map<string, number | undefined>();
+  let teamId: number | undefined;
+  for (const source of TEAM_SOURCES) {
+    const ref = parseTeamReference((req as any)[source]?.teamId);
+    if (ref === null) continue;
+    if (ref === 'invalid') return { ok: false, status: 400, message: 'Invalid teamId' };
+    let id: number | undefined;
+    let key: string;
+    if ('id' in ref) {
+      id = ref.id;
+      key = `id:${id}`;
+    } else {
+      if (!resolved.has(ref.name)) resolved.set(ref.name, (await getTeamByName(ref.name))?.id);
+      id = resolved.get(ref.name);
+      if (id === undefined && !allowUnknownName) {
+        return { ok: false, status: 404, message: 'Team not found' };
+      }
+      // An unknown name (development without a user) is only the same team as itself
+      key = id === undefined ? `name:${ref.name}` : `id:${id}`;
+    }
+    named.add(key);
+    teamId = id;
+  }
+  if (named.size > 1) return { ok: false, status: 400, message: 'teamId mismatch' };
+  return { ok: true, teamId };
+}
+
+function teamStorage(req: Request): Promise<any> {
+  return req.app.locals.storage
+    ? Promise.resolve(req.app.locals.storage)
+    : import('./storage.js').then((m) => m.getStorage());
+}
+
+/**
+ * Verify the user belongs to the team the request names, and give the handler that team.
+ *
+ * The team may be named by `params.teamId`, `query.teamId` or `body.teamId` (an id or a team
+ * name). All that are present must name the same team (see resolveRequestTeam), so a request
+ * cannot have one team checked while the handler acts on another. The resolved id is set as
+ * `req.checkedTeamId`; a handler that needs the team's id reads it from there instead of
+ * converting a raw value itself. The body is only seen once it is parsed: on a multipart route,
+ * this middleware goes after the multipart parser.
  *
  * Behaviour matrix:
  * ┌──────────────┬──────────┬──────────────────────────────────────────────┐
@@ -187,53 +280,45 @@ export function optionalAuth(req: AuthRequest, _res: Response, next: NextFunctio
  * │ true         │ absent   │ any        → 401                            │
  * │ true         │ present  │ present    → verify membership              │
  * │ true         │ present  │ absent     → attach userTeamIds, next()     │
- * │ false (dev)  │ absent   │ any        → next()                         │
+ * │ false (dev)  │ absent   │ any        → next() (no membership check)   │
  * │ false (dev)  │ present  │ present    → verify membership              │
  * │ false (dev)  │ present  │ absent     → attach userTeamIds, next()     │
  * └──────────────┴──────────┴──────────────────────────────────────────────┘
+ * In every row a malformed reference (400), an unknown team name (404, except in development
+ * without a user) and sources that name different teams (400) are refused first.
  *
- * When teamId is absent and user is authenticated, `req.userTeamIds` is
- * attached so that downstream handlers can scope queries to the user's teams.
+ * `req.userTeamIds` is attached (empty without a user) so that handlers can scope queries to
+ * the user's teams when the request names no team.
  */
 export function requireTeamMembership(req: AuthRequest, res: Response, next: NextFunction) {
-  // Dev mode without user — attach empty teamIds and continue
-  if (!config.enforceAuthForWrites && (!req.user || !req.user.id)) {
-    (req as any).userTeamIds = [];
-    return next();
-  }
+  const userId = req.user?.id;
 
   // Auth enforced but no user — reject
-  if (!req.user || !req.user.id) {
+  if (!userId && config.enforceAuthForWrites) {
     return res.status(401).json({ message: 'Authentication required' });
   }
 
-  const teamIdRaw = req.params.teamId || (req.query.teamId as string) || req.body?.teamId;
-
   (async () => {
     try {
-      const storage = req.app.locals.storage || (await import('./storage.js')).getStorage();
-      const userTeamIds = await storage.getUserTeamIds(req.user!.id);
+      const team = await resolveRequestTeam(
+        req,
+        async (name) => (await teamStorage(req)).getTeamByName(name),
+        { allowUnknownName: !userId }
+      );
+      if (!team.ok) return res.status(team.status).json({ message: team.message });
+      req.checkedTeamId = team.teamId;
 
-      // Attach for downstream handlers to use for scoping
-      (req as any).userTeamIds = userTeamIds;
-
-      if (!teamIdRaw) {
-        // No specific team requested — handler must scope using req.userTeamIds
+      // Dev mode without user — no membership to check, as before
+      if (!userId) {
+        req.userTeamIds = [];
         return next();
       }
 
-      let teamId: number;
-      if (!isNaN(parseInt(String(teamIdRaw)))) {
-        teamId = parseInt(String(teamIdRaw));
-      } else {
-        const team = await storage.getTeamByName(String(teamIdRaw));
-        if (!team) {
-          return res.status(404).json({ message: 'Team not found' });
-        }
-        teamId = team.id;
-      }
+      const userTeamIds: number[] = await (await teamStorage(req)).getUserTeamIds(userId);
+      // Attach for downstream handlers to use for scoping
+      req.userTeamIds = userTeamIds;
 
-      if (!userTeamIds.includes(teamId)) {
+      if (team.teamId !== undefined && !userTeamIds.includes(team.teamId)) {
         return res.status(403).json({ message: 'You are not a member of this team' });
       }
 
@@ -395,26 +480,19 @@ export function requireTeamRole(requiredRoles: Array<'owner' | 'admin' | 'member
         return res.status(401).json({ message: 'Authentication required' });
       }
 
-      // Get teamId from params, query, or body
-      const teamIdRaw = req.params.teamId || req.query.teamId || req.body?.teamId;
-      if (!teamIdRaw) {
+      const storage = await teamStorage(req);
+
+      // The one team the request names, read like requireTeamMembership does
+      const team = await resolveRequestTeam(req, (name) => storage.getTeamByName(name), {
+        allowUnknownName: false,
+      });
+      if (!team.ok) return res.status(team.status).json({ message: team.message });
+      if (team.teamId === undefined) {
         // No teamId in request — skip team check (non-team resource)
         return next();
       }
-
-      const storage = req.app.locals.storage || (await import('./storage.js')).getStorage();
-
-      // Resolve teamId (could be a name or numeric ID)
-      let teamId: number;
-      if (!isNaN(parseInt(String(teamIdRaw)))) {
-        teamId = parseInt(String(teamIdRaw));
-      } else {
-        const team = await storage.getTeamByName(String(teamIdRaw));
-        if (!team) {
-          return res.status(404).json({ message: 'Team not found' });
-        }
-        teamId = team.id;
-      }
+      const teamId = team.teamId;
+      req.checkedTeamId = teamId;
 
       // Get user's actual role in this team
       const userRole = await storage.getUserTeamRole(req.user.id, teamId);

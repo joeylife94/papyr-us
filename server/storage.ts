@@ -638,14 +638,11 @@ export class DBStorage {
         .replace(/[:&|!()]/g, ' ')
         .replace(/\s+/g, ' ');
 
-    // Build select with optional rank column
-    const selectColumns: any = { ...wikiPages };
-    if (useFts && hasQuery && params.sort === 'rank') {
-      const q = sanitizeQuery(params.query!);
-      selectColumns.rank = sql<number>`ts_rank(search_vector, plainto_tsquery('simple', ${q}))`;
-    }
+    // The full-text query, with the search text as a bound parameter.
+    const tsQuery =
+      useFts && hasQuery ? sql`plainto_tsquery('simple', ${sanitizeQuery(params.query!)})` : null;
 
-    const query = this.db.select(selectColumns).from(wikiPages);
+    const query = this.db.select({ ...wikiPages }).from(wikiPages);
     const countQuery = this.db.select({ count: sql`count(*)` }).from(wikiPages);
 
     const conditions = [];
@@ -654,9 +651,8 @@ export class DBStorage {
     conditions.push(isNull(wikiPages.deletedAt));
 
     if (hasQuery) {
-      if (useFts) {
-        const q = sanitizeQuery(params.query!);
-        conditions.push(sql`search_vector @@ plainto_tsquery('simple', ${q})`);
+      if (tsQuery) {
+        conditions.push(sql`search_vector @@ ${tsQuery}`);
       } else {
         // Fallback to LIKE search on title and content
         conditions.push(
@@ -696,12 +692,13 @@ export class DBStorage {
     const total = Number(totalResult[0].count);
 
     // Apply ordering and pagination
-    if (useFts && hasQuery && params.sort === 'rank') {
-      // Rank by relevance (ts_rank) when using FTS - already in SELECT
+    if (tsQuery && params.sort === 'rank') {
+      // Relevance first, newest first among equals (#131). The rank is an ORDER BY expression
+      // only: it is not selected, so rows keep the shape of the other sorts.
       query
         .limit(params.limit || 20)
         .offset(params.offset || 0)
-        .orderBy(sql`rank DESC`);
+        .orderBy(desc(sql`ts_rank(search_vector, ${tsQuery})`), desc(wikiPages.updatedAt));
     } else {
       // Default: order by update time
       query
