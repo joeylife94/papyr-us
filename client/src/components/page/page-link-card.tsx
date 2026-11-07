@@ -67,6 +67,8 @@ export function PageLinkCard({
 }) {
   const [open, setOpen] = useState(false);
   const timer = useRef<number>();
+  // The link element (the anchor's child; typed as a div by the anchor).
+  const anchor = useRef<HTMLElement | null>(null);
   const pointerInside = useRef(false);
   const keyboardFocused = useRef(false);
   const id = useId();
@@ -116,6 +118,9 @@ export function PageLinkCard({
     >
       <PopoverPrimitive.Anchor
         asChild
+        ref={(node: HTMLElement | null) => {
+          anchor.current = node;
+        }}
         onPointerEnter={pointerEnter}
         onPointerLeave={pointerLeave}
         onFocus={focus}
@@ -136,6 +141,11 @@ export function PageLinkCard({
           hideWhenDetached
           onOpenAutoFocus={(event) => event.preventDefault()}
           onCloseAutoFocus={(event) => event.preventDefault()}
+          // The link is outside the card: focusing or pressing it is not "outside" (the card
+          // opens on that very focus, which would otherwise close it again).
+          onInteractOutside={(event) => {
+            if (anchor.current?.contains(event.target as Node)) event.preventDefault();
+          }}
           onPointerEnter={pointerEnter}
           onPointerLeave={pointerLeave}
           // The card is in the link's React tree (a portal): presses on it must not reach the

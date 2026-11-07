@@ -163,7 +163,7 @@ test('hover and keyboard focus show the preview card; unreadable links show none
   }
 });
 
-test('a tap on a touch screen opens the page without a card', async ({ browser, request }) => {
+test('touch never opens the card, and a tap opens the page', async ({ browser, request }) => {
   const pages = await setUp(request);
   const reader = await registerTestUser(request, 'hover-touch');
   const context = await browser.newContext({ hasTouch: true });
@@ -174,6 +174,17 @@ test('a tap on a touch screen opens the page without a card', async ({ browser, 
     await page.goto(`/page/${pages.source.slug}`);
     const chip = page.locator(`a[data-page-link-target="${pages.target.id}"]`);
     await expect(chip).toBeVisible();
+
+    // A finger resting on the link (a touch that has not ended) is not a hover.
+    const box = await chip.boundingBox();
+    if (!box) throw new Error('the link has no box');
+    const touch = await context.newCDPSession(page);
+    const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
+    await page.waitForTimeout(OPEN_DELAY_MS * 3);
+    await expect(card(page)).toHaveCount(0);
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] });
+
     // Record whether a card ever appears, across the in-app navigation.
     await page.evaluate(() => {
       const seen = window as unknown as { cardSeen: boolean };
