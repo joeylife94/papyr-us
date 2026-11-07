@@ -30,9 +30,12 @@ export type InlineNode =
 // The grammar lives in shared/tags.ts: the server's tag pane (#137) reads tags the same way.
 export { isTagBoundary, readTagName };
 
-/** Where a tag chip leads: the document list filtered by that tag. */
-export function tagHref(tag: string): string {
-  return `/?tag=${encodeURIComponent(tag)}`;
+/**
+ * Where a tag chip leads: the tag pane with that tag selected (#137). `scopePath` is the
+ * workspace the chip is shown in: '' for personal pages, `/teams/<name>` for a team's.
+ */
+export function tagHref(tag: string, scopePath = ''): string {
+  return `${scopePath}/tags/${encodeURIComponent(tag)}`;
 }
 
 /** Look of a `#tag` chip, shared by the editor preview, the reader and the tag filter. */

@@ -92,7 +92,9 @@ export function resolveWorkspaceScope(
     return name ? teamWorkspace(name, accessibleTeams) : { kind: 'unknown' };
   }
 
+  // The document list, page creation and the tag pane (#137) without a team are personal.
   if (pathname === '/' || /^\/create(\/[^/]+)?\/?$/.test(pathname)) return { kind: 'personal' };
+  if (/^\/tags(\/|$)/.test(pathname)) return { kind: 'personal' };
   return { kind: 'unknown' };
 }
 

@@ -213,8 +213,10 @@ describe('tags', () => {
     expect(readTagName('x', 0)).toBeNull();
   });
 
-  it('links to the tag filter of the document list', () => {
-    expect(tagHref('태그')).toBe('/?tag=%ED%83%9C%EA%B7%B8');
-    expect(tagHref('a/b&c')).toBe('/?tag=a%2Fb%26c');
+  it('links to the tag pane with the tag selected (#137), URL-encoded, in its workspace', () => {
+    expect(tagHref('태그')).toBe('/tags/%ED%83%9C%EA%B7%B8');
+    expect(tagHref('a/b&c')).toBe('/tags/a%2Fb%26c');
+    expect(tagHref('x?y#z')).toBe('/tags/x%3Fy%23z');
+    expect(tagHref('plan', '/teams/alpha')).toBe('/teams/alpha/tags/plan');
   });
 });

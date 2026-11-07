@@ -29,6 +29,7 @@ import {
   BookOpen,
   CalendarDays,
   ArrowRightLeft,
+  Hash,
 } from 'lucide-react';
 import type { WikiPage } from '@shared/schema';
 import { useTheme } from '@/hooks/use-theme';
@@ -36,6 +37,8 @@ import { openQuickSwitcher } from '@/components/quick-switcher';
 import { PageIcon } from '@/components/page/page-icon';
 import { useOpenDailyNote } from '@/hooks/useDailyNote';
 import { scopeTeamParam } from '@/lib/page-scope';
+import { useTagScopePath } from '@/hooks/useTagScopePath';
+import { tagPanePath } from '@/lib/tag-pane';
 
 interface TitleMatch {
   id: number;
@@ -68,6 +71,8 @@ export function CommandPalette() {
   // Beyond the recent pages, typed text also searches every readable page title of the current
   // scope on the server (#111), through the same endpoint as the quick switcher.
   const { openDailyNote, scope } = useOpenDailyNote();
+  // The tag pane of the current workspace (#137), like the quick switcher's scope.
+  const tagsPath = tagPanePath(useTagScopePath());
   const teamParam = scopeTeamParam(scope);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -205,6 +210,10 @@ export function CommandPalette() {
           <CommandItem onSelect={() => runCommand(() => navigate('/automation'))}>
             <Zap className="mr-2 h-4 w-4" />
             <span>자동화</span>
+          </CommandItem>
+          <CommandItem onSelect={() => runCommand(() => navigate(tagsPath))}>
+            <Hash className="mr-2 h-4 w-4" />
+            <span>태그</span>
           </CommandItem>
           <CommandItem onSelect={() => runCommand(() => navigate('/knowledge-graph'))}>
             <Brain className="mr-2 h-4 w-4" />

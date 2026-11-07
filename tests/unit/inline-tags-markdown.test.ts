@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { extractHeadings, markdownToHtml } from '../../client/src/lib/markdown';
 
-// Issue #113 §2: the reader shows `#tags` as links to the tag's document list, with the same
-// rules as the editor preview. Display only: the page's stored tags do not change.
+// Issue #113 §2: the reader shows `#tags` as links, with the same rules as the editor preview.
+// Display only: the page's stored tags do not change. The links open the tag pane (#137).
 
 /** The rendered HTML with each tag link reduced to `<tag:name>`. */
 async function render(markdown: string): Promise<string> {
@@ -10,7 +10,7 @@ async function render(markdown: string): Promise<string> {
   return html.replace(
     /<a href="([^"]*)"[^>]*data-inline-tag="([^"]*)">([^<]*)<\/a>/g,
     (_m, href, tag, text) => {
-      expect(href).toBe(`/?tag=${encodeURIComponent(tag)}`);
+      expect(href).toBe(`/tags/${encodeURIComponent(tag)}`);
       expect(text).toBe(`#${tag}`);
       return `<tag:${tag}>`;
     }
@@ -37,9 +37,15 @@ describe('#tags in rendered Markdown', () => {
 
   it('gives each tag link an internal href, a chip class and an accessible name', async () => {
     const html = await markdownToHtml('#태그');
-    expect(html).toContain('href="/?tag=%ED%83%9C%EA%B7%B8"');
+    expect(html).toContain('href="/tags/%ED%83%9C%EA%B7%B8"');
     expect(html).toContain('aria-label="태그 태그"');
     expect(html).toContain('class="not-prose');
+  });
+
+  it("opens the tag pane of the page's workspace, the tag encoded", async () => {
+    const html = await markdownToHtml('#project/alpha', { tagScopePath: '/teams/alpha%20team' });
+    expect(html).toContain('href="/teams/alpha%20team/tags/project%2Falpha"');
+    expect(html).toContain('data-inline-tag="project/alpha"');
   });
 
   it.each([

@@ -96,14 +96,19 @@ function rehypeFootnoteLabelId(options: { id?: string }) {
 }
 
 // Convert markdown to HTML. Page link tokens become chip placeholders (#103 E6), `#tags` link to
-// the tag's document list and headings get the anchor ids the table of contents links to (#113).
+// the tag pane of `tagScopePath`'s workspace (#137; see `tagHref`) and headings get the anchor
+// ids the table of contents links to (#113).
 // Raw HTML is dropped by remark-rehype; links and images keep only safe URL schemes (a
 // `javascript:` link would otherwise run in the reader).
 // When a page renders in parts (see `markdownParts`): `takenHeadingIds` are the ids of headings
 // earlier in the page, `footnoteIdPrefix` keeps this part's footnote ids apart from the others'.
 export async function markdownToHtml(
   markdown: string,
-  options: { takenHeadingIds?: readonly string[]; footnoteIdPrefix?: string } = {}
+  options: {
+    takenHeadingIds?: readonly string[];
+    footnoteIdPrefix?: string;
+    tagScopePath?: string;
+  } = {}
 ): Promise<string> {
   // The default prefix without `footnoteIdPrefix`, so whole pages render as they always have.
   const footnoteIds = `user-content-${options.footnoteIdPrefix ?? ''}`;
@@ -113,7 +118,7 @@ export async function markdownToHtml(
     .use(rehypeFootnoteLabelId, {
       id: options.footnoteIdPrefix ? `${footnoteIds}footnote-label` : undefined,
     })
-    .use(rehypeInlineTags)
+    .use(rehypeInlineTags, { scopePath: options.tagScopePath })
     .use(rehypePageLinks)
     .use(rehypeHeadingIds, { taken: options.takenHeadingIds })
     .use(rehypeHighlight)

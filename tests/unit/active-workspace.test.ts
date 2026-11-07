@@ -57,6 +57,11 @@ describe('active workspace resolution', () => {
     expect(resolveWorkspaceScope('/', teams).kind).toBe('personal');
     expect(resolveWorkspaceScope('/create', teams).kind).toBe('personal');
     expect(resolveWorkspaceScope('/page/doc', teams, { teamId: null }).kind).toBe('personal');
+    // The tag pane without a team (#137); a team's tag pane is that team.
+    expect(resolveWorkspaceScope('/tags', teams).kind).toBe('personal');
+    expect(resolveWorkspaceScope('/tags/project%2Falpha', teams).kind).toBe('personal');
+    expect(resolveActiveWorkspace('/teams/alpha/tags/plan', teams)?.name).toBe('alpha');
+    expect(resolveWorkspaceScope('/tagsx', teams).kind).toBe('unknown');
   });
 
   it('does not guess a workspace while loading, for inaccessible teams, or for tool routes', () => {
