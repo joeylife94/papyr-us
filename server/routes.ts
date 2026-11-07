@@ -109,6 +109,7 @@ import { isPageId } from '../shared/page-links.js';
 import { draftPageExcerpt, excerptLinkIds, renderPageExcerpt } from '../shared/page-excerpt.js';
 import { registerDailyNoteRoutes } from './routes/daily-notes.js';
 import { registerVaultRoutes } from './routes/vault.js';
+import { registerTagRoutes } from './routes/tags.js';
 import { contentWithLinkTitles, singlePageMarkdown } from './services/vault-export.js';
 import { pageLinkTokenIds } from './services/vault-format.js';
 import { featureFlags } from './features.js';
@@ -1692,6 +1693,9 @@ export async function registerRoutes(
       res.status(500).json({ message: 'Server error' });
     }
   });
+
+  // The tag pane (#137): tags of one workspace scope, nested, and the pages of a tag.
+  registerTagRoutes(app, storage);
 
   if (featureFlags.FEATURE_CALENDAR) {
     // Calendar Events API

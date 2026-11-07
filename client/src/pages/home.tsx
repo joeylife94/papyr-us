@@ -24,7 +24,7 @@ const ROW_GRID = 'md:grid-cols-[minmax(0,1fr)_110px_140px_100px]';
 export default function Home({ searchQuery, selectedFolder, teamName }: HomeProps) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  // `?tag=` filters by a page tag: `#tag` chips in pages link here (#113).
+  // `?tag=` filters by a page tag (#113). Tag chips open the tag pane instead (#137).
   const [searchParams] = useSearchParams();
   const tag = searchParams.get('tag')?.trim() ?? '';
   const workspace = useActiveWorkspace();

@@ -9,6 +9,7 @@ import {
   Database,
   File,
   FileText,
+  Hash,
   Plus,
   Users,
 } from 'lucide-react';
@@ -49,7 +50,8 @@ export function WorkspacePanel({
   showTools = false,
 }: WorkspacePanelProps) {
   const { pathname } = useLocation();
-  const { scope, createHref, tools } = useShellNav();
+  const { scope, createHref, tagsHref, tools } = useShellNav();
+  const inTags = pathname === tagsHref || pathname.startsWith(`${tagsHref}/`);
   const workspace = scope.kind === 'team' ? scope.workspace : null;
   const { flags } = useFeatureFlags();
   const { toast } = useToast();
@@ -188,13 +190,29 @@ export function WorkspacePanel({
         className="h-9 bg-raised text-[13.5px]"
       />
 
-      <Link
-        to={createHref}
-        onClick={onNavigate}
-        className={cn(rowLink, 'text-foreground-secondary hover:bg-raised hover:text-foreground')}
-      >
-        <Plus className="h-4 w-4" aria-hidden="true" /> 새 문서 작성
-      </Link>
+      <div className="flex flex-col gap-0.5">
+        <Link
+          to={createHref}
+          onClick={onNavigate}
+          className={cn(rowLink, 'text-foreground-secondary hover:bg-raised hover:text-foreground')}
+        >
+          <Plus className="h-4 w-4" aria-hidden="true" /> 새 문서 작성
+        </Link>
+        {/* The tag pane of the active workspace (#137). */}
+        <Link
+          to={tagsHref}
+          onClick={onNavigate}
+          aria-current={inTags ? 'page' : undefined}
+          className={cn(
+            rowLink,
+            inTags
+              ? 'bg-raised font-semibold text-foreground'
+              : 'text-foreground-secondary hover:bg-raised hover:text-foreground'
+          )}
+        >
+          <Hash className="h-4 w-4" aria-hidden="true" /> 태그
+        </Link>
+      </div>
 
       {/* "페이지": the page tree of the active workspace (issue #103 E5); it replaces the folder
           list, while folders stay a page property and a filter on the document table. */}

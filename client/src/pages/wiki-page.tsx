@@ -26,6 +26,7 @@ import { PageProperties, PageTitle, SaveStatus } from '@/components/page/page-ed
 import { PageIcon, PageIconPicker } from '@/components/page/page-icon';
 import { AddPageCoverButton, EditablePageCover, PageCover } from '@/components/page/page-cover';
 import { Backlinks } from '@/components/page/page-links';
+import { PageTagLinks } from '@/components/page/page-tag-links';
 import { apiRequest, invalidatePageLists } from '@/lib/queryClient';
 import { extractHeadings, estimateReadingTime } from '@/lib/markdown';
 import { blocksToContent, initialBlocksFor, parseTags } from '@/lib/page-content';
@@ -410,15 +411,12 @@ function ReadOnlyPageBody({ page, actions, breadcrumb }: BodyProps) {
         {page.icon && <PageIcon icon={page.icon} className="block text-[44px]" />}
         <PageTitle initialTitle={page.title} editable={false} />
         <PageMeta page={page} content={page.content} />
-        <div className="flex min-w-0 flex-wrap gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <Badge variant="secondary" className="capitalize">
             {page.folder}
           </Badge>
-          {page.tags.map((tag) => (
-            <Badge key={tag} variant="outline">
-              {tag}
-            </Badge>
-          ))}
+          {/* The page's tags open the tag pane (#137). */}
+          <PageTagLinks tags={page.tags} />
         </div>
         {actions}
       </header>
@@ -556,6 +554,8 @@ function EditablePageBody({
             queue({ tags: parseTags(next) });
           }}
         />
+        {/* The page's tags open the tag pane (#137). */}
+        <PageTagLinks tags={parseTags(tagsText)} />
         {actions}
       </header>
       <div data-page-body className="min-w-0">

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { markdownToHtml, plainTextFallbackHtml } from '@/lib/markdown';
 import { INLINE_TAG_ATTRIBUTE } from '@/lib/rehype-inline-tags';
+import { useTagScopePath } from '@/hooks/useTagScopePath';
 import { PageLinkPortals } from '@/components/page/page-links';
 import { PageEmbedPortals } from '@/components/page/page-embed';
 
@@ -26,6 +27,8 @@ export function MarkdownRenderer({
   const [html, setHtml] = useState('');
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
   const navigate = useNavigate();
+  // `#tag` links open the tag pane of the page's workspace (#137).
+  const tagScopePath = useTagScopePath();
 
   // A stable dependency for the list (a new array each render would re-render every time).
   const takenKey = takenHeadingIds?.join('\n') ?? '';
@@ -36,6 +39,7 @@ export function MarkdownRenderer({
     markdownToHtml(content, {
       takenHeadingIds: takenKey ? takenKey.split('\n') : [],
       footnoteIdPrefix,
+      tagScopePath,
       embedded,
     })
       .then((htmlContent) => {
@@ -54,7 +58,7 @@ export function MarkdownRenderer({
     return () => {
       isCancelled = true;
     };
-  }, [content, takenKey, footnoteIdPrefix, embedded]);
+  }, [content, takenKey, footnoteIdPrefix, tagScopePath, embedded]);
 
   // `#tag` links (#113) are plain anchors in the HTML; open them in the app, not by a reload.
   useEffect(() => {

@@ -14,6 +14,7 @@ import {
   type InlineNode,
 } from '@/lib/inline-markdown';
 import { cn } from '@/lib/utils';
+import { useTagScopePath } from '@/hooks/useTagScopePath';
 import { PageLinkChip } from './page-links';
 
 /**
@@ -58,11 +59,22 @@ function keepFocus(event: MouseEvent) {
   event.preventDefault();
 }
 
-/** A `#tag` chip linking to the document list filtered by the tag. */
-export function TagChip({ tag, focusable = true }: { tag: string; focusable?: boolean }) {
+/**
+ * A `#tag` chip linking to the tag pane with the tag selected (#137), in the workspace of
+ * `scopePath` ('' personal, `/teams/<name>` a team; see `tagHref`).
+ */
+export function TagChip({
+  tag,
+  scopePath,
+  focusable = true,
+}: {
+  tag: string;
+  scopePath: string;
+  focusable?: boolean;
+}) {
   return (
     <Link
-      to={tagHref(tag)}
+      to={tagHref(tag, scopePath)}
       data-inline-tag={tag}
       aria-label={`태그 ${tag}`}
       tabIndex={focusable ? undefined : -1}
@@ -118,6 +130,7 @@ export function InlineMarkdown({
   nodes: InlineNode[];
   focusable?: boolean;
 }) {
+  const tagScopePath = useTagScopePath();
   const render = (list: InlineNode[]): ReactNode =>
     list.map((node, index) => {
       switch (node.type) {
@@ -156,7 +169,9 @@ export function InlineMarkdown({
         case 'pageLink':
           return <PageLinkChip key={index} pageId={node.pageId} focusable={focusable} />;
         case 'tag':
-          return <TagChip key={index} tag={node.tag} focusable={focusable} />;
+          return (
+            <TagChip key={index} tag={node.tag} scopePath={tagScopePath} focusable={focusable} />
+          );
         default:
           return null;
       }
