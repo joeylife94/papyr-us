@@ -84,10 +84,11 @@ import {
 } from './services/page-save.js';
 import {
   buildPageTree,
+  checkNewPage,
   checkParent,
   orderWithMove,
   subtreeForTrash,
-  type PageTreeStore,
+  type NewPageStore,
 } from './services/page-tree.js';
 import logger from './services/logger.js';
 import { ExternalIntegrationError } from './services/resilience.js';
@@ -162,14 +163,21 @@ export async function registerRoutes(
   // editing session fire once, when the session closes, instead of on every autosave.
   const pageSaveStore = storagePageSaveStore(storage as any);
   // Page tree rules (issue #103 E5) read pages and permissions through the same storage.
-  const pageTreeStore: PageTreeStore = {
+  const pageTreeStore: NewPageStore = {
     getPage: (id) => storage.getWikiPage(id),
     canEdit: (userId, id) => storage.checkPagePermission(userId, id, 'editor'),
     canRead: (userId, id) => storage.checkPagePermission(userId, id, 'viewer'),
     canOwn: (userId, id) => storage.checkPagePermission(userId, id, 'owner'),
     getLiveDescendantIds: (id) => storage.getLiveDescendantIds(id),
     getAllDescendantIds: (id) => storage.getAllDescendantIds(id),
+    getUserTeamIds: (userId) => storage.getUserTeamIds(userId),
   };
+  // Who may create a page in a team and under a parent: POST /api/pages, and the copy that
+  // POST /api/pages/:id/duplicate creates, so the two cannot drift apart.
+  const checkPagePlace = (
+    userId: number | undefined,
+    page: { teamId: number | null; parentId: number | null }
+  ) => checkNewPage(pageTreeStore, userId, page, { authEnforced: config.enforceAuthForWrites });
   setSessionClosedHandler(({ page, tagsAtStart }) => {
     triggerWorkflows('page_updated', {
       id: page.id,
@@ -837,24 +845,19 @@ export async function registerRoutes(
           }
         }
 
-        // A child page (issue #103 E5) joins its parent's team and needs editor on the parent.
+        // A child page (issue #103 E5) joins its parent's team.
         if (pageData.parentId != null) {
           const parent = await storage.getWikiPage(pageData.parentId);
           if (pageData.teamId == null && parent?.teamId != null) pageData.teamId = parent.teamId;
-          const refused = await checkParent(pageTreeStore, req.user?.id, pageData.parentId, {
-            teamId: (pageData.teamId as number | null | undefined) ?? null,
-          });
-          if (refused) return res.status(refused.status).json({ message: refused.message });
-          // requireTeamMembership only saw the team in the body. An inherited team needs the same
-          // check: an editor grant on a team page (public or to another team) must not let a
-          // non-member create pages in that team.
-          if (pageData.teamId != null) {
-            const userTeamIds = req.user?.id ? await storage.getUserTeamIds(req.user.id) : [];
-            if (!userTeamIds.includes(Number(pageData.teamId))) {
-              return res.status(403).json({ message: 'You are not a member of this team' });
-            }
-          }
         }
+        // The page's own team and parent decide, not only the team requireTeamMembership saw in the
+        // request: an inherited team, or a query teamId that differs from the body's, needs the
+        // same membership. A child page also needs editor on its parent.
+        const refused = await checkPagePlace(req.user?.id, {
+          teamId: pageData.teamId == null ? null : Number(pageData.teamId),
+          parentId: pageData.parentId ?? null,
+        });
+        if (refused) return res.status(refused.status).json({ message: refused.message });
 
         // Pass creator user ID for automatic owner permission assignment
         const creatorUserId = req.user?.id;
@@ -1339,6 +1342,13 @@ export async function registerRoutes(
         if (!original) {
           return res.status(404).json({ error: 'Page not found' });
         }
+        // The copy goes into the source's team and under its parent, so besides reading the
+        // source it needs what POST /api/pages needs to create a page there.
+        const refused = await checkPagePlace(req.user?.id, {
+          teamId: original.teamId ?? null,
+          parentId: original.parentId ?? null,
+        });
+        if (refused) return res.status(refused.status).json({ message: refused.message });
 
         // Generate unique slug
         const baseSlug = `${original.slug}-copy`;
