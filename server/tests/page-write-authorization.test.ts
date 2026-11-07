@@ -13,8 +13,8 @@
  * - the trash list is asked for with the caller's viewer, so it holds only pages they can read
  *   (the SQL filter is proven in tests/integration-layer4/trash-listing.test.ts);
  * - markdown import needs membership of the target team, like POST /api/pages;
- * - POST /api/pages needs membership of the team the page is created in, even when the query
- *   names another team (requireTeamMembership reads the query before the body).
+ * - POST /api/pages needs membership of the team the page is created in; a query naming another
+ *   team is refused as a mismatch (the other team-routes are in team-source-mismatch.test.ts).
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import request from 'supertest';
@@ -345,8 +345,19 @@ describe('POST /api/pages needs membership of the team the page goes into', () =
   });
 
   it('rejects a body team the caller is not in, even with their own team in the query', async () => {
+    // The query and the body name different teams: refused before the page rules (#132)
     const res = await request(app)
       .post(`/api/pages?teamId=${TEAM_B}`)
+      .set(as(OUTSIDER))
+      .send({ ...body, teamId: TEAM_A });
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ message: 'teamId mismatch' });
+    expect(storage.createWikiPage).not.toHaveBeenCalled();
+  });
+
+  it('rejects a body team the caller is not in', async () => {
+    const res = await request(app)
+      .post('/api/pages')
       .set(as(OUTSIDER))
       .send({ ...body, teamId: TEAM_A });
     expect(res.status).toBe(403);
