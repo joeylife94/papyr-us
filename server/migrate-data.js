@@ -2,6 +2,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 import { users, wikiPages, calendarEvents, directories, comments } from '../shared/schema.js';
+import { createUserInDefaultOrganization, defaultOrganizationId } from './organizations.js';
 import dotenv from 'dotenv';
 import path from 'path';
 
@@ -164,7 +165,8 @@ async function migrateData() {
     for (const user of defaultUsers) {
       try {
         const hashedPassword = await bcrypt.hash(user.password, 10);
-        await db.insert(users).values({
+        // Accounts join the default organization, like every sign-up (issue #124 X1)
+        await createUserInDefaultOrganization(db, {
           name: user.name,
           email: user.email,
           hashedPassword: hashedPassword,
@@ -196,9 +198,11 @@ async function migrateData() {
     }
 
     console.log('\n📄 위키 페이지 데이터 마이그레이션...');
+    // The seed pages are team-less pages of the default organization (issue #124 X1)
+    const organizationId = await defaultOrganizationId(db);
     for (const page of defaultPages) {
       try {
-        await db.insert(wikiPages).values(page);
+        await db.insert(wikiPages).values({ ...page, organizationId });
         console.log(`✅ 페이지 생성: ${page.title}`);
       } catch (error) {
         if (error.code === '23505') {

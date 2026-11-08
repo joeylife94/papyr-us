@@ -6,7 +6,7 @@
 
 - `ADMIN_EMAILS`(쉼표 구분)에 이메일이 있는 **활성 사용자 계정**입니다.
 - 관리자는 자기 계정으로 로그인합니다(이메일/비밀번호, Google, GitHub). **공유 관리자 비밀번호는 없습니다.** `ADMIN_PASSWORD`, `ALLOW_ADMIN_PASSWORD`, `POST /api/admin/auth`, `x-admin-password` 헤더, `adminPassword` 쿼리/바디 필드는 #124 X0에서 모두 제거됐습니다. 이 변수가 남아 있으면 서버가 시작할 때 "no longer used" 경고를 남기고 무시합니다.
-- 조직 단위 관리자(조직 소유자/관리자)는 #124 X1에서 추가됩니다.
+- 플랫폼 관리자 권한만으로는 어떤 조직의 페이지도 볼 수 없습니다. 조직과 그 경계는 [organizations-guide.md](./organizations-guide.md)에 있습니다. 조직 소유자·관리자 기능은 #124 X1c에서 추가됩니다.
 
 ## 설정
 

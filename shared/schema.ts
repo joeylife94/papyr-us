@@ -9,6 +9,9 @@ import {
   varchar,
   primaryKey,
   index,
+  unique,
+  uniqueIndex,
+  foreignKey,
 } from 'drizzle-orm/pg-core';
 import { createInsertSchema } from 'drizzle-zod';
 import { z } from 'zod';
@@ -187,29 +190,46 @@ export const blockSchema = z.object({
 
 export type Block = z.infer<typeof blockSchema>;
 
-export const wikiPages = pgTable('wiki_pages', {
-  id: serial('id').primaryKey(),
-  title: text('title').notNull(),
-  slug: text('slug').notNull().unique(),
-  content: text('content').notNull(),
-  blocks: jsonb('blocks').default([]), // New field for block-based content
-  folder: text('folder').notNull(), // docs, ideas, members, logs, archive, team1, team2, etc.
-  tags: text('tags').array().notNull().default([]),
-  author: text('author').notNull(),
-  parentId: integer('parent_id'), // Nested pages: reference to parent page
-  // Order among siblings in the page tree; null sorts after positioned siblings by creation time
-  // (drizzle/0020_add_wiki_pages_position.sql).
-  position: integer('position'),
-  // A team cannot be deleted while pages (trashed ones included) still belong to it: losing the
-  // team would turn them into team-less pages with different access rules (see deleteTeam).
-  teamId: integer('team_id').references(() => teams.id, { onDelete: 'restrict' }), // 팀 소속
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
-  isPublished: boolean('is_published').notNull().default(true),
-  deletedAt: timestamp('deleted_at'), // Soft delete: null = active, set = trashed
-  metadata: jsonb('metadata').default({}), // for frontmatter data
-  icon: text('icon'), // Page icon: one emoji, null = none (drizzle/0019_add_wiki_pages_icon.sql)
-});
+export const wikiPages = pgTable(
+  'wiki_pages',
+  {
+    id: serial('id').primaryKey(),
+    title: text('title').notNull(),
+    slug: text('slug').notNull().unique(),
+    content: text('content').notNull(),
+    blocks: jsonb('blocks').default([]), // New field for block-based content
+    folder: text('folder').notNull(), // docs, ideas, members, logs, archive, team1, team2, etc.
+    tags: text('tags').array().notNull().default([]),
+    author: text('author').notNull(),
+    parentId: integer('parent_id'), // Nested pages: reference to parent page
+    // Order among siblings in the page tree; null sorts after positioned siblings by creation time
+    // (drizzle/0020_add_wiki_pages_position.sql).
+    position: integer('position'),
+    // A team cannot be deleted while pages (trashed ones included) still belong to it: losing the
+    // team would turn them into team-less pages with different access rules (see deleteTeam).
+    teamId: integer('team_id').references(() => teams.id, { onDelete: 'restrict' }), // 팀 소속
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    isPublished: boolean('is_published').notNull().default(true),
+    deletedAt: timestamp('deleted_at'), // Soft delete: null = active, set = trashed
+    metadata: jsonb('metadata').default({}), // for frontmatter data
+    icon: text('icon'), // Page icon: one emoji, null = none (drizzle/0019_add_wiki_pages_icon.sql)
+    // The organization the page belongs to (issue #124 X1, drizzle/0022_add_organizations.sql).
+    // Set by the server when the page is created: its team's organization, or for a team-less
+    // page its creator's. A team page always has its team's organization (wiki_pages_team_org_fk).
+    organizationId: integer('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+  },
+  (table) => [
+    foreignKey({
+      name: 'wiki_pages_team_org_fk',
+      columns: [table.teamId, table.organizationId],
+      foreignColumns: [teams.id, teams.organizationId],
+    }),
+    index('idx_wiki_pages_organization_id').on(table.organizationId),
+  ]
+);
 
 const wikiPageInsertColumns = createInsertSchema(wikiPages);
 
@@ -220,6 +240,8 @@ export const insertWikiPageSchema = wikiPageInsertColumns
     updatedAt: true,
     // Tree order changes only through POST /api/pages/:id/move (issue #103 E5).
     position: true,
+    // Decided by the server from the page's team or creator, never by the client (issue #124 X1).
+    organizationId: true,
   })
   .extend({
     icon: pageIconSchema.nullable().optional(),
@@ -386,20 +408,68 @@ export type InsertComment = z.infer<typeof insertCommentSchema>;
 export type UpdateComment = z.infer<typeof updateCommentSchema>;
 export type Comment = typeof comments.$inferSelect;
 
-// Teams schema
-export const teams = pgTable('teams', {
+// Organizations (issue #124 X1, drizzle/0022_add_organizations.sql): the tenant boundary. Every
+// team and every page belongs to exactly one organization, and nothing is shared across them
+// except pages shared publicly on purpose. Each user belongs to at most one organization for now
+// (organization_members_user_id_unique), so a request's organization follows from its user.
+export const organizationRoles = ['owner', 'admin', 'member'] as const;
+export type OrganizationRole = (typeof organizationRoles)[number];
+
+export const organizations = pgTable('organizations', {
   id: serial('id').primaryKey(),
-  name: text('name').notNull().unique(),
-  displayName: text('display_name').notNull(),
-  description: text('description'),
-  password: text('password'), // 팀 접근 비밀번호
-  icon: text('icon'), // Lucide icon name
-  color: text('color'), // Tailwind color class
+  slug: text('slug').notNull().unique(),
+  name: text('name').notNull(),
   isActive: boolean('is_active').notNull().default(true),
-  order: integer('order').notNull().default(0),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
+
+export type Organization = typeof organizations.$inferSelect;
+
+export const organizationMembers = pgTable(
+  'organization_members',
+  {
+    id: serial('id').primaryKey(),
+    organizationId: integer('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    role: text('role').notNull().default('member'), // 'owner', 'admin', 'member'
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex('organization_members_user_id_unique').on(table.userId)]
+);
+
+export type OrganizationMember = typeof organizationMembers.$inferSelect;
+
+/** The organization existing data and new sign-ups join until signup policies arrive (X1d). */
+export const DEFAULT_ORGANIZATION_SLUG = 'default';
+
+// Teams schema
+export const teams = pgTable(
+  'teams',
+  {
+    id: serial('id').primaryKey(),
+    name: text('name').notNull().unique(),
+    displayName: text('display_name').notNull(),
+    description: text('description'),
+    password: text('password'), // 팀 접근 비밀번호
+    icon: text('icon'), // Lucide icon name
+    color: text('color'), // Tailwind color class
+    isActive: boolean('is_active').notNull().default(true),
+    order: integer('order').notNull().default(0),
+    // Set by the server from the creator's organization (issue #124 X1); never changes.
+    organizationId: integer('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  // Lets wiki_pages_team_org_fk tie a team page to its team's organization.
+  (table) => [unique('teams_id_organization_id_unique').on(table.id, table.organizationId)]
+);
 
 // Members schema
 export const members = pgTable('members', {
@@ -431,6 +501,8 @@ export const insertTeamSchema = createInsertSchema(teams).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+  // The creator's organization, set by the server (issue #124 X1)
+  organizationId: true,
 });
 
 export const updateTeamSchema = insertTeamSchema.partial();

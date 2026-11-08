@@ -4,6 +4,7 @@ import { Strategy as GitHubStrategy } from 'passport-github2';
 import { users } from '../../shared/schema.js';
 import { eq } from 'drizzle-orm';
 import { config } from '../config.js';
+import { createUserInDefaultOrganization } from '../organizations.js';
 import logger from './logger.js';
 import type { Pool } from 'pg';
 
@@ -56,16 +57,13 @@ export function initPassportStrategies(db: any) {
             if (existing.length > 0) {
               return done(null, existing[0]);
             } else {
-              const newUser = await _db
-                .insert(users)
-                .values({
-                  name: profile.displayName || email.split('@')[0],
-                  email,
-                  provider: 'google',
-                  providerId: profile.id,
-                })
-                .returning();
-              return done(null, newUser[0]);
+              const newUser = await createUserInDefaultOrganization(_db, {
+                name: profile.displayName || email.split('@')[0],
+                email,
+                provider: 'google',
+                providerId: profile.id,
+              });
+              return done(null, newUser);
             }
           } catch (error) {
             return done(error, undefined);
@@ -106,16 +104,13 @@ export function initPassportStrategies(db: any) {
             if (existing.length > 0) {
               return done(null, existing[0]);
             } else {
-              const newUser = await _db
-                .insert(users)
-                .values({
-                  name: profile.displayName || profile.username || email.split('@')[0],
-                  email,
-                  provider: 'github',
-                  providerId: profile.id,
-                })
-                .returning();
-              return done(null, newUser[0]);
+              const newUser = await createUserInDefaultOrganization(_db, {
+                name: profile.displayName || profile.username || email.split('@')[0],
+                email,
+                provider: 'github',
+                providerId: profile.id,
+              });
+              return done(null, newUser);
             }
           } catch (error) {
             return done(error, undefined);

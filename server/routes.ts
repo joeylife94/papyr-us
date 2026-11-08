@@ -1,4 +1,4 @@
-import type { Express } from 'express';
+import type { Express, Response } from 'express';
 import { createServer, type Server as HttpServer } from 'http';
 import { Server as SocketIoServer } from 'socket.io';
 import {
@@ -102,7 +102,8 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import passport from 'passport';
 import { eq, and, isNull } from 'drizzle-orm';
-import { ANONYMOUS_PAGE_VIEWER, DBStorage } from './storage.js';
+import { ANONYMOUS_PAGE_VIEWER, DBStorage, OrganizationRequiredError } from './storage.js';
+import { createUserInDefaultOrganization } from './organizations.js';
 import { registerKnowledgeRoutes } from './routes/knowledge.js';
 import { buildKnowledgeGraph, suggestAiLinks } from './services/knowledge-graph.js';
 import { isReservedDailyNoteSlug } from '../shared/daily-notes.js';
@@ -153,6 +154,14 @@ function failureBody(message: string, error: unknown): Record<string, unknown> {
   }
   logger.error(message, { error: error instanceof Error ? error.message : String(error) });
   return { message };
+}
+
+// A page was to be created with no organization to put it in (issue #124 X1): signed out, or an
+// account that belongs to no organization.
+function organizationRequired(req: AuthRequest, res: Response) {
+  return req.user?.id
+    ? res.status(403).json({ message: 'Your account does not belong to an organization' })
+    : res.status(401).json({ message: 'Authentication required' });
 }
 
 export async function registerRoutes(
@@ -319,11 +328,13 @@ export async function registerRoutes(
 
       const hashedPassword = await bcrypt.hash(password, 12);
 
-      const newUserResult = await storage.db
-        .insert(users)
-        .values({ name, email, hashedPassword, provider: 'local' })
-        .returning();
-      const newUser = newUserResult[0];
+      // The account joins the default organization in the same transaction (issue #124 X1)
+      const newUser = await createUserInDefaultOrganization(storage.db, {
+        name,
+        email,
+        hashedPassword,
+        provider: 'local',
+      });
       if (process.env.E2E_DEBUG_AUTH === '1') {
         logger.debug('[E2E DEBUG] /api/auth/register response user', {
           id: newUser.id,
@@ -801,6 +812,7 @@ export async function registerRoutes(
 
   app.post(
     '/api/pages',
+    optionalAuth,
     requireAuthIfEnabled,
     requireTeamMembership,
     async (req: AuthRequest, res) => {
@@ -859,6 +871,7 @@ export async function registerRoutes(
 
         res.status(201).json(page);
       } catch (error) {
+        if (error instanceof OrganizationRequiredError) return organizationRequired(req, res);
         res.status(400).json(failureBody('Invalid page data', error));
       }
     }
@@ -1311,6 +1324,7 @@ export async function registerRoutes(
 
   app.post(
     '/api/pages/:id/duplicate',
+    optionalAuth,
     requireAuthIfEnabled,
     requirePagePermission('viewer'),
     async (req: AuthRequest, res) => {
@@ -1360,6 +1374,7 @@ export async function registerRoutes(
 
         res.status(201).json(cloned);
       } catch (error) {
+        if (error instanceof OrganizationRequiredError) return organizationRequired(req, res);
         logger.error('Error duplicating page:', { error });
         res.status(500).json({ error: 'Failed to duplicate page' });
       }
@@ -1488,6 +1503,7 @@ export async function registerRoutes(
   // checked it (a query naming another team is refused there), never a raw conversion of it.
   app.post(
     '/api/pages/import/markdown',
+    optionalAuth,
     requireAuthIfEnabled,
     requireTeamMembership,
     async (req: AuthRequest, res) => {
@@ -1535,6 +1551,7 @@ export async function registerRoutes(
 
         res.status(201).json(page);
       } catch (error) {
+        if (error instanceof OrganizationRequiredError) return organizationRequired(req, res);
         logger.error('Error importing markdown:', { error });
         res.status(500).json({ error: 'Failed to import markdown' });
       }
@@ -2088,6 +2105,18 @@ export async function registerRoutes(
         permission: req.body.permission,
         grantedBy: req.user?.id,
       };
+
+      // Users and teams of another organization cannot be granted anything (issue #124 X1).
+      // The answer does not tell them apart from unknown ids.
+      if (
+        !(await storage.isGranteeInPageOrganization(
+          pageId,
+          permissionData.entityType,
+          permissionData.entityId
+        ))
+      ) {
+        return res.status(400).json({ message: 'Unknown user or team' });
+      }
 
       const permission = await storage.addPagePermission(permissionData);
       res.status(201).json(permission);
@@ -3515,15 +3544,20 @@ export async function registerRoutes(
       }
     });
 
-    app.post('/api/teams', requireAuthIfEnabled, async (req: AuthRequest, res) => {
+    app.post('/api/teams', optionalAuth, requireAuthIfEnabled, async (req: AuthRequest, res) => {
       try {
         const validatedData = insertTeamSchema.parse(req.body);
+        // A team belongs to its creator's organization (issue #124 X1), so it needs a creator
         const creatorUserId = req.user?.id;
-        const team = creatorUserId
-          ? await storage.createTeamWithOwner(validatedData, creatorUserId)
-          : await storage.createTeam(validatedData);
+        if (!creatorUserId) {
+          return res.status(401).json({ error: 'Authentication required' });
+        }
+        const team = await storage.createTeamWithOwner(validatedData, creatorUserId);
         res.status(201).json(team);
       } catch (error) {
+        if (error instanceof OrganizationRequiredError) {
+          return res.status(403).json({ error: 'Your account does not belong to an organization' });
+        }
         console.error('Error creating team:', error);
         res.status(500).json({ error: 'Failed to create team' });
       }

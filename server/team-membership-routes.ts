@@ -74,6 +74,15 @@ export function registerTeamMembershipRoutes(app: Express, storage: DBStorage) {
       .from(users)
       .where(eq(users.email, email));
     if (!target) return res.status(404).json({ message: 'Registered user not found' });
+    // Only accounts of the team's own organization can join it (issue #124 X1). Accounts of
+    // other organizations get the same answer as unknown ones.
+    const teamOrganizationId = await storage.getTeamOrganizationId(teamId);
+    if (
+      teamOrganizationId === null ||
+      (await storage.getUserOrganizationId(target.id)) !== teamOrganizationId
+    ) {
+      return res.status(404).json({ message: 'Registered user not found' });
+    }
 
     const result = await admitRegisteredMember(storage, teamId, target.id);
     return res.status(result.created ? 201 : 200).json(result.membership);

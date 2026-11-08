@@ -110,7 +110,10 @@ jobs:
           # wiki_pages.search_vector is not declared in shared/schema.ts, so db:push sees it as
           # drift: it hits the data-loss prompt, aborts and exits 0 without applying anything.
           # Remove the derived FTS objects first and re-create them afterwards.
+          # db:orgs:prepare moves existing data into the default organization before push adds
+          # the NOT NULL organization columns (issue #124 X1a).
           npm run db:fts:prepare
+          npm run db:orgs:prepare
           npm run db:push
           npm run db:fts
 

@@ -149,7 +149,7 @@ jobs:
         run: |
           docker compose --env-file .env.firebat -f compose.firebat.yml exec -T db \
             psql -U papyr -d papyr -v ON_ERROR_STOP=1 -c \
-            "INSERT INTO wiki_pages (title, slug, content, folder, author) VALUES ('Firebat CI', 'firebat-ci-persistence', 'persisted-before-recreate', 'docs', 'CI') ON CONFLICT (slug) DO UPDATE SET content = EXCLUDED.content;"
+            "INSERT INTO organizations (slug, name) VALUES ('default', 'Default') ON CONFLICT (slug) DO NOTHING; INSERT INTO wiki_pages (title, slug, content, folder, author, organization_id) SELECT 'Firebat CI', 'firebat-ci-persistence', 'persisted-before-recreate', 'docs', 'CI', id FROM organizations WHERE slug = 'default' ON CONFLICT (slug) DO UPDATE SET content = EXCLUDED.content;"
           docker compose --env-file .env.firebat -f compose.firebat.yml exec -T redis \
             redis-cli SET firebat:persistence persisted-before-recreate
           docker compose --env-file .env.firebat -f compose.firebat.yml exec -T app \

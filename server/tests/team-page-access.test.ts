@@ -11,7 +11,10 @@
  * - team pages without explicit permissions follow the same rules (members read only);
  * - current team owners and admins hold owner on every page of their team, so a page whose
  *   owner left the team stays manageable;
- * - grants to another team, public grants and team-less (personal) pages are unchanged.
+ * - grants to another team, public grants and team-less (personal) pages are unchanged;
+ * - (issue #124 X1) nothing but a public grant reaches across organizations: a member of another
+ *   organization gets nothing from authorship, a user grant or team membership, and a team-less
+ *   page without permissions is open only to signed-in members of its organization.
  */
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { pagePermissions, users, wikiPages } from '../../shared/schema.js';
@@ -22,6 +25,8 @@ const AUTHOR = { id: 1, email: 'author@example.com' };
 const TEAMMATE = { id: 2, email: 'teammate@example.com' };
 const OUTSIDER = { id: 3, email: 'outsider@example.com' };
 const PAGE_ID = 5;
+const ORG = 1;
+const OTHER_ORG = 2;
 
 type Level = 'viewer' | 'commenter' | 'editor' | 'owner';
 const LEVELS: Level[] = ['viewer', 'commenter', 'editor', 'owner'];
@@ -43,8 +48,16 @@ function createStorage(options: {
   teamsByUser: Record<number, number[]>;
   /** Team role of each user in the teams they belong to; 'member' when not listed. */
   rolesByUser?: Record<number, 'owner' | 'admin' | 'member'>;
+  /** Organization of each user; ORG when not listed, null for none. */
+  organizationByUser?: Record<number, number | null>;
+  /** The page's organization; ORG when not given. */
+  pageOrganizationId?: number;
 }) {
-  const pageRow = { id: PAGE_ID, ...options.page };
+  const pageRow = {
+    id: PAGE_ID,
+    organizationId: options.pageOrganizationId ?? ORG,
+    ...options.page,
+  };
   const permissionRows = options.permissions.map((p, index) => ({
     id: index + 1,
     pageId: PAGE_ID,
@@ -79,6 +92,9 @@ function createStorage(options: {
       }),
     }),
   };
+  instance.getUserOrganizationId = vi.fn(async (userId: number) =>
+    userId in (options.organizationByUser ?? {}) ? options.organizationByUser![userId] : ORG
+  );
   instance.getUserTeamIds = vi.fn(async (userId: number) => options.teamsByUser[userId] ?? []);
   instance.getUserTeamRole = vi.fn(async (userId: number, teamId: number) =>
     (options.teamsByUser[userId] ?? []).includes(teamId)
@@ -336,5 +352,77 @@ describe('team-less pages are unchanged', () => {
       teamsByUser: { [TEAMMATE.id]: [TEAM_A] },
     });
     expect(await allowedLevels(storage, TEAMMATE.id)).toEqual([]);
+  });
+});
+
+describe('organizations are a hard boundary (issue #124 X1)', () => {
+  const personalPage = {
+    page: { teamId: null, author: AUTHOR.email },
+    permissions: [{ entityType: 'user', entityId: AUTHOR.id, permission: 'owner' as Level }],
+  };
+
+  it('gives the author of a page nothing from another organization', async () => {
+    const storage = createStorage({
+      ...personalPage,
+      teamsByUser: {},
+      organizationByUser: { [AUTHOR.id]: OTHER_ORG },
+    });
+    expect(await allowedLevels(storage, AUTHOR.id)).toEqual([]);
+    expect(await storage.getUserPagePermission(AUTHOR.id, PAGE_ID)).toBeNull();
+  });
+
+  it('ignores user and team grants to members of another organization', async () => {
+    const storage = createStorage({
+      page: { teamId: TEAM_A, author: AUTHOR.email },
+      permissions: [
+        ...personalPage.permissions,
+        { entityType: 'user', entityId: OUTSIDER.id, permission: 'editor' },
+        { entityType: 'team', entityId: TEAM_B, permission: 'editor' },
+      ],
+      teamsByUser: { [AUTHOR.id]: [TEAM_A], [OUTSIDER.id]: [TEAM_B] },
+      organizationByUser: { [OUTSIDER.id]: OTHER_ORG },
+    });
+    expect(await allowedLevels(storage, OUTSIDER.id)).toEqual([]);
+    expect(await storage.getUserPagePermission(OUTSIDER.id, PAGE_ID)).toBeNull();
+  });
+
+  it('gives a team member of another organization nothing on a team page', async () => {
+    const storage = createStorage({
+      page: { teamId: TEAM_A, author: AUTHOR.email },
+      permissions: [],
+      // A stale membership row in the page's team must not count across organizations
+      teamsByUser: { [TEAMMATE.id]: [TEAM_A] },
+      rolesByUser: { [TEAMMATE.id]: 'owner' },
+      organizationByUser: { [TEAMMATE.id]: OTHER_ORG },
+    });
+    expect(await allowedLevels(storage, TEAMMATE.id)).toEqual([]);
+    expect(await storage.getUserPagePermission(TEAMMATE.id, PAGE_ID)).toBeNull();
+  });
+
+  it('opens a team-less page without permissions only to signed-in members of its organization', async () => {
+    const openPage = { page: { teamId: null, author: AUTHOR.email }, permissions: [] };
+    const storage = createStorage({
+      ...openPage,
+      teamsByUser: {},
+      organizationByUser: { [OUTSIDER.id]: OTHER_ORG, [TEAMMATE.id]: null },
+    });
+    expect(await allowedLevels(storage, AUTHOR.id)).toEqual(LEVELS);
+    expect(await allowedLevels(storage, OUTSIDER.id)).toEqual([]);
+    expect(await allowedLevels(storage, TEAMMATE.id)).toEqual([]);
+    expect(await allowedLevels(storage, undefined)).toEqual([]);
+  });
+
+  it('still lets a public grant read across organizations, and nothing more', async () => {
+    const storage = createStorage({
+      page: { teamId: TEAM_A, author: AUTHOR.email },
+      permissions: [
+        ...personalPage.permissions,
+        { entityType: 'public', entityId: null, permission: 'viewer' },
+      ],
+      teamsByUser: {},
+      organizationByUser: { [OUTSIDER.id]: OTHER_ORG },
+    });
+    expect(await allowedLevels(storage, OUTSIDER.id)).toEqual(['viewer']);
+    expect(await allowedLevels(storage, undefined)).toEqual(['viewer']);
   });
 });

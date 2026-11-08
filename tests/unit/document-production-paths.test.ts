@@ -37,9 +37,12 @@ describe('document production paths', () => {
         })),
       })),
     };
+    // The page's organization (issue #124 X1) is looked up once, before the insert attempts
+    (storage as any).organizationForNewPage = vi.fn(async () => 3);
 
     const created = await storage.createWikiPage(pageInput as any);
     expect(inserted.map((value) => value.slug)).toEqual(['duplicate-title', 'duplicate-title-2']);
+    expect(inserted.map((value) => value.organizationId)).toEqual([3, 3]);
     expect(created.slug).toBe('duplicate-title-2');
   });
 
@@ -63,6 +66,7 @@ describe('document production paths', () => {
         })),
       })),
     };
+    (storage as any).organizationForNewPage = vi.fn(async () => 3);
 
     const created = await storage.createWikiPage(pageInput as any);
     expect(inserted).toEqual(['duplicate-title', 'duplicate-title-2']);

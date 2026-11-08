@@ -1,5 +1,11 @@
 ## 변경 이력
 
+### 2026-11-08 — 조직 경계 (#124 X1a)
+
+- `organizations`, `organization_members` 테이블과 `teams.organization_id`, `wiki_pages.organization_id`(NOT NULL)를 추가했습니다. 기존 계정·팀·페이지는 `default` 조직으로 옮겨지고, 새 계정도 X1d 전까지 `default` 조직에 들어갑니다.
+- 공개 공유한 페이지를 빼면 어떤 읽기·쓰기·목록도 조직을 넘지 않습니다. 권한 행이 없는 팀 없는 페이지는 이제 같은 조직의 로그인 구성원에게만 열립니다.
+- 배포는 `db:push` 전에 `npm run db:orgs:prepare`를 실행합니다(Firebat, deploy 워크플로에 반영). 자세한 내용은 [organizations-guide.md](./organizations-guide.md)에 있습니다.
+
 ### 2026-11-02 — 미연결 서비스 제거 (#124 X0)
 
 - 어디에서도 import되지 않던 `server/services/` 파일 7개를 삭제했습니다: `sso.ts`, `audit-log.ts`, `rate-limiter.ts`, `microservices.ts`, `cdn.ts`, `i18n.ts`, `version-history.ts`. 아래 2026-02-01 항목이 언급하는 SSO/OIDC, 다국어, 마이크로서비스, 별도 버전 히스토리 서비스는 실제로 동작한 적이 없습니다.

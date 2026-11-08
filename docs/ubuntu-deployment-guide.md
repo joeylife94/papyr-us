@@ -36,6 +36,8 @@ docker compose logs -f app
 
 # 5. 데이터베이스 마이그레이션 + 초기 데이터 시드
 # app 컨테이너가 완전히 실행된 후, 아래 명령어를 실행하여 DB 스키마를 생성합니다.
+# db:orgs:prepare는 기존 데이터를 default 조직으로 옮깁니다(새 DB에서는 아무것도 하지 않음).
+docker compose exec app npm run db:orgs:prepare
 docker compose exec app npm run db:push
 docker compose exec app npm run db:seed
 
@@ -91,6 +93,7 @@ sudo apt install nginx
 # 코드 업데이트 시
 git pull origin main
 docker compose up -d --build
-# 스키마 변경이 있는 경우 마이그레이션 재실행
+# 스키마 변경이 있는 경우 마이그레이션 재실행 (db:orgs:prepare를 db:push보다 먼저)
+docker compose exec app npm run db:orgs:prepare
 docker compose exec app npm run db:push
 ```

@@ -16,6 +16,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
+import { addOrganizations } from './organizations-fixture';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) {
@@ -155,6 +156,8 @@ beforeAll(async () => {
   });
 
   process.env.DATABASE_URL = scopedUrl;
+  // Organizations (issue #124 X1a): the tables as 0022 leaves them, data in the default one
+  await addOrganizations(scoped, undefined, { teams: [TEAM_A, TEAM_B] });
   const { DBStorage } = await import('../../server/storage.js');
   storage = new DBStorage();
 });
