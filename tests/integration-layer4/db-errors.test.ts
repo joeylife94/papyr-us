@@ -15,6 +15,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { sql } from 'drizzle-orm';
 import { postgresErrorOf } from '../../server/db-errors';
+import { addOrganizations } from './organizations-fixture';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 
@@ -23,6 +24,7 @@ if (!DATABASE_URL) {
   process.exit(0);
 }
 
+const PLAN_TEAM = 70;
 const SCHEMA = 'db_errors_l4';
 const scopedUrl = (() => {
   const url = new URL(DATABASE_URL);
@@ -70,6 +72,8 @@ beforeAll(async () => {
   `);
 
   process.env.DATABASE_URL = scopedUrl;
+  // Organizations (issue #124 X1a): the tables as 0022 leaves them, data in the default one
+  await addOrganizations(scoped, undefined, { teams: [PLAN_TEAM] });
   const { DBStorage } = await import('../../server/storage.js');
   storage = new DBStorage();
 });
@@ -94,12 +98,14 @@ describe('database errors through drizzle (real Postgres)', () => {
   });
 
   it('createWikiPage takes the next slug when one is taken, also by a trashed page', async () => {
-    const first = await storage.createWikiPage(page('plan'));
-    const second = await storage.createWikiPage(page('plan'));
+    // A team page: its team gives it an organization (issue #124 X1)
+    const plan = { ...page('plan'), teamId: PLAN_TEAM };
+    const first = await storage.createWikiPage(plan);
+    const second = await storage.createWikiPage(plan);
     expect([first.slug, second.slug]).toEqual(['plan', 'plan-2']);
 
     await scoped.query('UPDATE wiki_pages SET deleted_at = NOW() WHERE id = $1', [second.id]);
-    const third = await storage.createWikiPage(page('plan'));
+    const third = await storage.createWikiPage(plan);
     expect(third.slug).toBe('plan-3');
   });
 

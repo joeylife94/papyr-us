@@ -19,6 +19,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { Pool } from 'pg';
 import { parseStoredFields, planAddField, type DatabaseField } from '../../shared/inline-database';
+import { addOrganizations } from './organizations-fixture';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 
@@ -165,6 +166,8 @@ beforeAll(async () => {
     [ALICE.id, ALICE.email, BOB.id, BOB.email]
   );
   process.env.DATABASE_URL = scopedUrl;
+  // Organizations (issue #124 X1a): the tables as 0022 leaves them, data in the default one
+  await addOrganizations(scoped);
   const { DBStorage } = await import('../../server/storage.js');
   storage = new DBStorage();
 });

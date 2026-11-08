@@ -18,6 +18,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { postgresErrorOf } from '../../server/db-errors';
+import { addOrganizations } from './organizations-fixture';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) {
@@ -141,12 +142,19 @@ beforeAll(async () => {
   await insertPage('team-trashed', { teamId: TEAM, trashed: true });
   await insertPage('other-team', { teamId: OTHER_TEAM });
   await grant('other-team', 'user', MEMBER.userId, 'owner'); // still outside the member's teams
-  await insertPage('open-personal'); // team-less, no permissions: readable by anyone
+  // team-less, no permissions: readable by the signed-in members of its organization (#124 X1)
+  await insertPage('open-personal');
   await insertPage('private-personal', { author: STRANGER.email });
   await grant('private-personal', 'user', STRANGER.userId, 'owner');
   await insertPage('scratch');
 
   process.env.DATABASE_URL = scopedUrl;
+  // Organizations (issue #124 X1a): the tables as 0022 leaves them, data in the default one
+  const organizationId = await addOrganizations(scoped, undefined, {
+    teams: [TEAM, OTHER_TEAM],
+  });
+  // The signed-in viewers belong to it, as getPageViewer would report
+  for (const viewer of [MEMBER, STRANGER]) Object.assign(viewer, { organizationId });
   const { DBStorage } = await import('../../server/storage.js');
   storage = new DBStorage();
 });
@@ -250,9 +258,12 @@ describe('synced block storage (real Postgres)', () => {
       ['synced_on_open-personal', 1],
       ['synced_on_private-personal', 0],
     ]);
-    expect(await listed(ANONYMOUS)).toEqual([['synced_on_open-personal', 0]]);
+    // Signed out, a team-less page without permissions is no longer open (issue #124 X1)
+    expect(await listed(ANONYMOUS)).toEqual([]);
 
-    const [row] = await storage.getReadableSyncedBlocks(ANONYMOUS);
+    const [row] = (await storage.getReadableSyncedBlocks(STRANGER)).filter(
+      (block: { originalBlockId: string }) => block.originalBlockId === 'synced_on_open-personal'
+    );
     expect(Object.keys(row).sort()).toEqual([
       'content',
       'createdAt',

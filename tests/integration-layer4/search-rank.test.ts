@@ -16,6 +16,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { Pool } from 'pg';
+import { addOrganizations } from './organizations-fixture';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) {
@@ -180,6 +181,12 @@ beforeAll(async () => {
 
   process.env.DATABASE_URL = scopedUrl;
   process.env.SEARCH_USE_FTS = 'true';
+  // Organizations (issue #124 X1a): the tables as 0022 leaves them, data in the default one
+  const organizationId = await addOrganizations(scoped, undefined, {
+    teams: [TEAM, OTHER_TEAM],
+  });
+  // The signed-in viewers belong to it, as getPageViewer would report
+  for (const viewer of [READER]) Object.assign(viewer, { organizationId });
   const { DBStorage } = await import('../../server/storage.js');
   storage = new DBStorage();
 });
