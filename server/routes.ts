@@ -3737,16 +3737,15 @@ export async function registerRoutes(
         }
       }
 
-      // Verify team membership with admin+ role (or allow bootstrapping empty teams)
+      // Only a current owner or admin of the team may add someone to it. A members row on a team
+      // counts as team membership for its email (getUserTeamIds), so this is the same rule as
+      // POST /api/teams/:teamId/memberships, with no exception for a team without members rows.
       if (memberData.teamId && req.user?.id) {
         const userRole = await storage.getUserTeamRole(req.user.id, memberData.teamId as number);
         if (!userRole) {
-          // Allow bootstrapping: first member can join an empty team
-          const existingMembers = await storage.getMembers(memberData.teamId as number);
-          if (existingMembers.length > 0) {
-            return res.status(403).json({ error: 'You are not a member of this team' });
-          }
-        } else if (userRole === 'member') {
+          return res.status(403).json({ error: 'You are not a member of this team' });
+        }
+        if (userRole === 'member') {
           return res.status(403).json({ error: 'Admin or owner role required to add members' });
         }
       }
@@ -3776,16 +3775,22 @@ export async function registerRoutes(
       }
 
       const memberData = updateMemberSchema.parse(req.body);
-      // Prevent cross-team reassignment
+      // Moving the row to another team adds its email to that team (see POST /api/members), so it
+      // needs the same owner or admin role on the target team
       if (
         memberData.teamId !== undefined &&
         memberData.teamId !== null &&
         Number(memberData.teamId) !== Number(existing?.teamId)
       ) {
         if (req.user?.id) {
-          const userTeamIds = await storage.getUserTeamIds(req.user.id);
-          if (!userTeamIds.includes(Number(memberData.teamId))) {
+          const targetRole = await storage.getUserTeamRole(req.user.id, Number(memberData.teamId));
+          if (!targetRole) {
             return res.status(403).json({ error: 'You are not a member of the target team' });
+          }
+          if (targetRole === 'member') {
+            return res
+              .status(403)
+              .json({ error: 'Admin or owner role required on the target team' });
           }
         } else if (config.enforceAuthForWrites) {
           return res.status(401).json({ error: 'Authentication required' });
