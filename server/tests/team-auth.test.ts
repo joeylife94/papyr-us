@@ -481,6 +481,65 @@ describe('Member resource authorization', () => {
       });
       expect(res.status).toBe(403);
     });
+
+    it('returns 403 for a non-member even when the team has no members rows yet', async () => {
+      // Teams created through POST /api/teams have a team_members owner but no members rows. A
+      // members row counts as membership for its email, so it must never be self-service.
+      storage.getUserTeamRole.mockResolvedValue(null);
+      storage.getMembers.mockResolvedValue([]);
+      const res = await request(app).post('/api/members').set(authHeader(tokenB)).send({
+        name: 'User Two',
+        email: 'user2@example.com',
+        role: '개발자',
+        teamId: TEAM_A_ID,
+        skills: [],
+      });
+      expect(res.status).toBe(403);
+      expect(storage.createMember).not.toHaveBeenCalled();
+    });
+
+    it('lets a team admin add a member', async () => {
+      storage.getUserTeamRole.mockResolvedValue('admin');
+      storage.createMember.mockResolvedValue({ ...memberInTeamA, id: 101, name: 'Bob' });
+      const res = await request(app).post('/api/members').set(authHeader(tokenA)).send({
+        name: 'Bob',
+        email: 'bob@example.com',
+        role: '개발자',
+        teamId: TEAM_A_ID,
+        skills: [],
+      });
+      expect(res.status).toBe(201);
+      expect(storage.createMember).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('PUT /api/members/:id moving a row to another team', () => {
+    it('returns 403 when the requester is only a plain member of the target team', async () => {
+      storage.getMember.mockResolvedValue(memberInTeamA);
+      storage.getUserTeamIds.mockResolvedValue([TEAM_A_ID, TEAM_B_ID]);
+      storage.getUserTeamRole.mockImplementation(async (_userId: number, teamId: number) =>
+        teamId === TEAM_A_ID ? 'admin' : 'member'
+      );
+      const res = await request(app)
+        .put('/api/members/100')
+        .set(authHeader(tokenA))
+        .send({ teamId: TEAM_B_ID });
+      expect(res.status).toBe(403);
+      expect(storage.updateMember).not.toHaveBeenCalled();
+    });
+
+    it('allows the move for an admin of both teams', async () => {
+      storage.getMember.mockResolvedValue(memberInTeamA);
+      storage.getUserTeamIds.mockResolvedValue([TEAM_A_ID, TEAM_B_ID]);
+      storage.getUserTeamRole.mockResolvedValue('admin');
+      storage.updateMember.mockResolvedValue({ ...memberInTeamA, teamId: TEAM_B_ID });
+      const res = await request(app)
+        .put('/api/members/100')
+        .set(authHeader(tokenA))
+        .send({ teamId: TEAM_B_ID });
+      expect(res.status).toBe(200);
+      expect(storage.updateMember).toHaveBeenCalledTimes(1);
+    });
   });
 });
 

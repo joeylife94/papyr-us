@@ -384,8 +384,10 @@ describe('4-2  Cross-team reassignment', () => {
 
     it('PUT /api/members/:id — rejects cross-team move when user lacks role in target team', async () => {
       storage.getMember.mockResolvedValue(memberInA);
-      storage.getUserTeamRole.mockResolvedValue('admin'); // user can edit in team A
-      // But user A is not in team B
+      // User A can edit in team A, but holds no role in team B
+      storage.getUserTeamRole.mockImplementation(async (_userId: number, teamId: number) =>
+        teamId === TEAM_B_ID ? null : 'admin'
+      );
       const res = await request(app)
         .put('/api/members/1')
         .set(auth(tokenA))
