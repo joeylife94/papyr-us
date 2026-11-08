@@ -3,7 +3,9 @@ import request from 'supertest';
 import type { Express } from 'express';
 import express from 'express';
 import http from 'http';
+import jwt from 'jsonwebtoken';
 import { registerRoutes } from '../routes';
+import { config } from '../config';
 
 // Mock the storage module
 vi.mock('../storage', async (importOriginal) => {
@@ -39,14 +41,47 @@ describe('Team Management API', () => {
     description: 'The core development team.',
   };
 
-  it('TC-TEAM-001: should create a new team successfully', async () => {
+  it('TC-TEAM-001: should create a new team owned by its creator', async () => {
     const newTeamData = { name: 'new-team', displayName: 'New Team' };
-    (storage.createTeam as vi.Mock).mockResolvedValue({ ...newTeamData, id: 2 });
+    (storage.createTeamWithOwner as vi.Mock).mockResolvedValue({ ...newTeamData, id: 2 });
+    const token = jwt.sign({ id: 7, email: 'creator@example.com' }, config.jwtSecret);
 
-    const response = await request(app).post('/api/teams').send(newTeamData);
+    const response = await request(app)
+      .post('/api/teams')
+      .set('Authorization', `Bearer ${token}`)
+      .send(newTeamData);
 
     expect(response.status).toBe(201);
     expect(response.body).toHaveProperty('id', 2);
+    // The team goes into the creator's organization (issue #124 X1), which storage resolves
+    expect(storage.createTeamWithOwner).toHaveBeenCalledWith(
+      expect.objectContaining(newTeamData),
+      7
+    );
+  });
+
+  it('TC-TEAM-001b: refuses to create a team without a signed-in creator', async () => {
+    const response = await request(app)
+      .post('/api/teams')
+      .send({ name: 'anon-team', displayName: 'Anon Team' });
+
+    expect(response.status).toBe(401);
+    expect(storage.createTeam).not.toHaveBeenCalled();
+    expect(storage.createTeamWithOwner).not.toHaveBeenCalled();
+  });
+
+  it('TC-TEAM-001c: refuses a creator who belongs to no organization', async () => {
+    const { OrganizationRequiredError } =
+      await vi.importActual<typeof import('../storage')>('../storage');
+    (storage.createTeamWithOwner as vi.Mock).mockRejectedValue(new OrganizationRequiredError());
+    const token = jwt.sign({ id: 8, email: 'nobody@example.com' }, config.jwtSecret);
+
+    const response = await request(app)
+      .post('/api/teams')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'orphan-team', displayName: 'Orphan Team' });
+
+    expect(response.status).toBe(403);
   });
 
   it('TC-TEAM-002: should retrieve all teams', async () => {

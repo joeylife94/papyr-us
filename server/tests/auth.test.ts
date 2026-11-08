@@ -25,12 +25,24 @@ vi.mock('../storage', async (importOriginal) => {
   return mod;
 });
 
+// Registration creates the account and its default-organization membership together (issue #124
+// X1); the real helper runs a transaction, so it is replaced here.
+vi.mock('../organizations', () => ({
+  createUserInDefaultOrganization: vi.fn(async (_db: unknown, values: any) => ({
+    id: 1,
+    name: values.name,
+    email: values.email,
+  })),
+  defaultOrganizationId: vi.fn(async () => 1),
+}));
+
 // Mock external libraries
 vi.mock('bcryptjs');
 vi.mock('jsonwebtoken');
 
 import { registerRoutes } from '../routes';
 import { storage } from '../storage';
+import { createUserInDefaultOrganization } from '../organizations';
 
 function authCookie(token: string) {
   return [`accessToken=${token}`];
@@ -83,6 +95,15 @@ describe('Authentication API', () => {
       expect(response.status).toBe(201);
       expect(response.body.message).toBe('User registered successfully');
       expect(response.body.user.email).toBe('new.user@test.com');
+      // The account is created inside the default organization, not on its own
+      expect(createUserInDefaultOrganization).toHaveBeenCalledWith(
+        storage.db,
+        expect.objectContaining({
+          email: 'new.user@test.com',
+          hashedPassword: 'hashed_password',
+          provider: 'local',
+        })
+      );
     });
 
     it('TC-AUTH-002: should fail to register with an existing email', async () => {

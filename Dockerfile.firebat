@@ -14,7 +14,9 @@ FROM dependencies AS migrate
 COPY . .
 # wiki_pages.search_vector is not declared in shared/schema.ts, so db:push treats it as
 # drift; remove the derived FTS objects first and re-create them afterwards.
-CMD ["sh", "-c", "npm run db:fts:prepare && npm run db:push -- --force && npm run db:fts"]
+# db:orgs:prepare moves existing data into the default organization before push adds the
+# NOT NULL organization columns (issue #124 X1a, drizzle/0022_add_organizations.sql).
+CMD ["sh", "-c", "npm run db:fts:prepare && npm run db:orgs:prepare && npm run db:push -- --force && npm run db:fts"]
 
 FROM migrate AS seed
 CMD ["node", "scripts/seed-firebat.mjs"]

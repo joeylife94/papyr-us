@@ -231,6 +231,43 @@ describe('Bulk page operations need the single-page level on every listed page',
   });
 });
 
+describe('Granting a page permission stays inside the organization (issue #124 X1)', () => {
+  const grant = (body: object) =>
+    request(app).post(`/api/pages/${PAGE_A}/permissions`).set(as(OWNER)).send(body);
+
+  it('refuses a user or team of another organization, like an unknown one', async () => {
+    storage.isGranteeInPageOrganization.mockResolvedValue(false);
+    for (const body of [
+      { entityType: 'user', entityId: 99, permission: 'editor' },
+      { entityType: 'team', entityId: 98, permission: 'viewer' },
+    ]) {
+      const res = await grant(body);
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({ message: 'Unknown user or team' });
+    }
+    expect(storage.isGranteeInPageOrganization).toHaveBeenCalledWith(PAGE_A, 'user', 99);
+    expect(storage.isGranteeInPageOrganization).toHaveBeenCalledWith(PAGE_A, 'team', 98);
+    expect(storage.addPagePermission).not.toHaveBeenCalled();
+  });
+
+  it('grants to a user of the page organization', async () => {
+    storage.isGranteeInPageOrganization.mockResolvedValue(true);
+    storage.addPagePermission.mockResolvedValue({ id: 1, pageId: PAGE_A });
+    const res = await grant({ entityType: 'user', entityId: EDITOR.id, permission: 'editor' });
+    expect(res.status).toBe(201);
+    expect(storage.addPagePermission).toHaveBeenCalledTimes(1);
+  });
+
+  it('checks ownership before looking at the grantee', async () => {
+    const res = await request(app)
+      .post(`/api/pages/${PAGE_A}/permissions`)
+      .set(as(EDITOR))
+      .send({ entityType: 'user', entityId: OUTSIDER.id, permission: 'viewer' });
+    expect(res.status).toBe(403);
+    expect(storage.isGranteeInPageOrganization).not.toHaveBeenCalled();
+  });
+});
+
 describe('Removing a page permission is scoped to that page', () => {
   it('removes the permission only from the page named in the path', async () => {
     const res = await request(app).delete(`/api/pages/${PAGE_B}/permissions/7`).set(as(OUTSIDER));

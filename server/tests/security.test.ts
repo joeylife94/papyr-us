@@ -222,6 +222,7 @@ describe('4-1  checkPagePermission logic (direct unit tests — no mock)', () =>
    *  - a fake `db` that returns controlled rows for the first two select() calls
    *    (first call = page rows, second call = pagePermissions rows)
    *  - a mocked getUserTeamIds
+   *  - a mocked getUserOrganizationId: every user in organization 1, the pages' organization
    *  - checkPagePermission bound from the real DBStorage prototype
    */
   function createInstance(pageRows: any[], permRows: any[]) {
@@ -239,6 +240,8 @@ describe('4-1  checkPagePermission logic (direct unit tests — no mock)', () =>
         },
       },
       getUserTeamIds: vi.fn(),
+      getUserOrganizationId: vi.fn(async () => 1),
+      getUserTeamRole: vi.fn(async () => 'member'),
     };
     inst.checkPagePermission = realCheckPagePermission.bind(inst);
     return inst;
@@ -246,7 +249,7 @@ describe('4-1  checkPagePermission logic (direct unit tests — no mock)', () =>
 
   it('denies when page has teamId, no permission rows, and user is NOT in that team', async () => {
     const inst = createInstance(
-      [{ id: 5, teamId: String(TEAM_A_ID), author: 'other@example.com' }],
+      [{ id: 5, teamId: String(TEAM_A_ID), author: 'other@example.com', organizationId: 1 }],
       [] // no explicit permissions — triggers the 4-1 fallback path
     );
     inst.getUserTeamIds.mockResolvedValue([TEAM_B_ID]); // user in team B only
@@ -255,7 +258,7 @@ describe('4-1  checkPagePermission logic (direct unit tests — no mock)', () =>
 
   it('allows when page has teamId, no permission rows, and user IS in that team', async () => {
     const inst = createInstance(
-      [{ id: 5, teamId: String(TEAM_A_ID), author: 'other@example.com' }],
+      [{ id: 5, teamId: String(TEAM_A_ID), author: 'other@example.com', organizationId: 1 }],
       []
     );
     inst.getUserTeamIds.mockResolvedValue([TEAM_A_ID]); // user in team A
@@ -264,15 +267,35 @@ describe('4-1  checkPagePermission logic (direct unit tests — no mock)', () =>
 
   it('denies unauthenticated access when page has teamId and no permission rows', async () => {
     const inst = createInstance(
-      [{ id: 5, teamId: String(TEAM_A_ID), author: 'other@example.com' }],
+      [{ id: 5, teamId: String(TEAM_A_ID), author: 'other@example.com', organizationId: 1 }],
       []
     );
     expect(await inst.checkPagePermission(undefined, 5, 'viewer')).toBe(false);
   });
 
   it('allows open access for legacy page (no teamId, no permission rows)', async () => {
-    const inst = createInstance([{ id: 5, teamId: null, author: 'other@example.com' }], []);
+    const inst = createInstance(
+      [{ id: 5, teamId: null, author: 'other@example.com', organizationId: 1 }],
+      []
+    );
     expect(await inst.checkPagePermission(USER_A_ID, 5, 'viewer')).toBe(true);
+  });
+
+  it('denies a legacy open page to a member of another organization (issue #124 X1)', async () => {
+    const inst = createInstance(
+      [{ id: 5, teamId: null, author: 'other@example.com', organizationId: 1 }],
+      []
+    );
+    inst.getUserOrganizationId.mockResolvedValue(2);
+    expect(await inst.checkPagePermission(USER_A_ID, 5, 'viewer')).toBe(false);
+  });
+
+  it('denies a legacy open page to an anonymous caller (issue #124 X1)', async () => {
+    const inst = createInstance(
+      [{ id: 5, teamId: null, author: 'other@example.com', organizationId: 1 }],
+      []
+    );
+    expect(await inst.checkPagePermission(undefined, 5, 'viewer')).toBe(false);
   });
 });
 

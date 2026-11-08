@@ -77,6 +77,7 @@ import {
   pagePermissions,
   publicLinks,
   teamMembers,
+  organizationMembers,
 } from '../shared/schema.js';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { eq, like, and, or, sql, desc, asc, isNull, inArray, type SQL } from 'drizzle-orm';
@@ -86,6 +87,7 @@ import type { RetrievedPageRow } from './services/retrieval.js';
 import type { PageTreeRow } from './services/page-tree.js';
 import type { TagPaneRow } from './services/tag-pane.js';
 import { postgresErrorOf } from './db-errors.js';
+import { defaultOrganizationId } from './organizations.js';
 import {
   MAX_INDEXED_LINKS,
   extractPageLinkIds,
@@ -113,11 +115,27 @@ function isBcryptHash(value: string): boolean {
   return typeof value === 'string' && /^\$2[aby]?\$\d{2}\$[./A-Za-z0-9]{53}$/.test(value);
 }
 
-/** A caller listing pages: identity plus current team memberships (see DBStorage.readableBy). */
+/**
+ * A caller listing pages: identity, organization and current team memberships (see
+ * DBStorage.readableBy). Only pages of `organizationId` are ever listed for them; without an
+ * organization (signed out, or a user in none) nothing is listed and only public pages read.
+ */
 export interface PageViewer {
   userId?: number;
   email?: string;
+  organizationId?: number | null;
   teamIds: number[];
+}
+
+/**
+ * Thrown when something must be placed in an organization (issue #124 X1) and none follows from
+ * the request: a team-less page or a team created without a creator who belongs to one.
+ */
+export class OrganizationRequiredError extends Error {
+  constructor() {
+    super('An organization is required');
+    this.name = 'OrganizationRequiredError';
+  }
 }
 
 /** A trashed page as the trash list shows it: no body. */
@@ -246,10 +264,11 @@ export class DBStorage {
   }
 
   async createWikiPage(page: InsertWikiPage, creatorUserId?: number): Promise<WikiPage> {
+    const organizationId = await this.organizationForNewPage(page.teamId, creatorUserId);
     const createdPage = await this.insertWithUniqueSlug(page.slug, async (slug) => {
       const result = await this.db
         .insert(wikiPages)
-        .values({ ...page, slug })
+        .values({ ...page, slug, organizationId })
         .returning();
       return result[0];
     });
@@ -288,6 +307,7 @@ export class DBStorage {
     creatorUserId?: number
   ): Promise<WikiPage> {
     const referenced = databaseBlockSchemaIds(page.blocks);
+    const organizationId = await this.organizationForNewPage(page.teamId, creatorUserId);
     return this.db.transaction(async (tx: any) => {
       const sources: DatabaseSchema[] =
         referenced.length === 0
@@ -311,7 +331,7 @@ export class DBStorage {
         tx.transaction(async (savepoint: any) => {
           const result = await savepoint
             .insert(wikiPages)
-            .values({ ...page, slug, blocks })
+            .values({ ...page, slug, blocks, organizationId })
             .returning();
           return result[0];
         })
@@ -680,8 +700,9 @@ export class DBStorage {
       );
     }
     if (options.readableBy) {
-      // Applied in SQL so totals and pagination never count pages the viewer cannot read.
-      conditions.push(this.readableBy(options.readableBy));
+      // Applied in SQL so totals and pagination never count pages the viewer cannot list: other
+      // organizations' pages included (issue #124 X1).
+      conditions.push(this.listableBy(options.readableBy));
     }
 
     if (conditions.length > 0) {
@@ -771,16 +792,30 @@ export class DBStorage {
       .select({ email: users.email })
       .from(users)
       .where(eq(users.id, userId));
-    return { userId, email: user?.email, teamIds: await this.getUserTeamIds(userId) };
+    return {
+      userId,
+      email: user?.email,
+      organizationId: await this.getUserOrganizationId(userId),
+      teamIds: await this.getUserTeamIds(userId),
+    };
+  }
+
+  /** Pages of the viewer's organization; nothing for a viewer without one (issue #124 X1). */
+  private inViewerOrganization(viewer: PageViewer): SQL {
+    return viewer.organizationId == null
+      ? sql`false`
+      : eq(wikiPages.organizationId, viewer.organizationId);
   }
 
   /**
    * SQL form of `checkPagePermission(viewer, page, 'viewer')`, for listings that must never
    * reveal a page GET /api/pages/:id would refuse:
-   * - team pages: current members of the team, a public grant, or a grant to one of the
-   *   viewer's teams; authorship and user grants need membership, so they add nothing here;
-   * - team-less pages: open without explicit permissions; otherwise a public grant, or
-   *   (signed in) authorship, a user grant, or a grant to one of the viewer's teams.
+   * - any page with a public grant;
+   * - otherwise only pages of the viewer's own organization (issue #124 X1), and among those:
+   *   - team pages: current members of the team, or a grant to one of the viewer's teams;
+   *     authorship and user grants need membership, so they add nothing here;
+   *   - team-less pages: (signed in) open without explicit permissions; otherwise authorship,
+   *     a user grant, or a grant to one of the viewer's teams.
    */
   private readableBy(viewer: PageViewer): SQL {
     const validPermission = sql`pp.permission IN ('viewer', 'commenter', 'editor', 'owner')`;
@@ -789,43 +824,42 @@ export class DBStorage {
     const hasPermissions = sql`EXISTS (SELECT 1 FROM page_permissions pp WHERE pp.page_id = ${wikiPages.id})`;
     const teamless = isNull(wikiPages.teamId);
 
+    const publicGrant = grant(sql`pp.entity_type = 'public'`);
+    if (!viewer.userId || viewer.organizationId == null) return publicGrant;
+
     const conditions: SQL[] = [
       and(sql`NOT ${hasPermissions}`, teamless)!,
-      grant(sql`pp.entity_type = 'public'`),
+      and(teamless, grant(sql`pp.entity_type = 'user' AND pp.entity_id = ${viewer.userId}`))!,
     ];
-    if (viewer.userId) {
-      conditions.push(
-        and(teamless, grant(sql`pp.entity_type = 'user' AND pp.entity_id = ${viewer.userId}`))!
-      );
-      if (viewer.email) {
-        conditions.push(and(teamless, hasPermissions, eq(wikiPages.author, viewer.email))!);
-      }
-      if (viewer.teamIds.length > 0) {
-        conditions.push(inArray(wikiPages.teamId, viewer.teamIds));
-        conditions.push(
-          grant(
-            sql`pp.entity_type = 'team' AND pp.entity_id IN (${sql.join(
-              viewer.teamIds.map((teamId) => sql`${teamId}`),
-              sql`, `
-            )})`
-          )
-        );
-      }
+    if (viewer.email) {
+      conditions.push(and(teamless, hasPermissions, eq(wikiPages.author, viewer.email))!);
     }
-    return or(...conditions)!;
+    if (viewer.teamIds.length > 0) {
+      conditions.push(inArray(wikiPages.teamId, viewer.teamIds));
+      conditions.push(
+        grant(
+          sql`pp.entity_type = 'team' AND pp.entity_id IN (${sql.join(
+            viewer.teamIds.map((teamId) => sql`${teamId}`),
+            sql`, `
+          )})`
+        )
+      );
+    }
+    return or(publicGrant, and(this.inViewerOrganization(viewer), or(...conditions)))!;
   }
 
   /**
-   * Listing scope: the viewer's teams plus team-less pages (the scope GET /api/pages already
-   * applies), narrowed to pages the viewer can read. Listings therefore also honour team
-   * revocation immediately.
+   * Listing scope: the viewer's organization (issue #124 X1), and in it the viewer's teams plus
+   * team-less pages (the scope GET /api/pages already applies), narrowed to pages the viewer
+   * can read. A publicly shared page of another organization opens by link but is never listed.
+   * Listings therefore also honour team revocation immediately.
    */
   private listableBy(viewer: PageViewer): SQL {
     const teamScope =
       viewer.teamIds.length > 0
         ? or(isNull(wikiPages.teamId), inArray(wikiPages.teamId, viewer.teamIds))!
         : isNull(wikiPages.teamId);
-    return and(teamScope, this.readableBy(viewer))!;
+    return and(this.inViewerOrganization(viewer), teamScope, this.readableBy(viewer))!;
   }
 
   /**
@@ -1446,8 +1480,9 @@ export class DBStorage {
     return result[0];
   }
 
-  async createTeam(team: InsertTeam): Promise<Team> {
-    const teamValues = { ...team };
+  /** Creates a team in `organizationId` with no owner (issue #124 X1: the caller picks the org). */
+  async createTeam(team: InsertTeam, organizationId: number): Promise<Team> {
+    const teamValues = { ...team, organizationId };
     if (teamValues.password) {
       teamValues.password = await bcrypt.hash(teamValues.password, 10);
     }
@@ -1455,8 +1490,14 @@ export class DBStorage {
     return result[0];
   }
 
+  /**
+   * Creates a team in its creator's organization with the creator as owner. Throws
+   * OrganizationRequiredError when the creator belongs to no organization.
+   */
   async createTeamWithOwner(team: InsertTeam, creatorUserId: number): Promise<Team> {
-    const teamValues = { ...team };
+    const organizationId = await this.getUserOrganizationId(creatorUserId);
+    if (organizationId === null) throw new OrganizationRequiredError();
+    const teamValues = { ...team, organizationId };
     if (teamValues.password) {
       teamValues.password = await bcrypt.hash(teamValues.password, 10);
     }
@@ -1523,16 +1564,85 @@ export class DBStorage {
     return account;
   }
 
+  // ==================== Organizations (issue #124 X1) ====================
+
+  /** The organization the user belongs to, or null when they belong to none. */
+  async getUserOrganizationId(userId: number): Promise<number | null> {
+    const [row] = await this.db
+      .select({ organizationId: organizationMembers.organizationId })
+      .from(organizationMembers)
+      .where(eq(organizationMembers.userId, userId))
+      .limit(1);
+    return row ? Number(row.organizationId) : null;
+  }
+
+  /** The team's organization, or null for an unknown team. */
+  async getTeamOrganizationId(teamId: number): Promise<number | null> {
+    const [row] = await this.db
+      .select({ organizationId: teams.organizationId })
+      .from(teams)
+      .where(eq(teams.id, teamId))
+      .limit(1);
+    return row ? Number(row.organizationId) : null;
+  }
+
+  /** The default organization's id; the organization is created on first use. */
+  async getDefaultOrganizationId(): Promise<number> {
+    return defaultOrganizationId(this.db);
+  }
+
   /**
-   * Get all team IDs that a user belongs to.
-   * First checks the team_members RBAC table; falls back to legacy members table.
+   * Places a new account in the default organization as a member: the sign-up policy until
+   * invitations arrive (#124 X1d). An account that already belongs to an organization keeps it.
+   * Returns the organization the account belongs to afterwards.
+   */
+  async joinDefaultOrganization(userId: number): Promise<number> {
+    const organizationId = await this.getDefaultOrganizationId();
+    await this.db
+      .insert(organizationMembers)
+      .values({ organizationId, userId, role: 'member' })
+      .onConflictDoNothing({ target: organizationMembers.userId });
+    return (await this.getUserOrganizationId(userId)) ?? organizationId;
+  }
+
+  /**
+   * The organization a new page belongs to: its team's, or for a team-less page its creator's.
+   * Throws OrganizationRequiredError when neither gives one, so a page never lands in an
+   * organization nobody chose.
+   */
+  private async organizationForNewPage(
+    teamId: number | string | null | undefined,
+    creatorUserId: number | undefined
+  ): Promise<number> {
+    if (teamId != null) {
+      const organizationId = await this.getTeamOrganizationId(Number(teamId));
+      if (organizationId === null) throw new Error('Team not found');
+      return organizationId;
+    }
+    if (creatorUserId) {
+      const organizationId = await this.getUserOrganizationId(creatorUserId);
+      if (organizationId !== null) return organizationId;
+    }
+    throw new OrganizationRequiredError();
+  }
+
+  /**
+   * Get all team IDs that a user belongs to, among the teams of the user's own organization
+   * (issue #124 X1): a membership row in another organization's team never counts, so every
+   * team-scoped check built on this stays inside the organization. A user in no organization
+   * belongs to no team. First checks the team_members RBAC table; falls back to legacy members
+   * table.
    */
   async getUserTeamIds(userId: number): Promise<number[]> {
+    const organizationId = await this.getUserOrganizationId(userId);
+    if (organizationId === null) return [];
+
     // Primary: team_members table (RBAC)
     const tmRecords = await this.db
       .select({ teamId: teamMembers.teamId })
       .from(teamMembers)
-      .where(eq(teamMembers.userId, userId));
+      .innerJoin(teams, eq(teams.id, teamMembers.teamId))
+      .where(and(eq(teamMembers.userId, userId), eq(teams.organizationId, organizationId)));
 
     if (tmRecords.length > 0) {
       return tmRecords.map((r: { teamId: number }) => r.teamId);
@@ -1547,7 +1657,14 @@ export class DBStorage {
     const memberRecords = await this.db
       .select({ teamId: members.teamId })
       .from(members)
-      .where(and(eq(members.email, userEmail), eq(members.isActive, true)));
+      .innerJoin(teams, eq(teams.id, members.teamId))
+      .where(
+        and(
+          eq(members.email, userEmail),
+          eq(members.isActive, true),
+          eq(teams.organizationId, organizationId)
+        )
+      );
 
     return memberRecords
       .map((m: { teamId: number | null }) => m.teamId)
@@ -1556,9 +1673,15 @@ export class DBStorage {
 
   /**
    * Get user's role in a specific team from team_members table.
-   * Returns the role ('owner' | 'admin' | 'member') or null if not a member.
+   * Returns the role ('owner' | 'admin' | 'member') or null if not a member. A team outside the
+   * user's organization always gives null (issue #124 X1).
    */
   async getUserTeamRole(userId: number, teamId: number): Promise<TeamRole | null> {
+    const organizationId = await this.getUserOrganizationId(userId);
+    if (organizationId === null || (await this.getTeamOrganizationId(teamId)) !== organizationId) {
+      return null;
+    }
+
     const record = await this.db
       .select({ role: teamMembers.role })
       .from(teamMembers)
@@ -2113,15 +2236,13 @@ export class DBStorage {
       .from(pagePermissions)
       .where(eq(pagePermissions.pageId, pageId));
 
-    const pageTeamId = page.length > 0 && page[0].teamId ? Number(page[0].teamId) : null;
-
-    // Pages without a teamId and without explicit permissions are legacy open-access pages.
-    // Team pages without explicit permissions follow the team rules below, like any team page.
-    if (permissions.length === 0 && pageTeamId === null) {
+    // An unknown page has nothing to protect: the route answers 404 for it.
+    if (page.length === 0) {
       return true;
     }
+    const pageTeamId = page[0].teamId ? Number(page[0].teamId) : null;
 
-    // Check public permissions first
+    // Check public permissions first: a page shared publicly reads for anyone
     const publicPermission = permissions.find((p: PagePermission) => p.entityType === 'public');
     if (
       publicPermission &&
@@ -2133,6 +2254,20 @@ export class DBStorage {
     // If no user ID, only public access is allowed
     if (!userId) {
       return false;
+    }
+
+    // Everything else needs a member of the page's organization (issue #124 X1): no grant,
+    // authorship or team membership reaches across organizations.
+    const userOrganizationId = await this.getUserOrganizationId(userId);
+    if (userOrganizationId === null || userOrganizationId !== Number(page[0].organizationId)) {
+      return false;
+    }
+
+    // Pages without a teamId and without explicit permissions are legacy open pages, open to the
+    // signed-in members of their organization. Team pages without explicit permissions follow
+    // the team rules below, like any team page.
+    if (permissions.length === 0 && pageTeamId === null) {
+      return true;
     }
 
     const userTeamIds = await this.getUserTeamIds(userId);
@@ -2190,6 +2325,30 @@ export class DBStorage {
   }
 
   /**
+   * Whether a grant on the page may name this grantee (issue #124 X1): a user or team of the
+   * page's own organization. Public grants name nobody; other entity types are left to the
+   * permission's own validation.
+   */
+  async isGranteeInPageOrganization(
+    pageId: number,
+    entityType: unknown,
+    entityId: unknown
+  ): Promise<boolean> {
+    if (entityType !== 'user' && entityType !== 'team') return true;
+    const [page] = await this.db
+      .select({ organizationId: wikiPages.organizationId })
+      .from(wikiPages)
+      .where(eq(wikiPages.id, pageId));
+    const id = Number(entityId);
+    if (!page || !Number.isInteger(id) || id <= 0) return false;
+    const granteeOrganizationId =
+      entityType === 'user'
+        ? await this.getUserOrganizationId(id)
+        : await this.getTeamOrganizationId(id);
+    return granteeOrganizationId !== null && granteeOrganizationId === Number(page.organizationId);
+  }
+
+  /**
    * Get all permissions for a page
    */
   async getPagePermissions(pageId: number): Promise<PagePermission[]> {
@@ -2209,9 +2368,13 @@ export class DBStorage {
    */
   async getUserPagePermission(userId: number, pageId: number): Promise<PermissionLevel | null> {
     const [page] = await this.db
-      .select({ teamId: wikiPages.teamId })
+      .select({ teamId: wikiPages.teamId, organizationId: wikiPages.organizationId })
       .from(wikiPages)
       .where(eq(wikiPages.id, pageId));
+    // No permission reaches across organizations (issue #124 X1)
+    if (page && Number(page.organizationId) !== (await this.getUserOrganizationId(userId))) {
+      return null;
+    }
     const userTeamIds = await this.getUserTeamIds(userId);
     if (page?.teamId) {
       const teamId = Number(page.teamId);
@@ -2950,6 +3113,7 @@ export class DBStorage {
     | { status: 'trashed' }
     | { status: 'conflict' }
   > {
+    const organizationId = await this.organizationForNewPage(note.teamId, note.userId);
     try {
       return await this.db.transaction(async (tx: any) => {
         await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${note.slug}, 0))`);
@@ -3000,6 +3164,7 @@ export class DBStorage {
             tags: note.tags,
             author: note.author,
             teamId: note.teamId,
+            organizationId,
           })
           .returning();
         const grants: InsertPagePermission[] = [
@@ -3108,6 +3273,7 @@ export class DBStorage {
     }>;
   }): Promise<Array<{ id: number; slug: string }>> {
     if (input.pages.length === 0) return [];
+    const organizationId = await this.organizationForNewPage(input.teamId, input.userId);
     return this.db.transaction(async (tx: any) => {
       const created: Array<{ id: number; slug: string }> = [];
       for (const page of input.pages) {
@@ -3126,6 +3292,7 @@ export class DBStorage {
               tags: page.tags,
               author: input.author,
               teamId: input.teamId,
+              organizationId,
               parentId: page.parentId,
               icon: page.icon,
               metadata: page.cover ? { cover: page.cover } : {},

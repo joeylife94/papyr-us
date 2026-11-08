@@ -45,18 +45,43 @@ if (!adminEmails.includes(email)) {
 
 const pool = new Pool({ connectionString: databaseUrl });
 try {
-  const existing = await pool.query('SELECT id FROM users WHERE lower(email) = $1 LIMIT 1', [email]);
+  const existing = await pool.query('SELECT id FROM users WHERE lower(email) = $1 LIMIT 1', [
+    email,
+  ]);
   if (existing.rowCount > 0) {
     console.log(`[SKIP] Firebat admin already exists: ${email}`);
     process.exitCode = 0;
   } else {
     const hashedPassword = await bcrypt.hash(password, 12);
-    const inserted = await pool.query(
-      `INSERT INTO users (name, email, hashed_password, provider)
-       VALUES ($1, $2, $3, 'local')
-       RETURNING id`,
-      [name, email, hashedPassword]
-    );
+    // Like every account, the admin account joins the default organization (issue #124 X1),
+    // in the same transaction. Platform admin rights come from ADMIN_EMAILS, not from this.
+    const client = await pool.connect();
+    let inserted;
+    try {
+      await client.query('BEGIN');
+      inserted = await client.query(
+        `INSERT INTO users (name, email, hashed_password, provider)
+         VALUES ($1, $2, $3, 'local')
+         RETURNING id`,
+        [name, email, hashedPassword]
+      );
+      await client.query(
+        `INSERT INTO organizations (slug, name) VALUES ('default', 'Default')
+         ON CONFLICT (slug) DO NOTHING`
+      );
+      await client.query(
+        `INSERT INTO organization_members (organization_id, user_id, role)
+         SELECT id, $1, 'member' FROM organizations WHERE slug = 'default'
+         ON CONFLICT (user_id) DO NOTHING`,
+        [inserted.rows[0].id]
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
     console.log(`[PASS] Firebat admin created: ${email} (id=${inserted.rows[0].id})`);
   }
 } finally {
