@@ -1,7 +1,7 @@
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
-import { wikiPages, calendarEvents, directories, comments } from '../shared/schema.js';
+import { users, wikiPages, calendarEvents, directories, comments } from '../shared/schema.js';
 import { createUserInDefaultOrganization, defaultOrganizationId } from './organizations.js';
 import dotenv from 'dotenv';
 import path from 'path';
