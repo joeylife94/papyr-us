@@ -39,6 +39,8 @@ export interface ShellNav {
   scope: WorkspaceScope;
   documentsHref: string;
   createHref: string;
+  /** The workspace's tag pane (#137). */
+  tagsHref: string;
   primary: ShellNavItem[];
   tools: ShellToolLink[];
 }
@@ -55,6 +57,7 @@ export function useShellNav(): ShellNav {
   const teamPrefix = workspace?.basePath ?? null;
   const documentsHref = workspace?.documentsPath ?? '/';
   const createHref = workspace?.createPath ?? '/create';
+  const tagsHref = `${teamPrefix ?? ''}/tags`;
 
   // Reading or editing a document keeps "문서" highlighted; aria-current stays on the list.
   const inDocuments =
@@ -111,5 +114,5 @@ export function useShellNav(): ShellNav {
     tools.push({ key: 'automation', label: '자동화', href: '/automation', icon: Zap });
   }
 
-  return { scope, documentsHref, createHref, primary, tools };
+  return { scope, documentsHref, createHref, tagsHref, primary, tools };
 }

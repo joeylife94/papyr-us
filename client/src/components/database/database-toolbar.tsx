@@ -1,14 +1,17 @@
 import { useId } from 'react';
-import { ArrowUpDown, ListFilter } from 'lucide-react';
+import { ArrowUpDown, Eye, ListFilter } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 import {
   FILTER_OPERATOR_LABELS,
+  calendarDateField,
   cellText,
+  galleryCardFields,
   operatorNeedsValue,
   operatorsFor,
   type DatabaseFilter,
   type DatabaseViewConfig,
+  type DatabaseViewKind,
   type FilterOperator,
 } from '@/lib/inline-database';
 import type { DatabaseField } from '@shared/inline-database';
@@ -42,26 +45,52 @@ function Labelled({
   );
 }
 
-/** Sort and filter of one view (and the board's grouping), stored with the block. */
+/**
+ * Sort and filter of one view, and what the view itself needs (the board's grouping, the
+ * gallery's card properties, the calendar's date property), stored with the block.
+ */
 export function ViewToolbar({
   fields,
   view,
-  board,
+  kind,
   onChange,
 }: {
   fields: DatabaseField[];
   view: DatabaseViewConfig;
-  board: boolean;
+  kind: DatabaseViewKind;
   onChange: (view: DatabaseViewConfig) => void;
 }) {
   const sortField = view.sort && fields.find((field) => field.id === view.sort?.fieldId);
   const filterField = view.filter && fields.find((field) => field.id === view.filter?.fieldId);
   const selectFields = fields.filter((field) => field.type === 'select');
+  const dateFields = fields.filter((field) => field.type === 'date');
+  const dateField = calendarDateField(fields, view.dateField);
   const groupId = useId();
+  const dateId = useId();
 
   return (
     <div className="flex flex-wrap items-center gap-1">
-      {board && selectFields.length > 0 && (
+      {kind === 'calendar' && dateField && (
+        <span className="mr-1 inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+          <label htmlFor={dateId}>날짜 속성</label>
+          <select
+            id={dateId}
+            value={dateField.id}
+            onChange={(event) => onChange({ ...view, dateField: event.target.value })}
+            className="rounded-md border border-input bg-background px-1.5 py-1 text-xs"
+          >
+            {dateFields.map((field) => (
+              <option key={field.id} value={field.id}>
+                {field.name}
+              </option>
+            ))}
+          </select>
+        </span>
+      )}
+
+      {kind === 'gallery' && <CardFieldsMenu fields={fields} view={view} onChange={onChange} />}
+
+      {kind === 'board' && selectFields.length > 0 && (
         <span className="mr-1 inline-flex items-center gap-1.5 text-xs text-muted-foreground">
           <label htmlFor={groupId}>그룹 기준</label>
           <select
@@ -161,6 +190,65 @@ export function ViewToolbar({
         </PopoverContent>
       </Popover>
     </div>
+  );
+}
+
+/** The gallery's "표시할 속성": which properties its cards show under the title. */
+function CardFieldsMenu({
+  fields,
+  view,
+  onChange,
+}: {
+  fields: DatabaseField[];
+  view: DatabaseViewConfig;
+  onChange: (view: DatabaseViewConfig) => void;
+}) {
+  const candidates = fields.filter((field) => field.type !== 'title');
+  const shown = galleryCardFields(fields, view.cardFields);
+  const shownIds = new Set(shown.map((field) => field.id));
+  const toggle = (fieldId: string, on: boolean) => {
+    const next = new Set(shownIds);
+    if (on) next.add(fieldId);
+    else next.delete(fieldId);
+    onChange({
+      ...view,
+      cardFields: candidates.filter((field) => next.has(field.id)).map((field) => field.id),
+    });
+  };
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button type="button" className={chipClass(shown.length > 0)}>
+          <Eye className="h-3.5 w-3.5" aria-hidden />
+          표시할 속성{shown.length > 0 ? ` ${shown.length}` : ''}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-64 p-3">
+        <fieldset className="space-y-1">
+          <legend className="mb-1 text-xs font-medium text-muted-foreground">
+            카드에 표시할 속성
+          </legend>
+          {candidates.length === 0 && (
+            <p className="text-sm text-muted-foreground">제목 외의 속성이 없습니다.</p>
+          )}
+          {candidates.map((field) => (
+            <label
+              key={field.id}
+              className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm hover:bg-accent"
+            >
+              <input
+                type="checkbox"
+                checked={shownIds.has(field.id)}
+                onChange={(event) => toggle(field.id, event.target.checked)}
+                className="h-4 w-4 accent-[hsl(var(--highlight))]"
+              />
+              <span className="truncate">{field.name}</span>
+            </label>
+          ))}
+        </fieldset>
+      </PopoverContent>
+    </Popover>
   );
 }
 

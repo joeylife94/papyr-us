@@ -6,6 +6,9 @@
  * Rules under test:
  * - a link preview shows the title only to callers who may read the target; a missing, trashed
  *   or unreadable target gets the same `{ accessible: false }` answer;
+ * - a readable target's preview carries its hover card (issue #133): a plain-text excerpt whose
+ *   links are named only for pages the caller may read, and the last update time; nothing of it
+ *   reaches an unreadable target's answer;
  * - backlinks need read access to the page and come from the caller-scoped query;
  * - the picker searches one team (members only) or personal pages.
  */
@@ -72,6 +75,10 @@ const OPEN_PAGE = 100; // readable by READER
 const SECRET_PAGE = 101; // exists, READER may not read it
 const TRASHED_PAGE = 102; // READER could read it, but it is in the trash
 
+const UPDATED_AT = new Date('2026-11-01T09:30:00.000Z');
+const LINKED_READABLE = 200;
+const LINKED_SECRET = 201;
+
 const page = (id: number, extra: object = {}) => ({
   id,
   title: `Title ${id}`,
@@ -79,6 +86,8 @@ const page = (id: number, extra: object = {}) => ({
   icon: '🚀',
   teamId: TEAM,
   deletedAt: null,
+  content: `## Notes of ${id}\n\nSee **[[page:${LINKED_READABLE}]]** and [[page:${LINKED_SECRET}]].`,
+  updatedAt: UPDATED_AT,
   ...extra,
 });
 
@@ -121,10 +130,22 @@ beforeEach(() => {
     { id: 7, title: 'Linking page', slug: 'linking', icon: null },
   ]);
   storage.searchLinkTargets.mockResolvedValue([]);
+  storage.getPageViewer.mockImplementation(async (userId?: number) =>
+    userId === READER.id
+      ? { userId, email: READER.email, teamIds: READER.teams }
+      : { teamIds: [] as number[] }
+  );
+  // Of the pages linked in the excerpts, the reader may read only LINKED_READABLE.
+  storage.resolveReadablePageLinks.mockImplementation(
+    async (viewer: { userId?: number }, ids: number[]) =>
+      viewer.userId === READER.id && ids.includes(LINKED_READABLE)
+        ? [{ id: LINKED_READABLE, title: 'Linked Title', slug: 'linked', icon: null }]
+        : []
+  );
 });
 
 describe('GET /api/pages/:id/link-preview', () => {
-  it('shows the current title and icon to a caller who may read the target', async () => {
+  it('shows the current title, icon, excerpt and update time to a reader of the target', async () => {
     const res = await request(app).get(`/api/pages/${OPEN_PAGE}/link-preview`).set(as(READER));
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -133,20 +154,42 @@ describe('GET /api/pages/:id/link-preview', () => {
       title: `Title ${OPEN_PAGE}`,
       slug: `slug-${OPEN_PAGE}`,
       icon: '🚀',
+      // Markdown stripped; the readable link by its title, the other one unnamed.
+      excerpt: `Notes of ${OPEN_PAGE} See Linked Title and [링크].`,
+      updatedAt: UPDATED_AT.toISOString(),
     });
+    // Links in the excerpt are named through the caller's own read rule, in one lookup.
+    expect(storage.getPageViewer).toHaveBeenCalledWith(READER.id);
+    expect(storage.resolveReadablePageLinks).toHaveBeenCalledTimes(1);
+    expect(storage.resolveReadablePageLinks).toHaveBeenCalledWith(
+      { userId: READER.id, email: READER.email, teamIds: READER.teams },
+      [LINKED_READABLE, LINKED_SECRET]
+    );
   });
 
-  it('answers unreadable, trashed and missing targets identically, without a title', async () => {
-    const bodies = [];
+  it('builds the excerpt without lookups when it has no links', async () => {
+    storage.getWikiPage.mockResolvedValue(page(OPEN_PAGE, { content: 'Just text, ~~no~~ links.' }));
+    const res = await request(app).get(`/api/pages/${OPEN_PAGE}/link-preview`).set(as(READER));
+    expect(res.body.excerpt).toBe('Just text, no links.');
+    expect(storage.resolveReadablePageLinks).not.toHaveBeenCalled();
+  });
+
+  it('answers unreadable, trashed and missing targets exactly as before, with nothing more', async () => {
     for (const id of [SECRET_PAGE, TRASHED_PAGE, 999]) {
       const res = await request(app).get(`/api/pages/${id}/link-preview`).set(as(READER));
       expect(res.status, `page ${id}`).toBe(200);
-      expect(JSON.stringify(res.body)).not.toContain('Title');
-      bodies.push({ ...res.body, id: undefined });
+      // Byte for byte the answer this route gave before hover cards: no title, excerpt or time.
+      expect(res.text, `page ${id}`).toBe(JSON.stringify({ id, accessible: false }));
     }
-    expect(bodies[0]).toEqual({ accessible: false });
-    expect(bodies[1]).toEqual(bodies[0]);
-    expect(bodies[2]).toEqual(bodies[0]);
+    // An unreadable page's content is never read for an excerpt.
+    expect(storage.getPageViewer).not.toHaveBeenCalled();
+    expect(storage.resolveReadablePageLinks).not.toHaveBeenCalled();
+  });
+
+  it('gives a signed-out caller the same answer for a page only members may read', async () => {
+    const res = await request(app).get(`/api/pages/${OPEN_PAGE}/link-preview`);
+    expect(res.status).toBe(200);
+    expect(res.text).toBe(JSON.stringify({ id: OPEN_PAGE, accessible: false }));
   });
 
   it('refuses an id beyond the page id column before any lookup', async () => {

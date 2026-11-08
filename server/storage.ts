@@ -55,6 +55,7 @@ import {
   type DatabaseRow,
   type DatabaseRelation,
   type SyncedBlock,
+  type PageCover,
   databaseSchemas,
   databaseRows,
   databaseRelations,
@@ -83,6 +84,7 @@ import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 import type { RetrievedPageRow } from './services/retrieval.js';
 import type { PageTreeRow } from './services/page-tree.js';
+import type { TagPaneRow } from './services/tag-pane.js';
 import { postgresErrorOf } from './db-errors.js';
 import {
   MAX_INDEXED_LINKS,
@@ -637,14 +639,11 @@ export class DBStorage {
         .replace(/[:&|!()]/g, ' ')
         .replace(/\s+/g, ' ');
 
-    // Build select with optional rank column
-    const selectColumns: any = { ...wikiPages };
-    if (useFts && hasQuery && params.sort === 'rank') {
-      const q = sanitizeQuery(params.query!);
-      selectColumns.rank = sql<number>`ts_rank(search_vector, plainto_tsquery('simple', ${q}))`;
-    }
+    // The full-text query, with the search text as a bound parameter.
+    const tsQuery =
+      useFts && hasQuery ? sql`plainto_tsquery('simple', ${sanitizeQuery(params.query!)})` : null;
 
-    const query = this.db.select(selectColumns).from(wikiPages);
+    const query = this.db.select({ ...wikiPages }).from(wikiPages);
     const countQuery = this.db.select({ count: sql`count(*)` }).from(wikiPages);
 
     const conditions = [];
@@ -653,9 +652,8 @@ export class DBStorage {
     conditions.push(isNull(wikiPages.deletedAt));
 
     if (hasQuery) {
-      if (useFts) {
-        const q = sanitizeQuery(params.query!);
-        conditions.push(sql`search_vector @@ plainto_tsquery('simple', ${q})`);
+      if (tsQuery) {
+        conditions.push(sql`search_vector @@ ${tsQuery}`);
       } else {
         // Fallback to LIKE search on title and content
         conditions.push(
@@ -695,12 +693,13 @@ export class DBStorage {
     const total = Number(totalResult[0].count);
 
     // Apply ordering and pagination
-    if (useFts && hasQuery && params.sort === 'rank') {
-      // Rank by relevance (ts_rank) when using FTS - already in SELECT
+    if (tsQuery && params.sort === 'rank') {
+      // Relevance first, newest first among equals (#131). The rank is an ORDER BY expression
+      // only: it is not selected, so rows keep the shape of the other sorts.
       query
         .limit(params.limit || 20)
         .offset(params.offset || 0)
-        .orderBy(sql`rank DESC`);
+        .orderBy(desc(sql`ts_rank(search_vector, ${tsQuery})`), desc(wikiPages.updatedAt));
     } else {
       // Default: order by update time
       query
@@ -1029,6 +1028,60 @@ export class DBStorage {
       });
     });
     return Array.from(tagCounts.entries()).map(([name, count]) => ({ name, count }));
+  }
+
+  /**
+   * Pages the tag pane (#137) reads: live pages of one scope (a team, or `null` for team-less
+   * pages) the viewer can list (`readablePagesInScope`), most recently updated first, at most
+   * `limit`. No body; `getTagPaneContent` loads the content in batches.
+   */
+  async getTagPaneRows(
+    viewer: PageViewer,
+    teamId: number | null,
+    limit: number
+  ): Promise<TagPaneRow[]> {
+    return this.db
+      .select({
+        id: wikiPages.id,
+        title: wikiPages.title,
+        slug: wikiPages.slug,
+        icon: wikiPages.icon,
+        teamId: wikiPages.teamId,
+        updatedAt: wikiPages.updatedAt,
+        tags: wikiPages.tags,
+      })
+      .from(wikiPages)
+      .where(this.readablePagesInScope(viewer, teamId))
+      .orderBy(desc(wikiPages.updatedAt), desc(wikiPages.id))
+      .limit(limit);
+  }
+
+  /**
+   * The first `maxChars` characters of the content of the given pages, for their inline `#tags`
+   * (#137). The scope and read rule are applied again, so a page that left them since
+   * `getTagPaneRows` gives nothing. Pages whose content has no `#` followed by a character that
+   * can start a tag name (only headings, say) are skipped.
+   */
+  async getTagPaneContent(
+    viewer: PageViewer,
+    teamId: number | null,
+    ids: number[],
+    maxChars: number
+  ): Promise<Array<{ id: number; content: string }>> {
+    if (ids.length === 0) return [];
+    return this.db
+      .select({
+        id: wikiPages.id,
+        content: sql<string>`left(${wikiPages.content}, ${maxChars})`,
+      })
+      .from(wikiPages)
+      .where(
+        and(
+          inArray(wikiPages.id, ids),
+          this.readablePagesInScope(viewer, teamId),
+          sql`${wikiPages.content} ~ '#[^[:space:]#]'`
+        )
+      );
   }
 
   /**
@@ -2998,6 +3051,8 @@ export class DBStorage {
         updatedAt: wikiPages.updatedAt,
         content: wikiPages.content,
         tags: wikiPages.tags,
+        // The export writes the page cover (issue #134) from here.
+        metadata: wikiPages.metadata,
       })
       .from(wikiPages)
       .where(this.readablePagesInScope(viewer, teamId));
@@ -3046,6 +3101,8 @@ export class DBStorage {
       content: string;
       tags: string[];
       icon: string | null;
+      /** A validated cover (issue #134), stored as the page's only metadata key. */
+      cover: PageCover | null;
       parentId: number | null;
       linkTargets: number[];
     }>;
@@ -3071,6 +3128,7 @@ export class DBStorage {
               teamId: input.teamId,
               parentId: page.parentId,
               icon: page.icon,
+              metadata: page.cover ? { cover: page.cover } : {},
               isPublished: true,
             })
             .onConflictDoNothing({ target: wikiPages.slug })

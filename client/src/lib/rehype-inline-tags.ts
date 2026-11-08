@@ -48,12 +48,12 @@ function hashOrigins(node: Text, source: string | null): HashOrigin[] | null {
   return origins.length === hashes ? origins : null;
 }
 
-function tagLink(tag: string): Element {
+function tagLink(tag: string, scopePath: string): Element {
   return {
     type: 'element',
     tagName: 'a',
     properties: {
-      href: tagHref(tag),
+      href: tagHref(tag, scopePath),
       className: TAG_CHIP_CLASS.split(' '),
       ariaLabel: `태그 ${tag}`,
       dataInlineTag: tag,
@@ -63,7 +63,7 @@ function tagLink(tag: string): Element {
 }
 
 /** The text node split around its tags, or null when it has none. */
-function splitTags(node: Text, source: string | null): ElementContent[] | null {
+function splitTags(node: Text, source: string | null, scopePath: string): ElementContent[] | null {
   const { value } = node;
   const origins = hashOrigins(node, source);
   const parts: ElementContent[] = [];
@@ -78,7 +78,7 @@ function splitTags(node: Text, source: string | null): ElementContent[] | null {
     const tag = readTagName(value, index);
     if (!tag) continue;
     if (index > last) parts.push({ type: 'text', value: value.slice(last, index) });
-    parts.push(tagLink(tag));
+    parts.push(tagLink(tag, scopePath));
     last = index + 1 + tag.length;
   }
   if (parts.length === 0) return null;
@@ -86,18 +86,20 @@ function splitTags(node: Text, source: string | null): ElementContent[] | null {
   return parts;
 }
 
-function transform(node: Root | Element, source: string | null) {
+function transform(node: Root | Element, source: string | null, scopePath: string) {
   if (node.type === 'element' && SKIPPED_PARENTS.has(node.tagName)) return;
   const children: Array<RootContent | ElementContent> = [];
   let changed = false;
   for (const child of node.children) {
     const split =
-      child.type === 'text' && child.value.includes('#') ? splitTags(child, source) : null;
+      child.type === 'text' && child.value.includes('#')
+        ? splitTags(child, source, scopePath)
+        : null;
     if (split) {
       for (const part of split) children.push(part); // no spread: text can hold many tags
       changed = true;
     } else {
-      if (child.type === 'element') transform(child, source);
+      if (child.type === 'element') transform(child, source, scopePath);
       children.push(child);
     }
   }
@@ -105,14 +107,17 @@ function transform(node: Root | Element, source: string | null) {
 }
 
 /**
- * Rehype plugin: `#tag` in rendered text becomes a link to the tag's document list (#113 §2),
- * with the same rules as the editor preview (`inline-markdown.ts`): Unicode letters, digits,
- * `_`, `-` and `/` with at least one letter, not inside a word, not escaped. Code, existing links
- * and raw-text elements keep the text as written. Run it before `rehypePageLinkSlots` (it reads
- * source positions those placeholders do not carry) and before `rehypeSafeUrls`.
+ * Rehype plugin: `#tag` in rendered text becomes a link to the tag pane with that tag selected
+ * (#113 §2, #137), with the same rules as the editor preview (shared/tags.ts): Unicode letters,
+ * digits, `_`, `-` and `/` with at least one letter, not inside a word, not escaped. Code,
+ * existing links and raw-text elements keep the text as written. `scopePath` is the workspace of
+ * the tag pane the links open ('' personal, `/teams/<name>` a team; see `tagHref`). Run it before
+ * `rehypePageLinkSlots` (it reads source positions those placeholders do not carry) and before
+ * `rehypeSafeUrls`.
  */
-export function rehypeInlineTags() {
+export function rehypeInlineTags(options: { scopePath?: string } = {}) {
+  const scopePath = options.scopePath ?? '';
   return (tree: Root, file: { value?: unknown }) => {
-    transform(tree, typeof file?.value === 'string' ? file.value : null);
+    transform(tree, typeof file?.value === 'string' ? file.value : null, scopePath);
   };
 }

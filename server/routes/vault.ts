@@ -8,7 +8,8 @@
  * - POST /api/vault/import?teamId=<id|name> — multipart field `files`: one `.zip` vault or up to
  *   500 `.md` files, 10 MB together. Creates the pages in that scope (see
  *   services/vault-import.ts) and answers `{ created: [{ id, title, slug, parentId, path }],
- *   skipped: [{ path, reason }], unresolvedLinks: [{ path, target }], unresolvedLinkCount }`,
+ *   skipped: [{ path, reason }], unresolvedLinks: [{ path, target }], unresolvedLinkCount,
+ *   droppedCovers: [{ path }] }` (notes whose `cover` was not a preset or an image here),
  *   201 when pages were created, 200 when there was nothing to create. Refusals: 401 (no
  *   session), 403 (not a member of the team), 411 (no Content-Length), 413 (upload, entry count,
  *   uncompressed size or page count over the limits), 400 (not a multipart upload, a damaged,
@@ -205,6 +206,7 @@ export function registerVaultRoutes(app: Express, storage: DBStorage) {
           skipped: plan.skipped,
           unresolvedLinks: [],
           unresolvedLinkCount: 0,
+          droppedCovers: plan.droppedCovers,
         });
       }
 
@@ -222,6 +224,7 @@ export function registerVaultRoutes(app: Express, storage: DBStorage) {
         content: contents[index],
         tags: page.tags,
         icon: page.icon,
+        cover: page.cover,
         parentId: page.parent === null ? null : ids[page.parent],
         linkTargets: extractPageLinkIds(contents[index]).filter((id) => id !== ids[index]),
       }));
@@ -244,6 +247,7 @@ export function registerVaultRoutes(app: Express, storage: DBStorage) {
         skipped: plan.skipped,
         unresolvedLinks: unresolved.slice(0, MAX_UNRESOLVED_LISTED),
         unresolvedLinkCount: unresolved.length,
+        droppedCovers: plan.droppedCovers,
       });
     } catch (error) {
       logger.error('Vault import failed', { error: (error as Error)?.message });

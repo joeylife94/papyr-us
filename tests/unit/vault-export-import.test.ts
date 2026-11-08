@@ -293,7 +293,8 @@ describe('renderImportedBodies', () => {
     expect(contents[2].split('\n')).toEqual([
       '[[page:102]] [[page:102]] [[page:102]] [[page:102]] [[page:102]]',
       '[[page:7]] [[page:8]] Alias Missing Local',
-      '`[[Plan]]` ![[Plan]] page:999 [[page:9]]',
+      // An embed resolves like a link, to an embed token (#135).
+      '`[[Plan]]` ![[page:102]] page:999 [[page:9]]',
     ]);
     expect(contents[1]).toBe('[[page:102]] [[page:103]]');
     expect(contents[0]).toBe('');

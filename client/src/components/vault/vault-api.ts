@@ -16,6 +16,8 @@ export interface VaultImportSummary {
   skipped: Array<{ path: string; reason: string }>;
   unresolvedLinks: Array<{ path: string; target: string }>;
   unresolvedLinkCount: number;
+  /** Notes imported without their frontmatter cover (not a preset or an image here, #134). */
+  droppedCovers: Array<{ path: string }>;
 }
 
 /** A refused or failed vault request; `status` is the HTTP status (0 when the request failed). */

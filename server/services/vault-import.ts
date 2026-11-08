@@ -8,15 +8,24 @@
  *   `__MACOSX/` are ignored; other non-Markdown files and oversized notes are reported as skipped.
  * - Hierarchy follows folders: `A.md` + `A/B.md` makes B a sub-page of A; a folder without a
  *   matching note becomes an empty page named after the folder. Parents come before children.
- * - Frontmatter gives `title` (else the file name), `tags` and `icon` (one emoji, else none).
+ * - Frontmatter gives `title` (else the file name), `tags`, `icon` (one emoji, else none) and
+ *   `cover` (a preset id or this instance's uploaded image path, else none; another value is
+ *   reported in `droppedCovers`, issue #134).
  * - Wikilinks resolve after every page has an id: within the import first (path, file name or
  *   title; exact, then case-insensitive), then among the readable live pages of the scope. A
  *   resolved link becomes an id token, which renders the target's current title, so an alias
  *   (`[[Title|alias]]`) is dropped. An unresolved link becomes its alias or title as plain text.
+ * - Embeds (`![[Title]]`, `![[Title|alias]]`, `![[path/Title]]`, #135) resolve the same way to
+ *   an embed token (`![[page:<id>]]`). An embed of a heading or block (`![[Title#Heading]]`)
+ *   becomes a link to the page: embedding part of a page is not supported. An unresolved embed
+ *   is kept as written (most are attachments such as `![[image.png]]`, which are not imported);
+ *   one that names a note is reported with the unresolved links.
  */
 import { pageLinkToken } from '../../shared/page-links.js';
-import { pageIconSchema } from '../../shared/schema.js';
+import { pageEmbedToken } from '../../shared/page-embeds.js';
+import { pageIconSchema, type PageCover } from '../../shared/schema.js';
 import {
+  coverFromFrontmatter,
   normalizeTags,
   parseFrontmatter,
   replaceWikiLinks,
@@ -71,6 +80,7 @@ export interface PlannedPage {
   title: string;
   tags: string[];
   icon: string | null;
+  cover: PageCover | null;
   /** Markdown body as imported, links still as written. */
   body: string;
   /** Index of the parent page in the plan, or null for a root page. */
@@ -80,6 +90,8 @@ export interface PlannedPage {
 export interface VaultImportPlan {
   pages: PlannedPage[];
   skipped: Array<{ path: string; reason: VaultSkipReason }>;
+  /** Notes imported without the cover their frontmatter named (not a preset or image here). */
+  droppedCovers: Array<{ path: string }>;
 }
 
 /**
@@ -126,6 +138,7 @@ function frontmatterTitle(value: unknown): string | null {
  */
 export function planVaultImport(files: VaultSourceFile[]): VaultImportPlan {
   const skipped: VaultImportPlan['skipped'] = [];
+  const droppedCovers: VaultImportPlan['droppedCovers'] = [];
   const pages = new Map<string, Omit<PlannedPage, 'parent'> & { segments: string[] }>();
 
   for (const file of files) {
@@ -150,6 +163,8 @@ export function planVaultImport(files: VaultSourceFile[]): VaultImportPlan {
       continue;
     }
     const { data, body } = parseFrontmatter(utf8.decode(file.read()));
+    const cover = coverFromFrontmatter(data.cover, data.cover_offset_y);
+    if (cover.dropped) droppedCovers.push({ path: file.path });
     pages.set(key.toLowerCase(), {
       key,
       path: file.path,
@@ -159,6 +174,7 @@ export function planVaultImport(files: VaultSourceFile[]): VaultImportPlan {
         segments[segments.length - 1].slice(0, VAULT_IMPORT_LIMITS.maxTitleLength),
       tags: normalizeTags(data.tags ?? data.tag),
       icon: pageIconSchema.safeParse(data.icon).success ? (data.icon as string) : null,
+      cover: cover.cover,
       body,
     });
   }
@@ -176,6 +192,7 @@ export function planVaultImport(files: VaultSourceFile[]): VaultImportPlan {
         title: segments[segments.length - 1].slice(0, VAULT_IMPORT_LIMITS.maxTitleLength),
         tags: [],
         icon: null,
+        cover: null,
         body: '',
       });
     }
@@ -197,6 +214,7 @@ export function planVaultImport(files: VaultSourceFile[]): VaultImportPlan {
           : null,
     })),
     skipped,
+    droppedCovers,
   };
 }
 
@@ -205,6 +223,9 @@ export interface ScopePageTitle {
   id: number;
   title: string;
 }
+
+/** A target with a file extension (`.md` is already stripped): an attachment, not a note. */
+const ATTACHMENT_TARGET = /\.[A-Za-z0-9]{1,10}$/;
 
 function setFirst<K, V>(map: Map<K, V>, key: K, value: V) {
   if (!map.has(key)) map.set(key, value);
@@ -284,15 +305,27 @@ export function renderImportedBodies(
   const unresolved: Array<{ path: string; target: string }> = [];
   const contents = plan.pages.map((page) => {
     const missing = new Set<string>();
-    const content = replaceWikiLinks(page.body, (link) => {
-      const id = resolve(link.target);
-      if (id !== null) return pageLinkToken(id);
-      if (link.target && !missing.has(link.target)) {
-        missing.add(link.target);
-        unresolved.push({ path: page.path, target: link.target });
+    const report = (target: string) => {
+      if (target && !missing.has(target)) {
+        missing.add(target);
+        unresolved.push({ path: page.path, target });
       }
-      return wikiLinkText(link);
-    });
+    };
+    const content = replaceWikiLinks(
+      page.body,
+      (link) => {
+        const id = resolve(link.target);
+        if (id !== null) return pageLinkToken(id);
+        report(link.target);
+        return wikiLinkText(link);
+      },
+      (link, written) => {
+        const id = resolve(link.target);
+        if (id !== null) return link.heading ? pageLinkToken(id) : pageEmbedToken(id);
+        if (!ATTACHMENT_TARGET.test(link.target)) report(link.target);
+        return written;
+      }
+    );
     return content;
   });
   return { contents, unresolved };

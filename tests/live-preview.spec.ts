@@ -7,10 +7,11 @@ import {
 
 // Issue #113 §2: a text block shows its inline Markdown rendered while it is not focused
 // (Obsidian-style live preview). Clicking the text edits the source again, edits persist, unsafe
-// link URLs never become links, and `#tags` (editor and reader) open the tag-filtered list.
+// link URLs never become links, and `#tags` (editor and reader) open the tag pane (#137) with
+// the tag selected.
 
 const SOURCE = '**굵게** _기울임_ `code` [링크](https://example.com) #태그';
-const TAG_HREF = `/?tag=${encodeURIComponent('태그')}`;
+const TAG_HREF = `/tags/${encodeURIComponent('태그')}`;
 
 const block = (id: string, type: string, content: string, order: number) => ({
   id,
@@ -40,7 +41,7 @@ const waitForAutosave = (page: Page, pageId: number) =>
       response.ok()
   );
 
-test('inline Markdown renders out of focus, edits as source, and #tags open the tag list', async ({
+test('inline Markdown renders out of focus, edits as source, and #tags open the tag pane', async ({
   page,
   request,
 }) => {
@@ -147,13 +148,13 @@ test('inline Markdown renders out of focus, edits as source, and #tags open the 
     await expect(preview(1).locator('[data-unsafe-link]')).toHaveText('나쁜');
     await expect(page.locator('[data-page-body] a[href^="javascript"]')).toHaveCount(0);
 
-    // 5. The tag chip opens the document list filtered by the tag.
+    // 5. The tag chip opens the tag pane with the tag selected, listing its pages.
     await preview(0).locator('a[data-inline-tag="태그"]').click();
     await expect(page).toHaveURL(TAG_HREF);
-    await expect(page.getByTestId('tag-filter')).toContainText('#태그');
-    const list = page.getByRole('table', { name: '#태그 태그 문서' });
-    await expect(list.getByRole('link', { name: title })).toBeVisible();
-    await expect(list.getByRole('link', { name: otherTitle })).toHaveCount(0);
+    await expect(page.locator('a[data-tag="태그"]')).toHaveAttribute('aria-current', 'page');
+    const list = page.getByRole('list', { name: '#태그 태그 문서' });
+    await expect(list.getByRole('link', { name: new RegExp(title) })).toBeVisible();
+    await expect(list.getByRole('link', { name: new RegExp(otherTitle) })).toHaveCount(0);
 
     // 6. The reader (here a share link) shows the same tag link and drops the unsafe URL.
     const share = await api.post(`/api/pages/${doc.id}/share`, { data: {} });
@@ -168,7 +169,9 @@ test('inline Markdown renders out of focus, edits as source, and #tags open the 
     await readerTag.click();
     await expect(page).toHaveURL(TAG_HREF);
     await expect(
-      page.getByRole('table', { name: '#태그 태그 문서' }).getByRole('link', { name: title })
+      page
+        .getByRole('list', { name: '#태그 태그 문서' })
+        .getByRole('link', { name: new RegExp(title) })
     ).toBeVisible();
   } finally {
     await api.delete(`/api/pages/${doc.id}`).catch(() => {});

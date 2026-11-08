@@ -17,8 +17,16 @@ interface ParagraphBlockProps {
   onSlashCommand?: (rect: DOMRect) => void;
   onSlashFilter?: (filter: string) => void;
   onSlashClose?: () => void;
-  /** `@` or `[[` was typed (issue #103 E6): open the link picker for that span of text. */
-  onPageLinkTrigger?: (rect: DOMRect, start: number, length: number) => void;
+  /**
+   * `@` or `[[` was typed (issue #103 E6): open the link picker for that span of text. `![[`
+   * (#135) opens it to embed the picked page instead.
+   */
+  onPageLinkTrigger?: (
+    rect: DOMRect,
+    start: number,
+    length: number,
+    mode: 'link' | 'embed'
+  ) => void;
   /** Markdown shortcuts (#111 §6): returns true when the editor converted the block. */
   onMarkdownShortcut?: (previous: string, next: string, caret: number) => boolean;
   placeholder?: string;
@@ -108,17 +116,19 @@ export function ParagraphBlock({
         onSlashFilter?.(filter);
       }
     } else if (onPageLinkTrigger && textareaRef.current) {
-      // Page links: "[[" anywhere, or "@" at the start or after whitespace.
+      // Page links: "[[" anywhere, or "@" at the start or after whitespace; "![[" embeds.
       const before = newContent.slice(0, cursorPos);
       const atMention =
         before.endsWith('@') && (cursorPos === 1 || /\s/.test(newContent[cursorPos - 2]));
       if (before.endsWith('[[') || atMention) {
-        const length = atMention ? 1 : 2;
+        const embed = before.endsWith('![[');
+        const length = atMention ? 1 : embed ? 3 : 2;
         const rect = textareaRef.current.getBoundingClientRect();
         onPageLinkTrigger(
           new DOMRect(rect.left, rect.top + 28, rect.width, rect.height),
           cursorPos - length,
-          length
+          length,
+          embed ? 'embed' : 'link'
         );
       }
     }
