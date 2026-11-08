@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface AuthContextType {
   isAuthenticated: boolean;
@@ -14,6 +15,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true); // true until initial auth check completes
   const [user, setUser] = useState(null);
+  const queryClient = useQueryClient();
 
   const logout = useCallback(async () => {
     try {
@@ -21,9 +23,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // best-effort
     }
+    // Signing out does not reload the page, and cached queries never go stale on their own
+    // (staleTime: Infinity), so drop everything the previous account fetched.
+    queryClient.clear();
     setIsAuthenticated(false);
     setUser(null);
-  }, []);
+  }, [queryClient]);
 
   const fetchUser = useCallback(async () => {
     try {
@@ -86,6 +91,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     if (response.ok) {
+      // A different account may have been signed in before (e.g. its session expired without a
+      // logout): nothing it fetched may carry over to this one.
+      queryClient.clear();
       await fetchUser();
     } else {
       throw new Error('Login failed');

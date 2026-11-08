@@ -1,74 +1,61 @@
 # RBAC (관리자) 가이드
 
-이 문서는 관리자 권한 제어(RBAC) 구성과 운영 환경에서의 권한 흐름을 명확히 하기 위한 가이드를 제공합니다. 아래 내용은 현재 코드베이스(`server/middleware.ts`, `server/routes.ts`)의 동작과 권장 설정을 반영합니다.
+이 문서는 플랫폼 관리자 권한이 어떻게 정해지고 검사되는지 설명합니다. 코드 기준은 `server/middleware.ts`(`isPlatformAdmin`, `requireAdmin`)입니다. 팀·페이지 권한은 이 문서의 범위가 아닙니다.
 
-## 설정 (환경변수)
+## 플랫폼 관리자란
 
-- `ADMIN_EMAILS` - 쉼표로 구분된 관리자 이메일 목록 (예: `admin@example.com,owner@company.com`).
-- `ADMIN_PASSWORD` - 하위 호환용 관리자 비밀번호(임시). 운영 환경에서는 사용 중단 권장.
-- `ALLOW_ADMIN_PASSWORD` 또는 `ALLOW_ADMIN_PASSWORD=true/false` - (구성) 비밀번호 기반 접근을 허용할지 제어합니다.
-- `JWT_SECRET`(또는 `JWT_SECRET`으로 노출된 값) - JWT 서명에 사용되는 비밀 키.
+- `ADMIN_EMAILS`(쉼표 구분)에 이메일이 있는 **활성 사용자 계정**입니다.
+- 관리자는 자기 계정으로 로그인합니다(이메일/비밀번호, Google, GitHub). **공유 관리자 비밀번호는 없습니다.** `ADMIN_PASSWORD`, `ALLOW_ADMIN_PASSWORD`, `POST /api/admin/auth`, `x-admin-password` 헤더, `adminPassword` 쿼리/바디 필드는 #124 X0에서 모두 제거됐습니다. 이 변수가 남아 있으면 서버가 시작할 때 "no longer used" 경고를 남기고 무시합니다.
+- 조직 단위 관리자(조직 소유자/관리자)는 #124 X1에서 추가됩니다.
 
-> 참고: 실제 프로젝트의 구성키 이름은 `server/config.ts`의 `config` 객체를 확인하세요. 운영 환경에서는 `ALLOW_ADMIN_PASSWORD`를 `false`로 설정하고 JWT 기반 인증만 허용하는 것을 권장합니다.
+## 설정
 
-## 권한 검사 흐름 (미들웨어 동작 요약)
+```env
+ADMIN_EMAILS=admin@example.com,owner@company.com
+JWT_SECRET=<랜덤 256-bit 이상>
+```
 
-1. `requireAdmin` 미들웨어는 먼저 요청에 포함된 `Authorization: Bearer <token>`을 해독하려 시도합니다. JWT가 유효하고 페이로드에 `role: 'admin'` 이거나, `email` 필드가 `ADMIN_EMAILS`에 포함되어 있으면 접근을 허용합니다.
-2. JWT가 없거나 무효인 경우, 구성에서 비밀번호 기반 접근을 허용(`ALLOW_ADMIN_PASSWORD`)하면 다음을 확인합니다:
-   - `x-admin-password` 헤더
-   - `adminPassword` 쿼리 파라미터
-   - 또는 요청 바디의 `adminPassword` 혹은 `password` 필드
-     이 값이 `ADMIN_PASSWORD`와 일치하면 접근을 허용합니다.
-3. 위 조건을 모두 만족하지 못하면 HTTP 403을 반환합니다.
+`ADMIN_EMAILS`를 바꾼 뒤에는 서버를 재시작해야 반영됩니다.
 
-## 보호되는 엔드포인트(예시)
+## 권한 검사 흐름
 
-아래 엔드포인트들은 서버에서 `requireAdmin` 또는 `requireAuthIfEnabled`/`requireAdmin` 조합으로 보호됩니다. (전체 목록은 `server/routes.ts`에서 `/api/admin/*` 경로를 검색하세요.)
+`requireAdmin`은 요청마다 다음을 확인합니다.
 
-- GET/POST/PATCH/DELETE `/api/admin/directories`\* - 관리자 디렉토리 관리
-- POST `/api/admin/auth` - (서버) 비밀번호로 임시 관리자 토큰을 발급하는 엔드포인트
+1. 요청의 액세스 토큰(`accessToken` 쿠키 또는 `Authorization: Bearer`)을 검증해 사용자 id를 얻습니다. 토큰이 없거나 무효이면 거부합니다.
+2. 그 id로 DB의 사용자 계정을 읽습니다. 계정이 없거나 비활성이면 거부합니다.
+3. **DB에 저장된 현재 이메일**이 `ADMIN_EMAILS`에 있으면 허용합니다.
 
-\*참고: 많은 관리자 기능은 `requireAdmin` 미들웨어가 적용되어 있으며, 관리자용 UI는 JWT 또는 비밀번호 기반 토큰을 사용해 호출할 수 있습니다.
+토큰 안의 `role`이나 `email` 값은 믿지 않습니다. 그래서:
 
-## 클라이언트 사용 예시
+- `ADMIN_EMAILS`에서 이메일을 빼거나 계정을 비활성화하면, 이미 발급된 토큰이 남아 있어도 다음 요청부터 관리자 권한이 사라집니다.
+- 사용자 id가 없는 토큰(제거된 비밀번호 로그인이 발급하던 형태)은 관리자 권한을 얻지 못합니다.
+- 계정 조회가 실패하면 `500 Admin check failed`로 거부합니다(fail closed). 권한이 없으면 `403 Forbidden: admin required`이고, 서버 로그에 `Denied admin access`가 남습니다.
 
-1. JWT 기반(권장)
+같은 판정(`isPlatformAdmin`)이 댓글 수정·삭제의 관리자 예외에도 쓰입니다.
+
+## 보호되는 엔드포인트
+
+| Method       | Endpoint                     | 설명                              |
+| ------------ | ---------------------------- | --------------------------------- |
+| GET          | `/api/admin/session`         | 로그인한 사용자가 관리자인지 확인 |
+| GET/POST     | `/api/admin/directories`     | 디렉토리 목록/생성                |
+| PATCH/DELETE | `/api/admin/directories/:id` | 디렉토리 수정/삭제                |
+| DELETE       | `/api/trash`                 | 휴지통 영구 비우기                |
+
+`/api/admin/*` 라우트는 `FEATURE_ADMIN`이 켜져 있을 때만 등록됩니다.
+
+## 사용 예시
+
+브라우저에서는 관리자 계정으로 로그인한 뒤 `/admin`을 열면 됩니다. 관리자가 아닌 계정은 "Your account is not a platform admin" 안내를 봅니다.
+
+API 클라이언트는 관리자 계정의 액세스 토큰을 씁니다.
 
 ```bash
-curl -H "Authorization: Bearer <관리자_JWT>" https://your-app.example.com/api/admin/directories
+curl -H "Authorization: Bearer <관리자 계정의 액세스 토큰>" https://your-app.example.com/api/admin/directories
 ```
 
-관리자 JWT는 일반 로그인 흐름에서 `role: 'admin'`이 포함된 토큰을 발급받거나, 서버의 `/api/admin/auth` 엔드포인트(비밀번호로 발급되는 단기 토큰)를 사용할 수 있습니다.
+## 운영 권장 사항
 
-2. 비밀번호(하위 호환)
-
-```bash
-curl -H "x-admin-password: <ADMIN_PASSWORD>" https://your-app.example.com/api/admin/directories
-```
-
-또는 쿼리/바디 방식:
-
-```
-POST /api/admin/directories?adminPassword=<ADMIN_PASSWORD>
-```
-
-## 보안 권장 사항
-
-- 운영 환경에서는 비밀번호 기반 접근을 비활성화하세요 (`ALLOW_ADMIN_PASSWORD=false`).
-- `ADMIN_EMAILS`는 최소한으로 유지하고 정기적으로 검토하세요.
-- 관리자 토큰(특히 `/api/admin/auth`에서 발급되는 단기 토큰)은 짧은 만료 시간을 사용하세요(예: 2시간).
-- 모든 관리자 API 호출은 HTTPS를 통해 전달되어야 합니다.
-
-## 디버깅 및 로그
-
-- `requireAdmin`는 실패 시 간단한 로깅(`Denied admin access: ...`)을 남깁니다. 운영에서는 과도한 로그 노출을 피하기 위해 적절한 로테이션/레벨을 사용하세요.
-
-## 마이그레이션 권장 작업
-
-1. `ALLOW_ADMIN_PASSWORD` 설정을 `false`로 전환하고 내부 도구/스크립트가 이를 사용하지 않는지 확인합니다.
-2. 문서(관리자 가이드, 운영 매뉴얼)에 관리자 토큰 발급 및 사용 예시를 추가합니다.
-3. 관리자 이메일 목록(`ADMIN_EMAILS`)을 보안 팀과 함께 정리하고, 변경 이력을 기록하세요.
-
----
-
-문서가 코드와 일치하도록 정기적으로 `server/middleware.ts`와 `server/routes.ts`의 관련 섹션을 검토하세요.
+- `ADMIN_EMAILS`는 최소한으로 유지하고 정기적으로 검토하세요. 퇴사자는 목록에서 빼고 계정을 비활성화하세요.
+- 관리자 API는 HTTPS로만 노출하세요.
+- 관리자 작업의 감사 기록은 아직 없습니다. #124 X2(감사 로그)에서 추가됩니다.

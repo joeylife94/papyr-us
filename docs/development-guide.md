@@ -1,5 +1,11 @@
 ## 변경 이력
 
+### 2026-11-02 — 미연결 서비스 제거 (#124 X0)
+
+- 어디에서도 import되지 않던 `server/services/` 파일 7개를 삭제했습니다: `sso.ts`, `audit-log.ts`, `rate-limiter.ts`, `microservices.ts`, `cdn.ts`, `i18n.ts`, `version-history.ts`. 아래 2026-02-01 항목이 언급하는 SSO/OIDC, 다국어, 마이크로서비스, 별도 버전 히스토리 서비스는 실제로 동작한 적이 없습니다.
+- 버전 히스토리는 `server/services/page-save.ts`와 `page_versions` 테이블이 담당합니다. 엔터프라이즈 SSO와 감사 로그는 #124의 X2·X3·X4 단계에서 새로 만듭니다.
+- 공유 관리자 비밀번호(`ADMIN_PASSWORD`, `ALLOW_ADMIN_PASSWORD`, `POST /api/admin/auth`)를 제거했습니다. 관리자는 `ADMIN_EMAILS`에 있는 사용자 계정으로 로그인합니다([rbac-guide.md](./rbac-guide.md)).
+
 ### 2026-02-01 — 프로덕션 준비 완료
 
 - **새로운 서비스 파일들** 추가:
@@ -214,7 +220,7 @@ npm run dev:secure  # ENFORCE_AUTH_WRITES, RATE_LIMIT_ENABLED 활성화
 
 - 주요 토글 환경변수
   - `ENFORCE_AUTH_WRITES` — 쓰기 메서드(POST/PUT/PATCH/DELETE)에 JWT 요구 여부. 기본값: 프로덕션에서 활성화.
-  - `ALLOW_ADMIN_PASSWORD` — 관리자 비밀번호 기반 접근 허용 여부. 기본값: 프로덕션에서 비활성화.
+  - `ADMIN_EMAILS` — 플랫폼 관리자 계정 이메일(쉼표 구분). 공유 관리자 비밀번호는 없습니다.
   - `RATE_LIMIT_ENABLED`, `RATE_LIMIT_WINDOW_MS`, `RATE_LIMIT_MAX` — 레이트리밋 설정. 기본값: 프로덕션에서 활성화.
 
 ### `.env.test` 권장 항목 (E2E 재현용)
@@ -222,7 +228,6 @@ npm run dev:secure  # ENFORCE_AUTH_WRITES, RATE_LIMIT_ENABLED 활성화
 로컬 및 CI에서 E2E를 안정적으로 실행하려면 `./.env.test`에 최소한 다음 항목을 설정하세요. 민감한 값은 로컬에만 두고 절대 저장소에 커밋하지 마세요.
 
 - 필수(최소):
-  - `ADMIN_PASSWORD` — 테스트용 관리자 비밀번호 (예: `admin123`)
   - `DATABASE_URL` — 테스트 DB 연결 문자열 (예: `postgres://testuser:testpass@localhost:5433/papyr_test`)
   - `PORT` — 테스트 서버 포트 (기본: `5001`)
   - `NODE_ENV` — `test` 권장
@@ -234,7 +239,6 @@ npm run dev:secure  # ENFORCE_AUTH_WRITES, RATE_LIMIT_ENABLED 활성화
 예시 `.env.test` (로컬 전용, 절대 커밋 금지):
 
 ```text
-ADMIN_PASSWORD=admin123
 ADMIN_EMAIL=admin@example.com
 DATABASE_URL=postgres://testuser:testpass@localhost:5433/papyr_test
 PORT=5001

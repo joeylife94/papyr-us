@@ -329,41 +329,51 @@ export function requireTeamMembership(req: AuthRequest, res: Response, next: Nex
   })();
 }
 
-// RBAC: Require admin access middleware
+type PlatformAdminStore = {
+  getUserAccount(userId: number): Promise<{ email: string; isActive: boolean } | undefined>;
+};
+
+/**
+ * Platform admin (issue #124 X0): an active user account whose email is listed in ADMIN_EMAILS,
+ * looked up when the request arrives. A token's own `role` or `email` claim is not trusted, so
+ * removing someone from ADMIN_EMAILS or deactivating the account takes effect at once, and a
+ * token without a user id never grants admin. There is no shared admin password.
+ */
+export async function isPlatformAdmin(
+  store: PlatformAdminStore,
+  user: { id?: unknown } | undefined
+): Promise<boolean> {
+  const userId = Number(user?.id);
+  if (!Number.isInteger(userId) || userId <= 0) return false;
+  const account = await store.getUserAccount(userId);
+  return Boolean(account?.isActive && config.adminEmails.includes(account.email.toLowerCase()));
+}
+
+// RBAC: Require a platform admin (see isPlatformAdmin)
 export function requireAdmin(req: AuthRequest, res: Response, next: NextFunction) {
-  // Try to decode JWT directly if provided (so this middleware can be used standalone)
+  // Decode the JWT here too, so this middleware can be used standalone
   try {
-    const payload = verifyRequestToken(req) as {
-      id?: number;
-      email?: string;
-      role?: string;
-    } | null;
+    const payload = verifyRequestToken(req);
     if (payload) {
       req.user = payload;
     }
   } catch (_) {
-    // ignore token errors here; we'll fall back to password check
+    // An invalid token is treated like no token
   }
 
-  // 1) If authenticated via JWT and role/email matches admin, allow
-  const user = req.user as { id?: number; email?: string; role?: string } | undefined;
-  if (user) {
-    const isRoleAdmin = user.role === 'admin';
-    const isEmailAdmin = user.email && config.adminEmails.includes(user.email.toLowerCase());
-    if (isRoleAdmin || isEmailAdmin) return next();
-  }
+  (async () => {
+    let allowed: boolean;
+    try {
+      const storage = req.app.locals.storage || (await import('./storage.js')).getStorage();
+      allowed = await isPlatformAdmin(storage, req.user);
+    } catch (error) {
+      return res.status(500).json({ message: 'Admin check failed' });
+    }
+    if (allowed) return next();
 
-  // 2) Backward compatibility (optional): allow if adminPassword provided
-  if (config.allowAdminPassword) {
-    const pwdFromHeader = req.header('x-admin-password');
-    const pwdFromQuery = (req.query?.adminPassword as string) || undefined;
-    const pwdFromBody = (req.body?.adminPassword as string) || (req.body?.password as string);
-    const provided = pwdFromHeader || pwdFromQuery || pwdFromBody;
-    if (provided && provided === config.adminPassword) return next();
-  }
-
-  log(`Denied admin access: method=${req.method} path=${req.path} ip=${req.ip}`, 'rbac');
-  return res.status(403).json({ message: 'Forbidden: admin required' });
+    log(`Denied admin access: method=${req.method} path=${req.path} ip=${req.ip}`, 'rbac');
+    return res.status(403).json({ message: 'Forbidden: admin required' });
+  })();
 }
 
 export type { AuthRequest };

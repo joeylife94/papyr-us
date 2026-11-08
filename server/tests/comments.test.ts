@@ -12,10 +12,8 @@ const TEST_SECRET = 'comment-test-secret';
 vi.mock('../config', () => ({
   config: {
     jwtSecret: 'comment-test-secret',
-    adminPassword: 'test-admin',
-    adminEmails: [],
+    adminEmails: ['admin@test.com'],
     enforceAuthForWrites: true,
-    allowAdminPassword: false,
     rateLimitEnabled: false,
     rateLimitWindowMs: 60_000,
     rateLimitMax: 1000,
@@ -61,6 +59,11 @@ beforeAll(async () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Platform admins are checked against the account, not the token's role claim (issue #124 X0)
+  (storage.getUserAccount as vi.Mock).mockImplementation(async (id: number) => {
+    const user = [ownerUser, otherUser, adminUser].find((candidate) => candidate.id === id);
+    return user && { id: user.id, email: user.email, isActive: true };
+  });
   // Allow all permission checks by default
   (storage.checkPagePermission as vi.Mock).mockResolvedValue(true);
   // Default: getComment returns a comment owned by ownerUser
@@ -211,6 +214,19 @@ describe('Comments Management API', () => {
       expect(response.status).toBe(200);
     });
 
+    it('TC-CMT-003c2: a token claiming the admin role is not enough to edit', async () => {
+      // otherUser's email is not in ADMIN_EMAILS, whatever the token says.
+      const token = signToken({ ...otherUser, role: 'admin' });
+
+      const response = await request(app)
+        .put(`/api/comments/${mockComment.id}`)
+        .set('Cookie', authCookie(token))
+        .send({ content: 'Hijack!' });
+
+      expect(response.status).toBe(403);
+      expect(storage.updateComment).not.toHaveBeenCalled();
+    });
+
     it('TC-CMT-003d: cannot update without authentication', async () => {
       const response = await request(app)
         .put(`/api/comments/${mockComment.id}`)
@@ -269,6 +285,18 @@ describe('Comments Management API', () => {
         .set('Cookie', authCookie(token));
 
       expect(response.status).toBe(200);
+    });
+
+    it('TC-CMT-004c2: a token claiming the admin role is not enough to delete', async () => {
+      (storage.checkPagePermission as vi.Mock).mockResolvedValue(false);
+      const token = signToken({ ...otherUser, role: 'admin' });
+
+      const response = await request(app)
+        .delete(`/api/comments/${mockComment.id}`)
+        .set('Cookie', authCookie(token));
+
+      expect(response.status).toBe(403);
+      expect(storage.deleteComment).not.toHaveBeenCalled();
     });
 
     it('TC-CMT-004d: cannot delete without authentication', async () => {

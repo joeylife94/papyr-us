@@ -113,7 +113,6 @@ describe('P3 — realtime config hardening', () => {
     it('is false when NODE_ENV is production', async () => {
       process.env.NODE_ENV = 'production';
       process.env.JWT_SECRET = 'a-secure-secret-that-is-long-enough';
-      process.env.ADMIN_PASSWORD = 'AdminPassword123!';
       process.env.DATABASE_URL = 'postgresql://x:x@localhost/x';
       vi.resetModules();
       const { config } = await import('../config.js');
@@ -151,7 +150,6 @@ describe('P3 — realtime config hardening', () => {
 
       process.env.NODE_ENV = 'production';
       process.env.JWT_SECRET = 'a-secure-secret-that-is-long-enough';
-      process.env.ADMIN_PASSWORD = 'AdminPassword123!';
       process.env.DATABASE_URL = 'postgresql://x:x@localhost/x';
     });
 
@@ -260,7 +258,6 @@ describe('P3 — realtime config hardening', () => {
     it('throws in production when CORS_ALLOWED_ORIGINS=* and CORS_ALLOW_CREDENTIALS=true', async () => {
       process.env.NODE_ENV = 'production';
       process.env.JWT_SECRET = 'a-secure-secret-that-is-long-enough';
-      process.env.ADMIN_PASSWORD = 'AdminPassword123!';
       process.env.DATABASE_URL = 'postgresql://x:x@localhost/x';
       process.env.CORS_ALLOWED_ORIGINS = '*';
       process.env.CORS_ALLOW_CREDENTIALS = 'true';
@@ -328,7 +325,6 @@ describe('P3 — realtime config hardening', () => {
     it('returns origin=false in production even if LOCAL_DEV_UNSAFE_CORS is somehow set', async () => {
       process.env.NODE_ENV = 'production';
       process.env.JWT_SECRET = 'a-secure-secret-that-is-long-enough';
-      process.env.ADMIN_PASSWORD = 'AdminPassword123!';
       process.env.DATABASE_URL = 'postgresql://x:x@localhost/x';
       process.env.LOCAL_DEV_UNSAFE_CORS = 'true'; // config.ts will exit(1) for this in real startup
       // We test what buildSocketCorsOptions() would produce — it reads config.isLocalDev

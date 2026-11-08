@@ -22,10 +22,8 @@ const TEST_SECRET = 'folder-pages-access-secret';
 vi.mock('../config', () => ({
   config: {
     jwtSecret: 'folder-pages-access-secret',
-    adminPassword: 'test-admin',
     adminEmails: [],
     enforceAuthForWrites: false,
-    allowAdminPassword: false,
     rateLimitEnabled: false,
     rateLimitWindowMs: 60_000,
     rateLimitMax: 1000,

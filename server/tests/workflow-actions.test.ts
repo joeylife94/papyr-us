@@ -24,10 +24,8 @@ const TEST_SECRET = 'workflow-action-test-secret';
 vi.mock('../config', () => ({
   config: {
     jwtSecret: 'workflow-action-test-secret',
-    adminPassword: 'test-admin',
     adminEmails: [],
     enforceAuthForWrites: true,
-    allowAdminPassword: false,
     rateLimitEnabled: false,
     rateLimitWindowMs: 60_000,
     rateLimitMax: 1000,

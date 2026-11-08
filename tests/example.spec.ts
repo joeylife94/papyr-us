@@ -591,31 +591,25 @@ test.describe('Productivity & Collaboration', () => {
 
 // == Admin Features Tests ==
 test.describe('Admin Features', () => {
-  const adminPassword = 'test-admin-password'; // As defined in original test
-  const testUserEmail = `admin-user-${Date.now()}@example.com`;
-  const testUserPassword = 'password123';
+  // The platform admin account: its email is in ADMIN_EMAILS for the E2E server
+  // (playwright.config.ts). There is no shared admin password (issue #124 X0).
+  const testUserEmail = 'e2e-platform-admin@example.com';
+  const testUserPassword = 'Password123!';
 
   async function adminLogin(page: Page) {
-    // 1. First, log in as a regular user to be able to access the /admin route
     await login(page, testUserEmail, testUserPassword);
-
-    // 2. Navigate to the admin page
     await page.goto('/admin', { waitUntil: 'networkidle' });
-
-    // 3. Enter password and log in as admin
-    // CardTitle renders as <div>, not heading, so use getByText
-    await expect(page.getByText('Admin Access')).toBeVisible({ timeout: 15000 });
-    await page.getByPlaceholder('Admin password').fill(adminPassword);
-    await page.getByRole('button', { name: 'Login' }).click();
     await expect(page.getByRole('heading', { name: 'Admin Panel' })).toBeVisible({
       timeout: 15000,
     });
   }
 
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await registerUser(page, 'Admin User', testUserEmail, testUserPassword);
-    await page.close();
+  test.beforeAll(async ({ request }) => {
+    // The account may already exist when the database is reused between runs.
+    const resp = await request.post('/api/auth/register', {
+      data: { name: 'Platform Admin', email: testUserEmail, password: testUserPassword },
+    });
+    expect([201, 409]).toContain(resp.status());
   });
 
   test.beforeEach(async ({ page }) => {

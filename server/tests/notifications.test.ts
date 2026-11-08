@@ -12,10 +12,8 @@ const TEST_SECRET = 'notif-test-secret';
 vi.mock('../config', () => ({
   config: {
     jwtSecret: 'notif-test-secret',
-    adminPassword: 'test-admin',
     adminEmails: [],
     enforceAuthForWrites: true,
-    allowAdminPassword: false,
     rateLimitEnabled: false,
     rateLimitWindowMs: 60_000,
     rateLimitMax: 1000,

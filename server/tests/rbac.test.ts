@@ -10,7 +10,6 @@ import { registerRoutes } from '../routes';
 vi.mock('../config', () => ({
   config: {
     jwtSecret: 'test-secret',
-    adminPassword: 'test-admin-password',
     adminEmails: ['admin@example.com'],
   },
 }));
@@ -36,6 +35,9 @@ beforeAll(async () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  storage.getUserAccount.mockImplementation(async (id: number) =>
+    id === 1 ? { id: 1, email: 'admin@example.com', isActive: true } : undefined
+  );
 });
 
 afterAll(async () => {
@@ -58,7 +60,7 @@ describe('RBAC via JWT', () => {
     expect(res.body).toEqual([{ id: 1, name: 'alpha' }]);
   });
 
-  it('forbids access without admin (no token and no password)', async () => {
+  it('forbids access without admin (no token)', async () => {
     const res = await request(app).get('/api/admin/directories');
     expect(res.status).toBe(403);
   });
