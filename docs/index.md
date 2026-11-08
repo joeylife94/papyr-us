@@ -157,12 +157,13 @@ Docker를 선호한다면: `docker-compose up --build`
 
 ### 핵심 기능 이해
 
-| 문서                                                 | 설명                                |
-| ---------------------------------------------------- | ----------------------------------- |
-| [yjs-architecture.md](./yjs-architecture.md)         | Yjs CRDT 실시간 협업 시스템 상세    |
-| [collaboration-engine.md](./collaboration-engine.md) | 실시간 협업 안정성 (스냅샷/TTL/LRU) |
-| [rbac-guide.md](./rbac-guide.md)                     | JWT, RBAC, Page Permission 4단계    |
-| [ai-features-guide.md](./ai-features-guide.md)       | AI Copilot, RAG, Writing Assistant  |
+| 문서                                                 | 설명                                 |
+| ---------------------------------------------------- | ------------------------------------ |
+| [yjs-architecture.md](./yjs-architecture.md)         | Yjs CRDT 실시간 협업 시스템 상세     |
+| [collaboration-engine.md](./collaboration-engine.md) | 실시간 협업 안정성 (스냅샷/TTL/LRU)  |
+| [rbac-guide.md](./rbac-guide.md)                     | JWT, RBAC, Page Permission 4단계     |
+| [organizations-guide.md](./organizations-guide.md)   | 조직(테넌트) 경계, 배포 마이그레이션 |
+| [ai-features-guide.md](./ai-features-guide.md)       | AI Copilot, RAG, Writing Assistant   |
 
 ### 인프라 & 배포
 
