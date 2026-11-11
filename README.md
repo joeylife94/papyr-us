@@ -166,7 +166,11 @@ Historical screenshots, archived guidance, old Playwright output, or code presen
 
 ## Current status
 
-Phase 0–4 implementation / verification / Proof Packaging are complete. The accepted implementation and Proof candidate is now at the **Human Review** closure gate. Automatic Phase 5 expansion is deferred unless Human Review identifies one concrete required acceptance gap.
+The v1.0 Proof (Phase 0–4) and the D1 small-team handoff are accepted and frozen as evidence.
+
+`main` has moved on since then: the B · Graphite UI (#101), in-place editing with a page tree and page links (#103), linked-notes features (#111), Markdown-faithful documents with vault export/import and inline databases (#113), phase 3 of the [Notion + Obsidian map](docs/design/notion-obsidian-destination.md) (#133–#137), and the first two phases of enterprise readiness (#124: platform admin accounts, organizations as the tenant boundary). This work is merged with per-PR evidence and green CI, but it is **not** repackaged as buyer-facing Proof, so the claim boundary and non-claims above still apply.
+
+Enterprise readiness (#124) is in progress; organization management, SSO, audit trail, provisioning and scale-out are not built yet. The latest checkpoint is [`docs/checkpoints/2026-11-11-checkpoint-1.md`](docs/checkpoints/2026-11-11-checkpoint-1.md).
 
 For the authoritative current state, use [`PAPYR_US_MASTER.md`](PAPYR_US_MASTER.md).
 
