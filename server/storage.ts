@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import {
   wikiPages,
   pageLinks,
+  pageViews,
   type WikiPage,
   type InsertWikiPage,
   type UpdateWikiPage,
@@ -1304,6 +1305,49 @@ export class DBStorage {
       .where(and(isNull(wikiPages.deletedAt), this.listableBy(viewer)))
       .orderBy(asc(wikiPages.folder));
     return result.map((r: { folder: string }) => r.folder);
+  }
+
+  /**
+   * The most viewed pages of the last `days` days (#141), most views first: only live pages the
+   * viewer may list (`listableBy`, the rule of the page lists). Views of another team's page, of
+   * a page whose explicit permissions deny the viewer, of another organization's page or of a
+   * trashed page never put that page in the list. Counts are over all recorded views of a listed
+   * page, as before.
+   */
+  async getPopularPages(
+    viewer: PageViewer,
+    options: { days: number; limit: number }
+  ): Promise<
+    Array<{
+      pageId: number;
+      pageTitle: string;
+      pageSlug: string;
+      viewCount: number;
+      uniqueViewers: number;
+    }>
+  > {
+    const days = Math.max(options.days, 1);
+    const limit = Math.max(options.limit, 1);
+    return this.db
+      .select({
+        pageId: pageViews.pageId,
+        pageTitle: wikiPages.title,
+        pageSlug: wikiPages.slug,
+        viewCount: sql<number>`COUNT(*)`,
+        uniqueViewers: sql<number>`COUNT(DISTINCT ${pageViews.userId})`,
+      })
+      .from(pageViews)
+      .innerJoin(wikiPages, eq(pageViews.pageId, wikiPages.id))
+      .where(
+        and(
+          sql`${pageViews.viewedAt} > NOW() - MAKE_INTERVAL(days => ${days})`,
+          isNull(wikiPages.deletedAt),
+          this.listableBy(viewer)
+        )
+      )
+      .groupBy(pageViews.pageId, wikiPages.title, wikiPages.slug)
+      .orderBy(sql`COUNT(*) DESC`, asc(pageViews.pageId))
+      .limit(limit);
   }
 
   async getCalendarEvents(teamId?: number): Promise<CalendarEvent[]> {

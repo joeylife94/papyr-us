@@ -62,11 +62,11 @@
 
 ## 페이지 분석 (Analytics)
 
-| Method | Endpoint                                  | Auth     | Description                                     |
-| ------ | ----------------------------------------- | -------- | ----------------------------------------------- |
-| POST   | `/api/pages/:id/view`                     | Optional | 조회 기록                                       |
-| GET    | `/api/pages/:id/analytics`                | Optional | 페이지 분석 (총 조회수, 고유 방문자, 일별 추이) |
-| GET    | `/api/analytics/popular?limit=20&days=30` | Optional | 인기 페이지 랭킹                                |
+| Method | Endpoint                                  | Auth     | Description                                                                              |
+| ------ | ----------------------------------------- | -------- | ---------------------------------------------------------------------------------------- |
+| POST   | `/api/pages/:id/view`                     | Optional | 조회 기록                                                                                |
+| GET    | `/api/pages/:id/analytics`                | Optional | 페이지 분석 (총 조회수, 고유 방문자, 일별 추이)                                          |
+| GET    | `/api/analytics/popular?limit=20&days=30` | Optional | 인기 페이지 랭킹. 호출자가 목록에서 볼 수 있는 페이지만 (인증 강제 시 세션이 없으면 401) |
 
 ---
 

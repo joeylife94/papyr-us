@@ -299,7 +299,7 @@ const MISMATCHED: Case[] = [
     route: 'GET /api/analytics/popular',
     send: () =>
       request(app).get(`/api/analytics/popular?teamId=${OWN}`).set(auth()).send({ teamId: OTHER }),
-    untouched: () => [],
+    untouched: () => [storage.getPopularPages],
   },
   {
     route: 'GET /api/activity',
