@@ -1,18 +1,18 @@
 ---
-title: "Papyr.us Master"
-aliases: ["PAPYR_US_MASTER", "Papyr.us v1.0 Master"]
-project: "Papyr.us"
-type: "project-master"
-status: "authoritative-contract"
-version: "0.93"
-target: "v1.0 frozen baseline + bounded post-v1.0 progression"
-current_phase: "D1 destination reached — Human Review next destination"
-priority: "P1"
-last_updated: "2026-09-08"
-repository: "joeylife94/papyr-us"
-accepted_product_main_sha: "3b91e18f477e8187c4aa8c21708b6f8cf7b2f2d4"
-accepted_proof_main_sha: "1cb04799a8a1924f7697d12d64f0999dcd591fcc"
-latest_progression_merge_sha: "14d6af9d049962108def451c7b16cf621ca43c83"
+title: 'Papyr.us Master'
+aliases: ['PAPYR_US_MASTER', 'Papyr.us v1.0 Master']
+project: 'Papyr.us'
+type: 'project-master'
+status: 'authoritative-contract'
+version: '0.93'
+target: 'v1.0 frozen baseline + bounded post-v1.0 progression'
+current_phase: 'D1 destination reached — Human Review next destination'
+priority: 'P1'
+last_updated: '2026-09-08'
+repository: 'joeylife94/papyr-us'
+accepted_product_main_sha: '3b91e18f477e8187c4aa8c21708b6f8cf7b2f2d4'
+accepted_proof_main_sha: '1cb04799a8a1924f7697d12d64f0999dcd591fcc'
+latest_progression_merge_sha: '14d6af9d049962108def451c7b16cf621ca43c83'
 ---
 
 # PAPYR.US MASTER

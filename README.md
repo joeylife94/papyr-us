@@ -36,13 +36,13 @@ and was squash-merged as:
 
 All required final gates completed successfully on the accepted candidate:
 
-| Gate | Run | Result |
-| --- | ---: | --- |
-| v1.0 Proof Package | `32543737366` | PASS |
-| Dependency Security Reachability | `32543737396` | PASS |
-| CI | `32543737424` | PASS |
-| 7-Layer Test Architecture | `32543737388` | PASS |
-| Firebat Deployment Gate | `32543737372` | PASS |
+| Gate                             |           Run | Result |
+| -------------------------------- | ------------: | ------ |
+| v1.0 Proof Package               | `32543737366` | PASS   |
+| Dependency Security Reachability | `32543737396` | PASS   |
+| CI                               | `32543737424` | PASS   |
+| 7-Layer Test Architecture        | `32543737388` | PASS   |
+| Firebat Deployment Gate          | `32543737372` | PASS   |
 
 The proof workflow generated a fresh artifact containing:
 
