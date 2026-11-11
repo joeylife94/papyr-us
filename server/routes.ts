@@ -4940,34 +4940,21 @@ export async function registerRoutes(
     }
   });
 
-  // Get popular pages (top viewed)
+  // Get popular pages (top viewed). The ranking shows page titles, so it follows the page read
+  // boundary (#141): only live pages the caller may list, like GET /api/pages. Without a session
+  // the answer is 401 when auth is enforced, and an empty list otherwise, never other callers'
+  // pages.
   app.get(
     '/api/analytics/popular',
     optionalAuth,
     requireTeamMembership,
     async (req: AuthRequest, res) => {
       try {
-        const { sql, desc, eq } = await import('drizzle-orm');
-        const db = (storage as any).db;
         const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
         const days = Math.min(parseInt(req.query.days as string) || 30, 365);
 
-        const popular = await db
-          .select({
-            pageId: pageViews.pageId,
-            pageTitle: wikiPages.title,
-            pageSlug: wikiPages.slug,
-            viewCount: sql<number>`COUNT(*)`,
-            uniqueViewers: sql<number>`COUNT(DISTINCT ${pageViews.userId})`,
-          })
-          .from(pageViews)
-          .innerJoin(wikiPages, eq(pageViews.pageId, wikiPages.id))
-          .where(sql`${pageViews.viewedAt} > NOW() - MAKE_INTERVAL(days => ${days})`)
-          .groupBy(pageViews.pageId, wikiPages.title, wikiPages.slug)
-          .orderBy(sql`COUNT(*) DESC`)
-          .limit(limit);
-
-        res.json(popular);
+        const viewer = await storage.getPageViewer(req.user?.id);
+        res.json(await storage.getPopularPages(viewer, { days, limit }));
       } catch (error) {
         logger.error('Error fetching popular pages:', { error });
         res.status(500).json({ error: 'Failed to fetch popular pages' });
