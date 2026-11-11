@@ -247,7 +247,7 @@ Phase order: X0 ✅ → X1 (X1a ✅, X1b, X1c, X1d) → X2 → X3 → X5 → X6 
 ### Open items
 
 - **Issue #124** — in progress; X1b next.
-- **Issue #141** (bug) — `GET /api/analytics/popular` lists the most-viewed pages of every team. Not fixed on `d2f092b`: the query has no team or organization filter, so it also crosses the X1a organization boundary. It overlaps X1b ("popular pages").
+- **Issue #141** (bug) — `GET /api/analytics/popular` ranked the most-viewed pages of every team and organization. Open on `d2f092b`; fixed right after this checkpoint on the same branch (§8, follow-up). The Issue closes when that change lands.
 - **Issue #93** — 32 failing legacy browser specs outside CI; waiting on three human decisions listed on the Issue.
 - **Issue #72 / PR #73** — D2-01 invitation draft, paused, based on `8b037a0`; absorbed into #124 X5.
 - **Design map "Next"** — database timeline view, rollups and formulas; database rows as pages; saved searches; creating synced block originals from the editor. Each needs its own contract Issue.
@@ -280,8 +280,18 @@ Phase order: X0 ✅ → X1 (X1a ✅, X1b, X1c, X1d) → X2 → X3 → X5 → X6 
 - no new buyer-facing Proof artifact was produced or inspected;
 - all non-claims in §3 remain unverified.
 
+### Follow-up — Issue #141 (same branch, 2026-11-11)
+
+`GET /api/analytics/popular` now ranks only live pages the caller may list (`listableBy`), through `DBStorage.getPopularPages`. Ranking, counts and the response shape are unchanged for the pages a caller does see. No schema change, and no change to how views are recorded.
+
+- Layer 4 on a local PostgreSQL 16: new `tests/integration-layer4/popular-pages.test.ts` — 9 tests, 8 of which fail against the previous unscoped query; whole Layer 4 run — 20 files, 113 tests **PASS**.
+- Route tests: new `server/tests/popular-pages-route.test.ts` (6); `npx vitest run --maxWorkers=4` — 53 files, 696 tests **PASS**.
+- Real server: new `tests/security-popular-pages.spec.ts` (added to `npm run test:gj`) — **PASS**; it fails on the previous server code.
+- `node scripts/verify-contributor.mjs` — **PASS**.
+- Golden Journey and P0 suites on a disposable database, driven with the container's Chromium rather than the build the repository's Playwright pins: P0 20 **PASS**; GJ 57 passed, 1 skipped, 2 failed. `daily-note.spec.ts` fails the same way on the unchanged code in this environment; `page-tree.spec.ts` (drag step) passed on rerun (4/4) and on the unchanged code. Neither touches the changed route. CI is the reference for both.
+
 ### Exact Next Action
 
-`#124 X1b` — organization and team scope on templates, stats, popular pages (#141), activity feed, favorites, notifications, workflows, uploads and saved views.
+`#124 X1b` — organization and team scope on templates, stats, activity feed, favorites, notifications, workflows, uploads and saved views. The popular pages list is already scoped (#141, follow-up above).
 
 This checkpoint does not change the state of the scheduled builder recorded in §6.
