@@ -393,3 +393,113 @@ describe('per-page view counts (real Postgres)', () => {
     });
   });
 });
+
+describe('favorites (real Postgres)', () => {
+  const favorite = (userId: number, slug: string) =>
+    scoped.query(`INSERT INTO page_favorites (user_id, page_id) VALUES ($1, $2)`, [
+      userId,
+      page[slug],
+    ]);
+  const slugsOf = async (user: { id: number }) =>
+    (await storage.getFavoritePages(await viewerOf(user))).map(
+      (row: { pageSlug: string }) => row.pageSlug
+    );
+
+  beforeAll(async () => {
+    // Rows a caller could only have created before the rule, or before losing access.
+    for (const slug of ['a-one', 'a-trashed', 'b-team', 'acme-open', 'acme-public', 'b-private']) {
+      await favorite(ALICE.id, slug);
+    }
+    await favorite(ALICE.id, 'open');
+    await favorite(ALICE.id, 'b-public');
+    await favorite(DAVE.id, 'a-one');
+    await favorite(DAVE.id, 'b-public');
+    await favorite(DAVE.id, 'acme-open');
+    await favorite(CAROL.id, 'a-one');
+    await favorite(CAROL.id, 'open');
+    await favorite(BOB.id, 'a-one'); // Bob has another team's page and a granted one
+  });
+
+  it('lists only favorites whose page is live and listable for the caller', async () => {
+    // never the trashed page, Bob's team page, a private page, or another organization's page
+    expect((await slugsOf(ALICE)).sort()).toEqual(['a-one', 'b-public', 'open']);
+    expect((await slugsOf(CAROL)).sort()).toEqual(['open']);
+    expect(await slugsOf(BOB)).toEqual([]);
+  });
+
+  it('shows another organization only its own pages, a public page of the default one never', async () => {
+    expect(await slugsOf(DAVE)).toEqual(['acme-open']);
+  });
+
+  it('lists nothing for an account in no organization and for no session', async () => {
+    await favorite(EVE.id, 'open');
+    expect(await storage.getFavoritePages(await viewerOf(EVE))).toEqual([]);
+    expect(await storage.getFavoritePages(await storage.getPageViewer(undefined))).toEqual([]);
+  });
+
+  it('keeps the newest-first order and the row shape', async () => {
+    await scoped.query(
+      `UPDATE page_favorites SET created_at = NOW() - INTERVAL '1 day'
+                        WHERE user_id = $1 AND page_id = $2`,
+      [ALICE.id, page['a-one']]
+    );
+    const rows = await storage.getFavoritePages(await viewerOf(ALICE));
+    expect(rows.map((row: { pageSlug: string }) => row.pageSlug).at(-1)).toBe('a-one');
+    expect(Object.keys(rows[0]).sort()).toEqual([
+      'createdAt',
+      'id',
+      'pageFolder',
+      'pageId',
+      'pageSlug',
+      'pageTitle',
+      'pageUpdatedAt',
+    ]);
+  });
+
+  it('hides rows without deleting them', async () => {
+    const { rows } = await scoped.query(
+      `SELECT count(*)::int AS n FROM page_favorites WHERE user_id = $1`,
+      [ALICE.id]
+    );
+    expect(rows[0].n).toBe(8);
+  });
+
+  it('allows a favorite only for a live page the caller may list', async () => {
+    const alice = await viewerOf(ALICE);
+    for (const slug of ['a-one', 'a-two', 'open', 'b-public']) {
+      expect(await storage.isPageListableBy(alice, page[slug]), slug).toBe(true);
+    }
+    for (const slug of ['a-trashed', 'b-team', 'b-private', 'acme-open', 'acme-public']) {
+      expect(await storage.isPageListableBy(alice, page[slug]), slug).toBe(false);
+    }
+    expect(await storage.isPageListableBy(alice, 2147483000)).toBe(false);
+
+    const carol = await viewerOf(CAROL);
+    expect(await storage.isPageListableBy(carol, page['a-one'])).toBe(false);
+    expect(await storage.isPageListableBy(carol, page['open'])).toBe(true);
+    const dave = await viewerOf(DAVE);
+    expect(await storage.isPageListableBy(dave, page['b-public'])).toBe(false);
+    expect(await storage.isPageListableBy(dave, page['acme-public'])).toBe(true);
+    expect(await storage.isPageListableBy(await viewerOf(EVE), page['open'])).toBe(false);
+    expect(
+      await storage.isPageListableBy(await storage.getPageViewer(undefined), page['b-public'])
+    ).toBe(false);
+  });
+
+  it('adds a favorite once per user and page', async () => {
+    const first = await storage.addPageFavorite(CAROL.id, page['b-public']);
+    expect(first).toMatchObject({ userId: CAROL.id, pageId: page['b-public'] });
+    expect(await storage.addPageFavorite(CAROL.id, page['b-public'])).toBeNull();
+    expect((await slugsOf(CAROL)).sort()).toEqual(['b-public', 'open']);
+  });
+
+  it('honours team revocation at once', async () => {
+    await scoped.query(`DELETE FROM team_members WHERE user_id = $1`, [ALICE.id]);
+    expect((await slugsOf(ALICE)).sort()).toEqual(['b-public', 'open']);
+    await scoped.query(
+      `INSERT INTO team_members (team_id, user_id, role) VALUES ($1, $2, 'owner')`,
+      [TEAM_A, ALICE.id]
+    );
+    expect((await slugsOf(ALICE)).sort()).toEqual(['a-one', 'b-public', 'open']);
+  });
+});

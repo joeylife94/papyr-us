@@ -79,6 +79,8 @@ import {
   publicLinks,
   teamMembers,
   organizationMembers,
+  pageFavorites,
+  type PageFavorite,
 } from '../shared/schema.js';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { eq, like, and, or, sql, desc, asc, isNull, inArray, type SQL } from 'drizzle-orm';
@@ -1555,6 +1557,69 @@ export class DBStorage {
       viewsLast7Days: Number(week?.count || 0),
       dailyViews,
     };
+  }
+
+  /**
+   * The caller's favorites, newest first, for GET /api/favorites: only rows whose page is live
+   * and listable for them (`listableBy`). A favorite of a page the caller can no longer list, or
+   * of a trashed page, is hidden, not deleted.
+   */
+  async getFavoritePages(viewer: PageViewer): Promise<
+    Array<{
+      id: number;
+      pageId: number;
+      createdAt: Date;
+      pageTitle: string;
+      pageSlug: string;
+      pageFolder: string;
+      pageUpdatedAt: Date;
+    }>
+  > {
+    if (!viewer.userId) return [];
+    return this.db
+      .select({
+        id: pageFavorites.id,
+        pageId: pageFavorites.pageId,
+        createdAt: pageFavorites.createdAt,
+        pageTitle: wikiPages.title,
+        pageSlug: wikiPages.slug,
+        pageFolder: wikiPages.folder,
+        pageUpdatedAt: wikiPages.updatedAt,
+      })
+      .from(pageFavorites)
+      .innerJoin(wikiPages, eq(pageFavorites.pageId, wikiPages.id))
+      .where(
+        and(
+          eq(pageFavorites.userId, viewer.userId),
+          isNull(wikiPages.deletedAt),
+          this.listableBy(viewer)
+        )
+      )
+      .orderBy(desc(pageFavorites.createdAt));
+  }
+
+  /** Whether the page is live and listable for the viewer: the rule of what may be favorited. */
+  async isPageListableBy(viewer: PageViewer, pageId: number): Promise<boolean> {
+    const rows = await this.db
+      .select({ id: wikiPages.id })
+      .from(wikiPages)
+      .where(and(eq(wikiPages.id, pageId), isNull(wikiPages.deletedAt), this.listableBy(viewer)))
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  /**
+   * Adds a favorite for the user. `null` when the page is already one of theirs. Whether the
+   * user may favorite the page is decided by the caller (`isPageListableBy`).
+   */
+  async addPageFavorite(userId: number, pageId: number): Promise<PageFavorite | null> {
+    const existing = await this.db
+      .select({ id: pageFavorites.id })
+      .from(pageFavorites)
+      .where(and(eq(pageFavorites.userId, userId), eq(pageFavorites.pageId, pageId)));
+    if (existing.length > 0) return null;
+    const [favorite] = await this.db.insert(pageFavorites).values({ userId, pageId }).returning();
+    return favorite;
   }
 
   async getCalendarEvents(teamId?: number): Promise<CalendarEvent[]> {

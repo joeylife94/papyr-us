@@ -4704,29 +4704,15 @@ export async function registerRoutes(
 
   // ==================== Page Favorites / Bookmarks API ====================
 
+  // Favorites hold only pages the caller may list (issue #124 X1b): the list hides rows whose
+  // page is trashed or no longer listable for them (it never deletes them), and a page they
+  // cannot list cannot be added: it answers exactly like an unknown page.
+
   // Get user's favorite pages
   app.get('/api/favorites', authMiddleware, async (req: AuthRequest, res) => {
     try {
-      const userId = req.user!.id;
-      const { eq, desc } = await import('drizzle-orm');
-      const db = (storage as any).db;
-
-      const favorites = await db
-        .select({
-          id: pageFavorites.id,
-          pageId: pageFavorites.pageId,
-          createdAt: pageFavorites.createdAt,
-          pageTitle: wikiPages.title,
-          pageSlug: wikiPages.slug,
-          pageFolder: wikiPages.folder,
-          pageUpdatedAt: wikiPages.updatedAt,
-        })
-        .from(pageFavorites)
-        .innerJoin(wikiPages, eq(pageFavorites.pageId, wikiPages.id))
-        .where(eq(pageFavorites.userId, userId))
-        .orderBy(desc(pageFavorites.createdAt));
-
-      res.json(favorites);
+      const viewer = await storage.getPageViewer(req.user!.id);
+      res.json(await storage.getFavoritePages(viewer));
     } catch (error) {
       logger.error('Error fetching favorites:', { error });
       res.status(500).json({ error: 'Failed to fetch favorites' });
@@ -4740,23 +4726,15 @@ export async function registerRoutes(
       const pageId = parseInt(req.params.pageId);
       if (isNaN(pageId)) return res.status(400).json({ error: 'Invalid page ID' });
 
-      const page = await storage.getWikiPage(pageId);
-      if (!page) return res.status(404).json({ error: 'Page not found' });
-
-      const { eq, and } = await import('drizzle-orm');
-      const db = (storage as any).db;
-
-      // Check if already favorited
-      const existing = await db
-        .select()
-        .from(pageFavorites)
-        .where(and(eq(pageFavorites.userId, userId), eq(pageFavorites.pageId, pageId)));
-
-      if (existing.length > 0) {
-        return res.status(409).json({ error: 'Page already in favorites' });
+      const viewer = await storage.getPageViewer(userId);
+      if (!(await storage.isPageListableBy(viewer, pageId))) {
+        return res.status(404).json({ error: 'Page not found' });
       }
 
-      const [favorite] = await db.insert(pageFavorites).values({ userId, pageId }).returning();
+      const favorite = await storage.addPageFavorite(userId, pageId);
+      if (!favorite) {
+        return res.status(409).json({ error: 'Page already in favorites' });
+      }
 
       res.status(201).json(favorite);
     } catch (error) {

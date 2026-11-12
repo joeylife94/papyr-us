@@ -90,6 +90,7 @@ async function arrange(request: APIRequestContext, prefix: string) {
     data: { email: accounts.memberA.email },
   });
   expect(admit.status()).toBe(201);
+  const memberAUserId = Number((await admit.json()).userId);
 
   const org = await db.query(
     `INSERT INTO organizations (slug, name) VALUES ($1, $1) RETURNING id`,
@@ -120,7 +121,7 @@ async function arrange(request: APIRequestContext, prefix: string) {
     for (const c of Object.values(ctx)) await c.dispose();
     await db.end();
   };
-  return { accounts, ctx, pages, teamA, teamX, db, stamp, close };
+  return { accounts, ctx, pages, teamA, teamX, memberAUserId, db, stamp, close };
 }
 
 test.describe('Page-derived reads follow the page read boundary', () => {
@@ -289,6 +290,96 @@ test.describe('Page-derived reads follow the page read boundary', () => {
         200
       );
       expect((await statsOf(pages.aPublic)).totalViews).toBe(1);
+    } finally {
+      await world.close();
+    }
+  });
+  test('favorites only hold pages the caller may list', async ({ request }) => {
+    test.setTimeout(240_000);
+    const world = await arrange(request, 'secpr-fav');
+    const { ctx, pages, accounts } = world;
+    type Favorite = { pageId: number; pageTitle: string; pageSlug: string };
+    const listOf = async (c: APIRequestContext) => {
+      const response = await c.get('/api/favorites');
+      expect(response.status()).toBe(200);
+      return (await response.json()) as Favorite[];
+    };
+    const slugsOf = async (c: APIRequestContext) => (await listOf(c)).map((row) => row.pageSlug);
+    try {
+      // ── 1. A page the caller cannot list answers like a page that does not exist ──
+      const unknown = await ctx.outsider.post('/api/favorites/2147483000');
+      expect(unknown.status()).toBe(404);
+      const unknownBody = await unknown.json();
+      for (const page of [pages.aTeam, pages.aPublic, pages.aOpen]) {
+        const refused = await ctx.outsider.post(`/api/favorites/${page.id}`);
+        expect(refused.status(), `outsider favorites ${page.slug}`).toBe(404);
+        expect(await refused.json()).toEqual(unknownBody);
+      }
+      expect(await listOf(ctx.outsider)).toEqual([]);
+      // the same organization, but not the team
+      const soloTeamPage = await ctx.solo.post(`/api/favorites/${pages.aTeam.id}`);
+      expect(soloTeamPage.status()).toBe(404);
+      expect(await soloTeamPage.json()).toEqual(unknownBody);
+      expect(await slugsOf(ctx.solo)).toEqual([]);
+      expect((await ctx.anonymous.post(`/api/favorites/${pages.aPublic.id}`)).status()).toBe(401);
+      expect((await ctx.anonymous.get('/api/favorites')).status()).toBe(401);
+
+      // ── 2. A caller without a team may favorite the team-less pages they can list ──
+      for (const page of [pages.aPublic, pages.aOpen]) {
+        expect((await ctx.solo.post(`/api/favorites/${page.id}`)).status()).toBe(201);
+      }
+      expect((await slugsOf(ctx.solo)).sort()).toEqual(
+        [pages.aPublic.slug, pages.aOpen.slug].sort()
+      );
+      // a private page of someone else is not theirs to favorite
+      const personal = await ctx.ownerA.post('/api/pages', {
+        data: {
+          title: 'Reads check personal',
+          content: 'x',
+          folder: `secpr-fav-${world.stamp}`,
+          tags: [],
+          slug: `secpr-fav-personal-${world.stamp}`,
+          author: accounts.ownerA.email,
+        },
+      });
+      const personalId = Number((await personal.json()).id);
+      expect((await ctx.solo.post(`/api/favorites/${personalId}`)).status()).toBe(404);
+
+      // ── 3. A member of the team favorites its page; the row keeps its shape ──
+      const add = await ctx.memberA.post(`/api/favorites/${pages.aTeam.id}`);
+      expect(add.status()).toBe(201);
+      expect(Object.keys(await add.json()).sort()).toEqual(['createdAt', 'id', 'pageId', 'userId']);
+      expect((await ctx.memberA.post(`/api/favorites/${pages.aTeam.id}`)).status()).toBe(409);
+      const [row] = await listOf(ctx.memberA);
+      expect(Object.keys(row).sort()).toEqual([
+        'createdAt',
+        'id',
+        'pageFolder',
+        'pageId',
+        'pageSlug',
+        'pageTitle',
+        'pageUpdatedAt',
+      ]);
+      expect(row).toMatchObject({ pageId: pages.aTeam.id, pageSlug: pages.aTeam.slug });
+      const check = await ctx.memberA.get(`/api/favorites/check/${pages.aTeam.id}`);
+      expect(await check.json()).toEqual({ isFavorited: true });
+
+      // ── 4. A favorite of a trashed page is hidden, not deleted ──
+      expect((await ctx.ownerA.delete(`/api/pages/${pages.aTeam.id}`)).status()).toBe(200);
+      expect(await slugsOf(ctx.memberA)).toEqual([]);
+      expect((await ctx.ownerA.post(`/api/trash/${pages.aTeam.id}/restore`)).status()).toBe(200);
+      expect(await slugsOf(ctx.memberA)).toEqual([pages.aTeam.slug]);
+
+      // ── 5. Leaving the team hides the favorite at once; the row can still be removed ──
+      const revoke = await ctx.ownerA.delete(
+        `/api/teams/${world.teamA.id}/memberships/${world.memberAUserId}`
+      );
+      expect(revoke.status()).toBe(204);
+      expect(await slugsOf(ctx.memberA)).toEqual([]);
+      expect((await ctx.memberA.post(`/api/favorites/${pages.aTeam.id}`)).status()).toBe(404);
+      const stillMarked = await ctx.memberA.get(`/api/favorites/check/${pages.aTeam.id}`);
+      expect(await stillMarked.json()).toEqual({ isFavorited: true });
+      expect((await ctx.memberA.delete(`/api/favorites/${pages.aTeam.id}`)).status()).toBe(204);
     } finally {
       await world.close();
     }

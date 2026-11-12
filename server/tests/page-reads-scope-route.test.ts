@@ -334,3 +334,153 @@ describe('per-page analytics follow the page read rule', () => {
     });
   });
 });
+
+// ==================== Surface C: favorites ====================
+
+describe('favorites', () => {
+  const PAGE_ID = 11;
+  const favoriteRows = [
+    {
+      id: 1,
+      pageId: PAGE_ID,
+      createdAt: '2026-01-02T00:00:00.000Z',
+      pageTitle: 'Roadmap',
+      pageSlug: 'roadmap',
+      pageFolder: 'docs',
+      pageUpdatedAt: '2026-01-01T00:00:00.000Z',
+    },
+  ];
+  const created = {
+    id: 5,
+    userId: CALLER.id,
+    pageId: PAGE_ID,
+    createdAt: '2026-01-03T00:00:00.000Z',
+  };
+
+  beforeEach(() => {
+    storage.getWikiPage.mockResolvedValue({ id: PAGE_ID, title: 'Roadmap', slug: 'roadmap' });
+    storage.getFavoritePages.mockResolvedValue(favoriteRows);
+    storage.isPageListableBy.mockResolvedValue(true);
+    storage.addPageFavorite.mockResolvedValue(created);
+  });
+
+  describe('GET /api/favorites', () => {
+    it('lists only through the caller-scoped storage query', async () => {
+      const response = await request(app).get('/api/favorites').set(signedIn());
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual(favoriteRows);
+      expect(storage.getPageViewer).toHaveBeenCalledWith(CALLER.id);
+      expect(storage.getFavoritePages).toHaveBeenCalledWith(viewer);
+    });
+
+    it('refuses a request without a session', async () => {
+      expect((await request(app).get('/api/favorites')).status).toBe(401);
+      expect(storage.getFavoritePages).not.toHaveBeenCalled();
+    });
+
+    it('answers a storage failure with a fixed message', async () => {
+      storage.getFavoritePages.mockRejectedValue(new Error('relation "secret_table" is gone'));
+
+      const response = await request(app).get('/api/favorites').set(signedIn());
+
+      expect(response.status).toBe(500);
+      expect(response.body).toEqual({ error: 'Failed to fetch favorites' });
+    });
+  });
+
+  describe('POST /api/favorites/:pageId', () => {
+    const PATH = `/api/favorites/${PAGE_ID}`;
+
+    it('adds a page the caller may list', async () => {
+      const response = await request(app).post(PATH).set(signedIn());
+
+      expect(response.status).toBe(201);
+      expect(response.body).toEqual(created);
+      expect(storage.isPageListableBy).toHaveBeenCalledWith(viewer, PAGE_ID);
+      expect(storage.addPageFavorite).toHaveBeenCalledWith(CALLER.id, PAGE_ID);
+    });
+
+    it('answers a page the caller may not list exactly like an unknown page, adding nothing', async () => {
+      storage.isPageListableBy.mockResolvedValue(false);
+
+      const hidden = await request(app).post(PATH).set(signedIn());
+
+      expect(hidden.status).toBe(404);
+      expect(hidden.body).toEqual({ error: 'Page not found' });
+      expect(storage.addPageFavorite).not.toHaveBeenCalled();
+    });
+
+    it('keeps 409 for a page that is already a favorite', async () => {
+      storage.addPageFavorite.mockResolvedValue(null);
+
+      const response = await request(app).post(PATH).set(signedIn());
+
+      expect(response.status).toBe(409);
+      expect(response.body).toEqual({ error: 'Page already in favorites' });
+    });
+
+    it('refuses a page id that is not a number and a request without a session', async () => {
+      expect((await request(app).post('/api/favorites/abc').set(signedIn())).status).toBe(400);
+      expect((await request(app).post(PATH)).status).toBe(401);
+      expect(storage.addPageFavorite).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when the listing check fails', async () => {
+      storage.isPageListableBy.mockRejectedValue(new Error('lookup failed'));
+
+      const response = await request(app).post(PATH).set(signedIn());
+
+      expect(response.status).toBe(500);
+      expect(response.body).toEqual({ error: 'Failed to add favorite' });
+      expect(storage.addPageFavorite).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('DELETE and check stay limited to the callers own rows', () => {
+    /** A query builder that answers `rows` for any chain, and records the calls made on it. */
+    const fakeDb = (rows: unknown[]) => {
+      const chain: any = {};
+      for (const name of ['select', 'from', 'where', 'delete', 'returning']) {
+        chain[name] = vi.fn(() => chain);
+      }
+      chain.then = (resolve: (value: unknown[]) => void) => resolve(rows);
+      return chain;
+    };
+    let originalDb: unknown;
+    beforeEach(() => {
+      originalDb = storage.db;
+    });
+    afterAll(() => {
+      storage.db = originalDb;
+    });
+
+    it('removes the favorite without any page check', async () => {
+      storage.db = fakeDb([{ id: 1 }]);
+
+      const response = await request(app).delete(`/api/favorites/${PAGE_ID}`).set(signedIn());
+
+      expect(response.status).toBe(204);
+      expect(storage.isPageListableBy).not.toHaveBeenCalled();
+    });
+
+    it('answers 404 when the caller has no such favorite', async () => {
+      storage.db = fakeDb([]);
+
+      const response = await request(app).delete(`/api/favorites/${PAGE_ID}`).set(signedIn());
+
+      expect(response.status).toBe(404);
+      expect(response.body).toEqual({ error: 'Favorite not found' });
+    });
+
+    it('answers the check from the callers own rows only', async () => {
+      storage.db = fakeDb([{ id: 1 }]);
+
+      const response = await request(app).get(`/api/favorites/check/${PAGE_ID}`).set(signedIn());
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ isFavorited: true });
+      expect(storage.isPageListableBy).not.toHaveBeenCalled();
+    });
+  });
+});
