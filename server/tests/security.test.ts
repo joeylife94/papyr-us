@@ -424,14 +424,28 @@ describe('4-2  Cross-team reassignment', () => {
 // 4-3  Notification IDOR
 // =============================================================================
 describe('4-3  Notification IDOR', () => {
+  // Notifications address member rows; an account owns the rows carrying its email (#124 X1b).
+  // The member ids are not the user ids on purpose.
+  const MEMBER_A_ID = 101;
+  const MEMBER_B_ID = 102;
   const notifForA = {
     id: 42,
     type: 'mention',
     title: 'Hi',
     content: 'Content',
-    recipientId: USER_A_ID,
+    recipientId: MEMBER_A_ID,
     isRead: false,
   };
+
+  beforeEach(() => {
+    storage.getMemberIdsForUser.mockImplementation(async (userId: number) =>
+      userId === USER_A_ID ? [MEMBER_A_ID] : userId === USER_B_ID ? [MEMBER_B_ID] : []
+    );
+    // Single-row lookups answer only for the recipient's account.
+    storage.getNotificationForUser.mockImplementation(async (_id: number, userId: number) =>
+      userId === USER_A_ID ? notifForA : undefined
+    );
+  });
 
   it('GET /api/notifications — requires authentication', async () => {
     const res = await request(app).get('/api/notifications');
@@ -442,8 +456,8 @@ describe('4-3  Notification IDOR', () => {
     storage.getNotifications.mockResolvedValue([notifForA]);
     const res = await request(app).get('/api/notifications').set(auth(tokenA));
     expect(res.status).toBe(200);
-    // storage should have been called with User A's ID, not a spoofed one
-    expect(storage.getNotifications).toHaveBeenCalledWith(USER_A_ID);
+    // storage should have been called with User A's member ids, not a user id or a spoofed one
+    expect(storage.getNotifications).toHaveBeenCalledWith([MEMBER_A_ID]);
   });
 
   it('GET /api/notifications/unread-count — requires authentication', async () => {
@@ -455,7 +469,7 @@ describe('4-3  Notification IDOR', () => {
     storage.getUnreadNotificationCount.mockResolvedValue(3);
     const res = await request(app).get('/api/notifications/unread-count').set(auth(tokenA));
     expect(res.status).toBe(200);
-    expect(storage.getUnreadNotificationCount).toHaveBeenCalledWith(USER_A_ID);
+    expect(storage.getUnreadNotificationCount).toHaveBeenCalledWith([MEMBER_A_ID]);
   });
 
   it('GET /api/notifications/:id — requires authentication', async () => {
@@ -463,38 +477,33 @@ describe('4-3  Notification IDOR', () => {
     expect(res.status).toBe(401);
   });
 
-  it('GET /api/notifications/:id — returns 403 when notification belongs to another user', async () => {
-    storage.getNotification.mockResolvedValue(notifForA);
+  it('GET /api/notifications/:id — returns 404 when notification belongs to another user', async () => {
     // User B tries to read User A's notification
     const res = await request(app).get('/api/notifications/42').set(auth(tokenB));
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
   });
 
   it('GET /api/notifications/:id — allows recipient to read own notification', async () => {
-    storage.getNotification.mockResolvedValue(notifForA);
     const res = await request(app).get('/api/notifications/42').set(auth(tokenA));
     expect(res.status).toBe(200);
   });
 
-  it('PUT /api/notifications/:id — returns 403 when notification belongs to another user', async () => {
-    storage.getNotification.mockResolvedValue(notifForA);
+  it('PUT /api/notifications/:id — returns 404 when notification belongs to another user', async () => {
     const res = await request(app)
       .put('/api/notifications/42')
       .set(auth(tokenB))
       .send({ isRead: true });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
   });
 
-  it('DELETE /api/notifications/:id — returns 403 when notification belongs to another user', async () => {
-    storage.getNotification.mockResolvedValue(notifForA);
+  it('DELETE /api/notifications/:id — returns 404 when notification belongs to another user', async () => {
     const res = await request(app).delete('/api/notifications/42').set(auth(tokenB));
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
   });
 
-  it('PATCH /api/notifications/:id/read — returns 403 when notification belongs to another user', async () => {
-    storage.getNotification.mockResolvedValue(notifForA);
+  it('PATCH /api/notifications/:id/read — returns 404 when notification belongs to another user', async () => {
     const res = await request(app).patch('/api/notifications/42/read').set(auth(tokenB));
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
   });
 
   it('PATCH /api/notifications/read-all — uses authenticated user ID, not body recipientId', async () => {
@@ -506,7 +515,7 @@ describe('4-3  Notification IDOR', () => {
       .set(auth(tokenA))
       .send({ recipientId: USER_B_ID });
     expect(res.status).toBe(200);
-    expect(storage.markAllNotificationsAsRead).toHaveBeenCalledWith(USER_A_ID);
+    expect(storage.markAllNotificationsAsRead).toHaveBeenCalledWith([MEMBER_A_ID]);
   });
 
   it('GET /api/notifications/:id — still requires JWT when ENFORCE_AUTH_WRITES is false', async () => {

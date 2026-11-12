@@ -888,7 +888,6 @@ export async function setupSocketIO(
         ) => {
           const requestedMemberId = parsePositiveInt(data.memberId);
           const authenticatedUserId = parsePositiveInt(socket.userId);
-          const isAdmin = socket.userRole === 'admin';
 
           if (!requestedMemberId) {
             if (typeof ack === 'function') ack({ ok: false, error: 'Invalid memberId' });
@@ -900,7 +899,9 @@ export async function setupSocketIO(
             return;
           }
 
-          if (requestedMemberId !== authenticatedUserId && !isAdmin) {
+          // Only the room the socket already joined (its own account's). The token's role claim
+          // grants nothing here.
+          if (requestedMemberId !== authenticatedUserId) {
             logger.warn('Denied unauthorized notification room join', {
               socketId: socket.id,
               authenticatedUserId,

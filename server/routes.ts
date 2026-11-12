@@ -2997,18 +2997,84 @@ export async function registerRoutes(
   });
 
   if (featureFlags.FEATURE_NOTIFICATIONS) {
-    // Notifications API
+    // Notifications API. Rows address `members`; a signed-in account owns the rows of the member
+    // records carrying its own email (storage.getMemberIdsForUser). Anything else, including an
+    // unknown id, answers 404 (issue #124 X1b).
+    const notificationNotFound = { message: 'Notification not found' };
+
+    // Realtime: deliver to the room of the account behind the recipient member row, and nowhere
+    // else. A member row without an account has no room, so nothing is emitted.
+    const emitNotificationEvent = async (
+      event: 'notification:new' | 'notification:updated',
+      notification: { recipientId: number }
+    ) => {
+      const ns = io?.of('/collab');
+      if (!ns) return;
+      const recipientUserId = await storage.getUserIdForMember(notification.recipientId);
+      if (recipientUserId === null || recipientUserId === undefined) return;
+      const memberIds = await storage.getMemberIdsForUser(recipientUserId);
+      ns.to(`user:${recipientUserId}`).emit(event, notification);
+      const count = await storage.getUnreadNotificationCount(memberIds);
+      ns.to(`user:${recipientUserId}`).emit('notification:unread-count', {
+        recipientId: notification.recipientId,
+        count,
+      });
+    };
+
+    // Whether `userId` may create a notification with this content: the recipient is in the
+    // caller's organization, the sender is the caller's own member row, and every related record
+    // is one the caller may read. Unknown records and records that cannot be read refuse alike.
+    const mayCreateNotification = async (
+      userId: number,
+      data: {
+        recipientId: number;
+        senderId?: number | null;
+        relatedPageId?: number | null;
+        relatedTaskId?: number | null;
+        relatedCommentId?: number | null;
+      }
+    ): Promise<boolean> => {
+      const callerOrganizationId = await storage.getUserOrganizationId(userId);
+      if (callerOrganizationId === null || callerOrganizationId === undefined) return false;
+      const recipientOrganizationId = await storage.getMemberOrganizationId(data.recipientId);
+      if (recipientOrganizationId !== callerOrganizationId) return false;
+
+      if (data.senderId != null) {
+        const mine = await storage.getMemberIdsForUser(userId);
+        if (!mine.includes(data.senderId)) return false;
+      }
+
+      const readablePage = async (pageId: number): Promise<boolean> => {
+        const page = await storage.getWikiPage(pageId);
+        if (!page) return false;
+        return (await storage.checkPagePermission(userId, pageId, 'viewer')) === true;
+      };
+      if (data.relatedPageId != null && !(await readablePage(data.relatedPageId))) return false;
+      if (data.relatedCommentId != null) {
+        const comment = await storage.getComment(data.relatedCommentId);
+        if (!comment || !(await readablePage(comment.pageId))) return false;
+      }
+      if (data.relatedTaskId != null) {
+        const task = await storage.getTask(data.relatedTaskId);
+        if (!task) return false;
+        const teamIds = (await storage.getUserTeamIds(userId)).map((id) => String(id));
+        if (!teamIds.includes(String(task.teamId))) return false;
+      }
+      return true;
+    };
+
     app.get('/api/notifications', requireAuthIfEnabled, async (req: AuthRequest, res) => {
       try {
-        const recipientId = req.user?.id;
-        if (!recipientId) {
+        const userId = req.user?.id;
+        if (!userId) {
           return res.status(401).json({ message: 'Authentication required' });
         }
 
         const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
         const cursor = req.query.cursor as string | undefined;
 
-        const notifications = await storage.getNotifications(recipientId);
+        const memberIds = await storage.getMemberIdsForUser(userId);
+        const notifications = memberIds.length ? await storage.getNotifications(memberIds) : [];
 
         // Apply cursor-based pagination
         let paginatedNotifications = notifications;
@@ -3050,12 +3116,13 @@ export async function registerRoutes(
       requireAuthIfEnabled,
       async (req: AuthRequest, res) => {
         try {
-          const recipientId = req.user?.id;
-          if (!recipientId) {
+          const userId = req.user?.id;
+          if (!userId) {
             return res.status(401).json({ message: 'Authentication required' });
           }
 
-          const count = await storage.getUnreadNotificationCount(recipientId);
+          const memberIds = await storage.getMemberIdsForUser(userId);
+          const count = memberIds.length ? await storage.getUnreadNotificationCount(memberIds) : 0;
           res.json({ count });
         } catch (error) {
           res.status(500).json({ message: 'Server error' });
@@ -3065,16 +3132,15 @@ export async function registerRoutes(
 
     app.get('/api/notifications/:id', authMiddleware, async (req: AuthRequest, res) => {
       try {
+        const userId = req.user?.id;
+        if (!userId) {
+          return res.status(401).json({ message: 'Authentication required' });
+        }
         const id = parseInt(req.params.id);
-        const notification = await storage.getNotification(id);
+        const notification = await storage.getNotificationForUser(id, userId);
 
         if (!notification) {
-          return res.status(404).json({ message: 'Notification not found' });
-        }
-
-        // Ownership check: only the recipient may view their notification
-        if (req.user?.id && notification.recipientId !== req.user.id) {
-          return res.status(403).json({ message: 'Access denied' });
+          return res.status(404).json(notificationNotFound);
         }
 
         res.json(notification);
@@ -3083,21 +3149,20 @@ export async function registerRoutes(
       }
     });
 
-    app.post('/api/notifications', requireAuthIfEnabled, async (req, res) => {
+    app.post('/api/notifications', requireAuthIfEnabled, async (req: AuthRequest, res) => {
       try {
+        // There is no organization to check against without a session, so no session, no write.
+        const userId = req.user?.id;
+        if (!userId) {
+          return res.status(401).json({ message: 'Authentication required' });
+        }
         const notificationData = insertNotificationSchema.parse(req.body);
+        if (!(await mayCreateNotification(userId, notificationData))) {
+          return res.status(400).json({ message: 'Invalid notification data' });
+        }
         const notification = await storage.createNotification(notificationData);
-        // Realtime: emit to user room and update unread count
         try {
-          const ns = io?.of('/collab');
-          if (ns) {
-            ns.to(`user:${notification.recipientId}`).emit('notification:new', notification);
-            const count = await storage.getUnreadNotificationCount(notification.recipientId);
-            ns.to(`user:${notification.recipientId}`).emit('notification:unread-count', {
-              recipientId: notification.recipientId,
-              count,
-            });
-          }
+          await emitNotificationEvent('notification:new', notification);
         } catch (emitErr) {
           console.warn('Socket emit failed for notification:new', emitErr);
         }
@@ -3110,33 +3175,44 @@ export async function registerRoutes(
 
     app.put('/api/notifications/:id', authMiddleware, async (req: AuthRequest, res) => {
       try {
+        const userId = req.user?.id;
+        if (!userId) {
+          return res.status(401).json({ message: 'Authentication required' });
+        }
         const id = parseInt(req.params.id);
         // Ownership check: fetch before updating
-        const existing = await storage.getNotification(id);
+        const existing = await storage.getNotificationForUser(id, userId);
         if (!existing) {
-          return res.status(404).json({ message: 'Notification not found' });
-        }
-        if (req.user?.id && existing.recipientId !== req.user.id) {
-          return res.status(403).json({ message: 'Access denied' });
+          return res.status(404).json(notificationNotFound);
         }
         const updateData = updateNotificationSchema.parse(req.body);
-        const notification = await storage.updateNotification(id, updateData);
+        // Content may change; who a notification is for, who sent it and what it points at may not.
+        const fixedFields = [
+          'recipientId',
+          'senderId',
+          'relatedPageId',
+          'relatedTaskId',
+          'relatedCommentId',
+        ] as const;
+        for (const field of fixedFields) {
+          if (updateData[field] !== undefined && updateData[field] !== existing[field]) {
+            return res.status(400).json({ message: 'Invalid update data' });
+          }
+        }
+        const changes: Record<string, unknown> = {};
+        for (const field of ['isRead', 'title', 'content', 'type'] as const) {
+          if (updateData[field] !== undefined) changes[field] = updateData[field];
+        }
+        const memberIds = await storage.getMemberIdsForUser(userId);
+        const notification = await storage.updateNotification(id, changes, memberIds);
 
         if (!notification) {
-          return res.status(404).json({ message: 'Notification not found' });
+          return res.status(404).json(notificationNotFound);
         }
 
         // Realtime: emit updated notification and possibly unread count change
         try {
-          const ns = io?.of('/collab');
-          if (ns) {
-            ns.to(`user:${notification.recipientId}`).emit('notification:updated', notification);
-            const count = await storage.getUnreadNotificationCount(notification.recipientId);
-            ns.to(`user:${notification.recipientId}`).emit('notification:unread-count', {
-              recipientId: notification.recipientId,
-              count,
-            });
-          }
+          await emitNotificationEvent('notification:updated', notification);
         } catch (emitErr) {
           console.warn('Socket emit failed for notification:updated', emitErr);
         }
@@ -3149,28 +3225,33 @@ export async function registerRoutes(
 
     app.delete('/api/notifications/:id', authMiddleware, async (req: AuthRequest, res) => {
       try {
+        const userId = req.user?.id;
+        if (!userId) {
+          return res.status(401).json({ message: 'Authentication required' });
+        }
         const id = parseInt(req.params.id);
         // Ownership check: fetch before deleting
-        const existing = await storage.getNotification(id);
+        const existing = await storage.getNotificationForUser(id, userId);
         if (!existing) {
-          return res.status(404).json({ message: 'Notification not found' });
+          return res.status(404).json(notificationNotFound);
         }
-        if (req.user?.id && existing.recipientId !== req.user.id) {
-          return res.status(403).json({ message: 'Access denied' });
-        }
-        const deleted = await storage.deleteNotification(id);
+        const memberIds = await storage.getMemberIdsForUser(userId);
+        const deleted = await storage.deleteNotification(id, memberIds);
 
         if (!deleted) {
-          return res.status(404).json({ message: 'Notification not found' });
+          return res.status(404).json(notificationNotFound);
         }
 
-        // Realtime: emit deletion and refresh unread count (need recipientId; attempt best-effort)
+        // Realtime: tell the deleting account's own sockets only, and refresh its unread count.
         try {
-          // If storage can fetch notification before deletion, consider enhancing storage API to return deleted entity
-          // For now, clients should refetch list on delete event
           const ns = io?.of('/collab');
           if (ns) {
-            ns.emit('notification:deleted', { id });
+            ns.to(`user:${userId}`).emit('notification:deleted', { id });
+            const count = await storage.getUnreadNotificationCount(memberIds);
+            ns.to(`user:${userId}`).emit('notification:unread-count', {
+              recipientId: existing.recipientId,
+              count,
+            });
           }
         } catch (emitErr) {
           console.warn('Socket emit failed for notification:deleted', emitErr);
@@ -3184,32 +3265,26 @@ export async function registerRoutes(
 
     app.patch('/api/notifications/:id/read', authMiddleware, async (req: AuthRequest, res) => {
       try {
+        const userId = req.user?.id;
+        if (!userId) {
+          return res.status(401).json({ message: 'Authentication required' });
+        }
         const id = parseInt(req.params.id);
         // Ownership check: fetch before marking as read
-        const existing = await storage.getNotification(id);
+        const existing = await storage.getNotificationForUser(id, userId);
         if (!existing) {
-          return res.status(404).json({ message: 'Notification not found' });
+          return res.status(404).json(notificationNotFound);
         }
-        if (req.user?.id && existing.recipientId !== req.user.id) {
-          return res.status(403).json({ message: 'Access denied' });
-        }
-        const notification = await storage.markNotificationAsRead(id);
+        const memberIds = await storage.getMemberIdsForUser(userId);
+        const notification = await storage.markNotificationAsRead(id, memberIds);
 
         if (!notification) {
-          return res.status(404).json({ message: 'Notification not found' });
+          return res.status(404).json(notificationNotFound);
         }
 
         // Realtime: emit updated notification and new unread count
         try {
-          const ns = io?.of('/collab');
-          if (ns) {
-            ns.to(`user:${notification.recipientId}`).emit('notification:updated', notification);
-            const count = await storage.getUnreadNotificationCount(notification.recipientId);
-            ns.to(`user:${notification.recipientId}`).emit('notification:unread-count', {
-              recipientId: notification.recipientId,
-              count,
-            });
-          }
+          await emitNotificationEvent('notification:updated', notification);
         } catch (emitErr) {
           console.warn('Socket emit failed for notification:read', emitErr);
         }
@@ -3225,23 +3300,26 @@ export async function registerRoutes(
       requireAuthIfEnabled,
       async (req: AuthRequest, res) => {
         try {
-          // Use authenticated user's ID ? do not trust client-supplied recipientId
-          const recipientId = req.user?.id;
-          if (!recipientId) {
+          // Use authenticated user's ID; never trust a client-supplied recipientId
+          const userId = req.user?.id;
+          if (!userId) {
             return res.status(401).json({ message: 'Authentication required' });
           }
 
-          await storage.markAllNotificationsAsRead(recipientId);
+          const memberIds = await storage.getMemberIdsForUser(userId);
+          if (memberIds.length) await storage.markAllNotificationsAsRead(memberIds);
 
-          // Realtime: emit unread count reset for recipient
+          // Realtime: emit unread count reset for the caller's own member rows
           try {
             const ns = io?.of('/collab');
-            if (ns) {
-              const count = await storage.getUnreadNotificationCount(recipientId);
-              ns.to(`user:${recipientId}`).emit('notification:unread-count', {
-                recipientId,
-                count,
-              });
+            if (ns && memberIds.length) {
+              const count = await storage.getUnreadNotificationCount(memberIds);
+              for (const memberId of memberIds) {
+                ns.to(`user:${userId}`).emit('notification:unread-count', {
+                  recipientId: memberId,
+                  count,
+                });
+              }
             }
           } catch (emitErr) {
             console.warn('Socket emit failed for notification:read-all', emitErr);

@@ -2294,16 +2294,32 @@ export class DBStorage {
     return result[0];
   }
 
-  async getNotifications(recipientId: number): Promise<Notification[]> {
+  // Notifications address `members` rows; a signed-in account owns the rows whose email matches
+  // its own (`getMemberIdsForUser`). Every read and write below is restricted to a list of member
+  // ids, and an empty list never becomes an unfiltered query (issue #124 X1b).
+
+  async getNotifications(memberIds: number[]): Promise<Notification[]> {
+    if (memberIds.length === 0) return [];
     return this.db
       .select()
       .from(notifications)
-      .where(eq(notifications.recipientId, recipientId))
+      .where(inArray(notifications.recipientId, memberIds))
       .orderBy(desc(notifications.createdAt));
   }
 
   async getNotification(id: number): Promise<Notification | undefined> {
     const result = await this.db.select().from(notifications).where(eq(notifications.id, id));
+    return result[0];
+  }
+
+  /** The notification when it is addressed to one of the account's member rows, else undefined. */
+  async getNotificationForUser(id: number, userId: number): Promise<Notification | undefined> {
+    const memberIds = await this.getMemberIdsForUser(userId);
+    if (memberIds.length === 0) return undefined;
+    const result = await this.db
+      .select()
+      .from(notifications)
+      .where(and(eq(notifications.id, id), inArray(notifications.recipientId, memberIds)));
     return result[0];
   }
 
@@ -2314,42 +2330,51 @@ export class DBStorage {
 
   async updateNotification(
     id: number,
-    notification: UpdateNotification
+    notification: UpdateNotification,
+    memberIds: number[]
   ): Promise<Notification | undefined> {
+    if (memberIds.length === 0) return undefined;
     const result = await this.db
       .update(notifications)
       .set(notification)
-      .where(eq(notifications.id, id))
+      .where(and(eq(notifications.id, id), inArray(notifications.recipientId, memberIds)))
       .returning();
     return result[0];
   }
 
-  async deleteNotification(id: number): Promise<boolean> {
-    const result = await this.db.delete(notifications).where(eq(notifications.id, id)).returning();
+  async deleteNotification(id: number, memberIds: number[]): Promise<boolean> {
+    if (memberIds.length === 0) return false;
+    const result = await this.db
+      .delete(notifications)
+      .where(and(eq(notifications.id, id), inArray(notifications.recipientId, memberIds)))
+      .returning();
     return result.length > 0;
   }
 
-  async markNotificationAsRead(id: number): Promise<Notification | undefined> {
+  async markNotificationAsRead(id: number, memberIds: number[]): Promise<Notification | undefined> {
+    if (memberIds.length === 0) return undefined;
     const result = await this.db
       .update(notifications)
       .set({ isRead: true })
-      .where(eq(notifications.id, id))
+      .where(and(eq(notifications.id, id), inArray(notifications.recipientId, memberIds)))
       .returning();
     return result[0];
   }
 
-  async markAllNotificationsAsRead(recipientId: number): Promise<void> {
+  async markAllNotificationsAsRead(memberIds: number[]): Promise<void> {
+    if (memberIds.length === 0) return;
     await this.db
       .update(notifications)
       .set({ isRead: true })
-      .where(eq(notifications.recipientId, recipientId));
+      .where(inArray(notifications.recipientId, memberIds));
   }
 
-  async getUnreadNotificationCount(recipientId: number): Promise<number> {
+  async getUnreadNotificationCount(memberIds: number[]): Promise<number> {
+    if (memberIds.length === 0) return 0;
     const result = await this.db
       .select({ count: sql`count(*)` })
       .from(notifications)
-      .where(and(eq(notifications.recipientId, recipientId), eq(notifications.isRead, false)));
+      .where(and(inArray(notifications.recipientId, memberIds), eq(notifications.isRead, false)));
     return Number(result[0].count);
   }
 
