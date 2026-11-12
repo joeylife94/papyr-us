@@ -287,7 +287,7 @@ export type UploadMeta = { teamId: string | null; organizationId: number | null 
 
 /**
  * The ownership of a file, or undefined when it cannot be told (sidecar missing or unreadable,
- * or an organization field that is not a positive integer). undefined means deny.
+ * or an organization field that is present and not a positive integer). undefined means deny.
  */
 export async function getFileMeta(
   filename: string,
@@ -296,7 +296,9 @@ export async function getFileMeta(
   const meta = await readSidecar(filename, isImageFile);
   if (!meta) return undefined;
   const { teamId, organizationId } = meta;
-  if (organizationId !== undefined && organizationId !== null) {
+  // Absent (a sidecar older than organizations) or a positive integer; anything else, null
+  // included, is not something this code writes and denies.
+  if (organizationId !== undefined) {
     if (!Number.isInteger(organizationId) || (organizationId as number) <= 0) return undefined;
   }
   if (teamId !== undefined && teamId !== null && typeof teamId !== 'string') return undefined;
@@ -312,8 +314,8 @@ export type UploadAccess = 'allowed' | 'denied' | 'metadata_unavailable';
  * The one rule for reading or deleting an upload (issue #124 X1b, D5):
  * - no readable ownership: metadata_unavailable (callers answer 403);
  * - a sidecar that names an organization other than the caller's: denied;
- * - a team file (a numeric id, or a legacy team name resolved by `teamByName`): only members of
- *   that team;
+ * - a team file (a numeric id, or a legacy team name resolved by `teamByName` and accepted only
+ *   when that team belongs to the default organization): only members of that team;
  * - a team-less file belongs to the organization in its sidecar, or the default organization
  *   when the sidecar is older than organizations; only that organization's accounts.
  * A failing lookup in `deps` rejects, so callers deny rather than allow.
@@ -338,11 +340,11 @@ export async function checkUploadAccess(
   if (/^[1-9]\d*$/.test(meta.teamId)) {
     teamId = Number(meta.teamId);
   } else {
+    // A legacy name sidecar has no organization of its own: it is the default organization's
+    // (D5). The name is resolved against today's teams, so a same-named team of another
+    // organization (created after the original was deleted) must not get the file.
     const team = await deps.teamByName(meta.teamId);
-    if (
-      team &&
-      (team.organizationId === undefined || team.organizationId === caller.organizationId)
-    ) {
+    if (team && team.organizationId === (await deps.defaultOrganizationId())) {
       teamId = team.id;
     }
   }
@@ -379,7 +381,7 @@ export async function listUploadedFiles(
         .filter((file) => file !== '.gitkeep' && !file.startsWith('_meta_'))
         .map(async (filename) => {
           if (teamId) {
-            const fileMeta = await getFileTeamId(filename, true);
+            const fileMeta = (await getFileMeta(filename, true))?.teamId;
             if (!isTeamFile(fileMeta, teamId, legacyTeamNames)) return null;
           }
           const info = await getFileInfo(filename, true);
@@ -392,7 +394,7 @@ export async function listUploadedFiles(
         .filter((file) => file !== '.gitkeep' && !file.startsWith('_meta_'))
         .map(async (filename) => {
           if (teamId) {
-            const fileMeta = await getFileTeamId(filename, false);
+            const fileMeta = (await getFileMeta(filename, false))?.teamId;
             if (!isTeamFile(fileMeta, teamId, legacyTeamNames)) return null;
           }
           const info = await getFileInfo(filename, false);

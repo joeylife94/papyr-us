@@ -103,7 +103,7 @@ describe('File Upload API', () => {
     const fileList = { files: [mockFile] };
     (listUploadedFiles as vi.Mock).mockResolvedValue(fileList);
 
-    const response = await request(app).get('/api/uploads?teamId=1');
+    const response = await request(app).get('/api/uploads?teamId=1').set(authHeader);
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual(fileList);

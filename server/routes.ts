@@ -2564,12 +2564,16 @@ export async function registerRoutes(
   });
 
   // List uploaded files
-  app.get('/api/uploads', optionalAuth, requireTeamMembership, async (req: AuthRequest, res) => {
+  app.get('/api/uploads', authMiddleware, requireTeamMembership, async (req: AuthRequest, res) => {
     try {
       // A team's files carry its numeric id, or (older uploads) its name.
       const listTeam = async (id: number) => {
+        // A legacy sidecar holding a team name is the default organization's (D5): the name
+        // counts only for a team of that organization.
         const team = await storage.getTeam(id);
-        return listUploadedFiles(String(id), team?.name ? [team.name] : []);
+        const legacy =
+          team?.name && Number(team.organizationId) === (await storage.getDefaultOrganizationId());
+        return listUploadedFiles(String(id), legacy ? [team!.name] : []);
       };
       const teamId = req.checkedTeamId;
 

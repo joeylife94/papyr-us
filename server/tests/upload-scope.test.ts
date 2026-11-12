@@ -102,7 +102,11 @@ describe('checkUploadAccess', () => {
   const deps = {
     defaultOrganizationId: async () => DEFAULT_ORG,
     teamByName: async (name: string) =>
-      name === 'alpha' ? { id: TEAM, organizationId: ORG } : undefined,
+      name === 'alpha'
+        ? { id: TEAM, organizationId: DEFAULT_ORG }
+        : name === 'beta'
+          ? { id: TEAM, organizationId: OTHER_ORG } // a team of another organization
+          : undefined,
   };
   const check = (meta: any, who = caller) => checkUploadAccess(meta, who, deps);
 
@@ -142,11 +146,21 @@ describe('checkUploadAccess', () => {
     ).rejects.toThrow();
   });
 
-  it('resolves a legacy sidecar that holds a team name', async () => {
+  it('resolves a legacy sidecar that holds a team name, for a default-organization team', async () => {
+    const inDefault = { organizationId: DEFAULT_ORG, teamIds: [TEAM] };
     const legacyName = { teamId: 'alpha', organizationId: null };
-    expect(await check(legacyName)).toBe('allowed');
-    expect(await check(legacyName, { organizationId: ORG, teamIds: [OTHER_TEAM] })).toBe('denied');
-    expect(await check({ teamId: 'unknown-team', organizationId: null })).toBe('denied');
+    expect(await check(legacyName, inDefault)).toBe('allowed');
+    expect(await check(legacyName, { organizationId: DEFAULT_ORG, teamIds: [OTHER_TEAM] })).toBe(
+      'denied'
+    );
+    expect(await check({ teamId: 'unknown-team', organizationId: null }, inDefault)).toBe('denied');
+  });
+
+  it('refuses a legacy team name that resolves to a team of another organization', async () => {
+    // The original team is gone; another organization created a team with the same name.
+    const members = { organizationId: OTHER_ORG, teamIds: [TEAM] };
+    expect(await check({ teamId: 'beta', organizationId: null }, members)).toBe('denied');
+    expect(await check({ teamId: 'beta', organizationId: null })).toBe('denied');
   });
 
   it('reports a missing sidecar as unavailable', async () => {
@@ -178,10 +192,14 @@ beforeEach(() => {
   storage.getUserTeamIds.mockImplementation(async (id: number) => teamsOf[id] ?? []);
   storage.getDefaultOrganizationId.mockResolvedValue(DEFAULT_ORG);
   storage.getTeamByName.mockImplementation(async (name: string) =>
-    name === 'alpha' ? { id: TEAM, name: 'alpha', organizationId: ORG } : undefined
+    name === 'alpha'
+      ? { id: TEAM, name: 'alpha', organizationId: DEFAULT_ORG }
+      : name === 'beta'
+        ? { id: TEAM, name: 'beta', organizationId: OTHER_ORG }
+        : undefined
   );
   storage.getTeam.mockImplementation(async (id: number) =>
-    id === TEAM ? { id: TEAM, name: 'alpha', organizationId: ORG } : undefined
+    id === TEAM ? { id: TEAM, name: 'alpha', organizationId: DEFAULT_ORG } : undefined
   );
   svc.processUploadedFile.mockImplementation(async (file: any, teamId?: string) => ({
     filename: 'stored.txt',
@@ -308,6 +326,18 @@ describe('GET /api/uploads/:type/:filename', () => {
     );
   });
 
+  it.each(kinds)(
+    '%s: a legacy team name that now resolves to another organization is refused',
+    async (kind) => {
+      sidecar({ teamId: 'beta', organizationId: null });
+      const response = await request(app).get(`/api/uploads/${kind}/a.png`).set(as(MEMBER));
+      expect(response.status).toBe(403);
+      const del = await request(app).delete(`/api/uploads/${kind}/a.png`).set(as(MEMBER));
+      expect(del.status).toBe(403);
+      expect(svc.deleteUploadedFile).not.toHaveBeenCalled();
+    }
+  );
+
   it.each(kinds)('%s: a missing sidecar is refused', async (kind) => {
     sidecar(undefined);
     const response = await request(app).get(`/api/uploads/${kind}/a.png`).set(as(MEMBER));
@@ -381,5 +411,23 @@ describe('GET /api/uploads', () => {
     const response = await request(app).get(`/api/uploads?teamId=${TEAM}`).set(as(OUTSIDER));
     expect(response.status).toBe(403);
     expect(svc.listUploadedFiles).not.toHaveBeenCalled();
+  });
+
+  it('needs a session in every mode, before any team resolution or listing', async () => {
+    for (const enforced of [true, false]) {
+      mockConfig.enforceAuthForWrites = enforced;
+      for (const query of ['', `?teamId=${TEAM}`, '?teamId=alpha']) {
+        const response = await request(app).get(`/api/uploads${query}`);
+        expect(response.status, `${enforced} ${query}`).toBe(401);
+      }
+    }
+    expect(svc.listUploadedFiles).not.toHaveBeenCalled();
+    expect(storage.getTeamByName).not.toHaveBeenCalled();
+  });
+
+  it('matches the legacy team name only for a team of the default organization', async () => {
+    storage.getTeam.mockResolvedValue({ id: TEAM, name: 'beta', organizationId: OTHER_ORG });
+    await request(app).get(`/api/uploads?teamId=${TEAM}`).set(as(MEMBER));
+    expect(svc.listUploadedFiles).toHaveBeenCalledWith(String(TEAM), []);
   });
 });

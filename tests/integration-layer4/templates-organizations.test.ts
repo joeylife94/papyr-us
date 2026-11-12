@@ -10,8 +10,8 @@
  * - careful: a database without a templates table is left alone; the default organization is
  *   created only when there are templates to put in it; without organizations (0022 not applied)
  *   and with templates it refuses;
- * - reversible: drizzle/0023_add_template_organizations.down.sql refuses while templates of two
- *   organizations exist, otherwise removes only the column, its index and its foreign key (the
+ * - reversible: drizzle/0023_add_template_organizations.down.sql refuses while more than one
+ *   organization exists (also when only one owns templates), otherwise removes only the column, its index and its foreign key (the
  *   templates keep all their data), and 0023 applies again after it.
  *
  * Boundary, DBStorage on the migrated tables with a second organization: no template read,
@@ -308,8 +308,18 @@ describe('0023 down migration', () => {
     expect(await shape(scoped, SCHEMA)).toEqual(before);
   });
 
-  it('removes only the column, index and key once one organization owns templates', async () => {
+  it('still refuses with two organizations where only one owns templates', async () => {
     await scoped.query(`DELETE FROM templates WHERE organization_id <> $1`, [defaultOrg]);
+    const owners = await scoped.query(`SELECT DISTINCT organization_id FROM templates`);
+    expect(owners.rows).toEqual([{ organization_id: defaultOrg }]);
+    const before = await shape(scoped, SCHEMA);
+    await expect(scoped.query(DOWN)).rejects.toThrow(/refusing to merge tenants/);
+    expect(await shape(scoped, SCHEMA)).toEqual(before);
+  });
+
+  it('removes only the column, index and key with exactly one organization', async () => {
+    await scoped.query(`DELETE FROM organizations WHERE id <> $1`, [defaultOrg]);
+    expect((await scoped.query(`SELECT count(*)::int AS n FROM organizations`)).rows[0].n).toBe(1);
     const rowsBefore = await legacyRows(scoped);
     await scoped.query(DOWN);
     const after = await shape(scoped, SCHEMA);
