@@ -1,4 +1,4 @@
-import type { Express, NextFunction, Response } from 'express';
+import type { Express, NextFunction, RequestHandler, Response } from 'express';
 import { createServer, type Server as HttpServer } from 'http';
 import { Server as SocketIoServer } from 'socket.io';
 import {
@@ -104,6 +104,7 @@ import { ANONYMOUS_PAGE_VIEWER, DBStorage, OrganizationRequiredError } from './s
 import { createUserInDefaultOrganization } from './organizations.js';
 import { registerKnowledgeRoutes } from './routes/knowledge.js';
 import { buildKnowledgeGraph, suggestAiLinks } from './services/knowledge-graph.js';
+import { organizationAiEnabledFor, requireOrganizationAi } from './organization-guards.js';
 import { isReservedDailyNoteSlug } from '../shared/daily-notes.js';
 import { isPageId } from '../shared/page-links.js';
 import { draftPageExcerpt, excerptLinkIds, renderPageExcerpt } from '../shared/page-excerpt.js';
@@ -277,6 +278,11 @@ export async function registerRoutes(
   const rlAdmin = buildRateLimiter({ windowMs: 60_000, max: 30 });
   const rlUpload = buildRateLimiter({ windowMs: 60_000, max: 30 });
   const rlAI = buildRateLimiter({ windowMs: 60_000, max: 15 }); // AI endpoints are expensive
+  // Rate limit, then the organization's AI setting: content reaches a provider only when it is on
+  const aiGate: RequestHandler = (req, res, next) =>
+    rlAI(req, res, (err?: unknown) =>
+      err ? next(err) : requireOrganizationAi(req as AuthRequest, res, next)
+    );
   const rlAnalytics = buildRateLimiter({ windowMs: 60_000, max: 60 }); // analytics view recording
 
   // User Registration
@@ -3930,7 +3936,7 @@ export async function registerRoutes(
   });
 
   // AI ??��??API
-  app.post('/api/ai/generate', rlAI, requireAuthIfEnabled, async (req, res) => {
+  app.post('/api/ai/generate', aiGate, requireAuthIfEnabled, async (req, res) => {
     try {
       const { prompt, type } = req.body;
       const { generateContent } = await import('./services/ai.js');
@@ -3943,7 +3949,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post('/api/ai/improve', rlAI, requireAuthIfEnabled, async (req, res) => {
+  app.post('/api/ai/improve', aiGate, requireAuthIfEnabled, async (req, res) => {
     try {
       const { content, title } = req.body;
       const { generateContentSuggestions } = await import('./services/ai.js');
@@ -4044,7 +4050,7 @@ export async function registerRoutes(
       // ordering is returned and the request still succeeds — retrieval does not
       // depend on AI.
       let outcome = applyAiReranking(retrieved, null);
-      if (isAIAvailable()) {
+      if (isAIAvailable() && (await organizationAiEnabledFor(storage, req.user.id))) {
         try {
           const candidates = retrieved.slice(0, MAX_AI_RERANK_CANDIDATES);
           const scored = await smartSearch(
@@ -4081,7 +4087,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post('/api/ai/search-suggestions', rlAI, requireAuthIfEnabled, async (req, res) => {
+  app.post('/api/ai/search-suggestions', aiGate, requireAuthIfEnabled, async (req, res) => {
     try {
       const { query } = req.body;
 
@@ -4101,7 +4107,7 @@ export async function registerRoutes(
   });
 
   // AI Copilot Chat
-  app.post('/api/ai/copilot/chat', rlAI, requireAuthIfEnabled, async (req, res) => {
+  app.post('/api/ai/copilot/chat', aiGate, requireAuthIfEnabled, async (req, res) => {
     try {
       const { messages, context } = req.body;
 
@@ -4121,7 +4127,7 @@ export async function registerRoutes(
   });
 
   // Extract tasks from content
-  app.post('/api/ai/extract-tasks', rlAI, requireAuthIfEnabled, async (req, res) => {
+  app.post('/api/ai/extract-tasks', aiGate, requireAuthIfEnabled, async (req, res) => {
     try {
       const { content } = req.body;
 
@@ -4141,7 +4147,7 @@ export async function registerRoutes(
   });
 
   // Find related pages
-  app.post('/api/ai/related-pages', rlAI, requireAuthIfEnabled, async (req: AuthRequest, res) => {
+  app.post('/api/ai/related-pages', aiGate, requireAuthIfEnabled, async (req: AuthRequest, res) => {
     try {
       const { content, title, pageId } = req.body;
 
@@ -4191,6 +4197,19 @@ export async function registerRoutes(
       try {
         const teamParam = typeof req.query.teamId === 'string' ? req.query.teamId : undefined;
         const includeAILinks = req.query.includeAI === 'true';
+
+        // AI links send page content to the provider: only for an organization that has AI on
+        if (includeAILinks) {
+          if (!req.user?.id) {
+            return res.status(401).json({ message: 'Authentication required' });
+          }
+          if (!(await organizationAiEnabledFor(storage, req.user.id))) {
+            return res.status(403).json({
+              code: 'ai_disabled',
+              message: 'AI features are turned off for your organization',
+            });
+          }
+        }
 
         // Use team IDs already resolved by requireTeamMembership middleware
         const userTeamIds: number[] = (req as any).userTeamIds ?? [];
@@ -4692,7 +4711,7 @@ export async function registerRoutes(
   });
 
   // AI text assistance
-  app.post('/api/ai/assist', rlAI, requireAuthIfEnabled, async (req, res) => {
+  app.post('/api/ai/assist', aiGate, requireAuthIfEnabled, async (req, res) => {
     try {
       const { command, text, language, targetCase } = req.body;
 
@@ -4717,7 +4736,7 @@ export async function registerRoutes(
   });
 
   // AI block generation
-  app.post('/api/ai/generate-block', rlAI, requireAuthIfEnabled, async (req, res) => {
+  app.post('/api/ai/generate-block', aiGate, requireAuthIfEnabled, async (req, res) => {
     try {
       const { prompt, blockType } = req.body;
 
@@ -4740,7 +4759,7 @@ export async function registerRoutes(
   });
 
   // AI smart suggestions
-  app.post('/api/ai/suggestions', rlAI, requireAuthIfEnabled, async (req, res) => {
+  app.post('/api/ai/suggestions', aiGate, requireAuthIfEnabled, async (req, res) => {
     try {
       const { text, cursorPosition } = req.body;
 
@@ -4759,7 +4778,7 @@ export async function registerRoutes(
   });
 
   // AI auto-format
-  app.post('/api/ai/auto-format', rlAI, requireAuthIfEnabled, async (req, res) => {
+  app.post('/api/ai/auto-format', aiGate, requireAuthIfEnabled, async (req, res) => {
     try {
       const { text } = req.body;
 
@@ -4778,7 +4797,7 @@ export async function registerRoutes(
   });
 
   // Inline AI action on selected text (summarize | rewrite | taskify)
-  app.post('/api/ai/inline', rlAI, requireAuthIfEnabled, async (req, res) => {
+  app.post('/api/ai/inline', aiGate, requireAuthIfEnabled, async (req, res) => {
     try {
       const { action, text } = req.body;
 

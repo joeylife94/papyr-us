@@ -50,6 +50,19 @@ function workflowTeamOf(context: Record<string, any>): number | null {
   return normalizeTeamId(context.workflow?.teamId);
 }
 
+/** Whether the organization of the workflow's own team has AI on; false on any doubt. */
+async function workflowTeamHasAi(context: Record<string, any>): Promise<boolean> {
+  const teamId = workflowTeamOf(context);
+  if (teamId === null) return false;
+  try {
+    const storage = getWorkflowStorage();
+    const organizationId = await storage.getTeamOrganizationId(teamId);
+    return (await storage.isOrganizationAiEnabled(organizationId)) === true;
+  } catch {
+    return false;
+  }
+}
+
 /** A live page of the workflow's team with this id, or null: the only pages an action may touch. */
 async function getPageOfWorkflowTeam(context: Record<string, any>, pageId: unknown) {
   const teamId = workflowTeamOf(context);
@@ -257,6 +270,11 @@ async function executeAction(
       case 'run_ai_summary':
         if (!context.trigger?.content) {
           return { success: false, error: 'No content to summarize' };
+        }
+        // Content goes to the provider only for a team whose organization has AI on; the
+        // organization follows from the workflow's own team, never from the trigger data.
+        if (!(await workflowTeamHasAi(context))) {
+          return { success: false, error: 'AI is turned off for this organization' };
         }
         const summary = await aiService.summarizeContent(context.trigger.content);
         return { success: true, result: { summary } };

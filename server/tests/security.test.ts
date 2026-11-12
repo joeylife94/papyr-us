@@ -720,6 +720,9 @@ describe('4-4  AI and aggregate routes scope', () => {
 
     it("POST /api/ai/related-pages — scopes to authenticated user's teams", async () => {
       storage.searchWikiPages.mockResolvedValue({ pages: [] });
+      // the caller's organization has AI on (#124 X1c P3)
+      storage.getOrganizationMembership.mockResolvedValue({ organizationId: 1, role: 'member' });
+      storage.isOrganizationAiEnabled.mockResolvedValue(true);
       const res = await request(app)
         .post('/api/ai/related-pages')
         .set(auth(tokenA))

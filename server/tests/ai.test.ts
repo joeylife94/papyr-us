@@ -96,6 +96,12 @@ beforeAll(async () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The AI routes need a signed-in caller whose organization has AI on (#124 X1c P3)
+  (storage.getOrganizationMembership as vi.Mock).mockResolvedValue({
+    organizationId: 1,
+    role: 'member',
+  });
+  (storage.isOrganizationAiEnabled as vi.Mock).mockResolvedValue(true);
 });
 
 afterAll((done) => {
