@@ -453,6 +453,77 @@ describe('createOrganizationWithOwner', () => {
   });
 });
 
+describe('createOrganizationWithOwner under concurrent changes', () => {
+  const stillPending = async (promise: Promise<unknown>, ms = 300) =>
+    (await Promise.race([
+      promise.then(
+        () => 'settled',
+        () => 'settled'
+      ),
+      new Promise((resolve) => setTimeout(() => resolve('pending'), ms)),
+    ])) === 'pending';
+
+  it('waits for the source organization lock and judges the account as it is after it', async () => {
+    const user = await newUser('serialized');
+    const holder = await scoped.connect();
+    let released = false;
+    try {
+      await holder.query('BEGIN');
+      await holder.query(
+        `SELECT pg_advisory_xact_lock(hashtextextended('organization-members:' || $1::text, 0))`,
+        [defaultOrg]
+      );
+      const creation = storage.createOrganizationWithOwner({
+        name: 'Serialized',
+        slug: 'serialized-org',
+        ownerEmail: user.email,
+      });
+      expect(await stillPending(creation)).toBe(true);
+      await holder.query(`UPDATE organization_members SET role = 'admin' WHERE user_id = $1`, [
+        user.id,
+      ]);
+      await holder.query('COMMIT');
+      released = true;
+      expect(await creation).toEqual({ kind: 'not_eligible', reasons: ['holds_role'] });
+      const { rows } = await scoped.query(
+        `SELECT 1 FROM organizations WHERE slug = 'serialized-org'`
+      );
+      expect(rows).toHaveLength(0);
+      expect(await membershipOf(user.id)).toEqual([{ organizationId: defaultOrg, role: 'admin' }]);
+    } finally {
+      if (!released) await holder.query('ROLLBACK').catch(() => {});
+      holder.release();
+    }
+  });
+
+  it('an account with no membership that is deactivated after the lookup is not placed', async () => {
+    const user = await newUser('deactivated-midway');
+    await scoped.query(`DELETE FROM organization_members WHERE user_id = $1`, [user.id]);
+    const holder = await scoped.connect();
+    let finished = false;
+    try {
+      // An uncommitted deactivation: the lookup still sees an active account.
+      await holder.query('BEGIN');
+      await holder.query(`UPDATE users SET is_active = FALSE WHERE id = $1`, [user.id]);
+      const creation = storage.createOrganizationWithOwner({
+        name: 'Midway',
+        slug: 'midway-org',
+        ownerEmail: user.email,
+      });
+      expect(await stillPending(creation)).toBe(true);
+      await holder.query('COMMIT');
+      finished = true;
+      expect(await creation).toEqual({ kind: 'user_not_found' });
+      const { rows } = await scoped.query(`SELECT 1 FROM organizations WHERE slug = 'midway-org'`);
+      expect(rows).toHaveLength(0);
+      expect(await membershipOf(user.id)).toEqual([]);
+    } finally {
+      if (!finished) await holder.query('ROLLBACK').catch(() => {});
+      holder.release();
+    }
+  });
+});
+
 describe('promoteFirstOrganizationOwner', () => {
   async function organizationWith(slug: string, ...users: Array<{ id: number }>) {
     const id = await newOrganization(slug);

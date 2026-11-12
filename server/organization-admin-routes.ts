@@ -24,6 +24,8 @@ const createOrganizationSchema = z
 
 const ownerEmailSchema = z.object({ email: z.string().trim().min(1) }).strict();
 
+const MAX_ORGANIZATION_ID = 2147483647;
+
 function parseOrganizationId(raw: string): number | null {
   if (!/^[0-9]+$/.test(raw)) return null;
   const id = Number(raw);
@@ -118,6 +120,10 @@ export function registerOrganizationAdminRoutes(app: Express, storage: DBStorage
       const parsed = ownerEmailSchema.safeParse(req.body);
       if (organizationId === null || !parsed.success) {
         return res.status(400).json({ message: 'Invalid owner data' });
+      }
+      // Ids beyond the column's range name no organization.
+      if (organizationId > MAX_ORGANIZATION_ID) {
+        return res.status(404).json({ message: 'Organization not found' });
       }
       try {
         const result = await storage.promoteFirstOrganizationOwner(

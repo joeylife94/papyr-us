@@ -12,17 +12,45 @@
  * - the owner of an organization that has one cannot be replaced through the owners route;
  * - a non-admin and a signed-out caller are refused on every route.
  */
-import { test, expect, type APIRequestContext } from '@playwright/test';
+import {
+  test,
+  expect,
+  request as playwrightRequest,
+  type APIRequestContext,
+} from '@playwright/test';
 import { createAuthenticatedApiContext, registerTestUser } from './e2e-helpers';
 
 const ADMIN_EMAIL = 'e2e-platform-admin@example.com';
 const ADMIN_PASSWORD = 'Password123!';
 
-async function ensureAdminAccount(request: APIRequestContext) {
-  const resp = await request.post('/api/auth/register', {
-    data: { name: 'Platform Admin', email: ADMIN_EMAIL, password: ADMIN_PASSWORD },
-  });
-  expect([201, 409]).toContain(resp.status());
+const baseURL = () => process.env.BASE_URL || 'http://localhost:5003';
+
+/**
+ * A context nobody has registered or signed in through. Registering sets the session cookie on
+ * the context it goes through, so accounts are registered on throwaway contexts and "nobody" is
+ * always a fresh one.
+ */
+const freshContext = () => playwrightRequest.newContext({ baseURL: baseURL() });
+
+async function register(prefix: string) {
+  const ctx = await freshContext();
+  try {
+    return await registerTestUser(ctx, prefix);
+  } finally {
+    await ctx.dispose();
+  }
+}
+
+async function ensureAdminAccount() {
+  const ctx = await freshContext();
+  try {
+    const resp = await ctx.post('/api/auth/register', {
+      data: { name: 'Platform Admin', email: ADMIN_EMAIL, password: ADMIN_PASSWORD },
+    });
+    expect([201, 409]).toContain(resp.status());
+  } finally {
+    await ctx.dispose();
+  }
 }
 
 const slugsIn = (body: unknown): string[] => {
@@ -31,23 +59,20 @@ const slugsIn = (body: unknown): string[] => {
 };
 
 test.describe('Platform admins create organizations', () => {
-  test('the first owner is an untouched account, moved into the new organization', async ({
-    request,
-  }) => {
+  test('the first owner is an untouched account, moved into the new organization', async () => {
     test.setTimeout(120_000);
-    await ensureAdminAccount(request);
+    await ensureAdminAccount();
     const admin = await createAuthenticatedApiContext(ADMIN_EMAIL, ADMIN_PASSWORD);
-    const bystander = await registerTestUser(request, 'orgadm-bystander');
-    const future = await registerTestUser(request, 'orgadm-owner');
+    const bystander = await register('orgadm-bystander');
+    const future = await register('orgadm-owner');
     const bystanderCtx = await createAuthenticatedApiContext(bystander.email, bystander.password);
     const futureCtx = await createAuthenticatedApiContext(future.email, future.password);
     const slug = `x1c-${Date.now().toString(36)}`;
     try {
-      // A team-less page of the default organization (a seeded one, with no grants of its own),
-      // which every member of it lists.
-      const listedBefore = slugsIn(await (await futureCtx.get('/api/pages')).json());
-      expect(listedBefore.length).toBeGreaterThan(0);
-      const pageSlug = listedBefore[0];
+      // What the fresh account lists before the move. A publicly shared page is listed to every
+      // account of every organization (other specs create some), so the pages that show the
+      // boundary are the ones that stop being listed after the move; see below.
+      const listedBefore = slugsIn(await (await futureCtx.get('/api/pages?limit=100')).json());
       expect((await futureCtx.get('/api/organization')).status()).toBe(200);
       expect((await (await futureCtx.get('/api/organization')).json()).slug).toBe('default');
 
@@ -76,13 +101,24 @@ test.describe('Platform admins create organizations', () => {
         aiEnabled: false,
       });
       // It no longer lists the default organization's page.
-      expect(slugsIn(await (await futureCtx.get('/api/pages')).json())).not.toContain(pageSlug);
+      const listedAfter = new Set(
+        slugsIn(await (await futureCtx.get('/api/pages?limit=100')).json())
+      );
+      const vanished = listedBefore.filter((slug) => !listedAfter.has(slug));
+      if (vanished.length === 0) {
+        throw new Error(
+          'The fresh account lists the same pages after the move: the test database has no default-organization page that is open to its members but not public'
+        );
+      }
+      const pageSlug = vanished[0];
       expect((await futureCtx.get(`/api/pages/${pageSlug}`)).status()).not.toBe(200);
 
       // The default organization's other members are unaffected.
       const other = await bystanderCtx.get('/api/organization');
       expect(await other.json()).toMatchObject({ slug: 'default', role: 'member' });
-      expect(slugsIn(await (await bystanderCtx.get('/api/pages')).json())).toContain(pageSlug);
+      expect(slugsIn(await (await bystanderCtx.get('/api/pages?limit=100')).json())).toContain(
+        pageSlug
+      );
 
       // The list shows the new organization with its counts and no member data.
       const list = await admin.get('/api/admin/organizations');
@@ -151,11 +187,11 @@ test.describe('Platform admins create organizations', () => {
     }
   });
 
-  test('an account with data elsewhere is refused and stays where it is', async ({ request }) => {
+  test('an account with data elsewhere is refused and stays where it is', async () => {
     test.setTimeout(120_000);
-    await ensureAdminAccount(request);
+    await ensureAdminAccount();
     const admin = await createAuthenticatedApiContext(ADMIN_EMAIL, ADMIN_PASSWORD);
-    const builder = await registerTestUser(request, 'orgadm-builder');
+    const builder = await register('orgadm-builder');
     const builderCtx = await createAuthenticatedApiContext(builder.email, builder.password);
     const slug = `x1c-no-${Date.now().toString(36)}`;
     try {
@@ -198,9 +234,10 @@ test.describe('Platform admins create organizations', () => {
     }
   });
 
-  test('a non-admin and a signed-out caller are refused on every route', async ({ request }) => {
-    const user = await registerTestUser(request, 'orgadm-plain');
+  test('a non-admin and a signed-out caller are refused on every route', async () => {
+    const user = await register('orgadm-plain');
     const userCtx = await createAuthenticatedApiContext(user.email, user.password);
+    const signedOut = await freshContext();
     try {
       const calls: Array<[string, string, object | undefined]> = [
         ['get', '/api/admin/organizations', undefined],
@@ -211,7 +248,7 @@ test.describe('Platform admins create organizations', () => {
         ],
         ['post', '/api/admin/organizations/1/owners', { email: user.email }],
       ];
-      for (const ctx of [userCtx, request]) {
+      for (const ctx of [userCtx, signedOut]) {
         for (const [method, path, data] of calls) {
           const res =
             method === 'get' ? await ctx.get(path) : await ctx.post(path, { data: data ?? {} });
@@ -224,7 +261,7 @@ test.describe('Platform admins create organizations', () => {
         role: 'member',
       });
     } finally {
-      await userCtx.dispose();
+      await Promise.all([userCtx.dispose(), signedOut.dispose()]);
     }
   });
 });

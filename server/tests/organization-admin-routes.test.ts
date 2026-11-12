@@ -123,6 +123,14 @@ describe.each([true, false])('platform admin guard (ENFORCE_AUTH_WRITES=%s)', (e
     expect(res.body).toEqual({ message: 'Admin check failed' });
   });
 
+  it('a token carrying the admin address with a non-admin id is 403', async () => {
+    const res = await request(buildApp())
+      .get('/api/admin/organizations')
+      .set('Authorization', bearer(MEMBER.id, ADMIN.email, { role: 'admin' }));
+    expect(res.status).toBe(403);
+    expect(storage.listOrganizationsForAdmin).not.toHaveBeenCalled();
+  });
+
   it('a denied caller reaches no storage method of the feature', async () => {
     await request(buildApp()).post('/api/admin/organizations').send(VALID);
     await request(buildApp())
@@ -348,6 +356,21 @@ describe('POST /api/admin/organizations/:id/owners', () => {
     const res = await post('4', body);
     expect(res.status).toBe(400);
     expect(storage.promoteFirstOrganizationOwner).not.toHaveBeenCalled();
+  });
+
+  it('404 without a query for an id beyond the column range', async () => {
+    for (const id of ['2147483648', '99999999999999']) {
+      const res = await post(id, { email: 'm@example.com' });
+      expect(res.status).toBe(404);
+      expect(res.body).toEqual({ message: 'Organization not found' });
+    }
+    expect(storage.promoteFirstOrganizationOwner).not.toHaveBeenCalled();
+  });
+
+  it('accepts the largest id the column holds', async () => {
+    storage.promoteFirstOrganizationOwner.mockResolvedValue({ kind: 'organization_not_found' });
+    await post('2147483647', { email: 'm@example.com' });
+    expect(storage.promoteFirstOrganizationOwner).toHaveBeenCalledWith(2147483647, 'm@example.com');
   });
 
   it('404 for an unknown organization', async () => {

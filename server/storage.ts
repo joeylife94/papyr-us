@@ -2174,6 +2174,8 @@ export class DBStorage {
    * when the account is unknown or inactive, or holds anything outside the new organization
    * (getAccountFootprintOutside). A taken slug throws the unique violation (23505) of the insert.
    * The source organization's lock is held while the footprint is checked and the row moves.
+   * The "nothing elsewhere" rule is checked at the moment of the move, under that lock; it is not
+   * a database invariant.
    */
   async createOrganizationWithOwner(input: {
     name: string;
@@ -2192,13 +2194,21 @@ export class DBStorage {
       const work = async (
         tx: OrganizationTx
       ): Promise<CreateOrganizationWithOwnerResult | null> => {
+        // Decide from the user row as it is now, held until the transaction ends: the account
+        // may have been removed or deactivated since the lookup above.
+        const [locked] = await tx
+          .select({ id: users.id, email: users.email, isActive: users.isActive })
+          .from(users)
+          .where(eq(users.id, account.id))
+          .for('update');
+        if (!locked || !locked.isActive) return { kind: 'user_not_found' };
         // The membership may have changed between the read above and the lock: start over.
         const current = await this.getOrganizationMembership(account.id, tx);
         if ((current?.organizationId ?? null) !== (source?.organizationId ?? null)) return null;
 
         const [organization] = await tx
           .insert(organizations)
-          .values({ name: input.name, slug: input.slug, aiEnabled: false })
+          .values({ name: input.name, slug: input.slug })
           .returning();
         const reasons = await this.getAccountFootprintOutside(account.id, organization.id, tx);
         if (reasons.length > 0) {
@@ -2218,7 +2228,7 @@ export class DBStorage {
         return {
           kind: 'created',
           organization,
-          owner: { userId: account.id, email: account.email },
+          owner: { userId: locked.id, email: locked.email },
         };
       };
 
@@ -2254,7 +2264,8 @@ export class DBStorage {
         .select({ id: users.id, email: users.email })
         .from(users)
         .where(eq(users.email, email))
-        .limit(1);
+        .limit(1)
+        .for('update');
       const membership = account ? await this.getOrganizationMembership(account.id, tx) : null;
       if (!account || membership?.organizationId !== organizationId) {
         return { kind: 'member_not_found' };
