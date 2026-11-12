@@ -195,6 +195,16 @@ test.describe('Popular pages follow the page read boundary', () => {
       await view(aTeam.id, [ownerARequest, ownerARequest, memberARequest, memberARequest]);
       await view(bPublic.id, [ownerARequest, soloRequest, outsiderRequest]);
 
+      // Databases hold views recorded before that rule: rows on pages their viewer cannot read.
+      // Written directly here, they must not rank those pages for that viewer either.
+      const ownerAId = await idOf(ownerARequest);
+      for (const pageId of [bTeam.id, bPrivate.id, xTeam.id]) {
+        await db.query(
+          'INSERT INTO page_views (page_id, user_id) SELECT $1, $2 FROM generate_series(1, 3)',
+          [pageId, ownerAId]
+        );
+      }
+
       expect(
         (await rankingOf(ownerARequest)).map((row) => row.pageSlug),
         'before the page is trashed'
