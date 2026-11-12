@@ -18,6 +18,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
+import { sql } from 'drizzle-orm';
 import { readFileSync } from 'node:fs';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -38,6 +39,7 @@ const SCHEMAS = {
   fresh: 'l4_x1c_base_fresh',
   chain: 'l4_x1c_base_chain',
   storage: 'l4_x1c_base_storage',
+  pushed: 'l4_x1c_base_pushed',
 };
 const urlFor = (schema: string) => {
   const url = new URL(DATABASE_URL);
@@ -102,6 +104,15 @@ beforeAll(async () => {
     chain,
     `CREATE TABLE templates (id SERIAL PRIMARY KEY, name TEXT NOT NULL, team_id INTEGER);
      INSERT INTO templates (name) VALUES ('tpl');`
+  );
+
+  // A database a schema push already gave the column, with `default` inserted by 0022 after it.
+  const pushed = pools[SCHEMAS.pushed];
+  await run(pushed, PRE_ORG_TABLES);
+  await run(pushed, M0022);
+  await run(
+    pushed,
+    `ALTER TABLE organizations ADD COLUMN ai_enabled BOOLEAN NOT NULL DEFAULT FALSE`
   );
 
   // Storage scenario: the upgraded shape with accounts in several states.
@@ -183,6 +194,37 @@ describe('migration 0024', () => {
     }
     expect(await hasColumn(pool)).toBe(true);
     expect(await aiOf(pool, 'default')).toBe(true);
+  });
+});
+
+describe('migration 0024 when the column already exists (schema push ran first)', () => {
+  it('turns AI on for `default` while it has no members', async () => {
+    const pool = pools[SCHEMAS.pushed];
+    expect(await aiOf(pool, 'default')).toBe(false);
+    await run(pool, UP);
+    expect(await aiOf(pool, 'default')).toBe(true);
+    await run(pool, UP);
+    expect(await aiOf(pool, 'default')).toBe(true);
+  });
+
+  it('leaves an organization without members other than `default` alone', async () => {
+    const pool = pools[SCHEMAS.pushed];
+    await run(pool, `INSERT INTO organizations (slug, name) VALUES ('empty', 'Empty')`);
+    await run(pool, UP);
+    expect(await aiOf(pool, 'empty')).toBe(false);
+  });
+
+  it('keeps FALSE on `default` once it has a member', async () => {
+    const pool = pools[SCHEMAS.pushed];
+    await run(pool, `INSERT INTO users (id, name, email) VALUES (50, 'M', 'm@example.com')`);
+    await run(
+      pool,
+      `INSERT INTO organization_members (organization_id, user_id, role)
+       SELECT id, 50, 'member' FROM organizations WHERE slug = 'default'`
+    );
+    await run(pool, `UPDATE organizations SET ai_enabled = FALSE WHERE slug = 'default'`);
+    await run(pool, UP);
+    expect(await aiOf(pool, 'default')).toBe(false);
   });
 });
 
@@ -274,7 +316,13 @@ describe('DBStorage organization helpers', () => {
   });
 
   it('a default organization created by the application has AI on', async () => {
+    // 0022 already inserted `default`; remove it (no members) so the insert really runs.
+    await st().query(`DELETE FROM organizations WHERE slug = 'default'`);
+    expect((await st().query(`SELECT 1 FROM organizations WHERE slug = 'default'`)).rowCount).toBe(
+      0
+    );
     const id = await storage.getDefaultOrganizationId();
+    expect(await aiOf(st(), 'default')).toBe(true);
     expect(await storage.isOrganizationAiEnabled(id)).toBe(true);
   });
 
@@ -337,5 +385,60 @@ describe('DBStorage organization helpers', () => {
     ).rejects.toThrow('stop');
     expect((await storage.getOrganization(orgId)).name).toBe('On');
     expect(await storage.withOrganizationLocks([orgId], async () => 42)).toBe(42);
+  });
+
+  it('an empty id list throws instead of running unlocked', async () => {
+    let ran = false;
+    await expect(
+      storage.withOrganizationLocks([], async () => {
+        ran = true;
+      })
+    ).rejects.toThrow(/at least one organization/);
+    expect(ran).toBe(false);
+  });
+
+  it('a read through the handle sees the locked transaction, a read without it does not', async () => {
+    await expect(
+      storage.withOrganizationLocks([orgId], async (tx: any) => {
+        await tx.execute(sql`UPDATE organization_members SET role = 'admin' WHERE user_id = 1`);
+        expect((await storage.getOrganizationMembership(1, tx))?.role).toBe('admin');
+        expect((await storage.getOrganizationMembership(1))?.role).toBe('owner');
+        expect((await storage.getOrganization(orgId, tx))?.id).toBe(orgId);
+        throw new Error('rollback');
+      })
+    ).rejects.toThrow('rollback');
+    expect((await storage.getOrganizationMembership(1))?.role).toBe('owner');
+  });
+
+  it('a second caller gets OrganizationBusyError when the lock is not free in time', async () => {
+    const { OrganizationBusyError } = await import('../../server/storage.js');
+    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const first = storage.withOrganizationLocks([orgId], async () => {
+      await held;
+      return 'first done';
+    });
+    await sleep(100);
+    const started = Date.now();
+    await expect(
+      storage.withOrganizationLocks([orgId], async () => 'never', { lockTimeoutMs: 300 })
+    ).rejects.toBeInstanceOf(OrganizationBusyError);
+    expect(Date.now() - started).toBeLessThan(3000);
+    release();
+    expect(await first).toBe('first done');
+    // The timeout bounds the wait, not the work: a holder may run longer than it.
+    expect(
+      await storage.withOrganizationLocks(
+        [orgId],
+        async () => {
+          await sleep(500);
+          return 'long work';
+        },
+        { lockTimeoutMs: 300 }
+      )
+    ).toBe('long work');
+    // The lock is free again.
+    expect(await storage.withOrganizationLocks([orgId], async () => 1)).toBe(1);
   });
 });

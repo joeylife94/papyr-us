@@ -88,7 +88,7 @@ import {
   activityFeed,
   type ActivityFeedEntry,
 } from '../shared/schema.js';
-import { drizzle } from 'drizzle-orm/node-postgres';
+import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { eq, like, and, or, sql, desc, asc, isNull, inArray, type SQL } from 'drizzle-orm';
 import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
@@ -193,6 +193,21 @@ function isSlugUniqueViolation(error: unknown): boolean {
 export function buildUniqueSlugCandidate(baseSlug: string, attempt: number): string {
   const normalizedBase = baseSlug.trim() || 'untitled';
   return attempt === 0 ? normalizedBase : `${normalizedBase}-${attempt + 1}`;
+}
+
+/** The handle a transaction callback receives (db.transaction), as withOrganizationLocks gives it. */
+export type OrganizationTx = Parameters<Parameters<NodePgDatabase['transaction']>[0]>[0];
+/** Where an organization read runs: the pool, or the locked transaction's handle. */
+export type OrganizationExecutor = NodePgDatabase | OrganizationTx;
+
+const ORGANIZATION_LOCK_TIMEOUT_MS = 5000;
+
+/** Another request holds the organization's member lock for too long; routes answer 503. */
+export class OrganizationBusyError extends Error {
+  constructor() {
+    super('Organization is busy');
+    this.name = 'OrganizationBusyError';
+  }
 }
 
 // Simplified and unified DBStorage
@@ -1969,9 +1984,10 @@ export class DBStorage {
    * outside organizationRoles counts as 'member' (X1c).
    */
   async getOrganizationMembership(
-    userId: number
+    userId: number,
+    executor: OrganizationExecutor = this.db
   ): Promise<{ organizationId: number; role: OrganizationRole } | null> {
-    const [row] = await this.db
+    const [row] = await executor
       .select({
         organizationId: organizationMembers.organizationId,
         role: organizationMembers.role,
@@ -1987,9 +2003,12 @@ export class DBStorage {
     return { organizationId: Number(row.organizationId), role };
   }
 
-  /** The organization row, or undefined. */
-  async getOrganization(organizationId: number): Promise<Organization | undefined> {
-    const [row] = await this.db
+  /** The organization row, or undefined. Pass the handle of withOrganizationLocks inside it. */
+  async getOrganization(
+    organizationId: number,
+    executor: OrganizationExecutor = this.db
+  ): Promise<Organization | undefined> {
+    const [row] = await executor
       .select()
       .from(organizations)
       .where(eq(organizations.id, organizationId))
@@ -2012,20 +2031,39 @@ export class DBStorage {
    * Runs fn in a transaction after taking, in ascending id order, the advisory lock
    * pg_advisory_xact_lock(hashtextextended('organization-members:' || id, 0)) of each id. Every
    * write to organization_members goes through this (DESIGN.md section 3, Concurrency).
+   * Contract: every read and write the decision depends on goes through the handle fn receives;
+   * nothing inside fn may use this.db or a storage method that does not take the handle; the
+   * lock ends with the transaction. A wait longer than the lock timeout (5 s unless
+   * options.lockTimeoutMs says otherwise) throws OrganizationBusyError; an empty id list throws.
    */
   async withOrganizationLocks<T>(
     organizationIds: number[],
-    fn: (tx: any) => Promise<T>
+    fn: (tx: OrganizationTx) => Promise<T>,
+    options: { lockTimeoutMs?: number } = {}
   ): Promise<T> {
     const ids = Array.from(new Set(organizationIds)).sort((a, b) => a - b);
-    return this.db.transaction(async (tx: any) => {
-      for (const id of ids) {
-        await tx.execute(
-          sql`select pg_advisory_xact_lock(hashtextextended(${'organization-members:' + id}, 0))`
-        );
-      }
-      return fn(tx);
-    });
+    if (ids.length === 0) throw new Error('withOrganizationLocks needs at least one organization');
+    const timeoutMs = options.lockTimeoutMs ?? ORGANIZATION_LOCK_TIMEOUT_MS;
+    if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
+      throw new Error('lockTimeoutMs must be a positive integer');
+    }
+    try {
+      return await this.db.transaction(async (tx: OrganizationTx) => {
+        await tx.execute(sql.raw(`SET LOCAL lock_timeout = '${timeoutMs}ms'`));
+        for (const id of ids) {
+          await tx.execute(
+            sql`select pg_advisory_xact_lock(hashtextextended(${'organization-members:' + id}, 0))`
+          );
+        }
+        // The timeout bounds the wait for the locks only, not the work inside fn.
+        await tx.execute(sql`SET LOCAL lock_timeout = 0`);
+        return fn(tx);
+      });
+    } catch (error) {
+      // 55P03 lock_not_available: the lock timeout expired while waiting.
+      if (postgresErrorOf(error)?.code === '55P03') throw new OrganizationBusyError();
+      throw error;
+    }
   }
 
   // ---- X1c P1: platform admin organization management (organization-admin-routes.ts) ----

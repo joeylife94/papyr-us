@@ -11,16 +11,30 @@ export interface CurrentOrganization {
   aiEnabled: boolean;
 }
 
+export interface UseOrganizationResult {
+  /** The caller's organization; null for a caller without one, while loading, and on error. */
+  organization: CurrentOrganization | null;
+  /** True while authentication or the organization request is still loading. */
+  isLoading: boolean;
+  /** True when the request failed for a reason other than 401/403 (which mean "none"). */
+  isError: boolean;
+  /** Owner or admin of the organization. */
+  canManage: boolean;
+}
+
 /**
  * The signed-in account's own organization (GET /api/organization). Resolves to `null` for an
- * account that belongs to none (or is signed out); only a failure other than 401/403 is an error.
- * The key includes the user id, so switching accounts never shows the previous one's answer.
+ * account that belongs to none (or is signed out); a 401/403 is that answer, any other failure
+ * is `isError`. Screens must not show "no organization" while `isLoading` or `isError`.
+ * The key includes the user id, so switching accounts never shows the previous one's answer, and
+ * the answer is asked again on every use (staleTime/gcTime 0) so a changed role or AI setting is
+ * never shown stale.
  */
-export function useOrganization() {
-  const { isAuthenticated, user } = useAuth();
+export function useOrganization(): UseOrganizationResult {
+  const { isAuthenticated, isLoading: isAuthLoading, user } = useAuth();
   const userId: number | undefined = user?.id;
 
-  const { data, isLoading } = useQuery<CurrentOrganization | null>({
+  const { data, isLoading, isError } = useQuery<CurrentOrganization | null>({
     queryKey: ['/api/organization', userId],
     queryFn: async () => {
       const response = await fetch('/api/organization', { credentials: 'include' });
@@ -29,13 +43,16 @@ export function useOrganization() {
       return response.json();
     },
     enabled: isAuthenticated && userId != null,
+    staleTime: 0,
+    gcTime: 0,
     retry: false,
   });
 
-  const organization = data ?? null;
+  const organization = isError ? null : (data ?? null);
   return {
     organization,
-    isLoading,
+    isLoading: isAuthLoading || isLoading,
+    isError,
     canManage: organization?.role === 'owner' || organization?.role === 'admin',
   };
 }
