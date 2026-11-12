@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import {
   wikiPages,
   pageLinks,
+  pageViews,
   type WikiPage,
   type InsertWikiPage,
   type UpdateWikiPage,
@@ -78,6 +79,10 @@ import {
   publicLinks,
   teamMembers,
   organizationMembers,
+  pageFavorites,
+  type PageFavorite,
+  activityFeed,
+  type ActivityFeedEntry,
 } from '../shared/schema.js';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { eq, like, and, or, sql, desc, asc, isNull, inArray, type SQL } from 'drizzle-orm';
@@ -1306,6 +1311,356 @@ export class DBStorage {
     return result.map((r: { folder: string }) => r.folder);
   }
 
+  /**
+   * The most viewed pages of the last `days` days (#141), most views first: only live pages the
+   * viewer may list (`listableBy`, the rule of the page lists). Views of another team's page, of
+   * a page whose explicit permissions deny the viewer, of another organization's page or of a
+   * trashed page never put that page in the list. Counts are over all recorded views of a listed
+   * page, as before.
+   */
+  async getPopularPages(
+    viewer: PageViewer,
+    options: { days: number; limit: number }
+  ): Promise<
+    Array<{
+      pageId: number;
+      pageTitle: string;
+      pageSlug: string;
+      viewCount: number;
+      uniqueViewers: number;
+    }>
+  > {
+    const days = Math.max(options.days, 1);
+    const limit = Math.max(options.limit, 1);
+    return this.db
+      .select({
+        pageId: pageViews.pageId,
+        pageTitle: wikiPages.title,
+        pageSlug: wikiPages.slug,
+        viewCount: sql<number>`COUNT(*)`,
+        uniqueViewers: sql<number>`COUNT(DISTINCT ${pageViews.userId})`,
+      })
+      .from(pageViews)
+      .innerJoin(wikiPages, eq(pageViews.pageId, wikiPages.id))
+      .where(
+        and(
+          sql`${pageViews.viewedAt} > NOW() - MAKE_INTERVAL(days => ${days})`,
+          isNull(wikiPages.deletedAt),
+          this.listableBy(viewer)
+        )
+      )
+      .groupBy(pageViews.pageId, wikiPages.title, wikiPages.slug)
+      .orderBy(sql`COUNT(*) DESC`, asc(pageViews.pageId))
+      .limit(limit);
+  }
+
+  /**
+   * Tasks the viewer may count: those of their own teams. `tasks.team_id` is text, and a
+   * team-less task belongs to no team the viewer could be in, so it is never counted.
+   */
+  private tasksOfViewerTeams(viewer: PageViewer): SQL {
+    return viewer.teamIds.length > 0
+      ? inArray(
+          tasks.teamId,
+          viewer.teamIds.map((teamId) => String(teamId))
+        )
+      : sql`false`;
+  }
+
+  /** Accounts of the viewer's organization; none for a viewer without one. */
+  private async countOrganizationUsers(viewer: PageViewer): Promise<number> {
+    if (viewer.organizationId == null) return 0;
+    const [row] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(organizationMembers)
+      .where(eq(organizationMembers.organizationId, viewer.organizationId));
+    return Number(row?.count ?? 0);
+  }
+
+  /**
+   * Numbers of GET /api/stats/dashboard, over what the viewer may list (issue #124 X1b): live
+   * pages they can list (`listableBy`), the comments on those pages, tasks of their own teams
+   * and the accounts of their organization. A viewer without an organization gets zeros.
+   */
+  async getDashboardStats(viewer: PageViewer): Promise<{
+    totals: { pages: number; tasks: number; comments: number; users: number };
+    recent: { pagesThisWeek: number; tasksCompletedThisWeek: number };
+    pageGrowth: Array<{ date: unknown; count: number }>;
+    topContributors: Array<{ author: string; pages_created: number }>;
+    taskBreakdown: Array<{ status: string; count: number }>;
+  }> {
+    const livePages = and(isNull(wikiPages.deletedAt), this.listableBy(viewer))!;
+    const ownTasks = this.tasksOfViewerTeams(viewer);
+    const int = sql<number>`count(*)::int`;
+
+    const [
+      [pageCount],
+      [taskCount],
+      [commentCount],
+      userCount,
+      [recentPages],
+      [recentTasks],
+      pageGrowth,
+      topContributors,
+      taskBreakdown,
+    ] = await Promise.all([
+      this.db.select({ count: int }).from(wikiPages).where(livePages),
+      this.db.select({ count: int }).from(tasks).where(ownTasks),
+      this.db
+        .select({ count: int })
+        .from(comments)
+        .innerJoin(wikiPages, eq(comments.pageId, wikiPages.id))
+        .where(livePages),
+      this.countOrganizationUsers(viewer),
+      this.db
+        .select({ count: int })
+        .from(wikiPages)
+        .where(and(livePages, sql`${wikiPages.createdAt} > NOW() - INTERVAL '7 days'`)),
+      this.db
+        .select({ count: int })
+        .from(tasks)
+        .where(
+          and(
+            ownTasks,
+            sql`${tasks.status} = 'done' AND ${tasks.updatedAt} > NOW() - INTERVAL '7 days'`
+          )
+        ),
+      this.db
+        .select({ date: sql<unknown>`DATE(${wikiPages.createdAt})`, count: int })
+        .from(wikiPages)
+        .where(and(livePages, sql`${wikiPages.createdAt} > NOW() - INTERVAL '30 days'`))
+        .groupBy(sql`DATE(${wikiPages.createdAt})`)
+        .orderBy(sql`DATE(${wikiPages.createdAt})`),
+      this.db
+        .select({ author: wikiPages.author, pages_created: int })
+        .from(wikiPages)
+        .where(livePages)
+        .groupBy(wikiPages.author)
+        .orderBy(sql`count(*) DESC`, asc(wikiPages.author))
+        .limit(10),
+      this.db
+        .select({ status: tasks.status, count: int })
+        .from(tasks)
+        .where(ownTasks)
+        .groupBy(tasks.status)
+        .orderBy(sql`count(*) DESC`, asc(tasks.status)),
+    ]);
+
+    return {
+      totals: {
+        pages: pageCount.count,
+        tasks: taskCount.count,
+        comments: commentCount.count,
+        users: userCount,
+      },
+      recent: { pagesThisWeek: recentPages.count, tasksCompletedThisWeek: recentTasks.count },
+      pageGrowth,
+      topContributors,
+      taskBreakdown,
+    };
+  }
+
+  /**
+   * Numbers of GET /api/stats/overview, over what the viewer may list (issue #124 X1b). Pages
+   * and their comments include trashed ones, as before; only the scope changed: pages the
+   * viewer can list, tasks of their own teams, accounts of their organization.
+   */
+  async getStatsOverview(viewer: PageViewer): Promise<{
+    totalPages: number;
+    totalUsers: number;
+    totalTasks: number;
+    totalComments: number;
+    pagesThisWeek: number;
+    tasksByStatus: Record<string, number>;
+  }> {
+    const pages = this.listableBy(viewer);
+    const ownTasks = this.tasksOfViewerTeams(viewer);
+    const total = sql<number>`COUNT(*)`;
+
+    const [[pageCount], totalUsers, [taskCount], [commentCount], [weeklyPages], byStatus] =
+      await Promise.all([
+        this.db.select({ count: total }).from(wikiPages).where(pages),
+        this.countOrganizationUsers(viewer),
+        this.db.select({ count: total }).from(tasks).where(ownTasks),
+        this.db
+          .select({ count: total })
+          .from(comments)
+          .innerJoin(wikiPages, eq(comments.pageId, wikiPages.id))
+          .where(pages),
+        this.db
+          .select({ count: total })
+          .from(wikiPages)
+          .where(and(pages, sql`${wikiPages.createdAt} > NOW() - INTERVAL '7 days'`)),
+        this.db
+          .select({ status: tasks.status, count: total })
+          .from(tasks)
+          .where(ownTasks)
+          .groupBy(tasks.status),
+      ]);
+
+    return {
+      totalPages: Number(pageCount?.count || 0),
+      totalUsers,
+      totalTasks: Number(taskCount?.count || 0),
+      totalComments: Number(commentCount?.count || 0),
+      pagesThisWeek: Number(weeklyPages?.count || 0),
+      tasksByStatus: byStatus.reduce(
+        (acc: Record<string, number>, row: { status: string; count: unknown }) => {
+          acc[row.status] = Number(row.count);
+          return acc;
+        },
+        {}
+      ),
+    };
+  }
+
+  /** Records one view of a page (`userId` null for a signed-out reader). */
+  async recordPageView(pageId: number, userId: number | null): Promise<void> {
+    await this.db.insert(pageViews).values({ pageId, userId });
+  }
+
+  /**
+   * View counts of one page, as GET /api/pages/:id/analytics reports them. Who may read them is
+   * decided by the route (the page read rule), not here.
+   */
+  async getPageViewStats(pageId: number): Promise<{
+    totalViews: number;
+    uniqueViewers: number;
+    viewsLast7Days: number;
+    dailyViews: Array<{ date: string; count: number }>;
+  }> {
+    const ofPage = eq(pageViews.pageId, pageId);
+    const [[total], [unique], [week], dailyViews] = await Promise.all([
+      this.db
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(pageViews)
+        .where(ofPage),
+      this.db
+        .select({ count: sql<number>`COUNT(DISTINCT ${pageViews.userId})` })
+        .from(pageViews)
+        .where(ofPage),
+      this.db
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(pageViews)
+        .where(and(ofPage, sql`${pageViews.viewedAt} > NOW() - INTERVAL '7 days'`)),
+      this.db
+        .select({
+          date: sql<string>`DATE(${pageViews.viewedAt})`,
+          count: sql<number>`COUNT(*)`,
+        })
+        .from(pageViews)
+        .where(and(ofPage, sql`${pageViews.viewedAt} > NOW() - INTERVAL '30 days'`))
+        .groupBy(sql`DATE(${pageViews.viewedAt})`)
+        .orderBy(sql`DATE(${pageViews.viewedAt})`),
+    ]);
+    return {
+      totalViews: Number(total?.count || 0),
+      uniqueViewers: Number(unique?.count || 0),
+      viewsLast7Days: Number(week?.count || 0),
+      dailyViews,
+    };
+  }
+
+  /**
+   * The caller's favorites, newest first, for GET /api/favorites: only rows whose page is live
+   * and listable for them (`listableBy`). A favorite of a page the caller can no longer list, or
+   * of a trashed page, is hidden, not deleted.
+   */
+  async getFavoritePages(viewer: PageViewer): Promise<
+    Array<{
+      id: number;
+      pageId: number;
+      createdAt: Date;
+      pageTitle: string;
+      pageSlug: string;
+      pageFolder: string;
+      pageUpdatedAt: Date;
+    }>
+  > {
+    if (!viewer.userId) return [];
+    return this.db
+      .select({
+        id: pageFavorites.id,
+        pageId: pageFavorites.pageId,
+        createdAt: pageFavorites.createdAt,
+        pageTitle: wikiPages.title,
+        pageSlug: wikiPages.slug,
+        pageFolder: wikiPages.folder,
+        pageUpdatedAt: wikiPages.updatedAt,
+      })
+      .from(pageFavorites)
+      .innerJoin(wikiPages, eq(pageFavorites.pageId, wikiPages.id))
+      .where(
+        and(
+          eq(pageFavorites.userId, viewer.userId),
+          isNull(wikiPages.deletedAt),
+          this.listableBy(viewer)
+        )
+      )
+      .orderBy(desc(pageFavorites.createdAt));
+  }
+
+  /** Whether the page is live and listable for the viewer: the rule of what may be favorited. */
+  async isPageListableBy(viewer: PageViewer, pageId: number): Promise<boolean> {
+    const rows = await this.db
+      .select({ id: wikiPages.id })
+      .from(wikiPages)
+      .where(and(eq(wikiPages.id, pageId), isNull(wikiPages.deletedAt), this.listableBy(viewer)))
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  /**
+   * Adds a favorite for the user. `null` when the page is already one of theirs. Whether the
+   * user may favorite the page is decided by the caller (`isPageListableBy`).
+   */
+  async addPageFavorite(userId: number, pageId: number): Promise<PageFavorite | null> {
+    const existing = await this.db
+      .select({ id: pageFavorites.id })
+      .from(pageFavorites)
+      .where(and(eq(pageFavorites.userId, userId), eq(pageFavorites.pageId, pageId)));
+    if (existing.length > 0) return null;
+    const [favorite] = await this.db.insert(pageFavorites).values({ userId, pageId }).returning();
+    return favorite;
+  }
+
+  /**
+   * The activity feed, newest first, for GET /api/activity. A row is visible to the viewer when
+   * it belongs to one of their teams, or when it has no team and its target is a page they may
+   * list (`listableBy`). Any other team-less row is hidden: it has no column that places it in
+   * an organization, so it fails closed.
+   */
+  async getActivityFeed(
+    viewer: PageViewer,
+    options: { limit: number; offset: number; action?: string; targetType?: string }
+  ): Promise<ActivityFeedEntry[]> {
+    const ofViewerTeams =
+      viewer.teamIds.length > 0 ? inArray(activityFeed.teamId, viewer.teamIds) : undefined;
+    const aboutListablePage = and(
+      isNull(activityFeed.teamId),
+      eq(activityFeed.targetType, 'page'),
+      sql`${wikiPages.id} IS NOT NULL`,
+      isNull(wikiPages.deletedAt),
+      this.listableBy(viewer)
+    );
+    const conditions: SQL[] = [or(ofViewerTeams, aboutListablePage)!];
+    if (options.action) conditions.push(eq(activityFeed.action, options.action));
+    if (options.targetType) conditions.push(eq(activityFeed.targetType, options.targetType));
+
+    const rows = await this.db
+      .select({ activity: activityFeed })
+      .from(activityFeed)
+      .leftJoin(
+        wikiPages,
+        and(eq(activityFeed.targetType, 'page'), eq(wikiPages.id, activityFeed.targetId))
+      )
+      .where(and(...conditions))
+      .orderBy(desc(activityFeed.createdAt), desc(activityFeed.id))
+      .limit(Math.max(options.limit, 1))
+      .offset(Math.max(options.offset, 0));
+    return rows.map((row: { activity: ActivityFeedEntry }) => row.activity);
+  }
+
   async getCalendarEvents(teamId?: number): Promise<CalendarEvent[]> {
     const query = this.db.select().from(calendarEvents);
     if (teamId) {
@@ -1605,6 +1960,51 @@ export class DBStorage {
     return (await this.getUserOrganizationId(userId)) ?? organizationId;
   }
 
+  // Accounts (`users`) and roster rows (`members`) are separate id spaces, linked only by email,
+  // the link `getUserTeamIds` already follows. Notifications address members, sessions carry a
+  // user id, so anything that compares the two goes through these three (issue #124 X1b).
+
+  /** The `members` rows of an account: those with exactly its email. Empty for an unknown user. */
+  async getMemberIdsForUser(userId: number): Promise<number[]> {
+    const rows: Array<{ id: number }> = await this.db
+      .select({ id: members.id })
+      .from(members)
+      .innerJoin(users, eq(users.email, members.email))
+      .where(eq(users.id, userId));
+    return rows.map((row) => Number(row.id));
+  }
+
+  /** The account behind a roster row: the user with exactly its email, or null. */
+  async getUserIdForMember(memberId: number): Promise<number | null> {
+    const [row] = await this.db
+      .select({ id: users.id })
+      .from(users)
+      .innerJoin(members, eq(members.email, users.email))
+      .where(eq(members.id, memberId))
+      .limit(1);
+    return row ? Number(row.id) : null;
+  }
+
+  /**
+   * The organization of a roster row: its account's when that account belongs to one, otherwise
+   * its team's. Null when neither places it (or the row is unknown); callers must then treat the
+   * member as outside every organization.
+   */
+  async getMemberOrganizationId(memberId: number): Promise<number | null> {
+    const [member] = await this.db
+      .select({ teamId: members.teamId })
+      .from(members)
+      .where(eq(members.id, memberId))
+      .limit(1);
+    if (!member) return null;
+    const userId = await this.getUserIdForMember(memberId);
+    if (userId !== null) {
+      const organizationId = await this.getUserOrganizationId(userId);
+      if (organizationId !== null) return organizationId;
+    }
+    return member.teamId == null ? null : this.getTeamOrganizationId(Number(member.teamId));
+  }
+
   /**
    * The organization a new page belongs to: its team's, or for a team-less page its creator's.
    * Throws OrganizationRequiredError when neither gives one, so a page never lands in an
@@ -1894,16 +2294,27 @@ export class DBStorage {
     return result[0];
   }
 
-  async getNotifications(recipientId: number): Promise<Notification[]> {
+  // Notifications address `members` rows; a signed-in account owns the rows whose email matches
+  // its own (`getMemberIdsForUser`). Every read and write below is restricted to a list of member
+  // ids, and an empty list never becomes an unfiltered query (issue #124 X1b).
+
+  async getNotifications(memberIds: number[]): Promise<Notification[]> {
+    if (memberIds.length === 0) return [];
     return this.db
       .select()
       .from(notifications)
-      .where(eq(notifications.recipientId, recipientId))
+      .where(inArray(notifications.recipientId, memberIds))
       .orderBy(desc(notifications.createdAt));
   }
 
-  async getNotification(id: number): Promise<Notification | undefined> {
-    const result = await this.db.select().from(notifications).where(eq(notifications.id, id));
+  /** The notification when it is addressed to one of the account's member rows, else undefined. */
+  async getNotificationForUser(id: number, userId: number): Promise<Notification | undefined> {
+    const memberIds = await this.getMemberIdsForUser(userId);
+    if (memberIds.length === 0) return undefined;
+    const result = await this.db
+      .select()
+      .from(notifications)
+      .where(and(eq(notifications.id, id), inArray(notifications.recipientId, memberIds)));
     return result[0];
   }
 
@@ -1914,42 +2325,51 @@ export class DBStorage {
 
   async updateNotification(
     id: number,
-    notification: UpdateNotification
+    notification: UpdateNotification,
+    memberIds: number[]
   ): Promise<Notification | undefined> {
+    if (memberIds.length === 0) return undefined;
     const result = await this.db
       .update(notifications)
       .set(notification)
-      .where(eq(notifications.id, id))
+      .where(and(eq(notifications.id, id), inArray(notifications.recipientId, memberIds)))
       .returning();
     return result[0];
   }
 
-  async deleteNotification(id: number): Promise<boolean> {
-    const result = await this.db.delete(notifications).where(eq(notifications.id, id)).returning();
+  async deleteNotification(id: number, memberIds: number[]): Promise<boolean> {
+    if (memberIds.length === 0) return false;
+    const result = await this.db
+      .delete(notifications)
+      .where(and(eq(notifications.id, id), inArray(notifications.recipientId, memberIds)))
+      .returning();
     return result.length > 0;
   }
 
-  async markNotificationAsRead(id: number): Promise<Notification | undefined> {
+  async markNotificationAsRead(id: number, memberIds: number[]): Promise<Notification | undefined> {
+    if (memberIds.length === 0) return undefined;
     const result = await this.db
       .update(notifications)
       .set({ isRead: true })
-      .where(eq(notifications.id, id))
+      .where(and(eq(notifications.id, id), inArray(notifications.recipientId, memberIds)))
       .returning();
     return result[0];
   }
 
-  async markAllNotificationsAsRead(recipientId: number): Promise<void> {
+  async markAllNotificationsAsRead(memberIds: number[]): Promise<void> {
+    if (memberIds.length === 0) return;
     await this.db
       .update(notifications)
       .set({ isRead: true })
-      .where(eq(notifications.recipientId, recipientId));
+      .where(inArray(notifications.recipientId, memberIds));
   }
 
-  async getUnreadNotificationCount(recipientId: number): Promise<number> {
+  async getUnreadNotificationCount(memberIds: number[]): Promise<number> {
+    if (memberIds.length === 0) return 0;
     const result = await this.db
       .select({ count: sql`count(*)` })
       .from(notifications)
-      .where(and(eq(notifications.recipientId, recipientId), eq(notifications.isRead, false)));
+      .where(and(inArray(notifications.recipientId, memberIds), eq(notifications.isRead, false)));
     return Number(result[0].count);
   }
 
@@ -1990,43 +2410,68 @@ export class DBStorage {
     return result.length > 0;
   }
 
-  async getTemplates(categoryId?: number): Promise<Template[]> {
-    const query = this.db.select().from(templates);
+  // Templates belong to an organization (issue #124 X1b): every read and write below is bound
+  // to the caller's organization in its WHERE clause, so a template of another organization is
+  // indistinguishable from an unknown id.
+
+  async getTemplates(organizationId: number, categoryId?: number): Promise<Template[]> {
+    const conditions = [eq(templates.organizationId, organizationId)];
     if (categoryId) {
-      query.where(eq(templates.categoryId, categoryId));
+      conditions.push(eq(templates.categoryId, categoryId));
     }
-    return query.orderBy(desc(templates.usageCount));
+    return this.db
+      .select()
+      .from(templates)
+      .where(and(...conditions))
+      .orderBy(desc(templates.usageCount));
   }
 
-  async getTemplate(id: number): Promise<Template | undefined> {
-    const result = await this.db.select().from(templates).where(eq(templates.id, id));
-    return result[0];
-  }
-
-  async createTemplate(template: InsertTemplate): Promise<Template> {
-    const result = await this.db.insert(templates).values(template).returning();
-    return result[0];
-  }
-
-  async updateTemplate(id: number, template: UpdateTemplate): Promise<Template | undefined> {
+  async getTemplate(id: number, organizationId: number): Promise<Template | undefined> {
     const result = await this.db
-      .update(templates)
-      .set(template)
-      .where(eq(templates.id, id))
+      .select()
+      .from(templates)
+      .where(and(eq(templates.id, id), eq(templates.organizationId, organizationId)));
+    return result[0];
+  }
+
+  async createTemplate(template: InsertTemplate, organizationId: number): Promise<Template> {
+    const result = await this.db
+      .insert(templates)
+      .values({ ...template, organizationId })
       .returning();
     return result[0];
   }
 
-  async deleteTemplate(id: number): Promise<boolean> {
-    const result = await this.db.delete(templates).where(eq(templates.id, id)).returning();
+  async updateTemplate(
+    id: number,
+    template: UpdateTemplate,
+    organizationId: number
+  ): Promise<Template | undefined> {
+    // A template never changes organization, whatever the caller passes.
+    const { organizationId: _ignored, ...changes } = template as UpdateTemplate & {
+      organizationId?: number;
+    };
+    const result = await this.db
+      .update(templates)
+      .set(changes)
+      .where(and(eq(templates.id, id), eq(templates.organizationId, organizationId)))
+      .returning();
+    return result[0];
+  }
+
+  async deleteTemplate(id: number, organizationId: number): Promise<boolean> {
+    const result = await this.db
+      .delete(templates)
+      .where(and(eq(templates.id, id), eq(templates.organizationId, organizationId)))
+      .returning();
     return result.length > 0;
   }
 
-  async incrementTemplateUsage(id: number): Promise<boolean> {
+  async incrementTemplateUsage(id: number, organizationId: number): Promise<boolean> {
     const result = await this.db
       .update(templates)
       .set({ usageCount: sql`${templates.usageCount} + 1` })
-      .where(eq(templates.id, id))
+      .where(and(eq(templates.id, id), eq(templates.organizationId, organizationId)))
       .returning();
     return result.length > 0;
   }
@@ -2118,17 +2563,17 @@ export class DBStorage {
 
   async getActiveWorkflowsByTrigger(
     triggerType: TriggerType,
-    teamId?: number
+    teamId?: number | string | null
   ): Promise<Workflow[]> {
-    const conditions = [eq(workflows.isActive, true)];
-    if (teamId) {
-      conditions.push(eq(workflows.teamId, teamId));
-    }
+    // Workflows belong to a team (#124 X1b): an event with no valid team has none to fire, and
+    // there is never an unfiltered query.
+    const team = typeof teamId === 'string' && /^\d+$/.test(teamId) ? Number(teamId) : teamId;
+    if (typeof team !== 'number' || !Number.isSafeInteger(team) || team <= 0) return [];
 
     const allWorkflows = await this.db
       .select()
       .from(workflows)
-      .where(and(...conditions));
+      .where(and(eq(workflows.isActive, true), eq(workflows.teamId, team)));
 
     // Filter by trigger type (since JSONB query is complex, filter in memory)
     return allWorkflows.filter((w: Workflow) => {

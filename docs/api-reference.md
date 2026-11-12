@@ -51,38 +51,38 @@
 
 ## 페이지 즐겨찾기 (Favorites)
 
-| Method | Endpoint                       | Auth | Description        |
-| ------ | ------------------------------ | ---- | ------------------ |
-| GET    | `/api/favorites`               | JWT  | 내 즐겨찾기 목록   |
-| POST   | `/api/favorites/:pageId`       | JWT  | 즐겨찾기 추가      |
-| DELETE | `/api/favorites/:pageId`       | JWT  | 즐겨찾기 제거      |
-| GET    | `/api/favorites/check/:pageId` | JWT  | 즐겨찾기 여부 확인 |
+| Method | Endpoint                       | Auth | Description                                               |
+| ------ | ------------------------------ | ---- | --------------------------------------------------------- |
+| GET    | `/api/favorites`               | JWT  | 내 즐겨찾기 목록                                          |
+| POST   | `/api/favorites/:pageId`       | JWT  | 즐겨찾기 추가. 목록에서 볼 수 있는 페이지만 (그 밖은 404) |
+| DELETE | `/api/favorites/:pageId`       | JWT  | 즐겨찾기 제거                                             |
+| GET    | `/api/favorites/check/:pageId` | JWT  | 즐겨찾기 여부 확인                                        |
 
 ---
 
 ## 페이지 분석 (Analytics)
 
-| Method | Endpoint                                  | Auth     | Description                                     |
-| ------ | ----------------------------------------- | -------- | ----------------------------------------------- |
-| POST   | `/api/pages/:id/view`                     | Optional | 조회 기록                                       |
-| GET    | `/api/pages/:id/analytics`                | Optional | 페이지 분석 (총 조회수, 고유 방문자, 일별 추이) |
-| GET    | `/api/analytics/popular?limit=20&days=30` | Optional | 인기 페이지 랭킹                                |
+| Method | Endpoint                                  | Auth             | Description                                                                              |
+| ------ | ----------------------------------------- | ---------------- | ---------------------------------------------------------------------------------------- |
+| POST   | `/api/pages/:id/view`                     | 페이지 읽기 권한 | 조회 기록. 읽을 수 없는 페이지는 기록하지 않음                                           |
+| GET    | `/api/pages/:id/analytics`                | 페이지 읽기 권한 | 페이지 분석 (총 조회수, 고유 방문자, 일별 추이)                                          |
+| GET    | `/api/analytics/popular?limit=20&days=30` | Optional         | 인기 페이지 랭킹. 호출자가 목록에서 볼 수 있는 페이지만 (인증 강제 시 세션이 없으면 401) |
 
 ---
 
 ## 활동 피드 (Activity Feed)
 
-| Method | Endpoint                          | Auth     | Description                      |
-| ------ | --------------------------------- | -------- | -------------------------------- |
-| GET    | `/api/activity?limit=50&offset=0` | Optional | 팀 활동 피드 (팀 소속 기준 필터) |
+| Method | Endpoint                          | Auth     | Description                                                            |
+| ------ | --------------------------------- | -------- | ---------------------------------------------------------------------- |
+| GET    | `/api/activity?limit=50&offset=0` | Optional | 활동 피드. 자기 팀의 행과, 팀 없는 행 중 볼 수 있는 페이지가 대상인 것 |
 
 ---
 
 ## 시스템 통계 (Stats)
 
-| Method | Endpoint              | Auth | Description                                   |
-| ------ | --------------------- | ---- | --------------------------------------------- |
-| GET    | `/api/stats/overview` | JWT  | 전체 통계 (페이지 수, 사용자 수, 태스크 현황) |
+| Method | Endpoint              | Auth | Description                                                  |
+| ------ | --------------------- | ---- | ------------------------------------------------------------ |
+| GET    | `/api/stats/overview` | JWT  | 통계 (페이지, 계정, 태스크). 호출자가 볼 수 있는 범위만 집계 |
 
 ---
 
@@ -164,30 +164,30 @@
 
 ## 알림 (Notifications)
 
-| Method | Endpoint                      | Auth        | Description    |
-| ------ | ----------------------------- | ----------- | -------------- |
-| GET    | `/api/notifications`          | Conditional | 알림 목록      |
-| GET    | `/api/notifications/:id`      | JWT         | 알림 상세      |
-| POST   | `/api/notifications`          | Conditional | 알림 생성      |
-| PUT    | `/api/notifications/:id`      | JWT         | 알림 수정      |
-| DELETE | `/api/notifications/:id`      | JWT         | 알림 삭제      |
-| PATCH  | `/api/notifications/:id/read` | JWT         | 읽음 처리      |
-| PATCH  | `/api/notifications/read-all` | JWT         | 전체 읽음 처리 |
+| Method | Endpoint                      | Auth | Description    |
+| ------ | ----------------------------- | ---- | -------------- |
+| GET    | `/api/notifications`          | JWT  | 알림 목록      |
+| GET    | `/api/notifications/:id`      | JWT  | 알림 상세      |
+| POST   | `/api/notifications`          | JWT  | 알림 생성      |
+| PUT    | `/api/notifications/:id`      | JWT  | 알림 수정      |
+| DELETE | `/api/notifications/:id`      | JWT  | 알림 삭제      |
+| PATCH  | `/api/notifications/:id/read` | JWT  | 읽음 처리      |
+| PATCH  | `/api/notifications/read-all` | JWT  | 전체 읽음 처리 |
 
 ---
 
 ## 템플릿 (Templates)
 
-| Method | Endpoint                   | Auth        | Description                  |
-| ------ | -------------------------- | ----------- | ---------------------------- |
-| GET    | `/api/template-categories` | -           | 카테고리 목록                |
-| POST   | `/api/template-categories` | Conditional | 카테고리 생성                |
-| GET    | `/api/templates`           | -           | 템플릿 목록                  |
-| GET    | `/api/templates/:id`       | -           | 템플릿 상세                  |
-| POST   | `/api/templates`           | Conditional | 템플릿 생성                  |
-| PUT    | `/api/templates/:id`       | Conditional | 템플릿 수정                  |
-| DELETE | `/api/templates/:id`       | Conditional | 템플릿 삭제                  |
-| POST   | `/api/templates/:id/use`   | Conditional | 템플릿 사용 (사용 횟수 증가) |
+| Method | Endpoint                   | Auth  | Description                  |
+| ------ | -------------------------- | ----- | ---------------------------- |
+| GET    | `/api/template-categories` | -     | 카테고리 목록                |
+| POST   | `/api/template-categories` | Admin | 카테고리 생성                |
+| GET    | `/api/templates`           | JWT   | 템플릿 목록                  |
+| GET    | `/api/templates/:id`       | JWT   | 템플릿 상세                  |
+| POST   | `/api/templates`           | JWT   | 템플릿 생성                  |
+| PUT    | `/api/templates/:id`       | JWT   | 템플릿 수정                  |
+| DELETE | `/api/templates/:id`       | JWT   | 템플릿 삭제                  |
+| POST   | `/api/templates/:id/use`   | JWT   | 템플릿 사용 (사용 횟수 증가) |
 
 ---
 
@@ -196,13 +196,13 @@
 | Method | Endpoint                    | Auth        | Description                 |
 | ------ | --------------------------- | ----------- | --------------------------- |
 | GET    | `/api/workflows`            | Conditional | 워크플로우 목록             |
-| GET    | `/api/workflows/:id`        | Conditional | 워크플로우 상세             |
-| POST   | `/api/workflows`            | Conditional | 워크플로우 생성             |
-| PUT    | `/api/workflows/:id`        | Conditional | 워크플로우 수정             |
-| DELETE | `/api/workflows/:id`        | Conditional | 워크플로우 삭제             |
-| POST   | `/api/workflows/:id/toggle` | Conditional | 워크플로우 활성화/비활성화  |
-| POST   | `/api/workflows/:id/test`   | Conditional | 워크플로우 테스트 (Dry-run) |
-| GET    | `/api/workflows/:id/runs`   | Conditional | 실행 히스토리               |
+| GET    | `/api/workflows/:id`        | JWT         | 워크플로우 상세             |
+| POST   | `/api/workflows`            | JWT         | 워크플로우 생성             |
+| PUT    | `/api/workflows/:id`        | JWT         | 워크플로우 수정             |
+| DELETE | `/api/workflows/:id`        | JWT         | 워크플로우 삭제             |
+| POST   | `/api/workflows/:id/toggle` | JWT         | 워크플로우 활성화/비활성화  |
+| POST   | `/api/workflows/:id/test`   | JWT         | 워크플로우 테스트 (Dry-run) |
+| GET    | `/api/workflows/:id/runs`   | JWT         | 실행 히스토리               |
 
 ---
 
@@ -223,13 +223,13 @@
 
 ## 파일 & 업로드 (Files)
 
-| Method | Endpoint                        | Auth        | Description                      |
-| ------ | ------------------------------- | ----------- | -------------------------------- |
-| POST   | `/api/upload`                   | JWT         | 파일 업로드 (이미지 자동 최적화) |
-| GET    | `/api/uploads/images/:filename` | JWT         | 이미지 다운로드                  |
-| GET    | `/api/uploads/files/:filename`  | JWT         | 파일 다운로드                    |
-| GET    | `/api/uploads`                  | Optional    | 파일 목록                        |
-| DELETE | `/api/uploads/:filename`        | Conditional | 파일 삭제                        |
+| Method | Endpoint                        | Auth | Description                      |
+| ------ | ------------------------------- | ---- | -------------------------------- |
+| POST   | `/api/upload`                   | JWT  | 파일 업로드 (이미지 자동 최적화) |
+| GET    | `/api/uploads/images/:filename` | JWT  | 이미지 다운로드                  |
+| GET    | `/api/uploads/files/:filename`  | JWT  | 파일 다운로드                    |
+| GET    | `/api/uploads`                  | JWT  | 파일 목록                        |
+| DELETE | `/api/uploads/:type/:filename`  | JWT  | 파일 삭제                        |
 
 ---
 
@@ -339,9 +339,9 @@
 | GET    | `/api/page-tree`       | Optional    | 페이지 트리 (네스팅 구조)                 |
 | GET    | `/api/knowledge-graph` | Conditional | 지식 그래프 데이터                        |
 | GET    | `/api/saved-views`     | Optional    | 저장된 뷰 목록                            |
-| POST   | `/api/saved-views`     | Conditional | 저장된 뷰 생성                            |
-| PUT    | `/api/saved-views/:id` | Conditional | 저장된 뷰 수정                            |
-| DELETE | `/api/saved-views/:id` | Conditional | 저장된 뷰 삭제                            |
+| POST   | `/api/saved-views`     | JWT         | 저장된 뷰 생성                            |
+| PUT    | `/api/saved-views/:id` | JWT         | 저장된 뷰 수정                            |
+| DELETE | `/api/saved-views/:id` | JWT         | 저장된 뷰 삭제                            |
 
 ---
 

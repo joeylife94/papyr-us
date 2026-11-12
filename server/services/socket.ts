@@ -882,38 +882,45 @@ export async function setupSocketIO(
       // Handle user presence for member notifications
       socket.on(
         'join-member',
-        (
+        async (
           data: { memberId: number | string },
           ack?: (resp: { ok: boolean; error?: string }) => void
         ) => {
-          const requestedMemberId = parsePositiveInt(data.memberId);
+          const reply = (resp: { ok: boolean; error?: string }) => {
+            if (typeof ack === 'function') ack(resp);
+          };
+          const requestedMemberId = parsePositiveInt(data?.memberId);
           const authenticatedUserId = parsePositiveInt(socket.userId);
-          const isAdmin = socket.userRole === 'admin';
 
-          if (!requestedMemberId) {
-            if (typeof ack === 'function') ack({ ok: false, error: 'Invalid memberId' });
-            return;
+          if (!requestedMemberId) return reply({ ok: false, error: 'Invalid memberId' });
+          if (!authenticatedUserId) return reply({ ok: false, error: 'Authentication required' });
+
+          // A socket is only ever in its own account's room (`user:<users.id>`, joined on
+          // connect). The token's role claim grants nothing here. The id is accepted when it is
+          // that account's id, or one of the member rows carrying the account's email (what the
+          // browser client sends); neither joins anything new.
+          let allowed = requestedMemberId === authenticatedUserId;
+          if (!allowed) {
+            try {
+              const ownMemberIds = await storage.getMemberIdsForUser(authenticatedUserId);
+              allowed = ownMemberIds.includes(requestedMemberId);
+            } catch {
+              allowed = false; // fail closed
+            }
           }
-
-          if (!authenticatedUserId) {
-            if (typeof ack === 'function') ack({ ok: false, error: 'Authentication required' });
-            return;
-          }
-
-          if (requestedMemberId !== authenticatedUserId && !isAdmin) {
+          if (!allowed) {
             logger.warn('Denied unauthorized notification room join', {
               socketId: socket.id,
               authenticatedUserId,
               requestedMemberId,
             });
-            if (typeof ack === 'function') ack({ ok: false, error: 'Forbidden' });
-            return;
+            return reply({ ok: false, error: 'Forbidden' });
           }
 
-          const memberRoom = `user:${requestedMemberId}`;
-          socket.join(memberRoom);
-          logger.info(`[Collab] User ${socket.userEmail} joined member room: ${memberRoom}`);
-          if (typeof ack === 'function') ack({ ok: true });
+          const ownRoom = `user:${authenticatedUserId}`;
+          socket.join(ownRoom);
+          logger.info(`[Collab] User ${socket.userEmail} joined member room: ${ownRoom}`);
+          reply({ ok: true });
         }
       );
     }

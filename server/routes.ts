@@ -1,4 +1,4 @@
-import type { Express, Response } from 'express';
+import type { Express, NextFunction, Response } from 'express';
 import { createServer, type Server as HttpServer } from 'http';
 import { Server as SocketIoServer } from 'socket.io';
 import {
@@ -39,12 +39,8 @@ import {
   insertSavedViewSchema,
   updateSavedViewSchema,
   pageFavorites,
-  pageViews,
-  activityFeed,
   wikiPages,
   pageVersions,
-  tasks,
-  comments,
   users,
   pageIconSchema,
   pageCoverSchema,
@@ -58,7 +54,9 @@ import {
   deleteUploadedFile,
   listUploadedFiles,
   getFileInfo,
-  getFileTeamId,
+  getFileMeta,
+  checkUploadAccess,
+  isSafeUploadFilename,
 } from './services/upload.js';
 import {
   smartSearch,
@@ -1560,78 +1558,13 @@ export async function registerRoutes(
 
   // ==================== Dashboard Stats API ====================
 
-  app.get('/api/stats/dashboard', optionalAuth, async (req: AuthRequest, res) => {
+  // Instance-wide figures were a read across organizations and teams. Both stats routes now
+  // always require a session (whatever ENFORCE_AUTH_WRITES says) and count only what the caller
+  // may list (issue #124 X1b): see DBStorage.getDashboardStats.
+  app.get('/api/stats/dashboard', authMiddleware, async (req: AuthRequest, res) => {
     try {
-      const db = (storage as any).db;
-      if (!db) return res.status(500).json({ error: 'Database not available' });
-
-      const { sql: sqlFn, count } = await import('drizzle-orm');
-
-      // Total counts
-      const [pageCount] = await db
-        .select({ count: sqlFn`count(*)::int` })
-        .from(wikiPages)
-        .where(isNull(wikiPages.deletedAt));
-      const [taskCount] = await db.select({ count: sqlFn`count(*)::int` }).from(tasks);
-      const [commentCount] = await db.select({ count: sqlFn`count(*)::int` }).from(comments);
-      const [userCount] = await db.select({ count: sqlFn`count(*)::int` }).from(users);
-
-      // Pages created in last 7 days
-      const [recentPages] = await db
-        .select({ count: sqlFn`count(*)::int` })
-        .from(wikiPages)
-        .where(
-          sqlFn`${wikiPages.createdAt} > NOW() - INTERVAL '7 days' AND ${wikiPages.deletedAt} IS NULL`
-        );
-
-      // Tasks completed in last 7 days
-      const [recentTasks] = await db
-        .select({ count: sqlFn`count(*)::int` })
-        .from(tasks)
-        .where(sqlFn`${tasks.status} = 'done' AND ${tasks.updatedAt} > NOW() - INTERVAL '7 days'`);
-
-      // Page growth over last 30 days (daily)
-      const pageGrowth = await db.execute(
-        sqlFn`SELECT DATE(created_at) as date, COUNT(*)::int as count
-              FROM wiki_pages
-              WHERE created_at > NOW() - INTERVAL '30 days' AND deleted_at IS NULL
-              GROUP BY DATE(created_at)
-              ORDER BY date`
-      );
-
-      // Top contributors (by pages authored)
-      const topContributors = await db.execute(
-        sqlFn`SELECT author, COUNT(*)::int as pages_created
-              FROM wiki_pages
-              WHERE deleted_at IS NULL
-              GROUP BY author
-              ORDER BY pages_created DESC
-              LIMIT 10`
-      );
-
-      // Task status breakdown
-      const taskBreakdown = await db.execute(
-        sqlFn`SELECT status, COUNT(*)::int as count
-              FROM tasks
-              GROUP BY status
-              ORDER BY count DESC`
-      );
-
-      res.json({
-        totals: {
-          pages: pageCount.count,
-          tasks: taskCount.count,
-          comments: commentCount.count,
-          users: userCount.count,
-        },
-        recent: {
-          pagesThisWeek: recentPages.count,
-          tasksCompletedThisWeek: recentTasks.count,
-        },
-        pageGrowth: pageGrowth.rows || pageGrowth,
-        topContributors: topContributors.rows || topContributors,
-        taskBreakdown: taskBreakdown.rows || taskBreakdown,
-      });
+      const viewer = await storage.getPageViewer(req.user!.id);
+      res.json(await storage.getDashboardStats(viewer));
     } catch (error) {
       logger.error('Error fetching dashboard stats:', { error });
       res.status(500).json({ error: 'Failed to fetch dashboard stats' });
@@ -2485,11 +2418,12 @@ export async function registerRoutes(
 
   // File Upload API. The team is a multipart field, so the membership check runs after the
   // multipart parser (files stay in memory until the handler saves them); before it, the check
-  // saw no body and a file could be saved under any team.
+  // saw no body and a file could be saved under any team. A session is always required: the
+  // file is recorded under the uploader's organization (issue #124 X1b).
   app.post(
     '/api/upload',
     rlUpload,
-    requireAuthIfEnabled,
+    authMiddleware,
     upload.array('files', 5),
     requireTeamMembership,
     async (req: any, res) => {
@@ -2498,11 +2432,19 @@ export async function registerRoutes(
           return res.status(400).json({ message: 'No files uploaded' });
         }
 
-        // Stored as sent (an id or a name, as before); requireTeamMembership checked that it
-        // names the caller's team and the same team as any query teamId.
-        const teamId = req.body.teamId;
+        const userId = Number(req.user?.id);
+        const organizationId = await storage.getUserOrganizationId(userId);
+        if (organizationId === null || organizationId === undefined) {
+          return organizationRequired(req, res);
+        }
+
+        // The team requireTeamMembership resolved and checked (from the query, the body or a
+        // team name), stored as its numeric id; never the raw field.
+        const teamId: string | undefined =
+          req.checkedTeamId !== undefined ? String(req.checkedTeamId) : undefined;
+        const owner = { organizationId, uploadedBy: userId };
         const uploadedFiles = await Promise.all(
-          req.files.map((file: any) => processUploadedFile(file, teamId))
+          req.files.map((file: any) => processUploadedFile(file, teamId, owner))
         );
 
         res.status(201).json({
@@ -2519,29 +2461,58 @@ export async function registerRoutes(
     }
   );
 
+  // May the signed-in caller read or delete this upload (issue #124 X1b)? Answers the refusal
+  // itself and returns false when not. The rule is checkUploadAccess; any failing lookup denies.
+  async function authorizeUploadAccess(
+    req: AuthRequest,
+    res: Response,
+    filename: string,
+    isImg: boolean
+  ): Promise<boolean> {
+    const userId = Number(req.user?.id);
+    if (!Number.isInteger(userId) || userId <= 0) {
+      res.status(401).json({ message: 'Authentication required' });
+      return false;
+    }
+    const meta = await getFileMeta(filename, isImg);
+    if (!meta) {
+      res.status(403).json({ message: 'File metadata unavailable' });
+      return false;
+    }
+    const organizationId = await storage.getUserOrganizationId(userId);
+    if (organizationId === null || organizationId === undefined) {
+      organizationRequired(req, res);
+      return false;
+    }
+    const access = await checkUploadAccess(
+      meta,
+      { organizationId, teamIds: await storage.getUserTeamIds(userId) },
+      {
+        defaultOrganizationId: () => storage.getDefaultOrganizationId(),
+        teamByName: async (name) => {
+          const team = await storage.getTeamByName(name);
+          return team
+            ? { id: Number(team.id), organizationId: Number(team.organizationId) }
+            : undefined;
+        },
+      }
+    );
+    if (access !== 'allowed') {
+      res.status(403).json({ message: 'You are not a member of this team' });
+      return false;
+    }
+    return true;
+  }
+
   // Serve uploaded images
   app.get('/api/uploads/images/:filename', authMiddleware, async (req: AuthRequest, res) => {
     try {
       const { filename } = req.params;
-
-      const fileTeamId = await getFileTeamId(filename, true);
-
-      // Fail-secure: sidecar missing or unreadable ? deny rather than silently allow
-      if (fileTeamId === undefined) {
-        return res.status(403).json({ message: 'File metadata unavailable' });
+      if (!isSafeUploadFilename(filename)) {
+        return res.status(400).json({ message: 'Invalid filename' });
       }
 
-      // File belongs to a specific team ? verify membership
-      if (fileTeamId !== null) {
-        if (!req.user?.id) {
-          return res.status(401).json({ message: 'Authentication required' });
-        }
-        const userTeamIds = await storage.getUserTeamIds(req.user.id);
-        if (!userTeamIds.map(String).includes(fileTeamId)) {
-          return res.status(403).json({ message: 'You are not a member of this team' });
-        }
-      }
-      // fileTeamId === null �� explicitly public file ? proceed
+      if (!(await authorizeUploadAccess(req, res, filename, true))) return;
 
       const fileInfo = await getFileInfo(filename, true);
 
@@ -2564,25 +2535,11 @@ export async function registerRoutes(
   app.get('/api/uploads/files/:filename', authMiddleware, async (req: AuthRequest, res) => {
     try {
       const { filename } = req.params;
-
-      const fileTeamId = await getFileTeamId(filename, false);
-
-      // Fail-secure: sidecar missing or unreadable ? deny rather than silently allow
-      if (fileTeamId === undefined) {
-        return res.status(403).json({ message: 'File metadata unavailable' });
+      if (!isSafeUploadFilename(filename)) {
+        return res.status(400).json({ message: 'Invalid filename' });
       }
 
-      // File belongs to a specific team ? verify membership
-      if (fileTeamId !== null) {
-        if (!req.user?.id) {
-          return res.status(401).json({ message: 'Authentication required' });
-        }
-        const userTeamIds = await storage.getUserTeamIds(req.user.id);
-        if (!userTeamIds.map(String).includes(fileTeamId)) {
-          return res.status(403).json({ message: 'You are not a member of this team' });
-        }
-      }
-      // fileTeamId === null �� explicitly public file ? proceed
+      if (!(await authorizeUploadAccess(req, res, filename, false))) return;
 
       const fileInfo = await getFileInfo(filename, false);
 
@@ -2603,17 +2560,24 @@ export async function registerRoutes(
   });
 
   // List uploaded files
-  app.get('/api/uploads', optionalAuth, requireTeamMembership, async (req: AuthRequest, res) => {
+  app.get('/api/uploads', authMiddleware, requireTeamMembership, async (req: AuthRequest, res) => {
     try {
-      const teamId = req.query.teamId as string | undefined;
+      // A team's files carry its numeric id, or (older uploads) its name.
+      const listTeam = async (id: number) => {
+        // A legacy sidecar holding a team name is the default organization's (D5): the name
+        // counts only for a team of that organization.
+        const team = await storage.getTeam(id);
+        const legacy =
+          team?.name && Number(team.organizationId) === (await storage.getDefaultOrganizationId());
+        return listUploadedFiles(String(id), legacy ? [team!.name] : []);
+      };
+      const teamId = req.checkedTeamId;
 
-      if (!teamId) {
-        // No teamId specified ? scope to user's teams to prevent full data leak
+      if (teamId === undefined) {
+        // No team specified: scope to the user's teams to prevent full data leak
         const userTeamIds = (req as any).userTeamIds as number[] | undefined;
         if (userTeamIds && userTeamIds.length > 0) {
-          const allLists = await Promise.all(
-            userTeamIds.map((tid) => listUploadedFiles(String(tid)))
-          );
+          const allLists = await Promise.all(userTeamIds.map((tid) => listTeam(tid)));
           return res.json({
             images: allLists.flatMap((l) => l.images),
             files: allLists.flatMap((l) => l.files),
@@ -2622,49 +2586,42 @@ export async function registerRoutes(
         return res.json({ images: [], files: [] });
       }
 
-      const fileList = await listUploadedFiles(teamId);
-      res.json(fileList);
+      res.json(await listTeam(teamId));
     } catch (error) {
       res.status(500).json({ message: 'Error listing files' });
     }
   });
 
-  // Delete uploaded file
-  app.delete(
-    '/api/uploads/:type/:filename',
-    requireAuthIfEnabled,
-    async (req: AuthRequest, res) => {
-      try {
-        const { type, filename } = req.params;
-        const isImg = type === 'images';
+  // Delete uploaded file. Needs a session and the same access as reading it: a team's file is
+  // deleted by that team's members, a team-less file by accounts of its organization, a file
+  // without readable ownership by nobody (issue #124 X1b).
+  app.delete('/api/uploads/:type/:filename', authMiddleware, async (req: AuthRequest, res) => {
+    try {
+      const { type, filename } = req.params;
+      const isImg = type === 'images';
 
-        if (type !== 'images' && type !== 'files') {
-          return res.status(400).json({ message: 'Invalid file type' });
-        }
-
-        // Verify the requester belongs to the team that uploaded this file
-        const fileTeamId = await getFileTeamId(filename, isImg);
-        if (fileTeamId && req.user?.id) {
-          const userTeamIds = await storage.getUserTeamIds(req.user.id);
-          if (!userTeamIds.map(String).includes(fileTeamId)) {
-            return res.status(403).json({ message: 'You are not a member of this team' });
-          }
-        } else if (fileTeamId && config.enforceAuthForWrites) {
-          return res.status(401).json({ message: 'Authentication required' });
-        }
-
-        const deleted = await deleteUploadedFile(filename, isImg);
-
-        if (!deleted) {
-          return res.status(404).json({ message: 'File not found' });
-        }
-
-        res.json({ message: 'File deleted successfully' });
-      } catch (error) {
-        res.status(500).json({ message: 'Error deleting file' });
+      if (type !== 'images' && type !== 'files') {
+        return res.status(400).json({ message: 'Invalid file type' });
       }
+      // The name is one path segment of an upload, nothing else (a decoded parameter can hold
+      // separators). Checked before any lookup or file-system call.
+      if (!isSafeUploadFilename(filename)) {
+        return res.status(400).json({ message: 'Invalid filename' });
+      }
+
+      if (!(await authorizeUploadAccess(req, res, filename, isImg))) return;
+
+      const deleted = await deleteUploadedFile(filename, isImg);
+
+      if (!deleted) {
+        return res.status(404).json({ message: 'File not found' });
+      }
+
+      res.json({ message: 'File deleted successfully' });
+    } catch (error) {
+      res.status(500).json({ message: 'Error deleting file' });
     }
-  );
+  });
 
   if (featureFlags.FEATURE_ADMIN) {
     // Whether the signed-in user is a platform admin (the admin panel asks before showing itself).
@@ -3050,18 +3007,84 @@ export async function registerRoutes(
   });
 
   if (featureFlags.FEATURE_NOTIFICATIONS) {
-    // Notifications API
-    app.get('/api/notifications', requireAuthIfEnabled, async (req: AuthRequest, res) => {
+    // Notifications API. Rows address `members`; a signed-in account owns the rows of the member
+    // records carrying its own email (storage.getMemberIdsForUser). Anything else, including an
+    // unknown id, answers 404 (issue #124 X1b).
+    const notificationNotFound = { message: 'Notification not found' };
+
+    // Realtime: deliver to the room of the account behind the recipient member row, and nowhere
+    // else. A member row without an account has no room, so nothing is emitted.
+    const emitNotificationEvent = async (
+      event: 'notification:new' | 'notification:updated',
+      notification: { recipientId: number }
+    ) => {
+      const ns = io?.of('/collab');
+      if (!ns) return;
+      const recipientUserId = await storage.getUserIdForMember(notification.recipientId);
+      if (recipientUserId === null || recipientUserId === undefined) return;
+      const memberIds = await storage.getMemberIdsForUser(recipientUserId);
+      ns.to(`user:${recipientUserId}`).emit(event, notification);
+      const count = await storage.getUnreadNotificationCount(memberIds);
+      ns.to(`user:${recipientUserId}`).emit('notification:unread-count', {
+        recipientId: notification.recipientId,
+        count,
+      });
+    };
+
+    // Whether `userId` may create a notification with this content: the recipient is in the
+    // caller's organization, the sender is the caller's own member row, and every related record
+    // is one the caller may read. Unknown records and records that cannot be read refuse alike.
+    const mayCreateNotification = async (
+      userId: number,
+      data: {
+        recipientId: number;
+        senderId?: number | null;
+        relatedPageId?: number | null;
+        relatedTaskId?: number | null;
+        relatedCommentId?: number | null;
+      }
+    ): Promise<boolean> => {
+      const callerOrganizationId = await storage.getUserOrganizationId(userId);
+      if (callerOrganizationId === null || callerOrganizationId === undefined) return false;
+      const recipientOrganizationId = await storage.getMemberOrganizationId(data.recipientId);
+      if (recipientOrganizationId !== callerOrganizationId) return false;
+
+      if (data.senderId != null) {
+        const mine = await storage.getMemberIdsForUser(userId);
+        if (!mine.includes(data.senderId)) return false;
+      }
+
+      const readablePage = async (pageId: number): Promise<boolean> => {
+        const page = await storage.getWikiPage(pageId);
+        if (!page) return false;
+        return (await storage.checkPagePermission(userId, pageId, 'viewer')) === true;
+      };
+      if (data.relatedPageId != null && !(await readablePage(data.relatedPageId))) return false;
+      if (data.relatedCommentId != null) {
+        const comment = await storage.getComment(data.relatedCommentId);
+        if (!comment || !(await readablePage(comment.pageId))) return false;
+      }
+      if (data.relatedTaskId != null) {
+        const task = await storage.getTask(data.relatedTaskId);
+        if (!task) return false;
+        const teamIds = (await storage.getUserTeamIds(userId)).map((id) => String(id));
+        if (!teamIds.includes(String(task.teamId))) return false;
+      }
+      return true;
+    };
+
+    app.get('/api/notifications', authMiddleware, async (req: AuthRequest, res) => {
       try {
-        const recipientId = req.user?.id;
-        if (!recipientId) {
+        const userId = req.user?.id;
+        if (!userId) {
           return res.status(401).json({ message: 'Authentication required' });
         }
 
         const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
         const cursor = req.query.cursor as string | undefined;
 
-        const notifications = await storage.getNotifications(recipientId);
+        const memberIds = await storage.getMemberIdsForUser(userId);
+        const notifications = memberIds.length ? await storage.getNotifications(memberIds) : [];
 
         // Apply cursor-based pagination
         let paginatedNotifications = notifications;
@@ -3098,36 +3121,32 @@ export async function registerRoutes(
       }
     });
 
-    app.get(
-      '/api/notifications/unread-count',
-      requireAuthIfEnabled,
-      async (req: AuthRequest, res) => {
-        try {
-          const recipientId = req.user?.id;
-          if (!recipientId) {
-            return res.status(401).json({ message: 'Authentication required' });
-          }
-
-          const count = await storage.getUnreadNotificationCount(recipientId);
-          res.json({ count });
-        } catch (error) {
-          res.status(500).json({ message: 'Server error' });
+    app.get('/api/notifications/unread-count', authMiddleware, async (req: AuthRequest, res) => {
+      try {
+        const userId = req.user?.id;
+        if (!userId) {
+          return res.status(401).json({ message: 'Authentication required' });
         }
+
+        const memberIds = await storage.getMemberIdsForUser(userId);
+        const count = memberIds.length ? await storage.getUnreadNotificationCount(memberIds) : 0;
+        res.json({ count });
+      } catch (error) {
+        res.status(500).json({ message: 'Server error' });
       }
-    );
+    });
 
     app.get('/api/notifications/:id', authMiddleware, async (req: AuthRequest, res) => {
       try {
+        const userId = req.user?.id;
+        if (!userId) {
+          return res.status(401).json({ message: 'Authentication required' });
+        }
         const id = parseInt(req.params.id);
-        const notification = await storage.getNotification(id);
+        const notification = await storage.getNotificationForUser(id, userId);
 
         if (!notification) {
-          return res.status(404).json({ message: 'Notification not found' });
-        }
-
-        // Ownership check: only the recipient may view their notification
-        if (req.user?.id && notification.recipientId !== req.user.id) {
-          return res.status(403).json({ message: 'Access denied' });
+          return res.status(404).json(notificationNotFound);
         }
 
         res.json(notification);
@@ -3136,21 +3155,20 @@ export async function registerRoutes(
       }
     });
 
-    app.post('/api/notifications', requireAuthIfEnabled, async (req, res) => {
+    app.post('/api/notifications', authMiddleware, async (req: AuthRequest, res) => {
       try {
+        // There is no organization to check against without a session, so no session, no write.
+        const userId = req.user?.id;
+        if (!userId) {
+          return res.status(401).json({ message: 'Authentication required' });
+        }
         const notificationData = insertNotificationSchema.parse(req.body);
+        if (!(await mayCreateNotification(userId, notificationData))) {
+          return res.status(400).json({ message: 'Invalid notification data' });
+        }
         const notification = await storage.createNotification(notificationData);
-        // Realtime: emit to user room and update unread count
         try {
-          const ns = io?.of('/collab');
-          if (ns) {
-            ns.to(`user:${notification.recipientId}`).emit('notification:new', notification);
-            const count = await storage.getUnreadNotificationCount(notification.recipientId);
-            ns.to(`user:${notification.recipientId}`).emit('notification:unread-count', {
-              recipientId: notification.recipientId,
-              count,
-            });
-          }
+          await emitNotificationEvent('notification:new', notification);
         } catch (emitErr) {
           console.warn('Socket emit failed for notification:new', emitErr);
         }
@@ -3163,33 +3181,46 @@ export async function registerRoutes(
 
     app.put('/api/notifications/:id', authMiddleware, async (req: AuthRequest, res) => {
       try {
+        const userId = req.user?.id;
+        if (!userId) {
+          return res.status(401).json({ message: 'Authentication required' });
+        }
         const id = parseInt(req.params.id);
         // Ownership check: fetch before updating
-        const existing = await storage.getNotification(id);
+        const existing = await storage.getNotificationForUser(id, userId);
         if (!existing) {
-          return res.status(404).json({ message: 'Notification not found' });
-        }
-        if (req.user?.id && existing.recipientId !== req.user.id) {
-          return res.status(403).json({ message: 'Access denied' });
+          return res.status(404).json(notificationNotFound);
         }
         const updateData = updateNotificationSchema.parse(req.body);
-        const notification = await storage.updateNotification(id, updateData);
+        // Content may change; who a notification is for, who sent it and what it points at may not.
+        const fixedFields = [
+          'recipientId',
+          'senderId',
+          'relatedPageId',
+          'relatedTaskId',
+          'relatedCommentId',
+        ] as const;
+        for (const field of fixedFields) {
+          if (updateData[field] !== undefined && updateData[field] !== existing[field]) {
+            return res.status(400).json({ message: 'Invalid update data' });
+          }
+        }
+        const changes: Record<string, unknown> = {};
+        for (const field of ['isRead', 'title', 'content', 'type'] as const) {
+          if (updateData[field] !== undefined) changes[field] = updateData[field];
+        }
+        // Nothing to write (the body only repeated stored values): answer with the row as it is.
+        if (Object.keys(changes).length === 0) return res.json(existing);
+        const memberIds = await storage.getMemberIdsForUser(userId);
+        const notification = await storage.updateNotification(id, changes, memberIds);
 
         if (!notification) {
-          return res.status(404).json({ message: 'Notification not found' });
+          return res.status(404).json(notificationNotFound);
         }
 
         // Realtime: emit updated notification and possibly unread count change
         try {
-          const ns = io?.of('/collab');
-          if (ns) {
-            ns.to(`user:${notification.recipientId}`).emit('notification:updated', notification);
-            const count = await storage.getUnreadNotificationCount(notification.recipientId);
-            ns.to(`user:${notification.recipientId}`).emit('notification:unread-count', {
-              recipientId: notification.recipientId,
-              count,
-            });
-          }
+          await emitNotificationEvent('notification:updated', notification);
         } catch (emitErr) {
           console.warn('Socket emit failed for notification:updated', emitErr);
         }
@@ -3202,28 +3233,33 @@ export async function registerRoutes(
 
     app.delete('/api/notifications/:id', authMiddleware, async (req: AuthRequest, res) => {
       try {
+        const userId = req.user?.id;
+        if (!userId) {
+          return res.status(401).json({ message: 'Authentication required' });
+        }
         const id = parseInt(req.params.id);
         // Ownership check: fetch before deleting
-        const existing = await storage.getNotification(id);
+        const existing = await storage.getNotificationForUser(id, userId);
         if (!existing) {
-          return res.status(404).json({ message: 'Notification not found' });
+          return res.status(404).json(notificationNotFound);
         }
-        if (req.user?.id && existing.recipientId !== req.user.id) {
-          return res.status(403).json({ message: 'Access denied' });
-        }
-        const deleted = await storage.deleteNotification(id);
+        const memberIds = await storage.getMemberIdsForUser(userId);
+        const deleted = await storage.deleteNotification(id, memberIds);
 
         if (!deleted) {
-          return res.status(404).json({ message: 'Notification not found' });
+          return res.status(404).json(notificationNotFound);
         }
 
-        // Realtime: emit deletion and refresh unread count (need recipientId; attempt best-effort)
+        // Realtime: tell the deleting account's own sockets only, and refresh its unread count.
         try {
-          // If storage can fetch notification before deletion, consider enhancing storage API to return deleted entity
-          // For now, clients should refetch list on delete event
           const ns = io?.of('/collab');
           if (ns) {
-            ns.emit('notification:deleted', { id });
+            ns.to(`user:${userId}`).emit('notification:deleted', { id });
+            const count = await storage.getUnreadNotificationCount(memberIds);
+            ns.to(`user:${userId}`).emit('notification:unread-count', {
+              recipientId: existing.recipientId,
+              count,
+            });
           }
         } catch (emitErr) {
           console.warn('Socket emit failed for notification:deleted', emitErr);
@@ -3237,32 +3273,26 @@ export async function registerRoutes(
 
     app.patch('/api/notifications/:id/read', authMiddleware, async (req: AuthRequest, res) => {
       try {
+        const userId = req.user?.id;
+        if (!userId) {
+          return res.status(401).json({ message: 'Authentication required' });
+        }
         const id = parseInt(req.params.id);
         // Ownership check: fetch before marking as read
-        const existing = await storage.getNotification(id);
+        const existing = await storage.getNotificationForUser(id, userId);
         if (!existing) {
-          return res.status(404).json({ message: 'Notification not found' });
+          return res.status(404).json(notificationNotFound);
         }
-        if (req.user?.id && existing.recipientId !== req.user.id) {
-          return res.status(403).json({ message: 'Access denied' });
-        }
-        const notification = await storage.markNotificationAsRead(id);
+        const memberIds = await storage.getMemberIdsForUser(userId);
+        const notification = await storage.markNotificationAsRead(id, memberIds);
 
         if (!notification) {
-          return res.status(404).json({ message: 'Notification not found' });
+          return res.status(404).json(notificationNotFound);
         }
 
         // Realtime: emit updated notification and new unread count
         try {
-          const ns = io?.of('/collab');
-          if (ns) {
-            ns.to(`user:${notification.recipientId}`).emit('notification:updated', notification);
-            const count = await storage.getUnreadNotificationCount(notification.recipientId);
-            ns.to(`user:${notification.recipientId}`).emit('notification:unread-count', {
-              recipientId: notification.recipientId,
-              count,
-            });
-          }
+          await emitNotificationEvent('notification:updated', notification);
         } catch (emitErr) {
           console.warn('Socket emit failed for notification:read', emitErr);
         }
@@ -3273,43 +3303,43 @@ export async function registerRoutes(
       }
     });
 
-    app.patch(
-      '/api/notifications/read-all',
-      requireAuthIfEnabled,
-      async (req: AuthRequest, res) => {
+    app.patch('/api/notifications/read-all', authMiddleware, async (req: AuthRequest, res) => {
+      try {
+        // Use authenticated user's ID; never trust a client-supplied recipientId
+        const userId = req.user?.id;
+        if (!userId) {
+          return res.status(401).json({ message: 'Authentication required' });
+        }
+
+        const memberIds = await storage.getMemberIdsForUser(userId);
+        if (memberIds.length) await storage.markAllNotificationsAsRead(memberIds);
+
+        // Realtime: emit unread count reset for the caller's own member rows
         try {
-          // Use authenticated user's ID ? do not trust client-supplied recipientId
-          const recipientId = req.user?.id;
-          if (!recipientId) {
-            return res.status(401).json({ message: 'Authentication required' });
-          }
-
-          await storage.markAllNotificationsAsRead(recipientId);
-
-          // Realtime: emit unread count reset for recipient
-          try {
-            const ns = io?.of('/collab');
-            if (ns) {
-              const count = await storage.getUnreadNotificationCount(recipientId);
-              ns.to(`user:${recipientId}`).emit('notification:unread-count', {
-                recipientId,
+          const ns = io?.of('/collab');
+          if (ns && memberIds.length) {
+            const count = await storage.getUnreadNotificationCount(memberIds);
+            for (const memberId of memberIds) {
+              ns.to(`user:${userId}`).emit('notification:unread-count', {
+                recipientId: memberId,
                 count,
               });
             }
-          } catch (emitErr) {
-            console.warn('Socket emit failed for notification:read-all', emitErr);
           }
-
-          res.json({ message: 'All notifications marked as read' });
-        } catch (error) {
-          res.status(400).json({ message: 'Invalid request data' });
+        } catch (emitErr) {
+          console.warn('Socket emit failed for notification:read-all', emitErr);
         }
+
+        res.json({ message: 'All notifications marked as read' });
+      } catch (error) {
+        res.status(400).json({ message: 'Invalid request data' });
       }
-    );
+    });
   }
 
   if (featureFlags.FEATURE_TEMPLATES) {
-    // Template Categories API
+    // Template Categories API: an instance-wide taxonomy. Anyone may read it; only platform
+    // admins change it, since a category's deletion removes its templates in every organization.
     app.get('/api/template-categories', async (req, res) => {
       try {
         const categories = await storage.getTemplateCategories();
@@ -3339,7 +3369,7 @@ export async function registerRoutes(
       }
     });
 
-    app.post('/api/template-categories', requireAuthIfEnabled, async (req, res) => {
+    app.post('/api/template-categories', requireAdmin, async (req, res) => {
       try {
         const validatedData = insertTemplateCategorySchema.parse(req.body);
         const category = await storage.createTemplateCategory(validatedData);
@@ -3350,7 +3380,7 @@ export async function registerRoutes(
       }
     });
 
-    app.put('/api/template-categories/:id', requireAuthIfEnabled, async (req, res) => {
+    app.put('/api/template-categories/:id', requireAdmin, async (req, res) => {
       try {
         const id = parseInt(req.params.id);
         if (isNaN(id)) {
@@ -3370,7 +3400,7 @@ export async function registerRoutes(
       }
     });
 
-    app.delete('/api/template-categories/:id', requireAuthIfEnabled, async (req, res) => {
+    app.delete('/api/template-categories/:id', requireAdmin, async (req, res) => {
       try {
         const id = parseInt(req.params.id);
         if (isNaN(id)) {
@@ -3389,8 +3419,19 @@ export async function registerRoutes(
       }
     });
 
-    // Templates API
-    app.get('/api/templates', async (req, res) => {
+    // Templates API (issue #124 X1b): templates belong to an organization, taken from the signed-in
+    // account and never from the request. Another organization's template and an unknown id
+    // answer alike (404).
+    const templateOrganization = async (req: AuthRequest, res: Response) => {
+      const organizationId = await storage.getUserOrganizationId(Number(req.user?.id));
+      if (organizationId === null || organizationId === undefined) {
+        organizationRequired(req, res);
+        return undefined;
+      }
+      return organizationId;
+    };
+
+    app.get('/api/templates', authMiddleware, async (req: AuthRequest, res) => {
       try {
         const categoryId = req.query.categoryId
           ? parseInt(req.query.categoryId as string)
@@ -3399,7 +3440,9 @@ export async function registerRoutes(
           return res.status(400).json({ error: 'Invalid category ID' });
         }
 
-        const templates = await storage.getTemplates(categoryId);
+        const organizationId = await templateOrganization(req, res);
+        if (organizationId === undefined) return;
+        const templates = await storage.getTemplates(organizationId, categoryId);
         res.json(templates);
       } catch (error) {
         console.error('Error fetching templates:', error);
@@ -3407,14 +3450,16 @@ export async function registerRoutes(
       }
     });
 
-    app.get('/api/templates/:id', async (req, res) => {
+    app.get('/api/templates/:id', authMiddleware, async (req: AuthRequest, res) => {
       try {
         const id = parseInt(req.params.id);
         if (isNaN(id)) {
           return res.status(400).json({ error: 'Invalid template ID' });
         }
 
-        const template = await storage.getTemplate(id);
+        const organizationId = await templateOrganization(req, res);
+        if (organizationId === undefined) return;
+        const template = await storage.getTemplate(id, organizationId);
         if (!template) {
           return res.status(404).json({ error: 'Template not found' });
         }
@@ -3426,10 +3471,13 @@ export async function registerRoutes(
       }
     });
 
-    app.post('/api/templates', requireAuthIfEnabled, async (req, res) => {
+    app.post('/api/templates', authMiddleware, async (req: AuthRequest, res) => {
       try {
+        const organizationId = await templateOrganization(req, res);
+        if (organizationId === undefined) return;
+        // The schema has no organizationId: one in the body is dropped.
         const validatedData = insertTemplateSchema.parse(req.body);
-        const template = await storage.createTemplate(validatedData);
+        const template = await storage.createTemplate(validatedData, organizationId);
         res.status(201).json(template);
       } catch (error) {
         console.error('Error creating template:', error);
@@ -3437,15 +3485,17 @@ export async function registerRoutes(
       }
     });
 
-    app.put('/api/templates/:id', requireAuthIfEnabled, async (req, res) => {
+    app.put('/api/templates/:id', authMiddleware, async (req: AuthRequest, res) => {
       try {
         const id = parseInt(req.params.id);
         if (isNaN(id)) {
           return res.status(400).json({ error: 'Invalid template ID' });
         }
 
+        const organizationId = await templateOrganization(req, res);
+        if (organizationId === undefined) return;
         const validatedData = updateTemplateSchema.parse(req.body);
-        const template = await storage.updateTemplate(id, validatedData);
+        const template = await storage.updateTemplate(id, validatedData, organizationId);
         if (!template) {
           return res.status(404).json({ error: 'Template not found' });
         }
@@ -3457,14 +3507,16 @@ export async function registerRoutes(
       }
     });
 
-    app.delete('/api/templates/:id', requireAuthIfEnabled, async (req, res) => {
+    app.delete('/api/templates/:id', authMiddleware, async (req: AuthRequest, res) => {
       try {
         const id = parseInt(req.params.id);
         if (isNaN(id)) {
           return res.status(400).json({ error: 'Invalid template ID' });
         }
 
-        const success = await storage.deleteTemplate(id);
+        const organizationId = await templateOrganization(req, res);
+        if (organizationId === undefined) return;
+        const success = await storage.deleteTemplate(id, organizationId);
         if (!success) {
           return res.status(404).json({ error: 'Template not found' });
         }
@@ -3476,14 +3528,16 @@ export async function registerRoutes(
       }
     });
 
-    app.post('/api/templates/:id/use', requireAuthIfEnabled, async (req, res) => {
+    app.post('/api/templates/:id/use', authMiddleware, async (req: AuthRequest, res) => {
       try {
         const id = parseInt(req.params.id);
         if (isNaN(id)) {
           return res.status(400).json({ error: 'Invalid template ID' });
         }
 
-        const success = await storage.incrementTemplateUsage(id);
+        const organizationId = await templateOrganization(req, res);
+        if (organizationId === undefined) return;
+        const success = await storage.incrementTemplateUsage(id, organizationId);
         if (!success) {
           return res.status(404).json({ error: 'Template not found' });
         }
@@ -4135,6 +4189,13 @@ export async function registerRoutes(
     }
   );
 
+  // Creating or changing a workflow or saved view needs a session, whatever ENFORCE_AUTH_WRITES
+  // says: it runs before any team resolution, lookup or write.
+  const requireSession = (req: AuthRequest, res: Response, next: NextFunction) => {
+    if (!req.user?.id) return res.status(401).json({ message: 'Authentication required' });
+    next();
+  };
+
   if (featureFlags.FEATURE_AUTOMATION) {
     // ==================== Workflows API ====================
 
@@ -4200,111 +4261,97 @@ export async function registerRoutes(
       }
     );
 
-    app.get('/api/workflows/:id', requireAuthIfEnabled, async (req: AuthRequest, res) => {
-      try {
-        const id = parseInt(req.params.id);
-        const workflow = await storage.getWorkflow(id);
-        if (!workflow) {
-          return res.status(404).json({ error: 'Workflow not found' });
-        }
-        if (workflow.teamId && req.user?.id) {
-          const userTeamIds = await storage.getUserTeamIds(req.user.id);
-          if (!userTeamIds.includes(Number(workflow.teamId))) {
-            return res.status(403).json({ message: 'You are not a member of this team' });
-          }
-        } else if (workflow.teamId && config.enforceAuthForWrites) {
-          return res.status(401).json({ message: 'Authentication required' });
-        }
-        res.json(workflow);
-      } catch (error) {
-        console.error('Error fetching workflow:', error);
-        res.status(500).json({ error: 'Failed to fetch workflow' });
+    // Every single-workflow route answers through this: a workflow belongs to a team (D4), so a
+    // row without one is not found for anyone, and the caller must be a member of that team. It
+    // sends the refusal itself and returns null; the handler continues only on a workflow.
+    const loadWorkflowForMember = async (req: AuthRequest, res: Response) => {
+      // The session comes first, so a signed-out caller cannot tell workflows apart
+      if (!req.user?.id) {
+        res.status(401).json({ message: 'Authentication required' });
+        return null;
       }
-    });
-
-    app.post('/api/workflows', requireAuthIfEnabled, requireTeamMembership, async (req, res) => {
-      try {
-        const workflowData = { ...req.body };
-        // Resolve string teamId (teamName) to numeric ID
-        if (
-          workflowData.teamId &&
-          typeof workflowData.teamId === 'string' &&
-          isNaN(parseInt(workflowData.teamId))
-        ) {
-          const team = await storage.getTeamByName(workflowData.teamId);
-          if (team) {
-            workflowData.teamId = team.id;
-          } else {
-            return res.status(400).json({ error: 'Team not found' });
-          }
-        }
-        // Validate action configs
-        const actionValidationError = validateWorkflowActions(workflowData.actions);
-        if (actionValidationError) {
-          return res.status(400).json({ error: actionValidationError });
-        }
-        const workflow = await storage.createWorkflow(workflowData);
-        res.status(201).json(workflow);
-      } catch (error) {
-        console.error('Error creating workflow:', error);
-        res.status(400).json({ error: 'Failed to create workflow' });
+      const id = Number(req.params.id);
+      const workflow = Number.isInteger(id) ? await storage.getWorkflow(id) : undefined;
+      if (!workflow || workflow.teamId == null) {
+        res.status(404).json({ error: 'Workflow not found' });
+        return null;
       }
-    });
+      const userTeamIds = await storage.getUserTeamIds(req.user.id);
+      if (!userTeamIds.includes(Number(workflow.teamId))) {
+        res.status(403).json({ message: 'You are not a member of this team' });
+        return null;
+      }
+      return workflow;
+    };
 
-    app.put(
+    app.get(
       '/api/workflows/:id',
+      optionalAuth,
       requireAuthIfEnabled,
+      async (req: AuthRequest, res) => {
+        try {
+          const workflow = await loadWorkflowForMember(req, res);
+          if (!workflow) return;
+          res.json(workflow);
+        } catch (error) {
+          console.error('Error fetching workflow:', error);
+          res.status(500).json({ error: 'Failed to fetch workflow' });
+        }
+      }
+    );
+
+    app.post(
+      '/api/workflows',
+      optionalAuth,
+      requireAuthIfEnabled,
+      requireSession,
       requireTeamMembership,
       async (req: AuthRequest, res) => {
         try {
-          const id = parseInt(req.params.id);
-          // Verify the existing workflow belongs to a team the requester is a member of
-          const existingWorkflow = await storage.getWorkflow(id);
-          if (!existingWorkflow) {
-            return res.status(404).json({ error: 'Workflow not found' });
+          // The team requireTeamMembership resolved and checked, never a raw body value
+          const teamId = req.checkedTeamId;
+          if (!teamId) {
+            return res.status(400).json({ error: 'teamId is required' });
           }
-          if (existingWorkflow.teamId && req.user?.id) {
-            const userTeamIds = await storage.getUserTeamIds(req.user.id);
-            if (!userTeamIds.includes(Number(existingWorkflow.teamId))) {
-              return res.status(403).json({ message: 'You are not a member of this team' });
-            }
-          } else if (existingWorkflow.teamId && config.enforceAuthForWrites) {
-            return res.status(401).json({ message: 'Authentication required' });
+          const workflowData = { ...req.body, teamId };
+          // Validate action configs
+          const actionValidationError = validateWorkflowActions(workflowData.actions);
+          if (actionValidationError) {
+            return res.status(400).json({ error: actionValidationError });
           }
+          const workflow = await storage.createWorkflow(workflowData);
+          res.status(201).json(workflow);
+        } catch (error) {
+          console.error('Error creating workflow:', error);
+          res.status(400).json({ error: 'Failed to create workflow' });
+        }
+      }
+    );
+
+    app.put(
+      '/api/workflows/:id',
+      optionalAuth,
+      requireAuthIfEnabled,
+      requireSession,
+      requireTeamMembership,
+      async (req: AuthRequest, res) => {
+        try {
+          const existingWorkflow = await loadWorkflowForMember(req, res);
+          if (!existingWorkflow) return;
           const workflowData = { ...req.body };
-          // Resolve string teamId (teamName) to numeric ID
-          if (
-            workflowData.teamId &&
-            typeof workflowData.teamId === 'string' &&
-            isNaN(parseInt(workflowData.teamId))
-          ) {
-            const team = await storage.getTeamByName(workflowData.teamId);
-            if (team) {
-              workflowData.teamId = team.id;
-            } else {
-              return res.status(400).json({ error: 'Team not found' });
+          // A workflow always keeps a team. A named target team was resolved and membership
+          // checked by requireTeamMembership (any source that names a team names the same one).
+          if ('teamId' in workflowData) {
+            if (!req.checkedTeamId) {
+              return res.status(400).json({ error: 'teamId is required' });
             }
-          }
-          // Prevent cross-team reassignment: if new teamId differs, verify membership
-          if (
-            workflowData.teamId !== undefined &&
-            workflowData.teamId !== null &&
-            Number(workflowData.teamId) !== Number(existingWorkflow.teamId)
-          ) {
-            if (req.user?.id) {
-              const userTeamIds = await storage.getUserTeamIds(req.user.id);
-              if (!userTeamIds.includes(Number(workflowData.teamId))) {
-                return res.status(403).json({ message: 'You are not a member of the target team' });
-              }
-            } else if (config.enforceAuthForWrites) {
-              return res.status(401).json({ message: 'Authentication required' });
-            }
+            workflowData.teamId = req.checkedTeamId;
           }
           const actionValidationError = validateWorkflowActions(workflowData.actions);
           if (actionValidationError) {
             return res.status(400).json({ error: actionValidationError });
           }
-          const workflow = await storage.updateWorkflow(id, workflowData);
+          const workflow = await storage.updateWorkflow(existingWorkflow.id, workflowData);
           if (!workflow) {
             return res.status(404).json({ error: 'Workflow not found' });
           }
@@ -4316,107 +4363,84 @@ export async function registerRoutes(
       }
     );
 
-    app.delete('/api/workflows/:id', requireAuthIfEnabled, async (req: AuthRequest, res) => {
-      try {
-        const id = parseInt(req.params.id);
-        const existingWorkflow = await storage.getWorkflow(id);
-        if (!existingWorkflow) {
-          return res.status(404).json({ error: 'Workflow not found' });
-        }
-        if (existingWorkflow.teamId && req.user?.id) {
-          const userTeamIds = await storage.getUserTeamIds(req.user.id);
-          if (!userTeamIds.includes(Number(existingWorkflow.teamId))) {
-            return res.status(403).json({ message: 'You are not a member of this team' });
+    app.delete(
+      '/api/workflows/:id',
+      optionalAuth,
+      requireAuthIfEnabled,
+      async (req: AuthRequest, res) => {
+        try {
+          const existingWorkflow = await loadWorkflowForMember(req, res);
+          if (!existingWorkflow) return;
+          const success = await storage.deleteWorkflow(existingWorkflow.id);
+          if (!success) {
+            return res.status(404).json({ error: 'Workflow not found' });
           }
-        } else if (existingWorkflow.teamId && config.enforceAuthForWrites) {
-          return res.status(401).json({ message: 'Authentication required' });
+          res.status(204).send();
+        } catch (error) {
+          console.error('Error deleting workflow:', error);
+          res.status(500).json({ error: 'Failed to delete workflow' });
         }
-        const success = await storage.deleteWorkflow(id);
-        if (!success) {
-          return res.status(404).json({ error: 'Workflow not found' });
-        }
-        res.status(204).send();
-      } catch (error) {
-        console.error('Error deleting workflow:', error);
-        res.status(500).json({ error: 'Failed to delete workflow' });
       }
-    });
+    );
 
-    app.post('/api/workflows/:id/toggle', requireAuthIfEnabled, async (req: AuthRequest, res) => {
-      try {
-        const id = parseInt(req.params.id);
-        const existingWorkflow = await storage.getWorkflow(id);
-        if (!existingWorkflow) {
-          return res.status(404).json({ error: 'Workflow not found' });
-        }
-        if (existingWorkflow.teamId && req.user?.id) {
-          const userTeamIds = await storage.getUserTeamIds(req.user.id);
-          if (!userTeamIds.includes(Number(existingWorkflow.teamId))) {
-            return res.status(403).json({ message: 'You are not a member of this team' });
+    app.post(
+      '/api/workflows/:id/toggle',
+      optionalAuth,
+      requireAuthIfEnabled,
+      async (req: AuthRequest, res) => {
+        try {
+          const existingWorkflow = await loadWorkflowForMember(req, res);
+          if (!existingWorkflow) return;
+          const { isActive } = req.body;
+          const workflow = await storage.toggleWorkflow(existingWorkflow.id, isActive);
+          if (!workflow) {
+            return res.status(404).json({ error: 'Workflow not found' });
           }
-        } else if (existingWorkflow.teamId && config.enforceAuthForWrites) {
-          return res.status(401).json({ message: 'Authentication required' });
+          res.json(workflow);
+        } catch (error) {
+          console.error('Error toggling workflow:', error);
+          res.status(500).json({ error: 'Failed to toggle workflow' });
         }
-        const { isActive } = req.body;
-        const workflow = await storage.toggleWorkflow(id, isActive);
-        if (!workflow) {
-          return res.status(404).json({ error: 'Workflow not found' });
-        }
-        res.json(workflow);
-      } catch (error) {
-        console.error('Error toggling workflow:', error);
-        res.status(500).json({ error: 'Failed to toggle workflow' });
       }
-    });
+    );
 
-    // Dry-run / test a workflow without persisting side-effects
-    app.post('/api/workflows/:id/test', requireAuthIfEnabled, async (req: AuthRequest, res) => {
-      try {
-        const id = parseInt(req.params.id);
-        const workflow = await storage.getWorkflow(id);
-        if (!workflow) {
-          return res.status(404).json({ error: 'Workflow not found' });
+    // Runs the workflow's actions with the given trigger data. The service confines every
+    // action to the workflow's own team, whatever the trigger data names.
+    app.post(
+      '/api/workflows/:id/test',
+      optionalAuth,
+      requireAuthIfEnabled,
+      async (req: AuthRequest, res) => {
+        try {
+          const workflow = await loadWorkflowForMember(req, res);
+          if (!workflow) return;
+          const triggerData = req.body.triggerData || {};
+          const run = await executeWorkflow(workflow, triggerData);
+          res.json({ dryRun: true, run });
+        } catch (error) {
+          console.error('Error testing workflow:', error);
+          res.status(500).json({ error: 'Failed to test workflow' });
         }
-        if (workflow.teamId && req.user?.id) {
-          const userTeamIds = await storage.getUserTeamIds(req.user.id);
-          if (!userTeamIds.includes(Number(workflow.teamId))) {
-            return res.status(403).json({ message: 'You are not a member of this team' });
-          }
-        } else if (workflow.teamId && config.enforceAuthForWrites) {
-          return res.status(401).json({ message: 'Authentication required' });
-        }
-        const triggerData = req.body.triggerData || {};
-        const run = await executeWorkflow(workflow, triggerData);
-        res.json({ dryRun: true, run });
-      } catch (error) {
-        console.error('Error testing workflow:', error);
-        res.status(500).json({ error: 'Failed to test workflow' });
       }
-    });
+    );
 
-    app.get('/api/workflows/:id/runs', requireAuthIfEnabled, async (req: AuthRequest, res) => {
-      try {
-        const id = parseInt(req.params.id);
-        const existingWorkflow = await storage.getWorkflow(id);
-        if (!existingWorkflow) {
-          return res.status(404).json({ error: 'Workflow not found' });
+    app.get(
+      '/api/workflows/:id/runs',
+      optionalAuth,
+      requireAuthIfEnabled,
+      async (req: AuthRequest, res) => {
+        try {
+          const existingWorkflow = await loadWorkflowForMember(req, res);
+          if (!existingWorkflow) return;
+          const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+          const runs = await storage.getWorkflowRuns(existingWorkflow.id, limit);
+          res.json(runs);
+        } catch (error) {
+          console.error('Error fetching workflow runs:', error);
+          res.status(500).json({ error: 'Failed to fetch workflow runs' });
         }
-        if (existingWorkflow.teamId && req.user?.id) {
-          const userTeamIds = await storage.getUserTeamIds(req.user.id);
-          if (!userTeamIds.includes(Number(existingWorkflow.teamId))) {
-            return res.status(403).json({ message: 'You are not a member of this team' });
-          }
-        } else if (existingWorkflow.teamId && config.enforceAuthForWrites) {
-          return res.status(401).json({ message: 'Authentication required' });
-        }
-        const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
-        const runs = await storage.getWorkflowRuns(id, limit);
-        res.json(runs);
-      } catch (error) {
-        console.error('Error fetching workflow runs:', error);
-        res.status(500).json({ error: 'Failed to fetch workflow runs' });
       }
-    });
+    );
   }
 
   // ==================== Saved Views API ====================
@@ -4463,27 +4487,37 @@ export async function registerRoutes(
     }
   );
 
+  // Every single-view route answers through this: a view belongs to a team (D4), so a row
+  // without one is not found for anyone, and the caller must be a member of that team. It sends
+  // the refusal itself and returns null; the handler continues only on a view.
+  const loadSavedViewForMember = async (req: AuthRequest, res: Response) => {
+    // The session comes first, so a signed-out caller cannot tell views apart
+    if (!req.user?.id) {
+      res.status(401).json({ message: 'Authentication required' });
+      return null;
+    }
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) {
+      res.status(400).json({ error: 'Invalid view ID' });
+      return null;
+    }
+    const view = await storage.getSavedView(id);
+    if (!view || view.teamId == null) {
+      res.status(404).json({ error: 'View not found' });
+      return null;
+    }
+    const userTeamIds = await storage.getUserTeamIds(req.user.id);
+    if (!userTeamIds.includes(Number(view.teamId))) {
+      res.status(403).json({ message: 'You are not a member of this team' });
+      return null;
+    }
+    return view;
+  };
+
   app.get('/api/saved-views/:id', optionalAuth, async (req: AuthRequest, res) => {
     try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid view ID' });
-      }
-
-      const view = await storage.getSavedView(id);
-      if (!view) {
-        return res.status(404).json({ error: 'View not found' });
-      }
-
-      if (view.teamId && req.user?.id) {
-        const userTeamIds = await storage.getUserTeamIds(req.user.id);
-        if (!userTeamIds.includes(Number(view.teamId))) {
-          return res.status(403).json({ message: 'You are not a member of this team' });
-        }
-      } else if (view.teamId && config.enforceAuthForWrites) {
-        return res.status(401).json({ message: 'Authentication required' });
-      }
-
+      const view = await loadSavedViewForMember(req, res);
+      if (!view) return;
       res.json(view);
     } catch (error) {
       console.error('Error fetching saved view:', error);
@@ -4491,59 +4525,50 @@ export async function registerRoutes(
     }
   });
 
-  app.post('/api/saved-views', requireAuthIfEnabled, requireTeamMembership, async (req, res) => {
-    try {
-      const validatedData = insertSavedViewSchema.parse(req.body);
-      const view = await storage.createSavedView(validatedData);
-      res.status(201).json(view);
-    } catch (error) {
-      console.error('Error creating saved view:', error);
-      res.status(400).json({ error: 'Failed to create saved view' });
-    }
-  });
-
-  app.put(
-    '/api/saved-views/:id',
+  app.post(
+    '/api/saved-views',
+    optionalAuth,
     requireAuthIfEnabled,
+    requireSession,
     requireTeamMembership,
     async (req: AuthRequest, res) => {
       try {
-        const id = parseInt(req.params.id);
-        if (isNaN(id)) {
-          return res.status(400).json({ error: 'Invalid view ID' });
+        // The team requireTeamMembership resolved and checked, never a raw body value
+        const teamId = req.checkedTeamId;
+        if (!teamId) {
+          return res.status(400).json({ error: 'teamId is required' });
         }
+        const validatedData = insertSavedViewSchema.parse({ ...req.body, teamId });
+        const view = await storage.createSavedView(validatedData);
+        res.status(201).json(view);
+      } catch (error) {
+        console.error('Error creating saved view:', error);
+        res.status(400).json({ error: 'Failed to create saved view' });
+      }
+    }
+  );
 
-        // Verify ownership based on the existing resource's teamId, not request body
-        const existingView = await storage.getSavedView(id);
-        if (!existingView) {
-          return res.status(404).json({ error: 'View not found' });
-        }
-        if (existingView.teamId && req.user?.id) {
-          const userTeamIds = await storage.getUserTeamIds(req.user.id);
-          if (!userTeamIds.includes(Number(existingView.teamId))) {
-            return res.status(403).json({ message: 'You are not a member of this team' });
-          }
-        } else if (existingView.teamId && config.enforceAuthForWrites) {
-          return res.status(401).json({ message: 'Authentication required' });
-        }
+  app.put(
+    '/api/saved-views/:id',
+    optionalAuth,
+    requireAuthIfEnabled,
+    requireSession,
+    requireTeamMembership,
+    async (req: AuthRequest, res) => {
+      try {
+        // Ownership comes from the existing resource's team, not the request body
+        const existingView = await loadSavedViewForMember(req, res);
+        if (!existingView) return;
 
-        const validatedData = updateSavedViewSchema.parse(req.body);
-        // Prevent cross-team reassignment
-        if (
-          validatedData.teamId !== undefined &&
-          validatedData.teamId !== null &&
-          Number(validatedData.teamId) !== Number(existingView.teamId)
-        ) {
-          if (req.user?.id) {
-            const userTeamIds = await storage.getUserTeamIds(req.user.id);
-            if (!userTeamIds.includes(Number(validatedData.teamId))) {
-              return res.status(403).json({ message: 'You are not a member of the target team' });
-            }
-          } else if (config.enforceAuthForWrites) {
-            return res.status(401).json({ message: 'Authentication required' });
-          }
+        // A view always keeps a team. A named target team was resolved and membership checked
+        // by requireTeamMembership (any source that names a team names the same one).
+        if ('teamId' in req.body && !req.checkedTeamId) {
+          return res.status(400).json({ error: 'teamId is required' });
         }
-        const view = await storage.updateSavedView(id, validatedData);
+        const validatedData = updateSavedViewSchema.parse(
+          'teamId' in req.body ? { ...req.body, teamId: req.checkedTeamId } : req.body
+        );
+        const view = await storage.updateSavedView(existingView.id, validatedData);
         if (!view) {
           return res.status(404).json({ error: 'View not found' });
         }
@@ -4556,67 +4581,48 @@ export async function registerRoutes(
     }
   );
 
-  app.delete('/api/saved-views/:id', requireAuthIfEnabled, async (req: AuthRequest, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid view ID' });
-      }
+  app.delete(
+    '/api/saved-views/:id',
+    optionalAuth,
+    requireAuthIfEnabled,
+    async (req: AuthRequest, res) => {
+      try {
+        const existingView = await loadSavedViewForMember(req, res);
+        if (!existingView) return;
 
-      const existingView = await storage.getSavedView(id);
-      if (!existingView) {
-        return res.status(404).json({ error: 'View not found' });
-      }
-      if (existingView.teamId && req.user?.id) {
-        const userTeamIds = await storage.getUserTeamIds(req.user.id);
-        if (!userTeamIds.includes(Number(existingView.teamId))) {
-          return res.status(403).json({ message: 'You are not a member of this team' });
+        const success = await storage.deleteSavedView(existingView.id);
+        if (!success) {
+          return res.status(404).json({ error: 'View not found' });
         }
-      } else if (existingView.teamId && config.enforceAuthForWrites) {
-        return res.status(401).json({ message: 'Authentication required' });
-      }
 
-      const success = await storage.deleteSavedView(id);
-      if (!success) {
-        return res.status(404).json({ error: 'View not found' });
+        res.status(204).send();
+      } catch (error) {
+        console.error('Error deleting saved view:', error);
+        res.status(500).json({ error: 'Failed to delete saved view' });
       }
-
-      res.status(204).send();
-    } catch (error) {
-      console.error('Error deleting saved view:', error);
-      res.status(500).json({ error: 'Failed to delete saved view' });
     }
-  });
+  );
 
   app.post(
     '/api/saved-views/:id/set-default',
+    optionalAuth,
     requireAuthIfEnabled,
+    requireSession,
     requireTeamMembership,
     async (req: AuthRequest, res) => {
       try {
-        const id = parseInt(req.params.id);
-        if (isNaN(id)) {
-          return res.status(400).json({ error: 'Invalid view ID' });
-        }
+        // Use the existing resource's values; never trust request body for teamId/entityType
+        const existingView = await loadSavedViewForMember(req, res);
+        if (!existingView) return;
 
-        // Use the existing resource's values ? never trust request body for teamId/entityType
-        const existingView = await storage.getSavedView(id);
-        if (!existingView) {
-          return res.status(404).json({ error: 'View not found' });
+        if (!existingView.entityType) {
+          return res.status(400).json({ error: 'View is missing entityType' });
         }
-        if (existingView.teamId && req.user?.id) {
-          const userTeamIds = await storage.getUserTeamIds(req.user.id);
-          if (!userTeamIds.includes(Number(existingView.teamId))) {
-            return res.status(403).json({ message: 'You are not a member of this team' });
-          }
-        } else if (existingView.teamId && config.enforceAuthForWrites) {
-          return res.status(401).json({ message: 'Authentication required' });
-        }
-
-        if (!existingView.teamId || !existingView.entityType) {
-          return res.status(400).json({ error: 'View is missing teamId or entityType' });
-        }
-        await storage.setDefaultView(id, existingView.teamId, existingView.entityType);
+        await storage.setDefaultView(
+          existingView.id,
+          Number(existingView.teamId),
+          existingView.entityType
+        );
         res.json({ success: true });
       } catch (error) {
         console.error('Error setting default view:', error);
@@ -4757,29 +4763,15 @@ export async function registerRoutes(
 
   // ==================== Page Favorites / Bookmarks API ====================
 
+  // Favorites hold only pages the caller may list (issue #124 X1b): the list hides rows whose
+  // page is trashed or no longer listable for them (it never deletes them), and a page they
+  // cannot list cannot be added: it answers exactly like an unknown page.
+
   // Get user's favorite pages
   app.get('/api/favorites', authMiddleware, async (req: AuthRequest, res) => {
     try {
-      const userId = req.user!.id;
-      const { eq, desc } = await import('drizzle-orm');
-      const db = (storage as any).db;
-
-      const favorites = await db
-        .select({
-          id: pageFavorites.id,
-          pageId: pageFavorites.pageId,
-          createdAt: pageFavorites.createdAt,
-          pageTitle: wikiPages.title,
-          pageSlug: wikiPages.slug,
-          pageFolder: wikiPages.folder,
-          pageUpdatedAt: wikiPages.updatedAt,
-        })
-        .from(pageFavorites)
-        .innerJoin(wikiPages, eq(pageFavorites.pageId, wikiPages.id))
-        .where(eq(pageFavorites.userId, userId))
-        .orderBy(desc(pageFavorites.createdAt));
-
-      res.json(favorites);
+      const viewer = await storage.getPageViewer(req.user!.id);
+      res.json(await storage.getFavoritePages(viewer));
     } catch (error) {
       logger.error('Error fetching favorites:', { error });
       res.status(500).json({ error: 'Failed to fetch favorites' });
@@ -4793,23 +4785,15 @@ export async function registerRoutes(
       const pageId = parseInt(req.params.pageId);
       if (isNaN(pageId)) return res.status(400).json({ error: 'Invalid page ID' });
 
-      const page = await storage.getWikiPage(pageId);
-      if (!page) return res.status(404).json({ error: 'Page not found' });
-
-      const { eq, and } = await import('drizzle-orm');
-      const db = (storage as any).db;
-
-      // Check if already favorited
-      const existing = await db
-        .select()
-        .from(pageFavorites)
-        .where(and(eq(pageFavorites.userId, userId), eq(pageFavorites.pageId, pageId)));
-
-      if (existing.length > 0) {
-        return res.status(409).json({ error: 'Page already in favorites' });
+      const viewer = await storage.getPageViewer(userId);
+      if (!(await storage.isPageListableBy(viewer, pageId))) {
+        return res.status(404).json({ error: 'Page not found' });
       }
 
-      const [favorite] = await db.insert(pageFavorites).values({ userId, pageId }).returning();
+      const favorite = await storage.addPageFavorite(userId, pageId);
+      if (!favorite) {
+        return res.status(409).json({ error: 'Page already in favorites' });
+      }
 
       res.status(201).json(favorite);
     } catch (error) {
@@ -4867,107 +4851,74 @@ export async function registerRoutes(
 
   // ==================== Page Analytics API ====================
 
+  // Per-page analytics follow the page read rule of GET /api/pages/:id (issue #124 X1b): a view
+  // is recorded and the counts are read only by a caller who may read the page, and a trashed or
+  // unknown page answers 404 either way. A refused view is not recorded.
+
   // Record a page view
-  app.post('/api/pages/:id/view', rlAnalytics, optionalAuth, async (req: AuthRequest, res) => {
-    try {
-      const pageId = parseInt(req.params.id);
-      if (isNaN(pageId)) return res.status(400).json({ error: 'Invalid page ID' });
+  app.post(
+    '/api/pages/:id/view',
+    rlAnalytics,
+    optionalAuth,
+    requirePagePermission('viewer'),
+    async (req: AuthRequest, res) => {
+      try {
+        const pageId = parseInt(req.params.id);
+        if (isNaN(pageId)) return res.status(400).json({ error: 'Invalid page ID' });
 
-      const db = (storage as any).db;
-      await db.insert(pageViews).values({
-        pageId,
-        userId: req.user?.id || null,
-      });
+        const page = await storage.getWikiPage(pageId);
+        if (!page) return res.status(404).json({ error: 'Page not found' });
 
-      res.status(201).json({ recorded: true });
-    } catch (error) {
-      // Don't fail the request if analytics recording fails
-      res.status(201).json({ recorded: false });
+        try {
+          await storage.recordPageView(pageId, req.user?.id || null);
+          res.status(201).json({ recorded: true });
+        } catch {
+          // Don't fail the request if analytics recording fails
+          res.status(201).json({ recorded: false });
+        }
+      } catch (error) {
+        logger.error('Error recording page view:', { error });
+        res.status(500).json({ error: 'Failed to record page view' });
+      }
     }
-  });
+  );
 
   // Get page view stats
-  app.get('/api/pages/:id/analytics', optionalAuth, async (req: AuthRequest, res) => {
-    try {
-      const pageId = parseInt(req.params.id);
-      if (isNaN(pageId)) return res.status(400).json({ error: 'Invalid page ID' });
+  app.get(
+    '/api/pages/:id/analytics',
+    optionalAuth,
+    requirePagePermission('viewer'),
+    async (req: AuthRequest, res) => {
+      try {
+        const pageId = parseInt(req.params.id);
+        if (isNaN(pageId)) return res.status(400).json({ error: 'Invalid page ID' });
 
-      const { eq, sql, desc } = await import('drizzle-orm');
-      const db = (storage as any).db;
+        const page = await storage.getWikiPage(pageId);
+        if (!page) return res.status(404).json({ error: 'Page not found' });
 
-      // Total views
-      const [totalResult] = await db
-        .select({ count: sql<number>`COUNT(*)` })
-        .from(pageViews)
-        .where(eq(pageViews.pageId, pageId));
-
-      // Unique viewers
-      const [uniqueResult] = await db
-        .select({ count: sql<number>`COUNT(DISTINCT ${pageViews.userId})` })
-        .from(pageViews)
-        .where(eq(pageViews.pageId, pageId));
-
-      // Views in last 7 days
-      const [weekResult] = await db
-        .select({ count: sql<number>`COUNT(*)` })
-        .from(pageViews)
-        .where(
-          sql`${pageViews.pageId} = ${pageId} AND ${pageViews.viewedAt} > NOW() - INTERVAL '7 days'`
-        );
-
-      // Daily views for last 30 days
-      const dailyViews = await db
-        .select({
-          date: sql<string>`DATE(${pageViews.viewedAt})`,
-          count: sql<number>`COUNT(*)`,
-        })
-        .from(pageViews)
-        .where(
-          sql`${pageViews.pageId} = ${pageId} AND ${pageViews.viewedAt} > NOW() - INTERVAL '30 days'`
-        )
-        .groupBy(sql`DATE(${pageViews.viewedAt})`)
-        .orderBy(sql`DATE(${pageViews.viewedAt})`);
-
-      res.json({
-        totalViews: Number(totalResult?.count || 0),
-        uniqueViewers: Number(uniqueResult?.count || 0),
-        viewsLast7Days: Number(weekResult?.count || 0),
-        dailyViews,
-      });
-    } catch (error) {
-      logger.error('Error fetching page analytics:', { error });
-      res.status(500).json({ error: 'Failed to fetch analytics' });
+        res.json(await storage.getPageViewStats(pageId));
+      } catch (error) {
+        logger.error('Error fetching page analytics:', { error });
+        res.status(500).json({ error: 'Failed to fetch analytics' });
+      }
     }
-  });
+  );
 
-  // Get popular pages (top viewed)
+  // Get popular pages (top viewed). The ranking shows page titles, so it follows the page read
+  // boundary (#141): only live pages the caller may list, like GET /api/pages. Without a session
+  // the answer is 401 when auth is enforced, and an empty list otherwise, never other callers'
+  // pages.
   app.get(
     '/api/analytics/popular',
     optionalAuth,
     requireTeamMembership,
     async (req: AuthRequest, res) => {
       try {
-        const { sql, desc, eq } = await import('drizzle-orm');
-        const db = (storage as any).db;
         const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
         const days = Math.min(parseInt(req.query.days as string) || 30, 365);
 
-        const popular = await db
-          .select({
-            pageId: pageViews.pageId,
-            pageTitle: wikiPages.title,
-            pageSlug: wikiPages.slug,
-            viewCount: sql<number>`COUNT(*)`,
-            uniqueViewers: sql<number>`COUNT(DISTINCT ${pageViews.userId})`,
-          })
-          .from(pageViews)
-          .innerJoin(wikiPages, eq(pageViews.pageId, wikiPages.id))
-          .where(sql`${pageViews.viewedAt} > NOW() - MAKE_INTERVAL(days => ${days})`)
-          .groupBy(pageViews.pageId, wikiPages.title, wikiPages.slug)
-          .orderBy(sql`COUNT(*) DESC`)
-          .limit(limit);
-
-        res.json(popular);
+        const viewer = await storage.getPageViewer(req.user?.id);
+        res.json(await storage.getPopularPages(viewer, { days, limit }));
       } catch (error) {
         logger.error('Error fetching popular pages:', { error });
         res.status(500).json({ error: 'Failed to fetch popular pages' });
@@ -4977,52 +4928,23 @@ export async function registerRoutes(
 
   // ==================== Activity Feed API ====================
 
-  // Get activity feed
+  // Get activity feed. Rows are limited to the caller's teams plus team-less rows about a page
+  // the caller may list (issue #124 X1b): see DBStorage.getActivityFeed. Without a team the
+  // feed is still scoped, never read unfiltered.
   app.get('/api/activity', optionalAuth, requireTeamMembership, async (req: AuthRequest, res) => {
     try {
-      const { desc, eq, sql, inArray, and } = await import('drizzle-orm');
-      const db = (storage as any).db;
       const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
       const offset = parseInt(req.query.offset as string) || 0;
       const action = req.query.action as string | undefined;
       const targetType = req.query.targetType as string | undefined;
 
-      const userTeamIds: number[] = (req as any).userTeamIds ?? [];
-
-      const conditions: any[] = [];
-
-      // Filter by user's teams
-      if (userTeamIds.length > 0) {
-        conditions.push(
-          sql`(${activityFeed.teamId} IN (${sql.join(
-            userTeamIds.map((id) => sql`${id}`),
-            sql`, `
-          )}) OR ${activityFeed.teamId} IS NULL)`
-        );
-      }
-
-      // Filter by action type
-      if (action) {
-        conditions.push(eq(activityFeed.action, action));
-      }
-
-      // Filter by target type
-      if (targetType) {
-        conditions.push(eq(activityFeed.targetType, targetType));
-      }
-
-      let query = db
-        .select()
-        .from(activityFeed)
-        .orderBy(desc(activityFeed.createdAt))
-        .limit(limit)
-        .offset(offset);
-
-      if (conditions.length > 0) {
-        query = query.where(and(...conditions));
-      }
-
-      const activities = await query;
+      const viewer = await storage.getPageViewer(req.user?.id);
+      const activities = await storage.getActivityFeed(viewer, {
+        limit,
+        offset,
+        action,
+        targetType,
+      });
 
       res.json({
         activities,
@@ -5228,45 +5150,11 @@ export async function registerRoutes(
 
   // ==================== System Stats API (Dashboard) ====================
 
+  // Counts only what the caller may list (issue #124 X1b): see DBStorage.getStatsOverview.
   app.get('/api/stats/overview', authMiddleware, async (req: AuthRequest, res) => {
     try {
-      const { sql } = await import('drizzle-orm');
-      const db = (storage as any).db;
-
-      const [pageCount] = await db.select({ count: sql<number>`COUNT(*)` }).from(wikiPages);
-      const [userCount] = await db.select({ count: sql<number>`COUNT(*)` }).from(users);
-      const [taskCount] = await db.select({ count: sql<number>`COUNT(*)` }).from(tasks);
-      const [commentCount] = await db.select({ count: sql<number>`COUNT(*)` }).from(comments);
-
-      // Pages created this week
-      const [weeklyPages] = await db
-        .select({ count: sql<number>`COUNT(*)` })
-        .from(wikiPages)
-        .where(sql`${wikiPages.createdAt} > NOW() - INTERVAL '7 days'`);
-
-      // Tasks by status
-      const tasksByStatus = await db
-        .select({
-          status: tasks.status,
-          count: sql<number>`COUNT(*)`,
-        })
-        .from(tasks)
-        .groupBy(tasks.status);
-
-      res.json({
-        totalPages: Number(pageCount?.count || 0),
-        totalUsers: Number(userCount?.count || 0),
-        totalTasks: Number(taskCount?.count || 0),
-        totalComments: Number(commentCount?.count || 0),
-        pagesThisWeek: Number(weeklyPages?.count || 0),
-        tasksByStatus: tasksByStatus.reduce(
-          (acc: Record<string, number>, row: { status: string; count: unknown }) => {
-            acc[row.status] = Number(row.count);
-            return acc;
-          },
-          {}
-        ),
-      });
+      const viewer = await storage.getPageViewer(req.user!.id);
+      res.json(await storage.getStatsOverview(viewer));
     } catch (error) {
       logger.error('Error fetching stats:', { error });
       res.status(500).json({ error: 'Failed to fetch stats' });

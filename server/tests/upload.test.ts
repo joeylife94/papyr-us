@@ -25,8 +25,8 @@ vi.mock('../services/upload', async () => {
     listUploadedFiles: vi.fn(),
     getFileInfo: vi.fn(),
     deleteUploadedFile: vi.fn(),
-    // Default to null (explicitly public file) so team membership does not deny access
-    getFileTeamId: vi.fn().mockResolvedValue(null),
+    // A team-less file of organization 1 (issue #124 X1b), so team membership does not apply
+    getFileMeta: vi.fn(),
   };
 });
 
@@ -35,6 +35,7 @@ import {
   listUploadedFiles,
   getFileInfo,
   deleteUploadedFile,
+  getFileMeta,
 } from '../services/upload';
 
 import { storage } from '../storage.js';
@@ -55,8 +56,16 @@ beforeAll(async () => {
   ({ httpServer: server } = await registerRoutes(app, storage));
 });
 
+// Uploads, downloads and deletes need a session, and the caller's organization (issue #124 X1b).
+const authHeader = {
+  Authorization: `Bearer ${jwt.sign({ id: 1, email: 'user@test.com', role: 'user' }, config.jwtSecret)}`,
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
+  (storage as any).getUserOrganizationId.mockResolvedValue(1);
+  (storage as any).getUserTeamIds.mockResolvedValue([1]);
+  (getFileMeta as vi.Mock).mockResolvedValue({ teamId: null, organizationId: 1 });
 });
 
 afterAll(() => {
@@ -81,6 +90,7 @@ describe('File Upload API', () => {
 
     const response = await request(app)
       .post('/api/upload')
+      .set(authHeader)
       .field('teamId', '1')
       .attach('files', testFilePath);
 
@@ -93,7 +103,7 @@ describe('File Upload API', () => {
     const fileList = { files: [mockFile] };
     (listUploadedFiles as vi.Mock).mockResolvedValue(fileList);
 
-    const response = await request(app).get('/api/uploads?teamId=1');
+    const response = await request(app).get('/api/uploads?teamId=1').set(authHeader);
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual(fileList);
@@ -102,7 +112,9 @@ describe('File Upload API', () => {
   it('TC-UPL-005: should delete an uploaded file', async () => {
     (deleteUploadedFile as vi.Mock).mockResolvedValue(true);
 
-    const response = await request(app).delete(`/api/uploads/files/${mockFile.filename}`);
+    const response = await request(app)
+      .delete(`/api/uploads/files/${mockFile.filename}`)
+      .set(authHeader);
 
     expect(response.status).toBe(200);
     expect(response.body.message).toBe('File deleted successfully');
@@ -111,11 +123,9 @@ describe('File Upload API', () => {
   // File downloads are always authenticated, including files explicitly marked public.
   it('TC-UPL-004: should get file info for an authenticated download', async () => {
     (getFileInfo as vi.Mock).mockResolvedValue({ ...mockFile, path: testFilePath });
-    const token = jwt.sign({ id: 1, email: 'user@test.com', role: 'user' }, config.jwtSecret);
-
     const response = await request(app)
       .get(`/api/uploads/files/${mockFile.filename}`)
-      .set('Authorization', `Bearer ${token}`);
+      .set(authHeader);
 
     expect(response.status).toBe(200);
     expect(response.headers['content-disposition']).toContain(
