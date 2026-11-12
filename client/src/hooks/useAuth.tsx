@@ -96,7 +96,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       queryClient.clear();
       await fetchUser();
     } else {
-      throw new Error('Login failed');
+      // The status lets the login page tell a deactivated account (403) from wrong credentials.
+      throw Object.assign(new Error('Login failed'), { status: response.status });
     }
   };
 

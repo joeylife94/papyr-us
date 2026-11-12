@@ -1,7 +1,7 @@
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import { Server as HTTPServer } from 'http';
 import { DBStorage } from '../storage.js';
-import jwt from 'jsonwebtoken';
+import { verifyAccessToken } from '../auth-tokens.js';
 import { config } from '../config.js';
 import logger from './logger.js';
 import { isRedisEnabled, getRedisClient, getSubscriberClient } from './redis.js';
@@ -623,7 +623,7 @@ export async function setupSocketIO(
       }
 
       try {
-        const decoded = jwt.verify(token, config.jwtSecret) as {
+        const decoded = verifyAccessToken(token) as {
           id: string | number;
           email?: string;
           role?: string;

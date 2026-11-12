@@ -140,6 +140,7 @@ describe('Authentication API', () => {
       name: 'Test User',
       email: 'user@test.com',
       hashedPassword: 'hashed_password',
+      isActive: true,
     };
 
     it('TC-AUTH-004: should log in a user successfully', async () => {
