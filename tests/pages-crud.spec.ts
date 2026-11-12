@@ -1,11 +1,26 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
+import { registerTestUser, createAuthenticatedApiContext } from './e2e-helpers';
 
 /**
  * Wiki Pages CRUD E2E Tests
  *
  * Tests the complete lifecycle of wiki pages via the API:
  * - Create → Read → Update → List → Delete → Verify deleted
+ *
+ * The server enforces authentication on every page read and write, so each file run
+ * registers a fresh user and signs in before touching /api/pages.
  */
+
+let authRequest: APIRequestContext;
+
+test.beforeAll(async ({ request }) => {
+  const user = await registerTestUser(request, 'pages-crud');
+  authRequest = await createAuthenticatedApiContext(user.email, user.password);
+});
+
+test.afterAll(async () => {
+  await authRequest?.dispose();
+});
 
 // Helper: create a page via API and return the full response body
 async function apiCreatePage(request: APIRequestContext, title: string, content: string) {
@@ -27,13 +42,13 @@ async function apiCreatePage(request: APIRequestContext, title: string, content:
 }
 
 test.describe('Wiki Pages CRUD', () => {
-  test('create a page and read it back by slug', async ({ request }) => {
+  test('create a page and read it back by slug', async () => {
     const title = `CRUD Read Test ${Date.now()}`;
     const content = 'Content for read test.';
-    const created = await apiCreatePage(request, title, content);
+    const created = await apiCreatePage(authRequest, title, content);
 
     // Read by slug
-    const getResp = await request.get(`/api/pages/slug/${created.slug}`);
+    const getResp = await authRequest.get(`/api/pages/slug/${created.slug}`);
     expect(getResp.status()).toBe(200);
     const page = await getResp.json();
     expect(page.title).toBe(title);
@@ -41,11 +56,11 @@ test.describe('Wiki Pages CRUD', () => {
     expect(page.id).toBe(created.id);
   });
 
-  test('create a page and verify it appears in the list', async ({ request }) => {
+  test('create a page and verify it appears in the list', async () => {
     const title = `CRUD List Test ${Date.now()}`;
-    const created = await apiCreatePage(request, title, 'List test content.');
+    const created = await apiCreatePage(authRequest, title, 'List test content.');
 
-    const listResp = await request.get('/api/pages');
+    const listResp = await authRequest.get('/api/pages');
     expect(listResp.status()).toBe(200);
     const body = await listResp.json();
     expect(body).toHaveProperty('pages');
@@ -56,47 +71,51 @@ test.describe('Wiki Pages CRUD', () => {
     expect(found.title).toBe(title);
   });
 
-  test('update a page title and content', async ({ request }) => {
-    const created = await apiCreatePage(request, `CRUD Update Test ${Date.now()}`, 'Original.');
+  test('update a page title and content', async () => {
+    const created = await apiCreatePage(authRequest, `CRUD Update Test ${Date.now()}`, 'Original.');
 
     const updatedTitle = `${created.title} (Updated)`;
     const updatedContent = 'Updated content.';
-    const putResp = await request.put(`/api/pages/${created.id}`, {
+    const putResp = await authRequest.put(`/api/pages/${created.id}`, {
       data: { title: updatedTitle, content: updatedContent },
     });
     expect(putResp.status()).toBe(200);
 
     // Re-read and verify
-    const getResp = await request.get(`/api/pages/slug/${created.slug}`);
+    const getResp = await authRequest.get(`/api/pages/slug/${created.slug}`);
     expect(getResp.status()).toBe(200);
     const page = await getResp.json();
     expect(page.title).toBe(updatedTitle);
     expect(page.content).toBe(updatedContent);
   });
 
-  test('delete a page and verify 404', async ({ request }) => {
-    const created = await apiCreatePage(request, `CRUD Delete Test ${Date.now()}`, 'To delete.');
+  test('delete a page and verify 404', async () => {
+    const created = await apiCreatePage(
+      authRequest,
+      `CRUD Delete Test ${Date.now()}`,
+      'To delete.'
+    );
 
-    const delResp = await request.delete(`/api/pages/${created.id}`);
+    const delResp = await authRequest.delete(`/api/pages/${created.id}`);
     expect(delResp.status()).toBe(200);
 
     // Verify it's gone
-    const getResp = await request.get(`/api/pages/slug/${created.slug}`);
+    const getResp = await authRequest.get(`/api/pages/slug/${created.slug}`);
     expect(getResp.status()).toBe(404);
   });
 
-  test('page not found returns 404', async ({ request }) => {
-    const resp = await request.get('/api/pages/999999999');
+  test('page not found returns 404', async () => {
+    const resp = await authRequest.get('/api/pages/999999999');
     expect(resp.status()).toBe(404);
   });
 });
 
 test.describe('Pages Search API', () => {
-  test('search returns matching page', async ({ request }) => {
+  test('search returns matching page', async () => {
     const uniqueWord = `searchable${Date.now()}`;
-    const created = await apiCreatePage(request, `Search ${uniqueWord}`, 'Findable content.');
+    const created = await apiCreatePage(authRequest, `Search ${uniqueWord}`, 'Findable content.');
 
-    const searchResp = await request.get(`/api/pages?q=${uniqueWord}`);
+    const searchResp = await authRequest.get(`/api/pages?q=${uniqueWord}`);
     expect(searchResp.status()).toBe(200);
     const body = await searchResp.json();
     expect(body).toHaveProperty('pages');
@@ -105,8 +124,8 @@ test.describe('Pages Search API', () => {
     expect(found).toBeDefined();
   });
 
-  test('empty search returns pages with pagination', async ({ request }) => {
-    const resp = await request.get('/api/pages?q=');
+  test('empty search returns pages with pagination', async () => {
+    const resp = await authRequest.get('/api/pages?q=');
     expect(resp.status()).toBe(200);
     const body = await resp.json();
     expect(body).toHaveProperty('pages');
