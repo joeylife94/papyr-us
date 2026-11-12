@@ -123,6 +123,12 @@ describe('TC-WF-API: POST /api/workflows action validation', () => {
   beforeEach(() => {
     // Storage stubs required by requireTeamMembership + workflow creation
     (storage.getUserTeamIds as ReturnType<typeof vi.fn>).mockResolvedValue([TEAM_ID]);
+    // The route reads the creator from the signed-in account
+    (storage.getUserAccount as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 1,
+      email: 'user@wf-test.com',
+      isActive: true,
+    });
     (storage.createWorkflow as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: 1,
       ...baseWorkflow,

@@ -122,6 +122,7 @@ beforeEach(() => {
   storage.createCalendarEvent.mockImplementation(async (event: any) => ({ id: 1, ...event }));
   storage.createTask.mockImplementation(async (task: any) => ({ id: 1, ...task }));
   storage.createWorkflow.mockImplementation(async (workflow: any) => ({ id: 1, ...workflow }));
+  storage.getUserAccount.mockResolvedValue({ id: CALLER.id, email: CALLER.email, isActive: true });
   storage.createSavedView.mockImplementation(async (view: any) => ({ id: 1, ...view }));
   (processUploadedFile as any).mockImplementation(async (file: any, teamId?: string) => ({
     filename: file.originalname,

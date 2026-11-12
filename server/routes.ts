@@ -4313,7 +4313,13 @@ export async function registerRoutes(
           if (!teamId) {
             return res.status(400).json({ error: 'teamId is required' });
           }
-          const workflowData = { ...req.body, teamId };
+          // The creator is the signed-in account, read from the database: a value in the body is
+          // ignored, and a session whose account is gone or deactivated creates nothing.
+          const account = await storage.getUserAccount(req.user!.id);
+          if (!account || !account.isActive) {
+            return res.status(401).json({ message: 'Authentication required' });
+          }
+          const workflowData = { ...req.body, teamId, createdBy: account.email };
           // Validate action configs
           const actionValidationError = validateWorkflowActions(workflowData.actions);
           if (actionValidationError) {
@@ -4339,6 +4345,8 @@ export async function registerRoutes(
           const existingWorkflow = await loadWorkflowForMember(req, res);
           if (!existingWorkflow) return;
           const workflowData = { ...req.body };
+          // The creator is set once, on create, from the session
+          delete workflowData.createdBy;
           // A workflow always keeps a team. A named target team was resolved and membership
           // checked by requireTeamMembership (any source that names a team names the same one).
           if ('teamId' in workflowData) {
