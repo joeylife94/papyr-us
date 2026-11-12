@@ -198,10 +198,11 @@ async function executeAction(
         if (!context.trigger?.id) {
           return { success: false, error: 'No task ID in context' };
         }
-        if (!(await getTaskOfWorkflowTeam(context, context.trigger.id))) {
+        const taskToUpdate = await getTaskOfWorkflowTeam(context, context.trigger.id);
+        if (!taskToUpdate) {
           return { success: false, error: 'Task not found' };
         }
-        const updatedTask = await getWorkflowStorage().updateTask(context.trigger.id, {
+        const updatedTask = await getWorkflowStorage().updateTask(taskToUpdate.id, {
           status: processedConfig.status,
           priority: processedConfig.priority,
           assignedTo: processedConfig.assignedTo,
@@ -228,11 +229,12 @@ async function executeAction(
         if (!context.trigger?.id) {
           return { success: false, error: 'No page ID in context' };
         }
-        if (!(await getPageOfWorkflowTeam(context, context.trigger.id))) {
+        const pageToComment = await getPageOfWorkflowTeam(context, context.trigger.id);
+        if (!pageToComment) {
           return { success: false, error: 'Page not found' };
         }
         const comment = await getWorkflowStorage().createComment({
-          pageId: context.trigger.id,
+          pageId: pageToComment.id,
           author: 'Automation Bot',
           content: processedConfig.message || 'Automated comment',
           parentId: null,
@@ -371,10 +373,11 @@ async function executeAction(
         if (!context.trigger?.id) {
           return { success: false, error: 'No task ID in context' };
         }
-        if (!(await getTaskOfWorkflowTeam(context, context.trigger.id))) {
+        const taskToAssign = await getTaskOfWorkflowTeam(context, context.trigger.id);
+        if (!taskToAssign) {
           return { success: false, error: 'Task not found' };
         }
-        await getWorkflowStorage().updateTask(context.trigger.id, {
+        await getWorkflowStorage().updateTask(taskToAssign.id, {
           assignedTo: processedConfig.assignedTo,
         });
         return { success: true, result: { assignedTo: processedConfig.assignedTo } };
@@ -383,10 +386,11 @@ async function executeAction(
         if (!context.trigger?.id) {
           return { success: false, error: 'No page ID in context' };
         }
-        if (!(await getPageOfWorkflowTeam(context, context.trigger.id))) {
+        const pageToMove = await getPageOfWorkflowTeam(context, context.trigger.id);
+        if (!pageToMove) {
           return { success: false, error: 'Page not found' };
         }
-        await getWorkflowStorage().updateWikiPage(context.trigger.id, {
+        await getWorkflowStorage().updateWikiPage(pageToMove.id, {
           folder: processedConfig.folder,
         });
         return { success: true, result: { folder: processedConfig.folder } };

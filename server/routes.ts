@@ -1,4 +1,4 @@
-import type { Express, Response } from 'express';
+import type { Express, NextFunction, Response } from 'express';
 import { createServer, type Server as HttpServer } from 'http';
 import { Server as SocketIoServer } from 'socket.io';
 import {
@@ -4082,6 +4082,13 @@ export async function registerRoutes(
     }
   );
 
+  // Creating or changing a workflow or saved view needs a session, whatever ENFORCE_AUTH_WRITES
+  // says: it runs before any team resolution, lookup or write.
+  const requireSession = (req: AuthRequest, res: Response, next: NextFunction) => {
+    if (!req.user?.id) return res.status(401).json({ message: 'Authentication required' });
+    next();
+  };
+
   if (featureFlags.FEATURE_AUTOMATION) {
     // ==================== Workflows API ====================
 
@@ -4151,14 +4158,15 @@ export async function registerRoutes(
     // row without one is not found for anyone, and the caller must be a member of that team. It
     // sends the refusal itself and returns null; the handler continues only on a workflow.
     const loadWorkflowForMember = async (req: AuthRequest, res: Response) => {
+      // The session comes first, so a signed-out caller cannot tell workflows apart
+      if (!req.user?.id) {
+        res.status(401).json({ message: 'Authentication required' });
+        return null;
+      }
       const id = Number(req.params.id);
       const workflow = Number.isInteger(id) ? await storage.getWorkflow(id) : undefined;
       if (!workflow || workflow.teamId == null) {
         res.status(404).json({ error: 'Workflow not found' });
-        return null;
-      }
-      if (!req.user?.id) {
-        res.status(401).json({ message: 'Authentication required' });
         return null;
       }
       const userTeamIds = await storage.getUserTeamIds(req.user.id);
@@ -4189,6 +4197,7 @@ export async function registerRoutes(
       '/api/workflows',
       optionalAuth,
       requireAuthIfEnabled,
+      requireSession,
       requireTeamMembership,
       async (req: AuthRequest, res) => {
         try {
@@ -4216,6 +4225,7 @@ export async function registerRoutes(
       '/api/workflows/:id',
       optionalAuth,
       requireAuthIfEnabled,
+      requireSession,
       requireTeamMembership,
       async (req: AuthRequest, res) => {
         try {
@@ -4374,6 +4384,11 @@ export async function registerRoutes(
   // without one is not found for anyone, and the caller must be a member of that team. It sends
   // the refusal itself and returns null; the handler continues only on a view.
   const loadSavedViewForMember = async (req: AuthRequest, res: Response) => {
+    // The session comes first, so a signed-out caller cannot tell views apart
+    if (!req.user?.id) {
+      res.status(401).json({ message: 'Authentication required' });
+      return null;
+    }
     const id = parseInt(req.params.id);
     if (isNaN(id)) {
       res.status(400).json({ error: 'Invalid view ID' });
@@ -4382,10 +4397,6 @@ export async function registerRoutes(
     const view = await storage.getSavedView(id);
     if (!view || view.teamId == null) {
       res.status(404).json({ error: 'View not found' });
-      return null;
-    }
-    if (!req.user?.id) {
-      res.status(401).json({ message: 'Authentication required' });
       return null;
     }
     const userTeamIds = await storage.getUserTeamIds(req.user.id);
@@ -4411,6 +4422,7 @@ export async function registerRoutes(
     '/api/saved-views',
     optionalAuth,
     requireAuthIfEnabled,
+    requireSession,
     requireTeamMembership,
     async (req: AuthRequest, res) => {
       try {
@@ -4433,6 +4445,7 @@ export async function registerRoutes(
     '/api/saved-views/:id',
     optionalAuth,
     requireAuthIfEnabled,
+    requireSession,
     requireTeamMembership,
     async (req: AuthRequest, res) => {
       try {
@@ -4487,6 +4500,7 @@ export async function registerRoutes(
     '/api/saved-views/:id/set-default',
     optionalAuth,
     requireAuthIfEnabled,
+    requireSession,
     requireTeamMembership,
     async (req: AuthRequest, res) => {
       try {

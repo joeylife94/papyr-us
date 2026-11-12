@@ -188,11 +188,36 @@ describe('a view with no team answers 404 to everyone', () => {
     noWrites();
   });
 
-  it('GET answers 404 to a caller without a session, when auth is not enforced', async () => {
-    mockConfig.enforceAuthForWrites = false;
-    const response = await request(app).get('/api/saved-views/5');
-    expect(response.status).toBe(404);
-  });
+  it.each([true, false])(
+    'every route answers 401 to a caller without a session, so team-less and team views look alike (auth enforced: %s)',
+    async (enforced) => {
+      mockConfig.enforceAuthForWrites = enforced;
+      for (const [, call] of singleRoutes) {
+        const response = await call(app);
+        expect(response.status).toBe(401);
+      }
+      expect(storage.getSavedView).not.toHaveBeenCalled();
+      noWrites();
+    }
+  );
+});
+
+describe('creating or changing a view needs a session in both auth modes', () => {
+  it.each([true, false])(
+    'POST and PUT answer 401 before any lookup (enforced: %s)',
+    async (enforced) => {
+      mockConfig.enforceAuthForWrites = enforced;
+      const created = await request(app)
+        .post('/api/saved-views')
+        .send({ ...body, teamId: OWN_TEAM });
+      expect(created.status).toBe(401);
+      const updated = await request(app).put('/api/saved-views/5').send({ teamId: OWN_TEAM });
+      expect(updated.status).toBe(401);
+      expect(storage.getTeamByName).not.toHaveBeenCalled();
+      expect(storage.getSavedView).not.toHaveBeenCalled();
+      noWrites();
+    }
+  );
 });
 
 describe('a view of another team answers 403', () => {

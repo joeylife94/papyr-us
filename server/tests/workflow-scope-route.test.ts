@@ -261,6 +261,42 @@ describe('a caller without a session', () => {
   });
 });
 
+describe('a caller without a session cannot tell workflows apart or write', () => {
+  it.each([true, false])(
+    'every single-workflow route answers 401 before any lookup (auth enforced: %s)',
+    async (enforced) => {
+      mockConfig.enforceAuthForWrites = enforced;
+      for (const team of [null, OWN_TEAM]) {
+        storage.getWorkflow.mockResolvedValue(workflowOf(team));
+        for (const [, call] of singleRoutes) {
+          expect((await call(app)).status).toBe(401);
+        }
+      }
+      expect(storage.getWorkflow).not.toHaveBeenCalled();
+      noWrites();
+    }
+  );
+
+  it.each([true, false])(
+    'POST and PUT answer 401 before any team resolution or write (auth enforced: %s)',
+    async (enforced) => {
+      mockConfig.enforceAuthForWrites = enforced;
+      const created = await request(app)
+        .post('/api/workflows')
+        .send({ ...body, teamId: OWN_TEAM });
+      expect(created.status).toBe(401);
+      const named = await request(app)
+        .post('/api/workflows')
+        .send({ ...body, teamId: 'own-team' });
+      expect(named.status).toBe(401);
+      const updated = await request(app).put('/api/workflows/5').send({ teamId: OWN_TEAM });
+      expect(updated.status).toBe(401);
+      expect(storage.getTeamByName).not.toHaveBeenCalled();
+      noWrites();
+    }
+  );
+});
+
 describe('a member of the workflow team', () => {
   beforeEach(() => storage.getWorkflow.mockResolvedValue(workflowOf(OWN_TEAM)));
 

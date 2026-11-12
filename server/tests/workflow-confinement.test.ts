@@ -285,3 +285,35 @@ describe('send_notification', () => {
     );
   });
 });
+
+describe('writes use the id of the row that was loaded and checked', () => {
+  it.each(['add_comment', 'add_tag', 'move_page'])(
+    '%s with a string trigger id writes with the page row id',
+    async (type) => {
+      storage.getWikiPage.mockResolvedValue(page(12, TEAM));
+      const run = await executeWorkflow(
+        workflowWith({ type, config: { message: 'm', tags: ['x'], folder: 'f' } }),
+        { id: '12' }
+      );
+      expect(run.status).toBe('success');
+      expect(storage.getWikiPage).toHaveBeenCalledWith(12);
+      if (type === 'add_comment') {
+        expect(storage.createComment).toHaveBeenCalledWith(expect.objectContaining({ pageId: 12 }));
+      } else {
+        expect(storage.updateWikiPage).toHaveBeenCalledWith(12, expect.any(Object));
+      }
+    }
+  );
+
+  it.each(['update_task', 'assign_task'])(
+    '%s with a string trigger id writes with the task row id',
+    async (type) => {
+      storage.getTask.mockResolvedValue({ id: 12, teamId: String(TEAM) });
+      const run = await executeWorkflow(workflowWith({ type, config: { status: 'done' } }), {
+        id: '12',
+      });
+      expect(run.status).toBe('success');
+      expect(storage.updateTask).toHaveBeenCalledWith(12, expect.any(Object));
+    }
+  );
+});
