@@ -64,6 +64,9 @@ test.describe('Workflow Automation UI', () => {
     await page.getByLabel(/워크플로우 이름/i).fill(workflowName);
     await page.getByLabel(/설명/i).fill('E2E UI 자동화 테스트 워크플로우');
 
+    // The default action (send notification) requires a message before the create button enables
+    await page.getByPlaceholder('알림 내용을 입력하세요').fill('E2E 알림 메시지');
+
     // Submit
     const submitBtn = page.getByRole('button', { name: /워크플로우 생성/i });
     await expect(submitBtn).toBeEnabled();
