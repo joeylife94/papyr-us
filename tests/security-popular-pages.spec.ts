@@ -99,7 +99,7 @@ test.describe('Popular pages follow the page read boundary', () => {
       expect(response.status(), `create ${data.slug}`).toBe(201);
       return (await response.json()) as { id: number; slug: string };
     };
-    /** Records one view of the page per context given: any signed-in caller can record one. */
+    /** Records one view of the page per context given; each must be able to read the page. */
     const view = async (pageId: number, viewers: APIRequestContext[]) => {
       for (const ctx of viewers) {
         const response = await ctx.post(`/api/pages/${pageId}/view`);
@@ -180,30 +180,11 @@ test.describe('Popular pages follow the page read boundary', () => {
       });
 
       // Other teams' and the other organization's pages have the most views.
-      await view(xTeam.id, [
-        outsiderRequest,
-        outsiderRequest,
-        outsiderRequest,
-        ownerARequest,
-        ownerBRequest,
-        soloRequest,
-        memberARequest,
-      ]);
-      await view(bTeam.id, [
-        ownerBRequest,
-        ownerBRequest,
-        ownerBRequest,
-        ownerARequest,
-        soloRequest,
-        memberARequest,
-      ]);
-      await view(bPrivate.id, [
-        ownerBRequest,
-        ownerBRequest,
-        ownerARequest,
-        memberARequest,
-        soloRequest,
-      ]);
+      // Each view comes from an account that can read the page (#124 X1b: a view of a page the
+      // caller cannot read is refused and not recorded).
+      await view(xTeam.id, Array(7).fill(outsiderRequest));
+      await view(bTeam.id, Array(6).fill(ownerBRequest));
+      await view(bPrivate.id, Array(5).fill(ownerBRequest));
       await view(aTrashed.id, [
         ownerARequest,
         ownerARequest,
@@ -211,7 +192,7 @@ test.describe('Popular pages follow the page read boundary', () => {
         memberARequest,
         memberARequest,
       ]);
-      await view(aTeam.id, [ownerARequest, ownerARequest, memberARequest, ownerBRequest]);
+      await view(aTeam.id, [ownerARequest, ownerARequest, memberARequest, memberARequest]);
       await view(bPublic.id, [ownerARequest, soloRequest, outsiderRequest]);
 
       expect(
@@ -265,7 +246,7 @@ test.describe('Popular pages follow the page read boundary', () => {
         pageTitle: `Popular check ${slug.aTeam}`,
       });
       expect(Number(first.viewCount)).toBe(4);
-      expect(Number(first.uniqueViewers)).toBe(3);
+      expect(Number(first.uniqueViewers)).toBe(2);
       expect(Number(second.viewCount)).toBe(3);
       const top = await ownerBRequest.get('/api/analytics/popular?limit=1&days=1');
       expect(((await top.json()) as Row[]).length).toBe(1);
