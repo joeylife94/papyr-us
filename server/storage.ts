@@ -200,6 +200,47 @@ export type OrganizationTx = Parameters<Parameters<NodePgDatabase['transaction']
 /** Where an organization read runs: the pool, or the locked transaction's handle. */
 export type OrganizationExecutor = NodePgDatabase | OrganizationTx;
 
+// ---- X1c P1 types ----
+export const FOOTPRINT_REASONS = [
+  'holds_role',
+  'team_memberships',
+  'authored_pages',
+  'page_grants',
+  'comments',
+  'roster_rows',
+] as const;
+export type FootprintReason = (typeof FOOTPRINT_REASONS)[number];
+
+export interface OrganizationAdminRow {
+  id: number;
+  slug: string;
+  name: string;
+  isActive: boolean;
+  aiEnabled: boolean;
+  memberCount: number;
+  ownerCount: number;
+  createdAt: Date;
+}
+
+export type CreateOrganizationWithOwnerResult =
+  | { kind: 'created'; organization: Organization; owner: { userId: number; email: string } }
+  | { kind: 'user_not_found' }
+  | { kind: 'not_eligible'; reasons: FootprintReason[] };
+
+export type PromoteFirstOwnerResult =
+  | { kind: 'promoted'; userId: number; email: string }
+  | { kind: 'organization_not_found' }
+  | { kind: 'member_not_found' }
+  | { kind: 'has_owner' };
+
+/** Thrown inside the placement transaction so the new organization is rolled back. */
+class FootprintRefusal extends Error {
+  constructor(readonly reasons: FootprintReason[]) {
+    super('account_not_eligible');
+  }
+}
+// ---- end X1c P1 types ----
+
 const ORGANIZATION_LOCK_TIMEOUT_MS = 5000;
 
 /** Another request holds the organization's member lock for too long; routes answer 503. */
@@ -2067,6 +2108,179 @@ export class DBStorage {
   }
 
   // ---- X1c P1: platform admin organization management (organization-admin-routes.ts) ----
+
+  /** Every organization with its member and owner counts, by id. No member names or emails. */
+  async listOrganizationsForAdmin(): Promise<OrganizationAdminRow[]> {
+    const result = await this.db.execute(sql`
+      SELECT o.id, o.slug, o.name, o.is_active, o.ai_enabled, o.created_at,
+        (SELECT count(*)::int FROM organization_members m WHERE m.organization_id = o.id) AS member_count,
+        (SELECT count(*)::int FROM organization_members m
+           WHERE m.organization_id = o.id AND m.role = 'owner') AS owner_count
+      FROM organizations o
+      ORDER BY o.id
+    `);
+    return (result.rows as any[]).map((row) => ({
+      id: Number(row.id),
+      slug: String(row.slug),
+      name: String(row.name),
+      isActive: row.is_active === true,
+      aiEnabled: row.ai_enabled === true,
+      memberCount: Number(row.member_count),
+      ownerCount: Number(row.owner_count),
+      createdAt: new Date(row.created_at),
+    }));
+  }
+
+  /**
+   * What an account holds outside organization `organizationId`, as reason codes (empty: it can
+   * be named first owner of that organization). Pass the handle of withOrganizationLocks to read
+   * inside the transaction.
+   */
+  async getAccountFootprintOutside(
+    userId: number,
+    organizationId: number,
+    executor: OrganizationExecutor = this.db
+  ): Promise<FootprintReason[]> {
+    const result = await executor.execute(sql`
+      SELECT
+        EXISTS (SELECT 1 FROM organization_members om
+          WHERE om.user_id = u.id AND om.organization_id <> ${organizationId}
+            AND om.role <> 'member') AS holds_role,
+        EXISTS (SELECT 1 FROM team_members tm JOIN teams t ON t.id = tm.team_id
+          WHERE tm.user_id = u.id AND t.organization_id <> ${organizationId}) AS team_memberships,
+        EXISTS (SELECT 1 FROM wiki_pages w
+          WHERE w.author = u.email AND w.organization_id <> ${organizationId}) AS authored_pages,
+        EXISTS (SELECT 1 FROM page_permissions pp JOIN wiki_pages w ON w.id = pp.page_id
+          WHERE pp.entity_type = 'user' AND pp.entity_id = u.id
+            AND w.organization_id <> ${organizationId}) AS page_grants,
+        EXISTS (SELECT 1 FROM comments c JOIN wiki_pages w ON w.id = c.page_id
+          WHERE c.author_user_id = u.id AND w.organization_id <> ${organizationId}) AS comments,
+        EXISTS (SELECT 1 FROM members r LEFT JOIN teams t ON t.id = r.team_id
+          WHERE r.email = u.email
+            AND (r.team_id IS NULL OR t.organization_id <> ${organizationId})) AS roster_rows
+      FROM users u
+      WHERE u.id = ${userId}
+    `);
+    const row = (result.rows as any[])[0];
+    // An unknown account has nothing to judge; callers look the account up first.
+    if (!row) return [];
+    return FOOTPRINT_REASONS.filter((reason) => row[reason] === true);
+  }
+
+  /**
+   * Creates an organization (AI off) and makes the account with exactly this email its first
+   * owner, in one transaction: the account's organization_members row moves to the new
+   * organization as `owner`, or is created when it has none. Refuses, leaving nothing behind,
+   * when the account is unknown or inactive, or holds anything outside the new organization
+   * (getAccountFootprintOutside). A taken slug throws the unique violation (23505) of the insert.
+   * The source organization's lock is held while the footprint is checked and the row moves.
+   */
+  async createOrganizationWithOwner(input: {
+    name: string;
+    slug: string;
+    ownerEmail: string;
+  }): Promise<CreateOrganizationWithOwnerResult> {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const [account] = await this.db
+        .select({ id: users.id, email: users.email, isActive: users.isActive })
+        .from(users)
+        .where(eq(users.email, input.ownerEmail))
+        .limit(1);
+      if (!account || !account.isActive) return { kind: 'user_not_found' };
+      const source = await this.getOrganizationMembership(account.id);
+
+      const work = async (
+        tx: OrganizationTx
+      ): Promise<CreateOrganizationWithOwnerResult | null> => {
+        // The membership may have changed between the read above and the lock: start over.
+        const current = await this.getOrganizationMembership(account.id, tx);
+        if ((current?.organizationId ?? null) !== (source?.organizationId ?? null)) return null;
+
+        const [organization] = await tx
+          .insert(organizations)
+          .values({ name: input.name, slug: input.slug, aiEnabled: false })
+          .returning();
+        const reasons = await this.getAccountFootprintOutside(account.id, organization.id, tx);
+        if (reasons.length > 0) {
+          // Rolls back the insert above: no organization is left behind.
+          throw new FootprintRefusal(reasons);
+        }
+        const moved = await tx
+          .update(organizationMembers)
+          .set({ organizationId: organization.id, role: 'owner', createdAt: new Date() })
+          .where(eq(organizationMembers.userId, account.id))
+          .returning({ id: organizationMembers.id });
+        if (moved.length === 0) {
+          await tx
+            .insert(organizationMembers)
+            .values({ organizationId: organization.id, userId: account.id, role: 'owner' });
+        }
+        return {
+          kind: 'created',
+          organization,
+          owner: { userId: account.id, email: account.email },
+        };
+      };
+
+      try {
+        const outcome = source
+          ? await this.withOrganizationLocks([source.organizationId], work)
+          : await this.db.transaction(work);
+        if (outcome) return outcome;
+      } catch (error) {
+        if (error instanceof FootprintRefusal) {
+          return { kind: 'not_eligible', reasons: error.reasons };
+        }
+        throw error;
+      }
+    }
+    throw new Error('The account kept changing organization while it was being placed');
+  }
+
+  /**
+   * Makes an existing member of the organization its owner, only while it has none. Never moves
+   * an account. The decision is made under the organization's lock, so of two concurrent calls
+   * exactly one succeeds.
+   */
+  async promoteFirstOrganizationOwner(
+    organizationId: number,
+    email: string
+  ): Promise<PromoteFirstOwnerResult> {
+    return this.withOrganizationLocks([organizationId], async (tx) => {
+      if (!(await this.getOrganization(organizationId, tx))) {
+        return { kind: 'organization_not_found' };
+      }
+      const [account] = await tx
+        .select({ id: users.id, email: users.email })
+        .from(users)
+        .where(eq(users.email, email))
+        .limit(1);
+      const membership = account ? await this.getOrganizationMembership(account.id, tx) : null;
+      if (!account || membership?.organizationId !== organizationId) {
+        return { kind: 'member_not_found' };
+      }
+      const [owners] = await tx
+        .select({ count: sql<number>`count(*)::int` })
+        .from(organizationMembers)
+        .where(
+          and(
+            eq(organizationMembers.organizationId, organizationId),
+            eq(organizationMembers.role, 'owner')
+          )
+        );
+      if (Number(owners?.count ?? 0) > 0) return { kind: 'has_owner' };
+      await tx
+        .update(organizationMembers)
+        .set({ role: 'owner' })
+        .where(
+          and(
+            eq(organizationMembers.userId, account.id),
+            eq(organizationMembers.organizationId, organizationId)
+          )
+        );
+      return { kind: 'promoted', userId: account.id, email: account.email };
+    });
+  }
   // ---- end X1c P1 ----
 
   // ---- X1c P2: organization members and settings (organization-routes.ts) ----
