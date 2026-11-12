@@ -403,3 +403,116 @@ describe('GET /api/knowledge-graph', () => {
     expect(aiFns.findRelatedPages).toHaveBeenCalled();
   });
 });
+
+describe("POST /api/ai/related-pages: AI on a page follows the page's organization", () => {
+  const related = (body: Record<string, unknown>) =>
+    request(app)
+      .post('/api/ai/related-pages')
+      .set('Cookie', cookie)
+      .send({ content: 'c', title: 't', ...body });
+  const viewer = { userId: 7, email: 'member@org.test', organizationId: ORG, teamIds: [3] };
+
+  beforeEach(() => {
+    s.getPageViewer.mockResolvedValue(viewer);
+    s.checkPagePermission.mockResolvedValue(true);
+    s.getWikiPage.mockImplementation(async (id: number) =>
+      id === 50
+        ? { id: 50, teamId: 3, organizationId: ORG }
+        : id === 60
+          ? { id: 60, teamId: 8, organizationId: ORG + 1 }
+          : undefined
+    );
+  });
+
+  it("reaches the provider function for a page of the caller's organization the caller can read", async () => {
+    const res = await related({ pageId: 50 });
+    expect(res.status).toBe(200);
+    expect(aiFns.findRelatedPages).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['a page of another organization', 60, true],
+    ['a page the caller cannot read', 50, false],
+    ['an unknown page', 999, true],
+  ])('refuses %s with 404 before any provider call', async (_label, pageId, readable) => {
+    s.checkPagePermission.mockResolvedValue(readable);
+    const res = await related({ pageId });
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ message: 'Page not found' });
+    expect(aiFns.findRelatedPages).not.toHaveBeenCalled();
+    expect(s.searchWikiPages).not.toHaveBeenCalled();
+  });
+
+  it('answers the same for a page of another organization and for one the caller cannot read', async () => {
+    const other = await related({ pageId: 60 });
+    s.checkPagePermission.mockResolvedValue(false);
+    const unreadable = await related({ pageId: 50 });
+    expect(other.status).toBe(unreadable.status);
+    expect(other.body).toEqual(unreadable.body);
+  });
+
+  it('hands the provider only pages the caller may list', async () => {
+    const listable = { id: 1, title: 'Listed', content: 'a', tags: [] };
+    const hidden = { id: 2, title: 'Hidden', content: 'b', tags: [] };
+    s.searchWikiPages.mockImplementation(async (_params: unknown, options?: any) => ({
+      pages: options?.readableBy ? [listable] : [listable, hidden],
+    }));
+    const res = await related({ pageId: 50 });
+    expect(res.status).toBe(200);
+    const sent = aiFns.findRelatedPages.mock.calls[0][2];
+    expect(sent.map((page: any) => page.id)).toEqual([1]);
+    expect(s.searchWikiPages).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ readableBy: viewer })
+    );
+  });
+});
+
+describe('signed in with ENFORCE_AUTH_WRITES off', () => {
+  beforeEach(() => {
+    cfg.enforce = false;
+    s.retrieveTeamScopedPages.mockResolvedValue([
+      { pageId: 1, teamId: 3, slug: 'roadmap', title: 'Roadmap', snippet: 'plan', score: 0.4 },
+    ]);
+    s.getKnowledgeGraphSource.mockResolvedValue({
+      pages: [
+        { id: 1, title: 'A', slug: 'a', icon: null, tags: [], content: 'x'.repeat(150) },
+        { id: 2, title: 'B', slug: 'b', icon: null, tags: [], content: 'y'.repeat(150) },
+      ],
+      links: [],
+    });
+  });
+  const search = () =>
+    request(app).post('/api/ai/search').set('Cookie', cookie).send({ query: 'roadmap' });
+  const graph = () => request(app).get('/api/knowledge-graph?includeAI=true').set('Cookie', cookie);
+
+  it('re-ranks AI search when the organization has AI on', async () => {
+    setOrganization('on');
+    const res = await search();
+    expect(res.status).toBe(200);
+    expect(aiFns.smartSearch).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps AI search in full-text order when the organization has AI off', async () => {
+    setOrganization('off');
+    const res = await search();
+    expect(res.status).toBe(200);
+    expect(res.body.rankingSource).toBe('fts');
+    expect(aiFns.smartSearch).not.toHaveBeenCalled();
+  });
+
+  it('builds AI graph links when the organization has AI on', async () => {
+    setOrganization('on');
+    const res = await graph();
+    expect(res.status).toBe(200);
+    expect(aiFns.findRelatedPages).toHaveBeenCalled();
+  });
+
+  it('refuses AI graph links when the organization has AI off', async () => {
+    setOrganization('off');
+    const res = await graph();
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('ai_disabled');
+    expect(aiFns.findRelatedPages).not.toHaveBeenCalled();
+  });
+});

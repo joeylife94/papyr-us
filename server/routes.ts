@@ -283,6 +283,10 @@ export async function registerRoutes(
     rlAI(req, res, (err?: unknown) =>
       err ? next(err) : requireOrganizationAi(req as AuthRequest, res, next)
     );
+  // Rate limit, then the session (read whatever ENFORCE_AUTH_WRITES says): the AI search degrades
+  // by the caller's organization setting instead of refusing
+  const aiSession: RequestHandler = (req, res, next) =>
+    rlAI(req, res, (err?: unknown) => (err ? next(err) : optionalAuth(req, res, next)));
   const rlAnalytics = buildRateLimiter({ windowMs: 60_000, max: 60 }); // analytics view recording
 
   // User Registration
@@ -3968,7 +3972,7 @@ export async function registerRoutes(
   // retrieval (top-k, ranked in the database) → optional LLM re-ranking over the
   // retrieved candidates only. The LLM never sees more than `limit` snippets, so
   // token cost is bounded by the request rather than by workspace size.
-  app.post('/api/ai/search', rlAI, requireAuthIfEnabled, async (req: AuthRequest, res) => {
+  app.post('/api/ai/search', aiSession, requireAuthIfEnabled, async (req: AuthRequest, res) => {
     try {
       const { query, teamId, limit } = req.body;
 
@@ -4155,6 +4159,23 @@ export async function registerRoutes(
         return res.status(400).json({ error: 'Content and title are required' });
       }
 
+      // AI on a page follows the page's organization: a named page must exist, be readable by the
+      // caller and belong to the caller's organization. One answer for every refusal.
+      const relatedViewer = await storage.getPageViewer(req.user?.id);
+      if (pageId !== undefined && pageId !== null) {
+        const namedPage = Number.isInteger(Number(pageId))
+          ? await storage.getWikiPage(Number(pageId))
+          : undefined;
+        if (
+          !namedPage ||
+          relatedViewer.organizationId == null ||
+          Number(namedPage.organizationId) !== Number(relatedViewer.organizationId) ||
+          !(await storage.checkPagePermission(req.user?.id, namedPage.id, 'viewer'))
+        ) {
+          return res.status(404).json({ message: 'Page not found' });
+        }
+      }
+
       // Scope pages to the authenticated user's accessible teams ? never pass undefined
       const userTeamIdsForRelated = req.user?.id ? await storage.getUserTeamIds(req.user.id) : [];
       if (userTeamIdsForRelated.length === 0) {
@@ -4163,7 +4184,10 @@ export async function registerRoutes(
       // Aggregate pages across ALL of the user's teams ? not just the first one
       const relatedPageResults = await Promise.all(
         userTeamIdsForRelated.map((tid) =>
-          storage.searchWikiPages({ query: '', teamId: String(tid), limit: 100, offset: 0 })
+          storage.searchWikiPages(
+            { query: '', teamId: String(tid), limit: 100, offset: 0 },
+            { readableBy: relatedViewer }
+          )
         )
       );
       const searchResults = { pages: relatedPageResults.flatMap((r: any) => r.pages) };
@@ -4191,6 +4215,7 @@ export async function registerRoutes(
   // page-link, legacy [[Title]], tag and optional AI edges. Never carries page content.
   app.get(
     '/api/knowledge-graph',
+    optionalAuth,
     requireAuthIfEnabled,
     requireTeamMembership,
     async (req: AuthRequest, res) => {
