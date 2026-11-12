@@ -73,6 +73,39 @@ describe('Realtime notifications over Socket.IO', () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }, 15000);
 
+  it('refuses a refresh token as the socket session, as cookie or as Bearer', async () => {
+    const refreshToken = jwt.sign({ id: recipientId, type: 'refresh' }, TEST_JWT_SECRET, {
+      expiresIn: '30d',
+    });
+    for (const extraHeaders of [
+      { Cookie: `accessToken=${refreshToken}` },
+      { Authorization: `Bearer ${refreshToken}` },
+    ]) {
+      const client = Client(`${baseUrl}/collab`, {
+        transports: ['polling'],
+        timeout: 4000,
+        reconnection: false,
+        extraHeaders,
+      });
+      try {
+        const outcome = await new Promise<string>((resolve) => {
+          const t = setTimeout(() => resolve('timeout'), 6000);
+          client.on('connect', () => {
+            clearTimeout(t);
+            resolve('connected');
+          });
+          client.on('connect_error', () => {
+            clearTimeout(t);
+            resolve('refused');
+          });
+        });
+        expect(outcome).toBe('refused');
+      } finally {
+        client.close();
+      }
+    }
+  });
+
   it('emits notification:new to the authenticated user room when a notification is created', async () => {
     const nsUrl = `${baseUrl}/collab`;
     const client = Client(nsUrl, {

@@ -53,6 +53,7 @@ const MOCK_USER = {
   name: 'Smoke Tester',
   email: 'smoke@test.com',
   hashedPassword: 'hashed_password',
+  isActive: true,
   provider: null,
   providerId: null,
 };
