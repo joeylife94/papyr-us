@@ -3203,6 +3203,8 @@ export async function registerRoutes(
         for (const field of ['isRead', 'title', 'content', 'type'] as const) {
           if (updateData[field] !== undefined) changes[field] = updateData[field];
         }
+        // Nothing to write (the body only repeated stored values): answer with the row as it is.
+        if (Object.keys(changes).length === 0) return res.json(existing);
         const memberIds = await storage.getMemberIdsForUser(userId);
         const notification = await storage.updateNotification(id, changes, memberIds);
 

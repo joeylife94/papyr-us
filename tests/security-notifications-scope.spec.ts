@@ -58,18 +58,7 @@ test.describe('Notifications follow the recipient and the organization', () => {
 
     const idOf = async (ctx: APIRequestContext) =>
       Number((await (await ctx.get('/api/auth/me')).json()).id);
-    const addMember = async (email: string, wantedId?: number) => {
-      if (wantedId !== undefined) {
-        const taken = await db.query(
-          `INSERT INTO members (id, name, email, role) VALUES ($1, $2, $2, 'tester')
-           ON CONFLICT (id) DO NOTHING RETURNING id`,
-          [wantedId, email]
-        );
-        if (taken.rows[0]) {
-          memberIds.push(Number(taken.rows[0].id));
-          return Number(taken.rows[0].id);
-        }
-      }
+    const addMember = async (email: string) => {
       const { rows } = await db.query(
         `INSERT INTO members (name, email, role) VALUES ($1, $1, 'tester') RETURNING id`,
         [email]
@@ -99,17 +88,25 @@ test.describe('Notifications follow the recipient and the organization', () => {
         outsiderUserId,
       ]);
 
-      // B's roster row is numbered like the outsider's account when that number is free.
+      // The case where one account's id equals another person's member id cannot be made
+      // deterministic here (the member id would have to be free in a shared database), so it is
+      // proven in tests/integration-layer4/notifications-scope.test.ts, where ids are chosen. This
+      // spec asserts the same rules on the ids it creates: a notification of B is never served to
+      // the outsider or to A, whatever their ids.
       const mA = await addMember(userA.email);
-      const mB = await addMember(userB.email, outsiderUserId);
+      const mB = await addMember(userB.email);
       const mO = await addMember(outsider.email);
-      const namesake = mB === outsiderUserId;
 
       const teamResponse = await aCtx.post('/api/teams', {
         data: { name: `secn-team-${stamp}`, displayName: `secn team ${stamp}` },
       });
       expect(teamResponse.status()).toBe(201);
       const teamA = (await teamResponse.json()) as { id: number };
+      const taskResponse = await aCtx.post('/api/tasks', {
+        data: { title: `secn task ${stamp}`, teamId: String(teamA.id) },
+      });
+      expect(taskResponse.status()).toBe(201);
+      const teamTask = (await taskResponse.json()) as { id: number };
       const pageResponse = await aCtx.post('/api/pages', {
         data: {
           title: `secn page ${stamp}`,
@@ -123,6 +120,11 @@ test.describe('Notifications follow the recipient and the organization', () => {
       });
       expect(pageResponse.status()).toBe(201);
       const teamPage = (await pageResponse.json()) as { id: number };
+      const commentResponse = await aCtx.post(`/api/pages/${teamPage.id}/comments`, {
+        data: { content: 'synthetic comment' },
+      });
+      expect(commentResponse.status()).toBe(201);
+      const teamComment = (await commentResponse.json()) as { id: number };
 
       // ── 1. No session, nothing ──
       for (const path of [
@@ -199,6 +201,33 @@ test.describe('Notifications follow the recipient and the organization', () => {
       expect((await create(oCtx, { recipientId: mO })).status(), 'own member, no references').toBe(
         201
       );
+      // The other organization's account naming the default organization's page, a comment on it
+      // and a task of its team, for its own member: each answers like an unknown id.
+      const unknownRefusal = { message: 'Invalid notification data' };
+      for (const [label, references] of [
+        ['page', { relatedPageId: teamPage.id }],
+        ['comment', { relatedCommentId: teamComment.id }],
+        ['task', { relatedTaskId: teamTask.id }],
+      ] as const) {
+        const refused = await create(oCtx, { recipientId: mO, ...references });
+        expect(refused.status(), `other organization's ${label}`).toBe(400);
+        expect(await refused.json(), `${label}: same body as an unknown id`).toEqual(
+          unknownRefusal
+        );
+      }
+      const unknownReference = await create(oCtx, {
+        recipientId: mO,
+        relatedTaskId: 2_000_000_000,
+      });
+      expect(unknownReference.status()).toBe(400);
+      expect(await unknownReference.json()).toEqual(unknownRefusal);
+      // The same records, named by an account that may read them, are accepted.
+      for (const references of [
+        { relatedCommentId: teamComment.id },
+        { relatedTaskId: teamTask.id },
+      ]) {
+        expect((await create(aCtx, { recipientId: mB, ...references })).status()).toBe(201);
+      }
       const refusedBody = await (await create(oCtx, { recipientId: mB })).json();
       expect(refusedBody).toEqual({ message: 'Invalid notification data' });
       expect(await (await create(aCtx, { recipientId: 2_000_000_000 })).json()).toEqual(
@@ -230,9 +259,6 @@ test.describe('Notifications follow the recipient and the organization', () => {
       expect(read.status()).toBe(200);
       expect((await bCtx.delete(`/api/notifications/${secondId}`)).status()).toBe(200);
       expect((await bCtx.get(`/api/notifications/${secondId}`)).status()).toBe(404);
-
-      // Recorded for the report: whether the member id could be made equal to the account id.
-      test.info().annotations.push({ type: 'namesake-member-id', description: String(namesake) });
     } finally {
       if (memberIds.length) {
         await db.query('DELETE FROM members WHERE id = ANY($1::int[])', [memberIds]);

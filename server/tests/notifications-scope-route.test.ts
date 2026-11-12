@@ -244,6 +244,19 @@ describe('PUT /api/notifications/:id', () => {
   });
 });
 
+describe('PUT with nothing left to change', () => {
+  it.each([
+    ['a body that only repeats stored values', { recipientId: CALLER_MEMBER, senderId: null }],
+    ['an empty body', {}],
+  ])('answers 200 with the stored row and writes nothing for %s', async (_label, body) => {
+    const res = await request(app).put('/api/notifications/1').set(signedIn()).send(body);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ id: 1, recipientId: CALLER_MEMBER });
+    expect(storage.updateNotification).not.toHaveBeenCalled();
+    expect(storage.getUnreadNotificationCount).not.toHaveBeenCalled();
+  });
+});
+
 describe('PATCH /api/notifications/read-all', () => {
   it('marks the caller member ids only', async () => {
     storage.markAllNotificationsAsRead.mockResolvedValue(undefined);

@@ -59,12 +59,12 @@ const ids: Record<string, number> = {};
 async function insertNotification(
   key: string,
   recipientId: number,
-  values: { isRead?: boolean } = {}
+  values: { isRead?: boolean; hoursAgo?: number } = {}
 ) {
   const { rows } = await scoped.query(
-    `INSERT INTO notifications (type, title, content, recipient_id, is_read)
-     VALUES ('mention', $1, 'body', $2, $3) RETURNING id`,
-    [key, recipientId, values.isRead ?? false]
+    `INSERT INTO notifications (type, title, content, recipient_id, is_read, created_at)
+     VALUES ('mention', $1, 'body', $2, $3, NOW() - MAKE_INTERVAL(hours => $4)) RETURNING id`,
+    [key, recipientId, values.isRead ?? false, values.hoursAgo ?? 0]
   );
   ids[key] = rows[0].id;
 }
@@ -160,11 +160,12 @@ beforeAll(async () => {
   // A roster row sharing Dave's account email in a different case is not Dave's (exact match).
   await scoped.query(`UPDATE members SET email = 'DAVE@example.com' WHERE id = $1`, [M_MOVED]);
 
-  await insertNotification('alice-1', M_ALICE);
-  await insertNotification('alice-2', M_ALICE);
-  await insertNotification('alice-3-read', M_ALICE, { isRead: true });
-  await insertNotification('bob-1', M_BOB);
-  await insertNotification('dave-1', M_DAVE);
+  // Explicit ages, so the newest-first order is not an accident of insertion order.
+  await insertNotification('alice-1', M_ALICE, { hoursAgo: 3 });
+  await insertNotification('alice-2', M_ALICE, { hoursAgo: 2 });
+  await insertNotification('alice-3-read', M_ALICE, { isRead: true, hoursAgo: 1 });
+  await insertNotification('bob-1', M_BOB, { hoursAgo: 4 });
+  await insertNotification('dave-1', M_DAVE, { hoursAgo: 5 });
 
   process.env.DATABASE_URL = scopedUrl;
   const { DBStorage } = await import('../../server/storage.js');
@@ -216,13 +217,18 @@ describe('identity helpers (H1)', () => {
 
 describe('scoped notification reads', () => {
   it('lists only the rows of the given member ids, newest first', async () => {
-    expect(titles(await storage.getNotifications([M_ALICE]))).toEqual([
-      'alice-1',
-      'alice-2',
+    const inOrder = async (memberIds: number[]) =>
+      (await storage.getNotifications(memberIds)).map((r: { title: string }) => r.title);
+    expect(await inOrder([M_ALICE])).toEqual(['alice-3-read', 'alice-2', 'alice-1']);
+    expect(await inOrder([M_BOB])).toEqual(['bob-1']);
+    expect(await inOrder([M_BOB, M_DAVE])).toEqual(['bob-1', 'dave-1']);
+    expect(await inOrder([M_DAVE, M_ALICE, M_BOB])).toEqual([
       'alice-3-read',
+      'alice-2',
+      'alice-1',
+      'bob-1',
+      'dave-1',
     ]);
-    expect(titles(await storage.getNotifications([M_BOB]))).toEqual(['bob-1']);
-    expect(titles(await storage.getNotifications([M_BOB, M_DAVE]))).toEqual(['bob-1', 'dave-1']);
   });
 
   it('serves an account the rows of its member ids, not those of the member numbered like it', async () => {

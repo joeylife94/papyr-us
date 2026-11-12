@@ -2307,11 +2307,6 @@ export class DBStorage {
       .orderBy(desc(notifications.createdAt));
   }
 
-  async getNotification(id: number): Promise<Notification | undefined> {
-    const result = await this.db.select().from(notifications).where(eq(notifications.id, id));
-    return result[0];
-  }
-
   /** The notification when it is addressed to one of the account's member rows, else undefined. */
   async getNotificationForUser(id: number, userId: number): Promise<Notification | undefined> {
     const memberIds = await this.getMemberIdsForUser(userId);

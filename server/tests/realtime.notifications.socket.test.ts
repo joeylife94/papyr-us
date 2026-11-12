@@ -18,6 +18,8 @@ describe('Realtime notifications over Socket.IO', () => {
   let app: Express;
   let server: http.Server;
   let baseUrl: string;
+  let ioServer: any;
+  let failMemberLookup = false;
   let registerRoutes: typeof import('../routes.js').registerRoutes;
 
   // 테스트용 storage 더미 구현
@@ -32,8 +34,10 @@ describe('Realtime notifications over Socket.IO', () => {
   const fakeStorage: any = {
     createNotification: async (n: any) => ({ id: 1, isRead: false, ...n }),
     getUnreadNotificationCount: async (memberIds: number[]) => (memberIds.length ? 1 : 0),
-    getMemberIdsForUser: async (userId: number) =>
-      [...memberToUser].filter(([, u]) => u === userId).map(([m]) => m),
+    getMemberIdsForUser: async (userId: number) => {
+      if (failMemberLookup) throw new Error('lookup failed');
+      return [...memberToUser].filter(([, u]) => u === userId).map(([m]) => m);
+    },
     getUserIdForMember: async (memberId: number) => memberToUser.get(memberId) ?? null,
     getMemberOrganizationId: async (memberId: number) =>
       memberToUser.has(memberId) || memberId === memberWithoutAccount ? 1 : null,
@@ -43,6 +47,18 @@ describe('Realtime notifications over Socket.IO', () => {
         ? { id: 1, recipientId: recipientMemberId, isRead: false }
         : undefined,
     deleteNotification: async () => true,
+    updateNotification: async (id: number, changes: any) => ({
+      id,
+      recipientId: recipientMemberId,
+      isRead: false,
+      ...changes,
+    }),
+    markNotificationAsRead: async (id: number) => ({
+      id,
+      recipientId: recipientMemberId,
+      isRead: true,
+    }),
+    markAllNotificationsAsRead: async () => undefined,
   };
 
   const connect = async (userId: number, role = 'user') => {
@@ -107,6 +123,7 @@ describe('Realtime notifications over Socket.IO', () => {
     app.use(express.json());
     app.use(cookieParser());
     const reg = await registerRoutes(app, fakeStorage);
+    ioServer = reg.io;
     server = reg.httpServer;
     if (!reg.io) {
       throw new Error('Test setup error: Socket.IO was not initialized (reg.io is undefined)');
@@ -320,4 +337,136 @@ describe('Realtime notifications over Socket.IO', () => {
       other.close();
     }
   }, 15000);
+
+  const roomsOf = (client: ReturnType<typeof Client>) =>
+    [...(ioServer.of('/collab').sockets.get(client.id)?.rooms ?? [])].sort();
+
+  it('accepts the caller own member id without joining any additional room', async () => {
+    const owner = await connect(recipientId);
+    try {
+      const before = roomsOf(owner);
+      expect(before).toContain(`user:${recipientId}`);
+      expect(await joinMember(owner, recipientMemberId)).toEqual({ ok: true });
+      expect(roomsOf(owner)).toEqual(before);
+      expect(roomsOf(owner)).not.toContain(`user:${recipientMemberId}`);
+    } finally {
+      owner.close();
+    }
+  }, 15000);
+
+  it('refuses another account member id and another account user id, joining nothing', async () => {
+    const other = await connect(recipientId + 1);
+    try {
+      const before = roomsOf(other);
+      expect(await joinMember(other, recipientMemberId)).toEqual({ ok: false, error: 'Forbidden' });
+      expect(await joinMember(other, recipientId)).toEqual({ ok: false, error: 'Forbidden' });
+      expect(roomsOf(other)).toEqual(before);
+    } finally {
+      other.close();
+    }
+  }, 15000);
+
+  it('refuses when the member lookup fails', async () => {
+    const owner = await connect(recipientId);
+    try {
+      failMemberLookup = true;
+      expect(await joinMember(owner, recipientMemberId)).toEqual({ ok: false, error: 'Forbidden' });
+    } finally {
+      failMemberLookup = false;
+      owner.close();
+    }
+  }, 15000);
+
+  it('an admin-role token gets no room beyond its own, even for a member id it does not own', async () => {
+    const admin = await connect(recipientId + 5, 'admin');
+    try {
+      const before = roomsOf(admin);
+      expect(await joinMember(admin, recipientMemberId)).toEqual({ ok: false, error: 'Forbidden' });
+      expect(roomsOf(admin)).toEqual(before);
+    } finally {
+      admin.close();
+    }
+  }, 15000);
+
+  const reachesOnlyRecipient = async (
+    events: string[],
+    act: () => Promise<Response>,
+    expected: Record<string, any[]>
+  ) => {
+    const owner = await connect(recipientId);
+    const namesake = await connect(recipientMemberId);
+    const other = await connect(recipientId + 1);
+    const admin = await connect(recipientId + 7, 'admin');
+    try {
+      const seen = new Map<string, Record<string, any[]>>();
+      const watch = (name: string, client: ReturnType<typeof Client>) => {
+        const byEvent: Record<string, any[]> = {};
+        for (const event of events) byEvent[event] = collect(client, event);
+        seen.set(name, byEvent);
+      };
+      watch('owner', owner);
+      watch('namesake', namesake);
+      watch('other', other);
+      watch('admin', admin);
+      const res = await act();
+      expect(res.status).toBe(200);
+      await settle();
+      for (const event of events) {
+        expect(seen.get('owner')![event], `owner ${event}`).toEqual(expected[event]);
+        for (const name of ['namesake', 'other', 'admin']) {
+          expect(seen.get(name)![event], `${name} ${event}`).toHaveLength(0);
+        }
+      }
+    } finally {
+      owner.close();
+      namesake.close();
+      other.close();
+      admin.close();
+    }
+  };
+
+  it('PUT reaches only the recipient account', async () => {
+    await reachesOnlyRecipient(
+      ['notification:updated', 'notification:unread-count'],
+      () =>
+        fetch(`${baseUrl}/api/notifications/1`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', Cookie: authCookieFor(recipientId) },
+          body: JSON.stringify({ title: 'renamed' }),
+        }),
+      {
+        'notification:updated': [
+          { id: 1, recipientId: recipientMemberId, isRead: false, title: 'renamed' },
+        ],
+        'notification:unread-count': [{ recipientId: recipientMemberId, count: 1 }],
+      }
+    );
+  }, 20000);
+
+  it('PATCH read reaches only the recipient account', async () => {
+    await reachesOnlyRecipient(
+      ['notification:updated', 'notification:unread-count'],
+      () =>
+        fetch(`${baseUrl}/api/notifications/1/read`, {
+          method: 'PATCH',
+          headers: { Cookie: authCookieFor(recipientId) },
+        }),
+      {
+        'notification:updated': [{ id: 1, recipientId: recipientMemberId, isRead: true }],
+        'notification:unread-count': [{ recipientId: recipientMemberId, count: 1 }],
+      }
+    );
+  }, 20000);
+
+  it('read-all reaches only the caller account', async () => {
+    await reachesOnlyRecipient(
+      ['notification:unread-count'],
+      () =>
+        fetch(`${baseUrl}/api/notifications/read-all`, {
+          method: 'PATCH',
+          headers: { Cookie: authCookieFor(recipientId) },
+        }),
+      { 'notification:unread-count': [{ recipientId: recipientMemberId, count: 1 }] }
+    );
+  }, 20000);
 });
