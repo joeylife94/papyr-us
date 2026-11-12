@@ -116,9 +116,15 @@ interface InlineFormattingToolbarProps {
    * Receives the textarea element and the prefix/suffix to wrap the selection.
    */
   onFormat?: (textarea: HTMLTextAreaElement, prefix: string, suffix: string) => void;
+  /** AI actions are allowed for the page being edited (default true). */
+  aiAllowed?: boolean;
 }
 
-export function InlineFormattingToolbar({ containerRef, onFormat }: InlineFormattingToolbarProps) {
+export function InlineFormattingToolbar({
+  containerRef,
+  onFormat,
+  aiAllowed = true,
+}: InlineFormattingToolbarProps) {
   const [visible, setVisible] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const [activeTextarea, setActiveTextarea] = useState<HTMLTextAreaElement | null>(null);
@@ -129,7 +135,7 @@ export function InlineFormattingToolbar({ containerRef, onFormat }: InlineFormat
   const { toast } = useToast();
   const { organization } = useOrganization();
   // No AI action while the organization is loading, failed to load, or has AI off
-  const showAI = flags.FEATURE_AI_SEARCH && organization?.aiEnabled === true;
+  const showAI = flags.FEATURE_AI_SEARCH && aiAllowed && organization?.aiEnabled === true;
 
   const checkSelection = useCallback(() => {
     const container = containerRef.current;

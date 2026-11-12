@@ -62,9 +62,7 @@ export default function WikiPageView() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { flags } = useFeatureFlags();
-  // The copilot sends page content to the AI provider: offered only once the organization is known to have AI on
   const { organization } = useOrganization();
-  const aiEnabled = organization?.aiEnabled === true;
   const workspaceScope = useWorkspaceScope();
   const workspace = workspaceScope.kind === 'team' ? workspaceScope.workspace : null;
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
@@ -84,6 +82,13 @@ export default function WikiPageView() {
     queryKey: [`/api/pages/slug/${slug}`],
     enabled: !!slug,
   });
+
+  // AI on a page follows the page's organization: offered only when the caller's organization has
+  // AI on and the page belongs to that same organization (false while either is loading or failed)
+  const aiEnabled =
+    organization?.aiEnabled === true &&
+    page?.organizationId != null &&
+    Number(page.organizationId) === organization.id;
 
   // Edit rights decide between the in-place editor and the read-only view (issue #103 E2).
   const { data: access, isLoading: accessLoading } = useQuery<{ canEdit: boolean }>({
@@ -337,6 +342,7 @@ export default function WikiPageView() {
               reloadToken={reloadKey}
               page={page}
               teamName={workspace?.name}
+              aiEnabled={aiEnabled}
               actions={actions}
               breadcrumb={breadcrumb}
               onContentChange={setLiveContent}
@@ -358,7 +364,12 @@ export default function WikiPageView() {
           </section>
 
           <section className="mt-12">
-            <RelatedPages pageId={page.id} pageTitle={page.title} pageContent={content} />
+            <RelatedPages
+              pageId={page.id}
+              pageTitle={page.title}
+              pageContent={content}
+              enabled={aiEnabled}
+            />
           </section>
         </article>
       </div>
@@ -435,6 +446,8 @@ function ReadOnlyPageBody({ page, actions, breadcrumb }: BodyProps) {
 
 interface EditableBodyProps extends BodyProps {
   teamName?: string;
+  /** AI is allowed on this page (the caller's organization has AI on and owns the page). */
+  aiEnabled: boolean;
   /** Changes after a restore: reset the editor to the restored page without remounting it. */
   reloadToken: number;
   onContentChange: (content: string) => void;
@@ -447,6 +460,7 @@ interface EditableBodyProps extends BodyProps {
 function EditablePageBody({
   page,
   teamName,
+  aiEnabled,
   reloadToken,
   actions,
   breadcrumb,
@@ -575,6 +589,7 @@ function EditablePageBody({
           }}
           teamName={teamName}
           pageId={page.id}
+          aiEnabledForPage={aiEnabled}
           userId={getUserId()}
           userName={getUserName()}
           useYjs={true}
