@@ -4,6 +4,8 @@ import type { Express } from 'express';
 import { registerRoutes } from '../routes'; // Adjust the import path as needed
 import express from 'express';
 import http from 'http';
+import jwt from 'jsonwebtoken';
+import { config } from '../config';
 
 // Mock storage module if it hits a real database
 vi.mock('../storage', async (importOriginal) => {
@@ -17,7 +19,22 @@ import { storage } from '../storage.js';
 let app: Express;
 let server: http.Server;
 
+// Templates need a session and an organization; categories are changed by a platform admin
+// (issue #124 X1b).
+const signIn = (id: number, email: string) => ({
+  Authorization: `Bearer ${jwt.sign({ id, email, role: 'user' }, config.jwtSecret)}`,
+});
+const memberAuth = signIn(1, 'member@test.com');
+const adminAuth = signIn(2, 'admin@test.com');
+
 beforeAll(async () => {
+  const { storage } = await import('../storage.js');
+  (storage.getUserOrganizationId as any).mockResolvedValue(1);
+  (storage.getUserAccount as any).mockImplementation(async (id: number) => ({
+    email: id === 2 ? 'admin@test.com' : 'member@test.com',
+    isActive: true,
+  }));
+  config.adminEmails = [...config.adminEmails, 'admin@test.com'];
   app = express();
   app.use(express.json());
   ({ httpServer: server } = await registerRoutes(app, storage));
@@ -33,7 +50,7 @@ describe('POST /api/templates', () => {
     const { storage } = await import('../storage.js');
     (storage.createTemplate as any).mockRejectedValueOnce(new Error('Category not found'));
 
-    const response = await request(app).post('/api/templates').send({
+    const response = await request(app).post('/api/templates').set(memberAuth).send({
       title: 'Test Template',
       description: 'A test template',
       content: 'Some content',
@@ -62,16 +79,19 @@ describe('POST /api/templates', () => {
     });
 
     // First, let's "create" a category to ensure it exists.
-    const categoryResponse = await request(app).post('/api/template-categories').send({
-      name: 'api-test-category',
-      displayName: 'API Test Category',
-    });
+    const categoryResponse = await request(app)
+      .post('/api/template-categories')
+      .set(adminAuth)
+      .send({
+        name: 'api-test-category',
+        displayName: 'API Test Category',
+      });
 
     expect(categoryResponse.status).toBe(201);
     expect(categoryResponse.body).toHaveProperty('id', categoryId);
 
     // Now, create the template using the new category ID
-    const templateResponse = await request(app).post('/api/templates').send({
+    const templateResponse = await request(app).post('/api/templates').set(memberAuth).send({
       title: 'API Test Template',
       description: 'A test template',
       content: 'Some content',

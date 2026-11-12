@@ -3336,7 +3336,8 @@ export async function registerRoutes(
   }
 
   if (featureFlags.FEATURE_TEMPLATES) {
-    // Template Categories API
+    // Template Categories API: an instance-wide taxonomy. Anyone may read it; only platform
+    // admins change it, since a category's deletion removes its templates in every organization.
     app.get('/api/template-categories', async (req, res) => {
       try {
         const categories = await storage.getTemplateCategories();
@@ -3366,7 +3367,7 @@ export async function registerRoutes(
       }
     });
 
-    app.post('/api/template-categories', requireAuthIfEnabled, async (req, res) => {
+    app.post('/api/template-categories', requireAdmin, async (req, res) => {
       try {
         const validatedData = insertTemplateCategorySchema.parse(req.body);
         const category = await storage.createTemplateCategory(validatedData);
@@ -3377,7 +3378,7 @@ export async function registerRoutes(
       }
     });
 
-    app.put('/api/template-categories/:id', requireAuthIfEnabled, async (req, res) => {
+    app.put('/api/template-categories/:id', requireAdmin, async (req, res) => {
       try {
         const id = parseInt(req.params.id);
         if (isNaN(id)) {
@@ -3397,7 +3398,7 @@ export async function registerRoutes(
       }
     });
 
-    app.delete('/api/template-categories/:id', requireAuthIfEnabled, async (req, res) => {
+    app.delete('/api/template-categories/:id', requireAdmin, async (req, res) => {
       try {
         const id = parseInt(req.params.id);
         if (isNaN(id)) {
@@ -3416,8 +3417,19 @@ export async function registerRoutes(
       }
     });
 
-    // Templates API
-    app.get('/api/templates', async (req, res) => {
+    // Templates API (issue #124 X1b): templates belong to an organization, taken from the signed-in
+    // account and never from the request. Another organization's template and an unknown id
+    // answer alike (404).
+    const templateOrganization = async (req: AuthRequest, res: Response) => {
+      const organizationId = await storage.getUserOrganizationId(Number(req.user?.id));
+      if (organizationId === null || organizationId === undefined) {
+        organizationRequired(req, res);
+        return undefined;
+      }
+      return organizationId;
+    };
+
+    app.get('/api/templates', authMiddleware, async (req: AuthRequest, res) => {
       try {
         const categoryId = req.query.categoryId
           ? parseInt(req.query.categoryId as string)
@@ -3426,7 +3438,9 @@ export async function registerRoutes(
           return res.status(400).json({ error: 'Invalid category ID' });
         }
 
-        const templates = await storage.getTemplates(categoryId);
+        const organizationId = await templateOrganization(req, res);
+        if (organizationId === undefined) return;
+        const templates = await storage.getTemplates(organizationId, categoryId);
         res.json(templates);
       } catch (error) {
         console.error('Error fetching templates:', error);
@@ -3434,14 +3448,16 @@ export async function registerRoutes(
       }
     });
 
-    app.get('/api/templates/:id', async (req, res) => {
+    app.get('/api/templates/:id', authMiddleware, async (req: AuthRequest, res) => {
       try {
         const id = parseInt(req.params.id);
         if (isNaN(id)) {
           return res.status(400).json({ error: 'Invalid template ID' });
         }
 
-        const template = await storage.getTemplate(id);
+        const organizationId = await templateOrganization(req, res);
+        if (organizationId === undefined) return;
+        const template = await storage.getTemplate(id, organizationId);
         if (!template) {
           return res.status(404).json({ error: 'Template not found' });
         }
@@ -3453,10 +3469,13 @@ export async function registerRoutes(
       }
     });
 
-    app.post('/api/templates', requireAuthIfEnabled, async (req, res) => {
+    app.post('/api/templates', authMiddleware, async (req: AuthRequest, res) => {
       try {
+        const organizationId = await templateOrganization(req, res);
+        if (organizationId === undefined) return;
+        // The schema has no organizationId: one in the body is dropped.
         const validatedData = insertTemplateSchema.parse(req.body);
-        const template = await storage.createTemplate(validatedData);
+        const template = await storage.createTemplate(validatedData, organizationId);
         res.status(201).json(template);
       } catch (error) {
         console.error('Error creating template:', error);
@@ -3464,15 +3483,17 @@ export async function registerRoutes(
       }
     });
 
-    app.put('/api/templates/:id', requireAuthIfEnabled, async (req, res) => {
+    app.put('/api/templates/:id', authMiddleware, async (req: AuthRequest, res) => {
       try {
         const id = parseInt(req.params.id);
         if (isNaN(id)) {
           return res.status(400).json({ error: 'Invalid template ID' });
         }
 
+        const organizationId = await templateOrganization(req, res);
+        if (organizationId === undefined) return;
         const validatedData = updateTemplateSchema.parse(req.body);
-        const template = await storage.updateTemplate(id, validatedData);
+        const template = await storage.updateTemplate(id, validatedData, organizationId);
         if (!template) {
           return res.status(404).json({ error: 'Template not found' });
         }
@@ -3484,14 +3505,16 @@ export async function registerRoutes(
       }
     });
 
-    app.delete('/api/templates/:id', requireAuthIfEnabled, async (req, res) => {
+    app.delete('/api/templates/:id', authMiddleware, async (req: AuthRequest, res) => {
       try {
         const id = parseInt(req.params.id);
         if (isNaN(id)) {
           return res.status(400).json({ error: 'Invalid template ID' });
         }
 
-        const success = await storage.deleteTemplate(id);
+        const organizationId = await templateOrganization(req, res);
+        if (organizationId === undefined) return;
+        const success = await storage.deleteTemplate(id, organizationId);
         if (!success) {
           return res.status(404).json({ error: 'Template not found' });
         }
@@ -3503,14 +3526,16 @@ export async function registerRoutes(
       }
     });
 
-    app.post('/api/templates/:id/use', requireAuthIfEnabled, async (req, res) => {
+    app.post('/api/templates/:id/use', authMiddleware, async (req: AuthRequest, res) => {
       try {
         const id = parseInt(req.params.id);
         if (isNaN(id)) {
           return res.status(400).json({ error: 'Invalid template ID' });
         }
 
-        const success = await storage.incrementTemplateUsage(id);
+        const organizationId = await templateOrganization(req, res);
+        if (organizationId === undefined) return;
+        const success = await storage.incrementTemplateUsage(id, organizationId);
         if (!success) {
           return res.status(404).json({ error: 'Template not found' });
         }

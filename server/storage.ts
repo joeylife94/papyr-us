@@ -2410,43 +2410,68 @@ export class DBStorage {
     return result.length > 0;
   }
 
-  async getTemplates(categoryId?: number): Promise<Template[]> {
-    const query = this.db.select().from(templates);
+  // Templates belong to an organization (issue #124 X1b): every read and write below is bound
+  // to the caller's organization in its WHERE clause, so a template of another organization is
+  // indistinguishable from an unknown id.
+
+  async getTemplates(organizationId: number, categoryId?: number): Promise<Template[]> {
+    const conditions = [eq(templates.organizationId, organizationId)];
     if (categoryId) {
-      query.where(eq(templates.categoryId, categoryId));
+      conditions.push(eq(templates.categoryId, categoryId));
     }
-    return query.orderBy(desc(templates.usageCount));
+    return this.db
+      .select()
+      .from(templates)
+      .where(and(...conditions))
+      .orderBy(desc(templates.usageCount));
   }
 
-  async getTemplate(id: number): Promise<Template | undefined> {
-    const result = await this.db.select().from(templates).where(eq(templates.id, id));
-    return result[0];
-  }
-
-  async createTemplate(template: InsertTemplate): Promise<Template> {
-    const result = await this.db.insert(templates).values(template).returning();
-    return result[0];
-  }
-
-  async updateTemplate(id: number, template: UpdateTemplate): Promise<Template | undefined> {
+  async getTemplate(id: number, organizationId: number): Promise<Template | undefined> {
     const result = await this.db
-      .update(templates)
-      .set(template)
-      .where(eq(templates.id, id))
+      .select()
+      .from(templates)
+      .where(and(eq(templates.id, id), eq(templates.organizationId, organizationId)));
+    return result[0];
+  }
+
+  async createTemplate(template: InsertTemplate, organizationId: number): Promise<Template> {
+    const result = await this.db
+      .insert(templates)
+      .values({ ...template, organizationId })
       .returning();
     return result[0];
   }
 
-  async deleteTemplate(id: number): Promise<boolean> {
-    const result = await this.db.delete(templates).where(eq(templates.id, id)).returning();
+  async updateTemplate(
+    id: number,
+    template: UpdateTemplate,
+    organizationId: number
+  ): Promise<Template | undefined> {
+    // A template never changes organization, whatever the caller passes.
+    const { organizationId: _ignored, ...changes } = template as UpdateTemplate & {
+      organizationId?: number;
+    };
+    const result = await this.db
+      .update(templates)
+      .set(changes)
+      .where(and(eq(templates.id, id), eq(templates.organizationId, organizationId)))
+      .returning();
+    return result[0];
+  }
+
+  async deleteTemplate(id: number, organizationId: number): Promise<boolean> {
+    const result = await this.db
+      .delete(templates)
+      .where(and(eq(templates.id, id), eq(templates.organizationId, organizationId)))
+      .returning();
     return result.length > 0;
   }
 
-  async incrementTemplateUsage(id: number): Promise<boolean> {
+  async incrementTemplateUsage(id: number, organizationId: number): Promise<boolean> {
     const result = await this.db
       .update(templates)
       .set({ usageCount: sql`${templates.usageCount} + 1` })
-      .where(eq(templates.id, id))
+      .where(and(eq(templates.id, id), eq(templates.organizationId, organizationId)))
       .returning();
     return result.length > 0;
   }
