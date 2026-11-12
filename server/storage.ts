@@ -1350,6 +1350,166 @@ export class DBStorage {
       .limit(limit);
   }
 
+  /**
+   * Tasks the viewer may count: those of their own teams. `tasks.team_id` is text, and a
+   * team-less task belongs to no team the viewer could be in, so it is never counted.
+   */
+  private tasksOfViewerTeams(viewer: PageViewer): SQL {
+    return viewer.teamIds.length > 0
+      ? inArray(
+          tasks.teamId,
+          viewer.teamIds.map((teamId) => String(teamId))
+        )
+      : sql`false`;
+  }
+
+  /** Accounts of the viewer's organization; none for a viewer without one. */
+  private async countOrganizationUsers(viewer: PageViewer): Promise<number> {
+    if (viewer.organizationId == null) return 0;
+    const [row] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(organizationMembers)
+      .where(eq(organizationMembers.organizationId, viewer.organizationId));
+    return Number(row?.count ?? 0);
+  }
+
+  /**
+   * Numbers of GET /api/stats/dashboard, over what the viewer may list (issue #124 X1b): live
+   * pages they can list (`listableBy`), the comments on those pages, tasks of their own teams
+   * and the accounts of their organization. A viewer without an organization gets zeros.
+   */
+  async getDashboardStats(viewer: PageViewer): Promise<{
+    totals: { pages: number; tasks: number; comments: number; users: number };
+    recent: { pagesThisWeek: number; tasksCompletedThisWeek: number };
+    pageGrowth: Array<{ date: unknown; count: number }>;
+    topContributors: Array<{ author: string; pages_created: number }>;
+    taskBreakdown: Array<{ status: string; count: number }>;
+  }> {
+    const livePages = and(isNull(wikiPages.deletedAt), this.listableBy(viewer))!;
+    const ownTasks = this.tasksOfViewerTeams(viewer);
+    const int = sql<number>`count(*)::int`;
+
+    const [
+      [pageCount],
+      [taskCount],
+      [commentCount],
+      userCount,
+      [recentPages],
+      [recentTasks],
+      pageGrowth,
+      topContributors,
+      taskBreakdown,
+    ] = await Promise.all([
+      this.db.select({ count: int }).from(wikiPages).where(livePages),
+      this.db.select({ count: int }).from(tasks).where(ownTasks),
+      this.db
+        .select({ count: int })
+        .from(comments)
+        .innerJoin(wikiPages, eq(comments.pageId, wikiPages.id))
+        .where(livePages),
+      this.countOrganizationUsers(viewer),
+      this.db
+        .select({ count: int })
+        .from(wikiPages)
+        .where(and(livePages, sql`${wikiPages.createdAt} > NOW() - INTERVAL '7 days'`)),
+      this.db
+        .select({ count: int })
+        .from(tasks)
+        .where(
+          and(
+            ownTasks,
+            sql`${tasks.status} = 'done' AND ${tasks.updatedAt} > NOW() - INTERVAL '7 days'`
+          )
+        ),
+      this.db
+        .select({ date: sql<unknown>`DATE(${wikiPages.createdAt})`, count: int })
+        .from(wikiPages)
+        .where(and(livePages, sql`${wikiPages.createdAt} > NOW() - INTERVAL '30 days'`))
+        .groupBy(sql`DATE(${wikiPages.createdAt})`)
+        .orderBy(sql`DATE(${wikiPages.createdAt})`),
+      this.db
+        .select({ author: wikiPages.author, pages_created: int })
+        .from(wikiPages)
+        .where(livePages)
+        .groupBy(wikiPages.author)
+        .orderBy(sql`count(*) DESC`, asc(wikiPages.author))
+        .limit(10),
+      this.db
+        .select({ status: tasks.status, count: int })
+        .from(tasks)
+        .where(ownTasks)
+        .groupBy(tasks.status)
+        .orderBy(sql`count(*) DESC`, asc(tasks.status)),
+    ]);
+
+    return {
+      totals: {
+        pages: pageCount.count,
+        tasks: taskCount.count,
+        comments: commentCount.count,
+        users: userCount,
+      },
+      recent: { pagesThisWeek: recentPages.count, tasksCompletedThisWeek: recentTasks.count },
+      pageGrowth,
+      topContributors,
+      taskBreakdown,
+    };
+  }
+
+  /**
+   * Numbers of GET /api/stats/overview, over what the viewer may list (issue #124 X1b). Pages
+   * and their comments include trashed ones, as before; only the scope changed: pages the
+   * viewer can list, tasks of their own teams, accounts of their organization.
+   */
+  async getStatsOverview(viewer: PageViewer): Promise<{
+    totalPages: number;
+    totalUsers: number;
+    totalTasks: number;
+    totalComments: number;
+    pagesThisWeek: number;
+    tasksByStatus: Record<string, number>;
+  }> {
+    const pages = this.listableBy(viewer);
+    const ownTasks = this.tasksOfViewerTeams(viewer);
+    const total = sql<number>`COUNT(*)`;
+
+    const [[pageCount], totalUsers, [taskCount], [commentCount], [weeklyPages], byStatus] =
+      await Promise.all([
+        this.db.select({ count: total }).from(wikiPages).where(pages),
+        this.countOrganizationUsers(viewer),
+        this.db.select({ count: total }).from(tasks).where(ownTasks),
+        this.db
+          .select({ count: total })
+          .from(comments)
+          .innerJoin(wikiPages, eq(comments.pageId, wikiPages.id))
+          .where(pages),
+        this.db
+          .select({ count: total })
+          .from(wikiPages)
+          .where(and(pages, sql`${wikiPages.createdAt} > NOW() - INTERVAL '7 days'`)),
+        this.db
+          .select({ status: tasks.status, count: total })
+          .from(tasks)
+          .where(ownTasks)
+          .groupBy(tasks.status),
+      ]);
+
+    return {
+      totalPages: Number(pageCount?.count || 0),
+      totalUsers,
+      totalTasks: Number(taskCount?.count || 0),
+      totalComments: Number(commentCount?.count || 0),
+      pagesThisWeek: Number(weeklyPages?.count || 0),
+      tasksByStatus: byStatus.reduce(
+        (acc: Record<string, number>, row: { status: string; count: unknown }) => {
+          acc[row.status] = Number(row.count);
+          return acc;
+        },
+        {}
+      ),
+    };
+  }
+
   async getCalendarEvents(teamId?: number): Promise<CalendarEvent[]> {
     const query = this.db.select().from(calendarEvents);
     if (teamId) {

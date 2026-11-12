@@ -1561,78 +1561,13 @@ export async function registerRoutes(
 
   // ==================== Dashboard Stats API ====================
 
-  app.get('/api/stats/dashboard', optionalAuth, async (req: AuthRequest, res) => {
+  // Instance-wide figures were a read across organizations and teams. Both stats routes now
+  // always require a session (whatever ENFORCE_AUTH_WRITES says) and count only what the caller
+  // may list (issue #124 X1b): see DBStorage.getDashboardStats.
+  app.get('/api/stats/dashboard', authMiddleware, async (req: AuthRequest, res) => {
     try {
-      const db = (storage as any).db;
-      if (!db) return res.status(500).json({ error: 'Database not available' });
-
-      const { sql: sqlFn, count } = await import('drizzle-orm');
-
-      // Total counts
-      const [pageCount] = await db
-        .select({ count: sqlFn`count(*)::int` })
-        .from(wikiPages)
-        .where(isNull(wikiPages.deletedAt));
-      const [taskCount] = await db.select({ count: sqlFn`count(*)::int` }).from(tasks);
-      const [commentCount] = await db.select({ count: sqlFn`count(*)::int` }).from(comments);
-      const [userCount] = await db.select({ count: sqlFn`count(*)::int` }).from(users);
-
-      // Pages created in last 7 days
-      const [recentPages] = await db
-        .select({ count: sqlFn`count(*)::int` })
-        .from(wikiPages)
-        .where(
-          sqlFn`${wikiPages.createdAt} > NOW() - INTERVAL '7 days' AND ${wikiPages.deletedAt} IS NULL`
-        );
-
-      // Tasks completed in last 7 days
-      const [recentTasks] = await db
-        .select({ count: sqlFn`count(*)::int` })
-        .from(tasks)
-        .where(sqlFn`${tasks.status} = 'done' AND ${tasks.updatedAt} > NOW() - INTERVAL '7 days'`);
-
-      // Page growth over last 30 days (daily)
-      const pageGrowth = await db.execute(
-        sqlFn`SELECT DATE(created_at) as date, COUNT(*)::int as count
-              FROM wiki_pages
-              WHERE created_at > NOW() - INTERVAL '30 days' AND deleted_at IS NULL
-              GROUP BY DATE(created_at)
-              ORDER BY date`
-      );
-
-      // Top contributors (by pages authored)
-      const topContributors = await db.execute(
-        sqlFn`SELECT author, COUNT(*)::int as pages_created
-              FROM wiki_pages
-              WHERE deleted_at IS NULL
-              GROUP BY author
-              ORDER BY pages_created DESC
-              LIMIT 10`
-      );
-
-      // Task status breakdown
-      const taskBreakdown = await db.execute(
-        sqlFn`SELECT status, COUNT(*)::int as count
-              FROM tasks
-              GROUP BY status
-              ORDER BY count DESC`
-      );
-
-      res.json({
-        totals: {
-          pages: pageCount.count,
-          tasks: taskCount.count,
-          comments: commentCount.count,
-          users: userCount.count,
-        },
-        recent: {
-          pagesThisWeek: recentPages.count,
-          tasksCompletedThisWeek: recentTasks.count,
-        },
-        pageGrowth: pageGrowth.rows || pageGrowth,
-        topContributors: topContributors.rows || topContributors,
-        taskBreakdown: taskBreakdown.rows || taskBreakdown,
-      });
+      const viewer = await storage.getPageViewer(req.user!.id);
+      res.json(await storage.getDashboardStats(viewer));
     } catch (error) {
       logger.error('Error fetching dashboard stats:', { error });
       res.status(500).json({ error: 'Failed to fetch dashboard stats' });
@@ -5227,45 +5162,11 @@ export async function registerRoutes(
 
   // ==================== System Stats API (Dashboard) ====================
 
+  // Counts only what the caller may list (issue #124 X1b): see DBStorage.getStatsOverview.
   app.get('/api/stats/overview', authMiddleware, async (req: AuthRequest, res) => {
     try {
-      const { sql } = await import('drizzle-orm');
-      const db = (storage as any).db;
-
-      const [pageCount] = await db.select({ count: sql<number>`COUNT(*)` }).from(wikiPages);
-      const [userCount] = await db.select({ count: sql<number>`COUNT(*)` }).from(users);
-      const [taskCount] = await db.select({ count: sql<number>`COUNT(*)` }).from(tasks);
-      const [commentCount] = await db.select({ count: sql<number>`COUNT(*)` }).from(comments);
-
-      // Pages created this week
-      const [weeklyPages] = await db
-        .select({ count: sql<number>`COUNT(*)` })
-        .from(wikiPages)
-        .where(sql`${wikiPages.createdAt} > NOW() - INTERVAL '7 days'`);
-
-      // Tasks by status
-      const tasksByStatus = await db
-        .select({
-          status: tasks.status,
-          count: sql<number>`COUNT(*)`,
-        })
-        .from(tasks)
-        .groupBy(tasks.status);
-
-      res.json({
-        totalPages: Number(pageCount?.count || 0),
-        totalUsers: Number(userCount?.count || 0),
-        totalTasks: Number(taskCount?.count || 0),
-        totalComments: Number(commentCount?.count || 0),
-        pagesThisWeek: Number(weeklyPages?.count || 0),
-        tasksByStatus: tasksByStatus.reduce(
-          (acc: Record<string, number>, row: { status: string; count: unknown }) => {
-            acc[row.status] = Number(row.count);
-            return acc;
-          },
-          {}
-        ),
-      });
+      const viewer = await storage.getPageViewer(req.user!.id);
+      res.json(await storage.getStatsOverview(viewer));
     } catch (error) {
       logger.error('Error fetching stats:', { error });
       res.status(500).json({ error: 'Failed to fetch stats' });
