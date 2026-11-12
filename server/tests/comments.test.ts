@@ -201,17 +201,36 @@ describe('Comments Management API', () => {
       expect(response.status).toBe(403);
     });
 
-    it('TC-CMT-003c: admin can update any comment', async () => {
+    it('TC-CMT-003c: a platform admin who is not the author cannot edit the comment (D6)', async () => {
       const token = signToken(adminUser);
-      const updateData = { content: 'Admin edit.' };
-      (storage.updateComment as vi.Mock).mockResolvedValue({ ...mockComment, ...updateData });
+      (storage.checkPagePermission as vi.Mock).mockResolvedValue(true);
 
       const response = await request(app)
         .put(`/api/comments/${mockComment.id}`)
         .set('Cookie', authCookie(token))
-        .send(updateData);
+        .send({ content: 'Admin edit.' });
 
-      expect(response.status).toBe(200);
+      expect(response.status).toBe(403);
+      expect(storage.updateComment).not.toHaveBeenCalled();
+    });
+
+    it('TC-CMT-003f: an author who can no longer read the page gets 404, as for an unknown comment', async () => {
+      const token = signToken(ownerUser);
+      (storage.checkPagePermission as vi.Mock).mockResolvedValue(false);
+
+      const response = await request(app)
+        .put(`/api/comments/${mockComment.id}`)
+        .set('Cookie', authCookie(token))
+        .send({ content: 'Still mine?' });
+
+      expect(storage.checkPagePermission).toHaveBeenCalledWith(
+        ownerUser.id,
+        mockComment.pageId,
+        'viewer'
+      );
+      expect(response.status).toBe(404);
+      expect(response.body).toEqual({ message: 'Comment not found' });
+      expect(storage.updateComment).not.toHaveBeenCalled();
     });
 
     it('TC-CMT-003c2: a token claiming the admin role is not enough to edit', async () => {
@@ -276,8 +295,36 @@ describe('Comments Management API', () => {
       expect(response.status).toBe(403);
     });
 
-    it('TC-CMT-004c: admin can delete any comment', async () => {
+    it('TC-CMT-004c: a platform admin who is neither author nor page editor cannot delete (D6)', async () => {
       const token = signToken(adminUser);
+      (storage.checkPagePermission as vi.Mock).mockImplementation(
+        async (_userId: number, _pageId: number, level: string) => level === 'viewer'
+      );
+
+      const response = await request(app)
+        .delete(`/api/comments/${mockComment.id}`)
+        .set('Cookie', authCookie(token));
+
+      expect(response.status).toBe(403);
+      expect(storage.deleteComment).not.toHaveBeenCalled();
+    });
+
+    it('TC-CMT-004e: an author who can no longer read the page gets 404, as for an unknown comment', async () => {
+      const token = signToken(ownerUser);
+      (storage.checkPagePermission as vi.Mock).mockResolvedValue(false);
+
+      const response = await request(app)
+        .delete(`/api/comments/${mockComment.id}`)
+        .set('Cookie', authCookie(token));
+
+      expect(response.status).toBe(404);
+      expect(response.body).toEqual({ message: 'Comment not found' });
+      expect(storage.deleteComment).not.toHaveBeenCalled();
+    });
+
+    it('TC-CMT-004f: a page editor who is not the author still deletes', async () => {
+      const token = signToken(otherUser);
+      (storage.checkPagePermission as vi.Mock).mockResolvedValue(true);
       (storage.deleteComment as vi.Mock).mockResolvedValue({ success: true });
 
       const response = await request(app)

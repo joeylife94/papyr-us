@@ -3,7 +3,6 @@ import { createServer, type Server as HttpServer } from 'http';
 import { Server as SocketIoServer } from 'socket.io';
 import {
   authMiddleware,
-  isPlatformAdmin,
   requireAdmin,
   writeAuthGate,
   buildRateLimiter,
@@ -36,6 +35,7 @@ import {
   insertTemplateSchema,
   updateTemplateSchema,
   insertTeamSchema,
+  updateTeamSchema,
   insertSavedViewSchema,
   updateSavedViewSchema,
   pageFavorites,
@@ -1940,13 +1940,14 @@ export async function registerRoutes(
         return res.status(404).json({ message: 'Comment not found' });
       }
 
-      // Owner-based authorization: only the comment author or a platform admin may edit
+      // Only the comment author may edit, and only while they can still read its page; anything
+      // else is answered like an unknown comment.
       const isOwner = existing.authorUserId != null && existing.authorUserId === userId;
-      const isAdmin = !isOwner && (await isPlatformAdmin(storage, req.user));
-      if (!isOwner && !isAdmin) {
-        return res
-          .status(403)
-          .json({ message: 'Only the comment author or an admin can edit this comment' });
+      if (!isOwner) {
+        return res.status(403).json({ message: 'Only the comment author can edit this comment' });
+      }
+      if (!(await storage.checkPagePermission(userId, existing.pageId, 'viewer'))) {
+        return res.status(404).json({ message: 'Comment not found' });
       }
 
       // updateCommentSchema already strips author/authorUserId to prevent identity tampering
@@ -1974,17 +1975,16 @@ export async function registerRoutes(
         return res.status(404).json({ message: 'Comment not found' });
       }
 
-      // Owner-based authorization: comment author, page editor, or platform admin may delete
+      // The comment author (while they can still read its page) or a page editor may delete.
+      // An author who can no longer read the page is answered like an unknown comment.
       const isOwner = existing.authorUserId != null && existing.authorUserId === userId;
-      const isAdmin = !isOwner && (await isPlatformAdmin(storage, req.user));
-      let isPageEditor = false;
-      if (!isOwner && !isAdmin) {
-        isPageEditor = await storage.checkPagePermission(userId, existing.pageId, 'editor');
-      }
-
-      if (!isOwner && !isAdmin && !isPageEditor) {
+      if (isOwner) {
+        if (!(await storage.checkPagePermission(userId, existing.pageId, 'viewer'))) {
+          return res.status(404).json({ message: 'Comment not found' });
+        }
+      } else if (!(await storage.checkPagePermission(userId, existing.pageId, 'editor'))) {
         return res.status(403).json({
-          message: 'Only the comment author, page editor, or admin can delete this comment',
+          message: 'Only the comment author or a page editor can delete this comment',
         });
       }
 
@@ -3073,11 +3073,21 @@ export async function registerRoutes(
       return true;
     };
 
+    // An account without an organization has no notifications to read or change.
+    const accountHasOrganization = async (userId: number): Promise<boolean> => {
+      const organizationId = await storage.getUserOrganizationId(userId);
+      return organizationId !== null && organizationId !== undefined;
+    };
+    const noOrganization = { message: 'Your account does not belong to an organization' };
+
     app.get('/api/notifications', authMiddleware, async (req: AuthRequest, res) => {
       try {
         const userId = req.user?.id;
         if (!userId) {
           return res.status(401).json({ message: 'Authentication required' });
+        }
+        if (!(await accountHasOrganization(userId))) {
+          return res.status(403).json(noOrganization);
         }
 
         const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
@@ -3127,6 +3137,9 @@ export async function registerRoutes(
         if (!userId) {
           return res.status(401).json({ message: 'Authentication required' });
         }
+        if (!(await accountHasOrganization(userId))) {
+          return res.status(403).json(noOrganization);
+        }
 
         const memberIds = await storage.getMemberIdsForUser(userId);
         const count = memberIds.length ? await storage.getUnreadNotificationCount(memberIds) : 0;
@@ -3141,6 +3154,9 @@ export async function registerRoutes(
         const userId = req.user?.id;
         if (!userId) {
           return res.status(401).json({ message: 'Authentication required' });
+        }
+        if (!(await accountHasOrganization(userId))) {
+          return res.status(403).json(noOrganization);
         }
         const id = parseInt(req.params.id);
         const notification = await storage.getNotificationForUser(id, userId);
@@ -3184,6 +3200,9 @@ export async function registerRoutes(
         const userId = req.user?.id;
         if (!userId) {
           return res.status(401).json({ message: 'Authentication required' });
+        }
+        if (!(await accountHasOrganization(userId))) {
+          return res.status(403).json(noOrganization);
         }
         const id = parseInt(req.params.id);
         // Ownership check: fetch before updating
@@ -3237,6 +3256,9 @@ export async function registerRoutes(
         if (!userId) {
           return res.status(401).json({ message: 'Authentication required' });
         }
+        if (!(await accountHasOrganization(userId))) {
+          return res.status(403).json(noOrganization);
+        }
         const id = parseInt(req.params.id);
         // Ownership check: fetch before deleting
         const existing = await storage.getNotificationForUser(id, userId);
@@ -3277,6 +3299,9 @@ export async function registerRoutes(
         if (!userId) {
           return res.status(401).json({ message: 'Authentication required' });
         }
+        if (!(await accountHasOrganization(userId))) {
+          return res.status(403).json(noOrganization);
+        }
         const id = parseInt(req.params.id);
         // Ownership check: fetch before marking as read
         const existing = await storage.getNotificationForUser(id, userId);
@@ -3309,6 +3334,9 @@ export async function registerRoutes(
         const userId = req.user?.id;
         if (!userId) {
           return res.status(401).json({ message: 'Authentication required' });
+        }
+        if (!(await accountHasOrganization(userId))) {
+          return res.status(403).json(noOrganization);
         }
 
         const memberIds = await storage.getMemberIdsForUser(userId);
@@ -3623,19 +3651,25 @@ export async function registerRoutes(
 
         // Always verify user's team membership and role for team updates
         const userId = req.user?.id;
-        if (userId) {
-          const userRole = await storage.getUserTeamRole(userId, id);
-          if (!userRole) {
-            return res.status(403).json({ error: 'You are not a member of this team' });
-          }
-          if (userRole === 'member') {
-            return res.status(403).json({ error: 'Admin or owner role required to update team' });
-          }
-        } else if (config.enforceAuthForWrites) {
+        if (!userId) {
           return res.status(401).json({ error: 'Authentication required' });
         }
+        const userRole = await storage.getUserTeamRole(userId, id);
+        if (!userRole) {
+          return res.status(403).json({ error: 'You are not a member of this team' });
+        }
+        if (userRole === 'member') {
+          return res.status(403).json({ error: 'Admin or owner role required to update team' });
+        }
 
-        const team = await storage.updateTeam(id, req.body);
+        // Only the columns updateTeamSchema allows are written; the team's organization and id
+        // are never taken from the request.
+        const parsed = updateTeamSchema.safeParse(req.body);
+        if (!parsed.success) {
+          return res.status(400).json({ error: 'Invalid team data' });
+        }
+
+        const team = await storage.updateTeam(id, parsed.data);
         if (!team) {
           return res.status(404).json({ error: 'Team not found' });
         }

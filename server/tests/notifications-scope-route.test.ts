@@ -481,3 +481,61 @@ describe('the session is read whether or not auth for writes is enforced', () =>
     expect(storage.markAllNotificationsAsRead).not.toHaveBeenCalled();
   });
 });
+
+describe('an account without an organization reads and changes no notification', () => {
+  const NO_ORGANIZATION = { message: 'Your account does not belong to an organization' };
+
+  for (const enforce of [true, false]) {
+    describe(`ENFORCE_AUTH_WRITES=${enforce}`, () => {
+      beforeEach(() => {
+        mockConfig.enforceAuthForWrites = enforce;
+        storage.getUserOrganizationId.mockResolvedValue(null);
+        storage.getNotifications.mockResolvedValue([row()]);
+        storage.updateNotification.mockResolvedValue(row());
+        storage.deleteNotification.mockResolvedValue(true);
+        storage.markNotificationAsRead.mockResolvedValue(row());
+      });
+
+      const calls: Array<[string, () => request.Test]> = [
+        ['list', () => request(app).get('/api/notifications').set(signedIn())],
+        ['count', () => request(app).get('/api/notifications/unread-count').set(signedIn())],
+        ['read', () => request(app).get('/api/notifications/1').set(signedIn())],
+        [
+          'update',
+          () => request(app).put('/api/notifications/1').set(signedIn()).send({ isRead: true }),
+        ],
+        ['delete', () => request(app).delete('/api/notifications/1').set(signedIn())],
+        ['mark-read', () => request(app).patch('/api/notifications/1/read').set(signedIn())],
+        ['read-all', () => request(app).patch('/api/notifications/read-all').set(signedIn())],
+      ];
+
+      for (const [name, call] of calls) {
+        it(`${name}: 403 before any notification row is read or written`, async () => {
+          const response = await call();
+          expect(response.status).toBe(403);
+          expect(response.body).toEqual(NO_ORGANIZATION);
+          expect(storage.getNotifications).not.toHaveBeenCalled();
+          expect(storage.getNotificationForUser).not.toHaveBeenCalled();
+          expect(storage.getUnreadNotificationCount).not.toHaveBeenCalled();
+          expect(storage.updateNotification).not.toHaveBeenCalled();
+          expect(storage.deleteNotification).not.toHaveBeenCalled();
+          expect(storage.markNotificationAsRead).not.toHaveBeenCalled();
+          expect(storage.markAllNotificationsAsRead).not.toHaveBeenCalled();
+        });
+      }
+
+      it('a failed organization lookup is refused too, not treated as allowed', async () => {
+        storage.getUserOrganizationId.mockRejectedValue(new Error('db down'));
+        const response = await request(app).get('/api/notifications').set(signedIn());
+        expect(response.status).toBeGreaterThanOrEqual(400);
+        expect(storage.getNotifications).not.toHaveBeenCalled();
+      });
+
+      it('an account with an organization still reads its own notifications', async () => {
+        storage.getUserOrganizationId.mockResolvedValue(CALLER_ORG);
+        const response = await request(app).get('/api/notifications').set(signedIn());
+        expect(response.status).toBe(200);
+      });
+    });
+  }
+});
