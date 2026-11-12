@@ -285,9 +285,29 @@ describe('the organization is always the caller own', () => {
 
 describe('PATCH /api/organization', () => {
   const stored = { id: ORG, slug: 'default', name: 'Renamed', aiEnabled: true };
+  // Storage re-reads the actor inside the lock: the in-memory organization answers as it does.
+  const answer = (organization: object) =>
+    storage.updateOrganizationSettings.mockImplementation(async (_org: number, actorId: number) => {
+      const actor = accounts.get(actorId);
+      if (!actor || actor.organizationId !== ORG) {
+        return {
+          ok: false,
+          status: 403,
+          body: { message: 'Your account does not belong to an organization' },
+        };
+      }
+      if (actor.role === 'member') {
+        return {
+          ok: false,
+          status: 403,
+          body: { message: 'Organization owner or admin role required' },
+        };
+      }
+      return { ok: true, value: { organization, role: actor.role } };
+    });
 
   it('renames, trimming the name, and answers the GET shape with the caller role', async () => {
-    storage.updateOrganizationSettings.mockResolvedValue(stored);
+    answer(stored);
     const res = await call(ADMIN, 'patch', '/api/organization', { name: '  Renamed  ' });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -297,14 +317,35 @@ describe('PATCH /api/organization', () => {
       role: 'admin',
       aiEnabled: true,
     });
-    expect(storage.updateOrganizationSettings).toHaveBeenCalledWith(ORG, { name: 'Renamed' });
+    expect(storage.updateOrganizationSettings).toHaveBeenCalledWith(ORG, ADMIN, {
+      name: 'Renamed',
+    });
   });
 
   it('switches AI alone', async () => {
-    storage.updateOrganizationSettings.mockResolvedValue({ ...stored, aiEnabled: false });
+    answer({ ...stored, aiEnabled: false });
     const res = await call(OWNER, 'patch', '/api/organization', { aiEnabled: false });
     expect(res.status).toBe(200);
-    expect(storage.updateOrganizationSettings).toHaveBeenCalledWith(ORG, { aiEnabled: false });
+    expect(storage.updateOrganizationSettings).toHaveBeenCalledWith(ORG, OWNER, {
+      aiEnabled: false,
+    });
+  });
+
+  it('a role that no longer allows the change when storage re-reads it is refused with 403', async () => {
+    // The guard saw an admin; inside the lock the account is a plain member.
+    answer(stored);
+    storage.getOrganizationMembership.mockResolvedValueOnce({ organizationId: ORG, role: 'admin' });
+    accounts.get(ADMIN)!.role = 'member';
+    const res = await call(ADMIN, 'patch', '/api/organization', { name: 'Renamed' });
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({ message: 'Organization owner or admin role required' });
+  });
+
+  it('a busy organization answers 503', async () => {
+    storage.updateOrganizationSettings.mockRejectedValue(new OrganizationBusyError());
+    const res = await call(OWNER, 'patch', '/api/organization', { name: 'Renamed' });
+    expect(res.status).toBe(503);
+    expect(res.body).toEqual({ message: 'Organization is busy, try again' });
   });
 
   for (const [label, body] of [
@@ -323,6 +364,41 @@ describe('PATCH /api/organization', () => {
       expect(storage.updateOrganizationSettings).not.toHaveBeenCalled();
     });
   }
+});
+
+describe('a deactivated owner does not count as an owner', () => {
+  beforeEach(() => {
+    accounts.delete(ADMIN);
+    accounts.delete(ADMIN_2);
+    accounts.set(OWNER_2, { organizationId: ORG, role: 'owner', isActive: false });
+  });
+
+  it('the active owner lowering itself is 409', async () => {
+    const res = await call(OWNER, 'patch', `/api/organization/members/${OWNER}`, { role: 'admin' });
+    expect(res.status).toBe(409);
+    expect(accounts.get(OWNER)!.role).toBe('owner');
+  });
+
+  it('the active owner lowers or removes the deactivated owner', async () => {
+    const lowered = await call(OWNER, 'patch', `/api/organization/members/${OWNER_2}`, {
+      role: 'member',
+    });
+    expect(lowered.status).toBe(200);
+    accounts.get(OWNER_2)!.role = 'owner';
+    const removed = await call(OWNER, 'delete', `/api/organization/members/${OWNER_2}`);
+    expect(removed.status).toBe(200);
+  });
+
+  it('the deactivated owner cannot act', async () => {
+    for (const [method, url, body] of [
+      ['patch', `/api/organization/members/${MEMBER}`, { role: 'admin' }],
+      ['delete', `/api/organization/members/${MEMBER}`, undefined],
+      ['patch', '/api/organization', { name: 'x' }],
+      ['get', '/api/organization/members', undefined],
+    ] as Array<['get' | 'patch' | 'delete', string, object | undefined]>) {
+      expect((await call(OWNER_2, method, url, body)).status).toBe(403);
+    }
+  });
 });
 
 describe('PATCH /api/organization/members/:userId', () => {

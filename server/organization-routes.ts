@@ -80,16 +80,14 @@ export function registerOrganizationRoutes(app: Express, storage: DBStorage) {
         return res.status(400).json({ message: 'Invalid organization settings' });
       }
       try {
-        const organization = await storage.updateOrganizationSettings(
+        const result = await storage.updateOrganizationSettings(
           req.organization!.id,
+          Number(req.user!.id),
           parsed.data
         );
-        if (!organization) {
-          return res
-            .status(403)
-            .json({ message: 'Your account does not belong to an organization' });
-        }
-        return res.json(settingsBody(organization, req.organization!.role));
+        if (!result.ok) return res.status(result.status).json(result.body);
+        const { organization, role } = result.value;
+        return res.json(settingsBody(organization, role));
       } catch (error) {
         return failure(res, error);
       }

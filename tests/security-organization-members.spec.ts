@@ -33,6 +33,12 @@ test.describe('Organization member management', () => {
     test.setTimeout(240_000);
     if (!DATABASE_URL) throw new Error('DATABASE_URL is required to set roles');
     const db = new Pool({ connectionString: DATABASE_URL });
+    // Everything the spec creates, removed in `finally`.
+    const created = {
+      organizations: [] as number[],
+      teams: [] as number[],
+      pages: [] as number[],
+    };
     const baseURL = process.env.BASE_URL || 'http://localhost:5003';
     // A context with no cookies at all (the default fixture may carry a stored session).
     const signedOutContext = await playwrightRequest.newContext({ baseURL });
@@ -54,33 +60,29 @@ test.describe('Organization member management', () => {
         .rows[0]?.role ?? null;
 
     try {
-      // ── Arrange: roles and a second organization, in the database ──
-      // This account is the only owner and the only admins are the two below: owners and admins
-      // left by earlier runs on the same database are made plain members.
-      await db.query(
-        `UPDATE organization_members SET role = 'member'
-          WHERE role IN ('owner', 'admin')
-            AND organization_id = (SELECT organization_id FROM organization_members WHERE user_id = $1)`,
-        [ids.owner]
-      );
-      await db.query(`UPDATE organization_members SET role = 'owner' WHERE user_id = $1`, [
-        ids.owner,
-      ]);
-      await db.query(`UPDATE organization_members SET role = 'admin' WHERE user_id = ANY($1)`, [
-        [ids.admin, ids.admin2],
-      ]);
-      const { rows } = await db.query(
-        `INSERT INTO organizations (slug, name) VALUES ($1, $1) RETURNING id`,
-        [`p2-org-b-${stamp}`]
-      );
-      const orgB = Number(rows[0].id);
-      await db.query(
-        `UPDATE organization_members SET organization_id = $1 WHERE user_id = ANY($2)`,
-        [orgB, [ids['b-owner'], ids['b-member']]]
-      );
-      await db.query(`UPDATE organization_members SET role = 'owner' WHERE user_id = $1`, [
-        ids['b-owner'],
-      ]);
+      // ── Arrange: two organizations the spec creates for itself, in the database ──
+      // Every role and setting this spec changes lives in them, never in the default
+      // organization. The accounts signed up into the default one and are moved out here.
+      const insertOrganization = async (slug: string) => {
+        const { rows } = await db.query(
+          `INSERT INTO organizations (slug, name) VALUES ($1, $1) RETURNING id`,
+          [slug]
+        );
+        created.organizations.push(Number(rows[0].id));
+        return Number(rows[0].id);
+      };
+      const orgA = await insertOrganization(`p2-org-a-${stamp}`);
+      const orgB = await insertOrganization(`p2-org-b-${stamp}`);
+      const place = (organizationId: number, role: string, who: string[]) =>
+        db.query(
+          `UPDATE organization_members SET organization_id = $1, role = $2 WHERE user_id = ANY($3)`,
+          [organizationId, role, who.map((name) => ids[name])]
+        );
+      await place(orgA, 'owner', ['owner']);
+      await place(orgA, 'admin', ['admin', 'admin2']);
+      await place(orgA, 'member', ['member', 'leaver']);
+      await place(orgB, 'owner', ['b-owner']);
+      await place(orgB, 'member', ['b-member']);
 
       // A team in each organization, and a team page the account that will leave can comment on.
       const teamResponse = await ctx.owner.post('/api/teams', {
@@ -88,11 +90,13 @@ test.describe('Organization member management', () => {
       });
       expect(teamResponse.status()).toBe(201);
       const teamA = await teamResponse.json();
+      created.teams.push(teamA.id);
       const teamBResponse = await ctx['b-owner'].post('/api/teams', {
         data: { name: `p2-team-b-${stamp}`, displayName: `P2 Team B ${stamp}` },
       });
       expect(teamBResponse.status()).toBe(201);
       const teamB = await teamBResponse.json();
+      created.teams.push(teamB.id);
       const admit = await ctx.owner.post(`/api/teams/${teamA.id}/memberships`, {
         data: { email: users.leaver.email },
       });
@@ -110,6 +114,7 @@ test.describe('Organization member management', () => {
       });
       expect(pageResponse.status()).toBe(201);
       const page = await pageResponse.json();
+      created.pages.push(page.id);
       expect((await ctx.leaver.get(`/api/pages/${page.id}`)).status()).toBe(200);
       // Team members read; a user grant lets it comment.
       const grant = await ctx.owner.post(`/api/pages/${page.id}/permissions`, {
@@ -248,17 +253,11 @@ test.describe('Organization member management', () => {
       });
       expect(renamed.status()).toBe(200);
       const renamedBody = await renamed.json();
-      expect(renamedBody).toMatchObject({ name: `P2 Org ${stamp}`, role: 'admin' });
+      expect(renamedBody).toMatchObject({ id: orgA, name: `P2 Org ${stamp}`, role: 'admin' });
       expect(Object.keys(renamedBody).sort()).toEqual(['aiEnabled', 'id', 'name', 'role', 'slug']);
       const nameOfB = (await db.query('SELECT name FROM organizations WHERE id = $1', [orgB]))
         .rows[0].name;
       expect(nameOfB).toBe(`p2-org-b-${stamp}`);
-      // Put the default organization's name back: other specs read it.
-      const previous = await db.query(`SELECT name FROM organizations WHERE id = $1`, [
-        renamedBody.id,
-      ]);
-      expect(previous.rows[0].name).toBe(`P2 Org ${stamp}`);
-      await db.query(`UPDATE organizations SET name = 'Default' WHERE id = $1`, [renamedBody.id]);
 
       // ── 7. Removal ──
       const removal = await ctx.owner.delete(`/api/organization/members/${ids.leaver}`);
@@ -327,6 +326,21 @@ test.describe('Organization member management', () => {
       );
       expect(await roleInDb('owner')).toBe('owner');
     } finally {
+      // Remove what the spec created; the default organization was never written.
+      const cleanup = async (text: string, params: unknown[]) => {
+        try {
+          await db.query(text, params);
+        } catch (error) {
+          console.warn('cleanup failed', text, error);
+        }
+      };
+      const userIds = Object.values(ids);
+      await cleanup('DELETE FROM comments WHERE page_id = ANY($1)', [created.pages]);
+      await cleanup('DELETE FROM wiki_pages WHERE id = ANY($1)', [created.pages]);
+      await cleanup('DELETE FROM teams WHERE id = ANY($1)', [created.teams]);
+      await cleanup('DELETE FROM organization_members WHERE user_id = ANY($1)', [userIds]);
+      await cleanup('DELETE FROM organizations WHERE id = ANY($1)', [created.organizations]);
+      await cleanup('DELETE FROM users WHERE id = ANY($1)', [userIds]);
       for (const name of names) await ctx[name]?.dispose();
       await signedOutContext.dispose();
       await db.end();

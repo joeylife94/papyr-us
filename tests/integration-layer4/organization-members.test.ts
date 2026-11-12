@@ -499,17 +499,95 @@ describe('listings', () => {
 });
 
 describe('updateOrganizationSettings', () => {
+  const nameOf = async (id: number) =>
+    (await one(`SELECT name FROM organizations WHERE id = $1`, [id])).name;
+
   it('renames and switches AI for the named organization only', async () => {
-    const updated = await storage.updateOrganizationSettings(defaultId, {
+    const updated = await storage.updateOrganizationSettings(defaultId, ADMIN, {
       name: 'Renamed',
       aiEnabled: false,
     });
-    expect(updated).toMatchObject({ id: defaultId, name: 'Renamed', aiEnabled: false });
-    expect((await one(`SELECT name FROM organizations WHERE id = $1`, [acmeId])).name).toBe('Acme');
-    await storage.updateOrganizationSettings(defaultId, { name: 'Default' });
+    expect(updated).toMatchObject({
+      ok: true,
+      value: { role: 'admin', organization: { id: defaultId, name: 'Renamed', aiEnabled: false } },
+    });
+    expect(await nameOf(acmeId)).toBe('Acme');
+    await storage.updateOrganizationSettings(defaultId, OWNER_A, { name: 'Default' });
     expect(
       (await one(`SELECT ai_enabled FROM organizations WHERE id = $1`, [defaultId])).ai_enabled
     ).toBe(false);
+  });
+
+  it('refuses a plain member, an account of another organization and an unknown account', async () => {
+    for (const actor of [MEMBER, ACME_USER, GHOST, 9999]) {
+      const result = await storage.updateOrganizationSettings(defaultId, actor, { name: 'Nope' });
+      expect(result).toMatchObject({ ok: false, status: 403 });
+    }
+    expect(await nameOf(defaultId)).toBe('Default');
+    expect(await nameOf(acmeId)).toBe('Acme');
+  });
+
+  it('a demotion committed while the update waits for the lock refuses the update', async () => {
+    const holder = await scoped.connect();
+    try {
+      await holder.query('BEGIN');
+      await holder.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [
+        `organization-members:${defaultId}`,
+      ]);
+      const pending = storage.updateOrganizationSettings(defaultId, ADMIN, { name: 'Late' });
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      await holder.query(`UPDATE organization_members SET role = 'member' WHERE user_id = $1`, [
+        ADMIN,
+      ]);
+      await holder.query('COMMIT');
+      expect(await pending).toMatchObject({ ok: false, status: 403 });
+      expect(await nameOf(defaultId)).toBe('Default');
+    } finally {
+      holder.release();
+    }
+  });
+});
+
+describe('a deactivated owner does not count as an owner', () => {
+  beforeEach(async () => {
+    await scoped.query(`UPDATE users SET is_active = FALSE WHERE id = $1`, [OWNER_B]);
+  });
+
+  it('the active owner lowering itself is the last-owner refusal', async () => {
+    const result = await storage.changeOrganizationMemberRole(defaultId, OWNER_A, OWNER_A, 'admin');
+    expect(result).toMatchObject({ ok: false, status: 409 });
+    expect(await roleOf(OWNER_A)).toBe('owner');
+  });
+
+  it('the active owner lowers the deactivated owner', async () => {
+    const result = await storage.changeOrganizationMemberRole(
+      defaultId,
+      OWNER_A,
+      OWNER_B,
+      'member'
+    );
+    expect(result).toMatchObject({ ok: true });
+    expect(await roleOf(OWNER_B)).toBe('member');
+  });
+
+  it('the active owner removes the deactivated owner', async () => {
+    const result = await storage.removeOrganizationMember(defaultId, OWNER_A, OWNER_B);
+    expect(result).toMatchObject({ ok: true });
+    expect(await roleOf(OWNER_B)).toBeNull();
+  });
+
+  it('the deactivated owner cannot act', async () => {
+    expect(
+      await storage.changeOrganizationMemberRole(defaultId, OWNER_B, MEMBER, 'admin')
+    ).toMatchObject({ ok: false, status: 403 });
+    expect(await storage.removeOrganizationMember(defaultId, OWNER_B, MEMBER)).toMatchObject({
+      ok: false,
+      status: 403,
+    });
+    expect(
+      await storage.updateOrganizationSettings(defaultId, OWNER_B, { name: 'x' })
+    ).toMatchObject({ ok: false, status: 403 });
+    expect(await roleOf(MEMBER)).toBe('member');
   });
 });
 

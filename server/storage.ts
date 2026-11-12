@@ -272,10 +272,17 @@ export type OrganizationMutationResult<T> =
   | { ok: true; value: T }
   | { ok: false; status: number; body: { message: string } };
 
-function refuseOrganization(status: number, message: string): OrganizationDecision {
+function refuseOrganization(
+  status: number,
+  message: string
+): { ok: false; status: number; body: { message: string } } {
   return { ok: false, status, body: { message } };
 }
 const ORG_MEMBER_NOT_FOUND = refuseOrganization(404, 'Member not found');
+const ORG_NO_ORGANIZATION = refuseOrganization(
+  403,
+  'Your account does not belong to an organization'
+);
 const ORG_MANAGER_REQUIRED = refuseOrganization(403, 'Organization owner or admin role required');
 const ORG_LAST_OWNER = refuseOrganization(409, 'Cannot remove the last organization owner');
 
@@ -2474,20 +2481,32 @@ export class DBStorage {
     }));
   }
 
-  /** Renames the organization and/or switches its AI setting; undefined for an unknown id. */
+  /**
+   * Renames the organization and/or switches its AI setting inside the organization lock. The
+   * actor's membership is read again through the handle: it must still be an active owner or
+   * admin of this organization, else the refusal is 403. Throws OrganizationBusyError when the
+   * lock is not available.
+   */
   async updateOrganizationSettings(
     organizationId: number,
+    actorUserId: number,
     patch: { name?: string; aiEnabled?: boolean }
-  ): Promise<Organization | undefined> {
-    const values: Partial<typeof organizations.$inferInsert> = { updatedAt: new Date() };
-    if (patch.name !== undefined) values.name = patch.name;
-    if (patch.aiEnabled !== undefined) values.aiEnabled = patch.aiEnabled;
-    const [row] = await this.db
-      .update(organizations)
-      .set(values)
-      .where(eq(organizations.id, organizationId))
-      .returning();
-    return row;
+  ): Promise<OrganizationMutationResult<{ organization: Organization; role: OrganizationRole }>> {
+    return this.withOrganizationLocks([organizationId], async (tx) => {
+      const membership = await this.getOrganizationMembership(actorUserId, tx);
+      if (!membership || membership.organizationId !== organizationId) return ORG_NO_ORGANIZATION;
+      if (!isOrganizationManager(membership.role)) return ORG_MANAGER_REQUIRED;
+      const values: Partial<typeof organizations.$inferInsert> = { updatedAt: new Date() };
+      if (patch.name !== undefined) values.name = patch.name;
+      if (patch.aiEnabled !== undefined) values.aiEnabled = patch.aiEnabled;
+      const [row] = await tx
+        .update(organizations)
+        .set(values)
+        .where(eq(organizations.id, organizationId))
+        .returning();
+      if (!row) return ORG_NO_ORGANIZATION;
+      return { ok: true as const, value: { organization: row, role: membership.role } };
+    });
   }
 
   /**
