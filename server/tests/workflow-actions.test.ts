@@ -109,8 +109,11 @@ describe('TC-WF-API: POST /api/workflows action validation', () => {
   const token = jwt.sign({ id: 1, email: 'user@wf-test.com', role: 'user' }, TEST_SECRET);
   const authCookie = [`accessToken=${token}`];
 
+  // A workflow always belongs to a team (#124 X1b D4): the caller is a member of this one
+  const TEAM_ID = 3;
   const baseWorkflow = {
     name: 'Test Workflow',
+    teamId: TEAM_ID,
     description: '',
     trigger: { type: 'page_created' },
     conditions: [],
@@ -119,7 +122,13 @@ describe('TC-WF-API: POST /api/workflows action validation', () => {
 
   beforeEach(() => {
     // Storage stubs required by requireTeamMembership + workflow creation
-    (storage.getUserTeamIds as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (storage.getUserTeamIds as ReturnType<typeof vi.fn>).mockResolvedValue([TEAM_ID]);
+    // The route reads the creator from the signed-in account
+    (storage.getUserAccount as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 1,
+      email: 'user@wf-test.com',
+      isActive: true,
+    });
     (storage.createWorkflow as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: 1,
       ...baseWorkflow,

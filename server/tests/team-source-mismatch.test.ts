@@ -112,6 +112,8 @@ beforeEach(() => {
   storage.getUserTeamIds.mockImplementation(async (userId: number) =>
     userId === CALLER.id ? [OWN] : []
   );
+  // An upload is recorded under the uploader's organization (issue #124 X1b).
+  storage.getUserOrganizationId.mockResolvedValue(1);
   storage.getTeamByName.mockImplementation(async (name: string) =>
     TEAMS[name] ? { id: TEAMS[name], name } : undefined
   );
@@ -120,6 +122,7 @@ beforeEach(() => {
   storage.createCalendarEvent.mockImplementation(async (event: any) => ({ id: 1, ...event }));
   storage.createTask.mockImplementation(async (task: any) => ({ id: 1, ...task }));
   storage.createWorkflow.mockImplementation(async (workflow: any) => ({ id: 1, ...workflow }));
+  storage.getUserAccount.mockResolvedValue({ id: CALLER.id, email: CALLER.email, isActive: true });
   storage.createSavedView.mockImplementation(async (view: any) => ({ id: 1, ...view }));
   (processUploadedFile as any).mockImplementation(async (file: any, teamId?: string) => ({
     filename: file.originalname,
@@ -299,7 +302,7 @@ const MISMATCHED: Case[] = [
     route: 'GET /api/analytics/popular',
     send: () =>
       request(app).get(`/api/analytics/popular?teamId=${OWN}`).set(auth()).send({ teamId: OTHER }),
-    untouched: () => [],
+    untouched: () => [storage.getPopularPages],
   },
   {
     route: 'GET /api/activity',
@@ -459,13 +462,19 @@ describe('file upload checks the team in the multipart body', () => {
   it('uploads into its own team', async () => {
     const res = await upload(`/api/upload?teamId=${OWN}`, String(OWN));
     expect(res.status).toBe(201);
-    expect(processUploadedFile).toHaveBeenCalledWith(expect.anything(), String(OWN));
+    expect(processUploadedFile).toHaveBeenCalledWith(expect.anything(), String(OWN), {
+      organizationId: 1,
+      uploadedBy: CALLER.id,
+    });
   });
 
   it('uploads a file with no team, as before', async () => {
     const res = await upload('/api/upload');
     expect(res.status).toBe(201);
-    expect(processUploadedFile).toHaveBeenCalledWith(expect.anything(), undefined);
+    expect(processUploadedFile).toHaveBeenCalledWith(expect.anything(), undefined, {
+      organizationId: 1,
+      uploadedBy: CALLER.id,
+    });
   });
 });
 

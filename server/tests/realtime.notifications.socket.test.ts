@@ -8,11 +8,8 @@ import cookieParser from 'cookie-parser';
 
 const TEST_JWT_SECRET = 'socket-test-secret';
 
-function authCookieFor(userId: number) {
-  const token = jwt.sign(
-    { id: userId, email: `user-${userId}@test.com`, role: 'user' },
-    TEST_JWT_SECRET
-  );
+function authCookieFor(userId: number, role = 'user') {
+  const token = jwt.sign({ id: userId, email: `user-${userId}@test.com`, role }, TEST_JWT_SECRET);
   return `accessToken=${token}`;
 }
 
@@ -21,14 +18,93 @@ describe('Realtime notifications over Socket.IO', () => {
   let app: Express;
   let server: http.Server;
   let baseUrl: string;
+  let ioServer: any;
+  let failMemberLookup = false;
   let registerRoutes: typeof import('../routes.js').registerRoutes;
 
   // 테스트용 storage 더미 구현
+  // Notifications address members, sockets belong to accounts (#124 X1b). The account `recipientId`
+  // owns member row 900 (same email); account 900 exists too and owns no member row, so a member id
+  // that equals a user id must not reach that user.
   const recipientId = 4242;
+  const recipientMemberId = 900;
+  // Member row 901 sits in the caller's organization through its team but has no account.
+  const memberWithoutAccount = 901;
+  const memberToUser = new Map<number, number>([[recipientMemberId, recipientId]]);
   const fakeStorage: any = {
     createNotification: async (n: any) => ({ id: 1, isRead: false, ...n }),
-    getUnreadNotificationCount: async (_rid: number) => 1,
+    getUnreadNotificationCount: async (memberIds: number[]) => (memberIds.length ? 1 : 0),
+    getMemberIdsForUser: async (userId: number) => {
+      if (failMemberLookup) throw new Error('lookup failed');
+      return [...memberToUser].filter(([, u]) => u === userId).map(([m]) => m);
+    },
+    getUserIdForMember: async (memberId: number) => memberToUser.get(memberId) ?? null,
+    getMemberOrganizationId: async (memberId: number) =>
+      memberToUser.has(memberId) || memberId === memberWithoutAccount ? 1 : null,
+    getUserOrganizationId: async (_userId: number) => 1,
+    getNotificationForUser: async (id: number, userId: number) =>
+      id === 1 && userId === recipientId
+        ? { id: 1, recipientId: recipientMemberId, isRead: false }
+        : undefined,
+    deleteNotification: async () => true,
+    updateNotification: async (id: number, changes: any) => ({
+      id,
+      recipientId: recipientMemberId,
+      isRead: false,
+      ...changes,
+    }),
+    markNotificationAsRead: async (id: number) => ({
+      id,
+      recipientId: recipientMemberId,
+      isRead: true,
+    }),
+    markAllNotificationsAsRead: async () => undefined,
   };
+
+  const connect = async (userId: number, role = 'user') => {
+    const client = Client(`${baseUrl}/collab`, {
+      transports: ['polling'],
+      timeout: 4000,
+      reconnection: false,
+      extraHeaders: { Cookie: authCookieFor(userId, role) },
+    });
+    await new Promise<void>((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error('timeout waiting for socket connect')), 6000);
+      client.on('connect', () => {
+        clearTimeout(t);
+        resolve();
+      });
+      client.on('connect_error', (err) => {
+        clearTimeout(t);
+        reject(err);
+      });
+    });
+    return client;
+  };
+
+  const joinMember = (client: ReturnType<typeof Client>, memberId: number) =>
+    new Promise<{ ok: boolean; error?: string }>((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error('timeout waiting for join-member ack')), 3000);
+      client.emit('join-member', { memberId }, (ack: { ok: boolean; error?: string }) => {
+        clearTimeout(t);
+        resolve(ack);
+      });
+    });
+
+  const collect = (client: ReturnType<typeof Client>, event: string) => {
+    const seen: any[] = [];
+    client.on(event, (payload: any) => seen.push(payload));
+    return seen;
+  };
+
+  const postNotification = (asUserId: number, body: Record<string, unknown>) =>
+    fetch(`${baseUrl}/api/notifications`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: authCookieFor(asUserId) },
+      body: JSON.stringify({ type: 'test', title: 't', content: 'c', ...body }),
+    });
+
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 400));
 
   beforeAll(async () => {
     // Ensure realtime sockets are enabled for this test regardless of local .env.
@@ -47,6 +123,7 @@ describe('Realtime notifications over Socket.IO', () => {
     app.use(express.json());
     app.use(cookieParser());
     const reg = await registerRoutes(app, fakeStorage);
+    ioServer = reg.io;
     server = reg.httpServer;
     if (!reg.io) {
       throw new Error('Test setup error: Socket.IO was not initialized (reg.io is undefined)');
@@ -70,6 +147,8 @@ describe('Realtime notifications over Socket.IO', () => {
   }, 30000);
 
   afterAll(async () => {
+    // fetch keeps connections alive, which would hold close() open
+    server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }, 15000);
 
@@ -109,7 +188,7 @@ describe('Realtime notifications over Socket.IO', () => {
         const t = setTimeout(() => reject(new Error('timeout waiting for notification:new')), 8000);
         client.on('notification:new', (payload: any) => {
           try {
-            if (payload?.recipientId === recipientId) {
+            if (payload?.recipientId === recipientMemberId) {
               clearTimeout(t);
               resolve();
             }
@@ -130,7 +209,12 @@ describe('Realtime notifications over Socket.IO', () => {
           'Content-Type': 'application/json',
           Cookie: authCookieFor(recipientId),
         },
-        body: JSON.stringify({ type: 'test', title: 't', content: 'c', recipientId }),
+        body: JSON.stringify({
+          type: 'test',
+          title: 't',
+          content: 'c',
+          recipientId: recipientMemberId,
+        }),
       });
       if (!res.ok) throw new Error(`create notif failed: ${res.status}`);
 
@@ -182,4 +266,207 @@ describe('Realtime notifications over Socket.IO', () => {
       client.close();
     }
   }, 15000);
+
+  it('refuses a token with role admin that asks to join another id', async () => {
+    const admin = await connect(recipientId + 5, 'admin');
+    try {
+      expect(await joinMember(admin, recipientId)).toEqual({ ok: false, error: 'Forbidden' });
+      expect(await joinMember(admin, recipientMemberId)).toEqual({ ok: false, error: 'Forbidden' });
+    } finally {
+      admin.close();
+    }
+  }, 15000);
+
+  it("delivers a notification for member M to the account with M's email, not to user #M", async () => {
+    const owner = await connect(recipientId);
+    const namesake = await connect(recipientMemberId); // users.id equals the member id
+    const adminBystander = await connect(recipientId + 7, 'admin');
+    try {
+      const ownerSeen = collect(owner, 'notification:new');
+      const namesakeSeen = collect(namesake, 'notification:new');
+      const bystanderSeen = collect(adminBystander, 'notification:new');
+      const ownerCount = collect(owner, 'notification:unread-count');
+      const namesakeCount = collect(namesake, 'notification:unread-count');
+
+      const res = await postNotification(recipientId, { recipientId: recipientMemberId });
+      expect(res.status).toBe(201);
+      await settle();
+
+      expect(ownerSeen).toHaveLength(1);
+      expect(ownerSeen[0].recipientId).toBe(recipientMemberId);
+      expect(ownerCount).toEqual([{ recipientId: recipientMemberId, count: 1 }]);
+      expect(namesakeSeen).toHaveLength(0);
+      expect(namesakeCount).toHaveLength(0);
+      expect(bystanderSeen).toHaveLength(0);
+    } finally {
+      owner.close();
+      namesake.close();
+      adminBystander.close();
+    }
+  }, 20000);
+
+  it('emits nothing for a recipient member row that has no account', async () => {
+    const owner = await connect(recipientId);
+    try {
+      const seen = collect(owner, 'notification:new');
+      const res = await postNotification(recipientId, { recipientId: memberWithoutAccount });
+      expect(res.status).toBe(201);
+      await settle();
+      expect(seen).toHaveLength(0);
+    } finally {
+      owner.close();
+    }
+  }, 15000);
+
+  it('tells only the deleting account about a deletion', async () => {
+    const owner = await connect(recipientId);
+    const other = await connect(recipientId + 1);
+    try {
+      const ownerSeen = collect(owner, 'notification:deleted');
+      const otherSeen = collect(other, 'notification:deleted');
+      const res = await fetch(`${baseUrl}/api/notifications/1`, {
+        method: 'DELETE',
+        headers: { Cookie: authCookieFor(recipientId) },
+      });
+      expect(res.status).toBe(200);
+      await settle();
+      expect(ownerSeen).toEqual([{ id: 1 }]);
+      expect(otherSeen).toHaveLength(0);
+    } finally {
+      owner.close();
+      other.close();
+    }
+  }, 15000);
+
+  const roomsOf = (client: ReturnType<typeof Client>) =>
+    [...(ioServer.of('/collab').sockets.get(client.id)?.rooms ?? [])].sort();
+
+  it('accepts the caller own member id without joining any additional room', async () => {
+    const owner = await connect(recipientId);
+    try {
+      const before = roomsOf(owner);
+      expect(before).toContain(`user:${recipientId}`);
+      expect(await joinMember(owner, recipientMemberId)).toEqual({ ok: true });
+      expect(roomsOf(owner)).toEqual(before);
+      expect(roomsOf(owner)).not.toContain(`user:${recipientMemberId}`);
+    } finally {
+      owner.close();
+    }
+  }, 15000);
+
+  it('refuses another account member id and another account user id, joining nothing', async () => {
+    const other = await connect(recipientId + 1);
+    try {
+      const before = roomsOf(other);
+      expect(await joinMember(other, recipientMemberId)).toEqual({ ok: false, error: 'Forbidden' });
+      expect(await joinMember(other, recipientId)).toEqual({ ok: false, error: 'Forbidden' });
+      expect(roomsOf(other)).toEqual(before);
+    } finally {
+      other.close();
+    }
+  }, 15000);
+
+  it('refuses when the member lookup fails', async () => {
+    const owner = await connect(recipientId);
+    try {
+      failMemberLookup = true;
+      expect(await joinMember(owner, recipientMemberId)).toEqual({ ok: false, error: 'Forbidden' });
+    } finally {
+      failMemberLookup = false;
+      owner.close();
+    }
+  }, 15000);
+
+  it('an admin-role token gets no room beyond its own, even for a member id it does not own', async () => {
+    const admin = await connect(recipientId + 5, 'admin');
+    try {
+      const before = roomsOf(admin);
+      expect(await joinMember(admin, recipientMemberId)).toEqual({ ok: false, error: 'Forbidden' });
+      expect(roomsOf(admin)).toEqual(before);
+    } finally {
+      admin.close();
+    }
+  }, 15000);
+
+  const reachesOnlyRecipient = async (
+    events: string[],
+    act: () => Promise<Response>,
+    expected: Record<string, any[]>
+  ) => {
+    const owner = await connect(recipientId);
+    const namesake = await connect(recipientMemberId);
+    const other = await connect(recipientId + 1);
+    const admin = await connect(recipientId + 7, 'admin');
+    try {
+      const seen = new Map<string, Record<string, any[]>>();
+      const watch = (name: string, client: ReturnType<typeof Client>) => {
+        const byEvent: Record<string, any[]> = {};
+        for (const event of events) byEvent[event] = collect(client, event);
+        seen.set(name, byEvent);
+      };
+      watch('owner', owner);
+      watch('namesake', namesake);
+      watch('other', other);
+      watch('admin', admin);
+      const res = await act();
+      expect(res.status).toBe(200);
+      await settle();
+      for (const event of events) {
+        expect(seen.get('owner')![event], `owner ${event}`).toEqual(expected[event]);
+        for (const name of ['namesake', 'other', 'admin']) {
+          expect(seen.get(name)![event], `${name} ${event}`).toHaveLength(0);
+        }
+      }
+    } finally {
+      owner.close();
+      namesake.close();
+      other.close();
+      admin.close();
+    }
+  };
+
+  it('PUT reaches only the recipient account', async () => {
+    await reachesOnlyRecipient(
+      ['notification:updated', 'notification:unread-count'],
+      () =>
+        fetch(`${baseUrl}/api/notifications/1`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', Cookie: authCookieFor(recipientId) },
+          body: JSON.stringify({ title: 'renamed' }),
+        }),
+      {
+        'notification:updated': [
+          { id: 1, recipientId: recipientMemberId, isRead: false, title: 'renamed' },
+        ],
+        'notification:unread-count': [{ recipientId: recipientMemberId, count: 1 }],
+      }
+    );
+  }, 20000);
+
+  it('PATCH read reaches only the recipient account', async () => {
+    await reachesOnlyRecipient(
+      ['notification:updated', 'notification:unread-count'],
+      () =>
+        fetch(`${baseUrl}/api/notifications/1/read`, {
+          method: 'PATCH',
+          headers: { Cookie: authCookieFor(recipientId) },
+        }),
+      {
+        'notification:updated': [{ id: 1, recipientId: recipientMemberId, isRead: true }],
+        'notification:unread-count': [{ recipientId: recipientMemberId, count: 1 }],
+      }
+    );
+  }, 20000);
+
+  it('read-all reaches only the caller account', async () => {
+    await reachesOnlyRecipient(
+      ['notification:unread-count'],
+      () =>
+        fetch(`${baseUrl}/api/notifications/read-all`, {
+          method: 'PATCH',
+          headers: { Cookie: authCookieFor(recipientId) },
+        }),
+      { 'notification:unread-count': [{ recipientId: recipientMemberId, count: 1 }] }
+    );
+  }, 20000);
 });

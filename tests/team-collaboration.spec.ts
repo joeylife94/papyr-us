@@ -90,14 +90,15 @@ test.describe('Team CRUD', () => {
     expect(updated.displayName).toBe('Updated Name');
   });
 
-  test('delete a team and verify 404', async () => {
+  test('delete a team and verify the former member is refused with 403', async () => {
     const team = await createTeam(authRequest, `e2e-del-${Date.now()}`, 'Delete Me');
 
     const delResp = await authRequest.delete(`/api/teams/${team.id}`);
     expect(delResp.status()).toBe(204);
 
+    // Membership is gone with the team, so the membership gate answers 403 (not 404).
     const getResp = await authRequest.get(`/api/teams/${team.id}`);
-    expect(getResp.status()).toBe(404);
+    expect(getResp.status()).toBe(403);
   });
 });
 

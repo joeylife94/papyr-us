@@ -624,24 +624,33 @@ export const templateCategories = pgTable('template_categories', {
 });
 
 // Templates schema
-export const templates = pgTable('templates', {
-  id: serial('id').primaryKey(),
-  title: text('title').notNull(),
-  description: text('description'),
-  content: text('content').notNull(), // Markdown content
-  categoryId: integer('category_id').references(() => templateCategories.id, {
-    onDelete: 'cascade',
-  }),
-  tags: text('tags').array().notNull().default([]),
-  author: text('author').notNull(),
-  isPublic: boolean('is_public').notNull().default(true),
-  usageCount: integer('usage_count').notNull().default(0),
-  rating: integer('rating').notNull().default(0), // 1-5 stars
-  thumbnail: text('thumbnail'), // Preview image URL
-  metadata: jsonb('metadata').default({}), // Additional template data
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
-});
+export const templates = pgTable(
+  'templates',
+  {
+    id: serial('id').primaryKey(),
+    title: text('title').notNull(),
+    description: text('description'),
+    content: text('content').notNull(), // Markdown content
+    categoryId: integer('category_id').references(() => templateCategories.id, {
+      onDelete: 'cascade',
+    }),
+    tags: text('tags').array().notNull().default([]),
+    author: text('author').notNull(),
+    isPublic: boolean('is_public').notNull().default(true),
+    usageCount: integer('usage_count').notNull().default(0),
+    rating: integer('rating').notNull().default(0), // 1-5 stars
+    thumbnail: text('thumbnail'), // Preview image URL
+    metadata: jsonb('metadata').default({}), // Additional template data
+    // Set by the server from the creator's organization (issue #124 X1b,
+    // drizzle/0023_add_template_organizations.sql); never accepted from a client, never changes.
+    organizationId: integer('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => [index('idx_templates_organization_id').on(table.organizationId)]
+);
 
 // Template Categories types
 export type TemplateCategory = typeof templateCategories.$inferSelect;
@@ -660,6 +669,7 @@ export const updateTemplateCategorySchema = insertTemplateCategorySchema.partial
 // Templates schemas
 export const insertTemplateSchema = createInsertSchema(templates).omit({
   id: true,
+  organizationId: true,
   createdAt: true,
   updatedAt: true,
 });
