@@ -4370,27 +4370,36 @@ export async function registerRoutes(
     }
   );
 
+  // Every single-view route answers through this: a view belongs to a team (D4), so a row
+  // without one is not found for anyone, and the caller must be a member of that team. It sends
+  // the refusal itself and returns null; the handler continues only on a view.
+  const loadSavedViewForMember = async (req: AuthRequest, res: Response) => {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) {
+      res.status(400).json({ error: 'Invalid view ID' });
+      return null;
+    }
+    const view = await storage.getSavedView(id);
+    if (!view || view.teamId == null) {
+      res.status(404).json({ error: 'View not found' });
+      return null;
+    }
+    if (!req.user?.id) {
+      res.status(401).json({ message: 'Authentication required' });
+      return null;
+    }
+    const userTeamIds = await storage.getUserTeamIds(req.user.id);
+    if (!userTeamIds.includes(Number(view.teamId))) {
+      res.status(403).json({ message: 'You are not a member of this team' });
+      return null;
+    }
+    return view;
+  };
+
   app.get('/api/saved-views/:id', optionalAuth, async (req: AuthRequest, res) => {
     try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid view ID' });
-      }
-
-      const view = await storage.getSavedView(id);
-      if (!view) {
-        return res.status(404).json({ error: 'View not found' });
-      }
-
-      if (view.teamId && req.user?.id) {
-        const userTeamIds = await storage.getUserTeamIds(req.user.id);
-        if (!userTeamIds.includes(Number(view.teamId))) {
-          return res.status(403).json({ message: 'You are not a member of this team' });
-        }
-      } else if (view.teamId && config.enforceAuthForWrites) {
-        return res.status(401).json({ message: 'Authentication required' });
-      }
-
+      const view = await loadSavedViewForMember(req, res);
+      if (!view) return;
       res.json(view);
     } catch (error) {
       console.error('Error fetching saved view:', error);
@@ -4398,59 +4407,48 @@ export async function registerRoutes(
     }
   });
 
-  app.post('/api/saved-views', requireAuthIfEnabled, requireTeamMembership, async (req, res) => {
-    try {
-      const validatedData = insertSavedViewSchema.parse(req.body);
-      const view = await storage.createSavedView(validatedData);
-      res.status(201).json(view);
-    } catch (error) {
-      console.error('Error creating saved view:', error);
-      res.status(400).json({ error: 'Failed to create saved view' });
-    }
-  });
-
-  app.put(
-    '/api/saved-views/:id',
+  app.post(
+    '/api/saved-views',
+    optionalAuth,
     requireAuthIfEnabled,
     requireTeamMembership,
     async (req: AuthRequest, res) => {
       try {
-        const id = parseInt(req.params.id);
-        if (isNaN(id)) {
-          return res.status(400).json({ error: 'Invalid view ID' });
+        // The team requireTeamMembership resolved and checked, never a raw body value
+        const teamId = req.checkedTeamId;
+        if (!teamId) {
+          return res.status(400).json({ error: 'teamId is required' });
         }
+        const validatedData = insertSavedViewSchema.parse({ ...req.body, teamId });
+        const view = await storage.createSavedView(validatedData);
+        res.status(201).json(view);
+      } catch (error) {
+        console.error('Error creating saved view:', error);
+        res.status(400).json({ error: 'Failed to create saved view' });
+      }
+    }
+  );
 
-        // Verify ownership based on the existing resource's teamId, not request body
-        const existingView = await storage.getSavedView(id);
-        if (!existingView) {
-          return res.status(404).json({ error: 'View not found' });
-        }
-        if (existingView.teamId && req.user?.id) {
-          const userTeamIds = await storage.getUserTeamIds(req.user.id);
-          if (!userTeamIds.includes(Number(existingView.teamId))) {
-            return res.status(403).json({ message: 'You are not a member of this team' });
-          }
-        } else if (existingView.teamId && config.enforceAuthForWrites) {
-          return res.status(401).json({ message: 'Authentication required' });
-        }
+  app.put(
+    '/api/saved-views/:id',
+    optionalAuth,
+    requireAuthIfEnabled,
+    requireTeamMembership,
+    async (req: AuthRequest, res) => {
+      try {
+        // Ownership comes from the existing resource's team, not the request body
+        const existingView = await loadSavedViewForMember(req, res);
+        if (!existingView) return;
 
-        const validatedData = updateSavedViewSchema.parse(req.body);
-        // Prevent cross-team reassignment
-        if (
-          validatedData.teamId !== undefined &&
-          validatedData.teamId !== null &&
-          Number(validatedData.teamId) !== Number(existingView.teamId)
-        ) {
-          if (req.user?.id) {
-            const userTeamIds = await storage.getUserTeamIds(req.user.id);
-            if (!userTeamIds.includes(Number(validatedData.teamId))) {
-              return res.status(403).json({ message: 'You are not a member of the target team' });
-            }
-          } else if (config.enforceAuthForWrites) {
-            return res.status(401).json({ message: 'Authentication required' });
-          }
+        // A view always keeps a team. A named target team was resolved and membership checked
+        // by requireTeamMembership (any source that names a team names the same one).
+        if ('teamId' in req.body && !req.checkedTeamId) {
+          return res.status(400).json({ error: 'teamId is required' });
         }
-        const view = await storage.updateSavedView(id, validatedData);
+        const validatedData = updateSavedViewSchema.parse(
+          'teamId' in req.body ? { ...req.body, teamId: req.checkedTeamId } : req.body
+        );
+        const view = await storage.updateSavedView(existingView.id, validatedData);
         if (!view) {
           return res.status(404).json({ error: 'View not found' });
         }
@@ -4463,67 +4461,47 @@ export async function registerRoutes(
     }
   );
 
-  app.delete('/api/saved-views/:id', requireAuthIfEnabled, async (req: AuthRequest, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid view ID' });
-      }
+  app.delete(
+    '/api/saved-views/:id',
+    optionalAuth,
+    requireAuthIfEnabled,
+    async (req: AuthRequest, res) => {
+      try {
+        const existingView = await loadSavedViewForMember(req, res);
+        if (!existingView) return;
 
-      const existingView = await storage.getSavedView(id);
-      if (!existingView) {
-        return res.status(404).json({ error: 'View not found' });
-      }
-      if (existingView.teamId && req.user?.id) {
-        const userTeamIds = await storage.getUserTeamIds(req.user.id);
-        if (!userTeamIds.includes(Number(existingView.teamId))) {
-          return res.status(403).json({ message: 'You are not a member of this team' });
+        const success = await storage.deleteSavedView(existingView.id);
+        if (!success) {
+          return res.status(404).json({ error: 'View not found' });
         }
-      } else if (existingView.teamId && config.enforceAuthForWrites) {
-        return res.status(401).json({ message: 'Authentication required' });
-      }
 
-      const success = await storage.deleteSavedView(id);
-      if (!success) {
-        return res.status(404).json({ error: 'View not found' });
+        res.status(204).send();
+      } catch (error) {
+        console.error('Error deleting saved view:', error);
+        res.status(500).json({ error: 'Failed to delete saved view' });
       }
-
-      res.status(204).send();
-    } catch (error) {
-      console.error('Error deleting saved view:', error);
-      res.status(500).json({ error: 'Failed to delete saved view' });
     }
-  });
+  );
 
   app.post(
     '/api/saved-views/:id/set-default',
+    optionalAuth,
     requireAuthIfEnabled,
     requireTeamMembership,
     async (req: AuthRequest, res) => {
       try {
-        const id = parseInt(req.params.id);
-        if (isNaN(id)) {
-          return res.status(400).json({ error: 'Invalid view ID' });
-        }
+        // Use the existing resource's values; never trust request body for teamId/entityType
+        const existingView = await loadSavedViewForMember(req, res);
+        if (!existingView) return;
 
-        // Use the existing resource's values ? never trust request body for teamId/entityType
-        const existingView = await storage.getSavedView(id);
-        if (!existingView) {
-          return res.status(404).json({ error: 'View not found' });
+        if (!existingView.entityType) {
+          return res.status(400).json({ error: 'View is missing entityType' });
         }
-        if (existingView.teamId && req.user?.id) {
-          const userTeamIds = await storage.getUserTeamIds(req.user.id);
-          if (!userTeamIds.includes(Number(existingView.teamId))) {
-            return res.status(403).json({ message: 'You are not a member of this team' });
-          }
-        } else if (existingView.teamId && config.enforceAuthForWrites) {
-          return res.status(401).json({ message: 'Authentication required' });
-        }
-
-        if (!existingView.teamId || !existingView.entityType) {
-          return res.status(400).json({ error: 'View is missing teamId or entityType' });
-        }
-        await storage.setDefaultView(id, existingView.teamId, existingView.entityType);
+        await storage.setDefaultView(
+          existingView.id,
+          Number(existingView.teamId),
+          existingView.entityType
+        );
         res.json({ success: true });
       } catch (error) {
         console.error('Error setting default view:', error);
