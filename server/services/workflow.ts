@@ -31,6 +31,43 @@ function getWorkflowStorage(): DBStorage {
   return _storage;
 }
 
+/** A team id as a positive integer: a number, or a string of digits. Anything else is no team. */
+function normalizeTeamId(value: unknown): number | null {
+  const id =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && /^\d+$/.test(value)
+        ? Number(value)
+        : NaN;
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
+/**
+ * The workflow's own team, set by the server in the execution context. Actions act inside this
+ * team only; the trigger data (which a caller of the test endpoint chooses) never names it.
+ */
+function workflowTeamOf(context: Record<string, any>): number | null {
+  return normalizeTeamId(context.workflow?.teamId);
+}
+
+/** A live page of the workflow's team with this id, or null: the only pages an action may touch. */
+async function getPageOfWorkflowTeam(context: Record<string, any>, pageId: unknown) {
+  const teamId = workflowTeamOf(context);
+  const id = Number(pageId);
+  if (teamId === null || !Number.isInteger(id)) return null;
+  const page = await getWorkflowStorage().getWikiPage(id);
+  return page && page.teamId != null && Number(page.teamId) === teamId ? page : null;
+}
+
+/** A task of the workflow's team (tasks keep the team id as text), or null. */
+async function getTaskOfWorkflowTeam(context: Record<string, any>, taskId: unknown) {
+  const teamId = workflowTeamOf(context);
+  const id = Number(taskId);
+  if (teamId === null || !Number.isInteger(id)) return null;
+  const task = await getWorkflowStorage().getTask(id);
+  return task && task.teamId != null && String(task.teamId) === String(teamId) ? task : null;
+}
+
 // Variable substitution helper
 function substituteVariables(template: string, variables: Record<string, any>): string {
   let result = template;
@@ -98,9 +135,29 @@ async function executeAction(
           processedConfig.message || processedConfig.content || 'Workflow notification';
         const title = processedConfig.title || 'Workflow Alert';
 
+        // Only members of the workflow team's organization are notified
+        const workflowTeamId = workflowTeamOf(context);
+        const organizationId =
+          workflowTeamId === null
+            ? null
+            : await getWorkflowStorage().getTeamOrganizationId(workflowTeamId);
+
         const notifications: any[] = [];
         for (const recipientId of recipients) {
           try {
+            const recipientOrganizationId =
+              organizationId === null || !Number.isInteger(Number(recipientId))
+                ? null
+                : await getWorkflowStorage().getMemberOrganizationId(Number(recipientId));
+            if (organizationId === null || recipientOrganizationId !== organizationId) {
+              logger.warn(
+                'Skipped notification for a recipient outside the workflow organization',
+                {
+                  recipientId,
+                }
+              );
+              continue;
+            }
             const notification = await getWorkflowStorage().createNotification({
               recipientId,
               type: 'system',
@@ -123,6 +180,9 @@ async function executeAction(
         };
 
       case 'create_task':
+        if (workflowTeamOf(context) === null) {
+          return { success: false, error: 'Workflow has no team' };
+        }
         const newTask = await getWorkflowStorage().createTask({
           title: processedConfig.title || 'New Task',
           description: processedConfig.description || '',
@@ -130,13 +190,16 @@ async function executeAction(
           priority: processedConfig.priority || 'medium',
           assignedTo: processedConfig.assignedTo,
           dueDate: processedConfig.dueDate ? new Date(processedConfig.dueDate) : undefined,
-          teamId: context.trigger?.teamId,
+          teamId: String(workflowTeamOf(context)),
         });
         return { success: true, result: newTask };
 
       case 'update_task':
         if (!context.trigger?.id) {
           return { success: false, error: 'No task ID in context' };
+        }
+        if (!(await getTaskOfWorkflowTeam(context, context.trigger.id))) {
+          return { success: false, error: 'Task not found' };
         }
         const updatedTask = await getWorkflowStorage().updateTask(context.trigger.id, {
           status: processedConfig.status,
@@ -147,6 +210,9 @@ async function executeAction(
         return { success: true, result: updatedTask };
 
       case 'create_page':
+        if (workflowTeamOf(context) === null) {
+          return { success: false, error: 'Workflow has no team' };
+        }
         const newPage = await getWorkflowStorage().createWikiPage({
           title: processedConfig.title || 'New Page',
           slug: processedConfig.title?.toLowerCase().replace(/\s+/g, '-') || `page-${Date.now()}`,
@@ -154,13 +220,16 @@ async function executeAction(
           folder: processedConfig.folder || 'docs',
           tags: processedConfig.tags || [],
           author: context.trigger?.author || 'automation',
-          teamId: context.trigger?.teamId,
+          teamId: workflowTeamOf(context),
         });
         return { success: true, result: newPage };
 
       case 'add_comment':
         if (!context.trigger?.id) {
           return { success: false, error: 'No page ID in context' };
+        }
+        if (!(await getPageOfWorkflowTeam(context, context.trigger.id))) {
+          return { success: false, error: 'Page not found' };
         }
         const comment = await getWorkflowStorage().createComment({
           pageId: context.trigger.id,
@@ -174,19 +243,13 @@ async function executeAction(
         if (!context.trigger?.id || !processedConfig.tags) {
           return { success: false, error: 'Missing page ID or tags' };
         }
-        // Fetch current page using searchWikiPages
-        const searchResult = await getWorkflowStorage().searchWikiPages({
-          query: '',
-          limit: 1000,
-          offset: 0,
-        });
-        const page = searchResult.pages.find((p: any) => p.id === context.trigger.id);
+        const page = await getPageOfWorkflowTeam(context, context.trigger.id);
         if (!page) {
           return { success: false, error: 'Page not found' };
         }
         // Add new tags
         const updatedTags = Array.from(new Set([...page.tags, ...processedConfig.tags]));
-        await getWorkflowStorage().updateWikiPage(context.trigger.id, { tags: updatedTags });
+        await getWorkflowStorage().updateWikiPage(page.id, { tags: updatedTags });
         return { success: true, result: { tags: updatedTags } };
 
       case 'run_ai_summary':
@@ -308,6 +371,9 @@ async function executeAction(
         if (!context.trigger?.id) {
           return { success: false, error: 'No task ID in context' };
         }
+        if (!(await getTaskOfWorkflowTeam(context, context.trigger.id))) {
+          return { success: false, error: 'Task not found' };
+        }
         await getWorkflowStorage().updateTask(context.trigger.id, {
           assignedTo: processedConfig.assignedTo,
         });
@@ -316,6 +382,9 @@ async function executeAction(
       case 'move_page':
         if (!context.trigger?.id) {
           return { success: false, error: 'No page ID in context' };
+        }
+        if (!(await getPageOfWorkflowTeam(context, context.trigger.id))) {
+          return { success: false, error: 'Page not found' };
         }
         await getWorkflowStorage().updateWikiPage(context.trigger.id, {
           folder: processedConfig.folder,
@@ -370,9 +439,21 @@ export async function executeWorkflow(
       workflow: {
         id: workflow.id,
         name: workflow.name,
+        teamId: workflow.teamId,
       },
       trigger: triggerData,
     };
+
+    // A workflow belongs to a team (D4); one without a team (a legacy row) runs nothing
+    if (normalizeTeamId(workflow.teamId) === null) {
+      await getWorkflowStorage().updateWorkflowRun(runId, {
+        status: 'failed',
+        results: [],
+        error: 'Workflow has no team',
+        completedAt: new Date(),
+      });
+      return await getWorkflowStorage().getWorkflowRun(runId);
+    }
 
     // Evaluate conditions
     const conditions = workflow.conditions as WorkflowCondition[];
@@ -486,11 +567,14 @@ export async function triggerWorkflows(
   data: Record<string, any>
 ): Promise<void> {
   try {
-    // Get all active workflows for this trigger type
-    const workflows = await getWorkflowStorage().getActiveWorkflowsByTrigger(
-      triggerType,
-      data.teamId
-    );
+    // An event with no team (a personal page, a daily note) fires nothing
+    const teamId = normalizeTeamId(data.teamId);
+    if (teamId === null) {
+      return;
+    }
+
+    // Get the active workflows of the event's team for this trigger type
+    const workflows = await getWorkflowStorage().getActiveWorkflowsByTrigger(triggerType, teamId);
 
     if (!Array.isArray(workflows)) {
       return;
@@ -498,6 +582,7 @@ export async function triggerWorkflows(
 
     // Execute each workflow
     for (const workflow of workflows) {
+      if (normalizeTeamId(workflow.teamId) !== teamId) continue;
       const trigger = workflow.trigger as WorkflowTrigger;
 
       // Check if trigger config matches

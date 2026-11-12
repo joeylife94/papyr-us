@@ -4147,111 +4147,94 @@ export async function registerRoutes(
       }
     );
 
-    app.get('/api/workflows/:id', requireAuthIfEnabled, async (req: AuthRequest, res) => {
-      try {
-        const id = parseInt(req.params.id);
-        const workflow = await storage.getWorkflow(id);
-        if (!workflow) {
-          return res.status(404).json({ error: 'Workflow not found' });
-        }
-        if (workflow.teamId && req.user?.id) {
-          const userTeamIds = await storage.getUserTeamIds(req.user.id);
-          if (!userTeamIds.includes(Number(workflow.teamId))) {
-            return res.status(403).json({ message: 'You are not a member of this team' });
-          }
-        } else if (workflow.teamId && config.enforceAuthForWrites) {
-          return res.status(401).json({ message: 'Authentication required' });
-        }
-        res.json(workflow);
-      } catch (error) {
-        console.error('Error fetching workflow:', error);
-        res.status(500).json({ error: 'Failed to fetch workflow' });
+    // Every single-workflow route answers through this: a workflow belongs to a team (D4), so a
+    // row without one is not found for anyone, and the caller must be a member of that team. It
+    // sends the refusal itself and returns null; the handler continues only on a workflow.
+    const loadWorkflowForMember = async (req: AuthRequest, res: Response) => {
+      const id = Number(req.params.id);
+      const workflow = Number.isInteger(id) ? await storage.getWorkflow(id) : undefined;
+      if (!workflow || workflow.teamId == null) {
+        res.status(404).json({ error: 'Workflow not found' });
+        return null;
       }
-    });
-
-    app.post('/api/workflows', requireAuthIfEnabled, requireTeamMembership, async (req, res) => {
-      try {
-        const workflowData = { ...req.body };
-        // Resolve string teamId (teamName) to numeric ID
-        if (
-          workflowData.teamId &&
-          typeof workflowData.teamId === 'string' &&
-          isNaN(parseInt(workflowData.teamId))
-        ) {
-          const team = await storage.getTeamByName(workflowData.teamId);
-          if (team) {
-            workflowData.teamId = team.id;
-          } else {
-            return res.status(400).json({ error: 'Team not found' });
-          }
-        }
-        // Validate action configs
-        const actionValidationError = validateWorkflowActions(workflowData.actions);
-        if (actionValidationError) {
-          return res.status(400).json({ error: actionValidationError });
-        }
-        const workflow = await storage.createWorkflow(workflowData);
-        res.status(201).json(workflow);
-      } catch (error) {
-        console.error('Error creating workflow:', error);
-        res.status(400).json({ error: 'Failed to create workflow' });
+      if (!req.user?.id) {
+        res.status(401).json({ message: 'Authentication required' });
+        return null;
       }
-    });
+      const userTeamIds = await storage.getUserTeamIds(req.user.id);
+      if (!userTeamIds.includes(Number(workflow.teamId))) {
+        res.status(403).json({ message: 'You are not a member of this team' });
+        return null;
+      }
+      return workflow;
+    };
 
-    app.put(
+    app.get(
       '/api/workflows/:id',
+      optionalAuth,
+      requireAuthIfEnabled,
+      async (req: AuthRequest, res) => {
+        try {
+          const workflow = await loadWorkflowForMember(req, res);
+          if (!workflow) return;
+          res.json(workflow);
+        } catch (error) {
+          console.error('Error fetching workflow:', error);
+          res.status(500).json({ error: 'Failed to fetch workflow' });
+        }
+      }
+    );
+
+    app.post(
+      '/api/workflows',
+      optionalAuth,
       requireAuthIfEnabled,
       requireTeamMembership,
       async (req: AuthRequest, res) => {
         try {
-          const id = parseInt(req.params.id);
-          // Verify the existing workflow belongs to a team the requester is a member of
-          const existingWorkflow = await storage.getWorkflow(id);
-          if (!existingWorkflow) {
-            return res.status(404).json({ error: 'Workflow not found' });
+          // The team requireTeamMembership resolved and checked, never a raw body value
+          const teamId = req.checkedTeamId;
+          if (!teamId) {
+            return res.status(400).json({ error: 'teamId is required' });
           }
-          if (existingWorkflow.teamId && req.user?.id) {
-            const userTeamIds = await storage.getUserTeamIds(req.user.id);
-            if (!userTeamIds.includes(Number(existingWorkflow.teamId))) {
-              return res.status(403).json({ message: 'You are not a member of this team' });
-            }
-          } else if (existingWorkflow.teamId && config.enforceAuthForWrites) {
-            return res.status(401).json({ message: 'Authentication required' });
+          const workflowData = { ...req.body, teamId };
+          // Validate action configs
+          const actionValidationError = validateWorkflowActions(workflowData.actions);
+          if (actionValidationError) {
+            return res.status(400).json({ error: actionValidationError });
           }
+          const workflow = await storage.createWorkflow(workflowData);
+          res.status(201).json(workflow);
+        } catch (error) {
+          console.error('Error creating workflow:', error);
+          res.status(400).json({ error: 'Failed to create workflow' });
+        }
+      }
+    );
+
+    app.put(
+      '/api/workflows/:id',
+      optionalAuth,
+      requireAuthIfEnabled,
+      requireTeamMembership,
+      async (req: AuthRequest, res) => {
+        try {
+          const existingWorkflow = await loadWorkflowForMember(req, res);
+          if (!existingWorkflow) return;
           const workflowData = { ...req.body };
-          // Resolve string teamId (teamName) to numeric ID
-          if (
-            workflowData.teamId &&
-            typeof workflowData.teamId === 'string' &&
-            isNaN(parseInt(workflowData.teamId))
-          ) {
-            const team = await storage.getTeamByName(workflowData.teamId);
-            if (team) {
-              workflowData.teamId = team.id;
-            } else {
-              return res.status(400).json({ error: 'Team not found' });
+          // A workflow always keeps a team. A named target team was resolved and membership
+          // checked by requireTeamMembership (any source that names a team names the same one).
+          if ('teamId' in workflowData) {
+            if (!req.checkedTeamId) {
+              return res.status(400).json({ error: 'teamId is required' });
             }
-          }
-          // Prevent cross-team reassignment: if new teamId differs, verify membership
-          if (
-            workflowData.teamId !== undefined &&
-            workflowData.teamId !== null &&
-            Number(workflowData.teamId) !== Number(existingWorkflow.teamId)
-          ) {
-            if (req.user?.id) {
-              const userTeamIds = await storage.getUserTeamIds(req.user.id);
-              if (!userTeamIds.includes(Number(workflowData.teamId))) {
-                return res.status(403).json({ message: 'You are not a member of the target team' });
-              }
-            } else if (config.enforceAuthForWrites) {
-              return res.status(401).json({ message: 'Authentication required' });
-            }
+            workflowData.teamId = req.checkedTeamId;
           }
           const actionValidationError = validateWorkflowActions(workflowData.actions);
           if (actionValidationError) {
             return res.status(400).json({ error: actionValidationError });
           }
-          const workflow = await storage.updateWorkflow(id, workflowData);
+          const workflow = await storage.updateWorkflow(existingWorkflow.id, workflowData);
           if (!workflow) {
             return res.status(404).json({ error: 'Workflow not found' });
           }
@@ -4263,107 +4246,84 @@ export async function registerRoutes(
       }
     );
 
-    app.delete('/api/workflows/:id', requireAuthIfEnabled, async (req: AuthRequest, res) => {
-      try {
-        const id = parseInt(req.params.id);
-        const existingWorkflow = await storage.getWorkflow(id);
-        if (!existingWorkflow) {
-          return res.status(404).json({ error: 'Workflow not found' });
-        }
-        if (existingWorkflow.teamId && req.user?.id) {
-          const userTeamIds = await storage.getUserTeamIds(req.user.id);
-          if (!userTeamIds.includes(Number(existingWorkflow.teamId))) {
-            return res.status(403).json({ message: 'You are not a member of this team' });
+    app.delete(
+      '/api/workflows/:id',
+      optionalAuth,
+      requireAuthIfEnabled,
+      async (req: AuthRequest, res) => {
+        try {
+          const existingWorkflow = await loadWorkflowForMember(req, res);
+          if (!existingWorkflow) return;
+          const success = await storage.deleteWorkflow(existingWorkflow.id);
+          if (!success) {
+            return res.status(404).json({ error: 'Workflow not found' });
           }
-        } else if (existingWorkflow.teamId && config.enforceAuthForWrites) {
-          return res.status(401).json({ message: 'Authentication required' });
+          res.status(204).send();
+        } catch (error) {
+          console.error('Error deleting workflow:', error);
+          res.status(500).json({ error: 'Failed to delete workflow' });
         }
-        const success = await storage.deleteWorkflow(id);
-        if (!success) {
-          return res.status(404).json({ error: 'Workflow not found' });
-        }
-        res.status(204).send();
-      } catch (error) {
-        console.error('Error deleting workflow:', error);
-        res.status(500).json({ error: 'Failed to delete workflow' });
       }
-    });
+    );
 
-    app.post('/api/workflows/:id/toggle', requireAuthIfEnabled, async (req: AuthRequest, res) => {
-      try {
-        const id = parseInt(req.params.id);
-        const existingWorkflow = await storage.getWorkflow(id);
-        if (!existingWorkflow) {
-          return res.status(404).json({ error: 'Workflow not found' });
-        }
-        if (existingWorkflow.teamId && req.user?.id) {
-          const userTeamIds = await storage.getUserTeamIds(req.user.id);
-          if (!userTeamIds.includes(Number(existingWorkflow.teamId))) {
-            return res.status(403).json({ message: 'You are not a member of this team' });
+    app.post(
+      '/api/workflows/:id/toggle',
+      optionalAuth,
+      requireAuthIfEnabled,
+      async (req: AuthRequest, res) => {
+        try {
+          const existingWorkflow = await loadWorkflowForMember(req, res);
+          if (!existingWorkflow) return;
+          const { isActive } = req.body;
+          const workflow = await storage.toggleWorkflow(existingWorkflow.id, isActive);
+          if (!workflow) {
+            return res.status(404).json({ error: 'Workflow not found' });
           }
-        } else if (existingWorkflow.teamId && config.enforceAuthForWrites) {
-          return res.status(401).json({ message: 'Authentication required' });
+          res.json(workflow);
+        } catch (error) {
+          console.error('Error toggling workflow:', error);
+          res.status(500).json({ error: 'Failed to toggle workflow' });
         }
-        const { isActive } = req.body;
-        const workflow = await storage.toggleWorkflow(id, isActive);
-        if (!workflow) {
-          return res.status(404).json({ error: 'Workflow not found' });
-        }
-        res.json(workflow);
-      } catch (error) {
-        console.error('Error toggling workflow:', error);
-        res.status(500).json({ error: 'Failed to toggle workflow' });
       }
-    });
+    );
 
-    // Dry-run / test a workflow without persisting side-effects
-    app.post('/api/workflows/:id/test', requireAuthIfEnabled, async (req: AuthRequest, res) => {
-      try {
-        const id = parseInt(req.params.id);
-        const workflow = await storage.getWorkflow(id);
-        if (!workflow) {
-          return res.status(404).json({ error: 'Workflow not found' });
+    // Runs the workflow's actions with the given trigger data. The service confines every
+    // action to the workflow's own team, whatever the trigger data names.
+    app.post(
+      '/api/workflows/:id/test',
+      optionalAuth,
+      requireAuthIfEnabled,
+      async (req: AuthRequest, res) => {
+        try {
+          const workflow = await loadWorkflowForMember(req, res);
+          if (!workflow) return;
+          const triggerData = req.body.triggerData || {};
+          const run = await executeWorkflow(workflow, triggerData);
+          res.json({ dryRun: true, run });
+        } catch (error) {
+          console.error('Error testing workflow:', error);
+          res.status(500).json({ error: 'Failed to test workflow' });
         }
-        if (workflow.teamId && req.user?.id) {
-          const userTeamIds = await storage.getUserTeamIds(req.user.id);
-          if (!userTeamIds.includes(Number(workflow.teamId))) {
-            return res.status(403).json({ message: 'You are not a member of this team' });
-          }
-        } else if (workflow.teamId && config.enforceAuthForWrites) {
-          return res.status(401).json({ message: 'Authentication required' });
-        }
-        const triggerData = req.body.triggerData || {};
-        const run = await executeWorkflow(workflow, triggerData);
-        res.json({ dryRun: true, run });
-      } catch (error) {
-        console.error('Error testing workflow:', error);
-        res.status(500).json({ error: 'Failed to test workflow' });
       }
-    });
+    );
 
-    app.get('/api/workflows/:id/runs', requireAuthIfEnabled, async (req: AuthRequest, res) => {
-      try {
-        const id = parseInt(req.params.id);
-        const existingWorkflow = await storage.getWorkflow(id);
-        if (!existingWorkflow) {
-          return res.status(404).json({ error: 'Workflow not found' });
+    app.get(
+      '/api/workflows/:id/runs',
+      optionalAuth,
+      requireAuthIfEnabled,
+      async (req: AuthRequest, res) => {
+        try {
+          const existingWorkflow = await loadWorkflowForMember(req, res);
+          if (!existingWorkflow) return;
+          const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+          const runs = await storage.getWorkflowRuns(existingWorkflow.id, limit);
+          res.json(runs);
+        } catch (error) {
+          console.error('Error fetching workflow runs:', error);
+          res.status(500).json({ error: 'Failed to fetch workflow runs' });
         }
-        if (existingWorkflow.teamId && req.user?.id) {
-          const userTeamIds = await storage.getUserTeamIds(req.user.id);
-          if (!userTeamIds.includes(Number(existingWorkflow.teamId))) {
-            return res.status(403).json({ message: 'You are not a member of this team' });
-          }
-        } else if (existingWorkflow.teamId && config.enforceAuthForWrites) {
-          return res.status(401).json({ message: 'Authentication required' });
-        }
-        const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
-        const runs = await storage.getWorkflowRuns(id, limit);
-        res.json(runs);
-      } catch (error) {
-        console.error('Error fetching workflow runs:', error);
-        res.status(500).json({ error: 'Failed to fetch workflow runs' });
       }
-    });
+    );
   }
 
   // ==================== Saved Views API ====================

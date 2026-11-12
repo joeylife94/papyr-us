@@ -2518,17 +2518,17 @@ export class DBStorage {
 
   async getActiveWorkflowsByTrigger(
     triggerType: TriggerType,
-    teamId?: number
+    teamId?: number | string | null
   ): Promise<Workflow[]> {
-    const conditions = [eq(workflows.isActive, true)];
-    if (teamId) {
-      conditions.push(eq(workflows.teamId, teamId));
-    }
+    // Workflows belong to a team (#124 X1b): an event with no valid team has none to fire, and
+    // there is never an unfiltered query.
+    const team = typeof teamId === 'string' && /^\d+$/.test(teamId) ? Number(teamId) : teamId;
+    if (typeof team !== 'number' || !Number.isSafeInteger(team) || team <= 0) return [];
 
     const allWorkflows = await this.db
       .select()
       .from(workflows)
-      .where(and(...conditions));
+      .where(and(eq(workflows.isActive, true), eq(workflows.teamId, team)));
 
     // Filter by trigger type (since JSONB query is complex, filter in memory)
     return allWorkflows.filter((w: Workflow) => {
