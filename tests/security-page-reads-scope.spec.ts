@@ -384,4 +384,66 @@ test.describe('Page-derived reads follow the page read boundary', () => {
       await world.close();
     }
   });
+  test('the activity feed shows only rows of the callers teams and pages they may list', async ({
+    request,
+  }) => {
+    test.setTimeout(240_000);
+    const world = await arrange(request, 'secpr-act');
+    const { ctx, pages, db } = world;
+    const label = (name: string) => `secpr-act-${name}-${world.stamp}`;
+    const rows = [
+      { name: 'team-a', type: 'page', targetId: pages.aTeam.id, teamId: world.teamA.id },
+      { name: 'team-x', type: 'page', targetId: pages.xTeam.id, teamId: world.teamX.id },
+      { name: 'task', type: 'task', targetId: pages.aOpen.id, teamId: null },
+      { name: 'page-open', type: 'page', targetId: pages.aOpen.id, teamId: null },
+      { name: 'page-team', type: 'page', targetId: pages.aTeam.id, teamId: null },
+      { name: 'page-other-org', type: 'page', targetId: pages.xTeam.id, teamId: null },
+    ];
+    // Nothing in the API writes activity rows yet, so the test inserts synthetic ones.
+    for (const row of rows) {
+      await db.query(
+        `INSERT INTO activity_feed (actor_name, action, target_type, target_id, target_title, team_id)
+         VALUES ('Synthetic', 'page_updated', $1, $2, $3, $4)`,
+        [row.type, row.targetId, label(row.name), row.teamId]
+      );
+    }
+    const seenBy = async (c: APIRequestContext, query = '') => {
+      const response = await c.get(`/api/activity?limit=200${query}`);
+      expect(response.status()).toBe(200);
+      const body = await response.json();
+      expect(Object.keys(body).sort()).toEqual(['activities', 'pagination']);
+      return (body.activities as Array<{ targetTitle: string }>)
+        .map((row) => row.targetTitle)
+        .filter((title) => title?.startsWith(`secpr-act-`) && title.endsWith(`-${world.stamp}`))
+        .sort();
+    };
+    const names = (...list: string[]) => list.map(label).sort();
+    try {
+      // ── 1. Another organization sees only its own rows, never the default organization's ──
+      expect(await seenBy(ctx.outsider)).toEqual(names('team-x', 'page-other-org'));
+
+      // ── 2. A caller without a team: team-less rows about pages they may list, nothing else ──
+      expect(await seenBy(ctx.solo)).toEqual(names('page-open'));
+
+      // ── 3. Members of the team see its rows too, but not another team's ──
+      for (const member of [ctx.ownerA, ctx.memberA]) {
+        expect(await seenBy(member)).toEqual(names('team-a', 'page-open', 'page-team'));
+      }
+
+      // ── 4. Filters and paging keep working inside that scope ──
+      expect(await seenBy(ctx.ownerA, '&targetType=task')).toEqual([]);
+      expect(await seenBy(ctx.ownerA, '&action=page_updated')).toHaveLength(3);
+      const page = await ctx.ownerA.get('/api/activity?limit=1&offset=0');
+      expect((await page.json()).pagination).toEqual({ limit: 1, offset: 0, count: 1 });
+
+      // ── 5. A team the caller is not in is refused; without a session so is the feed ──
+      expect((await ctx.solo.get(`/api/activity?teamId=${world.teamA.id}`)).status()).toBe(403);
+      expect((await ctx.anonymous.get('/api/activity')).status()).toBe(401);
+    } finally {
+      await db.query(`DELETE FROM activity_feed WHERE target_title LIKE $1`, [
+        `secpr-act-%-${world.stamp}`,
+      ]);
+      await world.close();
+    }
+  });
 });

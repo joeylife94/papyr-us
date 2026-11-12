@@ -484,3 +484,107 @@ describe('favorites', () => {
     });
   });
 });
+
+// ==================== Surface D: activity feed ====================
+
+describe('GET /api/activity', () => {
+  const PATH = '/api/activity';
+  const entries = [
+    {
+      id: 9,
+      actorId: 7,
+      actorName: 'Reader',
+      action: 'page_updated',
+      targetType: 'page',
+      targetId: 11,
+      targetTitle: 'Roadmap',
+      teamId: null,
+      metadata: {},
+      createdAt: '2026-01-02T00:00:00.000Z',
+    },
+  ];
+
+  beforeEach(() => {
+    storage.getActivityFeed.mockResolvedValue(entries);
+  });
+
+  it('answers only through the caller-scoped storage query, keeping the response shape', async () => {
+    const response = await request(app).get(PATH).set(signedIn());
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      activities: entries,
+      pagination: { limit: 50, offset: 0, count: 1 },
+    });
+    expect(storage.getPageViewer).toHaveBeenCalledWith(CALLER.id);
+    expect(storage.getActivityFeed).toHaveBeenCalledTimes(1);
+    expect(storage.getActivityFeed).toHaveBeenCalledWith(viewer, {
+      limit: 50,
+      offset: 0,
+      action: undefined,
+      targetType: undefined,
+    });
+  });
+
+  it('keeps the filters and the limit cap', async () => {
+    await request(app)
+      .get(`${PATH}?limit=5000&offset=20&action=page_updated&targetType=page`)
+      .set(signedIn());
+
+    expect(storage.getActivityFeed).toHaveBeenLastCalledWith(viewer, {
+      limit: 200,
+      offset: 20,
+      action: 'page_updated',
+      targetType: 'page',
+    });
+  });
+
+  it('still scopes a caller without a team, never reading the feed unfiltered', async () => {
+    const noTeam = { userId: CALLER.id, email: CALLER.email, organizationId: 1, teamIds: [] };
+    storage.getUserTeamIds.mockResolvedValue([]);
+    storage.getPageViewer.mockResolvedValue(noTeam);
+
+    const response = await request(app).get(PATH).set(signedIn());
+
+    expect(response.status).toBe(200);
+    expect(storage.getActivityFeed).toHaveBeenCalledTimes(1);
+    expect(storage.getActivityFeed).toHaveBeenCalledWith(noTeam, expect.any(Object));
+  });
+
+  it('refuses a request without a session when auth is enforced', async () => {
+    const response = await request(app).get(PATH);
+
+    expect(response.status).toBe(401);
+    expect(storage.getActivityFeed).not.toHaveBeenCalled();
+  });
+
+  it('reads as the anonymous viewer when auth is not enforced, never as another caller', async () => {
+    mockConfig.enforceAuthForWrites = false;
+    storage.getActivityFeed.mockImplementation(async (who: any) => (who.userId ? entries : []));
+
+    const response = await request(app).get(PATH);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      activities: [],
+      pagination: { limit: 50, offset: 0, count: 0 },
+    });
+    expect(storage.getActivityFeed).toHaveBeenCalledWith(anonymousViewer, expect.any(Object));
+  });
+
+  it('refuses a team the caller is not in before the handler runs', async () => {
+    const response = await request(app).get(`${PATH}?teamId=999`).set(signedIn());
+
+    expect(response.status).toBe(403);
+    expect(storage.getActivityFeed).not.toHaveBeenCalled();
+  });
+
+  it('answers a storage failure with a fixed message', async () => {
+    storage.getActivityFeed.mockRejectedValue(new Error('relation "secret_table" is gone'));
+
+    const response = await request(app).get(PATH).set(signedIn());
+
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({ error: 'Failed to fetch activity feed' });
+  });
+});

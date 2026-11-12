@@ -4869,52 +4869,23 @@ export async function registerRoutes(
 
   // ==================== Activity Feed API ====================
 
-  // Get activity feed
+  // Get activity feed. Rows are limited to the caller's teams plus team-less rows about a page
+  // the caller may list (issue #124 X1b): see DBStorage.getActivityFeed. Without a team the
+  // feed is still scoped, never read unfiltered.
   app.get('/api/activity', optionalAuth, requireTeamMembership, async (req: AuthRequest, res) => {
     try {
-      const { desc, eq, sql, inArray, and } = await import('drizzle-orm');
-      const db = (storage as any).db;
       const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
       const offset = parseInt(req.query.offset as string) || 0;
       const action = req.query.action as string | undefined;
       const targetType = req.query.targetType as string | undefined;
 
-      const userTeamIds: number[] = (req as any).userTeamIds ?? [];
-
-      const conditions: any[] = [];
-
-      // Filter by user's teams
-      if (userTeamIds.length > 0) {
-        conditions.push(
-          sql`(${activityFeed.teamId} IN (${sql.join(
-            userTeamIds.map((id) => sql`${id}`),
-            sql`, `
-          )}) OR ${activityFeed.teamId} IS NULL)`
-        );
-      }
-
-      // Filter by action type
-      if (action) {
-        conditions.push(eq(activityFeed.action, action));
-      }
-
-      // Filter by target type
-      if (targetType) {
-        conditions.push(eq(activityFeed.targetType, targetType));
-      }
-
-      let query = db
-        .select()
-        .from(activityFeed)
-        .orderBy(desc(activityFeed.createdAt))
-        .limit(limit)
-        .offset(offset);
-
-      if (conditions.length > 0) {
-        query = query.where(and(...conditions));
-      }
-
-      const activities = await query;
+      const viewer = await storage.getPageViewer(req.user?.id);
+      const activities = await storage.getActivityFeed(viewer, {
+        limit,
+        offset,
+        action,
+        targetType,
+      });
 
       res.json({
         activities,

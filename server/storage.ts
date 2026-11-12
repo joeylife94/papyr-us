@@ -81,6 +81,8 @@ import {
   organizationMembers,
   pageFavorites,
   type PageFavorite,
+  activityFeed,
+  type ActivityFeedEntry,
 } from '../shared/schema.js';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { eq, like, and, or, sql, desc, asc, isNull, inArray, type SQL } from 'drizzle-orm';
@@ -1620,6 +1622,43 @@ export class DBStorage {
     if (existing.length > 0) return null;
     const [favorite] = await this.db.insert(pageFavorites).values({ userId, pageId }).returning();
     return favorite;
+  }
+
+  /**
+   * The activity feed, newest first, for GET /api/activity. A row is visible to the viewer when
+   * it belongs to one of their teams, or when it has no team and its target is a page they may
+   * list (`listableBy`). Any other team-less row is hidden: it has no column that places it in
+   * an organization, so it fails closed.
+   */
+  async getActivityFeed(
+    viewer: PageViewer,
+    options: { limit: number; offset: number; action?: string; targetType?: string }
+  ): Promise<ActivityFeedEntry[]> {
+    const ofViewerTeams =
+      viewer.teamIds.length > 0 ? inArray(activityFeed.teamId, viewer.teamIds) : undefined;
+    const aboutListablePage = and(
+      isNull(activityFeed.teamId),
+      eq(activityFeed.targetType, 'page'),
+      sql`${wikiPages.id} IS NOT NULL`,
+      isNull(wikiPages.deletedAt),
+      this.listableBy(viewer)
+    );
+    const conditions: SQL[] = [or(ofViewerTeams, aboutListablePage)!];
+    if (options.action) conditions.push(eq(activityFeed.action, options.action));
+    if (options.targetType) conditions.push(eq(activityFeed.targetType, options.targetType));
+
+    const rows = await this.db
+      .select({ activity: activityFeed })
+      .from(activityFeed)
+      .leftJoin(
+        wikiPages,
+        and(eq(activityFeed.targetType, 'page'), eq(wikiPages.id, activityFeed.targetId))
+      )
+      .where(and(...conditions))
+      .orderBy(desc(activityFeed.createdAt), desc(activityFeed.id))
+      .limit(Math.max(options.limit, 1))
+      .offset(Math.max(options.offset, 0));
+    return rows.map((row: { activity: ActivityFeedEntry }) => row.activity);
   }
 
   async getCalendarEvents(teamId?: number): Promise<CalendarEvent[]> {

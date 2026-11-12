@@ -503,3 +503,134 @@ describe('favorites (real Postgres)', () => {
     expect((await slugsOf(ALICE)).sort()).toEqual(['a-one', 'b-public', 'open']);
   });
 });
+
+describe('activity feed (real Postgres)', () => {
+  let minutes = 0;
+  /** One row; `label` is stored as the target title so assertions can name rows. Later rows are older. */
+  const activity = (
+    label: string,
+    values: { type: string; targetId?: number | null; teamId?: number | null; action?: string }
+  ) =>
+    scoped.query(
+      `INSERT INTO activity_feed (actor_name, action, target_type, target_id, target_title, team_id, created_at)
+       VALUES ('Someone', $1, $2, $3, $4, $5, NOW() - MAKE_INTERVAL(mins => $6))`,
+      [
+        values.action ?? 'page_updated',
+        values.type,
+        values.targetId ?? null,
+        label,
+        values.teamId ?? null,
+        ++minutes,
+      ]
+    );
+  const labelsOf = async (
+    who: { id: number } | undefined,
+    options: { limit?: number; offset?: number; action?: string; targetType?: string } = {}
+  ) =>
+    (
+      await storage.getActivityFeed(await storage.getPageViewer(who?.id), {
+        limit: options.limit ?? 100,
+        offset: options.offset ?? 0,
+        action: options.action,
+        targetType: options.targetType,
+      })
+    ).map((row: { targetTitle: string }) => row.targetTitle);
+
+  beforeAll(async () => {
+    await activity('team-a', { type: 'page', teamId: TEAM_A, targetId: page['a-one'] });
+    await activity('team-b', { type: 'task', teamId: TEAM_B, action: 'task_completed' });
+    // Team-less rows about pages
+    await activity('page-open', { type: 'page', targetId: page['open'] });
+    await activity('page-a-one', { type: 'page', targetId: page['a-one'] });
+    await activity('page-b-private', { type: 'page', targetId: page['b-private'] });
+    await activity('page-b-public', { type: 'page', targetId: page['b-public'] });
+    await activity('page-a-trashed', { type: 'page', targetId: page['a-trashed'] });
+    await activity('page-acme-open', { type: 'page', targetId: page['acme-open'] });
+    await activity('page-acme-public', { type: 'page', targetId: page['acme-public'] });
+    await activity('page-no-target', { type: 'page', targetId: null });
+    await activity('page-unknown-target', { type: 'page', targetId: 2147483000 });
+    // Team-less rows about anything else, even when the id happens to be a listable page's id
+    await activity('task-open-id', {
+      type: 'task',
+      targetId: page['open'],
+      action: 'task_completed',
+    });
+    await activity('team-row', { type: 'team', targetId: page['open'], action: 'team_created' });
+    await activity('comment-open-id', { type: 'comment', targetId: page['open'] });
+  });
+
+  it('shows a caller their teams rows and team-less rows about pages they may list', async () => {
+    expect(await labelsOf(ALICE)).toEqual(['team-a', 'page-open', 'page-a-one', 'page-b-public']);
+    expect(await labelsOf(BOB)).toEqual(['team-b', 'page-open', 'page-b-private', 'page-b-public']);
+  });
+
+  it('gives a caller without a team only team-less rows about pages they may list', async () => {
+    expect(await labelsOf(CAROL)).toEqual(['page-open', 'page-b-public']);
+  });
+
+  it('hides every team-less row that is not about a listable page, from everyone', async () => {
+    const hidden = [
+      'task-open-id',
+      'team-row',
+      'comment-open-id',
+      'page-no-target',
+      'page-unknown-target',
+      'page-a-trashed',
+    ];
+    for (const user of [ALICE, BOB, CAROL, DAVE, EVE]) {
+      const seen = await labelsOf(user);
+      for (const label of hidden) expect(seen, `user ${user.id} ${label}`).not.toContain(label);
+    }
+    expect(await labelsOf(undefined)).toEqual([]);
+  });
+
+  it('shows another organization nothing of the default one', async () => {
+    expect(await labelsOf(DAVE)).toEqual(['page-acme-open', 'page-acme-public']);
+    expect(await labelsOf(EVE)).toEqual([]);
+    for (const user of [ALICE, BOB, CAROL]) {
+      const seen = await labelsOf(user);
+      expect(seen).not.toContain('page-acme-open');
+      expect(seen).not.toContain('page-acme-public');
+    }
+  });
+
+  it('keeps the filters, the newest-first order and the paging', async () => {
+    expect(await labelsOf(ALICE, { action: 'page_updated' })).toEqual([
+      'team-a',
+      'page-open',
+      'page-a-one',
+      'page-b-public',
+    ]);
+    expect(await labelsOf(BOB, { targetType: 'task' })).toEqual(['team-b']);
+    expect(await labelsOf(BOB, { action: 'team_created' })).toEqual([]);
+    expect(await labelsOf(ALICE, { limit: 2 })).toEqual(['team-a', 'page-open']);
+    expect(await labelsOf(ALICE, { limit: 2, offset: 2 })).toEqual(['page-a-one', 'page-b-public']);
+    expect(await labelsOf(ALICE, { offset: -5 })).toHaveLength(4);
+  });
+
+  it('honours team revocation at once', async () => {
+    await scoped.query(`DELETE FROM team_members WHERE user_id = $1`, [ALICE.id]);
+    expect(await labelsOf(ALICE)).toEqual(['page-open', 'page-b-public']);
+    await scoped.query(
+      `INSERT INTO team_members (team_id, user_id, role) VALUES ($1, $2, 'owner')`,
+      [TEAM_A, ALICE.id]
+    );
+    expect(await labelsOf(ALICE)).toHaveLength(4);
+  });
+
+  it('returns whole rows, as the route answered before', async () => {
+    const [row] = await storage.getActivityFeed(await viewerOf(ALICE), { limit: 1, offset: 0 });
+    expect(Object.keys(row).sort()).toEqual([
+      'action',
+      'actorId',
+      'actorName',
+      'createdAt',
+      'id',
+      'metadata',
+      'targetId',
+      'targetTitle',
+      'targetType',
+      'teamId',
+    ]);
+  });
+});
