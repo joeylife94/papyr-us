@@ -433,3 +433,51 @@ describe('POST /api/notifications', () => {
     expect(storage.createNotification).not.toHaveBeenCalled();
   });
 });
+
+// A session is required on these four routes in every mode, and the session has to be read in
+// every mode too: with write enforcement off nothing else decodes the token, so a route that
+// only checked `req.user` would refuse signed-in callers as well.
+describe('the session is read whether or not auth for writes is enforced', () => {
+  const body = () => ({ type: 'mention', title: 'Hi', content: 'There', recipientId: 50 });
+
+  beforeEach(() => {
+    mockConfig.enforceAuthForWrites = false;
+    storage.getNotifications.mockResolvedValue([]);
+    storage.markAllNotificationsAsRead.mockResolvedValue(undefined);
+    storage.getMemberOrganizationId.mockResolvedValue(CALLER_ORG);
+    storage.createNotification.mockImplementation(async (n: any) => ({
+      id: 9,
+      isRead: false,
+      ...n,
+    }));
+  });
+
+  it('a signed-in caller lists, counts, marks all read and creates', async () => {
+    const list = await request(app).get('/api/notifications').set(signedIn());
+    expect(list.status).toBe(200);
+
+    const count = await request(app).get('/api/notifications/unread-count').set(signedIn());
+    expect(count.status).toBe(200);
+
+    const readAll = await request(app).patch('/api/notifications/read-all').set(signedIn());
+    expect(readAll.status).toBe(200);
+
+    const created = await request(app).post('/api/notifications').set(signedIn()).send(body());
+    expect(created.status).toBe(201);
+    expect(storage.createNotification).toHaveBeenCalledTimes(1);
+    expect(storage.getMemberIdsForUser).toHaveBeenCalledWith(CALLER_ID);
+  });
+
+  it('a signed-out caller gets 401 on all four, and nothing is read or written', async () => {
+    const responses = [
+      await request(app).get('/api/notifications'),
+      await request(app).get('/api/notifications/unread-count'),
+      await request(app).patch('/api/notifications/read-all'),
+      await request(app).post('/api/notifications').send(body()),
+    ];
+    for (const response of responses) expect(response.status).toBe(401);
+    expect(storage.getMemberIdsForUser).not.toHaveBeenCalled();
+    expect(storage.createNotification).not.toHaveBeenCalled();
+    expect(storage.markAllNotificationsAsRead).not.toHaveBeenCalled();
+  });
+});

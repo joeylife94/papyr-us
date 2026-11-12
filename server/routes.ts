@@ -3073,7 +3073,7 @@ export async function registerRoutes(
       return true;
     };
 
-    app.get('/api/notifications', requireAuthIfEnabled, async (req: AuthRequest, res) => {
+    app.get('/api/notifications', authMiddleware, async (req: AuthRequest, res) => {
       try {
         const userId = req.user?.id;
         if (!userId) {
@@ -3121,24 +3121,20 @@ export async function registerRoutes(
       }
     });
 
-    app.get(
-      '/api/notifications/unread-count',
-      requireAuthIfEnabled,
-      async (req: AuthRequest, res) => {
-        try {
-          const userId = req.user?.id;
-          if (!userId) {
-            return res.status(401).json({ message: 'Authentication required' });
-          }
-
-          const memberIds = await storage.getMemberIdsForUser(userId);
-          const count = memberIds.length ? await storage.getUnreadNotificationCount(memberIds) : 0;
-          res.json({ count });
-        } catch (error) {
-          res.status(500).json({ message: 'Server error' });
+    app.get('/api/notifications/unread-count', authMiddleware, async (req: AuthRequest, res) => {
+      try {
+        const userId = req.user?.id;
+        if (!userId) {
+          return res.status(401).json({ message: 'Authentication required' });
         }
+
+        const memberIds = await storage.getMemberIdsForUser(userId);
+        const count = memberIds.length ? await storage.getUnreadNotificationCount(memberIds) : 0;
+        res.json({ count });
+      } catch (error) {
+        res.status(500).json({ message: 'Server error' });
       }
-    );
+    });
 
     app.get('/api/notifications/:id', authMiddleware, async (req: AuthRequest, res) => {
       try {
@@ -3159,7 +3155,7 @@ export async function registerRoutes(
       }
     });
 
-    app.post('/api/notifications', requireAuthIfEnabled, async (req: AuthRequest, res) => {
+    app.post('/api/notifications', authMiddleware, async (req: AuthRequest, res) => {
       try {
         // There is no organization to check against without a session, so no session, no write.
         const userId = req.user?.id;
@@ -3307,42 +3303,38 @@ export async function registerRoutes(
       }
     });
 
-    app.patch(
-      '/api/notifications/read-all',
-      requireAuthIfEnabled,
-      async (req: AuthRequest, res) => {
-        try {
-          // Use authenticated user's ID; never trust a client-supplied recipientId
-          const userId = req.user?.id;
-          if (!userId) {
-            return res.status(401).json({ message: 'Authentication required' });
-          }
-
-          const memberIds = await storage.getMemberIdsForUser(userId);
-          if (memberIds.length) await storage.markAllNotificationsAsRead(memberIds);
-
-          // Realtime: emit unread count reset for the caller's own member rows
-          try {
-            const ns = io?.of('/collab');
-            if (ns && memberIds.length) {
-              const count = await storage.getUnreadNotificationCount(memberIds);
-              for (const memberId of memberIds) {
-                ns.to(`user:${userId}`).emit('notification:unread-count', {
-                  recipientId: memberId,
-                  count,
-                });
-              }
-            }
-          } catch (emitErr) {
-            console.warn('Socket emit failed for notification:read-all', emitErr);
-          }
-
-          res.json({ message: 'All notifications marked as read' });
-        } catch (error) {
-          res.status(400).json({ message: 'Invalid request data' });
+    app.patch('/api/notifications/read-all', authMiddleware, async (req: AuthRequest, res) => {
+      try {
+        // Use authenticated user's ID; never trust a client-supplied recipientId
+        const userId = req.user?.id;
+        if (!userId) {
+          return res.status(401).json({ message: 'Authentication required' });
         }
+
+        const memberIds = await storage.getMemberIdsForUser(userId);
+        if (memberIds.length) await storage.markAllNotificationsAsRead(memberIds);
+
+        // Realtime: emit unread count reset for the caller's own member rows
+        try {
+          const ns = io?.of('/collab');
+          if (ns && memberIds.length) {
+            const count = await storage.getUnreadNotificationCount(memberIds);
+            for (const memberId of memberIds) {
+              ns.to(`user:${userId}`).emit('notification:unread-count', {
+                recipientId: memberId,
+                count,
+              });
+            }
+          }
+        } catch (emitErr) {
+          console.warn('Socket emit failed for notification:read-all', emitErr);
+        }
+
+        res.json({ message: 'All notifications marked as read' });
+      } catch (error) {
+        res.status(400).json({ message: 'Invalid request data' });
       }
-    );
+    });
   }
 
   if (featureFlags.FEATURE_TEMPLATES) {
