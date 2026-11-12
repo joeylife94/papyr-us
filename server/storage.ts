@@ -1649,6 +1649,51 @@ export class DBStorage {
     return (await this.getUserOrganizationId(userId)) ?? organizationId;
   }
 
+  // Accounts (`users`) and roster rows (`members`) are separate id spaces, linked only by email,
+  // the link `getUserTeamIds` already follows. Notifications address members, sessions carry a
+  // user id, so anything that compares the two goes through these three (issue #124 X1b).
+
+  /** The `members` rows of an account: those with exactly its email. Empty for an unknown user. */
+  async getMemberIdsForUser(userId: number): Promise<number[]> {
+    const rows: Array<{ id: number }> = await this.db
+      .select({ id: members.id })
+      .from(members)
+      .innerJoin(users, eq(users.email, members.email))
+      .where(eq(users.id, userId));
+    return rows.map((row) => Number(row.id));
+  }
+
+  /** The account behind a roster row: the user with exactly its email, or null. */
+  async getUserIdForMember(memberId: number): Promise<number | null> {
+    const [row] = await this.db
+      .select({ id: users.id })
+      .from(users)
+      .innerJoin(members, eq(members.email, users.email))
+      .where(eq(members.id, memberId))
+      .limit(1);
+    return row ? Number(row.id) : null;
+  }
+
+  /**
+   * The organization of a roster row: its account's when that account belongs to one, otherwise
+   * its team's. Null when neither places it (or the row is unknown); callers must then treat the
+   * member as outside every organization.
+   */
+  async getMemberOrganizationId(memberId: number): Promise<number | null> {
+    const [member] = await this.db
+      .select({ teamId: members.teamId })
+      .from(members)
+      .where(eq(members.id, memberId))
+      .limit(1);
+    if (!member) return null;
+    const userId = await this.getUserIdForMember(memberId);
+    if (userId !== null) {
+      const organizationId = await this.getUserOrganizationId(userId);
+      if (organizationId !== null) return organizationId;
+    }
+    return member.teamId == null ? null : this.getTeamOrganizationId(Number(member.teamId));
+  }
+
   /**
    * The organization a new page belongs to: its team's, or for a team-less page its creator's.
    * Throws OrganizationRequiredError when neither gives one, so a page never lands in an
