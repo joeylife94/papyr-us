@@ -14,11 +14,15 @@ import {
   users,
 } from '../shared/schema.js';
 
-/** The default organization's id; the organization is created on first use. */
+/**
+ * The default organization's id; the organization is created on first use. It is created with AI
+ * on: it is the deployment's own organization and keeps AI as it was before per-organization
+ * settings (#124 X1c), on a fresh install as after the 0024 upgrade.
+ */
 export async function defaultOrganizationId(db: any): Promise<number> {
   await db
     .insert(organizations)
-    .values({ slug: DEFAULT_ORGANIZATION_SLUG, name: 'Default' })
+    .values({ slug: DEFAULT_ORGANIZATION_SLUG, name: 'Default', aiEnabled: true })
     .onConflictDoNothing({ target: organizations.slug });
   const [row] = await db
     .select({ id: organizations.id })

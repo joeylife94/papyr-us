@@ -79,6 +79,10 @@ import {
   publicLinks,
   teamMembers,
   organizationMembers,
+  organizations,
+  organizationRoles,
+  type Organization,
+  type OrganizationRole,
   pageFavorites,
   type PageFavorite,
   activityFeed,
@@ -1959,6 +1963,76 @@ export class DBStorage {
       .onConflictDoNothing({ target: organizationMembers.userId });
     return (await this.getUserOrganizationId(userId)) ?? organizationId;
   }
+
+  /**
+   * The account's organization and role; null without one or for an inactive account. A role
+   * outside organizationRoles counts as 'member' (X1c).
+   */
+  async getOrganizationMembership(
+    userId: number
+  ): Promise<{ organizationId: number; role: OrganizationRole } | null> {
+    const [row] = await this.db
+      .select({
+        organizationId: organizationMembers.organizationId,
+        role: organizationMembers.role,
+      })
+      .from(organizationMembers)
+      .innerJoin(users, eq(users.id, organizationMembers.userId))
+      .where(and(eq(organizationMembers.userId, userId), eq(users.isActive, true)))
+      .limit(1);
+    if (!row) return null;
+    const role = (organizationRoles as readonly string[]).includes(row.role)
+      ? (row.role as OrganizationRole)
+      : 'member';
+    return { organizationId: Number(row.organizationId), role };
+  }
+
+  /** The organization row, or undefined. */
+  async getOrganization(organizationId: number): Promise<Organization | undefined> {
+    const [row] = await this.db
+      .select()
+      .from(organizations)
+      .where(eq(organizations.id, organizationId))
+      .limit(1);
+    return row;
+  }
+
+  /** Whether the organization has AI turned on. False for null or an unknown id. */
+  async isOrganizationAiEnabled(organizationId: number | null): Promise<boolean> {
+    if (organizationId === null || organizationId === undefined) return false;
+    const [row] = await this.db
+      .select({ aiEnabled: organizations.aiEnabled })
+      .from(organizations)
+      .where(eq(organizations.id, organizationId))
+      .limit(1);
+    return row?.aiEnabled === true;
+  }
+
+  /**
+   * Runs fn in a transaction after taking, in ascending id order, the advisory lock
+   * pg_advisory_xact_lock(hashtextextended('organization-members:' || id, 0)) of each id. Every
+   * write to organization_members goes through this (DESIGN.md section 3, Concurrency).
+   */
+  async withOrganizationLocks<T>(
+    organizationIds: number[],
+    fn: (tx: any) => Promise<T>
+  ): Promise<T> {
+    const ids = Array.from(new Set(organizationIds)).sort((a, b) => a - b);
+    return this.db.transaction(async (tx: any) => {
+      for (const id of ids) {
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(hashtextextended(${'organization-members:' + id}, 0))`
+        );
+      }
+      return fn(tx);
+    });
+  }
+
+  // ---- X1c P1: platform admin organization management (organization-admin-routes.ts) ----
+  // ---- end X1c P1 ----
+
+  // ---- X1c P2: organization members and settings (organization-routes.ts) ----
+  // ---- end X1c P2 ----
 
   // Accounts (`users`) and roster rows (`members`) are separate id spaces, linked only by email,
   // the link `getUserTeamIds` already follows. Notifications address members, sessions carry a

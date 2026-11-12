@@ -420,6 +420,8 @@ export const organizations = pgTable('organizations', {
   slug: text('slug').notNull().unique(),
   name: text('name').notNull(),
   isActive: boolean('is_active').notNull().default(true),
+  // Off for organizations created through the admin API; 0024 turned it on for organizations that existed before.
+  aiEnabled: boolean('ai_enabled').notNull().default(false),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });

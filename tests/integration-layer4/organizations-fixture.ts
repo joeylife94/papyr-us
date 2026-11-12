@@ -1,6 +1,6 @@
 /**
  * Layer 4 fixture: bring a test schema built in the pre-organization shape to the shape of
- * drizzle/0022_add_organizations.sql (issue #124 X1a), so DBStorage runs against it.
+ * drizzle/0022_add_organizations.sql (issue #124 X1a) and 0024 (X1c), so DBStorage runs against it.
  *
  * Most Layer 4 files hand-write their tables as they were before organizations and insert rows
  * by hand. `addOrganizations` applies the real 0022 migration to those tables, which puts every
@@ -27,6 +27,12 @@ const FULL_MIGRATION = readFileSync(
 );
 if (!COMPOSITE_KEY.test(FULL_MIGRATION)) throw new Error('0022 changed: update the fixture');
 const MIGRATION = FULL_MIGRATION.replace(COMPOSITE_KEY, '');
+// 0024 (#124 X1c) adds the organization AI setting and turns it on for the organizations that
+// exist, so every file describes an upgraded deployment: the default organization has AI on.
+const AI_SETTING_MIGRATION = readFileSync(
+  new URL('../../drizzle/0024_add_organization_ai_setting.sql', import.meta.url),
+  'utf8'
+);
 
 /**
  * Applies 0022 to a pre-organization test schema and returns the default organization's id.
@@ -61,6 +67,7 @@ export async function addOrganizations(
       );
     `);
     await client.query(MIGRATION);
+    await client.query(AI_SETTING_MIGRATION);
     const { rows } = await client.query(`SELECT id FROM organizations WHERE slug = 'default'`);
     const organizationId = Number(rows[0].id);
     // The trigger names its schema, so inserts through a pool without the search path work too.
