@@ -199,4 +199,98 @@ test.describe('Page-derived reads follow the page read boundary', () => {
       await world.close();
     }
   });
+  test('per-page analytics are refused for a page the caller cannot read', async ({ request }) => {
+    test.setTimeout(240_000);
+    const world = await arrange(request, 'secpr-views');
+    const { ctx, pages, accounts } = world;
+    try {
+      const statsOf = async (page: { id: number }) => {
+        const response = await ctx.ownerA.get(`/api/pages/${page.id}/analytics`);
+        expect(response.status()).toBe(200);
+        return (await response.json()) as {
+          totalViews: number;
+          uniqueViewers: number;
+          viewsLast7Days: number;
+          dailyViews: unknown[];
+        };
+      };
+      const before = await statsOf(pages.aTeam);
+
+      // ── 1. Another organization: no view recorded, no counts, on any page not shared ──
+      for (const page of [pages.aTeam, pages.aOpen]) {
+        const view = await ctx.outsider.post(`/api/pages/${page.id}/view`);
+        expect(view.status(), `outsider view ${page.slug}`).toBe(403);
+        expect(await view.text()).not.toContain('recorded');
+        const analytics = await ctx.outsider.get(`/api/pages/${page.id}/analytics`);
+        expect(analytics.status(), `outsider analytics ${page.slug}`).toBe(403);
+        expect(await analytics.text()).not.toContain('totalViews');
+      }
+      // ── 2. Same organization, other team ──
+      expect((await ctx.solo.post(`/api/pages/${pages.aTeam.id}/view`)).status()).toBe(403);
+      expect((await ctx.solo.get(`/api/pages/${pages.aTeam.id}/analytics`)).status()).toBe(403);
+      // ── 3. Signed out ──
+      expect((await ctx.anonymous.post(`/api/pages/${pages.aTeam.id}/view`)).status()).toBe(401);
+      expect((await ctx.anonymous.get(`/api/pages/${pages.aTeam.id}/analytics`)).status()).toBe(
+        401
+      );
+      expect(await statsOf(pages.aTeam), 'refused views were not recorded').toEqual(before);
+
+      // ── 4. Unknown, trashed and malformed ids ──
+      for (const path of ['/api/pages/2147483000/view', '/api/pages/2147483000/analytics']) {
+        const verb = path.endsWith('view') ? 'post' : 'get';
+        expect((await ctx.ownerA[verb](path)).status(), path).toBe(404);
+      }
+      const trashed = await ctx.ownerA.post('/api/pages', {
+        data: {
+          title: 'Reads check trashed',
+          content: 'x',
+          folder: `secpr-views-${world.stamp}`,
+          tags: [],
+          slug: `secpr-views-trashed-${world.stamp}`,
+          author: accounts.ownerA.email,
+          teamId: world.teamA.id,
+        },
+      });
+      const trashedId = Number((await trashed.json()).id);
+      expect((await ctx.ownerA.delete(`/api/pages/${trashedId}`)).status()).toBe(200);
+      expect((await ctx.ownerA.post(`/api/pages/${trashedId}/view`)).status()).toBe(404);
+      expect((await ctx.ownerA.get(`/api/pages/${trashedId}/analytics`)).status()).toBe(404);
+      expect((await ctx.ownerA.post('/api/pages/abc/view')).status()).toBe(400);
+      expect((await ctx.ownerA.get('/api/pages/abc/analytics')).status()).toBe(400);
+
+      // ── 5. Readers keep working, with the same response shape ──
+      for (const reader of [ctx.ownerA, ctx.memberA]) {
+        const view = await reader.post(`/api/pages/${pages.aTeam.id}/view`);
+        expect(view.status()).toBe(201);
+        expect(await view.json()).toEqual({ recorded: true });
+      }
+      const after = await statsOf(pages.aTeam);
+      expect(after.totalViews).toBe(before.totalViews + 2);
+      expect(after.uniqueViewers).toBe(before.uniqueViewers + 2);
+      expect(after.viewsLast7Days).toBe(before.viewsLast7Days + 2);
+      expect(Object.keys(after).sort()).toEqual([
+        'dailyViews',
+        'totalViews',
+        'uniqueViewers',
+        'viewsLast7Days',
+      ]);
+      const memberCounts = await ctx.memberA.get(`/api/pages/${pages.aTeam.id}/analytics`);
+      expect(memberCounts.status()).toBe(200);
+
+      // ── 6. A page shared publicly follows the page read rule: anyone may read it, a signed-in reader may view it ──
+      // (a signed-out write is refused by the server's global write guard, as every write is)
+      expect((await ctx.anonymous.post(`/api/pages/${pages.aPublic.id}/view`)).status()).toBe(401);
+      expect((await ctx.anonymous.get(`/api/pages/${pages.aPublic.id}/analytics`)).status()).toBe(
+        200
+      );
+      const outsiderView = await ctx.outsider.post(`/api/pages/${pages.aPublic.id}/view`);
+      expect(outsiderView.status()).toBe(201);
+      expect((await ctx.outsider.get(`/api/pages/${pages.aPublic.id}/analytics`)).status()).toBe(
+        200
+      );
+      expect((await statsOf(pages.aPublic)).totalViews).toBe(1);
+    } finally {
+      await world.close();
+    }
+  });
 });

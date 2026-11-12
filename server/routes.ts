@@ -4814,78 +4814,58 @@ export async function registerRoutes(
 
   // ==================== Page Analytics API ====================
 
+  // Per-page analytics follow the page read rule of GET /api/pages/:id (issue #124 X1b): a view
+  // is recorded and the counts are read only by a caller who may read the page, and a trashed or
+  // unknown page answers 404 either way. A refused view is not recorded.
+
   // Record a page view
-  app.post('/api/pages/:id/view', rlAnalytics, optionalAuth, async (req: AuthRequest, res) => {
-    try {
-      const pageId = parseInt(req.params.id);
-      if (isNaN(pageId)) return res.status(400).json({ error: 'Invalid page ID' });
+  app.post(
+    '/api/pages/:id/view',
+    rlAnalytics,
+    optionalAuth,
+    requirePagePermission('viewer'),
+    async (req: AuthRequest, res) => {
+      try {
+        const pageId = parseInt(req.params.id);
+        if (isNaN(pageId)) return res.status(400).json({ error: 'Invalid page ID' });
 
-      const db = (storage as any).db;
-      await db.insert(pageViews).values({
-        pageId,
-        userId: req.user?.id || null,
-      });
+        const page = await storage.getWikiPage(pageId);
+        if (!page) return res.status(404).json({ error: 'Page not found' });
 
-      res.status(201).json({ recorded: true });
-    } catch (error) {
-      // Don't fail the request if analytics recording fails
-      res.status(201).json({ recorded: false });
+        try {
+          await storage.recordPageView(pageId, req.user?.id || null);
+          res.status(201).json({ recorded: true });
+        } catch {
+          // Don't fail the request if analytics recording fails
+          res.status(201).json({ recorded: false });
+        }
+      } catch (error) {
+        logger.error('Error recording page view:', { error });
+        res.status(500).json({ error: 'Failed to record page view' });
+      }
     }
-  });
+  );
 
   // Get page view stats
-  app.get('/api/pages/:id/analytics', optionalAuth, async (req: AuthRequest, res) => {
-    try {
-      const pageId = parseInt(req.params.id);
-      if (isNaN(pageId)) return res.status(400).json({ error: 'Invalid page ID' });
+  app.get(
+    '/api/pages/:id/analytics',
+    optionalAuth,
+    requirePagePermission('viewer'),
+    async (req: AuthRequest, res) => {
+      try {
+        const pageId = parseInt(req.params.id);
+        if (isNaN(pageId)) return res.status(400).json({ error: 'Invalid page ID' });
 
-      const { eq, sql, desc } = await import('drizzle-orm');
-      const db = (storage as any).db;
+        const page = await storage.getWikiPage(pageId);
+        if (!page) return res.status(404).json({ error: 'Page not found' });
 
-      // Total views
-      const [totalResult] = await db
-        .select({ count: sql<number>`COUNT(*)` })
-        .from(pageViews)
-        .where(eq(pageViews.pageId, pageId));
-
-      // Unique viewers
-      const [uniqueResult] = await db
-        .select({ count: sql<number>`COUNT(DISTINCT ${pageViews.userId})` })
-        .from(pageViews)
-        .where(eq(pageViews.pageId, pageId));
-
-      // Views in last 7 days
-      const [weekResult] = await db
-        .select({ count: sql<number>`COUNT(*)` })
-        .from(pageViews)
-        .where(
-          sql`${pageViews.pageId} = ${pageId} AND ${pageViews.viewedAt} > NOW() - INTERVAL '7 days'`
-        );
-
-      // Daily views for last 30 days
-      const dailyViews = await db
-        .select({
-          date: sql<string>`DATE(${pageViews.viewedAt})`,
-          count: sql<number>`COUNT(*)`,
-        })
-        .from(pageViews)
-        .where(
-          sql`${pageViews.pageId} = ${pageId} AND ${pageViews.viewedAt} > NOW() - INTERVAL '30 days'`
-        )
-        .groupBy(sql`DATE(${pageViews.viewedAt})`)
-        .orderBy(sql`DATE(${pageViews.viewedAt})`);
-
-      res.json({
-        totalViews: Number(totalResult?.count || 0),
-        uniqueViewers: Number(uniqueResult?.count || 0),
-        viewsLast7Days: Number(weekResult?.count || 0),
-        dailyViews,
-      });
-    } catch (error) {
-      logger.error('Error fetching page analytics:', { error });
-      res.status(500).json({ error: 'Failed to fetch analytics' });
+        res.json(await storage.getPageViewStats(pageId));
+      } catch (error) {
+        logger.error('Error fetching page analytics:', { error });
+        res.status(500).json({ error: 'Failed to fetch analytics' });
+      }
     }
-  });
+  );
 
   // Get popular pages (top viewed). The ranking shows page titles, so it follows the page read
   // boundary (#141): only live pages the caller may list, like GET /api/pages. Without a session

@@ -170,3 +170,167 @@ describe('GET /api/stats/overview', () => {
     expect(response.body).toEqual({ error: 'Failed to fetch stats' });
   });
 });
+
+// ==================== Surface B: per-page analytics ====================
+
+describe('per-page analytics follow the page read rule', () => {
+  const PAGE_ID = 11;
+  const counts = {
+    totalViews: 5,
+    uniqueViewers: 2,
+    viewsLast7Days: 3,
+    dailyViews: [{ date: '2026-01-01', count: 5 }],
+  };
+  /** A page the signed-in caller cannot read and nobody signed out can (no public grant). */
+  const denyUnlessSignedInReader = (readable: boolean) =>
+    storage.checkPagePermission.mockImplementation(async (userId?: number) =>
+      userId === CALLER.id ? readable : false
+    );
+
+  beforeEach(() => {
+    storage.getWikiPage.mockResolvedValue({ id: PAGE_ID, title: 'Roadmap', slug: 'roadmap' });
+    storage.getPageViewStats.mockResolvedValue(counts);
+    storage.recordPageView.mockResolvedValue(undefined);
+  });
+
+  describe('POST /api/pages/:id/view', () => {
+    const PATH = `/api/pages/${PAGE_ID}/view`;
+
+    it('records a view of a page the caller may read, for that caller', async () => {
+      const response = await request(app).post(PATH).set(signedIn());
+
+      expect(response.status).toBe(201);
+      expect(response.body).toEqual({ recorded: true });
+      expect(storage.checkPagePermission).toHaveBeenCalledWith(CALLER.id, PAGE_ID, 'viewer');
+      expect(storage.recordPageView).toHaveBeenCalledWith(PAGE_ID, CALLER.id);
+    });
+
+    it('records a signed-out view only when the page itself reads for anyone (writes not enforced)', async () => {
+      mockConfig.enforceAuthForWrites = false;
+
+      const response = await request(app).post(PATH);
+
+      expect(response.status).toBe(201);
+      expect(response.body).toEqual({ recorded: true });
+      expect(storage.checkPagePermission).toHaveBeenCalledWith(undefined, PAGE_ID, 'viewer');
+      expect(storage.recordPageView).toHaveBeenCalledWith(PAGE_ID, null);
+    });
+
+    it('refuses a signed-out view while writes are enforced, recording nothing', async () => {
+      const response = await request(app).post(PATH);
+
+      expect(response.status).toBe(401);
+      expect(storage.recordPageView).not.toHaveBeenCalled();
+    });
+
+    it('refuses a signed-out view of a page that does not read for anyone, recording nothing', async () => {
+      mockConfig.enforceAuthForWrites = false;
+      denyUnlessSignedInReader(true);
+
+      const response = await request(app).post(PATH);
+
+      expect(response.status).toBe(401);
+      expect(response.body.recorded).toBeUndefined();
+      expect(storage.recordPageView).not.toHaveBeenCalled();
+    });
+
+    it('refuses a signed-in caller who cannot read the page, recording nothing', async () => {
+      denyUnlessSignedInReader(false);
+
+      const response = await request(app).post(PATH).set(signedIn());
+
+      expect(response.status).toBe(403);
+      expect(response.body.recorded).toBeUndefined();
+      expect(storage.getWikiPage).not.toHaveBeenCalled();
+      expect(storage.recordPageView).not.toHaveBeenCalled();
+    });
+
+    it('answers 404 for an unknown or trashed page, recording nothing', async () => {
+      storage.getWikiPage.mockResolvedValue(undefined);
+
+      const response = await request(app).post(PATH).set(signedIn());
+
+      expect(response.status).toBe(404);
+      expect(response.body).toEqual({ error: 'Page not found' });
+      expect(storage.recordPageView).not.toHaveBeenCalled();
+    });
+
+    it('refuses a page id that is not a number', async () => {
+      const response = await request(app).post('/api/pages/abc/view').set(signedIn());
+
+      expect(response.status).toBe(400);
+      expect(storage.recordPageView).not.toHaveBeenCalled();
+    });
+
+    it('keeps the soft failure only for a failed insert after the checks', async () => {
+      storage.recordPageView.mockRejectedValue(new Error('insert failed'));
+
+      const response = await request(app).post(PATH).set(signedIn());
+
+      expect(response.status).toBe(201);
+      expect(response.body).toEqual({ recorded: false });
+    });
+
+    it('does not let a failing permission check record anything', async () => {
+      storage.checkPagePermission.mockRejectedValue(new Error('lookup failed'));
+
+      const response = await request(app).post(PATH).set(signedIn());
+
+      expect(response.status).toBe(500);
+      expect(storage.recordPageView).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('GET /api/pages/:id/analytics', () => {
+    const PATH = `/api/pages/${PAGE_ID}/analytics`;
+
+    it('answers the counts of a page the caller may read, shape unchanged', async () => {
+      const response = await request(app).get(PATH).set(signedIn());
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual(counts);
+      expect(storage.checkPagePermission).toHaveBeenCalledWith(CALLER.id, PAGE_ID, 'viewer');
+      expect(storage.getPageViewStats).toHaveBeenCalledWith(PAGE_ID);
+    });
+
+    it('answers a signed-out caller only for a page that reads for anyone', async () => {
+      expect((await request(app).get(PATH)).status).toBe(200);
+
+      denyUnlessSignedInReader(true);
+      storage.getPageViewStats.mockClear();
+      const refused = await request(app).get(PATH);
+      expect(refused.status).toBe(401);
+      expect(refused.body.totalViews).toBeUndefined();
+      expect(storage.getPageViewStats).not.toHaveBeenCalled();
+    });
+
+    it('refuses a signed-in caller who cannot read the page, without reading the counts', async () => {
+      denyUnlessSignedInReader(false);
+
+      const response = await request(app).get(PATH).set(signedIn());
+
+      expect(response.status).toBe(403);
+      expect(response.body.totalViews).toBeUndefined();
+      expect(storage.getPageViewStats).not.toHaveBeenCalled();
+    });
+
+    it('answers 404 for an unknown or trashed page', async () => {
+      storage.getWikiPage.mockResolvedValue(undefined);
+
+      const response = await request(app).get(PATH).set(signedIn());
+
+      expect(response.status).toBe(404);
+      expect(response.body).toEqual({ error: 'Page not found' });
+      expect(storage.getPageViewStats).not.toHaveBeenCalled();
+    });
+
+    it('answers a storage failure with a fixed message', async () => {
+      storage.getPageViewStats.mockRejectedValue(new Error('relation "secret_table" is gone'));
+
+      const response = await request(app).get(PATH).set(signedIn());
+
+      expect(response.status).toBe(500);
+      expect(response.body).toEqual({ error: 'Failed to fetch analytics' });
+    });
+  });
+});

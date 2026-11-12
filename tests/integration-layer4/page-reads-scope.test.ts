@@ -364,3 +364,32 @@ describe('stats overview (real Postgres)', () => {
     }
   });
 });
+
+describe('per-page view counts (real Postgres)', () => {
+  it('records views of a page and counts them in the windows the route reports', async () => {
+    const target = await insertPage('viewed', { teamId: TEAM_A, author: ALICE.email });
+    const other = await insertPage('viewed-other', { teamId: TEAM_A, author: ALICE.email });
+    await storage.recordPageView(target, ALICE.id);
+    await storage.recordPageView(target, ALICE.id);
+    await storage.recordPageView(target, null);
+    await storage.recordPageView(other, BOB.id);
+    await scoped.query(
+      `INSERT INTO page_views (page_id, user_id, viewed_at)
+       VALUES ($1, $2, NOW() - INTERVAL '10 days'), ($1, $3, NOW() - INTERVAL '40 days')`,
+      [target, BOB.id, CAROL.id]
+    );
+
+    const stats = await storage.getPageViewStats(target);
+
+    expect(stats.totalViews).toBe(5);
+    expect(stats.uniqueViewers).toBe(3); // Alice, Bob, Carol; a signed-out view is not a viewer
+    expect(stats.viewsLast7Days).toBe(3);
+    expect(stats.dailyViews.map((row: { count: number }) => Number(row.count))).toEqual([1, 3]);
+    expect(await storage.getPageViewStats(2147483000)).toEqual({
+      totalViews: 0,
+      uniqueViewers: 0,
+      viewsLast7Days: 0,
+      dailyViews: [],
+    });
+  });
+});

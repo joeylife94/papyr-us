@@ -1510,6 +1510,53 @@ export class DBStorage {
     };
   }
 
+  /** Records one view of a page (`userId` null for a signed-out reader). */
+  async recordPageView(pageId: number, userId: number | null): Promise<void> {
+    await this.db.insert(pageViews).values({ pageId, userId });
+  }
+
+  /**
+   * View counts of one page, as GET /api/pages/:id/analytics reports them. Who may read them is
+   * decided by the route (the page read rule), not here.
+   */
+  async getPageViewStats(pageId: number): Promise<{
+    totalViews: number;
+    uniqueViewers: number;
+    viewsLast7Days: number;
+    dailyViews: Array<{ date: string; count: number }>;
+  }> {
+    const ofPage = eq(pageViews.pageId, pageId);
+    const [[total], [unique], [week], dailyViews] = await Promise.all([
+      this.db
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(pageViews)
+        .where(ofPage),
+      this.db
+        .select({ count: sql<number>`COUNT(DISTINCT ${pageViews.userId})` })
+        .from(pageViews)
+        .where(ofPage),
+      this.db
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(pageViews)
+        .where(and(ofPage, sql`${pageViews.viewedAt} > NOW() - INTERVAL '7 days'`)),
+      this.db
+        .select({
+          date: sql<string>`DATE(${pageViews.viewedAt})`,
+          count: sql<number>`COUNT(*)`,
+        })
+        .from(pageViews)
+        .where(and(ofPage, sql`${pageViews.viewedAt} > NOW() - INTERVAL '30 days'`))
+        .groupBy(sql`DATE(${pageViews.viewedAt})`)
+        .orderBy(sql`DATE(${pageViews.viewedAt})`),
+    ]);
+    return {
+      totalViews: Number(total?.count || 0),
+      uniqueViewers: Number(unique?.count || 0),
+      viewsLast7Days: Number(week?.count || 0),
+      dailyViews,
+    };
+  }
+
   async getCalendarEvents(teamId?: number): Promise<CalendarEvent[]> {
     const query = this.db.select().from(calendarEvents);
     if (teamId) {
