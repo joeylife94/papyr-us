@@ -9,6 +9,7 @@ import { ScrollArea } from '../ui/scroll-area';
 import { Skeleton } from '../ui/skeleton';
 import { PageIcon } from '../page/page-icon';
 import { cn } from '@/lib/utils';
+import { useOrganization } from '@/hooks/useOrganization';
 import {
   Network,
   Search,
@@ -145,7 +146,12 @@ export function KnowledgeGraph({ teamId }: KnowledgeGraphProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
-  const [includeAILinks, setIncludeAILinks] = useState(false);
+  const [aiLinksRequested, setIncludeAILinks] = useState(false);
+  // AI links send page content to the AI provider: only once the organization is known to have
+  // AI on (never while it loads or when it failed to load)
+  const { organization } = useOrganization();
+  const aiEnabled = organization?.aiEnabled === true;
+  const includeAILinks = aiLinksRequested && aiEnabled;
 
   const params = new URLSearchParams();
   if (teamId) params.append('teamId', teamId);
@@ -287,26 +293,28 @@ export function KnowledgeGraph({ teamId }: KnowledgeGraphProps) {
               className="pl-9"
             />
           </div>
-          <Button
-            variant={includeAILinks ? 'default' : 'outline'}
-            onClick={() => setIncludeAILinks(!includeAILinks)}
-            disabled={includeAILinks && isFetching}
-            aria-pressed={includeAILinks}
-            className="gap-2"
-          >
-            {includeAILinks && isFetching ? (
-              <RefreshCw aria-hidden="true" className="h-4 w-4 animate-spin" />
-            ) : (
-              <span aria-hidden="true" className="font-mono text-[11px]">
-                AI
-              </span>
-            )}
-            {includeAILinks && isFetching
-              ? 'AI 링크 생성 중...'
-              : includeAILinks
-                ? 'AI 링크 ON'
-                : 'AI 링크 OFF'}
-          </Button>
+          {aiEnabled && (
+            <Button
+              variant={includeAILinks ? 'default' : 'outline'}
+              onClick={() => setIncludeAILinks(!includeAILinks)}
+              disabled={includeAILinks && isFetching}
+              aria-pressed={includeAILinks}
+              className="gap-2"
+            >
+              {includeAILinks && isFetching ? (
+                <RefreshCw aria-hidden="true" className="h-4 w-4 animate-spin" />
+              ) : (
+                <span aria-hidden="true" className="font-mono text-[11px]">
+                  AI
+                </span>
+              )}
+              {includeAILinks && isFetching
+                ? 'AI 링크 생성 중...'
+                : includeAILinks
+                  ? 'AI 링크 ON'
+                  : 'AI 링크 OFF'}
+            </Button>
+          )}
           <Button
             variant="outline"
             size="icon"

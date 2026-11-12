@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
+import { useOrganization } from '@/hooks/useOrganization';
+import { AI_DISABLED_NOTICE } from '@/lib/ai-gate';
 
 /** Mirrors RetrievalResultSchema in contracts/api.schema.ts. */
 interface SearchResult {
@@ -38,6 +40,11 @@ export function AISearch({ teamId }: { teamId?: string }) {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const { toast } = useToast();
+  // Suggestions send the query to the AI provider: only once the organization is known to have
+  // AI on. Search itself keeps working (full-text order) either way.
+  const { organization, isLoading: orgLoading, isError: orgError } = useOrganization();
+  const aiEnabled = organization?.aiEnabled === true;
+  const aiOff = !orgLoading && !orgError && !aiEnabled;
 
   // AI 검색 뮤테이션
   const searchMutation = useMutation({
@@ -71,7 +78,7 @@ export function AISearch({ teamId }: { teamId?: string }) {
 
   // 검색어 변경 시 제안 생성
   useEffect(() => {
-    if (query.trim().length > 2) {
+    if (aiEnabled && query.trim().length > 2) {
       const timeoutId = setTimeout(() => {
         suggestionsMutation.mutate(query);
       }, 500);
@@ -80,7 +87,7 @@ export function AISearch({ teamId }: { teamId?: string }) {
     } else {
       setSuggestions([]);
     }
-  }, [query]);
+  }, [query, aiEnabled]);
 
   // 제안 결과 업데이트
   useEffect(() => {
@@ -152,6 +159,12 @@ export function AISearch({ teamId }: { teamId?: string }) {
             <span>AI 검색</span>
           </Button>
         </div>
+
+        {aiOff && (
+          <p className="mt-2 text-sm text-muted-foreground">
+            {AI_DISABLED_NOTICE} AI 재정렬 없이 전문 검색 순서로 표시됩니다.
+          </p>
+        )}
 
         {/* 검색 제안 */}
         {showSuggestions && suggestions.length > 0 && (

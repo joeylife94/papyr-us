@@ -15,6 +15,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { useFeatureFlags } from '@/features/FeatureFlagsContext';
 import { http } from '@/lib/http';
+import { AI_DISABLED_NOTICE, isAiDisabledResponse } from '@/lib/ai-gate';
+import { useOrganization } from '@/hooks/useOrganization';
 import { useToast } from '@/hooks/use-toast';
 
 interface InlineFormatAction {
@@ -125,7 +127,9 @@ export function InlineFormattingToolbar({ containerRef, onFormat }: InlineFormat
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { flags } = useFeatureFlags();
   const { toast } = useToast();
-  const showAI = flags.FEATURE_AI_SEARCH;
+  const { organization } = useOrganization();
+  // No AI action while the organization is loading, failed to load, or has AI off
+  const showAI = flags.FEATURE_AI_SEARCH && organization?.aiEnabled === true;
 
   const checkSelection = useCallback(() => {
     const container = containerRef.current;
@@ -290,7 +294,13 @@ export function InlineFormattingToolbar({ containerRef, onFormat }: InlineFormat
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, text: selectedText }),
       });
-      if (!res.ok) throw new Error('AI request failed');
+      if (!res.ok) {
+        if (await isAiDisabledResponse(res)) {
+          toast({ title: AI_DISABLED_NOTICE, variant: 'destructive' });
+          return;
+        }
+        throw new Error('AI request failed');
+      }
       const data = await res.json();
       const replacement = data.result ?? data.text ?? selectedText;
 

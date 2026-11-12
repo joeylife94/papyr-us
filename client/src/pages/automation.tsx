@@ -25,6 +25,8 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
+import { useOrganization } from '@/hooks/useOrganization';
+import { AI_DISABLED_NOTICE } from '@/lib/ai-gate';
 import { http } from '@/lib/http';
 import {
   Workflow,
@@ -55,6 +57,11 @@ export default function AutomationPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { teamName } = useParams<{ teamName?: string }>();
+  // The AI summary action sends page content to the AI provider: offered only once the
+  // organization is known to have AI on; the notice shows only once that is known to be off
+  const { organization, isLoading: orgLoading, isError: orgError } = useOrganization();
+  const aiEnabled = organization?.aiEnabled === true;
+  const aiOff = !orgLoading && !orgError && !aiEnabled;
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newWorkflow, setNewWorkflow] = useState({
     name: '',
@@ -478,11 +485,14 @@ export default function AutomationPage() {
                   <SelectItem value="add_comment">댓글 추가</SelectItem>
                   <SelectItem value="add_tag">태그 추가</SelectItem>
                   <SelectItem value="move_page">페이지 이동</SelectItem>
-                  <SelectItem value="run_ai_summary">AI 요약 실행</SelectItem>
+                  <SelectItem value="run_ai_summary" disabled={!aiEnabled}>
+                    AI 요약 실행
+                  </SelectItem>
                   <SelectItem value="webhook">웹훅 호출</SelectItem>
                   <SelectItem value="slack_webhook">Slack 웹훅</SelectItem>
                 </SelectContent>
               </Select>
+              {aiOff && <p className="text-xs text-muted-foreground">{AI_DISABLED_NOTICE}</p>}
             </div>
 
             {/* Action-specific config fields */}

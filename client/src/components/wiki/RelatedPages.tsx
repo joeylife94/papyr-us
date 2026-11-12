@@ -4,6 +4,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Sparkles, ArrowRight } from 'lucide-react';
+import { useOrganization } from '@/hooks/useOrganization';
 
 interface RelatedPagesProps {
   pageId: number;
@@ -16,6 +17,11 @@ interface RelatedPagesProps {
  * instead (components/page/backlinks.tsx, issue #103 E6).
  */
 export function RelatedPages({ pageId, pageTitle, pageContent }: RelatedPagesProps) {
+  // The request sends the page content to the AI provider: only once the organization is known
+  // to have AI on (while it loads, or when it failed to load, nothing is sent)
+  const { organization } = useOrganization();
+  const aiEnabled = organization?.aiEnabled === true;
+
   // Fetch AI-recommended related pages
   const { data: aiRelated, isLoading: aiLoading } = useQuery<{
     relatedPages: Array<{
@@ -44,8 +50,12 @@ export function RelatedPages({ pageId, pageTitle, pageContent }: RelatedPagesPro
       }
       return response.json();
     },
-    enabled: !!pageId && !!pageTitle,
+    enabled: aiEnabled && !!pageId && !!pageTitle,
   });
+
+  if (!aiEnabled) {
+    return null;
+  }
 
   if (aiLoading) {
     return (
