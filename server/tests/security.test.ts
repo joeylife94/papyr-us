@@ -64,7 +64,7 @@ vi.mock('../services/upload', async () => {
     listUploadedFiles: vi.fn().mockResolvedValue({ images: [], files: [] }),
     getFileInfo: vi.fn(),
     deleteUploadedFile: vi.fn(),
-    getFileTeamId: vi.fn(),
+    getFileMeta: vi.fn(),
   };
 });
 
@@ -98,7 +98,7 @@ vi.mock('../storage', async (importOriginal) => {
 });
 
 import * as storageModule from '../storage.js';
-import { getFileTeamId, listUploadedFiles, getFileInfo } from '../services/upload.js';
+import { getFileMeta, listUploadedFiles, getFileInfo } from '../services/upload.js';
 const storage: any = (storageModule as any).storage;
 
 // ─── Test fixtures ────────────────────────────────────────────────────────────
@@ -106,6 +106,14 @@ const USER_A_ID = 1;
 const USER_B_ID = 2;
 const TEAM_A_ID = 10;
 const TEAM_B_ID = 20;
+const UPLOAD_ORG_ID = 1;
+
+/** What the mocked file service reports for a sidecar: undefined = missing, null = no team. */
+function setSidecar(teamId: string | null | undefined) {
+  (getFileMeta as any).mockResolvedValue(
+    teamId === undefined ? undefined : { teamId, organizationId: UPLOAD_ORG_ID }
+  );
+}
 
 function makeToken(userId: number): string {
   return jwt.sign({ id: userId, email: `user${userId}@example.com`, role: 'user' }, TEST_SECRET, {
@@ -138,6 +146,10 @@ beforeEach(() => {
     if (userId === USER_B_ID) return [TEAM_B_ID];
     return [];
   });
+
+  // Everyone is in organization 1, the organization of the files below (issue #124 X1b).
+  storage.getUserOrganizationId.mockResolvedValue(UPLOAD_ORG_ID);
+  storage.getDefaultOrganizationId.mockResolvedValue(UPLOAD_ORG_ID);
 
   storage.getUserTeamRole.mockResolvedValue(null);
   // NOTE: checkPagePermission is intentionally NOT given a blanket mock here.
@@ -727,20 +739,20 @@ describe('4-5  File download access control', () => {
   const filename = 'secret-image.png';
 
   it('GET /api/uploads/images/:filename — returns 401 without authentication', async () => {
-    (getFileTeamId as any).mockResolvedValue(String(TEAM_A_ID));
+    setSidecar(String(TEAM_A_ID));
     const res = await request(app).get(`/api/uploads/images/${filename}`);
     expect(res.status).toBe(401);
   });
 
   it("GET /api/uploads/images/:filename — returns 403 when user is not in file's team", async () => {
-    (getFileTeamId as any).mockResolvedValue(String(TEAM_A_ID));
+    setSidecar(String(TEAM_A_ID));
     // User B is in team 20; file is in team 10
     const res = await request(app).get(`/api/uploads/images/${filename}`).set(auth(tokenB));
     expect(res.status).toBe(403);
   });
 
   it("GET /api/uploads/images/:filename — allows member of the file's team", async () => {
-    (getFileTeamId as any).mockResolvedValue(String(TEAM_A_ID));
+    setSidecar(String(TEAM_A_ID));
     (getFileInfo as any).mockResolvedValue({
       path: __filename, // use this test file as a stand-in payload
       mimetype: 'image/png',
@@ -752,20 +764,20 @@ describe('4-5  File download access control', () => {
   });
 
   it('GET /api/uploads/files/:filename — returns 401 without authentication', async () => {
-    (getFileTeamId as any).mockResolvedValue(String(TEAM_A_ID));
+    setSidecar(String(TEAM_A_ID));
     const res = await request(app).get(`/api/uploads/files/report.pdf`);
     expect(res.status).toBe(401);
   });
 
   it("GET /api/uploads/files/:filename — returns 403 when user is not in file's team", async () => {
-    (getFileTeamId as any).mockResolvedValue(String(TEAM_A_ID));
+    setSidecar(String(TEAM_A_ID));
     const res = await request(app).get('/api/uploads/files/report.pdf').set(auth(tokenB));
     expect(res.status).toBe(403);
   });
 
   it('GET /api/uploads/files/:filename — allows files with no team ownership (public files)', async () => {
-    // getFileTeamId returning null = sidecar present but no teamId → explicitly public
-    (getFileTeamId as any).mockResolvedValue(null);
+    // a sidecar without a team: the file belongs to the caller's organization
+    setSidecar(null);
     (getFileInfo as any).mockResolvedValue({
       path: __filename,
       mimetype: 'application/pdf',
@@ -777,17 +789,17 @@ describe('4-5  File download access control', () => {
   });
 
   // ─── Fail-secure: missing metadata ─────────────────────────────────────────
-  // getFileTeamId returning undefined means the sidecar (.json) is missing or
+  // A missing sidecar (undefined) means the sidecar (.json) is missing or
   // unreadable.  The routes must deny access rather than silently allowing it.
 
   it('GET /api/uploads/images/:filename — returns 403 when file metadata is missing (fail-secure)', async () => {
-    (getFileTeamId as any).mockResolvedValue(undefined);
+    setSidecar(undefined);
     const res = await request(app).get('/api/uploads/images/orphaned-image.png').set(auth(tokenA));
     expect(res.status).toBe(403);
   });
 
   it('GET /api/uploads/files/:filename — returns 403 when file metadata is missing (fail-secure)', async () => {
-    (getFileTeamId as any).mockResolvedValue(undefined);
+    setSidecar(undefined);
     const res = await request(app).get('/api/uploads/files/orphaned-report.pdf').set(auth(tokenA));
     expect(res.status).toBe(403);
   });
@@ -795,7 +807,7 @@ describe('4-5  File download access control', () => {
   it('GET /api/uploads/images/:filename — returns 401 for unauthenticated requests regardless of metadata state', async () => {
     // authMiddleware runs before the metadata check, so anonymous requests
     // always get 401 first. The fail-secure 403 applies to authenticated users.
-    (getFileTeamId as any).mockResolvedValue(undefined);
+    setSidecar(undefined);
     const res = await request(app).get('/api/uploads/images/orphaned-image.png');
     expect(res.status).toBe(401);
   });
@@ -804,7 +816,7 @@ describe('4-5  File download access control', () => {
     const prev = config.enforceAuthForWrites;
     config.enforceAuthForWrites = false;
     try {
-      (getFileTeamId as any).mockResolvedValue(null);
+      setSidecar(null);
       const res = await request(app).get('/api/uploads/files/public.pdf');
       expect(res.status).toBe(401);
     } finally {

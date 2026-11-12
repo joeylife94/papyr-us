@@ -58,7 +58,8 @@ import {
   deleteUploadedFile,
   listUploadedFiles,
   getFileInfo,
-  getFileTeamId,
+  getFileMeta,
+  checkUploadAccess,
   isSafeUploadFilename,
 } from './services/upload.js';
 import {
@@ -2421,11 +2422,12 @@ export async function registerRoutes(
 
   // File Upload API. The team is a multipart field, so the membership check runs after the
   // multipart parser (files stay in memory until the handler saves them); before it, the check
-  // saw no body and a file could be saved under any team.
+  // saw no body and a file could be saved under any team. A session is always required: the
+  // file is recorded under the uploader's organization (issue #124 X1b).
   app.post(
     '/api/upload',
     rlUpload,
-    requireAuthIfEnabled,
+    authMiddleware,
     upload.array('files', 5),
     requireTeamMembership,
     async (req: any, res) => {
@@ -2434,11 +2436,19 @@ export async function registerRoutes(
           return res.status(400).json({ message: 'No files uploaded' });
         }
 
-        // Stored as sent (an id or a name, as before); requireTeamMembership checked that it
-        // names the caller's team and the same team as any query teamId.
-        const teamId = req.body.teamId;
+        const userId = Number(req.user?.id);
+        const organizationId = await storage.getUserOrganizationId(userId);
+        if (organizationId === null || organizationId === undefined) {
+          return organizationRequired(req, res);
+        }
+
+        // The team requireTeamMembership resolved and checked (from the query, the body or a
+        // team name), stored as its numeric id; never the raw field.
+        const teamId: string | undefined =
+          req.checkedTeamId !== undefined ? String(req.checkedTeamId) : undefined;
+        const owner = { organizationId, uploadedBy: userId };
         const uploadedFiles = await Promise.all(
-          req.files.map((file: any) => processUploadedFile(file, teamId))
+          req.files.map((file: any) => processUploadedFile(file, teamId, owner))
         );
 
         res.status(201).json({
@@ -2455,6 +2465,49 @@ export async function registerRoutes(
     }
   );
 
+  // May the signed-in caller read or delete this upload (issue #124 X1b)? Answers the refusal
+  // itself and returns false when not. The rule is checkUploadAccess; any failing lookup denies.
+  async function authorizeUploadAccess(
+    req: AuthRequest,
+    res: Response,
+    filename: string,
+    isImg: boolean
+  ): Promise<boolean> {
+    const userId = Number(req.user?.id);
+    if (!Number.isInteger(userId) || userId <= 0) {
+      res.status(401).json({ message: 'Authentication required' });
+      return false;
+    }
+    const meta = await getFileMeta(filename, isImg);
+    if (!meta) {
+      res.status(403).json({ message: 'File metadata unavailable' });
+      return false;
+    }
+    const organizationId = await storage.getUserOrganizationId(userId);
+    if (organizationId === null || organizationId === undefined) {
+      organizationRequired(req, res);
+      return false;
+    }
+    const access = await checkUploadAccess(
+      meta,
+      { organizationId, teamIds: await storage.getUserTeamIds(userId) },
+      {
+        defaultOrganizationId: () => storage.getDefaultOrganizationId(),
+        teamByName: async (name) => {
+          const team = await storage.getTeamByName(name);
+          return team
+            ? { id: Number(team.id), organizationId: Number(team.organizationId) }
+            : undefined;
+        },
+      }
+    );
+    if (access !== 'allowed') {
+      res.status(403).json({ message: 'You are not a member of this team' });
+      return false;
+    }
+    return true;
+  }
+
   // Serve uploaded images
   app.get('/api/uploads/images/:filename', authMiddleware, async (req: AuthRequest, res) => {
     try {
@@ -2463,24 +2516,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: 'Invalid filename' });
       }
 
-      const fileTeamId = await getFileTeamId(filename, true);
-
-      // Fail-secure: sidecar missing or unreadable ? deny rather than silently allow
-      if (fileTeamId === undefined) {
-        return res.status(403).json({ message: 'File metadata unavailable' });
-      }
-
-      // File belongs to a specific team ? verify membership
-      if (fileTeamId !== null) {
-        if (!req.user?.id) {
-          return res.status(401).json({ message: 'Authentication required' });
-        }
-        const userTeamIds = await storage.getUserTeamIds(req.user.id);
-        if (!userTeamIds.map(String).includes(fileTeamId)) {
-          return res.status(403).json({ message: 'You are not a member of this team' });
-        }
-      }
-      // fileTeamId === null �� explicitly public file ? proceed
+      if (!(await authorizeUploadAccess(req, res, filename, true))) return;
 
       const fileInfo = await getFileInfo(filename, true);
 
@@ -2507,24 +2543,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: 'Invalid filename' });
       }
 
-      const fileTeamId = await getFileTeamId(filename, false);
-
-      // Fail-secure: sidecar missing or unreadable ? deny rather than silently allow
-      if (fileTeamId === undefined) {
-        return res.status(403).json({ message: 'File metadata unavailable' });
-      }
-
-      // File belongs to a specific team ? verify membership
-      if (fileTeamId !== null) {
-        if (!req.user?.id) {
-          return res.status(401).json({ message: 'Authentication required' });
-        }
-        const userTeamIds = await storage.getUserTeamIds(req.user.id);
-        if (!userTeamIds.map(String).includes(fileTeamId)) {
-          return res.status(403).json({ message: 'You are not a member of this team' });
-        }
-      }
-      // fileTeamId === null �� explicitly public file ? proceed
+      if (!(await authorizeUploadAccess(req, res, filename, false))) return;
 
       const fileInfo = await getFileInfo(filename, false);
 
@@ -2547,15 +2566,18 @@ export async function registerRoutes(
   // List uploaded files
   app.get('/api/uploads', optionalAuth, requireTeamMembership, async (req: AuthRequest, res) => {
     try {
-      const teamId = req.query.teamId as string | undefined;
+      // A team's files carry its numeric id, or (older uploads) its name.
+      const listTeam = async (id: number) => {
+        const team = await storage.getTeam(id);
+        return listUploadedFiles(String(id), team?.name ? [team.name] : []);
+      };
+      const teamId = req.checkedTeamId;
 
-      if (!teamId) {
-        // No teamId specified ? scope to user's teams to prevent full data leak
+      if (teamId === undefined) {
+        // No team specified: scope to the user's teams to prevent full data leak
         const userTeamIds = (req as any).userTeamIds as number[] | undefined;
         if (userTeamIds && userTeamIds.length > 0) {
-          const allLists = await Promise.all(
-            userTeamIds.map((tid) => listUploadedFiles(String(tid)))
-          );
+          const allLists = await Promise.all(userTeamIds.map((tid) => listTeam(tid)));
           return res.json({
             images: allLists.flatMap((l) => l.images),
             files: allLists.flatMap((l) => l.files),
@@ -2564,54 +2586,42 @@ export async function registerRoutes(
         return res.json({ images: [], files: [] });
       }
 
-      const fileList = await listUploadedFiles(teamId);
-      res.json(fileList);
+      res.json(await listTeam(teamId));
     } catch (error) {
       res.status(500).json({ message: 'Error listing files' });
     }
   });
 
-  // Delete uploaded file
-  app.delete(
-    '/api/uploads/:type/:filename',
-    requireAuthIfEnabled,
-    async (req: AuthRequest, res) => {
-      try {
-        const { type, filename } = req.params;
-        const isImg = type === 'images';
+  // Delete uploaded file. Needs a session and the same access as reading it: a team's file is
+  // deleted by that team's members, a team-less file by accounts of its organization, a file
+  // without readable ownership by nobody (issue #124 X1b).
+  app.delete('/api/uploads/:type/:filename', authMiddleware, async (req: AuthRequest, res) => {
+    try {
+      const { type, filename } = req.params;
+      const isImg = type === 'images';
 
-        if (type !== 'images' && type !== 'files') {
-          return res.status(400).json({ message: 'Invalid file type' });
-        }
-        // The name is one path segment of an upload, nothing else (a decoded parameter can hold
-        // separators). Checked before any lookup or file-system call.
-        if (!isSafeUploadFilename(filename)) {
-          return res.status(400).json({ message: 'Invalid filename' });
-        }
-
-        // Verify the requester belongs to the team that uploaded this file
-        const fileTeamId = await getFileTeamId(filename, isImg);
-        if (fileTeamId && req.user?.id) {
-          const userTeamIds = await storage.getUserTeamIds(req.user.id);
-          if (!userTeamIds.map(String).includes(fileTeamId)) {
-            return res.status(403).json({ message: 'You are not a member of this team' });
-          }
-        } else if (fileTeamId && config.enforceAuthForWrites) {
-          return res.status(401).json({ message: 'Authentication required' });
-        }
-
-        const deleted = await deleteUploadedFile(filename, isImg);
-
-        if (!deleted) {
-          return res.status(404).json({ message: 'File not found' });
-        }
-
-        res.json({ message: 'File deleted successfully' });
-      } catch (error) {
-        res.status(500).json({ message: 'Error deleting file' });
+      if (type !== 'images' && type !== 'files') {
+        return res.status(400).json({ message: 'Invalid file type' });
       }
+      // The name is one path segment of an upload, nothing else (a decoded parameter can hold
+      // separators). Checked before any lookup or file-system call.
+      if (!isSafeUploadFilename(filename)) {
+        return res.status(400).json({ message: 'Invalid filename' });
+      }
+
+      if (!(await authorizeUploadAccess(req, res, filename, isImg))) return;
+
+      const deleted = await deleteUploadedFile(filename, isImg);
+
+      if (!deleted) {
+        return res.status(404).json({ message: 'File not found' });
+      }
+
+      res.json({ message: 'File deleted successfully' });
+    } catch (error) {
+      res.status(500).json({ message: 'Error deleting file' });
     }
-  );
+  });
 
   if (featureFlags.FEATURE_ADMIN) {
     // Whether the signed-in user is a platform admin (the admin panel asks before showing itself).

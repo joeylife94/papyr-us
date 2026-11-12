@@ -20,6 +20,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
 import { registerRoutes } from '../routes';
 import {
   deleteUploadedFile,
@@ -52,6 +53,12 @@ vi.mock('../storage', async (importOriginal) => {
 
 import { storage } from '../storage';
 
+// Deleting needs a session and an organization (issue #124 X1b). The stored upload below has a
+// legacy sidecar (no organization), which counts as the default organization's.
+const authHeader = {
+  Authorization: `Bearer ${jwt.sign({ id: 1, email: 'user@test.com' }, 'upload-filename-secret')}`,
+};
+
 const FILES_DIR = path.join(process.cwd(), 'server', 'uploads', 'files');
 const IMAGES_DIR = path.join(process.cwd(), 'server', 'uploads', 'images');
 const tag = crypto.randomBytes(6).toString('hex');
@@ -72,6 +79,9 @@ let app: Express;
 let server: http.Server;
 
 beforeAll(async () => {
+  (storage as any).getUserOrganizationId.mockResolvedValue(1);
+  (storage as any).getDefaultOrganizationId.mockResolvedValue(1);
+  (storage as any).getUserTeamIds.mockResolvedValue([]);
   app = express();
   app.use(express.json());
   ({ httpServer: server } = await registerRoutes(app, storage as any));
@@ -157,7 +167,9 @@ describe('the upload routes refuse a filename that is not one', () => {
   it('DELETE answers 400 and leaves the outside file alone', async () => {
     for (const type of ['files', 'images']) {
       const dir = type === 'files' ? FILES_DIR : IMAGES_DIR;
-      const response = await request(app).delete(`/api/uploads/${type}/${encoded(walkFrom(dir))}`);
+      const response = await request(app)
+        .delete(`/api/uploads/${type}/${encoded(walkFrom(dir))}`)
+        .set(authHeader);
       expect(response.status, type).toBe(400);
       expect(response.body).toEqual({ message: 'Invalid filename' });
     }
@@ -165,20 +177,26 @@ describe('the upload routes refuse a filename that is not one', () => {
   });
 
   it('DELETE refuses a sidecar name and keeps the sidecar', async () => {
-    const response = await request(app).delete(`/api/uploads/files/${encoded(sidecarName)}`);
+    const response = await request(app)
+      .delete(`/api/uploads/files/${encoded(sidecarName)}`)
+      .set(authHeader);
     expect(response.status).toBe(400);
     expect(fs.existsSync(sidecarPath)).toBe(true);
   });
 
   it('DELETE refuses separators in either style, and dot names', async () => {
     for (const name of ['..\\..\\package.json', 'nested/file.txt', '.gitkeep']) {
-      const response = await request(app).delete(`/api/uploads/files/${encoded(name)}`);
+      const response = await request(app)
+        .delete(`/api/uploads/files/${encoded(name)}`)
+        .set(authHeader);
       expect(response.status, name).toBe(400);
     }
   });
 
   it('a stored upload is still deleted by its name, with its sidecar', async () => {
-    const response = await request(app).delete(`/api/uploads/files/${encoded(storedName)}`);
+    const response = await request(app)
+      .delete(`/api/uploads/files/${encoded(storedName)}`)
+      .set(authHeader);
     expect(response.status).toBe(200);
     expect(fs.existsSync(storedPath)).toBe(false);
     expect(fs.existsSync(sidecarPath)).toBe(false);

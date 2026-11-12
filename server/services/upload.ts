@@ -115,10 +115,15 @@ export const upload = multer({
   },
 });
 
-// Process and save uploaded file
+/** Who an upload belongs to, from the server's view of the uploader (never from the request). */
+export type UploadOwner = { organizationId: number; uploadedBy: number };
+
+// Process and save uploaded file. The sidecar records the team (the numeric id as a string, or
+// none), and, when the uploader is known, their organization and id.
 export async function processUploadedFile(
   file: Express.Multer.File,
-  teamId?: string
+  teamId?: string,
+  owner?: UploadOwner
 ): Promise<{
   filename: string;
   originalName: string;
@@ -137,6 +142,8 @@ export async function processUploadedFile(
       metaPath,
       JSON.stringify({
         teamId,
+        organizationId: owner?.organizationId,
+        uploadedBy: owner?.uploadedBy,
         originalName: file.originalname,
         uploadedAt: new Date().toISOString(),
       })
@@ -240,30 +247,124 @@ export async function getFileInfo(filename: string, isImage: boolean = false) {
   }
 }
 
-// Read sidecar metadata for a file.
+/** Reads and parses the sidecar of a file; undefined when it is missing, unreadable or not an object. */
+async function readSidecar(
+  filename: string,
+  isImageFile: boolean
+): Promise<Record<string, unknown> | undefined> {
+  try {
+    const dir = isImageFile ? IMAGES_DIR : FILES_DIR;
+    if (!isSafeUploadFilename(filename)) return undefined; // not an upload's name: fail-secure
+    const metaPath = path.join(dir, `${SIDECAR_PREFIX}${filename}.json`);
+    if (!existsSync(metaPath)) return undefined; // sidecar missing: fail-secure
+    const meta = JSON.parse(await fs.readFile(metaPath, 'utf-8'));
+    return meta !== null && typeof meta === 'object' && !Array.isArray(meta) ? meta : undefined;
+  } catch {
+    return undefined; // unreadable: fail-secure
+  }
+}
+
+// Read the team of a file from its sidecar.
 // Returns:
-//   string   — file is team-scoped (sidecar exists and contains a teamId)
-//   null     — file is explicitly public (sidecar exists but has no teamId field)
-//   undefined — sidecar is missing or unreadable; callers MUST deny access (fail-secure)
+//   string    - the sidecar names a team
+//   null      - the sidecar exists and names no team (a team-less file: see getFileMeta)
+//   undefined - the sidecar is missing or unreadable; callers MUST deny access (fail-secure)
 export async function getFileTeamId(
   filename: string,
   isImageFile: boolean
 ): Promise<string | null | undefined> {
-  try {
-    const dir = isImageFile ? IMAGES_DIR : FILES_DIR;
-    if (!isSafeUploadFilename(filename)) return undefined; // not an upload's name — fail-secure
-    const metaPath = path.join(dir, `${SIDECAR_PREFIX}${filename}.json`);
-    if (!existsSync(metaPath)) return undefined; // sidecar missing — fail-secure
-    const raw = await fs.readFile(metaPath, 'utf-8');
-    const meta = JSON.parse(raw);
-    return meta.teamId ?? null; // null = explicitly public
-  } catch {
-    return undefined; // unreadable — fail-secure
-  }
+  const meta = await readSidecar(filename, isImageFile);
+  if (!meta) return undefined;
+  return (meta.teamId as string | null | undefined) ?? null;
 }
 
-// List uploaded files
-export async function listUploadedFiles(teamId?: string): Promise<{
+/**
+ * What the sidecar of a file says about who owns it. `teamId` is the numeric id as a string for
+ * files stored by this code, or a team name for older ones; null for a team-less file.
+ * `organizationId` is null for sidecars written before organizations existed.
+ */
+export type UploadMeta = { teamId: string | null; organizationId: number | null };
+
+/**
+ * The ownership of a file, or undefined when it cannot be told (sidecar missing or unreadable,
+ * or an organization field that is not a positive integer). undefined means deny.
+ */
+export async function getFileMeta(
+  filename: string,
+  isImageFile: boolean
+): Promise<UploadMeta | undefined> {
+  const meta = await readSidecar(filename, isImageFile);
+  if (!meta) return undefined;
+  const { teamId, organizationId } = meta;
+  if (organizationId !== undefined && organizationId !== null) {
+    if (!Number.isInteger(organizationId) || (organizationId as number) <= 0) return undefined;
+  }
+  if (teamId !== undefined && teamId !== null && typeof teamId !== 'string') return undefined;
+  return {
+    teamId: (teamId as string | null | undefined) ?? null,
+    organizationId: (organizationId as number | null | undefined) ?? null,
+  };
+}
+
+export type UploadAccess = 'allowed' | 'denied' | 'metadata_unavailable';
+
+/**
+ * The one rule for reading or deleting an upload (issue #124 X1b, D5):
+ * - no readable ownership: metadata_unavailable (callers answer 403);
+ * - a sidecar that names an organization other than the caller's: denied;
+ * - a team file (a numeric id, or a legacy team name resolved by `teamByName`): only members of
+ *   that team;
+ * - a team-less file belongs to the organization in its sidecar, or the default organization
+ *   when the sidecar is older than organizations; only that organization's accounts.
+ * A failing lookup in `deps` rejects, so callers deny rather than allow.
+ */
+export async function checkUploadAccess(
+  meta: UploadMeta | undefined,
+  caller: { organizationId: number; teamIds: number[] },
+  deps: {
+    defaultOrganizationId: () => Promise<number>;
+    teamByName: (name: string) => Promise<{ id: number; organizationId?: number } | undefined>;
+  }
+): Promise<UploadAccess> {
+  if (!meta) return 'metadata_unavailable';
+  if (meta.organizationId !== null && meta.organizationId !== caller.organizationId) {
+    return 'denied';
+  }
+  if (meta.teamId === null) {
+    const owner = meta.organizationId ?? (await deps.defaultOrganizationId());
+    return owner === caller.organizationId ? 'allowed' : 'denied';
+  }
+  let teamId: number | undefined;
+  if (/^[1-9]\d*$/.test(meta.teamId)) {
+    teamId = Number(meta.teamId);
+  } else {
+    const team = await deps.teamByName(meta.teamId);
+    if (
+      team &&
+      (team.organizationId === undefined || team.organizationId === caller.organizationId)
+    ) {
+      teamId = team.id;
+    }
+  }
+  return teamId !== undefined && caller.teamIds.includes(teamId) ? 'allowed' : 'denied';
+}
+
+function isTeamFile(
+  fileTeam: string | null | undefined,
+  teamId: string,
+  legacyTeamNames: string[]
+): boolean {
+  return (
+    typeof fileTeam === 'string' && (fileTeam === teamId || legacyTeamNames.includes(fileTeam))
+  );
+}
+
+// List uploaded files. With a team, only its files: those whose sidecar holds the team's id, or
+// one of `legacyTeamNames` (sidecars written before ids were stored consistently).
+export async function listUploadedFiles(
+  teamId?: string,
+  legacyTeamNames: string[] = []
+): Promise<{
   images: any[];
   files: any[];
 }> {
@@ -279,7 +380,7 @@ export async function listUploadedFiles(teamId?: string): Promise<{
         .map(async (filename) => {
           if (teamId) {
             const fileMeta = await getFileTeamId(filename, true);
-            if (fileMeta !== teamId) return null;
+            if (!isTeamFile(fileMeta, teamId, legacyTeamNames)) return null;
           }
           const info = await getFileInfo(filename, true);
           return info ? { ...info, url: `/api/uploads/images/${filename}` } : null;
@@ -292,7 +393,7 @@ export async function listUploadedFiles(teamId?: string): Promise<{
         .map(async (filename) => {
           if (teamId) {
             const fileMeta = await getFileTeamId(filename, false);
-            if (fileMeta !== teamId) return null;
+            if (!isTeamFile(fileMeta, teamId, legacyTeamNames)) return null;
           }
           const info = await getFileInfo(filename, false);
           return info ? { ...info, url: `/api/uploads/files/${filename}` } : null;
