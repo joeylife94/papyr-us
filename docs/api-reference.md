@@ -103,12 +103,15 @@
 
 ## 댓글 (Comments)
 
-| Method | Endpoint                      | Auth     | Description        |
-| ------ | ----------------------------- | -------- | ------------------ |
-| GET    | `/api/pages/:pageId/comments` | Optional | 댓글 목록          |
-| POST   | `/api/pages/:pageId/comments` | JWT      | 댓글 작성          |
-| PUT    | `/api/comments/:id`           | JWT      | 댓글 수정 (본인만) |
-| DELETE | `/api/comments/:id`           | JWT      | 댓글 삭제 (본인만) |
+| Method | Endpoint                      | Auth     | Description                         |
+| ------ | ----------------------------- | -------- | ----------------------------------- |
+| GET    | `/api/pages/:pageId/comments` | Optional | 댓글 목록                           |
+| POST   | `/api/pages/:pageId/comments` | JWT      | 댓글 작성                           |
+| PUT    | `/api/comments/:id`           | JWT      | 댓글 수정 (본인만)                  |
+| DELETE | `/api/comments/:id`           | JWT      | 댓글 삭제 (본인 또는 페이지 편집자) |
+
+- 작성자는 그 페이지에 댓글을 달 수 있는 동안에만 자기 댓글을 고치거나 지웁니다. 플랫폼 관리자라는 이유만으로는 남의 댓글을 다룰 수 없습니다(#124 X1c).
+- 호출자가 볼 수 없는 페이지의 댓글은 없는 댓글과 같은 404입니다.
 
 ---
 
@@ -144,9 +147,11 @@
 | GET    | `/api/teams`        | Optional    | 팀 목록          |
 | GET    | `/api/teams/:id`    | Optional    | 팀 상세          |
 | POST   | `/api/teams`        | Conditional | 팀 생성          |
-| PUT    | `/api/teams/:id`    | Conditional | 팀 수정          |
-| DELETE | `/api/teams/:id`    | Admin       | 팀 삭제          |
+| PUT    | `/api/teams/:id`    | JWT         | 팀 수정          |
+| DELETE | `/api/teams/:id`    | JWT         | 팀 삭제          |
 | POST   | `/api/teams/verify` | -           | 팀 비밀번호 검증 |
+
+- `PUT`과 `DELETE`는 `ENFORCE_AUTH_WRITES`와 무관하게 로그인이 필요하고, 팀 역할 검사는 그대로입니다. `PUT`은 정해진 팀 필드만 받으며(그 밖의 키는 무시), 바꿀 필드가 없으면 400 `Invalid team data`입니다(#124 X1c).
 
 ---
 
@@ -173,6 +178,8 @@
 | DELETE | `/api/notifications/:id`      | JWT  | 알림 삭제      |
 | PATCH  | `/api/notifications/:id/read` | JWT  | 읽음 처리      |
 | PATCH  | `/api/notifications/read-all` | JWT  | 전체 읽음 처리 |
+
+- 조직이 없는 계정은 읽기와 변경 모두 403 `Your account does not belong to an organization`입니다(#124 X1c).
 
 ---
 
@@ -219,6 +226,20 @@
 | POST   | `/api/ai/related-pages`      | Conditional | 관련 페이지 추천                      |
 | POST   | `/api/ai/inline`             | Conditional | 인라인 AI (summarize/rewrite/taskify) |
 
+**조직별 AI 설정 (#124 X1c).** 위 표의 Auth 표기와 무관하게, AI 제공자에게 내용을 보내는 모든 경로는 호출자 조직의 AI 설정을 따릅니다. 규칙은 [organizations-guide.md](./organizations-guide.md#조직별-ai)에 있습니다.
+
+| 호출자                | `/api/ai/*` (search 제외)                                                                      | `POST /api/ai/search`       |
+| --------------------- | ---------------------------------------------------------------------------------------------- | --------------------------- |
+| 비로그인              | 401 `Authentication required` (`ENFORCE_AUTH_WRITES`와 무관)                                   | 401                         |
+| 조직이 없는 계정      | 403 `Your account does not belong to an organization`                                          | 200, AI 재정렬 없음         |
+| 조직의 AI가 꺼져 있음 | 403 `{ "code": "ai_disabled", "message": "AI features are turned off for your organization" }` | 200, `rankingSource: "fts"` |
+| 조직 확인 실패        | 500 `Organization check failed`                                                                | 200, AI 재정렬 없음         |
+| 조직의 AI가 켜져 있음 | 기존 동작                                                                                      | 기존 동작                   |
+
+- `GET /api/knowledge-graph?includeAI=true`도 같은 403 `ai_disabled`를 답합니다. `includeAI` 없는 요청은 영향을 받지 않습니다.
+- `POST /api/ai/related-pages`에 `pageId`를 주면 그 페이지는 호출자가 읽을 수 있고 호출자의 조직에 속해야 합니다. 추천 후보는 호출자가 목록에서 볼 수 있는 페이지뿐입니다.
+- 워크플로의 `run_ai_summary` 액션은 워크플로 팀의 조직을 따르며, 꺼져 있으면 그 액션이 `AI is turned off for this organization`으로 실패합니다.
+
 ---
 
 ## 파일 & 업로드 (Files)
@@ -235,13 +256,51 @@
 
 ## 관리자 (Admin)
 
-| Method | Endpoint                     | Auth  | Description   |
-| ------ | ---------------------------- | ----- | ------------- |
-| GET    | `/api/admin/session`         | Admin | 관리자 확인   |
-| GET    | `/api/admin/directories`     | Admin | 디렉토리 목록 |
-| POST   | `/api/admin/directories`     | Admin | 디렉토리 생성 |
-| PATCH  | `/api/admin/directories/:id` | Admin | 디렉토리 수정 |
-| DELETE | `/api/admin/directories/:id` | Admin | 디렉토리 삭제 |
+| Method | Endpoint                              | Auth  | Description                                     |
+| ------ | ------------------------------------- | ----- | ----------------------------------------------- |
+| GET    | `/api/admin/session`                  | Admin | 관리자 확인                                     |
+| GET    | `/api/admin/directories`              | Admin | 디렉토리 목록                                   |
+| POST   | `/api/admin/directories`              | Admin | 디렉토리 생성                                   |
+| PATCH  | `/api/admin/directories/:id`          | Admin | 디렉토리 수정                                   |
+| DELETE | `/api/admin/directories/:id`          | Admin | 디렉토리 삭제                                   |
+| GET    | `/api/admin/organizations`            | Admin | 조직 목록 (구성원 수·소유자 수, 개인 정보 없음) |
+| POST   | `/api/admin/organizations`            | Admin | 조직 생성과 첫 소유자 지정                      |
+| POST   | `/api/admin/organizations/:id/owners` | Admin | 소유자 없는 조직의 구성원을 소유자로 지정       |
+
+**조직 관리자 API (#124 X1c).** 플랫폼 관리자가 아니면(비로그인 포함) 403 `Forbidden: admin required`입니다.
+
+`POST /api/admin/organizations` — 본문 `{ "name", "slug", "ownerEmail" }`만 받습니다. slug는 소문자·숫자·하이픈 1~40자입니다.
+
+| 응답 | 본문                                                                                                                   | 뜻                                                                                                                                          |
+| ---- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| 201  | `{ organization: { id, slug, name, isActive, aiEnabled: false, createdAt }, owner: { userId, email, role: "owner" } }` | 생성됨. 새 조직은 AI가 꺼져 있습니다                                                                                                        |
+| 400  | `{ message: "Invalid organization data", error }`                                                                      | 값이 틀렸거나 허용되지 않는 키                                                                                                              |
+| 404  | `{ message: "Registered user not found" }`                                                                             | 그 이메일의 활성 계정이 없음                                                                                                                |
+| 409  | `{ code: "slug_taken", message }`                                                                                      | slug가 이미 쓰이는 중                                                                                                                       |
+| 409  | `{ code: "account_not_eligible", message, reasons: [...] }`                                                            | 계정이 다른 조직에 남긴 것이 있음. `reasons`는 `holds_role`, `team_memberships`, `authored_pages`, `page_grants`, `comments`, `roster_rows` |
+| 503  | `{ message: "Organization is busy, try again" }`                                                                       | 잠금 대기 초과. 다시 시도                                                                                                                   |
+
+`POST /api/admin/organizations/:id/owners` — 본문 `{ "email" }`. 200 `{ userId, email, role: "owner" }`, 400 `Invalid owner data`, 404 `Organization not found` / `Member not found`(그 조직의 활성 구성원이 아님), 409 `{ code: "organization_has_owner" }`, 503.
+
+---
+
+## 조직 (Organization)
+
+로그인한 계정 자신의 조직에 대한 API입니다(#124 X1c). 조직은 요청으로 지정할 수 없습니다. 규칙은 [organizations-guide.md](./organizations-guide.md#조직-관리-x1c)에 있습니다.
+
+| Method | Endpoint                            | Auth              | Description                                                                     |
+| ------ | ----------------------------------- | ----------------- | ------------------------------------------------------------------------------- |
+| GET    | `/api/organization`                 | JWT               | 자기 조직과 자기 역할 `{ id, slug, name, role, aiEnabled }`                     |
+| PATCH  | `/api/organization`                 | JWT (owner/admin) | 이름, AI 사용 여부 변경 `{ name?, aiEnabled? }`                                 |
+| GET    | `/api/organization/members`         | JWT (owner/admin) | 구성원 목록 `[{ userId, name, email, role, isActive, joinedAt }]`               |
+| PATCH  | `/api/organization/members/:userId` | JWT (owner/admin) | 역할 변경 `{ role }`                                                            |
+| DELETE | `/api/organization/members/:userId` | JWT (owner/admin) | 구성원 내보내기                                                                 |
+| GET    | `/api/organization/teams`           | JWT (owner/admin) | 조직의 팀 목록 `[{ id, name, displayName, isActive, memberCount, ownerCount }]` |
+
+공통 응답: 비로그인 401, 조직이 없는 계정 403 `Your account does not belong to an organization`, `member` 403 `Organization owner or admin role required`(`GET /api/organization` 제외), 잠금 대기 초과 503 `Organization is busy, try again`.
+
+- 역할 변경: 200 `{ userId, role }`, 400 `Invalid user ID` / `Invalid role`, 403(소유자 역할은 소유자만, 다른 관리자는 소유자만, 자기 역할을 올릴 수 없음), 404 `Member not found`(다른 조직의 계정 포함), 409 `Cannot remove the last organization owner`.
+- 내보내기: 200 `{ removed: true, teamsLeftWithoutOwner: [{ id, name, displayName }] }`, 403(자신, 또는 소유자가 아닌데 소유자·관리자를 내보내려 함), 404, 409(마지막 소유자).
 
 ---
 
