@@ -243,6 +243,47 @@ class FootprintRefusal extends Error {
 
 const ORGANIZATION_LOCK_TIMEOUT_MS = 5000;
 
+const ORGANIZATION_ROLE_RANK: Record<OrganizationRole, number> = { owner: 3, admin: 2, member: 1 };
+
+/** A stored role outside organizationRoles counts as 'member'. */
+function normalizeOrganizationRole(role: unknown): OrganizationRole {
+  return (organizationRoles as readonly unknown[]).includes(role)
+    ? (role as OrganizationRole)
+    : 'member';
+}
+
+function isOrganizationManager(role: OrganizationRole): boolean {
+  return role === 'owner' || role === 'admin';
+}
+
+/** One member of an organization as read inside its lock. */
+export interface OrganizationMemberState {
+  userId: number;
+  role: OrganizationRole;
+  isActive: boolean;
+}
+
+export type OrganizationDecision =
+  | { ok: true; write: boolean }
+  | { ok: false; status: number; body: { message: string } };
+
+/** The outcome of an organization member mutation: a value, or the refusal to answer with. */
+export type OrganizationMutationResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; status: number; body: { message: string } };
+
+function refuseOrganization(status: number, message: string): OrganizationDecision {
+  return { ok: false, status, body: { message } };
+}
+const ORG_MEMBER_NOT_FOUND = refuseOrganization(404, 'Member not found');
+const ORG_MANAGER_REQUIRED = refuseOrganization(403, 'Organization owner or admin role required');
+const ORG_LAST_OWNER = refuseOrganization(409, 'Cannot remove the last organization owner');
+
+/** Whether taking the target out of the owners would leave the organization without an active owner. */
+function lastActiveOwner(activeOwnerCount: number, target: OrganizationMemberState): boolean {
+  return activeOwnerCount - (target.isActive ? 1 : 0) < 1;
+}
+
 /** Another request holds the organization's member lock for too long; routes answer 503. */
 export class OrganizationBusyError extends Error {
   constructor() {
@@ -2295,6 +2336,305 @@ export class DBStorage {
   // ---- end X1c P1 ----
 
   // ---- X1c P2: organization members and settings (organization-routes.ts) ----
+
+  /**
+   * The role rules for changing a member's role (DESIGN.md section 3). Pure: the caller reads the
+   * actor, the target and the owner count inside the organization lock and passes them in.
+   * The order is the contract: the target is looked up first, so no role-specific answer
+   * reveals anything about accounts outside the organization.
+   */
+  static decideOrganizationRoleChange(input: {
+    actor: OrganizationMemberState | null;
+    target: OrganizationMemberState | null;
+    requested: OrganizationRole;
+    /** Active owners of the organization, the target included when it is one. */
+    activeOwnerCount: number;
+  }): OrganizationDecision {
+    const { actor, target, requested } = input;
+    if (!target) return ORG_MEMBER_NOT_FOUND;
+    if (!actor || !isOrganizationManager(actor.role)) return ORG_MANAGER_REQUIRED;
+    if ((target.role === 'owner' || requested === 'owner') && actor.role !== 'owner') {
+      return refuseOrganization(
+        403,
+        'Only an organization owner can grant or change the owner role'
+      );
+    }
+    if (target.role === 'admin' && target.userId !== actor.userId && actor.role !== 'owner') {
+      return refuseOrganization(403, 'Only an organization owner can change an admin');
+    }
+    if (
+      target.userId === actor.userId &&
+      ORGANIZATION_ROLE_RANK[requested] > ORGANIZATION_ROLE_RANK[target.role]
+    ) {
+      return refuseOrganization(403, 'You cannot raise your own role');
+    }
+    if (requested === target.role) return { ok: true, write: false };
+    if (target.role === 'owner' && lastActiveOwner(input.activeOwnerCount, target)) {
+      return ORG_LAST_OWNER;
+    }
+    return { ok: true, write: true };
+  }
+
+  /** The role rules for removing a member, same contract as decideOrganizationRoleChange. */
+  static decideOrganizationMemberRemoval(input: {
+    actor: OrganizationMemberState | null;
+    actorUserId: number;
+    targetUserId: number;
+    target: OrganizationMemberState | null;
+    activeOwnerCount: number;
+  }): OrganizationDecision {
+    const { actor, target } = input;
+    if (input.targetUserId === input.actorUserId) {
+      return refuseOrganization(403, 'You cannot remove yourself from the organization');
+    }
+    if (!target) return ORG_MEMBER_NOT_FOUND;
+    if (!actor || !isOrganizationManager(actor.role)) return ORG_MANAGER_REQUIRED;
+    if ((target.role === 'owner' || target.role === 'admin') && actor.role !== 'owner') {
+      return refuseOrganization(403, 'Only an organization owner can remove an owner or admin');
+    }
+    if (target.role === 'owner' && lastActiveOwner(input.activeOwnerCount, target)) {
+      return ORG_LAST_OWNER;
+    }
+    return { ok: true, write: true };
+  }
+
+  /** Members of one organization, highest role first, then by name. */
+  async listOrganizationMembers(organizationId: number): Promise<
+    Array<{
+      userId: number;
+      name: string;
+      email: string;
+      role: OrganizationRole;
+      isActive: boolean;
+      joinedAt: Date;
+    }>
+  > {
+    const rows = await this.db
+      .select({
+        userId: organizationMembers.userId,
+        name: users.name,
+        email: users.email,
+        role: organizationMembers.role,
+        isActive: users.isActive,
+        joinedAt: organizationMembers.createdAt,
+      })
+      .from(organizationMembers)
+      .innerJoin(users, eq(users.id, organizationMembers.userId))
+      .where(eq(organizationMembers.organizationId, organizationId));
+    return rows
+      .map((row: any) => ({
+        userId: Number(row.userId),
+        name: row.name,
+        email: row.email,
+        role: normalizeOrganizationRole(row.role),
+        isActive: row.isActive === true,
+        joinedAt: row.joinedAt,
+      }))
+      .sort(
+        (
+          a: { userId: number; name: string; role: OrganizationRole },
+          b: { userId: number; name: string; role: OrganizationRole }
+        ) =>
+          ORGANIZATION_ROLE_RANK[b.role] - ORGANIZATION_ROLE_RANK[a.role] ||
+          String(a.name).localeCompare(String(b.name)) ||
+          a.userId - b.userId
+      );
+  }
+
+  /** Every team of one organization, inactive ones included, with its member and owner counts. */
+  async listOrganizationTeams(organizationId: number): Promise<
+    Array<{
+      id: number;
+      name: string;
+      displayName: string;
+      isActive: boolean;
+      memberCount: number;
+      ownerCount: number;
+    }>
+  > {
+    const rows = await this.db
+      .select({
+        id: teams.id,
+        name: teams.name,
+        displayName: teams.displayName,
+        isActive: teams.isActive,
+        memberCount: sql<number>`(select count(*) from team_members tm where tm.team_id = "teams"."id")`,
+        ownerCount: sql<number>`(select count(*) from team_members tm where tm.team_id = "teams"."id" and tm.role = 'owner')`,
+      })
+      .from(teams)
+      .where(eq(teams.organizationId, organizationId))
+      .orderBy(asc(teams.id));
+    return rows.map((row: any) => ({
+      id: Number(row.id),
+      name: row.name,
+      displayName: row.displayName,
+      isActive: row.isActive === true,
+      memberCount: Number(row.memberCount),
+      ownerCount: Number(row.ownerCount),
+    }));
+  }
+
+  /** Renames the organization and/or switches its AI setting; undefined for an unknown id. */
+  async updateOrganizationSettings(
+    organizationId: number,
+    patch: { name?: string; aiEnabled?: boolean }
+  ): Promise<Organization | undefined> {
+    const values: Partial<typeof organizations.$inferInsert> = { updatedAt: new Date() };
+    if (patch.name !== undefined) values.name = patch.name;
+    if (patch.aiEnabled !== undefined) values.aiEnabled = patch.aiEnabled;
+    const [row] = await this.db
+      .update(organizations)
+      .set(values)
+      .where(eq(organizations.id, organizationId))
+      .returning();
+    return row;
+  }
+
+  /**
+   * Members of the organization among `userIds`, plus the number of active owners, read through
+   * the handle of withOrganizationLocks. The actor counts only while its account is active.
+   */
+  private async readOrganizationRoles(
+    executor: OrganizationExecutor,
+    organizationId: number,
+    actorUserId: number,
+    targetUserId: number
+  ): Promise<{
+    actor: OrganizationMemberState | null;
+    target: OrganizationMemberState | null;
+    activeOwnerCount: number;
+  }> {
+    const rows = await executor
+      .select({
+        userId: organizationMembers.userId,
+        role: organizationMembers.role,
+        isActive: users.isActive,
+      })
+      .from(organizationMembers)
+      .innerJoin(users, eq(users.id, organizationMembers.userId))
+      .where(eq(organizationMembers.organizationId, organizationId));
+    const states = rows.map((row: any) => ({
+      userId: Number(row.userId),
+      role: normalizeOrganizationRole(row.role),
+      isActive: row.isActive === true,
+    }));
+    const find = (id: number) => states.find((state: any) => state.userId === id) ?? null;
+    const actor = find(actorUserId);
+    return {
+      actor: actor && actor.isActive ? actor : null,
+      target: find(targetUserId),
+      activeOwnerCount: states.filter((state: any) => state.role === 'owner' && state.isActive)
+        .length,
+    };
+  }
+
+  /**
+   * Changes one member's role inside the organization lock. The actor's role, the target's role
+   * and the owner count are read after the lock is taken, and the answer follows
+   * decideOrganizationRoleChange. Throws OrganizationBusyError when the lock is not available.
+   */
+  async changeOrganizationMemberRole(
+    organizationId: number,
+    actorUserId: number,
+    targetUserId: number,
+    requested: OrganizationRole
+  ): Promise<OrganizationMutationResult<{ userId: number; role: OrganizationRole }>> {
+    return this.withOrganizationLocks([organizationId], async (tx) => {
+      const state = await this.readOrganizationRoles(tx, organizationId, actorUserId, targetUserId);
+      const decision = DBStorage.decideOrganizationRoleChange({ ...state, requested });
+      if (!decision.ok) return decision;
+      if (decision.write) {
+        await tx
+          .update(organizationMembers)
+          .set({ role: requested })
+          .where(
+            and(
+              eq(organizationMembers.organizationId, organizationId),
+              eq(organizationMembers.userId, targetUserId)
+            )
+          );
+      }
+      return { ok: true as const, value: { userId: targetUserId, role: requested } };
+    });
+  }
+
+  /**
+   * Removes a member from the organization inside the organization lock: the membership row, the
+   * account's memberships in this organization's teams and the user grants it holds on this
+   * organization's pages. Pages it wrote, comments, roster rows, notifications and favorites are
+   * left. Reports the teams of the organization that have no owner left.
+   */
+  async removeOrganizationMember(
+    organizationId: number,
+    actorUserId: number,
+    targetUserId: number
+  ): Promise<
+    OrganizationMutationResult<{
+      teamsLeftWithoutOwner: Array<{ id: number; name: string; displayName: string }>;
+    }>
+  > {
+    return this.withOrganizationLocks([organizationId], async (tx) => {
+      const state = await this.readOrganizationRoles(tx, organizationId, actorUserId, targetUserId);
+      const decision = DBStorage.decideOrganizationMemberRemoval({
+        ...state,
+        actorUserId,
+        targetUserId,
+      });
+      if (!decision.ok) return decision;
+
+      const soleOwnerTeams = await tx
+        .select({ id: teams.id, name: teams.name, displayName: teams.displayName })
+        .from(teams)
+        .innerJoin(teamMembers, eq(teamMembers.teamId, teams.id))
+        .where(
+          and(
+            eq(teams.organizationId, organizationId),
+            eq(teamMembers.userId, targetUserId),
+            eq(teamMembers.role, 'owner'),
+            sql`(select count(*) from team_members o where o.team_id = ${teams.id} and o.role = 'owner') = 1`
+          )
+        )
+        .orderBy(asc(teams.id));
+
+      await tx
+        .delete(organizationMembers)
+        .where(
+          and(
+            eq(organizationMembers.organizationId, organizationId),
+            eq(organizationMembers.userId, targetUserId)
+          )
+        );
+      await tx
+        .delete(teamMembers)
+        .where(
+          and(
+            eq(teamMembers.userId, targetUserId),
+            sql`${teamMembers.teamId} in (select id from teams where organization_id = ${organizationId})`
+          )
+        );
+      await tx
+        .delete(pagePermissions)
+        .where(
+          and(
+            eq(pagePermissions.entityType, 'user'),
+            eq(pagePermissions.entityId, targetUserId),
+            sql`${pagePermissions.pageId} in (select id from wiki_pages where organization_id = ${organizationId})`
+          )
+        );
+
+      return {
+        ok: true as const,
+        value: {
+          teamsLeftWithoutOwner: soleOwnerTeams.map((row: any) => ({
+            id: Number(row.id),
+            name: row.name,
+            displayName: row.displayName,
+          })),
+        },
+      };
+    });
+  }
+
   // ---- end X1c P2 ----
 
   // Accounts (`users`) and roster rows (`members`) are separate id spaces, linked only by email,
@@ -2323,9 +2663,10 @@ export class DBStorage {
   }
 
   /**
-   * The organization of a roster row: its account's when that account belongs to one, otherwise
-   * its team's. Null when neither places it (or the row is unknown); callers must then treat the
-   * member as outside every organization.
+   * The organization of a roster row: the one its account belongs to, or null when that account
+   * belongs to none (a removed account stays outside every organization). Only a row with no
+   * account at all is placed by its team's organization. Null when nothing places the row (or it
+   * is unknown); callers must then treat the member as outside every organization.
    */
   async getMemberOrganizationId(memberId: number): Promise<number | null> {
     const [member] = await this.db
@@ -2335,10 +2676,7 @@ export class DBStorage {
       .limit(1);
     if (!member) return null;
     const userId = await this.getUserIdForMember(memberId);
-    if (userId !== null) {
-      const organizationId = await this.getUserOrganizationId(userId);
-      if (organizationId !== null) return organizationId;
-    }
+    if (userId !== null) return this.getUserOrganizationId(userId);
     return member.teamId == null ? null : this.getTeamOrganizationId(Number(member.teamId));
   }
 
