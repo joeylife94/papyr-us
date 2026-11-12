@@ -8,6 +8,9 @@
  * the spec creates a second organization in the database (DATABASE_URL), moves one freshly
  * registered account into it and flips `ai_enabled` directly.
  *
+ * The spec fails fast when GET /api/ai/status reports a provider as available: its "AI on" steps
+ * must never reach a real provider.
+ *
  * Rules under test:
  * - an account of an organization with AI off gets 403 `ai_disabled` on every AI route, with a
  *   valid or an invalid body, and on the knowledge graph with includeAI; AI search still answers
@@ -65,6 +68,15 @@ test.describe('AI follows the organization setting', () => {
     const contexts: APIRequestContext[] = [insiderRequest, outsiderRequest, anonymous];
 
     try {
+      const status = await (await anonymous.get('/api/ai/status')).json();
+      if (status?.available !== false) {
+        throw new Error(
+          'security-organization-ai.spec.ts must run without an AI provider key: GET /api/ai/status reports a provider as available'
+        );
+      }
+      // the signed-out context never registered or signed in
+      expect((await anonymous.get('/api/auth/me')).status()).toBe(401);
+
       const outsiderId = Number((await (await outsiderRequest.get('/api/auth/me')).json()).id);
       const { rows } = await db.query(
         `INSERT INTO organizations (slug, name, ai_enabled) VALUES ($1, $1, FALSE) RETURNING id`,
@@ -138,6 +150,27 @@ test.describe('AI follows the organization setting', () => {
         expect((await bodyOf(response)).code, `AI on ${route.path}`).not.toBe('ai_disabled');
       }
       expect((await outsiderRequest.get('/api/knowledge-graph?includeAI=true')).status()).toBe(200);
+
+      // A named page of another organization is refused with the answer for an unknown page
+      const foreign = await insiderRequest.post('/api/pages', {
+        data: {
+          title: `orgai foreign ${stamp}`,
+          slug: `orgai-foreign-${stamp}`,
+          content: 'foreign body',
+          folder: 'orgai',
+          tags: [],
+          author: insider.email,
+        },
+      });
+      expect(foreign.status()).toBe(201);
+      const foreignId = (await foreign.json()).id;
+      for (const pageId of [foreignId, 2_000_000_000]) {
+        const refused = await outsiderRequest.post('/api/ai/related-pages', {
+          data: { content: 'hello', title: 'T', pageId },
+        });
+        expect(refused.status(), `related-pages pageId ${pageId}`).toBe(404);
+        expect(await refused.json()).toEqual({ message: 'Page not found' });
+      }
 
       // ── 5. Turned off again: refused again right away ──
       await db.query('UPDATE organizations SET ai_enabled = FALSE WHERE id = $1', [organizationId]);
