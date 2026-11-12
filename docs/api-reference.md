@@ -237,7 +237,7 @@
 | 조직의 AI가 켜져 있음 | 기존 동작                                                                                      | 기존 동작                   |
 
 - `GET /api/knowledge-graph?includeAI=true`도 같은 403 `ai_disabled`를 답합니다. `includeAI` 없는 요청은 영향을 받지 않습니다.
-- `POST /api/ai/related-pages`에 `pageId`를 주면 그 페이지는 호출자가 읽을 수 있고 호출자의 조직에 속해야 합니다. 추천 후보는 호출자가 목록에서 볼 수 있는 페이지뿐입니다.
+- `POST /api/ai/related-pages`에 `pageId`를 주면 그 페이지는 호출자가 읽을 수 있고 호출자의 조직에 속해야 합니다. 아니면 없는 페이지와 같은 404 `Page not found`입니다. 추천 후보는 호출자가 목록에서 볼 수 있는 페이지뿐입니다.
 - 워크플로의 `run_ai_summary` 액션은 워크플로 팀의 조직을 따르며, 꺼져 있으면 그 액션이 `AI is turned off for this organization`으로 실패합니다.
 
 ---
