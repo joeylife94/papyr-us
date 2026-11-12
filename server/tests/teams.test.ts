@@ -217,12 +217,64 @@ describe('Team Management API', () => {
         expect(response.status).toBe(200);
       });
     }
+
+    it('TC-TEAM-006f: a body that parses to nothing is 400 and nothing is written', async () => {
+      (storage.getUserTeamRole as vi.Mock).mockResolvedValue('owner');
+      for (const body of [{}, { organizationId: 2 }, { id: 5, createdAt: '2020-01-01' }]) {
+        const response = await request(app)
+          .put(`/api/teams/${mockTeam.id}`)
+          .set('Authorization', `Bearer ${memberToken}`)
+          .send(body);
+        expect(response.status).toBe(400);
+        expect(response.body).toEqual({ error: 'Invalid team data' });
+      }
+      expect(storage.updateTeam).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('DELETE /api/teams/:id (session in every mode)', () => {
+    afterEach(() => {
+      mockConfig.enforceAuthForWrites = false;
+    });
+
+    for (const enforce of [true, false]) {
+      it(`signed out is 401 with ENFORCE_AUTH_WRITES=${enforce}`, async () => {
+        mockConfig.enforceAuthForWrites = enforce;
+        const response = await request(app).delete(`/api/teams/${mockTeam.id}`);
+        expect(response.status).toBe(401);
+        expect(storage.getUserTeamRole).not.toHaveBeenCalled();
+        expect(storage.deleteTeam).not.toHaveBeenCalled();
+      });
+
+      it(`a signed-in owner deletes with ENFORCE_AUTH_WRITES=${enforce}`, async () => {
+        mockConfig.enforceAuthForWrites = enforce;
+        (storage.getUserTeamRole as vi.Mock).mockResolvedValue('owner');
+        (storage.deleteTeam as vi.Mock).mockResolvedValue('deleted');
+        const response = await request(app)
+          .delete(`/api/teams/${mockTeam.id}`)
+          .set('Authorization', `Bearer ${memberToken}`);
+        expect(response.status).toBe(204);
+      });
+
+      it(`a signed-in non-owner is 403 with ENFORCE_AUTH_WRITES=${enforce}`, async () => {
+        mockConfig.enforceAuthForWrites = enforce;
+        (storage.getUserTeamRole as vi.Mock).mockResolvedValue('admin');
+        const response = await request(app)
+          .delete(`/api/teams/${mockTeam.id}`)
+          .set('Authorization', `Bearer ${memberToken}`);
+        expect(response.status).toBe(403);
+        expect(storage.deleteTeam).not.toHaveBeenCalled();
+      });
+    }
   });
 
   it('TC-TEAM-007: should delete a team', async () => {
     (storage.deleteTeam as vi.Mock).mockResolvedValue('deleted');
 
-    const response = await request(app).delete(`/api/teams/${mockTeam.id}`);
+    (storage.getUserTeamRole as vi.Mock).mockResolvedValue('owner');
+    const response = await request(app)
+      .delete(`/api/teams/${mockTeam.id}`)
+      .set('Authorization', `Bearer ${memberToken}`);
 
     expect(response.status).toBe(204);
   });
@@ -230,7 +282,10 @@ describe('Team Management API', () => {
   it('TC-TEAM-008: refuses to delete a team that still has pages', async () => {
     (storage.deleteTeam as vi.Mock).mockResolvedValue('has-pages');
 
-    const response = await request(app).delete(`/api/teams/${mockTeam.id}`);
+    (storage.getUserTeamRole as vi.Mock).mockResolvedValue('owner');
+    const response = await request(app)
+      .delete(`/api/teams/${mockTeam.id}`)
+      .set('Authorization', `Bearer ${memberToken}`);
 
     expect(response.status).toBe(409);
     expect(response.body.error).toMatch(/still has pages/);
@@ -239,7 +294,10 @@ describe('Team Management API', () => {
   it('TC-TEAM-009: reports a missing team as not found', async () => {
     (storage.deleteTeam as vi.Mock).mockResolvedValue('not-found');
 
-    const response = await request(app).delete(`/api/teams/${mockTeam.id}`);
+    (storage.getUserTeamRole as vi.Mock).mockResolvedValue('owner');
+    const response = await request(app)
+      .delete(`/api/teams/${mockTeam.id}`)
+      .set('Authorization', `Bearer ${memberToken}`);
 
     expect(response.status).toBe(404);
   });

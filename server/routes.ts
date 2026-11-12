@@ -1940,13 +1940,17 @@ export async function registerRoutes(
         return res.status(404).json({ message: 'Comment not found' });
       }
 
-      // Only the comment author may edit, and only while they can still read its page; anything
-      // else is answered like an unknown comment.
+      // A caller who cannot view the comment's page is answered as for an unknown comment. The
+      // author may then edit only while they may still comment on the page (the level creating
+      // a comment requires); anyone else who can view the page is refused.
+      if (!(await storage.checkPagePermission(userId, existing.pageId, 'viewer'))) {
+        return res.status(404).json({ message: 'Comment not found' });
+      }
       const isOwner = existing.authorUserId != null && existing.authorUserId === userId;
       if (!isOwner) {
         return res.status(403).json({ message: 'Only the comment author can edit this comment' });
       }
-      if (!(await storage.checkPagePermission(userId, existing.pageId, 'viewer'))) {
+      if (!(await storage.checkPagePermission(userId, existing.pageId, 'commenter'))) {
         return res.status(404).json({ message: 'Comment not found' });
       }
 
@@ -1975,11 +1979,15 @@ export async function registerRoutes(
         return res.status(404).json({ message: 'Comment not found' });
       }
 
-      // The comment author (while they can still read its page) or a page editor may delete.
-      // An author who can no longer read the page is answered like an unknown comment.
+      // A caller who cannot view the comment's page is answered as for an unknown comment. The
+      // author may then delete only while they may still comment on the page; anyone else needs
+      // to be a page editor.
+      if (!(await storage.checkPagePermission(userId, existing.pageId, 'viewer'))) {
+        return res.status(404).json({ message: 'Comment not found' });
+      }
       const isOwner = existing.authorUserId != null && existing.authorUserId === userId;
       if (isOwner) {
-        if (!(await storage.checkPagePermission(userId, existing.pageId, 'viewer'))) {
+        if (!(await storage.checkPagePermission(userId, existing.pageId, 'commenter'))) {
           return res.status(404).json({ message: 'Comment not found' });
         }
       } else if (!(await storage.checkPagePermission(userId, existing.pageId, 'editor'))) {
@@ -3665,7 +3673,7 @@ export async function registerRoutes(
         // Only the columns updateTeamSchema allows are written; the team's organization and id
         // are never taken from the request.
         const parsed = updateTeamSchema.safeParse(req.body);
-        if (!parsed.success) {
+        if (!parsed.success || Object.keys(parsed.data).length === 0) {
           return res.status(400).json({ error: 'Invalid team data' });
         }
 
@@ -3690,16 +3698,15 @@ export async function registerRoutes(
 
           // Always verify user's team ownership for team deletion
           const userId = req.user?.id;
-          if (userId) {
-            const userRole = await storage.getUserTeamRole(userId, id);
-            if (!userRole) {
-              return res.status(403).json({ error: 'You are not a member of this team' });
-            }
-            if (userRole !== 'owner') {
-              return res.status(403).json({ error: 'Owner role required to delete team' });
-            }
-          } else if (config.enforceAuthForWrites) {
+          if (!userId) {
             return res.status(401).json({ error: 'Authentication required' });
+          }
+          const userRole = await storage.getUserTeamRole(userId, id);
+          if (!userRole) {
+            return res.status(403).json({ error: 'You are not a member of this team' });
+          }
+          if (userRole !== 'owner') {
+            return res.status(403).json({ error: 'Owner role required to delete team' });
           }
 
           const result = await storage.deleteTeam(id);

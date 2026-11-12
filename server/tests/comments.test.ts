@@ -270,6 +270,77 @@ describe('Comments Management API', () => {
     });
   });
 
+  describe('comment access follows the caller on the comment page', () => {
+    // Levels the caller holds on the comment's page.
+    const holds = (...levels: string[]) =>
+      (storage.checkPagePermission as vi.Mock).mockImplementation(
+        async (_userId: number, _pageId: number, level: string) => levels.includes(level)
+      );
+    const edit = (user: typeof ownerUser) =>
+      request(app)
+        .put(`/api/comments/${mockComment.id}`)
+        .set('Cookie', authCookie(signToken(user)))
+        .send({ content: 'changed' });
+    const remove = (user: typeof ownerUser) =>
+      request(app)
+        .delete(`/api/comments/${mockComment.id}`)
+        .set('Cookie', authCookie(signToken(user)));
+    const notFound = { message: 'Comment not found' };
+
+    it('an author who can view but not comment gets 404 on PUT and DELETE', async () => {
+      holds('viewer');
+      const put = await edit(ownerUser);
+      const del = await remove(ownerUser);
+      expect(put.status).toBe(404);
+      expect(put.body).toEqual(notFound);
+      expect(del.status).toBe(404);
+      expect(del.body).toEqual(notFound);
+      expect(storage.updateComment).not.toHaveBeenCalled();
+      expect(storage.deleteComment).not.toHaveBeenCalled();
+    });
+
+    it('a non-author who cannot view the page gets 404 on PUT and DELETE', async () => {
+      holds();
+      const put = await edit(otherUser);
+      const del = await remove(otherUser);
+      expect(put.status).toBe(404);
+      expect(put.body).toEqual(notFound);
+      expect(del.status).toBe(404);
+      expect(del.body).toEqual(notFound);
+    });
+
+    it('a non-author who can view the page gets 403 on PUT', async () => {
+      holds('viewer', 'commenter');
+      expect((await edit(otherUser)).status).toBe(403);
+      expect(storage.updateComment).not.toHaveBeenCalled();
+    });
+
+    it('a non-author who can view but not edit gets 403 on DELETE', async () => {
+      holds('viewer', 'commenter');
+      expect((await remove(otherUser)).status).toBe(403);
+      expect(storage.deleteComment).not.toHaveBeenCalled();
+    });
+
+    it('a page editor who is not the author still deletes', async () => {
+      holds('viewer', 'commenter', 'editor');
+      (storage.deleteComment as vi.Mock).mockResolvedValue({ success: true });
+      expect((await remove(otherUser)).status).toBe(200);
+    });
+
+    it('an author who may comment edits and deletes', async () => {
+      holds('viewer', 'commenter');
+      (storage.updateComment as vi.Mock).mockResolvedValue({ ...mockComment, content: 'changed' });
+      (storage.deleteComment as vi.Mock).mockResolvedValue({ success: true });
+      expect((await edit(ownerUser)).status).toBe(200);
+      expect((await remove(ownerUser)).status).toBe(200);
+      expect(storage.checkPagePermission).toHaveBeenCalledWith(
+        ownerUser.id,
+        mockComment.pageId,
+        'commenter'
+      );
+    });
+  });
+
   describe('DELETE /api/comments/:id', () => {
     it('TC-CMT-004: owner can delete their own comment', async () => {
       const token = signToken(ownerUser);
@@ -284,7 +355,7 @@ describe('Comments Management API', () => {
       expect(storage.deleteComment).toHaveBeenCalledWith(mockComment.id);
     });
 
-    it("TC-CMT-004b: non-owner non-admin cannot delete another user's comment", async () => {
+    it('TC-CMT-004b: a non-author who cannot view the page gets 404 on delete', async () => {
       const token = signToken(otherUser);
       (storage.checkPagePermission as vi.Mock).mockResolvedValue(false);
 
@@ -292,7 +363,7 @@ describe('Comments Management API', () => {
         .delete(`/api/comments/${mockComment.id}`)
         .set('Cookie', authCookie(token));
 
-      expect(response.status).toBe(403);
+      expect(response.status).toBe(404);
     });
 
     it('TC-CMT-004c: a platform admin who is neither author nor page editor cannot delete (D6)', async () => {
@@ -334,7 +405,7 @@ describe('Comments Management API', () => {
       expect(response.status).toBe(200);
     });
 
-    it('TC-CMT-004c2: a token claiming the admin role is not enough to delete', async () => {
+    it('TC-CMT-004c2: a token claiming the admin role gives no access to the comment', async () => {
       (storage.checkPagePermission as vi.Mock).mockResolvedValue(false);
       const token = signToken({ ...otherUser, role: 'admin' });
 
@@ -342,7 +413,7 @@ describe('Comments Management API', () => {
         .delete(`/api/comments/${mockComment.id}`)
         .set('Cookie', authCookie(token));
 
-      expect(response.status).toBe(403);
+      expect(response.status).toBe(404);
       expect(storage.deleteComment).not.toHaveBeenCalled();
     });
 
