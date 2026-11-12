@@ -1,11 +1,12 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { LogOut, Moon, Settings, Sun } from 'lucide-react';
+import { Building2, LogOut, Moon, Settings, Sun } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/hooks/use-theme';
 import { toast } from '@/hooks/use-toast';
 import { useMemberByEmail } from '@/hooks/useMember';
 import { useFeatureFlags } from '@/features/FeatureFlagsContext';
+import { useOrganization } from '@/hooks/useOrganization';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { NotificationBell } from '@/components/ui/notification-bell';
@@ -65,6 +66,7 @@ export function AccountMenu({
   const { isAuthenticated, user, logout } = useAuth();
   const navigate = useNavigate();
   const { flags } = useFeatureFlags();
+  const { canManage: canManageOrganization } = useOrganization();
 
   if (!isAuthenticated || !user) {
     return (
@@ -105,6 +107,13 @@ export function AccountMenu({
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+        {canManageOrganization ? (
+          <DropdownMenuItem onClick={() => navigate('/organization')}>
+            <Building2 className="mr-2 h-4 w-4" />
+            <span>조직 관리</span>
+          </DropdownMenuItem>
+        ) : null}
+        {canManageOrganization && !flags.FEATURE_ADMIN ? <DropdownMenuSeparator /> : null}
         {flags.FEATURE_ADMIN ? (
           <>
             <DropdownMenuItem onClick={() => navigate('/admin')}>

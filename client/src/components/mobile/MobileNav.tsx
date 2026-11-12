@@ -9,7 +9,9 @@ import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useBreakpoint, useMobileNav, useSwipe } from '@/hooks/use-responsive';
+import { useOrganization } from '@/hooks/useOrganization';
 import {
+  Building2,
   Menu,
   X,
   Home,
@@ -49,6 +51,7 @@ export function MobileHeader({ className }: MobileNavProps) {
   const { isOpen, toggle, close } = useMobileNav();
   const { isMobile } = useBreakpoint();
   const [notificationCount] = useState(3); // Example
+  const { canManage: canManageOrganization } = useOrganization();
 
   // Swipe to close
   const swipeHandlers = useSwipe(
@@ -152,6 +155,16 @@ export function MobileHeader({ className }: MobileNavProps) {
 
           {/* Drawer Footer */}
           <div className="border-t p-4">
+            {canManageOrganization ? (
+              <Link
+                to="/organization"
+                onClick={close}
+                className="flex items-center gap-3 px-4 py-3 rounded-lg active:bg-muted"
+              >
+                <Building2 className="w-5 h-5" />
+                <span>조직 관리</span>
+              </Link>
+            ) : null}
             <Link
               to="/admin"
               onClick={close}
