@@ -66,6 +66,8 @@ vi.mock('../features', () => ({
 vi.mock('../services/workflow', async () => ({
   triggerWorkflows: vi.fn().mockResolvedValue(undefined),
   initWorkflowService: vi.fn(),
+  // these workflows never use the AI action (the route asks, #124 X1c P5a)
+  workflowUsesAi: () => false,
 }));
 
 vi.mock('../services/upload', async () => {

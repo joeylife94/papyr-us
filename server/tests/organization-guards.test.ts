@@ -14,7 +14,8 @@
  * - requireOrganizationAi: signed out is 401 with ENFORCE_AUTH_WRITES on and off, a signed-in
  *   caller is read in both modes, a disabled organization is 403 `ai_disabled`, a failing
  *   lookup is 500 and never passes;
- * - organizationAiEnabledFor is false without user, without organization and on error.
+ * - requireOrganizationAi also refuses a member without AI access with 403 `ai_not_granted`;
+ * - aiUsableBy is false without user, without organization, without the grant and on error.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
@@ -51,7 +52,7 @@ import { authMiddleware } from '../middleware.js';
 import {
   requireOrganizationRole,
   requireOrganizationAi,
-  organizationAiEnabledFor,
+  aiUsableBy,
 } from '../organization-guards.js';
 import { registerOrganizationRoutes } from '../organization-routes.js';
 
@@ -96,7 +97,11 @@ describe('GET /api/organization', () => {
   });
 
   it('answers 200 with the organization and the stored role', async () => {
-    storage.getOrganizationMembership.mockResolvedValue({ organizationId: 3, role: 'member' });
+    storage.getOrganizationMembership.mockResolvedValue({
+      organizationId: 3,
+      role: 'member',
+      aiAllowed: true,
+    });
     storage.getOrganization.mockResolvedValue({
       id: 3,
       slug: 'acme',
@@ -114,6 +119,7 @@ describe('GET /api/organization', () => {
       name: 'Acme',
       role: 'member',
       aiEnabled: false,
+      aiAllowed: true,
     });
     expect(storage.getOrganizationMembership).toHaveBeenCalledWith(7);
     expect(storage.getOrganization).toHaveBeenCalledWith(3);
@@ -170,10 +176,14 @@ describe('requireOrganizationRole', () => {
   });
 
   it('lets an admin through and sets req.organization', async () => {
-    storage.getOrganizationMembership.mockResolvedValue({ organizationId: 3, role: 'admin' });
+    storage.getOrganizationMembership.mockResolvedValue({
+      organizationId: 3,
+      role: 'admin',
+      aiAllowed: true,
+    });
     const res = await request(buildApp()).get('/t/role').set('Authorization', bearer());
     expect(res.status).toBe(200);
-    expect(res.body.organization).toEqual({ id: 3, role: 'admin' });
+    expect(res.body.organization).toEqual({ id: 3, role: 'admin', aiAllowed: true });
   });
 
   it('refuses an account without membership', async () => {
@@ -209,7 +219,11 @@ describe.each([true, false])('requireOrganizationAi with ENFORCE_AUTH_WRITES=%s'
   });
 
   it('reads a signed-in caller from a bearer token and from the cookie', async () => {
-    storage.getOrganizationMembership.mockResolvedValue({ organizationId: 3, role: 'member' });
+    storage.getOrganizationMembership.mockResolvedValue({
+      organizationId: 3,
+      role: 'member',
+      aiAllowed: true,
+    });
     storage.isOrganizationAiEnabled.mockResolvedValue(true);
     const viaBearer = await request(buildApp()).post('/t/ai').set('Authorization', bearer());
     expect(viaBearer.status).toBe(200);
@@ -229,6 +243,36 @@ describe.each([true, false])('requireOrganizationAi with ENFORCE_AUTH_WRITES=%s'
       code: 'ai_disabled',
       message: 'AI features are turned off for your organization',
     });
+  });
+
+  it.each([{ aiAllowed: false }, {}, { aiAllowed: 'true' }])(
+    'answers 403 ai_not_granted for a member without AI access (%j) of an organization with AI on',
+    async (grant) => {
+      storage.getOrganizationMembership.mockResolvedValue({
+        organizationId: 3,
+        role: 'member',
+        ...grant,
+      });
+      storage.isOrganizationAiEnabled.mockResolvedValue(true);
+      const res = await request(buildApp()).post('/t/ai').set('Authorization', bearer());
+      expect(res.status).toBe(403);
+      expect(res.body).toEqual({
+        code: 'ai_not_granted',
+        message: 'AI has not been granted to your account',
+      });
+    }
+  );
+
+  it('answers ai_disabled, not ai_not_granted, when the switch is off and the grant is missing', async () => {
+    storage.getOrganizationMembership.mockResolvedValue({
+      organizationId: 3,
+      role: 'member',
+      aiAllowed: false,
+    });
+    storage.isOrganizationAiEnabled.mockResolvedValue(false);
+    const res = await request(buildApp()).post('/t/ai').set('Authorization', bearer());
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('ai_disabled');
   });
 
   it('answers 403 for an account without an organization', async () => {
@@ -259,23 +303,38 @@ describe.each([true, false])('requireOrganizationAi with ENFORCE_AUTH_WRITES=%s'
   });
 });
 
-describe('organizationAiEnabledFor', () => {
+describe('aiUsableBy', () => {
   it('is false without a user, without an organization and on error', async () => {
-    expect(await organizationAiEnabledFor(storage, undefined)).toBe(false);
+    expect(await aiUsableBy(storage, undefined)).toBe(false);
     storage.getOrganizationMembership.mockResolvedValue(null);
-    expect(await organizationAiEnabledFor(storage, 7)).toBe(false);
+    expect(await aiUsableBy(storage, 7)).toBe(false);
     storage.getOrganizationMembership.mockRejectedValue(new Error('boom'));
-    expect(await organizationAiEnabledFor(storage, 7)).toBe(false);
-    storage.getOrganizationMembership.mockResolvedValue({ organizationId: 3, role: 'member' });
+    expect(await aiUsableBy(storage, 7)).toBe(false);
+    storage.getOrganizationMembership.mockResolvedValue({
+      organizationId: 3,
+      role: 'member',
+      aiAllowed: true,
+    });
     storage.isOrganizationAiEnabled.mockRejectedValue(new Error('boom'));
-    expect(await organizationAiEnabledFor(storage, 7)).toBe(false);
+    expect(await aiUsableBy(storage, 7)).toBe(false);
   });
 
-  it('is true only when the setting is on', async () => {
-    storage.getOrganizationMembership.mockResolvedValue({ organizationId: 3, role: 'member' });
+  it('is true only when the setting is on and the member is granted', async () => {
+    storage.getOrganizationMembership.mockResolvedValue({
+      organizationId: 3,
+      role: 'member',
+      aiAllowed: true,
+    });
     storage.isOrganizationAiEnabled.mockResolvedValue(true);
-    expect(await organizationAiEnabledFor(storage, 7)).toBe(true);
+    expect(await aiUsableBy(storage, 7)).toBe(true);
     storage.isOrganizationAiEnabled.mockResolvedValue(false);
-    expect(await organizationAiEnabledFor(storage, 7)).toBe(false);
+    expect(await aiUsableBy(storage, 7)).toBe(false);
+    storage.isOrganizationAiEnabled.mockResolvedValue(true);
+    storage.getOrganizationMembership.mockResolvedValue({
+      organizationId: 3,
+      role: 'member',
+      aiAllowed: false,
+    });
+    expect(await aiUsableBy(storage, 7)).toBe(false);
   });
 });

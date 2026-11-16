@@ -265,6 +265,7 @@ describe('the organization is always the caller own', () => {
         role: 'owner',
         isActive: true,
         joinedAt: '2025-01-01T00:00:00.000Z',
+        aiAllowed: true,
       },
     ];
     storage.listOrganizationMembers.mockResolvedValue(rows);
@@ -303,7 +304,7 @@ describe('PATCH /api/organization', () => {
           body: { message: 'Organization owner or admin role required' },
         };
       }
-      return { ok: true, value: { organization, role: actor.role } };
+      return { ok: true, value: { organization, role: actor.role, aiAllowed: true } };
     });
 
   it('renames, trimming the name, and answers the GET shape with the caller role', async () => {
@@ -316,6 +317,7 @@ describe('PATCH /api/organization', () => {
       name: 'Renamed',
       role: 'admin',
       aiEnabled: true,
+      aiAllowed: true,
     });
     expect(storage.updateOrganizationSettings).toHaveBeenCalledWith(ORG, ADMIN, {
       name: 'Renamed',

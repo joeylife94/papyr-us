@@ -100,6 +100,7 @@ beforeEach(() => {
   (storage.getOrganizationMembership as vi.Mock).mockResolvedValue({
     organizationId: 1,
     role: 'member',
+    aiAllowed: true,
   });
   (storage.isOrganizationAiEnabled as vi.Mock).mockResolvedValue(true);
 });

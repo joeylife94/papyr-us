@@ -127,7 +127,11 @@ function setOrganization(state: 'on' | 'off' | 'none' | 'lookup-fails' | 'settin
     s.getOrganizationMembership.mockRejectedValue(new Error('db down'));
     return;
   }
-  s.getOrganizationMembership.mockResolvedValue({ organizationId: ORG, role: 'member' });
+  s.getOrganizationMembership.mockResolvedValue({
+    organizationId: ORG,
+    role: 'member',
+    aiAllowed: true,
+  });
   if (state === 'setting-fails') {
     s.isOrganizationAiEnabled.mockRejectedValue(new Error('db down'));
     return;
@@ -362,16 +366,17 @@ describe('GET /api/knowledge-graph', () => {
     expect(s.getKnowledgeGraphSource).not.toHaveBeenCalled();
   });
 
-  it.each(['none', 'lookup-fails', 'setting-fails'] as const)(
-    'refuses includeAI=true when the organization state is %s',
-    async (state) => {
-      setOrganization(state);
-      const res = await graph('?includeAI=true');
-      expect(res.status).toBe(403);
-      expect(aiFns.findRelatedPages).not.toHaveBeenCalled();
-      expect(s.getKnowledgeGraphSource).not.toHaveBeenCalled();
-    }
-  );
+  it.each([
+    ['none', 403],
+    ['lookup-fails', 500],
+    ['setting-fails', 500],
+  ] as const)('refuses includeAI=true when the organization state is %s', async (state, status) => {
+    setOrganization(state);
+    const res = await graph('?includeAI=true');
+    expect(res.status).toBe(status);
+    expect(aiFns.findRelatedPages).not.toHaveBeenCalled();
+    expect(s.getKnowledgeGraphSource).not.toHaveBeenCalled();
+  });
 
   it('answers 401 for includeAI=true without a session in both modes', async () => {
     for (const enforce of [true, false]) {
