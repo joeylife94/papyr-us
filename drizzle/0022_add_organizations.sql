@@ -1,7 +1,9 @@
 -- Organizations (issue #124 X1a): the tenant boundary.
 --
 -- Additive and idempotent. Every existing account, team and page moves into one organization,
--- "default", so a deployment behaves as before. After this migration:
+-- "default", so a deployment behaves as before. Accounts are placed only the first time (see
+-- the membership insert below); teams and pages without an organization are placed every time.
+-- After this migration:
 -- - organizations / organization_members exist, with at most one organization per account;
 -- - teams.organization_id and wiki_pages.organization_id are NOT NULL;
 -- - a team page's organization is its team's (wiki_pages_team_org_fk).
@@ -35,12 +37,16 @@ CREATE UNIQUE INDEX IF NOT EXISTS organization_members_user_id_unique
 INSERT INTO organizations (slug, name) VALUES ('default', 'Default')
   ON CONFLICT (slug) DO NOTHING;
 
--- Every existing account joins the default organization as a member.
+-- Every existing account joins the default organization as a member, once: only while no
+-- account has been placed in any organization yet (the upgrade from a database without
+-- organizations). This file is applied again on every deploy, and from then on an account
+-- without a membership is one an organization removed (issue #124 X1c); it is left that way.
 INSERT INTO organization_members (organization_id, user_id, role)
 SELECT o.id, u.id, 'member'
   FROM users u
  CROSS JOIN organizations o
  WHERE o.slug = 'default'
+   AND NOT EXISTS (SELECT 1 FROM organization_members)
 ON CONFLICT (user_id) DO NOTHING;
 
 -- Teams: all existing teams belong to the default organization.
