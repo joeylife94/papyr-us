@@ -146,7 +146,7 @@ export function AdminOrganizationsTab({ userId }: { userId: number | undefined }
                   Members
                 </TableHead>
                 <TableHead className="px-2 text-right sm:px-4">Owners</TableHead>
-                <TableHead className="px-2 sm:px-4">AI</TableHead>
+                <TableHead className="hidden sm:table-cell">AI</TableHead>
                 <TableHead className="hidden md:table-cell">Created</TableHead>
                 <TableHead className="px-2 text-right sm:px-4">
                   <span className="sr-only sm:not-sr-only">Actions</span>
@@ -166,11 +166,17 @@ export function AdminOrganizationsTab({ userId }: { userId: number | undefined }
                     key={organization.id}
                     data-testid={`organization-row-${organization.slug}`}
                   >
-                    <TableCell className="max-w-[6rem] break-words px-2 font-medium sm:max-w-none sm:px-4">
+                    <TableCell className="px-2 font-medium sm:px-4">
                       {organization.name}
                       <div className="break-all font-mono text-xs font-normal text-foreground-secondary md:hidden">
                         {organization.slug}
                       </div>
+                      <Badge
+                        className="mt-1 whitespace-nowrap sm:hidden"
+                        variant={organization.aiEnabled ? 'default' : 'secondary'}
+                      >
+                        {organization.aiEnabled ? 'AI on' : 'AI off'}
+                      </Badge>
                     </TableCell>
                     <TableCell className="hidden break-all font-mono text-sm md:table-cell">
                       {organization.slug}
@@ -181,7 +187,7 @@ export function AdminOrganizationsTab({ userId }: { userId: number | undefined }
                     <TableCell className="px-2 text-right sm:px-4">
                       {organization.ownerCount}
                     </TableCell>
-                    <TableCell className="px-2 sm:px-4">
+                    <TableCell className="hidden sm:table-cell">
                       <Badge
                         className="whitespace-nowrap"
                         variant={organization.aiEnabled ? 'default' : 'secondary'}
@@ -194,7 +200,14 @@ export function AdminOrganizationsTab({ userId }: { userId: number | undefined }
                       {formatDate(organization.createdAt)}
                     </TableCell>
                     <TableCell className="px-2 text-right sm:px-4">
-                      {organization.ownerCount === 0 ? (
+                      {organization.ownerCount === 0 && organization.memberCount === 0 ? (
+                        <span
+                          className="text-xs text-foreground-secondary"
+                          data-testid={`no-members-${organization.slug}`}
+                        >
+                          No members yet
+                        </span>
+                      ) : organization.ownerCount === 0 ? (
                         <Button
                           variant="outline"
                           size="sm"

@@ -3,8 +3,12 @@
  *
  * Every scenario works in an organization the spec creates for itself (through the platform
  * admin API, naming a fresh account as owner) and moves fresh accounts into it in the database;
- * nothing in the default organization is read or changed. Accounts are fresh, each persona gets
- * its own browser context, and a signed-out visitor is a context that never signed in.
+ * No existing data of the default organization is read or changed. What is written there: every
+ * account the spec registers starts in `default` (every sign-up does) and is moved out
+ * straight away, and the platform admin account is registered if it does not exist yet. The
+ * accounts are fresh and carry a timestamp, so they touch no role, setting, page or team that
+ * existed before. Each persona gets its own browser context, and a signed-out visitor is a
+ * context that never signed in.
  *
  * Under test: owner and admin see exactly the controls the role rules allow; changes, removal
  * with confirmation, the teams left without an owner, the settings (name, AI with its
@@ -150,13 +154,11 @@ test.describe('Organization page', () => {
       );
       expect(await roleInOrg(apis.owner, accounts.member)).toBe('admin');
 
-      // The server's refusal is shown in words: the only owner cannot lower itself.
-      await chooseRole(page, accounts.owner, '관리자');
-      await expect(
-        page.getByText('조직의 마지막 소유자는 내릴 수 없습니다', { exact: false }).first()
-      ).toBeVisible();
-      expect(await roleInOrg(apis.owner, accounts.owner)).toBe('owner');
-      await expect(page.getByTestId(`role-select-${accounts.owner.email}`)).toContainText('소유자');
+      // The only active owner is offered no lower role on their own row (the server would
+      // refuse it): a badge, no select, no remove.
+      await expect(page.getByTestId(`role-badge-${accounts.owner.email}`)).toHaveText('소유자');
+      await expect(page.getByTestId(`role-select-${accounts.owner.email}`)).toHaveCount(0);
+      await expect(page.getByTestId(`remove-member-${accounts.owner.email}`)).toHaveCount(0);
 
       // Remove: nothing happens until the dialog is confirmed.
       await page.getByTestId(`remove-member-${accounts.member2.email}`).click();
@@ -164,6 +166,8 @@ test.describe('Organization page', () => {
       await expect(dialog).toContainText('로그인');
       await dialog.getByRole('button', { name: '취소' }).click();
       await expect(memberRow(page, accounts.member2)).toBeVisible();
+      // Cancelled means nothing was sent: the account still has its role in the organization.
+      expect(await roleInOrg(apis.owner, accounts.member2)).toBe('member');
       await page.getByTestId(`remove-member-${accounts.member2.email}`).click();
       await page.getByTestId('confirm-remove-member').click();
       await expect(memberRow(page, accounts.member2)).toHaveCount(0);
@@ -199,9 +203,13 @@ test.describe('Organization page', () => {
       await expect(confirm).toContainText('켜면 문서 내용이 외부 AI 제공자(OpenAI)로 전송됩니다.');
       await confirm.getByRole('button', { name: '취소' }).click();
       await expect(aiSwitch).not.toBeChecked();
-      expect(((await (await apis.owner.get('/api/organization')).json()) as any).aiEnabled).toBe(
-        false
-      );
+      // Cancelled means nothing was sent: the setting stays off however long we look.
+      for (let attempt = 0; attempt < 4; attempt++) {
+        expect(((await (await apis.owner.get('/api/organization')).json()) as any).aiEnabled).toBe(
+          false
+        );
+        await page.waitForTimeout(300);
+      }
       await aiSwitch.click();
       await page.getByTestId('confirm-ai-on').click();
       await expect(aiSwitch).toBeChecked();
@@ -259,9 +267,20 @@ test.describe('Organization page', () => {
       await expect(page.getByRole('menuitem', { name: '조직 관리' })).toBeVisible();
       await page.keyboard.press('Escape');
 
-      // Lowering itself: the page re-renders with the rights it now has.
+      // Lowering itself asks first, and cancelling sends nothing.
       await chooseRole(page, accounts.admin, '구성원');
+      const selfDialog = page.getByTestId('self-role-dialog');
+      await expect(selfDialog).toContainText('더 이상 관리할 수 없게');
+      await selfDialog.getByRole('button', { name: '취소' }).click();
+      await expect(selfDialog).toHaveCount(0);
+      expect(await roleInOrg(world.apis.owner, accounts.admin)).toBe('admin');
+      await expect(page.getByTestId('members-table')).toBeVisible();
+
+      // Confirming: the page re-renders with the rights it now has, without a list error.
+      await chooseRole(page, accounts.admin, '구성원');
+      await page.getByTestId('confirm-self-role').click();
       await expect(page.getByTestId('organization-members-only')).toBeVisible();
+      await expect(page.getByTestId('members-error')).toHaveCount(0);
       await expect(page.getByTestId('organization-role')).toHaveText('구성원');
       await expect(page.getByTestId('members-table')).toHaveCount(0);
       expect(await roleInOrg(world.apis.owner, accounts.admin)).toBe('member');
@@ -340,6 +359,34 @@ test.describe('Organization page', () => {
     }
   });
 
+  test('a 403 on the teams list makes the page follow the caller’s real role', async ({
+    browser,
+    request,
+  }) => {
+    test.setTimeout(240_000);
+    const world = await makeWorld(request, 'list403');
+    const { accounts } = world;
+    const { page, context } = await pageFor(browser, accounts.owner);
+    try {
+      await page.goto('/organization');
+      await expect(page.getByTestId('members-table')).toBeVisible();
+      // The owner is lowered meanwhile (an admin takes the owner role so the organization keeps one).
+      await world.db.query(`UPDATE organization_members SET role = 'owner' WHERE user_id = $1`, [
+        accounts.admin.id,
+      ]);
+      await world.db.query(`UPDATE organization_members SET role = 'member' WHERE user_id = $1`, [
+        accounts.owner.id,
+      ]);
+      await page.getByRole('tab', { name: '팀' }).click();
+      await expect(page.getByTestId('organization-members-only')).toBeVisible();
+      await expect(page.getByTestId('organization-role')).toHaveText('구성원');
+      await expect(page.getByTestId('teams-error')).toHaveCount(0);
+    } finally {
+      await context.close();
+      await world.dispose();
+    }
+  });
+
   test('a busy answer and a refused change are shown in words, and the person can retry', async ({
     browser,
     request,
@@ -370,14 +417,41 @@ test.describe('Organization page', () => {
       await expect(page.getByText('조직이 다른 변경을 처리 중입니다').first()).toBeVisible();
       expect(answeredBusy).toBe(1);
       expect(await roleInOrg(apis.owner, accounts.member)).toBe('member');
-      await expect(page.getByTestId(`role-select-${accounts.member.email}`)).toContainText(
-        '구성원'
-      );
+      // Not applied (the server still has the old role, above) and the control still works.
+      await expect(page.getByTestId(`role-select-${accounts.member.email}`)).toBeEnabled();
       await chooseRole(page, accounts.member, '관리자');
       await expect(page.getByTestId(`role-select-${accounts.member.email}`)).toContainText(
         '관리자'
       );
       expect(await roleInOrg(apis.owner, accounts.member)).toBe('admin');
+      await page.unroute('**/api/organization/members/*');
+
+      // With a second owner the first one is offered a lower role on their own row; a 409 the
+      // server gives anyway (faked here) is shown in words and nothing changes. Lowering one's
+      // own role asks first.
+      const promote = await apis.owner.patch(`/api/organization/members/${accounts.member2.id}`, {
+        data: { role: 'owner' },
+      });
+      expect(promote.status()).toBe(200);
+      await page.reload();
+      await expect(page.getByTestId('members-table')).toBeVisible();
+      await page.route('**/api/organization/members/*', async (route) => {
+        if (route.request().method() === 'PATCH') {
+          await route.fulfill({
+            status: 409,
+            contentType: 'application/json',
+            body: JSON.stringify({ message: 'Cannot remove the last organization owner' }),
+          });
+          return;
+        }
+        await route.continue();
+      });
+      await chooseRole(page, accounts.owner, '관리자');
+      await page.getByTestId('confirm-self-role').click();
+      await expect(
+        page.getByText('조직의 마지막 소유자는 내릴 수 없습니다', { exact: false }).first()
+      ).toBeVisible();
+      expect(await roleInOrg(apis.owner, accounts.owner)).toBe('owner');
       await page.unroute('**/api/organization/members/*');
 
       // 403 from the server for a change the screen offered because the caller's role was

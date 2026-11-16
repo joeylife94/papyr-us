@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DBStorage } from '../../server/storage';
 import {
   allowedRoleOptions,
   canRemoveMember,
@@ -82,5 +83,78 @@ describe('canRemoveMember (caller role, row role, self)', () => {
 
   it('treats a missing caller role as no rights', () => {
     expect(canRemoveMember(null, 'member', false)).toBe(false);
+  });
+});
+
+describe('the screen and the server agree (every combination)', () => {
+  // The server's decision functions are the contract. For each consistent case, the screen
+  // offers a change exactly when the server would accept it and write it, and offers removal
+  // exactly when the server would accept it.
+  const ACTOR_ID = 1;
+  const OTHER_ID = 2;
+  let compared = 0;
+
+  for (const caller of ROLES) {
+    for (const row of ROLES) {
+      for (const isSelf of [false, true]) {
+        for (const activeOwnerCount of [1, 2]) {
+          // A self row holds the caller's own role; the owner count includes every active owner.
+          if (isSelf && row !== caller) continue;
+          const required = (caller === 'owner' ? 1 : 0) + (!isSelf && row === 'owner' ? 1 : 0);
+          if (activeOwnerCount < required) continue;
+          const name = `caller ${caller}, row ${row}, self=${isSelf}, ${activeOwnerCount} active owner(s)`;
+
+          it(name, () => {
+            const actor = { userId: ACTOR_ID, role: caller, isActive: true };
+            const target = { userId: isSelf ? ACTOR_ID : OTHER_ID, role: row, isActive: true };
+            const ctx = { activeOwnerCount, rowIsActive: true };
+            const options = allowedRoleOptions(caller, row, isSelf, ctx);
+            let anyChange = false;
+            for (const requested of ROLES) {
+              const decision = DBStorage.decideOrganizationRoleChange({
+                actor,
+                target,
+                requested,
+                activeOwnerCount,
+              });
+              const accepted = decision.ok && decision.write;
+              if (requested === row) {
+                // Setting the role a row already holds never writes.
+                expect(decision.ok && decision.write).toBe(false);
+                continue;
+              }
+              anyChange ||= accepted;
+              expect(options.includes(requested), `${name}: offers ${requested}`).toBe(accepted);
+            }
+            // A row gets a control exactly when some change is possible, its own role included.
+            expect(options.length > 0).toBe(anyChange);
+            if (anyChange) expect(options).toContain(row);
+
+            const removal = DBStorage.decideOrganizationMemberRemoval({
+              actor,
+              actorUserId: ACTOR_ID,
+              targetUserId: target.userId,
+              target,
+              activeOwnerCount,
+            });
+            expect(canRemoveMember(caller, row, isSelf, ctx), `${name}: removal`).toBe(removal.ok);
+            compared += 1;
+          });
+        }
+      }
+    }
+  }
+
+  it('compared every consistent case', () => {
+    expect(compared).toBeGreaterThan(20);
+  });
+
+  it('offers the only active owner no lower role on their own row', () => {
+    expect(allowedRoleOptions('owner', 'owner', true, { activeOwnerCount: 1 })).toEqual([]);
+    expect(allowedRoleOptions('owner', 'owner', true, { activeOwnerCount: 2 })).toEqual([
+      'owner',
+      'admin',
+      'member',
+    ]);
   });
 });

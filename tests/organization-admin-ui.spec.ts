@@ -1,8 +1,12 @@
 /**
  * The platform admin's Organizations tab (issue #124 X1c P4), in a browser against the real
  * server. Every organization and account here is made by the spec itself (fresh accounts, a
- * slug carrying the run's timestamp); nothing in the default organization or in another spec's
- * data is read or changed, so the spec can run twice against the same database.
+ * slug carrying the run's timestamp), so the spec can run twice against the same database.
+ * No existing data of the default organization is read or changed. What is written there: the
+ * fresh accounts register into `default` (every sign-up does); one of them creates a team there
+ * (to have a footprint that makes it ineligible as an owner), and the others are moved out
+ * into the spec's own organizations. All of it is new, timestamped and owned by those accounts,
+ * so nothing that existed before changes.
  *
  * Under test: the table (name, slug, members, owners, AI badge), the New organization dialog
  * (success, slug already used, unknown account, account that is not eligible with its reasons in
@@ -134,6 +138,15 @@ test.describe('Admin panel: Organizations tab', () => {
       await expect(ownerlessRow).toBeVisible();
       await expect(ownerlessRow.getByRole('cell').nth(3)).toHaveText('0');
       await expect(page.getByTestId(`set-owner-${slug}`)).toHaveCount(0);
+
+      // An organization with no members cannot be given an owner: a note, no button.
+      const emptySlug = `p4-ui-empty-${stamp}`;
+      await db.query(`INSERT INTO organizations (slug, name) VALUES ($1, $1)`, [emptySlug]);
+      await page.reload();
+      await page.getByRole('tab', { name: 'Organizations' }).click();
+      await expect(page.getByTestId(`organization-row-${emptySlug}`)).toBeVisible();
+      await expect(page.getByTestId(`no-members-${emptySlug}`)).toHaveText('No members yet');
+      await expect(page.getByTestId(`set-owner-${emptySlug}`)).toHaveCount(0);
 
       await page.getByTestId(`set-owner-${ownerlessSlug}`).click();
       const ownerDialog = page.getByTestId('set-owner-dialog');

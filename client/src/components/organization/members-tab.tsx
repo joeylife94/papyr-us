@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { UserMinus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -62,6 +62,7 @@ export function MembersTab({ userId, callerRole }: Props) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [removing, setRemoving] = useState<OrganizationMember | null>(null);
+  const [selfChange, setSelfChange] = useState<OrganizationRole | null>(null);
   const [ownerless, setOwnerless] = useState<{ member: string; teams: OwnerlessTeam[] } | null>(
     null
   );
@@ -71,12 +72,20 @@ export function MembersTab({ userId, callerRole }: Props) {
     data: members,
     isLoading,
     isError,
+    error,
     refetch,
   } = useQuery<OrganizationMember[]>({
     queryKey: membersKey,
     queryFn: () => organizationRequest<OrganizationMember[]>('/api/organization/members'),
     retry: false,
+    // A 403 here means the caller's role is no longer what the page shows: the organization is
+    // asked again below, and the page follows it, so a retry that can never work is not offered.
   });
+
+  const refusedList = error instanceof OrganizationApiError && error.status === 403;
+  useEffect(() => {
+    if (refusedList) queryClient.invalidateQueries({ queryKey: ['/api/organization', userId] });
+  }, [refusedList, queryClient, userId]);
 
   // A refusal may mean the caller's own rights changed: ask for the organization again too.
   const refreshAfterRefusal = (error: unknown) => {
@@ -93,10 +102,12 @@ export function MembersTab({ userId, callerRole }: Props) {
         { method: 'PATCH', body: { role } }
       ),
     onSuccess: (_result, { target, role }) => {
-      queryClient.invalidateQueries({ queryKey: membersKey });
       if (target.userId === userId) {
-        // The caller's own role changed: the page re-renders with the rights it now has.
+        // The caller's own role changed: the page re-renders with the rights it now has. The
+        // list is not asked again (a lowered caller would only get a refusal for it).
         queryClient.invalidateQueries({ queryKey: ['/api/organization', userId] });
+      } else {
+        queryClient.invalidateQueries({ queryKey: membersKey });
       }
       toast({
         title: '역할을 바꿨습니다',
@@ -159,6 +170,10 @@ export function MembersTab({ userId, callerRole }: Props) {
     );
   }
 
+  const activeOwnerCount = members.filter(
+    (member) => member.role === 'owner' && member.isActive
+  ).length;
+
   return (
     <div className="space-y-4">
       {ownerless ? (
@@ -192,14 +207,17 @@ export function MembersTab({ userId, callerRole }: Props) {
               <TableHead className="px-2 sm:px-4">역할</TableHead>
               <TableHead className="hidden sm:table-cell">가입일</TableHead>
               <TableHead className="hidden sm:table-cell">상태</TableHead>
-              <TableHead className="px-2 text-right sm:px-4">관리</TableHead>
+              <TableHead className="px-2 text-right sm:px-4">
+                <span className="sr-only sm:not-sr-only">관리</span>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {members.map((member) => {
               const isSelf = member.userId === userId;
-              const options = allowedRoleOptions(callerRole, member.role, isSelf);
-              const removable = canRemoveMember(callerRole, member.role, isSelf);
+              const context = { activeOwnerCount, rowIsActive: member.isActive };
+              const options = allowedRoleOptions(callerRole, member.role, isSelf, context);
+              const removable = canRemoveMember(callerRole, member.role, isSelf, context);
               return (
                 <TableRow key={member.userId} data-testid={`member-row-${member.email}`}>
                   <TableCell className="min-w-0 max-w-[8.5rem] px-2 sm:min-w-[12rem] sm:max-w-none sm:px-4">
@@ -221,7 +239,11 @@ export function MembersTab({ userId, callerRole }: Props) {
                         value={member.role}
                         disabled={roleMutation.isPending}
                         onValueChange={(role) => {
-                          if (role !== member.role) {
+                          if (role === member.role) return;
+                          if (isSelf) {
+                            // Your own role cannot be given back by you: ask first.
+                            setSelfChange(role as OrganizationRole);
+                          } else {
                             roleMutation.mutate({ target: member, role: role as OrganizationRole });
                           }
                         }}
@@ -278,6 +300,36 @@ export function MembersTab({ userId, callerRole }: Props) {
           </TableBody>
         </Table>
       </div>
+
+      <AlertDialog
+        open={selfChange !== null}
+        onOpenChange={(open) => (!open ? setSelfChange(null) : undefined)}
+      >
+        <AlertDialogContent data-testid="self-role-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              내 역할을 {selfChange ? ROLE_LABELS[selfChange] : ''}(으)로 낮출까요?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              역할을 낮추면 이 조직의 구성원과 설정을 더 이상 관리할 수 없게 되고, 직접 되돌릴 수도
+              없습니다. 다시 올리려면 소유자가 역할을 바꿔 주어야 합니다.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>취소</AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="confirm-self-role"
+              onClick={() => {
+                const me = members.find((member) => member.userId === userId);
+                if (me && selfChange) roleMutation.mutate({ target: me, role: selfChange });
+                setSelfChange(null);
+              }}
+            >
+              낮추기
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={removing !== null}

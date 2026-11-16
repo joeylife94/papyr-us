@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -9,7 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { organizationRequest } from './api';
+import { OrganizationApiError, organizationRequest } from './api';
 
 interface OrganizationTeam {
   id: number;
@@ -21,16 +22,25 @@ interface OrganizationTeam {
 }
 
 export function TeamsTab({ userId }: { userId: number }) {
+  const queryClient = useQueryClient();
   const {
     data: teams,
     isLoading,
     isError,
+    error,
     refetch,
   } = useQuery<OrganizationTeam[]>({
     queryKey: ['/api/organization/teams', userId],
     queryFn: () => organizationRequest<OrganizationTeam[]>('/api/organization/teams'),
     retry: false,
   });
+
+  // A 403 means the caller's role is no longer what the page shows: ask for the organization
+  // again so the page follows the real role instead of offering a retry that cannot work.
+  const refused = error instanceof OrganizationApiError && error.status === 403;
+  useEffect(() => {
+    if (refused) queryClient.invalidateQueries({ queryKey: ['/api/organization', userId] });
+  }, [refused, queryClient, userId]);
 
   if (isLoading) {
     return (
@@ -59,9 +69,9 @@ export function TeamsTab({ userId }: { userId: number }) {
         <Table data-testid="teams-table">
           <TableHeader>
             <TableRow>
-              <TableHead>팀</TableHead>
-              <TableHead className="text-right">구성원</TableHead>
-              <TableHead className="text-right">소유자</TableHead>
+              <TableHead className="px-2 sm:px-4">팀</TableHead>
+              <TableHead className="whitespace-nowrap px-2 text-right sm:px-4">구성원</TableHead>
+              <TableHead className="whitespace-nowrap px-2 text-right sm:px-4">소유자</TableHead>
               <TableHead className="hidden sm:table-cell">상태</TableHead>
             </TableRow>
           </TableHeader>
@@ -75,12 +85,12 @@ export function TeamsTab({ userId }: { userId: number }) {
             ) : (
               teams.map((team) => (
                 <TableRow key={team.id} data-testid={`team-row-${team.name}`}>
-                  <TableCell className="min-w-[10rem]">
+                  <TableCell className="min-w-0 px-2 sm:min-w-[10rem] sm:px-4">
                     <div className="font-medium text-foreground">{team.displayName}</div>
                     <div className="break-all text-xs text-foreground-secondary">{team.name}</div>
                   </TableCell>
-                  <TableCell className="text-right">{team.memberCount}</TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="px-2 text-right sm:px-4">{team.memberCount}</TableCell>
+                  <TableCell className="px-2 text-right sm:px-4">
                     {team.ownerCount === 0 ? (
                       <Badge variant="destructive" data-testid={`team-ownerless-${team.name}`}>
                         소유자 없음

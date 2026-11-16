@@ -29,7 +29,9 @@ const AI_WARNING = '켜면 문서 내용이 외부 AI 제공자(OpenAI)로 전�
 export function SettingsTab({ userId, organization }: Props) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const [name, setName] = useState(organization.name);
+  // null until the person types: an untouched field follows the organization's current name.
+  const [draft, setDraft] = useState<string | null>(null);
+  const name = draft ?? organization.name;
   const [nameError, setNameError] = useState<string | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
   const [confirmAiOn, setConfirmAiOn] = useState(false);
@@ -51,7 +53,7 @@ export function SettingsTab({ userId, organization }: Props) {
         body: { name: next },
       }),
     onSuccess: (result) => {
-      setName(result.name);
+      setDraft(null);
       refreshOrganization();
       toast({ title: '조직 이름을 바꿨습니다', description: result.name });
     },
@@ -129,7 +131,7 @@ export function SettingsTab({ userId, organization }: Props) {
               aria-invalid={nameError ? true : undefined}
               aria-describedby={nameError ? 'organization-name-error' : undefined}
               onChange={(event) => {
-                setName(event.target.value);
+                setDraft(event.target.value);
                 setNameError(null);
               }}
               data-testid="organization-name-input"
