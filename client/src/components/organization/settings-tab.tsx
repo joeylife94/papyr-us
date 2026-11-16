@@ -166,6 +166,9 @@ export function SettingsTab({ userId, organization }: Props) {
             <p className="text-sm text-foreground-secondary">
               현재: {organization.aiEnabled ? '켜짐' : '꺼짐'}
             </p>
+            <p className="text-sm text-foreground-secondary">
+              켜도 AI는 구성원 탭에서 허용된 구성원만 사용할 수 있습니다.
+            </p>
           </div>
           <Switch
             id="organization-ai"

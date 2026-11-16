@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { UserMinus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,6 +32,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { OrganizationApiError, organizationRequest } from './api';
 import { organizationErrorText, ROLE_LABELS } from './messages';
+import { aiAccessChange } from './ai-access-options';
 import { allowedRoleOptions, canRemoveMember, type OrganizationRole } from './role-options';
 
 interface OrganizationMember {
@@ -40,6 +42,7 @@ interface OrganizationMember {
   role: OrganizationRole;
   isActive: boolean;
   joinedAt: string;
+  aiAllowed: boolean;
 }
 
 interface OwnerlessTeam {
@@ -51,6 +54,8 @@ interface OwnerlessTeam {
 interface Props {
   userId: number;
   callerRole: OrganizationRole;
+  /** The organization's AI switch. Grants can be prepared while it is off. */
+  organizationAiEnabled: boolean;
 }
 
 function formatDate(value: string): string {
@@ -58,7 +63,7 @@ function formatDate(value: string): string {
   return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString('ko-KR');
 }
 
-export function MembersTab({ userId, callerRole }: Props) {
+export function MembersTab({ userId, callerRole, organizationAiEnabled }: Props) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [removing, setRemoving] = useState<OrganizationMember | null>(null);
@@ -118,6 +123,35 @@ export function MembersTab({ userId, callerRole }: Props) {
       refreshAfterRefusal(error);
       toast({
         title: '역할을 바꾸지 못했습니다',
+        description: organizationErrorText(error),
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const aiMutation = useMutation({
+    mutationFn: ({ target, aiAllowed }: { target: OrganizationMember; aiAllowed: boolean }) =>
+      organizationRequest<{ userId: number; aiAllowed: boolean }>(
+        `/api/organization/members/${target.userId}/ai`,
+        { method: 'PATCH', body: { aiAllowed } }
+      ),
+    onSuccess: (_result, { target, aiAllowed }) => {
+      queryClient.invalidateQueries({ queryKey: membersKey });
+      // The caller's own grant changed: their AI entry points follow at once.
+      if (target.userId === userId) {
+        queryClient.invalidateQueries({ queryKey: ['/api/organization', userId] });
+      }
+      toast({
+        title: aiAllowed
+          ? `${target.name} 님의 AI 사용을 허용했습니다`
+          : `${target.name} 님의 AI 사용 허용을 해제했습니다`,
+      });
+    },
+    onError: (error) => {
+      // The switch goes back to what the server holds (the list is asked again).
+      refreshAfterRefusal(error);
+      toast({
+        title: 'AI 사용 권한을 바꾸지 못했습니다',
         description: organizationErrorText(error),
         variant: 'destructive',
       });
@@ -199,6 +233,13 @@ export function MembersTab({ userId, callerRole }: Props) {
         </div>
       ) : null}
 
+      {!organizationAiEnabled ? (
+        <p className="text-sm text-foreground-secondary" data-testid="ai-grants-org-off">
+          조직의 AI 기능이 꺼져 있어 지금은 아무도 AI를 사용할 수 없습니다. 여기서 허용해 두면 설정
+          탭에서 AI 기능을 켠 뒤부터 적용됩니다.
+        </p>
+      ) : null}
+
       <div className="overflow-x-auto rounded-md border border-border">
         <Table data-testid="members-table">
           <TableHeader>
@@ -207,6 +248,7 @@ export function MembersTab({ userId, callerRole }: Props) {
               <TableHead className="px-2 sm:px-4">역할</TableHead>
               <TableHead className="hidden sm:table-cell">가입일</TableHead>
               <TableHead className="hidden sm:table-cell">상태</TableHead>
+              <TableHead className="px-2 sm:px-4">AI</TableHead>
               <TableHead className="px-2 text-right sm:px-4">
                 <span className="sr-only sm:not-sr-only">관리</span>
               </TableHead>
@@ -218,9 +260,10 @@ export function MembersTab({ userId, callerRole }: Props) {
               const context = { activeOwnerCount, rowIsActive: member.isActive };
               const options = allowedRoleOptions(callerRole, member.role, isSelf, context);
               const removable = canRemoveMember(callerRole, member.role, isSelf, context);
+              const aiChange = aiAccessChange(callerRole, member.role, isSelf, member.aiAllowed);
               return (
                 <TableRow key={member.userId} data-testid={`member-row-${member.email}`}>
-                  <TableCell className="min-w-0 max-w-[8.5rem] px-2 sm:min-w-[12rem] sm:max-w-none sm:px-4">
+                  <TableCell className="min-w-0 max-w-[5.5rem] !px-2 sm:min-w-[12rem] sm:max-w-none sm:!px-4">
                     <div className="font-medium text-foreground">
                       {member.name}
                       {isSelf ? (
@@ -233,7 +276,7 @@ export function MembersTab({ userId, callerRole }: Props) {
                       {member.email}
                     </div>
                   </TableCell>
-                  <TableCell className="px-2 sm:px-4">
+                  <TableCell className="!px-2 sm:!px-4">
                     {options.length > 0 ? (
                       <Select
                         value={member.role}
@@ -249,7 +292,7 @@ export function MembersTab({ userId, callerRole }: Props) {
                         }}
                       >
                         <SelectTrigger
-                          className="w-24 sm:w-28"
+                          className="w-[5.5rem] sm:w-28"
                           aria-label={`${member.name} 님의 역할`}
                           data-testid={`role-select-${member.email}`}
                         >
@@ -280,11 +323,34 @@ export function MembersTab({ userId, callerRole }: Props) {
                       {member.isActive ? '활성' : '비활성'}
                     </Badge>
                   </TableCell>
-                  <TableCell className="px-2 text-right sm:px-4">
+                  <TableCell className="!px-2 sm:!px-4">
+                    {aiChange ? (
+                      <Switch
+                        // The phone stylesheet gives every button a 44 px minimum: keep the switch a switch
+                        className="min-h-0 min-w-0"
+                        checked={member.aiAllowed}
+                        disabled={aiMutation.isPending}
+                        onCheckedChange={(checked) =>
+                          aiMutation.mutate({ target: member, aiAllowed: checked })
+                        }
+                        aria-label={`${member.name} 님의 AI 사용 허용`}
+                        data-testid={`ai-switch-${member.email}`}
+                      />
+                    ) : (
+                      <Badge
+                        variant={member.aiAllowed ? 'outline' : 'secondary'}
+                        data-testid={`ai-badge-${member.email}`}
+                      >
+                        {member.aiAllowed ? '허용' : '허용 안 함'}
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="!px-2 text-right sm:!px-4">
                     {removable ? (
                       <Button
                         variant="outline"
                         size="sm"
+                        className="min-w-0"
                         aria-label={`${member.name} 님을 조직에서 내보내기`}
                         onClick={() => setRemoving(member)}
                         data-testid={`remove-member-${member.email}`}

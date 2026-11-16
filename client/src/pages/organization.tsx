@@ -11,6 +11,7 @@ import { MembersTab } from '@/components/organization/members-tab';
 import { TeamsTab } from '@/components/organization/teams-tab';
 import { SettingsTab } from '@/components/organization/settings-tab';
 import { ROLE_LABELS } from '@/components/organization/messages';
+import { aiNoticeFor } from '@/lib/ai-gate';
 
 function Notice({
   title,
@@ -38,7 +39,10 @@ export default function OrganizationPage() {
   const { user } = useAuth();
   const userId: number | undefined = user?.id;
   const queryClient = useQueryClient();
-  const { organization, isLoading, isError, canManage } = useOrganization();
+  const { organization, isLoading, isError, isSignedOut, canManage, aiState } = useOrganization();
+  // What this person may do with AI, said to every member (owners' and admins' names are not shown)
+  const myAiLine =
+    aiState === 'available' ? 'AI 기능을 사용할 수 있습니다.' : (aiNoticeFor(aiState) ?? '');
 
   const body = (() => {
     if (isLoading) {
@@ -46,6 +50,17 @@ export default function OrganizationPage() {
         <p className="text-foreground-secondary" data-testid="organization-loading">
           조직 정보를 불러오는 중…
         </p>
+      );
+    }
+    if (isSignedOut) {
+      // The session ended: no organization data, and no claim that the account has none.
+      return (
+        <Notice title="로그인이 만료되었습니다" testId="organization-signed-out">
+          <p className="mb-3">조직 정보를 보려면 다시 로그인하세요.</p>
+          <Button variant="outline" asChild>
+            <a href="/login">로그인</a>
+          </Button>
+        </Notice>
       );
     }
     if (isError) {
@@ -83,6 +98,10 @@ export default function OrganizationPage() {
           <Badge data-testid="organization-role">{ROLE_LABELS[organization.role]}</Badge>
         </div>
 
+        <p className="text-sm text-foreground-secondary" data-testid="organization-my-ai">
+          {myAiLine}
+        </p>
+
         {!canManage ? (
           <Notice title="조직은 소유자와 관리자가 관리합니다" testId="organization-members-only">
             구성원 목록과 설정은 조직의 소유자와 관리자만 볼 수 있습니다.
@@ -95,7 +114,11 @@ export default function OrganizationPage() {
               <TabsTrigger value="settings">설정</TabsTrigger>
             </TabsList>
             <TabsContent value="members" className="mt-4">
-              <MembersTab userId={userId} callerRole={organization.role} />
+              <MembersTab
+                userId={userId}
+                callerRole={organization.role}
+                organizationAiEnabled={organization.aiEnabled}
+              />
             </TabsContent>
             <TabsContent value="teams" className="mt-4">
               <TeamsTab userId={userId} />

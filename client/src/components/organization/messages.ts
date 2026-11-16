@@ -22,6 +22,11 @@ const KNOWN_MESSAGES: Record<string, string> = {
   'Your account does not belong to an organization': '이 계정은 더 이상 조직에 속해 있지 않습니다.',
   'Invalid organization settings':
     '설정 값이 올바르지 않습니다. 이름은 1자 이상 100자 이하여야 합니다.',
+  'Only an organization owner can change AI access for an owner or admin':
+    '소유자와 관리자의 AI 사용 권한은 조직 소유자만 바꿀 수 있습니다.',
+  'You cannot grant AI access to yourself':
+    '자신에게 AI 사용 권한을 줄 수는 없습니다. 조직 소유자에게 요청하세요.',
+  'Invalid AI access': 'AI 사용 권한 값이 올바르지 않습니다. 목록을 새로 고친 뒤 다시 시도하세요.',
   'Invalid role': '선택한 역할이 올바르지 않습니다.',
   'Invalid user ID': '구성원을 확인할 수 없습니다. 목록을 새로 고친 뒤 다시 시도하세요.',
   'Organization is busy, try again': '조직이 다른 변경을 처리 중입니다. 잠시 후 다시 시도하세요.',
