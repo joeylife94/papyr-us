@@ -226,19 +226,22 @@
 | POST   | `/api/ai/related-pages`      | Conditional | 관련 페이지 추천                      |
 | POST   | `/api/ai/inline`             | Conditional | 인라인 AI (summarize/rewrite/taskify) |
 
-**조직별 AI 설정 (#124 X1c).** 위 표의 Auth 표기와 무관하게, AI 제공자에게 내용을 보내는 모든 경로는 호출자 조직의 AI 설정을 따릅니다. 규칙은 [organizations-guide.md](./organizations-guide.md#조직별-ai)에 있습니다.
+**조직 스위치와 구성원별 AI 권한 (#124 X1c).** 위 표의 Auth 표기와 무관하게, AI 제공자에게 내용을 보내는 모든 경로는 호출자 조직의 AI 스위치와 호출자 본인의 AI 권한을 함께 따릅니다. 규칙은 [organizations-guide.md](./organizations-guide.md#ai-조직-스위치와-구성원별-권한)에 있습니다.
 
-| 호출자                | `/api/ai/*` (search 제외)                                                                      | `POST /api/ai/search`       |
-| --------------------- | ---------------------------------------------------------------------------------------------- | --------------------------- |
-| 비로그인              | 401 `Authentication required` (`ENFORCE_AUTH_WRITES`와 무관)                                   | 401                         |
-| 조직이 없는 계정      | 403 `Your account does not belong to an organization`                                          | 200, AI 재정렬 없음         |
-| 조직의 AI가 꺼져 있음 | 403 `{ "code": "ai_disabled", "message": "AI features are turned off for your organization" }` | 200, `rankingSource: "fts"` |
-| 조직 확인 실패        | 500 `Organization check failed`                                                                | 200, AI 재정렬 없음         |
-| 조직의 AI가 켜져 있음 | 기존 동작                                                                                      | 기존 동작                   |
+| 호출자                              | `/api/ai/*` (search 제외)                                                                      | `POST /api/ai/search`       |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------- | --------------------------- |
+| 비로그인                            | 401 `Authentication required` (`ENFORCE_AUTH_WRITES`와 무관)                                   | 401                         |
+| 조직이 없는 계정                    | 403 `Your account does not belong to an organization`                                          | 200, AI 재정렬 없음         |
+| 조직 스위치가 꺼져 있음             | 403 `{ "code": "ai_disabled", "message": "AI features are turned off for your organization" }` | 200, `rankingSource: "fts"` |
+| 스위치는 켜져 있고 본인 권한이 없음 | 403 `{ "code": "ai_not_granted", "message": "AI has not been granted to your account" }`       | 200, `rankingSource: "fts"` |
+| 조직·권한 확인 실패                 | 500 `Organization check failed`                                                                | 200, AI 재정렬 없음         |
+| 스위치가 켜져 있고 권한이 있음      | 기존 동작                                                                                      | 기존 동작                   |
 
-- `GET /api/knowledge-graph?includeAI=true`도 같은 403 `ai_disabled`를 답합니다. `includeAI` 없는 요청은 영향을 받지 않습니다.
+- 스위치가 꺼져 있으면 권한 유무와 상관없이 `ai_disabled`가 먼저입니다.
+- `GET /api/knowledge-graph?includeAI=true`도 위 표의 403·500을 그대로 답합니다. `includeAI` 없는 요청은 영향을 받지 않습니다.
 - `POST /api/ai/related-pages`에 `pageId`를 주면 그 페이지는 호출자가 읽을 수 있고 호출자의 조직에 속해야 합니다. 아니면 없는 페이지와 같은 404 `Page not found`입니다. 추천 후보는 호출자가 목록에서 볼 수 있는 페이지뿐입니다.
-- 워크플로의 `run_ai_summary` 액션은 워크플로 팀의 조직을 따르며, 꺼져 있으면 그 액션이 `AI is turned off for this organization`으로 실패합니다.
+- 워크플로: `run_ai_summary` 액션이 든 워크플로의 생성(`POST /api/workflows`), 수정(`PUT /api/workflows/:id`, 본문에 `actions`가 없으면 저장된 액션 기준), 켜기(`POST /api/workflows/:id/toggle`), 테스트 실행(`POST /api/workflows/:id/test`)은 호출자에게 위 표와 같은 자격을 요구하고 같은 403을 답합니다. 끄기, 삭제, 그 액션을 빼는 수정은 요구하지 않습니다.
+- 이벤트로 실행될 때 `run_ai_summary` 액션은 워크플로 팀의 조직 스위치만 따르며, 꺼져 있으면 그 액션이 `AI is turned off for this organization`으로 실패합니다.
 
 ---
 
@@ -288,19 +291,21 @@
 
 로그인한 계정 자신의 조직에 대한 API입니다(#124 X1c). 조직은 요청으로 지정할 수 없습니다. 규칙은 [organizations-guide.md](./organizations-guide.md#조직-관리-x1c)에 있습니다.
 
-| Method | Endpoint                            | Auth              | Description                                                                     |
-| ------ | ----------------------------------- | ----------------- | ------------------------------------------------------------------------------- |
-| GET    | `/api/organization`                 | JWT               | 자기 조직과 자기 역할 `{ id, slug, name, role, aiEnabled }`                     |
-| PATCH  | `/api/organization`                 | JWT (owner/admin) | 이름, AI 사용 여부 변경 `{ name?, aiEnabled? }`                                 |
-| GET    | `/api/organization/members`         | JWT (owner/admin) | 구성원 목록 `[{ userId, name, email, role, isActive, joinedAt }]`               |
-| PATCH  | `/api/organization/members/:userId` | JWT (owner/admin) | 역할 변경 `{ role }`                                                            |
-| DELETE | `/api/organization/members/:userId` | JWT (owner/admin) | 구성원 내보내기                                                                 |
-| GET    | `/api/organization/teams`           | JWT (owner/admin) | 조직의 팀 목록 `[{ id, name, displayName, isActive, memberCount, ownerCount }]` |
+| Method | Endpoint                               | Auth              | Description                                                                                                                            |
+| ------ | -------------------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/organization`                    | JWT               | 자기 조직과 자기 역할 `{ id, slug, name, role, aiEnabled, aiAllowed }`. `aiEnabled`는 조직 스위치, `aiAllowed`는 호출자 본인의 AI 권한 |
+| PATCH  | `/api/organization`                    | JWT (owner/admin) | 이름, 조직 AI 스위치 변경 `{ name?, aiEnabled? }`. 응답은 GET과 같은 형태                                                              |
+| GET    | `/api/organization/members`            | JWT (owner/admin) | 구성원 목록 `[{ userId, name, email, role, isActive, joinedAt, aiAllowed }]`                                                           |
+| PATCH  | `/api/organization/members/:userId`    | JWT (owner/admin) | 역할 변경 `{ role }`                                                                                                                   |
+| DELETE | `/api/organization/members/:userId`    | JWT (owner/admin) | 구성원 내보내기                                                                                                                        |
+| PATCH  | `/api/organization/members/:userId/ai` | JWT (owner/admin) | 구성원의 AI 권한 부여·회수 `{ aiAllowed }`                                                                                             |
+| GET    | `/api/organization/teams`              | JWT (owner/admin) | 조직의 팀 목록 `[{ id, name, displayName, isActive, memberCount, ownerCount }]`                                                        |
 
 공통 응답: 비로그인 401, 조직이 없는 계정 403 `Your account does not belong to an organization`, `member` 403 `Organization owner or admin role required`(`GET /api/organization` 제외), 잠금 대기 초과 503 `Organization is busy, try again`.
 
 - 역할 변경: 200 `{ userId, role }`, 400 `Invalid user ID` / `Invalid role`, 403(소유자 역할은 소유자만, 다른 관리자는 소유자만, 자기 역할을 올릴 수 없음), 404 `Member not found`(다른 조직의 계정 포함), 409 `Cannot remove the last organization owner`.
 - 내보내기: 200 `{ removed: true, teamsLeftWithoutOwner: [{ id, name, displayName }] }`, 403(자신, 또는 소유자가 아닌데 소유자·관리자를 내보내려 함), 404, 409(마지막 소유자).
+- AI 권한: 본문은 정확히 `{ "aiAllowed": true | false }`. 200 `{ userId, aiAllowed }`(이미 그 값이면 아무것도 쓰지 않고 200), 400 `Invalid user ID` / `Invalid AI access`, 403 `Only an organization owner can change AI access for an owner or admin`(관리자가 소유자·다른 관리자를 바꾸려 함), 403 `You cannot grant AI access to yourself`(관리자가 자신에게 부여), 404 `Member not found`.
 
 ---
 
