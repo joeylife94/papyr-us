@@ -10,7 +10,9 @@
  *   existing account, team and page into the "default" organization;
  * - drizzle/0023_add_template_organizations.sql (X1b): moves every existing template into it;
  * - drizzle/0024_add_organization_ai_setting.sql (X1c): adds the per-organization AI setting,
- *   on for every organization that exists when it is added.
+ *   on for every organization that exists when it is added;
+ * - drizzle/0025_add_organization_member_ai_access.sql (X1c): adds the per-member AI access,
+ *   granted to every membership that exists when it is added.
  *
  * All add their columns and constraints under the names push expects, so push then has nothing
  * left to change. All are idempotent, so running this on every deploy is safe.
@@ -21,9 +23,10 @@
  *   npm run db:fts:prepare && npm run db:orgs:prepare && npm run db:push && npm run db:fts
  *
  * --down applies the .down.sql files in reverse order. Each refuses while it would lose a
- * boundary (an organization with AI turned off, more than one organization, or templates of more
- * than one), and then nothing is changed. Like apply-fts-schema.mjs, the script refuses non-local database hosts unless
- * --allow-remote is given.
+ * boundary (an organization with AI turned off, a member without AI access, more than one
+ * organization, or templates of more than one), and then nothing is changed. Like
+ * apply-fts-schema.mjs, the script refuses non-local database hosts unless --allow-remote is
+ * given.
  */
 
 import { readFile } from 'node:fs/promises';
@@ -40,6 +43,7 @@ const MIGRATIONS = [
   '0022_add_organizations',
   '0023_add_template_organizations',
   '0024_add_organization_ai_setting',
+  '0025_add_organization_member_ai_access',
 ];
 const sqlPaths = (down ? [...MIGRATIONS].reverse() : MIGRATIONS).map((name) =>
   fileURLToPath(new URL(`../drizzle/${name}${down ? '.down' : ''}.sql`, import.meta.url))

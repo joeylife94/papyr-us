@@ -439,6 +439,8 @@ export const organizationMembers = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     role: text('role').notNull().default('member'), // 'owner', 'admin', 'member'
+    // AI use is granted per member (#124 X1c): a member may use AI only while this is true and the organization has AI on.
+    aiAllowed: boolean('ai_allowed').notNull().default(false),
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
   (table) => [uniqueIndex('organization_members_user_id_unique').on(table.userId)]

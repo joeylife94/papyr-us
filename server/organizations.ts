@@ -44,7 +44,9 @@ export async function createUserInDefaultOrganization(
     const [user] = await tx.insert(users).values(values).returning();
     await tx
       .insert(organizationMembers)
-      .values({ organizationId, userId: user.id, role: 'member' });
+      // Sign-up into the default organization starts with AI access (single-organization
+      // deployments keep AI as before).
+      .values({ organizationId, userId: user.id, role: 'member', aiAllowed: true });
     return user;
   });
 }

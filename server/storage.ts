@@ -263,6 +263,11 @@ export interface OrganizationMemberState {
   isActive: boolean;
 }
 
+/** A member as read for an AI access decision: the role state plus the current grant. */
+export interface OrganizationMemberAiState extends OrganizationMemberState {
+  aiAllowed: boolean;
+}
+
 export type OrganizationDecision =
   | { ok: true; write: boolean }
   | { ok: false; status: number; body: { message: string } };
@@ -2063,7 +2068,7 @@ export class DBStorage {
     const organizationId = await this.getDefaultOrganizationId();
     await this.db
       .insert(organizationMembers)
-      .values({ organizationId, userId, role: 'member' })
+      .values({ organizationId, userId, role: 'member', aiAllowed: true })
       .onConflictDoNothing({ target: organizationMembers.userId });
     return (await this.getUserOrganizationId(userId)) ?? organizationId;
   }
@@ -2075,11 +2080,12 @@ export class DBStorage {
   async getOrganizationMembership(
     userId: number,
     executor: OrganizationExecutor = this.db
-  ): Promise<{ organizationId: number; role: OrganizationRole } | null> {
+  ): Promise<{ organizationId: number; role: OrganizationRole; aiAllowed: boolean } | null> {
     const [row] = await executor
       .select({
         organizationId: organizationMembers.organizationId,
         role: organizationMembers.role,
+        aiAllowed: organizationMembers.aiAllowed,
       })
       .from(organizationMembers)
       .innerJoin(users, eq(users.id, organizationMembers.userId))
@@ -2089,7 +2095,7 @@ export class DBStorage {
     const role = (organizationRoles as readonly string[]).includes(row.role)
       ? (row.role as OrganizationRole)
       : 'member';
-    return { organizationId: Number(row.organizationId), role };
+    return { organizationId: Number(row.organizationId), role, aiAllowed: row.aiAllowed === true };
   }
 
   /** The organization row, or undefined. Pass the handle of withOrganizationLocks inside it. */
@@ -2265,13 +2271,21 @@ export class DBStorage {
         }
         const moved = await tx
           .update(organizationMembers)
-          .set({ organizationId: organization.id, role: 'owner', createdAt: new Date() })
+          .set({
+            organizationId: organization.id,
+            role: 'owner',
+            aiAllowed: true,
+            createdAt: new Date(),
+          })
           .where(eq(organizationMembers.userId, account.id))
           .returning({ id: organizationMembers.id });
         if (moved.length === 0) {
-          await tx
-            .insert(organizationMembers)
-            .values({ organizationId: organization.id, userId: account.id, role: 'owner' });
+          await tx.insert(organizationMembers).values({
+            organizationId: organization.id,
+            userId: account.id,
+            role: 'owner',
+            aiAllowed: true,
+          });
         }
         return {
           kind: 'created',
@@ -2414,6 +2428,7 @@ export class DBStorage {
       role: OrganizationRole;
       isActive: boolean;
       joinedAt: Date;
+      aiAllowed: boolean;
     }>
   > {
     const rows = await this.db
@@ -2424,6 +2439,7 @@ export class DBStorage {
         role: organizationMembers.role,
         isActive: users.isActive,
         joinedAt: organizationMembers.createdAt,
+        aiAllowed: organizationMembers.aiAllowed,
       })
       .from(organizationMembers)
       .innerJoin(users, eq(users.id, organizationMembers.userId))
@@ -2436,6 +2452,7 @@ export class DBStorage {
         role: normalizeOrganizationRole(row.role),
         isActive: row.isActive === true,
         joinedAt: row.joinedAt,
+        aiAllowed: row.aiAllowed === true,
       }))
       .sort(
         (
@@ -2491,7 +2508,13 @@ export class DBStorage {
     organizationId: number,
     actorUserId: number,
     patch: { name?: string; aiEnabled?: boolean }
-  ): Promise<OrganizationMutationResult<{ organization: Organization; role: OrganizationRole }>> {
+  ): Promise<
+    OrganizationMutationResult<{
+      organization: Organization;
+      role: OrganizationRole;
+      aiAllowed: boolean;
+    }>
+  > {
     return this.withOrganizationLocks([organizationId], async (tx) => {
       const membership = await this.getOrganizationMembership(actorUserId, tx);
       if (!membership || membership.organizationId !== organizationId) return ORG_NO_ORGANIZATION;
@@ -2505,7 +2528,10 @@ export class DBStorage {
         .where(eq(organizations.id, organizationId))
         .returning();
       if (!row) return ORG_NO_ORGANIZATION;
-      return { ok: true as const, value: { organization: row, role: membership.role } };
+      return {
+        ok: true as const,
+        value: { organization: row, role: membership.role, aiAllowed: membership.aiAllowed },
+      };
     });
   }
 
@@ -2655,6 +2681,96 @@ export class DBStorage {
   }
 
   // ---- end X1c P2 ----
+
+  // ---- X1c P5: AI access per organization member (organization-routes.ts) ----
+
+  /**
+   * The rules for granting or revoking a member's AI access. Pure: the caller reads the actor
+   * and the target inside the organization lock and passes them in. The order is the contract:
+   * the target is looked up first (a target outside the organization is not found, whoever asks),
+   * then the actor's role, then who may change an owner or admin, then the admin self-grant rule
+   * (granting is a raise, as for roles), and only then the no-op.
+   */
+  static decideOrganizationAiAccessChange(input: {
+    actor: OrganizationMemberAiState | null;
+    target: OrganizationMemberAiState | null;
+    requested: boolean;
+  }): OrganizationDecision {
+    const { actor, target, requested } = input;
+    if (!target) return ORG_MEMBER_NOT_FOUND;
+    if (!actor || !isOrganizationManager(actor.role)) return ORG_MANAGER_REQUIRED;
+    const self = target.userId === actor.userId;
+    if (!self && (target.role === 'owner' || target.role === 'admin') && actor.role !== 'owner') {
+      return refuseOrganization(
+        403,
+        'Only an organization owner can change AI access for an owner or admin'
+      );
+    }
+    if (self && actor.role === 'admin' && requested === true && target.aiAllowed !== true) {
+      return refuseOrganization(403, 'You cannot grant AI access to yourself');
+    }
+    if (requested === (target.aiAllowed === true)) return { ok: true, write: false };
+    return { ok: true, write: true };
+  }
+
+  /**
+   * Grants or revokes one member's AI access inside the organization lock. The actor and the
+   * target, with their roles and current grant, are read through the handle after the lock is
+   * taken, from this organization only; the answer follows decideOrganizationAiAccessChange.
+   * Throws OrganizationBusyError when the lock is not available.
+   */
+  async setOrganizationMemberAiAccess(
+    organizationId: number,
+    actorUserId: number,
+    targetUserId: number,
+    aiAllowed: boolean
+  ): Promise<OrganizationMutationResult<{ userId: number; aiAllowed: boolean }>> {
+    return this.withOrganizationLocks([organizationId], async (tx) => {
+      const rows = await tx
+        .select({
+          userId: organizationMembers.userId,
+          role: organizationMembers.role,
+          aiAllowed: organizationMembers.aiAllowed,
+          isActive: users.isActive,
+        })
+        .from(organizationMembers)
+        .innerJoin(users, eq(users.id, organizationMembers.userId))
+        .where(
+          and(
+            eq(organizationMembers.organizationId, organizationId),
+            inArray(organizationMembers.userId, [actorUserId, targetUserId])
+          )
+        );
+      const states: OrganizationMemberAiState[] = rows.map((row: any) => ({
+        userId: Number(row.userId),
+        role: normalizeOrganizationRole(row.role),
+        isActive: row.isActive === true,
+        aiAllowed: row.aiAllowed === true,
+      }));
+      const find = (id: number) => states.find((state) => state.userId === id) ?? null;
+      const actor = find(actorUserId);
+      const decision = DBStorage.decideOrganizationAiAccessChange({
+        actor: actor && actor.isActive ? actor : null,
+        target: find(targetUserId),
+        requested: aiAllowed,
+      });
+      if (!decision.ok) return decision;
+      if (decision.write) {
+        await tx
+          .update(organizationMembers)
+          .set({ aiAllowed })
+          .where(
+            and(
+              eq(organizationMembers.organizationId, organizationId),
+              eq(organizationMembers.userId, targetUserId)
+            )
+          );
+      }
+      return { ok: true as const, value: { userId: targetUserId, aiAllowed } };
+    });
+  }
+
+  // ---- end X1c P5 ----
 
   // Accounts (`users`) and roster rows (`members`) are separate id spaces, linked only by email,
   // the link `getUserTeamIds` already follows. Notifications address members, sessions carry a

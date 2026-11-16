@@ -70,8 +70,8 @@ try {
          ON CONFLICT (slug) DO NOTHING`
       );
       await client.query(
-        `INSERT INTO organization_members (organization_id, user_id, role)
-         SELECT id, $1, 'member' FROM organizations WHERE slug = 'default'
+        `INSERT INTO organization_members (organization_id, user_id, role, ai_allowed)
+         SELECT id, $1, 'member', TRUE FROM organizations WHERE slug = 'default'
          ON CONFLICT (user_id) DO NOTHING`,
         [inserted.rows[0].id]
       );
