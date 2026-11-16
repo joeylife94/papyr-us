@@ -327,9 +327,11 @@ describe('createOrganizationWithOwner', () => {
     ]);
     const { rows } = await scoped.query(`SELECT ai_enabled FROM organizations WHERE slug = 'acme'`);
     expect(rows[0].ai_enabled).toBe(false);
+    // The first owner holds AI access (#124 X1c): the organization's own switch starts off.
     expect(await storage.getOrganizationMembership(user.id)).toEqual({
       organizationId: result.organization.id,
       role: 'owner',
+      aiAllowed: true,
     });
   });
 

@@ -283,13 +283,14 @@ export async function registerRoutes(
   const rlAdmin = buildRateLimiter({ windowMs: 60_000, max: 30 });
   const rlUpload = buildRateLimiter({ windowMs: 60_000, max: 30 });
   const rlAI = buildRateLimiter({ windowMs: 60_000, max: 15 }); // AI endpoints are expensive
-  // Rate limit, then the organization's AI setting: content reaches a provider only when it is on
+  // Rate limit, then the caller's AI access (the organization's switch and the member's own grant):
+  // content reaches a provider only when both hold
   const aiGate: RequestHandler = (req, res, next) =>
     rlAI(req, res, (err?: unknown) =>
       err ? next(err) : requireOrganizationAi(req as AuthRequest, res, next)
     );
   // Rate limit, then the session (read whatever ENFORCE_AUTH_WRITES says): the AI search degrades
-  // by the caller's organization setting instead of refusing
+  // by the caller's AI access instead of refusing
   const aiSession: RequestHandler = (req, res, next) =>
     rlAI(req, res, (err?: unknown) => (err ? next(err) : optionalAuth(req, res, next)));
   const rlAnalytics = buildRateLimiter({ windowMs: 60_000, max: 60 }); // analytics view recording

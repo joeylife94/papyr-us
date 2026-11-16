@@ -181,6 +181,7 @@ npm run db:fts
   - 여러 번 실행해도 결과가 같습니다.
 - 기본 테이블이 아직 없는 새 설치에서는 아무것도 하지 않습니다. 이 경우 push가 스키마를 만들고, 첫 가입 때 `default` 조직이 만들어집니다.
 - `db:orgs:prepare`를 빼먹고 기존 DB에 push하면, NOT NULL 컬럼 추가가 실패하면서 push가 멈춥니다. 이때 데이터는 바뀌지 않습니다.
+- **이미 조직이 있는 DB에서도 순서를 지켜야 합니다.** `db:orgs:prepare`보다 push를 먼저 돌리면 push가 구성원별 AI 권한 컬럼을 기본값(권한 없음)으로 만들고, 뒤늦게 돌린 prepare는 이를 회수된 상태와 구분할 수 없어 그대로 둡니다. 그러면 기존 구성원 전원이 AI 권한을 잃고, 소유자가 없는 조직에서는 화면으로 되돌릴 방법이 없습니다(SQL로 `organization_members.ai_allowed`를 고쳐야 합니다).
 - 수동 배포(`docs/ubuntu-deployment-guide.md`)도 같은 순서를 따릅니다.
 
 ### 되돌리기
