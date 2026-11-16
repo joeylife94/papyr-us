@@ -1,6 +1,7 @@
 /**
  * Layer 4 fixture: bring a test schema built in the pre-organization shape to the shape of
- * drizzle/0022_add_organizations.sql (issue #124 X1a) and 0024 (X1c), so DBStorage runs against it.
+ * drizzle/0022_add_organizations.sql (issue #124 X1a), 0024 and 0025 (X1c), so DBStorage runs
+ * against it.
  *
  * Most Layer 4 files hand-write their tables as they were before organizations and insert rows
  * by hand. `addOrganizations` applies the real 0022 migration to those tables, which puts every
@@ -9,7 +10,7 @@
  * deployment without spelling out organizations in every insert:
  * - wiki_pages_team_org_fk is left out: these fixtures write team ids without teams rows;
  * - pages and teams inserted later default to the default organization;
- * - accounts inserted later join it (a trigger, as sign-up does through DBStorage);
+ * - accounts inserted later join it with AI access (a trigger, as sign-up does through DBStorage);
  * - `teams` and `users` rows can be added for ids a file uses without creating them, because a
  *   new page takes its team's organization, or its creator's.
  *
@@ -31,6 +32,12 @@ const MIGRATION = FULL_MIGRATION.replace(COMPOSITE_KEY, '');
 // exist, so every file describes an upgraded deployment: the default organization has AI on.
 const AI_SETTING_MIGRATION = readFileSync(
   new URL('../../drizzle/0024_add_organization_ai_setting.sql', import.meta.url),
+  'utf8'
+);
+// 0025 (#124 X1c P5a) adds organization_members.ai_allowed and grants every row that exists, so
+// every file describes an upgraded deployment: its members keep AI.
+const AI_ACCESS_MIGRATION = readFileSync(
+  new URL('../../drizzle/0025_add_organization_member_ai_access.sql', import.meta.url),
   'utf8'
 );
 
@@ -68,6 +75,7 @@ export async function addOrganizations(
     `);
     await client.query(MIGRATION);
     await client.query(AI_SETTING_MIGRATION);
+    await client.query(AI_ACCESS_MIGRATION);
     const { rows } = await client.query(`SELECT id FROM organizations WHERE slug = 'default'`);
     const organizationId = Number(rows[0].id);
     // The trigger names its schema, so inserts through a pool without the search path work too.
@@ -76,8 +84,8 @@ export async function addOrganizations(
       ALTER TABLE teams ALTER COLUMN organization_id SET DEFAULT ${organizationId};
       CREATE OR REPLACE FUNCTION l4_join_default_organization() RETURNS trigger AS $$
       BEGIN
-        INSERT INTO "${target}".organization_members (organization_id, user_id, role)
-        VALUES (${organizationId}, NEW.id, 'member')
+        INSERT INTO "${target}".organization_members (organization_id, user_id, role, ai_allowed)
+        VALUES (${organizationId}, NEW.id, 'member', TRUE)
         ON CONFLICT (user_id) DO NOTHING;
         RETURN NEW;
       END

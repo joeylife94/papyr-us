@@ -44,6 +44,8 @@ const UP = read('0022_add_organizations.sql');
 const DOWN = read('0022_add_organizations.down.sql');
 // The storage tests below run on the upgraded shape: 0024 (#124 X1c) adds organizations.ai_enabled.
 const AI_SETTING = read('0024_add_organization_ai_setting.sql');
+// and 0025 (#124 X1c P5a) adds organization_members.ai_allowed.
+const AI_ACCESS = read('0025_add_organization_member_ai_access.sql');
 
 let admin: Pool;
 let scoped: Pool;
@@ -251,6 +253,7 @@ describe('0022 organizations migration (real Postgres)', () => {
       (await scoped.query(`SELECT count(*)::int AS n FROM organization_members`)).rows[0].n
     ).toBe(2);
     await scoped.query(AI_SETTING);
+    await scoped.query(AI_ACCESS);
   });
 });
 

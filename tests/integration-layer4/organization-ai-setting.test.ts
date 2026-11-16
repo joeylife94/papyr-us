@@ -33,6 +33,8 @@ const M0022 = read('0022_add_organizations.sql');
 const M0023 = read('0023_add_template_organizations.sql');
 const UP = read('0024_add_organization_ai_setting.sql');
 const DOWN = read('0024_add_organization_ai_setting.down.sql');
+// The storage scenario runs on the shape after 0025 (#124 X1c P5a): organization_members.ai_allowed.
+const AI_ACCESS = read('0025_add_organization_member_ai_access.sql');
 
 const SCHEMAS = {
   upgrade: 'l4_x1c_base',
@@ -120,6 +122,7 @@ beforeAll(async () => {
   await run(st, PRE_ORG_TABLES);
   await run(st, M0022);
   await run(st, UP);
+  await run(st, AI_ACCESS);
   process.env.DATABASE_URL = urlFor(SCHEMAS.storage);
   const { DBStorage } = await import('../../server/storage.js');
   storage = new DBStorage();
@@ -286,6 +289,7 @@ describe('DBStorage organization helpers', () => {
     expect(await storage.getOrganizationMembership(1)).toEqual({
       organizationId: orgId,
       role: 'owner',
+      aiAllowed: false, // inserted without naming the column: the fail-closed default
     });
   });
 
@@ -299,6 +303,7 @@ describe('DBStorage organization helpers', () => {
     expect(await storage.getOrganizationMembership(3)).toEqual({
       organizationId: orgId,
       role: 'member',
+      aiAllowed: false, // inserted without naming the column: the fail-closed default
     });
   });
 
