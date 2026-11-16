@@ -45,8 +45,20 @@ test.describe('GET /api/organization', () => {
       const defaultView = await memberRequest.get('/api/organization');
       expect(defaultView.status()).toBe(200);
       const defaultBody = await defaultView.json();
-      expect(Object.keys(defaultBody).sort()).toEqual(['aiEnabled', 'id', 'name', 'role', 'slug']);
-      expect(defaultBody).toMatchObject({ slug: 'default', role: 'member', aiEnabled: true });
+      expect(Object.keys(defaultBody).sort()).toEqual([
+        'aiAllowed',
+        'aiEnabled',
+        'id',
+        'name',
+        'role',
+        'slug',
+      ]);
+      expect(defaultBody).toMatchObject({
+        slug: 'default',
+        role: 'member',
+        aiEnabled: true,
+        aiAllowed: true,
+      });
 
       const ownerId = Number((await (await ownerRequest.get('/api/auth/me')).json()).id);
       const inserted = await db.query(
@@ -70,6 +82,7 @@ test.describe('GET /api/organization', () => {
         name: `Spec org ${stamp}`,
         role: 'owner',
         aiEnabled: false,
+        aiAllowed: true,
       });
 
       // The role is read from the database on every request, not kept in the session.

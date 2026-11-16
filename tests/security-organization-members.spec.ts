@@ -254,7 +254,14 @@ test.describe('Organization member management', () => {
       expect(renamed.status()).toBe(200);
       const renamedBody = await renamed.json();
       expect(renamedBody).toMatchObject({ id: orgA, name: `P2 Org ${stamp}`, role: 'admin' });
-      expect(Object.keys(renamedBody).sort()).toEqual(['aiEnabled', 'id', 'name', 'role', 'slug']);
+      expect(Object.keys(renamedBody).sort()).toEqual([
+        'aiAllowed',
+        'aiEnabled',
+        'id',
+        'name',
+        'role',
+        'slug',
+      ]);
       const nameOfB = (await db.query('SELECT name FROM organizations WHERE id = $1', [orgB]))
         .rows[0].name;
       expect(nameOfB).toBe(`p2-org-b-${stamp}`);
