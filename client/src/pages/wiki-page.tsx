@@ -62,7 +62,7 @@ export default function WikiPageView() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { flags } = useFeatureFlags();
-  const { organization } = useOrganization();
+  const { organization, aiAvailable } = useOrganization();
   const workspaceScope = useWorkspaceScope();
   const workspace = workspaceScope.kind === 'team' ? workspaceScope.workspace : null;
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
@@ -83,10 +83,11 @@ export default function WikiPageView() {
     enabled: !!slug,
   });
 
-  // AI on a page follows the page's organization: offered only when the caller's organization has
-  // AI on and the page belongs to that same organization (false while either is loading or failed)
-  const aiEnabled =
-    organization?.aiEnabled === true &&
+  // AI on a page is offered only to a member granted AI in an organization with AI on, and only
+  // when the page belongs to that same organization (false while either is loading or failed)
+  const aiOfferedOnPage =
+    aiAvailable &&
+    organization != null &&
     page?.organizationId != null &&
     Number(page.organizationId) === organization.id;
 
@@ -257,7 +258,7 @@ export default function WikiPageView() {
         currentUpdatedAt={page.updatedAt}
         onRestored={handleRestored}
       />
-      {aiEnabled && (
+      {aiOfferedOnPage && (
         <Button
           variant={showAICopilot ? 'default' : 'outline'}
           size="sm"
@@ -342,7 +343,7 @@ export default function WikiPageView() {
               reloadToken={reloadKey}
               page={page}
               teamName={workspace?.name}
-              aiEnabled={aiEnabled}
+              aiOfferedOnPage={aiOfferedOnPage}
               actions={actions}
               breadcrumb={breadcrumb}
               onContentChange={setLiveContent}
@@ -368,7 +369,7 @@ export default function WikiPageView() {
               pageId={page.id}
               pageTitle={page.title}
               pageContent={content}
-              enabled={aiEnabled}
+              enabled={aiOfferedOnPage}
             />
           </section>
         </article>
@@ -376,7 +377,7 @@ export default function WikiPageView() {
 
       <TableOfContents headings={headings} />
 
-      {aiEnabled && showAICopilot && (
+      {aiOfferedOnPage && showAICopilot && (
         <AICopilotSidebar
           pageId={page.id}
           pageTitle={page.title}
@@ -447,7 +448,7 @@ function ReadOnlyPageBody({ page, actions, breadcrumb }: BodyProps) {
 interface EditableBodyProps extends BodyProps {
   teamName?: string;
   /** AI is allowed on this page (the caller's organization has AI on and owns the page). */
-  aiEnabled: boolean;
+  aiOfferedOnPage: boolean;
   /** Changes after a restore: reset the editor to the restored page without remounting it. */
   reloadToken: number;
   onContentChange: (content: string) => void;
@@ -460,7 +461,7 @@ interface EditableBodyProps extends BodyProps {
 function EditablePageBody({
   page,
   teamName,
-  aiEnabled,
+  aiOfferedOnPage,
   reloadToken,
   actions,
   breadcrumb,
@@ -589,7 +590,7 @@ function EditablePageBody({
           }}
           teamName={teamName}
           pageId={page.id}
-          aiEnabledForPage={aiEnabled}
+          aiOfferedOnPage={aiOfferedOnPage}
           userId={getUserId()}
           userName={getUserName()}
           useYjs={true}

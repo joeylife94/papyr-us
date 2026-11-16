@@ -10,6 +10,8 @@ import { Skeleton } from '../ui/skeleton';
 import { PageIcon } from '../page/page-icon';
 import { cn } from '@/lib/utils';
 import { useOrganization } from '@/hooks/useOrganization';
+import { useAiRefusal } from '@/hooks/useAiRefusal';
+import { aiRefusalCodeOf, type AiRefusalCode } from '@/lib/ai-gate';
 import {
   Network,
   Search,
@@ -134,6 +136,13 @@ function GraphLegend({ palette, className }: { palette: GraphPalette; className?
   );
 }
 
+/** The graph request was refused because the caller may not use AI (ai_disabled, ai_not_granted). */
+class GraphAiRefusal extends Error {
+  constructor(readonly code: AiRefusalCode) {
+    super(code);
+  }
+}
+
 export function KnowledgeGraph({ teamId }: KnowledgeGraphProps) {
   const navigate = useNavigate();
   const palette = useGraphPalette();
@@ -147,10 +156,10 @@ export function KnowledgeGraph({ teamId }: KnowledgeGraphProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [aiLinksRequested, setIncludeAILinks] = useState(false);
-  // AI links send page content to the AI provider: only once the organization is known to have
-  // AI on (never while it loads or when it failed to load)
-  const { organization } = useOrganization();
-  const aiEnabled = organization?.aiEnabled === true;
+  // AI links send page content to the AI provider: only for a member granted AI in an
+  // organization with AI on (never while it loads or when it failed to load)
+  const { aiAvailable: aiEnabled } = useOrganization();
+  const onAiRefusal = useAiRefusal();
   const includeAILinks = aiLinksRequested && aiEnabled;
 
   const params = new URLSearchParams();
@@ -162,11 +171,32 @@ export function KnowledgeGraph({ teamId }: KnowledgeGraphProps) {
     isLoading,
     isFetching,
     isError,
+    error,
     refetch,
   } = useQuery<GraphData>({
     queryKey: [`/api/knowledge-graph${query ? `?${query}` : ''}`],
+    queryFn: async () => {
+      const response = await fetch(`/api/knowledge-graph${query ? `?${query}` : ''}`, {
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        const code = await aiRefusalCodeOf(response);
+        if (code) throw new GraphAiRefusal(code);
+        throw new Error(`${response.status}: ${(await response.text()) || response.statusText}`);
+      }
+      return response.json();
+    },
     staleTime: 30_000,
   });
+
+  // The server refused the AI links: say why, ask for the organization again, and show the
+  // graph without them.
+  const refusal = error instanceof GraphAiRefusal ? error.code : null;
+  useEffect(() => {
+    if (!refusal) return;
+    setIncludeAILinks(false);
+    onAiRefusal(refusal);
+  }, [refusal, onAiRefusal]);
 
   const nodes = useMemo(() => graph?.nodes ?? [], [graph]);
   const links = useMemo(() => graph?.links ?? [], [graph]);

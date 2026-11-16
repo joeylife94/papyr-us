@@ -26,7 +26,8 @@ import {
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { useOrganization } from '@/hooks/useOrganization';
-import { AI_DISABLED_NOTICE } from '@/lib/ai-gate';
+import { useAiRefusal } from '@/hooks/useAiRefusal';
+import { aiNoticeFor, aiRefusalCodeOf, type AiRefusalCode } from '@/lib/ai-gate';
 import { http } from '@/lib/http';
 import {
   Workflow,
@@ -53,15 +54,27 @@ interface WorkflowData {
   updatedAt: string;
 }
 
+/** A workflow write was refused because the caller may not use AI (ai_disabled, ai_not_granted). */
+class AutomationAiRefusal extends Error {
+  constructor(readonly code: AiRefusalCode) {
+    super(code);
+  }
+}
+
 export default function AutomationPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { teamName } = useParams<{ teamName?: string }>();
-  // The AI summary action sends page content to the AI provider: offered only once the
-  // organization is known to have AI on; the notice shows only once that is known to be off
-  const { organization, isLoading: orgLoading, isError: orgError } = useOrganization();
-  const aiEnabled = organization?.aiEnabled === true;
-  const aiOff = !orgLoading && !orgError && !aiEnabled;
+  // The AI summary action sends page content to the AI provider: offered only to a member granted
+  // AI in an organization with AI on; the notice says why it is not, once that is known
+  const { aiState, aiAvailable: aiEnabled } = useOrganization();
+  const aiNotice = aiNoticeFor(aiState);
+  const onAiRefusal = useAiRefusal();
+  // A write refused because AI is off or not granted: shown as that notice, nothing is saved
+  const refusalOf = async (response: Response) => {
+    const code = await aiRefusalCodeOf(response);
+    return code ? new AutomationAiRefusal(code) : null;
+  };
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newWorkflow, setNewWorkflow] = useState({
     name: '',
@@ -95,7 +108,7 @@ export default function AutomationPage() {
         },
         body: JSON.stringify({ isActive }),
       });
-      if (!response.ok) throw new Error('Failed to toggle workflow');
+      if (!response.ok) throw (await refusalOf(response)) ?? new Error('Failed to toggle workflow');
       return response.json();
     },
     onSuccess: () => {
@@ -105,7 +118,10 @@ export default function AutomationPage() {
         description: '워크플로우 상태가 변경되었습니다.',
       });
     },
-    onError: () => {
+    onError: (error) => {
+      // The switch shows what is saved, not what was asked for
+      queryClient.invalidateQueries({ queryKey: [workflowsUrl] });
+      if (error instanceof AutomationAiRefusal) return onAiRefusal(error.code);
       toast({
         title: '오류',
         description: '워크플로우 업데이트에 실패했습니다.',
@@ -166,7 +182,7 @@ export default function AutomationPage() {
           ...(teamName ? { teamId: teamName } : {}),
         }),
       });
-      if (!response.ok) throw new Error('Failed to create workflow');
+      if (!response.ok) throw (await refusalOf(response)) ?? new Error('Failed to create workflow');
       return response.json();
     },
     onSuccess: () => {
@@ -184,7 +200,8 @@ export default function AutomationPage() {
         description: '새 워크플로우가 생성되었습니다.',
       });
     },
-    onError: () => {
+    onError: (error) => {
+      if (error instanceof AutomationAiRefusal) return onAiRefusal(error.code);
       toast({
         title: '오류',
         description: '워크플로우 생성에 실패했습니다.',
@@ -300,6 +317,14 @@ export default function AutomationPage() {
                   <div className="flex items-center gap-2">
                     <Switch
                       checked={workflow.isActive}
+                      // Turning an AI workflow on needs AI access; turning it off always works
+                      disabled={
+                        !workflow.isActive &&
+                        !aiEnabled &&
+                        (workflow.actions ?? []).some(
+                          (action: any) => action?.type === 'run_ai_summary'
+                        )
+                      }
                       onCheckedChange={(checked) =>
                         toggleMutation.mutate({ id: workflow.id, isActive: checked })
                       }
@@ -492,7 +517,11 @@ export default function AutomationPage() {
                   <SelectItem value="slack_webhook">Slack 웹훅</SelectItem>
                 </SelectContent>
               </Select>
-              {aiOff && <p className="text-xs text-muted-foreground">{AI_DISABLED_NOTICE}</p>}
+              {aiNotice && (
+                <p className="text-xs text-muted-foreground" data-testid="automation-ai-notice">
+                  {aiNotice}
+                </p>
+              )}
             </div>
 
             {/* Action-specific config fields */}

@@ -9,7 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { useOrganization } from '@/hooks/useOrganization';
-import { AI_DISABLED_NOTICE } from '@/lib/ai-gate';
+import { aiNoticeFor } from '@/lib/ai-gate';
 
 /** Mirrors RetrievalResultSchema in contracts/api.schema.ts. */
 interface SearchResult {
@@ -40,11 +40,10 @@ export function AISearch({ teamId }: { teamId?: string }) {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const { toast } = useToast();
-  // Suggestions send the query to the AI provider: only once the organization is known to have
-  // AI on. Search itself keeps working (full-text order) either way.
-  const { organization, isLoading: orgLoading, isError: orgError } = useOrganization();
-  const aiEnabled = organization?.aiEnabled === true;
-  const aiOff = !orgLoading && !orgError && !aiEnabled;
+  // Suggestions send the query to the AI provider: only once the organization has AI on and the
+  // caller has been granted it. Search itself keeps working (full-text order) either way.
+  const { aiState, aiAvailable: aiEnabled } = useOrganization();
+  const aiNotice = aiNoticeFor(aiState);
 
   // AI 검색 뮤테이션
   const searchMutation = useMutation({
@@ -160,9 +159,9 @@ export function AISearch({ teamId }: { teamId?: string }) {
           </Button>
         </div>
 
-        {aiOff && (
-          <p className="mt-2 text-sm text-muted-foreground">
-            {AI_DISABLED_NOTICE} AI 재정렬 없이 전문 검색 순서로 표시됩니다.
+        {aiNotice && (
+          <p className="mt-2 text-sm text-muted-foreground" data-testid="ai-search-notice">
+            {aiNotice} AI 재정렬 없이 전문 검색 순서로 표시됩니다.
           </p>
         )}
 
