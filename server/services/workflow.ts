@@ -50,6 +50,16 @@ function workflowTeamOf(context: Record<string, any>): number | null {
   return normalizeTeamId(context.workflow?.teamId);
 }
 
+/** Whether the actions include the AI summary action. Nothing else sends content to a provider. */
+export function workflowUsesAi(actions: unknown): boolean {
+  return (
+    Array.isArray(actions) &&
+    actions.some(
+      (action) => action !== null && typeof action === 'object' && action.type === 'run_ai_summary'
+    )
+  );
+}
+
 /** Whether the organization of the workflow's own team has AI on; false on any doubt. */
 async function workflowTeamHasAi(context: Record<string, any>): Promise<boolean> {
   const teamId = workflowTeamOf(context);

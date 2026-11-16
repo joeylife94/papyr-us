@@ -27,6 +27,9 @@ function parseUserId(raw: string): number | null {
   return Number.isInteger(userId) && userId > 0 ? userId : null;
 }
 
+// AI access is one flag, nothing else: a key the route does not name is refused, never ignored.
+const aiAccessSchema = z.object({ aiAllowed: z.boolean() }).strict();
+
 const MANAGERS = ['owner', 'admin'] as const;
 
 /** 503 while another change holds the organization's lock, 500 for anything else. */
@@ -40,13 +43,16 @@ function failure(res: Response, error: unknown) {
 export function registerOrganizationRoutes(app: Express, storage: DBStorage) {
   const settingsBody = (
     organization: { id: number; slug: string; name: string; aiEnabled: boolean },
-    role: string
+    role: string,
+    aiAllowed: unknown
   ) => ({
     id: organization.id,
     slug: organization.slug,
     name: organization.name,
     role,
     aiEnabled: organization.aiEnabled,
+    // The caller's own grant; aiEnabled is the organization switch.
+    aiAllowed: aiAllowed === true,
   });
 
   // The caller's own organization: the one their account belongs to, never one named by the
@@ -63,7 +69,9 @@ export function registerOrganizationRoutes(app: Express, storage: DBStorage) {
             .status(403)
             .json({ message: 'Your account does not belong to an organization' });
         }
-        return res.json(settingsBody(organization, req.organization!.role));
+        return res.json(
+          settingsBody(organization, req.organization!.role, req.organization!.aiAllowed)
+        );
       } catch {
         return res.status(500).json({ message: 'Organization check failed' });
       }
@@ -86,8 +94,8 @@ export function registerOrganizationRoutes(app: Express, storage: DBStorage) {
           parsed.data
         );
         if (!result.ok) return res.status(result.status).json(result.body);
-        const { organization, role } = result.value;
-        return res.json(settingsBody(organization, role));
+        const { organization, role, aiAllowed } = result.value;
+        return res.json(settingsBody(organization, role, aiAllowed));
       } catch (error) {
         return failure(res, error);
       }
@@ -137,6 +145,32 @@ export function registerOrganizationRoutes(app: Express, storage: DBStorage) {
           Number(req.user!.id),
           targetUserId,
           parsed.data.role
+        );
+        if (!result.ok) return res.status(result.status).json(result.body);
+        return res.json(result.value);
+      } catch (error) {
+        return failure(res, error);
+      }
+    }
+  );
+
+  // Grants or revokes one member's AI access. The caller's role is read again inside the
+  // organization lock, as for role changes.
+  app.patch(
+    '/api/organization/members/:userId/ai',
+    authMiddleware,
+    requireOrganizationRole([...MANAGERS]),
+    async (req: OrganizationRequest, res: Response) => {
+      const targetUserId = parseUserId(req.params.userId);
+      if (targetUserId === null) return res.status(400).json({ message: 'Invalid user ID' });
+      const parsed = aiAccessSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: 'Invalid AI access' });
+      try {
+        const result = await storage.setOrganizationMemberAiAccess(
+          req.organization!.id,
+          Number(req.user!.id),
+          targetUserId,
+          parsed.data.aiAllowed
         );
         if (!result.ok) return res.status(result.status).json(result.body);
         return res.json(result.value);

@@ -75,7 +75,12 @@ import {
 import * as aiService from './services/ai.js';
 import { aiAssistant } from './services/ai-assistant.js';
 import { z } from 'zod';
-import { triggerWorkflows, initWorkflowService, executeWorkflow } from './services/workflow.js';
+import {
+  triggerWorkflows,
+  initWorkflowService,
+  executeWorkflow,
+  workflowUsesAi,
+} from './services/workflow.js';
 import {
   savePage,
   checkpointPage,
@@ -104,7 +109,7 @@ import { ANONYMOUS_PAGE_VIEWER, DBStorage, OrganizationRequiredError } from './s
 import { createUserInDefaultOrganization } from './organizations.js';
 import { registerKnowledgeRoutes } from './routes/knowledge.js';
 import { buildKnowledgeGraph, suggestAiLinks } from './services/knowledge-graph.js';
-import { organizationAiEnabledFor, requireOrganizationAi } from './organization-guards.js';
+import { aiRefusalFor, aiUsableBy, requireOrganizationAi } from './organization-guards.js';
 import { isReservedDailyNoteSlug } from '../shared/daily-notes.js';
 import { isPageId } from '../shared/page-links.js';
 import { draftPageExcerpt, excerptLinkIds, renderPageExcerpt } from '../shared/page-excerpt.js';
@@ -4054,7 +4059,7 @@ export async function registerRoutes(
       // ordering is returned and the request still succeeds — retrieval does not
       // depend on AI.
       let outcome = applyAiReranking(retrieved, null);
-      if (isAIAvailable() && (await organizationAiEnabledFor(storage, req.user.id))) {
+      if (isAIAvailable() && (await aiUsableBy(storage, req.user.id))) {
         try {
           const candidates = retrieved.slice(0, MAX_AI_RERANK_CANDIDATES);
           const scored = await smartSearch(
@@ -4223,17 +4228,13 @@ export async function registerRoutes(
         const teamParam = typeof req.query.teamId === 'string' ? req.query.teamId : undefined;
         const includeAILinks = req.query.includeAI === 'true';
 
-        // AI links send page content to the provider: only for an organization that has AI on
+        // AI links send page content to the provider: only for a caller who may use AI
         if (includeAILinks) {
           if (!req.user?.id) {
             return res.status(401).json({ message: 'Authentication required' });
           }
-          if (!(await organizationAiEnabledFor(storage, req.user.id))) {
-            return res.status(403).json({
-              code: 'ai_disabled',
-              message: 'AI features are turned off for your organization',
-            });
-          }
+          const refusal = await aiRefusalFor(storage, req.user.id);
+          if (refusal) return res.status(refusal.status).json(refusal.body);
         }
 
         // Use team IDs already resolved by requireTeamMembership middleware
@@ -4398,6 +4399,11 @@ export async function registerRoutes(
           if (!teamId) {
             return res.status(400).json({ error: 'teamId is required' });
           }
+          // Saving a workflow with the AI action needs the caller's AI access
+          if (workflowUsesAi(req.body?.actions)) {
+            const refusal = await aiRefusalFor(storage, req.user!.id);
+            if (refusal) return res.status(refusal.status).json(refusal.body);
+          }
           const workflowData = { ...req.body, teamId };
           // Validate action configs
           const actionValidationError = validateWorkflowActions(workflowData.actions);
@@ -4423,6 +4429,13 @@ export async function registerRoutes(
         try {
           const existingWorkflow = await loadWorkflowForMember(req, res);
           if (!existingWorkflow) return;
+          // The actions after this write need the caller's AI access when they include AI
+          const actionsAfter =
+            'actions' in (req.body ?? {}) ? req.body.actions : existingWorkflow.actions;
+          if (workflowUsesAi(actionsAfter)) {
+            const refusal = await aiRefusalFor(storage, req.user!.id);
+            if (refusal) return res.status(refusal.status).json(refusal.body);
+          }
           const workflowData = { ...req.body };
           // A workflow always keeps a team. A named target team was resolved and membership
           // checked by requireTeamMembership (any source that names a team names the same one).
@@ -4477,6 +4490,11 @@ export async function registerRoutes(
           const existingWorkflow = await loadWorkflowForMember(req, res);
           if (!existingWorkflow) return;
           const { isActive } = req.body;
+          // Anything that could turn an AI workflow on needs the caller's AI access
+          if (isActive !== false && workflowUsesAi(existingWorkflow.actions)) {
+            const refusal = await aiRefusalFor(storage, req.user!.id);
+            if (refusal) return res.status(refusal.status).json(refusal.body);
+          }
           const workflow = await storage.toggleWorkflow(existingWorkflow.id, isActive);
           if (!workflow) {
             return res.status(404).json({ error: 'Workflow not found' });
@@ -4499,6 +4517,10 @@ export async function registerRoutes(
         try {
           const workflow = await loadWorkflowForMember(req, res);
           if (!workflow) return;
+          if (workflowUsesAi(workflow.actions)) {
+            const refusal = await aiRefusalFor(storage, req.user!.id);
+            if (refusal) return res.status(refusal.status).json(refusal.body);
+          }
           const triggerData = req.body.triggerData || {};
           const run = await executeWorkflow(workflow, triggerData);
           res.json({ dryRun: true, run });
