@@ -30,6 +30,11 @@ const BASE_URL = process.env.BASE_URL || 'http://localhost:5003';
 
 const NOT_GRANTED_NOTICE =
   '내 계정에는 AI 사용 권한이 없습니다. 조직 소유자나 관리자에게 요청하세요.';
+const OWNER_OFF_LINE = '이 조직에서는 AI 기능이 꺼져 있습니다. 설정 탭에서 켤 수 있습니다.';
+const OWNER_NOT_GRANTED_LINE =
+  '내 계정에는 AI 사용 권한이 없습니다. 구성원 탭에서 나에게 허용할 수 있습니다.';
+const ADMIN_NOT_GRANTED_LINE =
+  '내 계정에는 AI 사용 권한이 없습니다. 관리자는 스스로에게 권한을 줄 수 없으니 조직 소유자에게 요청하세요.';
 const DISABLED_NOTICE = '이 조직에서는 AI 기능이 꺼져 있습니다. 조직 관리자에게 문의하세요.';
 
 type Persona = 'owner' | 'admin' | 'member' | 'member2';
@@ -56,6 +61,8 @@ async function requireNoProvider(api: APIRequestContext) {
 
 /** A fresh organization of its own: an owner, an admin and two members. AI is off. */
 async function makeWorld(request: APIRequestContext, label: string): Promise<World> {
+  // First, before any account is registered.
+  await requireNoProvider(request);
   if (!DATABASE_URL) throw new Error('DATABASE_URL is required to place accounts');
   const db = new Pool({ connectionString: DATABASE_URL });
   const stamp = Date.now();
@@ -73,7 +80,6 @@ async function makeWorld(request: APIRequestContext, label: string): Promise<Wor
     const me = await (await apis[persona].get('/api/auth/me')).json();
     accounts[persona] = { ...user, id: Number(me.id) };
   }
-  await requireNoProvider(apis.owner);
 
   const adminApi = await createAuthenticatedApiContext(ADMIN_EMAIL, ADMIN_PASSWORD);
   try {
@@ -239,6 +245,8 @@ test.describe('AI is granted per member (screens)', () => {
       await expect(owner.page.getByTestId('ai-grants-org-off')).toContainText(
         '조직의 AI 기능이 꺼져 있어 지금은 아무도 AI를 사용할 수 없습니다'
       );
+      // An owner is told where to switch AI on, not to ask someone.
+      await expect(owner.page.getByTestId('organization-my-ai')).toHaveText(OWNER_OFF_LINE);
       for (const persona of ['owner', 'admin', 'member', 'member2'] as const) {
         await expect(aiSwitch(owner.page, accounts[persona])).toBeChecked();
       }
@@ -260,6 +268,36 @@ test.describe('AI is granted per member (screens)', () => {
       await expect(owner.page.getByTestId('organization-ai-switch')).toBeChecked();
       await owner.page.getByRole('tab', { name: '구성원' }).click();
       await expect(owner.page.getByTestId('ai-grants-org-off')).toHaveCount(0);
+      await expect(owner.page.getByTestId('organization-my-ai')).toHaveText(
+        'AI 기능을 사용할 수 있습니다.'
+      );
+
+      // The owner turns its own access off: it is told it can allow itself in this tab.
+      await aiSwitch(owner.page, accounts.owner).click();
+      await expect(aiSwitch(owner.page, accounts.owner)).not.toBeChecked();
+      await expect(owner.page.getByTestId('organization-my-ai')).toHaveText(OWNER_NOT_GRANTED_LINE);
+      await aiSwitch(owner.page, accounts.owner).click();
+      await expect(aiSwitch(owner.page, accounts.owner)).toBeChecked();
+
+      // A quick double click sends one request: the switch is disabled while it is pending and
+      // shows the server's answer as soon as it comes back.
+      const patches: string[] = [];
+      owner.page.on('request', (request) => {
+        if (
+          request.method() === 'PATCH' &&
+          /\/members\/\d+\/ai$/.test(new URL(request.url()).pathname)
+        ) {
+          patches.push(request.url());
+        }
+      });
+      await aiSwitch(owner.page, accounts.member2).dblclick();
+      await expect(aiSwitch(owner.page, accounts.member2)).not.toBeChecked();
+      await owner.page.waitForTimeout(1000);
+      expect(patches, 'one request for a double click').toHaveLength(1);
+      expect(await aiAllowedInList(apis.owner, accounts.member2)).toBe(false);
+      await aiSwitch(owner.page, accounts.member2).click();
+      await expect(aiSwitch(owner.page, accounts.member2)).toBeChecked();
+      expect(patches).toHaveLength(2);
 
       // ── Admin: a switch on a plain member's row and on its own; a badge on the owner's ──
       await admin.page.goto('/organization');
@@ -283,7 +321,7 @@ test.describe('AI is granted per member (screens)', () => {
       await expect(aiSwitch(admin.page, accounts.admin)).toHaveCount(0);
       expect(await aiAllowedInList(apis.owner, accounts.admin)).toBe(false);
       // ... and the admin's own entry points follow at once, without a reload.
-      await expect(admin.page.getByTestId('organization-my-ai')).toHaveText(NOT_GRANTED_NOTICE);
+      await expect(admin.page.getByTestId('organization-my-ai')).toHaveText(ADMIN_NOT_GRANTED_LINE);
       // The owner sees the admin's row with a switch (an owner changes anyone's access).
       await owner.page.reload();
       await expect(aiSwitch(owner.page, accounts.admin)).not.toBeChecked();
@@ -544,7 +582,7 @@ test.describe('AI is granted per member (screens)', () => {
     }
   });
 
-  test('an ended session shows neither organization data nor “no organization”, and AI is not offered', async ({
+  test('a 401 that survives the token refresh shows neither organization data nor “no organization”, and AI is not offered', async ({
     browser,
     request,
   }) => {
@@ -555,6 +593,8 @@ test.describe('AI is granted per member (screens)', () => {
     const member = await pageFor(browser, accounts.member);
     const aiRequests = recordAiRequests(member.page);
     try {
+      // client/src/lib/http.ts answers a 401 by refreshing the token and retrying once; a 401
+      // that survives the refresh (the retry here is answered 401 again) reaches the screens.
       await member.page.route('**/api/organization', (route) =>
         route.fulfill({
           status: 401,
@@ -580,6 +620,52 @@ test.describe('AI is granted per member (screens)', () => {
       await member.page.waitForTimeout(1500);
       await expect(member.page.getByTestId('ai-search-notice')).toHaveCount(0);
       expect(aiRequests, 'no /api/ai/* request without a known organization').toEqual([]);
+    } finally {
+      await member.context.close();
+      await world.dispose();
+    }
+  });
+
+  test('revoked while the search page is open: the next suggestion request is refused, the notice shows once and no more are sent', async ({
+    browser,
+    request,
+  }) => {
+    test.setTimeout(240_000);
+    const world = await makeWorld(request, 'search');
+    const { accounts, apis } = world;
+    await setOrganizationAi(apis.owner, true);
+    const member = await pageFor(browser, accounts.member);
+    const suggestionRequests: string[] = [];
+    member.page.on('request', (r) => {
+      if (new URL(r.url()).pathname === '/api/ai/search-suggestions')
+        suggestionRequests.push(r.url());
+    });
+    try {
+      // Open the page and wait until the organization answer (granted) is in, so the revocation
+      // below really happens while the page is open.
+      const organizationAnswer = member.page.waitForResponse(
+        (r) => new URL(r.url()).pathname === '/api/organization' && r.ok(),
+        { timeout: 20_000 }
+      );
+      await member.page.goto('/ai-search');
+      await organizationAnswer;
+      const box = member.page.getByPlaceholder('AI 검색으로 원하는 내용을 찾아보세요...');
+      await expect(box).toBeVisible();
+      await member.page.waitForTimeout(500);
+      await expect(member.page.getByTestId('ai-search-notice')).toHaveCount(0);
+
+      await setMemberAi(apis.owner, accounts.member, false);
+      await box.fill('roadmap plan');
+      await expect(member.page.getByText(NOT_GRANTED_NOTICE).first()).toBeVisible();
+      await expect(member.page.getByTestId('ai-search-notice')).toHaveText(
+        `${NOT_GRANTED_NOTICE} AI 재정렬 없이 전문 검색 순서로 표시됩니다.`
+      );
+      expect(suggestionRequests, 'one refused suggestion request').toHaveLength(1);
+
+      // Typing on sends nothing more.
+      await box.fill('roadmap plan next quarter');
+      await member.page.waitForTimeout(1500);
+      expect(suggestionRequests, 'no suggestion request after the refused one').toHaveLength(1);
     } finally {
       await member.context.close();
       await world.dispose();

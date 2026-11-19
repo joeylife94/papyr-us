@@ -11,7 +11,7 @@ import { MembersTab } from '@/components/organization/members-tab';
 import { TeamsTab } from '@/components/organization/teams-tab';
 import { SettingsTab } from '@/components/organization/settings-tab';
 import { ROLE_LABELS } from '@/components/organization/messages';
-import { aiNoticeFor } from '@/lib/ai-gate';
+import { myAiLineFor } from '@/lib/ai-gate';
 
 function Notice({
   title,
@@ -41,8 +41,7 @@ export default function OrganizationPage() {
   const queryClient = useQueryClient();
   const { organization, isLoading, isError, isSignedOut, canManage, aiState } = useOrganization();
   // What this person may do with AI, said to every member (owners' and admins' names are not shown)
-  const myAiLine =
-    aiState === 'available' ? 'AI 기능을 사용할 수 있습니다.' : (aiNoticeFor(aiState) ?? '');
+  const myAiLine = myAiLineFor(aiState, organization?.role) ?? '';
 
   const body = (() => {
     if (isLoading) {
@@ -53,7 +52,8 @@ export default function OrganizationPage() {
       );
     }
     if (isSignedOut) {
-      // The session ended: no organization data, and no claim that the account has none.
+      // A 401 that survived the token refresh: no organization data, and no claim that the account
+      // has none.
       return (
         <Notice title="로그인이 만료되었습니다" testId="organization-signed-out">
           <p className="mb-3">조직 정보를 보려면 다시 로그인하세요.</p>

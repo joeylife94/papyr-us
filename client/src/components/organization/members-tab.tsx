@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { UserMinus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -129,13 +129,22 @@ export function MembersTab({ userId, callerRole, organizationAiEnabled }: Props)
     },
   });
 
+  // True from the click until the answer is in: a quick second click is ignored at once, before
+  // the pending state has been rendered.
+  const aiRequestOpen = useRef(false);
   const aiMutation = useMutation({
     mutationFn: ({ target, aiAllowed }: { target: OrganizationMember; aiAllowed: boolean }) =>
       organizationRequest<{ userId: number; aiAllowed: boolean }>(
         `/api/organization/members/${target.userId}/ai`,
         { method: 'PATCH', body: { aiAllowed } }
       ),
-    onSuccess: (_result, { target, aiAllowed }) => {
+    onSuccess: (result, { target, aiAllowed }) => {
+      // Show the server's answer at once; the list is asked again as well.
+      queryClient.setQueryData<OrganizationMember[]>(membersKey, (rows) =>
+        rows?.map((row) =>
+          row.userId === result.userId ? { ...row, aiAllowed: result.aiAllowed } : row
+        )
+      );
       queryClient.invalidateQueries({ queryKey: membersKey });
       // The caller's own grant changed: their AI entry points follow at once.
       if (target.userId === userId) {
@@ -146,6 +155,9 @@ export function MembersTab({ userId, callerRole, organizationAiEnabled }: Props)
           ? `${target.name} 님의 AI 사용을 허용했습니다`
           : `${target.name} 님의 AI 사용 허용을 해제했습니다`,
       });
+    },
+    onSettled: () => {
+      aiRequestOpen.current = false;
     },
     onError: (error) => {
       // The switch goes back to what the server holds (the list is asked again).
@@ -330,9 +342,11 @@ export function MembersTab({ userId, callerRole, organizationAiEnabled }: Props)
                         className="min-h-0 min-w-0"
                         checked={member.aiAllowed}
                         disabled={aiMutation.isPending}
-                        onCheckedChange={(checked) =>
-                          aiMutation.mutate({ target: member, aiAllowed: checked })
-                        }
+                        onCheckedChange={(checked) => {
+                          if (aiRequestOpen.current) return;
+                          aiRequestOpen.current = true;
+                          aiMutation.mutate({ target: member, aiAllowed: checked });
+                        }}
                         aria-label={`${member.name} 님의 AI 사용 허용`}
                         data-testid={`ai-switch-${member.email}`}
                       />

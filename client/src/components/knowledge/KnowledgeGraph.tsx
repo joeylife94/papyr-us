@@ -377,7 +377,8 @@ export function KnowledgeGraph({ teamId }: KnowledgeGraphProps) {
           className="relative h-[420px] min-w-0 bg-muted/20 md:h-auto md:flex-1"
           aria-hidden="true"
         >
-          {isLoading ? (
+          {/* A refused AI-links request is not an error: the graph without them loads next. */}
+          {isLoading || refusal ? (
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="text-center">
                 <RefreshCw className="mx-auto mb-2 h-8 w-8 animate-spin text-highlight" />

@@ -15,7 +15,7 @@ export const AI_NOT_GRANTED_NOTICE =
 
 /**
  * - `available`: the organization has AI on and the caller has been granted it.
- * - `pending`: not known (loading, failed to load, or the session ended); show nothing.
+ * - `pending`: not known (loading, failed to load, or a 401 survived the token refresh); show nothing.
  * - `none`: the account belongs to no organization.
  * - `ai_disabled`: the organization has AI off.
  * - `ai_not_granted`: AI is on, but not granted to the caller.
@@ -26,7 +26,7 @@ export interface AiStateInput {
   organization: { aiEnabled?: unknown; aiAllowed?: unknown } | null | undefined;
   isLoading: boolean;
   isError: boolean;
-  /** The session ended (401): there is no organization data to read. */
+  /** A 401 survived the token refresh (or nobody is signed in): there is no organization data. */
   signedOut?: boolean;
 }
 
@@ -47,6 +47,35 @@ export function aiNoticeFor(state: AiState): string | null {
       return AI_DISABLED_NOTICE;
     case 'ai_not_granted':
       return AI_NOT_GRANTED_NOTICE;
+    default:
+      return null;
+  }
+}
+
+/** The line the organization page shows a person about their own AI state. */
+export function myAiLineFor(
+  state: AiState,
+  role: 'owner' | 'admin' | 'member' | null | undefined
+): string | null {
+  const canManage = role === 'owner' || role === 'admin';
+  switch (state) {
+    case 'available':
+      return 'AI 기능을 사용할 수 있습니다.';
+    case 'ai_disabled':
+      // Owners and admins switch it on themselves; they are not told to ask someone else.
+      return canManage
+        ? '이 조직에서는 AI 기능이 꺼져 있습니다. 설정 탭에서 켤 수 있습니다.'
+        : AI_DISABLED_NOTICE;
+    case 'ai_not_granted':
+      if (role === 'owner') {
+        return '내 계정에는 AI 사용 권한이 없습니다. 구성원 탭에서 나에게 허용할 수 있습니다.';
+      }
+      if (role === 'admin') {
+        return '내 계정에는 AI 사용 권한이 없습니다. 관리자는 스스로에게 권한을 줄 수 없으니 조직 소유자에게 요청하세요.';
+      }
+      return AI_NOT_GRANTED_NOTICE;
+    case 'none':
+      return AI_DISABLED_NOTICE;
     default:
       return null;
   }

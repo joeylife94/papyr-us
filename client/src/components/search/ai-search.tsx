@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { Search, Sparkles, FileText, Clock, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -9,7 +9,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { useOrganization } from '@/hooks/useOrganization';
-import { aiNoticeFor } from '@/lib/ai-gate';
+import { useAiRefusal } from '@/hooks/useAiRefusal';
+import { aiNoticeFor, aiRefusalCodeOf, type AiRefusalCode } from '@/lib/ai-gate';
 
 /** Mirrors RetrievalResultSchema in contracts/api.schema.ts. */
 interface SearchResult {
@@ -35,6 +36,13 @@ interface SearchSuggestionsResponse {
   suggestions: string[];
 }
 
+/** The suggestion request was refused because the caller may not use AI. */
+class SuggestionsRefused extends Error {
+  constructor(readonly code: AiRefusalCode) {
+    super(code);
+  }
+}
+
 export function AISearch({ teamId }: { teamId?: string }) {
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -44,6 +52,9 @@ export function AISearch({ teamId }: { teamId?: string }) {
   // caller has been granted it. Search itself keeps working (full-text order) either way.
   const { aiState, aiAvailable: aiEnabled } = useOrganization();
   const aiNotice = aiNoticeFor(aiState);
+  const onAiRefusal = useAiRefusal();
+  // Set once the server has refused a suggestion request: no further one until AI is available again.
+  const suggestionsRefused = useRef(false);
 
   // AI 검색 뮤테이션
   const searchMutation = useMutation({
@@ -67,17 +78,38 @@ export function AISearch({ teamId }: { teamId?: string }) {
   // 검색 제안 뮤테이션
   const suggestionsMutation = useMutation({
     mutationFn: async (searchQuery: string) => {
-      const res = await apiRequest('POST', '/api/ai/search-suggestions', {
-        query: searchQuery,
+      const res = await fetch('/api/ai/search-suggestions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ query: searchQuery }),
       });
+      if (!res.ok) {
+        const code = await aiRefusalCodeOf(res);
+        if (code) throw new SuggestionsRefused(code);
+        throw new Error(`${res.status}: ${res.statusText}`);
+      }
       const data: SearchSuggestionsResponse = await res.json();
       return data;
     },
+    onError: (error) => {
+      // AI is off or not granted: say why once, ask for the organization again, stop asking.
+      if (error instanceof SuggestionsRefused) {
+        suggestionsRefused.current = true;
+        setSuggestions([]);
+        onAiRefusal(error.code);
+      }
+    },
   });
+
+  // Once AI is known to be unavailable the refusal has been taken in; start clean when it returns.
+  useEffect(() => {
+    if (!aiEnabled) suggestionsRefused.current = false;
+  }, [aiEnabled]);
 
   // 검색어 변경 시 제안 생성
   useEffect(() => {
-    if (aiEnabled && query.trim().length > 2) {
+    if (aiEnabled && !suggestionsRefused.current && query.trim().length > 2) {
       const timeoutId = setTimeout(() => {
         suggestionsMutation.mutate(query);
       }, 500);

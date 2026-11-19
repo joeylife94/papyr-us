@@ -5,6 +5,7 @@ import {
   aiNoticeFor,
   aiRefusalCodeOf,
   aiStateOf,
+  myAiLineFor,
   noticeForRefusalCode,
   type AiState,
 } from '../../client/src/lib/ai-gate';
@@ -128,5 +129,37 @@ describe('aiRefusalCodeOf', () => {
     const response = json(403, { code: 'ai_disabled', message: 'x' });
     await aiRefusalCodeOf(response);
     expect(await response.json()).toEqual({ code: 'ai_disabled', message: 'x' });
+  });
+});
+
+describe('myAiLineFor (state x role)', () => {
+  const roles = ['owner', 'admin', 'member'] as const;
+  const states: AiState[] = ['available', 'pending', 'none', 'ai_disabled', 'ai_not_granted'];
+
+  it.each(roles)('says AI can be used when available (%s)', (role) => {
+    expect(myAiLineFor('available', role)).toBe('AI 기능을 사용할 수 있습니다.');
+  });
+  it.each(roles)('says nothing while pending (%s)', (role) => {
+    expect(myAiLineFor('pending', role)).toBeNull();
+  });
+  it('tells a plain member to ask, by role only', () => {
+    expect(myAiLineFor('ai_disabled', 'member')).toBe(AI_DISABLED_NOTICE);
+    expect(myAiLineFor('ai_not_granted', 'member')).toBe(AI_NOT_GRANTED_NOTICE);
+    expect(myAiLineFor('ai_not_granted', null)).toBe(AI_NOT_GRANTED_NOTICE);
+  });
+  it.each(['owner', 'admin'] as const)('tells %s the switch is in the settings tab', (role) => {
+    const line = myAiLineFor('ai_disabled', role)!;
+    expect(line).toContain('설정 탭에서 켤 수 있습니다');
+    expect(line).not.toContain('문의');
+  });
+  it('tells an owner without the grant to allow themselves in the members tab', () => {
+    const line = myAiLineFor('ai_not_granted', 'owner')!;
+    expect(line).toContain('구성원 탭에서 나에게 허용할 수 있습니다');
+    expect(line).not.toContain('요청하세요');
+  });
+  it('tells an admin without the grant to ask an owner (an admin cannot grant itself)', () => {
+    const line = myAiLineFor('ai_not_granted', 'admin')!;
+    expect(line).toContain('조직 소유자에게 요청하세요');
+    expect(line).not.toContain('구성원 탭');
   });
 });

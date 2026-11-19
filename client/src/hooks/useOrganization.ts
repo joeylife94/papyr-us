@@ -22,11 +22,14 @@ export interface UseOrganizationResult {
   organization: CurrentOrganization | null;
   /** True while authentication or the organization request is still loading. */
   isLoading: boolean;
-  /** True when the request failed for a reason other than 401/403 (which mean "none"). */
+  /** True when the request failed for a reason other than 401 (signed out) or 403 ("none"). */
   isError: boolean;
   /** Owner or admin of the organization. */
   canManage: boolean;
-  /** The session ended (401): no organization data is shown, and nothing says "no organization". */
+  /**
+   * A 401 survived the token refresh (or there is no signed-in account): no organization data is
+   * shown, and nothing says "no organization".
+   */
   isSignedOut: boolean;
   /** Why AI is or is not offered (see aiStateOf). The one place AI entry points read. */
   aiState: AiState;
@@ -34,7 +37,11 @@ export interface UseOrganizationResult {
   aiAvailable: boolean;
 }
 
-/** The organization request answered 401: the session is gone. */
+/**
+ * The organization request was answered 401 after lib/http.ts had already tried the token refresh
+ * (a 401 is retried once after a successful refresh; when the refresh fails the browser is sent to
+ * the login page instead). A 401 that reaches this hook is one that survived the refresh.
+ */
 class SignedOutError extends Error {}
 
 /**
