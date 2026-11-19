@@ -46,6 +46,8 @@ export async function organizationRequest<T>(
         : undefined
     );
   }
+  // An answer with no body (204, as team removal gives) has nothing to read.
+  if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
 

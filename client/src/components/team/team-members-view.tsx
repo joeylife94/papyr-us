@@ -129,11 +129,13 @@ export function TeamMembersView({ teamId, teamName, teamDisplayName, userId }: P
     mutationFn: () =>
       organizationRequest<unknown>(`/api/teams/${teamId}/memberships/me`, { method: 'DELETE' }),
     onMutate: () => setActionError(null),
-    onSuccess: async () => {
+    onSuccess: () => {
       setLeaving(false);
-      await queryClient.invalidateQueries({ queryKey: ['/api/teams'] });
       toast({ title: '팀에서 나갔습니다', description: `${teamDisplayName} 팀에서 나왔습니다.` });
+      // Leave the screen first: the members list of this team is refused from now on.
       navigate('/');
+      queryClient.removeQueries({ queryKey: membersKey });
+      queryClient.invalidateQueries({ queryKey: ['/api/teams'], exact: true });
     },
     onError: (failure) => {
       setLeaving(false);

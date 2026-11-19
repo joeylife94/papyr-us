@@ -89,7 +89,7 @@ async function addThroughPicker(page: Page, person: Person) {
   await expect(row(page, person)).toBeVisible();
   // The candidate is gone from the picker once added.
   await expect(page.getByTestId(`team-candidate-${person.email}`)).toHaveCount(0);
-  await page.keyboard.press('Escape');
+  await dialog.getByRole('button', { name: 'Close' }).click();
   await expect(dialog).toHaveCount(0);
 }
 
@@ -194,6 +194,8 @@ test.describe('Team membership screens', () => {
           content: 'for the team',
           author: owner.email,
           teamId: team.id,
+          folder: 'WP2',
+          tags: ['wp2'],
         },
       });
       expect(created.status()).toBe(201);
