@@ -52,6 +52,7 @@ import {
   type PermissionLevel,
   type TeamMember,
   type TeamRole,
+  teamRoles,
   type DatabaseSchema,
   type DatabaseRow,
   type DatabaseRelation,
@@ -301,6 +302,44 @@ export class OrganizationBusyError extends Error {
   constructor() {
     super('Organization is busy');
     this.name = 'OrganizationBusyError';
+  }
+}
+
+// ---- WP2: team members (team-membership-routes.ts) ----
+
+const TEAM_LOCK_TIMEOUT_MS = 5000;
+
+const TEAM_ROLE_RANK: Record<TeamRole, number> = { owner: 3, admin: 2, member: 1 };
+
+/** A stored role outside teamRoles counts as 'member'. */
+function normalizeTeamRole(role: unknown): TeamRole {
+  return (teamRoles as readonly unknown[]).includes(role) ? (role as TeamRole) : 'member';
+}
+
+function isTeamManager(role: TeamRole): boolean {
+  return role === 'owner' || role === 'admin';
+}
+
+/** One member of a team as read inside its lock. */
+export interface TeamMemberState {
+  userId: number;
+  role: TeamRole;
+  isActive: boolean;
+}
+
+export type TeamDecision = OrganizationDecision;
+export type TeamMutationResult<T> = OrganizationMutationResult<T>;
+
+const TEAM_MEMBER_NOT_FOUND = refuseOrganization(404, 'Membership not found');
+const TEAM_MANAGER_REQUIRED = refuseOrganization(403, 'Owner or admin role required');
+const TEAM_LAST_OWNER_REMOVAL = refuseOrganization(409, 'Cannot remove the sole team owner');
+const TEAM_LAST_OWNER_DEMOTION = refuseOrganization(409, 'Cannot demote the sole team owner');
+
+/** Another request holds the team's member lock for too long; routes answer 503. */
+export class TeamBusyError extends Error {
+  constructor() {
+    super('Team is busy');
+    this.name = 'TeamBusyError';
   }
 }
 
@@ -2937,6 +2976,363 @@ export class DBStorage {
       })
       .returning();
     return result[0];
+  }
+
+  // ---- WP2: team members (team-membership-routes.ts) ----
+
+  /**
+   * The role rules for changing a team member's role. Pure: the caller reads the actor, the
+   * target and the owner count inside the team lock and passes them in. They mirror
+   * decideOrganizationRoleChange: only an owner grants or changes `owner`, an admin cannot change
+   * another admin, nobody raises their own role, the last active owner stays. The actor is
+   * checked first (a non-member and a plain member get the same answer, so nothing is revealed
+   * about a team the caller is not in), then the target.
+   */
+  static decideTeamRoleChange(input: {
+    actor: TeamMemberState | null;
+    target: TeamMemberState | null;
+    requested: TeamRole;
+    /** Active owners of the team, the target included when it is one. */
+    activeOwnerCount: number;
+  }): TeamDecision {
+    const { actor, target, requested } = input;
+    if (!actor || !isTeamManager(actor.role)) return TEAM_MANAGER_REQUIRED;
+    if (!target) return TEAM_MEMBER_NOT_FOUND;
+    if ((target.role === 'owner' || requested === 'owner') && actor.role !== 'owner') {
+      return refuseOrganization(403, 'Only a team owner can grant or change the owner role');
+    }
+    if (target.role === 'admin' && target.userId !== actor.userId && actor.role !== 'owner') {
+      return refuseOrganization(403, 'Only a team owner can change an admin');
+    }
+    if (target.userId === actor.userId && TEAM_ROLE_RANK[requested] > TEAM_ROLE_RANK[target.role]) {
+      return refuseOrganization(403, 'You cannot raise your own role');
+    }
+    if (requested === target.role) return { ok: true, write: false };
+    if (target.role === 'owner' && lastActiveOwner(input.activeOwnerCount, target)) {
+      return TEAM_LAST_OWNER_DEMOTION;
+    }
+    return { ok: true, write: true };
+  }
+
+  /**
+   * The role rules for taking a member out of a team, same contract as decideTeamRoleChange.
+   * `leaving` is a member removing their own row (DELETE .../memberships/me): any member may,
+   * except the last active owner. Otherwise the actor must be an owner or admin; only an owner
+   * removes an owner or another admin.
+   */
+  static decideTeamMemberRemoval(input: {
+    actor: TeamMemberState | null;
+    target: TeamMemberState | null;
+    leaving: boolean;
+    activeOwnerCount: number;
+  }): TeamDecision {
+    const { actor, target } = input;
+    if (input.leaving) {
+      if (!actor) return TEAM_MEMBER_NOT_FOUND;
+      if (actor.role === 'owner' && lastActiveOwner(input.activeOwnerCount, actor)) {
+        return TEAM_LAST_OWNER_REMOVAL;
+      }
+      return { ok: true, write: true };
+    }
+    if (!actor || !isTeamManager(actor.role)) return TEAM_MANAGER_REQUIRED;
+    if (!target) return TEAM_MEMBER_NOT_FOUND;
+    if (target.role === 'owner' && actor.role !== 'owner') {
+      return refuseOrganization(403, 'Only an owner can remove another owner');
+    }
+    if (target.role === 'admin' && target.userId !== actor.userId && actor.role !== 'owner') {
+      return refuseOrganization(403, 'Only an owner can remove an admin');
+    }
+    if (target.role === 'owner' && lastActiveOwner(input.activeOwnerCount, target)) {
+      return TEAM_LAST_OWNER_REMOVAL;
+    }
+    return { ok: true, write: true };
+  }
+
+  /**
+   * Runs fn in a transaction after taking pg_advisory_xact_lock(hashtextextended('team-members:' ||
+   * teamId, 0)). Every change to team_members that depends on who else is in the team (roles,
+   * removal, leaving, admission) goes through this. Same contract as withOrganizationLocks: every
+   * read and write the decision depends on goes through the handle fn receives; a wait longer than
+   * the lock timeout throws TeamBusyError.
+   */
+  async withTeamLock<T>(
+    teamId: number,
+    fn: (tx: OrganizationTx) => Promise<T>,
+    options: { lockTimeoutMs?: number } = {}
+  ): Promise<T> {
+    const timeoutMs = options.lockTimeoutMs ?? TEAM_LOCK_TIMEOUT_MS;
+    if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
+      throw new Error('lockTimeoutMs must be a positive integer');
+    }
+    try {
+      return await this.db.transaction(async (tx: OrganizationTx) => {
+        await tx.execute(sql.raw(`SET LOCAL lock_timeout = '${timeoutMs}ms'`));
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(hashtextextended(${'team-members:' + teamId}, 0))`
+        );
+        await tx.execute(sql`SET LOCAL lock_timeout = 0`);
+        return fn(tx);
+      });
+    } catch (error) {
+      if (postgresErrorOf(error)?.code === '55P03') throw new TeamBusyError();
+      throw error;
+    }
+  }
+
+  /**
+   * The members of a team read through the lock's handle: only accounts that are also members of
+   * the team's organization count, so a row left over from another organization is not a member.
+   */
+  private async readTeamRoles(
+    executor: OrganizationExecutor,
+    teamId: number,
+    actorUserId: number,
+    targetUserId: number
+  ): Promise<{
+    organizationId: number | null;
+    actor: TeamMemberState | null;
+    target: TeamMemberState | null;
+    activeOwnerCount: number;
+  }> {
+    const [team] = await executor
+      .select({ organizationId: teams.organizationId })
+      .from(teams)
+      .where(eq(teams.id, teamId))
+      .limit(1);
+    if (!team) return { organizationId: null, actor: null, target: null, activeOwnerCount: 0 };
+    const rows = await executor
+      .select({
+        userId: teamMembers.userId,
+        role: teamMembers.role,
+        isActive: users.isActive,
+      })
+      .from(teamMembers)
+      .innerJoin(users, eq(users.id, teamMembers.userId))
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.userId, teamMembers.userId),
+          eq(organizationMembers.organizationId, team.organizationId)
+        )
+      )
+      .where(eq(teamMembers.teamId, teamId));
+    const states: TeamMemberState[] = rows.map((row: any) => ({
+      userId: Number(row.userId),
+      role: normalizeTeamRole(row.role),
+      isActive: row.isActive === true,
+    }));
+    const find = (id: number) => states.find((state) => state.userId === id) ?? null;
+    const actor = find(actorUserId);
+    return {
+      organizationId: Number(team.organizationId),
+      actor: actor && actor.isActive ? actor : null,
+      target: find(targetUserId),
+      activeOwnerCount: states.filter((state) => state.role === 'owner' && state.isActive).length,
+    };
+  }
+
+  /**
+   * Changes one team member's role inside the team lock. The actor's role, the target's role and
+   * the owner count are read after the lock is taken and the answer follows
+   * decideTeamRoleChange. `demoted` says the new role is lower than the old one.
+   */
+  async changeTeamMemberRole(
+    teamId: number,
+    actorUserId: number,
+    targetUserId: number,
+    requested: TeamRole
+  ): Promise<
+    TeamMutationResult<{ teamId: number; userId: number; role: TeamRole; demoted: boolean }>
+  > {
+    return this.withTeamLock(teamId, async (tx) => {
+      const state = await this.readTeamRoles(tx, teamId, actorUserId, targetUserId);
+      const decision = DBStorage.decideTeamRoleChange({ ...state, requested });
+      if (!decision.ok) return decision;
+      const previous = state.target!.role;
+      if (decision.write) {
+        await tx
+          .update(teamMembers)
+          .set({ role: requested })
+          .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, targetUserId)));
+      }
+      return {
+        ok: true as const,
+        value: {
+          teamId,
+          userId: targetUserId,
+          role: requested,
+          demoted: decision.write && TEAM_ROLE_RANK[requested] < TEAM_ROLE_RANK[previous],
+        },
+      };
+    });
+  }
+
+  /**
+   * Takes a member out of the team inside the team lock. `leaving` is the caller removing their
+   * own row; the target is then the actor. Decided by decideTeamMemberRemoval.
+   */
+  async removeTeamMember(
+    teamId: number,
+    actorUserId: number,
+    targetUserId: number,
+    options: { leaving?: boolean } = {}
+  ): Promise<TeamMutationResult<{ userId: number }>> {
+    const leaving = options.leaving === true;
+    const subjectUserId = leaving ? actorUserId : targetUserId;
+    return this.withTeamLock(teamId, async (tx) => {
+      const state = await this.readTeamRoles(tx, teamId, actorUserId, subjectUserId);
+      const decision = DBStorage.decideTeamMemberRemoval({ ...state, leaving });
+      if (!decision.ok) return decision;
+      await tx
+        .delete(teamMembers)
+        .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, subjectUserId)));
+      return { ok: true as const, value: { userId: subjectUserId } };
+    });
+  }
+
+  /**
+   * Admits an existing account of the team's own organization as a plain member, inside the team
+   * lock. An unknown account and an account of another organization get the same refusal.
+   */
+  async admitTeamMember(
+    teamId: number,
+    actorUserId: number,
+    email: string
+  ): Promise<
+    TeamMutationResult<{
+      created: boolean;
+      membership: { teamId: number; userId: number; role: TeamRole };
+    }>
+  > {
+    return this.withTeamLock(teamId, async (tx) => {
+      const state = await this.readTeamRoles(tx, teamId, actorUserId, actorUserId);
+      if (!state.actor || !isTeamManager(state.actor.role)) return TEAM_MANAGER_REQUIRED;
+      if (!email) return refuseOrganization(400, 'Existing user email is required');
+      const notFound = refuseOrganization(404, 'Registered user not found');
+      const [account] = await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.email, email))
+        .limit(1);
+      if (!account) return notFound;
+      const [membership] = await tx
+        .select({ organizationId: organizationMembers.organizationId })
+        .from(organizationMembers)
+        .where(eq(organizationMembers.userId, account.id))
+        .limit(1);
+      if (!membership || Number(membership.organizationId) !== state.organizationId) {
+        return notFound;
+      }
+      const [existing] = await tx
+        .select({ teamId: teamMembers.teamId, userId: teamMembers.userId, role: teamMembers.role })
+        .from(teamMembers)
+        .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, account.id)))
+        .limit(1);
+      if (existing) {
+        const membership = { ...existing, role: normalizeTeamRole(existing.role) };
+        return { ok: true as const, value: { created: false, membership } };
+      }
+      const [created] = await tx
+        .insert(teamMembers)
+        .values({ teamId, userId: account.id, role: 'member', invitedBy: actorUserId })
+        .returning({
+          teamId: teamMembers.teamId,
+          userId: teamMembers.userId,
+          role: teamMembers.role,
+        });
+      return {
+        ok: true as const,
+        value: { created: true, membership: { ...created, role: normalizeTeamRole(created.role) } },
+      };
+    });
+  }
+
+  /**
+   * The members of a team, highest role first, then by name. Only accounts that are also members
+   * of the team's organization are listed.
+   */
+  async listTeamMembers(teamId: number): Promise<
+    Array<{
+      userId: number;
+      name: string;
+      email: string;
+      role: TeamRole;
+      isActive: boolean;
+      joinedAt: Date;
+    }>
+  > {
+    const rows = await this.db
+      .select({
+        userId: teamMembers.userId,
+        name: users.name,
+        email: users.email,
+        role: teamMembers.role,
+        isActive: users.isActive,
+        joinedAt: teamMembers.joinedAt,
+      })
+      .from(teamMembers)
+      .innerJoin(teams, eq(teams.id, teamMembers.teamId))
+      .innerJoin(users, eq(users.id, teamMembers.userId))
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.userId, teamMembers.userId),
+          eq(organizationMembers.organizationId, teams.organizationId)
+        )
+      )
+      .where(eq(teamMembers.teamId, teamId));
+    return rows
+      .map((row: any) => ({
+        userId: Number(row.userId),
+        name: row.name,
+        email: row.email,
+        role: normalizeTeamRole(row.role),
+        isActive: row.isActive === true,
+        joinedAt: row.joinedAt,
+      }))
+      .sort(
+        (
+          a: { userId: number; name: string; role: TeamRole },
+          b: { userId: number; name: string; role: TeamRole }
+        ) =>
+          TEAM_ROLE_RANK[b.role] - TEAM_ROLE_RANK[a.role] ||
+          a.name.localeCompare(b.name) ||
+          a.userId - b.userId
+      );
+  }
+
+  /**
+   * Active members of the team's organization who are not in the team, for the "add member"
+   * picker. `query` matches a part of the name or the email (case-insensitive); at most `limit`
+   * rows, by name. Name and email only.
+   */
+  async listTeamMemberCandidates(
+    teamId: number,
+    query: string,
+    limit = 20
+  ): Promise<Array<{ name: string; email: string }>> {
+    const needle = query.trim().replace(/[\\%_]/g, (character) => `\\${character}`);
+    const filter = needle
+      ? sql`and (u.name ilike ${'%' + needle + '%'} or u.email ilike ${'%' + needle + '%'})`
+      : sql``;
+    const result = await this.db.execute(sql`
+      SELECT u.name, u.email
+      FROM teams t
+      JOIN organization_members om ON om.organization_id = t.organization_id
+      JOIN users u ON u.id = om.user_id
+      WHERE t.id = ${teamId}
+        AND u.is_active = true
+        AND NOT EXISTS (
+          SELECT 1 FROM team_members tm WHERE tm.team_id = t.id AND tm.user_id = u.id
+        )
+        ${filter}
+      ORDER BY u.name, u.id
+      LIMIT ${limit}
+    `);
+    return (result.rows as any[]).map((row) => ({
+      name: String(row.name),
+      email: String(row.email),
+    }));
   }
 
   async getMembers(teamId?: number): Promise<Member[]> {

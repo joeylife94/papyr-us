@@ -3652,17 +3652,24 @@ export async function registerRoutes(
 
     app.post('/api/teams', optionalAuth, requireAuthIfEnabled, async (req: AuthRequest, res) => {
       try {
-        const validatedData = insertTeamSchema.parse(req.body);
         // A team belongs to its creator's organization (issue #124 X1), so it needs a creator
         const creatorUserId = req.user?.id;
         if (!creatorUserId) {
           return res.status(401).json({ error: 'Authentication required' });
         }
-        const team = await storage.createTeamWithOwner(validatedData, creatorUserId);
+        const parsed = insertTeamSchema.safeParse(req.body);
+        if (!parsed.success) {
+          return res.status(400).json({ error: 'Invalid team data' });
+        }
+        const team = await storage.createTeamWithOwner(parsed.data, creatorUserId);
         res.status(201).json(team);
       } catch (error) {
         if (error instanceof OrganizationRequiredError) {
           return res.status(403).json({ error: 'Your account does not belong to an organization' });
+        }
+        // Team names are unique across the instance: the same answer whoever holds the name.
+        if (postgresErrorOf(error)?.code === '23505') {
+          return res.status(409).json({ error: 'A team with this name already exists' });
         }
         console.error('Error creating team:', error);
         res.status(500).json({ error: 'Failed to create team' });

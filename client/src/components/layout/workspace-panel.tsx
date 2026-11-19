@@ -6,6 +6,7 @@ import {
   CheckSquare,
   ChevronDown,
   ChevronRight,
+  Contact,
   Database,
   File,
   FileText,
@@ -21,6 +22,8 @@ import { SearchBar } from '@/components/wiki/search-bar';
 import { useToast } from '@/hooks/use-toast';
 import { useFeatureFlags } from '@/features/FeatureFlagsContext';
 import { DailyNoteButton } from '@/components/daily-note-button';
+import { CreateTeamDialog } from '@/components/team/create-team-dialog';
+import { useOrganization } from '@/hooks/useOrganization';
 import { VaultMenu } from '@/components/vault/vault-menu';
 import { useShellNav } from './shell-nav';
 import { PageTree } from './page-tree';
@@ -62,6 +65,13 @@ export function WorkspacePanel({
   );
   const [passwordInput, setPasswordInput] = useState('');
   const [verifiedTeams, setVerifiedTeams] = useState<string[]>([]);
+  const [creatingTeam, setCreatingTeam] = useState(false);
+  // Any member of an organization may create a team in it; the server decides (POST /api/teams).
+  const {
+    organization,
+    isLoading: organizationLoading,
+    isError: organizationError,
+  } = useOrganization();
 
   const {
     data: teams = [],
@@ -130,7 +140,8 @@ export function WorkspacePanel({
   const teamLinks = (teamName: string) => {
     const base = `/teams/${teamName}`;
     const links = [
-      { href: `${base}/members`, label: '팀원 관리', icon: Users },
+      { href: `${base}/team-members`, label: '팀 멤버', icon: Users },
+      { href: `${base}/members`, label: '디렉터리', icon: Contact },
       { href: `${base}/tasks`, label: '과제 트래커', icon: CheckSquare },
       { href: `${base}/files`, label: '파일 관리', icon: File },
     ];
@@ -228,10 +239,24 @@ export function WorkspacePanel({
 
       {flags.FEATURE_TEAMS ? (
         <div className="flex flex-col">
-          <h3 className={sectionLabel}>
-            워크스페이스 목록
-            {teamsLoading && <span className="ml-2 normal-case">(로딩 중…)</span>}
-          </h3>
+          <div className="flex items-center justify-between pr-1">
+            <h3 className={sectionLabel}>
+              워크스페이스 목록
+              {teamsLoading && <span className="ml-2 normal-case">(로딩 중…)</span>}
+            </h3>
+            {organization ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 min-h-0 min-w-0 text-muted-foreground hover:text-foreground"
+                aria-label="새 팀 만들기"
+                onClick={() => setCreatingTeam(true)}
+                data-testid="create-team-entry"
+              >
+                <Plus className="h-4 w-4" aria-hidden="true" />
+              </Button>
+            ) : null}
+          </div>
           {teamsError && (
             <p className="px-2.5 text-xs text-destructive">팀 목록을 불러오는데 실패했습니다.</p>
           )}
@@ -284,8 +309,12 @@ export function WorkspacePanel({
             })
           )}
           {!teamsLoading && teams.length === 0 && (
-            <p className="px-2.5 text-xs text-muted-foreground">
-              팀이 없습니다. 관리자 페이지에서 팀을 추가하세요.
+            <p className="px-2.5 text-xs text-muted-foreground" data-testid="teams-empty">
+              {organization
+                ? '아직 속한 팀이 없습니다. 위의 + 버튼으로 새 팀을 만들 수 있습니다.'
+                : organizationLoading || organizationError
+                  ? '팀이 없습니다.'
+                  : '소속된 조직이 없어 팀을 만들 수 없습니다. 플랫폼 관리자에게 문의하세요.'}
             </p>
           )}
         </div>
@@ -310,6 +339,12 @@ export function WorkspacePanel({
           ))}
         </nav>
       )}
+
+      <CreateTeamDialog
+        open={creatingTeam}
+        onOpenChange={setCreatingTeam}
+        onNavigate={onNavigate}
+      />
 
       <Dialog open={!!passwordPrompt} onOpenChange={() => setPasswordPrompt(null)}>
         <DialogContent>

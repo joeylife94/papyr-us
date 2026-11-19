@@ -101,6 +101,70 @@ describe('Team Management API', () => {
     expect(response.status).toBe(403);
   });
 
+  for (const enforce of [true, false]) {
+    describe(`creating a team with ENFORCE_AUTH_WRITES=${enforce}`, () => {
+      beforeEach(() => {
+        mockConfig.enforceAuthForWrites = enforce;
+      });
+      afterEach(() => {
+        mockConfig.enforceAuthForWrites = false;
+      });
+
+      it('signed out is 401 and nothing is created', async () => {
+        const response = await request(app)
+          .post('/api/teams')
+          .send({ name: 'anon-team', displayName: 'Anon Team' });
+        expect(response.status).toBe(401);
+        expect(storage.createTeamWithOwner).not.toHaveBeenCalled();
+      });
+
+      it('signed in creates the team for its creator', async () => {
+        (storage.createTeamWithOwner as vi.Mock).mockResolvedValue({ id: 3, name: 'mode-team' });
+        const token = jwt.sign({ id: 9, email: 'mode@example.com' }, config.jwtSecret);
+        const response = await request(app)
+          .post('/api/teams')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ name: 'mode-team', displayName: 'Mode Team' });
+        expect(response.status).toBe(201);
+        expect(storage.createTeamWithOwner).toHaveBeenCalledWith(
+          expect.objectContaining({ name: 'mode-team' }),
+          9
+        );
+      });
+    });
+  }
+
+  it('TC-TEAM-001d: refuses a team without a name or display name (400)', async () => {
+    const token = jwt.sign({ id: 7, email: 'creator@example.com' }, config.jwtSecret);
+    for (const body of [{}, { name: 'only-name' }, { displayName: 'Only display' }]) {
+      const response = await request(app)
+        .post('/api/teams')
+        .set('Authorization', `Bearer ${token}`)
+        .send(body);
+      expect(response.status, JSON.stringify(body)).toBe(400);
+    }
+    expect(storage.createTeamWithOwner).not.toHaveBeenCalled();
+  });
+
+  it('TC-TEAM-001e: a name that is already taken is 409, not a server error', async () => {
+    (storage.createTeamWithOwner as vi.Mock).mockRejectedValue(
+      Object.assign(
+        new Error('duplicate key value violates unique constraint "teams_name_unique"'),
+        {
+          code: '23505',
+          constraint: 'teams_name_unique',
+        }
+      )
+    );
+    const token = jwt.sign({ id: 7, email: 'creator@example.com' }, config.jwtSecret);
+    const response = await request(app)
+      .post('/api/teams')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'taken', displayName: 'Taken' });
+    expect(response.status).toBe(409);
+    expect(JSON.stringify(response.body)).not.toContain('teams_name_unique');
+  });
+
   it('TC-TEAM-002: should retrieve all teams', async () => {
     const teams = [mockTeam, { ...mockTeam, id: 2, name: 'qa-team' }];
     (storage.getTeams as vi.Mock).mockResolvedValue(teams);

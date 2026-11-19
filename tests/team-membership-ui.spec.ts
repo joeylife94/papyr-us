@@ -1,0 +1,558 @@
+/**
+ * Team membership from the UI (WP2), in a browser against the real server.
+ *
+ * Every scenario registers its own fresh accounts (each sign-up joins the `default` organization)
+ * and makes its own team, so no existing role, setting, page or team is read or changed. The
+ * account without an organization is moved out of `default` in the database, as the
+ * organization specs do. Each person has a browser context of their own; "signed out" is never
+ * needed here because the screens sit behind sign-in.
+ *
+ * Under test: a member of an organization creates a team from the workspace sidebar and becomes
+ * its owner; the owner adds a colleague from the organization and makes them admin; the admin adds
+ * a third person; that member sees a read-only list and can leave; the owner removes a member
+ * whose next read of a team page is then refused; controls follow the role rules; the last owner
+ * cannot leave; an account without an organization is not offered team creation and nothing is
+ * sent; refusals are shown in words next to where they happened; the screen fits 390 px.
+ */
+import { test, expect, type APIRequestContext, type Browser, type Page } from '@playwright/test';
+import { Pool } from 'pg';
+import {
+  createAuthenticatedApiContext,
+  loginPageWithCookies,
+  registerTestUser,
+} from './e2e-helpers';
+
+const DATABASE_URL = process.env.DATABASE_URL;
+const BASE_URL = process.env.BASE_URL || 'http://localhost:5003';
+
+type Person = { email: string; password: string; name: string; id: number; api: APIRequestContext };
+
+async function makePerson(request: APIRequestContext, label: string): Promise<Person> {
+  const user = await registerTestUser(request, `wp2-${label}`);
+  const api = await createAuthenticatedApiContext(user.email, user.password);
+  const me = await (await api.get('/api/auth/me')).json();
+  return { ...user, id: Number(me.id), api };
+}
+
+async function pageFor(
+  browser: Browser,
+  person: Person,
+  viewport?: { width: number; height: number }
+) {
+  const context = await browser.newContext({ baseURL: BASE_URL, viewport });
+  const page = await context.newPage();
+  await loginPageWithCookies(page, person.email, person.password);
+  return { page, context };
+}
+
+/** A team made through the API with `owner` as its owner. */
+async function makeTeam(owner: Person, label: string) {
+  const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const response = await owner.api.post('/api/teams', {
+    data: { name: `wp2-${label}-${stamp}`, displayName: `WP2 ${label} ${stamp}` },
+  });
+  expect(response.status()).toBe(201);
+  return (await response.json()) as { id: number; name: string; displayName: string };
+}
+
+async function addMember(api: APIRequestContext, teamId: number, person: Person) {
+  const response = await api.post(`/api/teams/${teamId}/memberships`, {
+    data: { email: person.email },
+  });
+  expect([200, 201]).toContain(response.status());
+}
+
+async function teamMembers(api: APIRequestContext, teamId: number) {
+  const response = await api.get(`/api/teams/${teamId}/members`);
+  expect(response.status()).toBe(200);
+  return (await response.json()) as {
+    myRole: string;
+    members: Array<{ userId: number; role: string; email: string }>;
+  };
+}
+
+const membersUrl = (team: { name: string }) => `/teams/${team.name}/team-members`;
+const row = (page: Page, person: Person) => page.getByTestId(`team-member-row-${person.email}`);
+
+async function chooseRole(page: Page, person: Person, label: string) {
+  await page.getByTestId(`team-role-select-${person.email}`).click();
+  await page.getByRole('option', { name: label, exact: true }).click();
+}
+
+async function addThroughPicker(page: Page, person: Person) {
+  await page.getByTestId('team-add-member').click();
+  const dialog = page.getByTestId('add-member-dialog');
+  await expect(dialog).toBeVisible();
+  await page.getByTestId('team-candidate-search').fill(person.email);
+  await expect(page.getByTestId(`team-candidate-${person.email}`)).toBeVisible();
+  await page.getByTestId(`team-candidate-add-${person.email}`).click();
+  await expect(row(page, person)).toBeVisible();
+  // The candidate is gone from the picker once added.
+  await expect(page.getByTestId(`team-candidate-${person.email}`)).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+}
+
+function countRequests(page: Page, test: (url: URL, method: string) => boolean) {
+  const seen: string[] = [];
+  page.on('request', (request) => {
+    const url = new URL(request.url());
+    if (test(url, request.method())) seen.push(`${request.method()} ${url.pathname}${url.search}`);
+  });
+  return seen;
+}
+
+test.describe('Team membership screens', () => {
+  test('an owner creates a team, adds a colleague and makes them admin; the admin adds a third; the member sees a read-only list; the owner removes the member', async ({
+    browser,
+    request,
+  }) => {
+    const owner = await makePerson(request, 'own');
+    const second = await makePerson(request, 'adm');
+    const third = await makePerson(request, 'mem');
+    const sessions: Array<{ context: { close(): Promise<void> } }> = [];
+    try {
+      // ── The owner creates the team from the sidebar ─────────────────────────────────────
+      const o = await pageFor(browser, owner);
+      sessions.push(o);
+      await o.page.goto('/');
+      const teamName = `WP2 Team ${Date.now()}`;
+      await o.page.getByTestId('create-team-entry').click();
+      await expect(o.page.getByTestId('create-team-dialog')).toBeVisible();
+      await o.page.getByTestId('create-team-name').fill(teamName);
+      await o.page.getByTestId('create-team-submit').click();
+      await expect(o.page).toHaveURL(/\/teams\/[^/]+\/team-members$/);
+      await expect(o.page.getByTestId('team-members-heading')).toContainText(teamName);
+
+      const teams = (await (await owner.api.get('/api/teams')).json()) as Array<{
+        id: number;
+        name: string;
+        displayName: string;
+      }>;
+      const team = teams.find((candidate) => candidate.displayName === teamName)!;
+      expect(team, 'the new team is in the creator’s teams').toBeTruthy();
+      expect((await teamMembers(owner.api, team.id)).myRole).toBe('owner');
+
+      // The creator is the only member, an owner, and cannot leave as the last owner.
+      await expect(row(o.page, owner)).toBeVisible();
+      await expect(o.page.getByTestId(`team-role-badge-${owner.email}`)).toHaveText('소유자');
+      await expect(o.page.getByTestId('team-leave')).toHaveCount(0);
+      await expect(o.page.getByTestId('team-last-owner-hint')).toBeVisible();
+      // The new team is in the sidebar list.
+      await expect(o.page.getByRole('button', { name: teamName })).toBeVisible();
+
+      // ── The owner adds a colleague and makes them admin ─────────────────────────────────
+      await addThroughPicker(o.page, second);
+      await expect(o.page.getByTestId(`team-role-select-${second.email}`)).toBeVisible();
+      await chooseRole(o.page, second, '관리자');
+      await expect
+        .poll(
+          async () =>
+            (await teamMembers(owner.api, team.id)).members.find((m) => m.userId === second.id)
+              ?.role
+        )
+        .toBe('admin');
+
+      // ── The admin adds a third person ───────────────────────────────────────────────────
+      const a = await pageFor(browser, second);
+      sessions.push(a);
+      await a.page.goto(membersUrl(team));
+      await expect(a.page.getByTestId('team-add-member')).toBeVisible();
+      await addThroughPicker(a.page, third);
+      // An admin may promote a member to admin but never to owner; the owner row has no control.
+      await a.page.getByTestId(`team-role-select-${third.email}`).click();
+      await expect(a.page.getByRole('option')).toHaveText(['관리자', '멤버']);
+      await a.page.keyboard.press('Escape');
+      await expect(a.page.getByTestId(`team-role-badge-${owner.email}`)).toBeVisible();
+      await expect(a.page.getByTestId(`team-remove-${owner.email}`)).toHaveCount(0);
+
+      // ── The member sees a read-only list ────────────────────────────────────────────────
+      const m = await pageFor(browser, third);
+      sessions.push(m);
+      const managementRequests = countRequests(
+        m.page,
+        (url, method) =>
+          url.pathname.endsWith('/member-candidates') ||
+          (method !== 'GET' && url.pathname.startsWith('/api/teams/'))
+      );
+      await m.page.goto(membersUrl(team));
+      await expect(m.page.getByTestId('team-members-list')).toBeVisible();
+      for (const person of [owner, second, third]) await expect(row(m.page, person)).toBeVisible();
+      await expect(m.page.getByTestId('team-add-member')).toHaveCount(0);
+      await expect(m.page.locator('[data-testid^="team-role-select-"]')).toHaveCount(0);
+      await expect(m.page.locator('[data-testid^="team-remove-"]')).toHaveCount(0);
+      await expect(m.page.getByTestId(`team-role-badge-${second.email}`)).toHaveText('관리자');
+      await expect(m.page.getByTestId('team-leave')).toBeVisible();
+      expect(managementRequests, 'a plain member makes no management request').toEqual([]);
+
+      // A team page the member can read now; after removal it is refused.
+      const slug = `wp2-team-page-${Date.now()}`;
+      const created = await owner.api.post('/api/pages', {
+        data: {
+          title: 'Team page',
+          slug,
+          content: 'for the team',
+          author: owner.email,
+          teamId: team.id,
+        },
+      });
+      expect(created.status()).toBe(201);
+      const pageId = (await created.json()).id;
+      expect((await third.api.get(`/api/pages/${pageId}`)).status()).toBe(200);
+
+      // ── The owner removes the member after confirming ───────────────────────────────────
+      await o.page.reload();
+      await o.page.getByTestId(`team-remove-${third.email}`).click();
+      await expect(o.page.getByTestId('team-remove-dialog')).toBeVisible();
+      // Cancelling removes nobody.
+      await o.page.getByRole('button', { name: '취소' }).click();
+      expect((await teamMembers(owner.api, team.id)).members.map((x) => x.userId)).toContain(
+        third.id
+      );
+      await o.page.getByTestId(`team-remove-${third.email}`).click();
+      await o.page.getByTestId('team-confirm-remove').click();
+      await expect(row(o.page, third)).toHaveCount(0);
+      expect((await teamMembers(owner.api, team.id)).members.map((x) => x.userId)).not.toContain(
+        third.id
+      );
+      expect([403, 404]).toContain((await third.api.get(`/api/pages/${pageId}`)).status());
+      expect((await third.api.get(`/api/teams/${team.id}/members`)).status()).toBe(403);
+    } finally {
+      for (const session of sessions) await session.context.close();
+      for (const person of [owner, second, third]) await person.api.dispose();
+    }
+  });
+
+  test('a member leaves after confirming and the team is gone from their list; an admin may leave too', async ({
+    browser,
+    request,
+  }) => {
+    const owner = await makePerson(request, 'lo');
+    const leaver = await makePerson(request, 'ls');
+    try {
+      const team = await makeTeam(owner, 'leave');
+      await addMember(owner.api, team.id, leaver);
+      const l = await pageFor(browser, leaver);
+      try {
+        await l.page.goto(membersUrl(team));
+        await expect(l.page.getByTestId('team-leave')).toBeVisible();
+        await l.page.getByTestId('team-leave').click();
+        await expect(l.page.getByTestId('team-leave-dialog')).toBeVisible();
+        await l.page.getByRole('button', { name: '취소' }).click();
+        expect((await teamMembers(owner.api, team.id)).members.map((x) => x.userId)).toContain(
+          leaver.id
+        );
+        await l.page.getByTestId('team-leave').click();
+        await l.page.getByTestId('team-confirm-leave').click();
+        await expect(l.page).toHaveURL(/\/$/);
+        const mine = (await (await leaver.api.get('/api/teams')).json()) as Array<{ id: number }>;
+        expect(mine.map((t) => t.id)).not.toContain(team.id);
+        expect((await teamMembers(owner.api, team.id)).members.map((x) => x.userId)).not.toContain(
+          leaver.id
+        );
+      } finally {
+        await l.context.close();
+      }
+    } finally {
+      await owner.api.dispose();
+      await leaver.api.dispose();
+    }
+  });
+
+  test('an organization member who is not in the team, and a team that does not exist, get an explanation and no member request', async ({
+    browser,
+    request,
+  }) => {
+    const owner = await makePerson(request, 'no');
+    const outsider = await makePerson(request, 'ni');
+    try {
+      const team = await makeTeam(owner, 'closed');
+      const o = await pageFor(browser, outsider);
+      try {
+        const memberRequests = countRequests(o.page, (url) =>
+          /^\/api\/teams\/\d+\/(members|member-candidates)$/.test(url.pathname)
+        );
+        await o.page.goto(membersUrl(team));
+        await expect(o.page.getByTestId('team-page-not-found')).toBeVisible();
+        await o.page.goto('/teams/no-such-team-wp2/team-members');
+        await expect(o.page.getByTestId('team-page-not-found')).toBeVisible();
+        await expect(o.page.getByTestId('team-members')).toHaveCount(0);
+        expect(memberRequests).toEqual([]);
+        // Both are answered alike by the API as well.
+        expect((await outsider.api.get(`/api/teams/${team.id}/members`)).status()).toBe(403);
+        expect((await outsider.api.get(`/api/teams/999999/members`)).status()).toBe(403);
+      } finally {
+        await o.context.close();
+      }
+    } finally {
+      await owner.api.dispose();
+      await outsider.api.dispose();
+    }
+  });
+
+  test('an account without an organization is not offered team creation and nothing is sent', async ({
+    browser,
+    request,
+  }) => {
+    if (!DATABASE_URL) throw new Error('DATABASE_URL is required to place accounts');
+    const nobody = await makePerson(request, 'nb');
+    const db = new Pool({ connectionString: DATABASE_URL });
+    try {
+      await db.query(`DELETE FROM organization_members WHERE user_id = $1`, [nobody.id]);
+      const n = await pageFor(browser, nobody);
+      try {
+        const creations = countRequests(
+          n.page,
+          (url, method) => url.pathname === '/api/teams' && method === 'POST'
+        );
+        await n.page.goto('/');
+        await expect(n.page.getByTestId('teams-empty')).toContainText('소속된 조직이 없어');
+        await expect(n.page.getByTestId('create-team-entry')).toHaveCount(0);
+        expect(creations).toEqual([]);
+        // The API refuses as well, in the same words for every caller without an organization.
+        const refused = await nobody.api.post('/api/teams', {
+          data: { name: `wp2-orphan-${Date.now()}`, displayName: 'Orphan' },
+        });
+        expect(refused.status()).toBe(403);
+      } finally {
+        await n.context.close();
+      }
+    } finally {
+      await db.end();
+      await nobody.api.dispose();
+    }
+  });
+
+  test('an empty team name sends nothing; a refusal from the server is shown in words', async ({
+    browser,
+    request,
+  }) => {
+    const owner = await makePerson(request, 'cf');
+    try {
+      const o = await pageFor(browser, owner);
+      try {
+        const creations = countRequests(
+          o.page,
+          (url, method) => url.pathname === '/api/teams' && method === 'POST'
+        );
+        await o.page.goto('/');
+        await o.page.getByTestId('create-team-entry').click();
+        await o.page.getByTestId('create-team-name').fill('   ');
+        await o.page.getByTestId('create-team-submit').click();
+        await expect(o.page.getByTestId('create-team-error')).toContainText('팀 이름을 입력하세요');
+        expect(creations).toEqual([]);
+
+        // The server says no (name taken): words, not JSON, and the dialog stays for another try.
+        await o.page.route('**/api/teams', async (route) => {
+          if (route.request().method() === 'POST') {
+            await route.fulfill({
+              status: 409,
+              contentType: 'application/json',
+              body: JSON.stringify({ error: 'A team with this name already exists' }),
+            });
+          } else {
+            await route.continue();
+          }
+        });
+        await o.page.getByTestId('create-team-name').fill('Taken name');
+        await o.page.getByTestId('create-team-submit').click();
+        const error = o.page.getByTestId('create-team-error');
+        await expect(error).toContainText('같은 주소의 팀이 이미 있습니다');
+        await expect(error).not.toContainText('{');
+        await expect(error).not.toContainText('409');
+        await expect(o.page.getByTestId('create-team-dialog')).toBeVisible();
+        expect(creations).toHaveLength(1);
+      } finally {
+        await o.context.close();
+      }
+    } finally {
+      await owner.api.dispose();
+    }
+  });
+
+  test('a screen that went stale shows the server’s refusal in words and then follows the real role', async ({
+    browser,
+    request,
+  }) => {
+    const owner = await makePerson(request, 'so');
+    const admin = await makePerson(request, 'sa');
+    const target = await makePerson(request, 'st');
+    try {
+      const team = await makeTeam(owner, 'stale');
+      await addMember(owner.api, team.id, admin);
+      await addMember(owner.api, team.id, target);
+      expect(
+        (
+          await owner.api.patch(`/api/teams/${team.id}/memberships/${admin.id}`, {
+            data: { role: 'admin' },
+          })
+        ).status()
+      ).toBe(200);
+      const a = await pageFor(browser, admin);
+      try {
+        await a.page.goto(membersUrl(team));
+        await expect(a.page.getByTestId(`team-remove-${target.email}`)).toBeVisible();
+        // The owner lowers the admin while their screen is open.
+        expect(
+          (
+            await owner.api.patch(`/api/teams/${team.id}/memberships/${admin.id}`, {
+              data: { role: 'member' },
+            })
+          ).status()
+        ).toBe(200);
+        await a.page.getByTestId(`team-remove-${target.email}`).click();
+        await a.page.getByTestId('team-confirm-remove').click();
+        const error = a.page.getByTestId('team-members-action-error');
+        await expect(error).toContainText('팀 소유자 또는 관리자만 할 수 있습니다');
+        await expect(error).not.toContainText('{');
+        await expect(error).not.toContainText('403');
+        // The list is asked again and the screen is now the read-only one.
+        await expect(a.page.getByTestId(`team-remove-${target.email}`)).toHaveCount(0);
+        await expect(a.page.getByTestId('team-add-member')).toHaveCount(0);
+        expect((await teamMembers(owner.api, team.id)).members.map((x) => x.userId)).toContain(
+          target.id
+        );
+      } finally {
+        await a.context.close();
+      }
+    } finally {
+      for (const person of [owner, admin, target]) await person.api.dispose();
+    }
+  });
+
+  test('an owner lowering themselves is asked first; the last owner is offered no way out', async ({
+    browser,
+    request,
+  }) => {
+    const owner = await makePerson(request, 'ro');
+    const other = await makePerson(request, 'rt');
+    try {
+      const team = await makeTeam(owner, 'selfrole');
+      await addMember(owner.api, team.id, other);
+      expect(
+        (
+          await owner.api.patch(`/api/teams/${team.id}/memberships/${other.id}`, {
+            data: { role: 'owner' },
+          })
+        ).status()
+      ).toBe(200);
+      const o = await pageFor(browser, owner);
+      try {
+        await o.page.goto(membersUrl(team));
+        await chooseRole(o.page, owner, '멤버');
+        await expect(o.page.getByTestId('team-self-role-dialog')).toBeVisible();
+        // Cancelling lowers nothing.
+        await o.page.getByRole('button', { name: '취소' }).click();
+        expect((await teamMembers(owner.api, team.id)).myRole).toBe('owner');
+        await chooseRole(o.page, owner, '멤버');
+        await o.page.getByTestId('team-confirm-self-role').click();
+        // The screen follows the lowered role: read-only now.
+        await expect(o.page.getByTestId('team-add-member')).toHaveCount(0);
+        await expect(o.page.getByTestId(`team-role-badge-${owner.email}`)).toHaveText('멤버');
+        expect((await teamMembers(owner.api, team.id)).myRole).toBe('member');
+      } finally {
+        await o.context.close();
+      }
+      // The remaining owner is the last one: no control on their own row, no leave.
+      const l = await pageFor(browser, other);
+      try {
+        await l.page.goto(membersUrl(team));
+        await expect(l.page.getByTestId(`team-role-badge-${other.email}`)).toHaveText('소유자');
+        await expect(l.page.getByTestId(`team-role-select-${other.email}`)).toHaveCount(0);
+        await expect(l.page.getByTestId('team-leave')).toHaveCount(0);
+        await expect(l.page.getByTestId('team-last-owner-hint')).toBeVisible();
+        // The server says the same.
+        const leave = await other.api.delete(`/api/teams/${team.id}/memberships/me`);
+        expect(leave.status()).toBe(409);
+      } finally {
+        await l.context.close();
+      }
+    } finally {
+      await owner.api.dispose();
+      await other.api.dispose();
+    }
+  });
+
+  test('the members screen and the picker fit a 390 px screen without sideways scrolling', async ({
+    browser,
+    request,
+  }) => {
+    const owner = await makePerson(request, 'mo');
+    const people = [await makePerson(request, 'm1'), await makePerson(request, 'm2')];
+    const candidate = await makePerson(request, 'mc');
+    try {
+      const team = await makeTeam(owner, 'phone');
+      for (const person of people) await addMember(owner.api, team.id, person);
+      expect(
+        (
+          await owner.api.patch(`/api/teams/${team.id}/memberships/${people[0].id}`, {
+            data: { role: 'admin' },
+          })
+        ).status()
+      ).toBe(200);
+      const o = await pageFor(browser, owner, { width: 390, height: 844 });
+      try {
+        await o.page.goto(membersUrl(team));
+        await expect(row(o.page, people[1])).toBeVisible();
+        const overflow = () =>
+          o.page.evaluate(
+            () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+          );
+        expect(await overflow()).toBeLessThanOrEqual(0);
+        for (const person of people) {
+          const box = await row(o.page, person).boundingBox();
+          expect(box!.x).toBeGreaterThanOrEqual(0);
+          expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+        }
+        await expect(o.page.getByTestId(`team-remove-${people[1].email}`)).toBeVisible();
+        await o.page.getByTestId('team-add-member').click();
+        await o.page.getByTestId('team-candidate-search').fill(candidate.email);
+        await expect(o.page.getByTestId(`team-candidate-${candidate.email}`)).toBeVisible();
+        const dialog = await o.page.getByTestId('add-member-dialog').boundingBox();
+        expect(dialog!.x).toBeGreaterThanOrEqual(0);
+        expect(dialog!.x + dialog!.width).toBeLessThanOrEqual(390);
+        expect(await overflow()).toBeLessThanOrEqual(0);
+      } finally {
+        await o.context.close();
+      }
+    } finally {
+      for (const person of [owner, ...people, candidate]) await person.api.dispose();
+    }
+  });
+
+  test('the sidebar and the directory page tell team members from the directory', async ({
+    browser,
+    request,
+  }) => {
+    const owner = await makePerson(request, 'dr');
+    try {
+      const team = await makeTeam(owner, 'labels');
+      const o = await pageFor(browser, owner);
+      try {
+        await o.page.goto('/');
+        await o.page.getByRole('button', { name: team.displayName }).click();
+        await expect(o.page.getByRole('link', { name: '팀 멤버', exact: true })).toHaveAttribute(
+          'href',
+          `/teams/${team.name}/team-members`
+        );
+        await expect(o.page.getByRole('link', { name: '디렉터리', exact: true })).toHaveAttribute(
+          'href',
+          `/teams/${team.name}/members`
+        );
+        await o.page.getByRole('link', { name: '디렉터리', exact: true }).click();
+        await expect(o.page.getByTestId('directory-not-membership')).toContainText(
+          '접근 권한을 주지 않습니다'
+        );
+        await o.page
+          .getByTestId('directory-not-membership')
+          .getByRole('link', { name: '팀 멤버' })
+          .click();
+        await expect(o.page).toHaveURL(new RegExp(`/teams/${team.name}/team-members$`));
+      } finally {
+        await o.context.close();
+      }
+    } finally {
+      await owner.api.dispose();
+    }
+  });
+});
