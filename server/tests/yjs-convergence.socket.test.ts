@@ -134,7 +134,11 @@ interface Client {
 }
 
 async function join(): Promise<Client> {
-  const socket = connect(`${baseUrl}/yjs`, { transports: ['websocket'], reconnection: false, forceNew: true });
+  const socket = connect(`${baseUrl}/yjs`, {
+    transports: ['websocket'],
+    reconnection: false,
+    forceNew: true,
+  });
   sockets.push(socket);
   let composing = false;
   const offline: OfflineChanges[] = [];
@@ -191,7 +195,8 @@ describe('two sessions on one document', () => {
     b.setComposing(false);
     await waitFor(
       () => [a.blocks(), b.blocks(), serverBlocks()],
-      ([x, y, z]) => JSON.stringify(x) === JSON.stringify(y) && JSON.stringify(y) === JSON.stringify(z)
+      ([x, y, z]) =>
+        JSON.stringify(x) === JSON.stringify(y) && JSON.stringify(y) === JSON.stringify(z)
     );
 
     expect(ids(serverBlocks())).toEqual(['b1']);
@@ -390,7 +395,11 @@ describe('who may edit', () => {
 
   it('refuses a client of another document shape and a page that does not exist', async () => {
     resetPage([block('b1', 'one')]);
-    const socket = connect(`${baseUrl}/yjs`, { transports: ['websocket'], reconnection: false, forceNew: true });
+    const socket = connect(`${baseUrl}/yjs`, {
+      transports: ['websocket'],
+      reconnection: false,
+      forceNew: true,
+    });
     sockets.push(socket);
     await new Promise<void>((resolve) => socket.on('connect', () => resolve()));
     const codes: string[] = [];

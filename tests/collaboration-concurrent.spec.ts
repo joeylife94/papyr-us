@@ -338,3 +338,44 @@ test('a Korean composition in progress is not interrupted by a collaborator, and
     await guestApi.dispose();
   }
 });
+
+test('undo takes back only what the person typed themselves, not a collaborator’s text', async ({
+  browser,
+  request,
+}) => {
+  const flags = await (await request.get('/api/features')).json();
+  test.skip(!flags.FEATURE_COLLABORATION, 'FEATURE_COLLABORATION is disabled on this server');
+
+  const { owner, guest, api, guestApi, pageId, slug } = await setup(request, 'Base');
+  const a = await openEditor(browser, owner, slug);
+  const b = await openEditor(browser, guest, slug);
+  try {
+    await field(a.page).click();
+    await a.page.keyboard.press('End');
+    await a.page.keyboard.type(' alice');
+    await expect(field(b.page)).toHaveValue('Base alice');
+    await field(b.page).click();
+    await b.page.keyboard.press('Home');
+    await b.page.keyboard.type('bob ');
+    await expect(field(a.page)).toHaveValue('bob Base alice');
+
+    // Alice undoes: her own words go, Bob's stay, on both screens
+    await field(a.page).click();
+    await a.page.keyboard.press('Control+z');
+    await expect(field(a.page)).toHaveValue('bob Base');
+    await expect(field(b.page)).toHaveValue('bob Base');
+    await a.page.keyboard.press('Control+Shift+z');
+    await expect(field(a.page)).toHaveValue('bob Base alice');
+    await expect(field(b.page)).toHaveValue('bob Base alice');
+    await expect(rows(a.page)).toHaveCount(1);
+    await expect
+      .poll(async () => (await storedBlocks(api, pageId)).map((x) => x.content))
+      .toEqual(['bob Base alice']);
+  } finally {
+    await a.context.close();
+    await b.context.close();
+    await api.delete(`/api/pages/${pageId}`).catch(() => {});
+    await api.dispose();
+    await guestApi.dispose();
+  }
+});

@@ -227,22 +227,44 @@ export function useYjsCollaboration({
       console.log('[Yjs] Received awareness update');
     });
 
-    // Undo and redo (Ctrl/Cmd+Z, the Edit menu) act on this person's own edits only: the
-    // browser's own undo would also have to cross collaborators' changes, which it cannot.
+    // Undo and redo (Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl+Y, the Edit menu) act on this person's own
+    // edits only: the browser's own undo would also have to cross collaborators' changes, which it
+    // cannot (and it keeps no history for text that was set from the shared document).
+    const inBlockRow = (target: EventTarget | null) =>
+      target instanceof Element && target.closest('[data-block-row]') !== null;
+    const step = (kind: 'undo' | 'redo'): boolean => {
+      const undo = session.undoManager;
+      if (!undo || !session.canEdit) return false;
+      if (kind === 'undo') undo.undo();
+      else undo.redo();
+      return true;
+    };
     const onBeforeInput = (event: InputEvent) => {
       if (event.inputType !== 'historyUndo' && event.inputType !== 'historyRedo') return;
-      const target = event.target;
-      if (!(target instanceof Element) || !target.closest('[data-block-row]')) return;
-      const undo = session.undoManager;
-      if (!undo || !session.canEdit) return;
-      event.preventDefault();
-      if (event.inputType === 'historyUndo') undo.undo();
-      else undo.redo();
+      if (!inBlockRow(event.target)) return;
+      if (step(event.inputType === 'historyUndo' ? 'undo' : 'redo')) event.preventDefault();
+    };
+    // Bubble phase: a block's own handling of the key (undoing a Markdown shortcut) goes first
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing || event.altKey) return;
+      if (!(event.ctrlKey || event.metaKey) || !inBlockRow(event.target)) return;
+      const key = event.key.toLowerCase();
+      const kind =
+        key === 'z'
+          ? event.shiftKey
+            ? 'redo'
+            : 'undo'
+          : key === 'y' && event.ctrlKey && !event.metaKey && !event.shiftKey
+            ? 'redo'
+            : null;
+      if (kind && step(kind)) event.preventDefault();
     };
     document.addEventListener('beforeinput', onBeforeInput, true);
+    document.addEventListener('keydown', onKeyDown);
 
     return () => {
       document.removeEventListener('beforeinput', onBeforeInput, true);
+      document.removeEventListener('keydown', onKeyDown);
       stopWatchingComposition();
       session.destroy();
       if (sessionRef.current === session) sessionRef.current = null;

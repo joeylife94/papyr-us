@@ -15,6 +15,7 @@ import {
   blockMaps,
   blockOrder,
   changesSince,
+  createUndoManager,
   deleteBlock,
   diffText,
   insertBlock,
@@ -453,4 +454,73 @@ describe('text edits', () => {
     expect(find(a, 'p')!.content).toBe('A quick brown fox');
     expect(readBlocks(a)).toEqual(readBlocks(b));
   });
+});
+
+describe("undo and redo of one person's own edits", () => {
+  it('undo takes back what this person typed, not what a collaborator typed', () => {
+    const [a, b] = replicas([block('p', 'Base')]);
+    const undoA = createUndoManager(a);
+    updateBlock(a, 'p', { content: 'Base A' });
+    updateBlock(b, 'p', { content: 'B Base' });
+    exchange(a, b);
+    expect(find(a, 'p')!.content).toBe('B Base A');
+
+    undoA.undo();
+    expect(find(a, 'p')!.content).toBe('B Base');
+    exchange(a, b);
+    expect(find(b, 'p')!.content).toBe('B Base');
+
+    undoA.redo();
+    expect(find(a, 'p')!.content).toBe('B Base A');
+  });
+
+  it('a change that came from the server is not on the undo stack', () => {
+    const [a, b] = replicas([block('p', 'Base')]);
+    const undoA = createUndoManager(a);
+    updateBlock(b, 'p', { content: 'Base from B' });
+    Y.applyUpdate(a, Y.encodeStateAsUpdate(b), 'server');
+    expect(undoA.canUndo()).toBe(false);
+    undoA.undo();
+    expect(find(a, 'p')!.content).toBe('Base from B');
+  });
+});
+
+describe('tables', () => {
+  const table = (cells: string[][]) => ({ rows: cells.length, cols: cells[0].length, cells });
+
+  it('a table is one value: cells edited at the same moment keep one of the two edits (known limit)', () => {
+    const base = table([
+      ['a', 'b'],
+      ['c', 'd'],
+    ]);
+    const [x, y] = replicas([block('t', '', { type: 'table', properties: { tableData: base } })]);
+    updateBlock(x, 't', {
+      properties: {
+        tableData: table([
+          ['A', 'b'],
+          ['c', 'd'],
+        ]),
+      },
+    });
+    updateBlock(y, 't', {
+      properties: {
+        tableData: table([
+          ['a', 'b'],
+          ['c', 'D'],
+        ]),
+      },
+    });
+    exchange(x, y);
+    expect(readBlocks(x)).toEqual(readBlocks(y));
+    const cells = (find(x, 't')!.properties as any).tableData.cells as string[][];
+    // Whole-table replacement: exactly one person's edit survives, never a mix and never both
+    expect([cells[0][0] + cells[1][1]]).toSatisfy(
+      ([pair]: string[]) => pair === 'Ad' || pair === 'aD'
+    );
+    expect(ids(x)).toEqual(['t']);
+  });
+
+  it.todo(
+    'edits to different cells of one table both survive (needs a per-cell shared structure; the table block writes its whole table as one property value today)'
+  );
 });

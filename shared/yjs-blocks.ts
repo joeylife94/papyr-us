@@ -142,6 +142,18 @@ export function visibleBlockIds(doc: Y.Doc): string[] {
   return ids;
 }
 
+/**
+ * Undo and redo of this person's own edits: changes made through the helpers above (origin
+ * `LOCAL_ORIGIN`) are tracked, and a collaborator's changes are never undone. Typing in quick
+ * succession is one step.
+ */
+export function createUndoManager(doc: Y.Doc): Y.UndoManager {
+  return new Y.UndoManager([blockOrder(doc), blockMaps(doc)], {
+    trackedOrigins: new Set([LOCAL_ORIGIN]),
+    captureTimeout: 500,
+  });
+}
+
 /** Unique ids for stored blocks: a later block repeating an id keeps its content under a new id. */
 function uniqueBlocks(blocks: Array<Partial<Block>>): Array<Partial<Block> & { id: string }> {
   const used = new Set<string>();

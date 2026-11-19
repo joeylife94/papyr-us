@@ -17,8 +17,8 @@ import {
   YJS_SCHEMA_VERSION,
   LOCAL_ORIGIN,
   blockMaps,
-  blockOrder,
   changesSince,
+  createUndoManager,
   readBlocks,
   type OfflineChanges,
 } from '@shared/yjs-blocks';
@@ -237,12 +237,8 @@ export class YjsSession {
   };
 
   private attach(doc: Y.Doc): () => void {
-    const order = blockOrder(doc);
     const maps = blockMaps(doc);
-    const undo = new Y.UndoManager([order, maps], {
-      trackedOrigins: new Set([LOCAL_ORIGIN]),
-      captureTimeout: 500,
-    });
+    const undo = createUndoManager(doc);
     this.undoManager = undo;
 
     const onUpdate = (update: Uint8Array, origin: unknown) => {
