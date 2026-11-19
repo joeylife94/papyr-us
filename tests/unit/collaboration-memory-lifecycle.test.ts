@@ -5,6 +5,7 @@ import {
   type CollabConfig,
 } from '../../server/services/yjs-collaboration';
 import { initialBlocksFor } from '../../client/src/lib/page-content';
+import { readBlocks } from '../../shared/yjs-blocks';
 
 // Regression coverage for connection-scoped membership and bounded document snapshots.
 const legacyConfig: LegacyCollabConfig = {
@@ -112,12 +113,14 @@ describe('collaboration memory lifecycle', () => {
       const storage = { getWikiPage: vi.fn().mockResolvedValue(page), updateWikiPage: vi.fn() };
       const manager = new YjsCollaborationManager(namespace, storage as any, yjsConfig);
       const doc = await manager.getOrCreate('page-7', 7);
-      return doc.ydoc.getArray('blocks').toArray() as any[];
+      return readBlocks(doc.ydoc) as any[];
     };
 
     it('loads stored blocks as they are', async () => {
       const blocks = [{ id: 'b1', type: 'heading1', content: 'Title' }];
-      expect(await seededBlocks({ content: 'Title', blocks })).toEqual(blocks);
+      expect(await seededBlocks({ content: 'Title', blocks })).toEqual([
+        { id: 'b1', type: 'heading1', content: 'Title', properties: {}, order: 0 },
+      ]);
     });
 
     it('seeds a paragraph from plain content when the page has no blocks', async () => {
