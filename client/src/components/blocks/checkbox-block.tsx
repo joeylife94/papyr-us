@@ -3,6 +3,7 @@ import { Block, BlockType } from '@shared/schema';
 import { Trash2, CheckSquare, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useInlinePreview } from '@/components/page/inline-preview';
+import { useSyncedText } from '@/hooks/useSyncedText';
 
 interface CheckboxBlockProps {
   block: Block;
@@ -23,9 +24,10 @@ export function CheckboxBlock({
   onDelete,
   onAddBlock,
 }: CheckboxBlockProps) {
-  const [content, setContent] = useState(block.content);
-  const [isChecked, setIsChecked] = useState(block.properties?.checked || false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [content, setContent] = useSyncedText(block.id, block.content, textareaRef);
+  // Follows the block, so a collaborator's tick shows up
+  const isChecked = !!block.properties?.checked;
   const checkedText = isChecked ? 'text-muted-foreground line-through' : 'text-foreground';
   // Inline Markdown, links and #tags render while the item is not focused (#113 §2).
   const preview = useInlinePreview({
@@ -63,7 +65,6 @@ export function CheckboxBlock({
 
   const handleCheckboxToggle = () => {
     const newChecked = !isChecked;
-    setIsChecked(newChecked);
     onUpdate({
       properties: {
         ...block.properties,

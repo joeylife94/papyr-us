@@ -2325,6 +2325,17 @@ export class DBStorage {
   }
 
   /**
+   * Whether the user may edit the page: the one decision behind the page UI's edit mode
+   * (`GET /api/pages/:id/access`), the REST write routes and the realtime `/yjs` channel. It is
+   * `checkPagePermission(…, 'editor')` and nothing else, so no surface can grant what another
+   * denies (legacy team-less pages, authorship, team managers, public editor grants all follow
+   * that one rule). `userId` is undefined for a signed-out caller.
+   */
+  async canEditPage(userId: number | undefined, pageId: number): Promise<boolean> {
+    return this.checkPagePermission(userId, pageId, 'editor');
+  }
+
+  /**
    * Whether a grant on the page may name this grantee (issue #124 X1): a user or team of the
    * page's own organization. Public grants name nobody; other entity types are left to the
    * permission's own validation.

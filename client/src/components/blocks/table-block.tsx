@@ -3,6 +3,7 @@ import { Block, BlockType } from '@shared/schema';
 import { Trash2, Table as TableIcon, Plus, Minus, Edit3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { jsonEqual } from '@shared/json-equal';
 
 interface TableBlockProps {
   block: Block;
@@ -47,15 +48,32 @@ export function TableBlock({
   const [isEditingCell, setIsEditingCell] = useState<{ row: number; col: number } | null>(null);
   const [editingValue, setEditingValue] = useState('');
 
+  // The table as the block last held it, or as this editor last wrote it. A change of the block's
+  // table that differs from it came from elsewhere (a collaborator, a restore): it replaces the
+  // local copy. A change of the local copy that differs from it is written to the block. Without
+  // this the local copy overwrote every collaborator's change to the table. (The table is one
+  // value: cells edited at the same moment by two people keep one of the two edits.)
+  const syncedTable = useRef<TableData | undefined>(block.properties?.tableData);
+  const blockTable: TableData | undefined = block.properties?.tableData;
+
+  useEffect(() => {
+    if (blockTable && !jsonEqual(blockTable, syncedTable.current)) {
+      syncedTable.current = blockTable;
+      setTableData(blockTable);
+    }
+  }, [blockTable]);
+
   // 테이블 데이터가 변경될 때마다 블록 업데이트
   useEffect(() => {
+    if (jsonEqual(tableData, syncedTable.current)) return;
+    syncedTable.current = tableData;
     onUpdate({
       properties: {
         ...block.properties,
         tableData,
       },
     });
-  }, [tableData, onUpdate, block.properties]);
+  }, [tableData]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {

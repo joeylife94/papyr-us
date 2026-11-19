@@ -4,6 +4,8 @@ import { DBStorage } from '../storage.js';
 import logger from './logger.js';
 import { savePage, storagePageSaveStore } from './page-save.js';
 import { markdownToBlocks } from '../../shared/block-markdown.js';
+import { randomUUID } from 'node:crypto';
+import { readBlocks, seedBlocks, YJS_SCHEMA_VERSION } from '../../shared/yjs-blocks.js';
 import jwt from 'jsonwebtoken';
 import { config } from '../config.js';
 import { onPageAccessChanged } from './page-access-events.js';
@@ -198,6 +200,12 @@ type DocState = {
   documentId: string;
   pageId: number;
   ydoc: Y.Doc;
+  /**
+   * Names this incarnation of the document. A document rebuilt from the database (after an unload,
+   * an eviction, a restart, or a restore) gets a new epoch, so a client that kept an earlier one
+   * knows its copy is not a replica of this document.
+   */
+  epoch: string;
   clients: Set<string>;
   lastAccessAt: number;
   dirty: boolean;
@@ -207,6 +215,12 @@ type DocState = {
   ttlTimer?: NodeJS.Timeout;
   metrics: DocMetrics;
 };
+
+class PageNotFoundError extends Error {
+  constructor(pageId: number) {
+    super(`Page ${pageId} not found`);
+  }
+}
 
 export class YjsCollaborationManager {
   private docs = new Map<string, DocState>();
@@ -238,12 +252,13 @@ export class YjsCollaborationManager {
 
     // Load persisted state before attaching update listeners.
     const page = await this.storage.getWikiPage(pageId);
+    if (!page) throw new PageNotFoundError(pageId);
     // Pages saved without blocks (API-, template- or import-created) open as the blocks their
     // Markdown content describes, seeded once per document so collaborators share the same blocks
     // instead of an empty array.
-    const initialBlocks = page ? blocksForPage(page) : [];
+    const initialBlocks = blocksForPage(page);
     if (initialBlocks.length > 0) {
-      ydoc.getArray('blocks').push(initialBlocks);
+      seedBlocks(ydoc, initialBlocks);
       logger.info('Loaded Yjs document state from database', {
         documentId,
         pageId,
@@ -255,6 +270,7 @@ export class YjsCollaborationManager {
       documentId,
       pageId,
       ydoc,
+      epoch: randomUUID(),
       clients: new Set(),
       lastAccessAt: Date.now(),
       dirty: false,
@@ -404,10 +420,10 @@ export class YjsCollaborationManager {
         continue;
       }
 
-      const permission = await this.storage.getUserPagePermission(userId, parsed.pageId);
+      const canEdit = await this.storage.canEditPage(userId, parsed.pageId);
       if (!stillJoined()) continue;
-      socket.data.userPermission = permission;
-      socket.data.canEdit = permission === 'owner' || permission === 'editor';
+      socket.data.userPermission = canEdit ? 'editor' : 'viewer';
+      socket.data.canEdit = canEdit;
     }
   }
 
@@ -476,12 +492,12 @@ export class YjsCollaborationManager {
     if (!page) return 0;
     const blocks = blocksForPage(page);
     for (const doc of docs) {
-      doc.ydoc.transact(() => {
-        const yblocks = doc.ydoc.getArray('blocks');
-        yblocks.delete(0, yblocks.length);
-        if (blocks.length > 0) yblocks.push(blocks);
-      }, RELOAD_ORIGIN);
+      seedBlocks(doc.ydoc, blocks, RELOAD_ORIGIN);
       doc.dirty = false;
+      // Edits a disconnected client made to the blocks that were just replaced cannot merge into
+      // the restored page: a new epoch makes such a client start over and tell its person.
+      doc.epoch = randomUUID();
+      this.namespace.to(doc.documentId).emit('yjs:epoch', { epoch: doc.epoch });
     }
     logger.info('Reloaded Yjs documents from database', { pageId, documents: docs.length });
     return docs.length;
@@ -502,8 +518,7 @@ export class YjsCollaborationManager {
     doc.metrics.savesAttempted += 1;
 
     try {
-      const yblocks = doc.ydoc.getArray('blocks');
-      const blocks = yblocks.toArray();
+      const blocks = readBlocks(doc.ydoc);
 
       // Same pipeline as REST autosave (issue #103 E1): keeps `content` (reader, FTS, AI search)
       // in step with the blocks and groups saves into one version per editing session.
@@ -659,9 +674,11 @@ export function setupYjsCollaboration(io: SocketIOServer, storage: DBStorage) {
           return;
         }
 
-        // Get user's permission level to determine edit rights
-        const userPermission = userId ? await storage.getUserPagePermission(userId, pageId) : null;
-        const canEdit = userPermission === 'owner' || userPermission === 'editor';
+        // Edit rights are exactly what the page UI and the REST write routes decide
+        // (checkPagePermission 'editor'), so an editable page never refuses its editor's updates
+        // and a read-only one never accepts them.
+        const canEdit = await storage.canEditPage(userId, pageId);
+        const userPermission: PermissionLevel = canEdit ? 'editor' : 'viewer';
 
         // Store permission info in socket data for later checks
         socket.data.userId = userId;
@@ -678,10 +695,20 @@ export function setupYjsCollaboration(io: SocketIOServer, storage: DBStorage) {
         });
         // ===== END PERMISSION CHECK =====
 
+        // Clients of another document shape would write into types this server never reads.
+        if ((data as any).schema !== YJS_SCHEMA_VERSION) {
+          socket.emit('yjs:error', {
+            message: 'This page editor is out of date. Reload the page.',
+            code: 'CLIENT_OUTDATED',
+          });
+          return;
+        }
+
         // Join doc in manager (enforces max clients/doc and capacity)
         const joinResult = await yjsManager!.joinDocument(socket, documentId, pageId);
 
-        const ydoc = yjsManager!.getDoc(documentId)!.ydoc;
+        const docState = yjsManager!.getDoc(documentId)!;
+        const ydoc = docState.ydoc;
 
         // Send current state to new client
         const stateVector = Y.encodeStateAsUpdate(ydoc);
@@ -695,6 +722,10 @@ export function setupYjsCollaboration(io: SocketIOServer, storage: DBStorage) {
         }
         socket.emit('yjs:init', {
           stateVector: Buffer.from(stateVector).toString('base64'),
+          // What this server holds, so the client can send back only what the server lacks
+          serverStateVector: Buffer.from(Y.encodeStateVector(ydoc)).toString('base64'),
+          epoch: docState.epoch,
+          schema: YJS_SCHEMA_VERSION,
           userCount: yjsManager!.getUserCount(documentId),
           permission: joinResult.permission,
           canEdit: joinResult.canEdit,
@@ -709,6 +740,10 @@ export function setupYjsCollaboration(io: SocketIOServer, storage: DBStorage) {
           permission: joinResult.permission,
         });
       } catch (error) {
+        if (error instanceof PageNotFoundError) {
+          socket.emit('yjs:error', { message: 'Page not found', code: 'PAGE_NOT_FOUND' });
+          return;
+        }
         logger.error('Error joining Yjs document:', {
           error: error instanceof Error ? error.message : 'Unknown error',
           stack: error instanceof Error ? error.stack : undefined,

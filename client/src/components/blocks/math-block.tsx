@@ -1,11 +1,14 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
+import { useRemoteCaret } from '@/hooks/useSyncedText';
 import { Button } from '@/components/ui/button';
 import { Calculator, Eye, EyeOff } from 'lucide-react';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 
 export interface MathBlockProps {
+  /** The block's id, so a collaborator's typing does not move the caret (shared documents). */
+  blockId?: string;
   expression: string;
   displayMode?: 'inline' | 'block';
   onExpressionChange?: (expression: string) => void;
@@ -27,6 +30,7 @@ function renderLaTeX(expression: string, displayMode: 'inline' | 'block'): strin
 }
 
 export function MathBlock({
+  blockId,
   expression,
   displayMode = 'block',
   onExpressionChange,
@@ -35,6 +39,8 @@ export function MathBlock({
   className = '',
 }: MathBlockProps) {
   const [showRaw, setShowRaw] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  useRemoteCaret(blockId, textareaRef, expression);
 
   if (!expression && !readOnly) {
     return (
@@ -91,6 +97,7 @@ export function MathBlock({
       >
         {showRaw || !expression ? (
           <textarea
+            ref={textareaRef}
             value={expression}
             onChange={(e) => onExpressionChange?.(e.target.value)}
             placeholder="Enter LaTeX expression (e.g., E = mc^2)"

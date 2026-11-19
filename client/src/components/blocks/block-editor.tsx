@@ -57,7 +57,8 @@ import {
 import { useCollaboration } from '@/lib/socket';
 import { Badge } from '@/components/ui/badge';
 import { collaborationSync } from '@/lib/collaboration';
-import { useYjsCollaboration } from '@/hooks/useYjsCollaboration';
+import { useYjsCollaboration, type OfflineChanges } from '@/hooks/useYjsCollaboration';
+import { OfflineChangesNotice } from './offline-changes-notice';
 import { UserCursors } from '@/components/collaboration/user-cursor';
 import { useFeatureFlags } from '@/features/FeatureFlagsContext';
 import { SlashCommandMenu } from './slash-command-menu';
@@ -191,6 +192,9 @@ export function BlockEditor({
 
   const collaborationEnabled = flags.FEATURE_COLLABORATION && !!pageId && !!userId && !!userName;
 
+  // Edits that were made offline and could not be applied to a rebuilt shared document
+  const [offlineChanges, setOfflineChanges] = useState<OfflineChanges | null>(null);
+
   // Yjs CRDT-based collaboration (new, conflict-free)
   const yjsCollaboration = useYjsCollaboration({
     pageId: pageId || 0,
@@ -207,7 +211,21 @@ export function BlockEditor({
     onError: (error) => {
       console.error('[Yjs] Collaboration error:', error);
     },
+    onOfflineChanges: setOfflineChanges,
   });
+  // Edits go to the shared document as soon as this browser holds one, also while the connection
+  // is down: they merge when it returns, or are handed back (offlineChanges) if the server has
+  // rebuilt the document meanwhile. Before the first sync there is nothing to merge into.
+  const sharedDoc = useYjs && yjsCollaboration.hasDocument;
+
+  // The caret after the person's edit of this block's text, so a repeated text is edited at the
+  // caret (see diffText).
+  const caretIn = (blockId: string): number | undefined => {
+    const active = document.activeElement;
+    if (!(active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement)) return;
+    if (!active.closest(`[data-block-row="${CSS.escape(blockId)}"]`)) return;
+    return active.selectionEnd ?? undefined;
+  };
 
   // Legacy Socket.IO collaboration (old, timestamp-based conflict resolution)
   const collaboration = useCollaboration(
@@ -279,9 +297,9 @@ export function BlockEditor({
         children: [],
       };
 
-      // Route edits through Yjs only once the shared document has synced; before that the
-      // Y.Array can be shorter than the local blocks and index-based edits would be dropped.
-      if (useYjs && yjsCollaboration.isSynced) {
+      // Route edits through Yjs once the shared document exists; before that there is nothing
+      // to merge into and the page's own state is the document.
+      if (sharedDoc) {
         // Yjs CRDT: Conflict-free insertion
         yjsCollaboration.insertBlock(index, newBlock);
       } else {
@@ -309,19 +327,16 @@ export function BlockEditor({
 
       setFocusedBlockId(newBlock.id);
     },
-    [blocks, onChange, pageId, collaboration, useYjs, yjsCollaboration]
+    [blocks, onChange, pageId, collaboration, sharedDoc, yjsCollaboration]
   );
 
   // 블록 삭제 함수
   const deleteBlock = useCallback(
     (blockId: string) => {
       lastShortcutRef.current = null;
-      if (useYjs && yjsCollaboration.isSynced) {
-        // Yjs CRDT: Find index and delete
-        const index = blocks.findIndex((b) => b.id === blockId);
-        if (index !== -1) {
-          yjsCollaboration.deleteBlock(index);
-        }
+      if (sharedDoc) {
+        // Yjs CRDT: delete by id, so the block that goes is the one the person meant
+        yjsCollaboration.deleteBlock(blockId);
       } else {
         // Legacy: Manual conflict resolution
         const newBlocks = blocks.filter((block) => block.id !== blockId);
@@ -341,7 +356,7 @@ export function BlockEditor({
         }
       }
     },
-    [blocks, onChange, pageId, collaboration, useYjs, yjsCollaboration]
+    [blocks, onChange, pageId, collaboration, sharedDoc, yjsCollaboration]
   );
 
   // 블록 업데이트 함수
@@ -349,12 +364,13 @@ export function BlockEditor({
     (blockId: string, updates: Partial<Block>) => {
       // Any edit ends the window in which Ctrl/Cmd+Z undoes a markdown shortcut.
       lastShortcutRef.current = null;
-      if (useYjs && yjsCollaboration.isSynced) {
-        // Yjs CRDT: Find index and update
-        const index = blocks.findIndex((b) => b.id === blockId);
-        if (index !== -1) {
-          yjsCollaboration.updateBlock(index, updates);
-        }
+      if (sharedDoc) {
+        // Yjs CRDT: text becomes character edits, properties merge key by key
+        yjsCollaboration.updateBlock(
+          blockId,
+          updates,
+          typeof updates.content === 'string' ? caretIn(blockId) : undefined
+        );
       } else {
         // Legacy: Manual conflict resolution
         const newBlocks = blocks.map((block) =>
@@ -385,22 +401,23 @@ export function BlockEditor({
         }
       }
     },
-    [blocks, onChange, pageId, collaboration, useYjs, yjsCollaboration]
+    [blocks, onChange, pageId, collaboration, sharedDoc, yjsCollaboration]
   );
 
   // 블록 이동 함수 (issue #103 E3): drag, Alt+↑/↓ and the drag handle's keyboard mode.
   const moveBlockAt = useCallback(
     (from: number, to: number) => {
       if (from === to || to < 0 || to >= blocks.length) return;
-      if (useYjs && yjsCollaboration.isSynced) {
-        // Yjs CRDT: one transaction, so collaborators converge on the new order.
-        yjsCollaboration.moveBlock(from, to);
+      if (sharedDoc) {
+        // Yjs CRDT: one change of the order that leaves the block itself alone, so a collaborator's
+        // edit of it is kept.
+        yjsCollaboration.moveBlock(blocks[from].id, to);
       } else {
         // The legacy Socket.IO channel has no move; pages edit through Yjs or autosave.
         onChange(reorderBlocks(blocks, from, to));
       }
     },
-    [blocks, onChange, useYjs, yjsCollaboration]
+    [blocks, onChange, sharedDoc, yjsCollaboration]
   );
 
   // Divider (#113 §1): the block at `index` becomes a divider (`replace`) or one is inserted below
@@ -420,11 +437,15 @@ export function BlockEditor({
     });
     const paragraph = fresh(`block_${stamp}`, 'paragraph');
     const at = replace ? index : index + 1;
-    if (useYjs && yjsCollaboration.isSynced) {
+    if (sharedDoc) {
+      const targetId = blocks[index]?.id;
       if (replace) {
-        yjsCollaboration.updateBlock(index, { type: 'divider', content: '', properties: {} });
+        if (targetId) {
+          yjsCollaboration.updateBlock(targetId, { type: 'divider', content: '', properties: {} });
+        }
       } else {
-        if (text !== undefined) yjsCollaboration.updateBlock(index, { content: text });
+        if (text !== undefined && targetId)
+          yjsCollaboration.updateBlock(targetId, { content: text });
         yjsCollaboration.insertBlock(at, fresh(`block_${stamp}_divider`, 'divider'));
       }
       yjsCollaboration.insertBlock(at + 1, paragraph);
@@ -467,15 +488,15 @@ export function BlockEditor({
     });
     if (!insertion) return;
     const { index, replace, embed } = insertion;
-    if (useYjs && yjsCollaboration.isSynced) {
+    if (sharedDoc) {
       if (replace) {
-        yjsCollaboration.updateBlock(index, {
+        yjsCollaboration.updateBlock(blockId, {
           type: 'page_embed',
           content: '',
           properties: embed.properties,
         });
       } else {
-        yjsCollaboration.updateBlock(index, { content: text });
+        yjsCollaboration.updateBlock(blockId, { content: text });
         yjsCollaboration.insertBlock(index + 1, embed);
       }
     } else {
@@ -527,8 +548,8 @@ export function BlockEditor({
         children: [],
       });
     }
-    if (useYjs && yjsCollaboration.isSynced) {
-      yjsCollaboration.deleteBlock(index);
+    if (sharedDoc) {
+      yjsCollaboration.deleteBlock(blockId);
       copies.forEach((copy, offset) => yjsCollaboration.insertBlock(index + offset, copy));
     } else {
       const next = [...blocks];
@@ -737,6 +758,7 @@ export function BlockEditor({
       case 'callout':
         return (
           <CalloutBlock
+            blockId={block.id}
             content={block.content}
             color={(block.properties?.color as any) || 'blue'}
             icon={(block.properties?.icon as string) || 'lightbulb'}
@@ -757,6 +779,7 @@ export function BlockEditor({
       case 'math':
         return (
           <MathBlock
+            blockId={block.id}
             expression={block.content}
             displayMode={(block.properties?.displayMode as 'inline' | 'block') || 'block'}
             onExpressionChange={(expression: string) =>
@@ -965,6 +988,12 @@ export function BlockEditor({
               )}
             </div>
           </div>
+        )}
+        {offlineChanges && (
+          <OfflineChangesNotice
+            changes={offlineChanges}
+            onDismiss={() => setOfflineChanges(null)}
+          />
         )}
         {blocks.length === 0 ? (
           <div className="flex items-center justify-center h-64 border-2 border-dashed border-border rounded-lg hover:border-muted-foreground transition-colors">

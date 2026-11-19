@@ -1,8 +1,18 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import * as Y from 'yjs';
 import { Awareness } from 'y-protocols/awareness';
 import { io, Socket } from 'socket.io-client';
 import { Block } from '@shared/schema';
+import {
+  updateBlock as updateBlockIn,
+  insertBlock as insertBlockIn,
+  deleteBlock as deleteBlockIn,
+  moveBlock as moveBlockIn,
+  type BlockPatch,
+} from '@shared/yjs-blocks';
+import { isComposing, watchComposition } from '@/lib/collab-text';
+import { YjsSession, type OfflineChanges } from '@/lib/yjs-session';
 
 export interface User {
   id: string;
@@ -10,6 +20,8 @@ export interface User {
   color: string;
   cursor?: { x: number; y: number; blockId?: string };
 }
+
+export type { OfflineChanges };
 
 interface YjsCollaborationOptions {
   pageId: number;
@@ -20,12 +32,17 @@ interface YjsCollaborationOptions {
   onUsersChange?: (users: User[]) => void;
   onUserCountChange?: (count: number) => void;
   onError?: (error: string) => void;
+  /** The server started a new incarnation of the document and edits made offline were not applied. */
+  onOfflineChanges?: (changes: OfflineChanges) => void;
 }
 
 interface YjsCollaborationState {
   isConnected: boolean;
   userCount: number;
+  /** Connected, and the document is in step with the server's. */
   isSynced: boolean;
+  /** A shared document exists in this browser (it stays after a disconnect, edits go to it). */
+  hasDocument: boolean;
   users: User[];
 }
 
@@ -43,31 +60,21 @@ const USER_COLORS = [
   '#52B788',
 ];
 
-// The server exchanges Yjs updates as base64. Node's Buffer does not exist in the browser
-// (Vite does not polyfill it), so decode/encode with atob/btoa.
-function base64ToBytes(base64: string): Uint8Array {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = '';
-  for (let i = 0; i < bytes.length; i += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  }
-  return btoa(binary);
-}
-
 function getUserColor(userId: string): string {
   const hash = userId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
   return USER_COLORS[hash % USER_COLORS.length];
 }
 
 /**
- * React hook for Yjs-based collaborative editing
- * Provides conflict-free concurrent editing using CRDT
+ * React hook for Yjs-based collaborative editing.
+ *
+ * Document: see shared/yjs-blocks.ts. Joining: every (re)connect sends `yjs:join`; the server
+ * answers with the document's state and its epoch (the incarnation of the document). A browser
+ * keeps the document it holds only while the epoch is the one it joined before: then the server's
+ * state is merged into it and what the server lacks is sent back, so edits made while
+ * disconnected merge. With another epoch (the server rebuilt the document) the held document is
+ * not a replica of the server's, so a fresh one replaces it, and edits made offline are reported
+ * through `onOfflineChanges` instead of being merged or lost.
  */
 export function useYjsCollaboration({
   pageId,
@@ -78,57 +85,67 @@ export function useYjsCollaboration({
   onUsersChange,
   onUserCountChange,
   onError,
+  onOfflineChanges,
 }: YjsCollaborationOptions) {
   const [state, setState] = useState<YjsCollaborationState>({
     isConnected: false,
     userCount: 0,
     isSynced: false,
+    hasDocument: false,
     users: [],
   });
 
   const socketRef = useRef<Socket | null>(null);
-  const ydocRef = useRef<Y.Doc | null>(null);
   const awarenessRef = useRef<Awareness | null>(null);
-  const yblocksRef = useRef<Y.Array<Block> | null>(null);
-  const isApplyingRemoteRef = useRef(false);
+  const sessionRef = useRef<YjsSession | null>(null);
 
   // Callers pass inline callbacks, so read them through a ref instead of listing them as
   // effect dependencies; otherwise every render tears down and recreates the Y.Doc and the
   // /yjs socket, which reconnects in a loop and never finishes the initial sync.
-  const callbacksRef = useRef({ onBlocksChange, onUsersChange, onUserCountChange, onError });
-  callbacksRef.current = { onBlocksChange, onUsersChange, onUserCountChange, onError };
+  const callbacksRef = useRef({
+    onBlocksChange,
+    onUsersChange,
+    onUserCountChange,
+    onError,
+    onOfflineChanges,
+  });
+  callbacksRef.current = {
+    onBlocksChange,
+    onUsersChange,
+    onUserCountChange,
+    onError,
+    onOfflineChanges,
+  };
 
   const documentId = `page-${pageId}`;
 
-  // Initialize Yjs document
+  // Presence (awareness). It lives on its own document: the shared one is replaced whenever the
+  // server rebuilds it.
   useEffect(() => {
     if (!enabled || !pageId) {
       // If disabled, ensure we look disconnected. Keep the previous state when it already
       // is, so re-running this effect never forces a re-render.
       setState((prev) =>
-        !prev.isConnected && prev.userCount === 0 && !prev.isSynced && prev.users.length === 0
+        !prev.isConnected &&
+        prev.userCount === 0 &&
+        !prev.isSynced &&
+        !prev.hasDocument &&
+        prev.users.length === 0
           ? prev
-          : { isConnected: false, userCount: 0, isSynced: false, users: [] }
+          : { isConnected: false, userCount: 0, isSynced: false, hasDocument: false, users: [] }
       );
       return;
     }
 
-    // Create Yjs document
-    const ydoc = new Y.Doc();
-    const yblocks = ydoc.getArray<Block>('blocks');
-    const awareness = new Awareness(ydoc);
-
-    ydocRef.current = ydoc;
-    yblocksRef.current = yblocks;
+    const awarenessDoc = new Y.Doc();
+    const awareness = new Awareness(awarenessDoc);
     awarenessRef.current = awareness;
 
-    // Set local awareness state
-    const userColor = getUserColor(userId);
     awareness.setLocalState({
       user: {
         id: userId,
         name: userName,
-        color: userColor,
+        color: getUserColor(userId),
       },
     });
 
@@ -152,25 +169,15 @@ export function useYjsCollaboration({
 
     awareness.on('change', awarenessChangeHandler);
 
-    // Mirror every change (local edits and updates from other collaborators) into React.
-    // Skipping remote updates here meant other users' edits were applied to the Y.Doc but
-    // never rendered.
-    const observer = () => {
-      const blocks = yblocks.toArray();
-      callbacksRef.current.onBlocksChange(blocks);
-    };
-
-    yblocks.observe(observer);
-
     return () => {
       awareness.off('change', awarenessChangeHandler);
-      yblocks.unobserve(observer);
       awareness.destroy();
-      ydoc.destroy();
+      awarenessDoc.destroy();
+      if (awarenessRef.current === awareness) awarenessRef.current = null;
     };
   }, [enabled, pageId, userId, userName]);
 
-  // Connect to Yjs server
+  // The shared document and its connection to the server (see lib/yjs-session.ts)
   useEffect(() => {
     if (!enabled || !pageId) return;
 
@@ -179,168 +186,105 @@ export function useYjsCollaboration({
       withCredentials: true,
       transports: ['websocket', 'polling'],
     });
-
     socketRef.current = socket;
 
-    // Connection events
-    socket.on('connect', () => {
-      console.log('[Yjs] Connected to collaboration server');
-      setState((prev) => ({ ...prev, isConnected: true }));
-
-      // Join document
-      socket.emit('yjs:join', { documentId, pageId });
+    const session = new YjsSession(socket, {
+      documentId,
+      pageId,
+      composition: { isComposing },
+      onBlocksChange: (blocks, origin) => {
+        // A change from elsewhere is rendered before anything else can happen, so the next
+        // keystroke is always made against the text on screen. The person's own edits render
+        // with the event that made them.
+        if (origin === 'local') callbacksRef.current.onBlocksChange(blocks);
+        else flushSync(() => callbacksRef.current.onBlocksChange(blocks));
+      },
+      onStatus: ({ connected, synced, hasDocument, userCount }) => {
+        setState((prev) => ({
+          ...prev,
+          isConnected: connected,
+          isSynced: synced,
+          hasDocument,
+          userCount: userCount ?? prev.userCount,
+        }));
+        if (userCount !== undefined) callbacksRef.current.onUserCountChange?.(userCount);
+      },
+      onOfflineChanges: (changes) => callbacksRef.current.onOfflineChanges?.(changes),
+      onError: (message) => {
+        console.error('[Yjs] Server error:', message);
+        callbacksRef.current.onError?.(message);
+      },
+      onLog: (message, detail) => console.log(`[Yjs] ${message}`, ...(detail ? [detail] : [])),
     });
-
-    socket.on('disconnect', () => {
-      console.log('[Yjs] Disconnected from collaboration server');
-      setState((prev) => ({ ...prev, isConnected: false, isSynced: false }));
-    });
-
-    // Initialize with server state
-    socket.on('yjs:init', (data: { stateVector: string; userCount: number }) => {
-      const ydoc = ydocRef.current;
-      if (!ydoc) return;
-
-      try {
-        const stateVector = base64ToBytes(data.stateVector);
-        // 'server' origin keeps the update handler below from echoing it back.
-        Y.applyUpdate(ydoc, stateVector, 'server');
-
-        setState((prev) => ({ ...prev, isSynced: true, userCount: data.userCount }));
-        callbacksRef.current.onUserCountChange?.(data.userCount);
-
-        console.log('[Yjs] Document initialized', {
-          documentId,
-          userCount: data.userCount,
-        });
-      } catch (error) {
-        console.error('[Yjs] Failed to initialize document:', error);
-        callbacksRef.current.onError?.('Failed to initialize document');
-      }
-    });
-
-    // Receive updates from server
-    socket.on('yjs:update', (data: { update: string }) => {
-      const ydoc = ydocRef.current;
-      if (!ydoc) return;
-
-      try {
-        isApplyingRemoteRef.current = true;
-        const update = base64ToBytes(data.update);
-        Y.applyUpdate(ydoc, update, 'server');
-        isApplyingRemoteRef.current = false;
-
-        console.log('[Yjs] Applied remote update');
-      } catch (error) {
-        console.error('[Yjs] Failed to apply update:', error);
-        isApplyingRemoteRef.current = false;
-      }
-    });
+    sessionRef.current = session;
+    const stopWatchingComposition = watchComposition(() => session.releaseHeld());
 
     // Receive awareness updates from server
     socket.on('yjs:awareness', (data: { update: string }) => {
-      const awareness = awarenessRef.current;
-      if (!awareness) return;
-
-      try {
-        const update = base64ToBytes(data.update);
-        const updateArray = Array.from(update);
-        // Apply awareness update (this will trigger the 'change' event)
-        // Note: y-protocols uses specific encoding, we'll handle this in a simple way
-        console.log('[Yjs] Received awareness update');
-      } catch (error) {
-        console.error('[Yjs] Failed to apply awareness update:', error);
-      }
+      // Presence is not wired up yet: the server relays `awarenessUpdate`, not `update`, and
+      // this client never sends its own.
+      void data;
+      console.log('[Yjs] Received awareness update');
     });
 
-    // Error handling
-    socket.on('yjs:error', (data: { message: string }) => {
-      console.error('[Yjs] Server error:', data.message);
-      callbacksRef.current.onError?.(data.message);
-    });
-
-    // Setup update broadcasting to server
-    const ydoc = ydocRef.current;
-    if (ydoc) {
-      const updateHandler = (update: Uint8Array, origin: any) => {
-        // Don't send update if it came from the server
-        if (origin === 'server') return;
-
-        // Send update to server
-        socket.emit('yjs:update', {
-          documentId,
-          update: bytesToBase64(update),
-        });
-      };
-
-      ydoc.on('update', updateHandler);
-
-      return () => {
-        ydoc.off('update', updateHandler);
-        socket.disconnect();
-      };
-    }
+    // Undo and redo (Ctrl/Cmd+Z, the Edit menu) act on this person's own edits only: the
+    // browser's own undo would also have to cross collaborators' changes, which it cannot.
+    const onBeforeInput = (event: InputEvent) => {
+      if (event.inputType !== 'historyUndo' && event.inputType !== 'historyRedo') return;
+      const target = event.target;
+      if (!(target instanceof Element) || !target.closest('[data-block-row]')) return;
+      const undo = session.undoManager;
+      if (!undo || !session.canEdit) return;
+      event.preventDefault();
+      if (event.inputType === 'historyUndo') undo.undo();
+      else undo.redo();
+    };
+    document.addEventListener('beforeinput', onBeforeInput, true);
 
     return () => {
+      document.removeEventListener('beforeinput', onBeforeInput, true);
+      stopWatchingComposition();
+      session.destroy();
+      if (sessionRef.current === session) sessionRef.current = null;
+      if (socketRef.current === socket) socketRef.current = null;
       socket.disconnect();
+      setState((prev) => ({ ...prev, hasDocument: false, isSynced: false, isConnected: false }));
     };
   }, [enabled, pageId, documentId]);
 
-  // Update blocks (called from BlockEditor)
-  const updateBlocks = useCallback((blocks: Block[]) => {
-    const yblocks = yblocksRef.current;
-    if (!yblocks || isApplyingRemoteRef.current) return;
-
-    // Apply changes to Yjs array
-    ydocRef.current?.transact(() => {
-      yblocks.delete(0, yblocks.length);
-      yblocks.push(blocks);
-    });
-  }, []);
+  const editable = () => {
+    const session = sessionRef.current;
+    if (!session?.doc) return null;
+    if (!session.canEdit) {
+      callbacksRef.current.onError?.('You do not have permission to edit this page.');
+      return null;
+    }
+    return session.doc;
+  };
 
   // Insert block at index
   const insertBlock = useCallback((index: number, block: Block) => {
-    const yblocks = yblocksRef.current;
-    if (!yblocks) return;
-
-    ydocRef.current?.transact(() => {
-      yblocks.insert(index, [block]);
-    });
+    const doc = editable();
+    return doc ? insertBlockIn(doc, index, block) : false;
   }, []);
 
-  // Update block at index
-  const updateBlock = useCallback((index: number, block: Partial<Block>) => {
-    const yblocks = yblocksRef.current;
-    if (!yblocks || index >= yblocks.length) return;
-
-    ydocRef.current?.transact(() => {
-      const currentBlock = yblocks.get(index);
-      yblocks.delete(index, 1);
-      yblocks.insert(index, [{ ...currentBlock, ...block }]);
-    });
+  // Update the block with this id: `content` as a text edit (`caret` is the caret after it),
+  // `properties` key by key.
+  const updateBlock = useCallback((blockId: string, patch: BlockPatch, caret?: number) => {
+    const doc = editable();
+    return doc ? updateBlockIn(doc, blockId, patch, caret) : false;
   }, []);
 
-  // Delete block at index
-  const deleteBlock = useCallback((index: number) => {
-    const yblocks = yblocksRef.current;
-    if (!yblocks || index >= yblocks.length) return;
-
-    ydocRef.current?.transact(() => {
-      yblocks.delete(index, 1);
-    });
+  // Delete the block with this id
+  const deleteBlock = useCallback((blockId: string) => {
+    const doc = editable();
+    return doc ? deleteBlockIn(doc, blockId) : false;
   }, []);
 
-  // Move a block (issue #103 E3): delete and re-insert it in one transaction, so every
-  // collaborator applies the reorder as a single update. `to` is the index in the resulting list.
-  const moveBlock = useCallback((from: number, to: number) => {
-    const yblocks = yblocksRef.current;
-    if (!yblocks || from === to || from >= yblocks.length || to >= yblocks.length) return;
-
-    ydocRef.current?.transact(() => {
-      const block = yblocks.get(from);
-      yblocks.delete(from, 1);
-      yblocks.insert(to, [block]);
-    });
+  // Move a block (issue #103 E3) as one change; `to` is its index in the resulting list.
+  const moveBlock = useCallback((blockId: string, to: number) => {
+    const doc = editable();
+    return doc ? moveBlockIn(doc, blockId, to) : false;
   }, []);
 
   // Update cursor position
@@ -387,7 +331,6 @@ export function useYjsCollaboration({
 
   return {
     ...state,
-    updateBlocks,
     insertBlock,
     updateBlock,
     deleteBlock,
