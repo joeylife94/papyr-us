@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Block, PageCover } from '@shared/schema';
+import type { Block, PageCover, WikiPage } from '@shared/schema';
 
 /** Fields the autosave endpoint accepts (see PUT /api/pages/:id/autosave). */
 export interface AutosavePatch {
@@ -13,7 +13,17 @@ export interface AutosavePatch {
   cover?: PageCover | null;
 }
 
-export type AutosaveStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
+export type AutosaveStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'error' | 'conflict';
+
+/** A page as the server answers reads: the stored fields plus the revision saves are based on. */
+export type PageWithRevision = WikiPage & { revision?: string };
+
+/** The server refused a save because the page changed after the revision it was based on. */
+export interface SaveConflict {
+  /** The page as it is stored now. */
+  page: PageWithRevision;
+  currentRevision: string;
+}
 
 const IDLE_DELAY_MS = 1000;
 const MAX_WAIT_MS = 5000;
@@ -23,6 +33,19 @@ const RETRY_MAX_MS = 30000;
 interface Options {
   /** Called with the server's answer after each successful save. */
   onSaved?: (result: { id: number; slug: string; title: string }) => void;
+  /**
+   * The revision of the page as the editor loaded it. Every save names the revision it is based
+   * on, and a save based on an older one is refused instead of overwriting (WP1). It is taken
+   * once, from the page the editor was opened on, and afterwards only from this editor's own
+   * saves or an explicit `loadLatest`, never from a background refetch: a refetched page the
+   * editor is not showing would otherwise hide that someone else changed it.
+   */
+  baseRevision?: string;
+  /**
+   * Whether saves name their base revision. Off while realtime collaboration is on: the
+   * collaboration server saves the page itself, so a client's base would be stale all the time.
+   */
+  guarded?: boolean;
 }
 
 /**
@@ -31,9 +54,22 @@ interface Options {
  * `flush()` saves now (Ctrl/Cmd+S). A failed save is retried with backoff, together with any
  * newer edits. Leaving the page flushes pending edits and checkpoints the page, which closes its
  * editing session on the server.
+ *
+ * When the server answers 409 (the page was changed by someone else), autosaving stops and
+ * `conflict` carries the page as it is now. The unsent edits are kept until the person chooses:
+ * `keepMine()` saves them on top of the current revision, `loadLatest()` drops them and returns
+ * the current page to show.
  */
-export function usePageAutosave(pageId: number | undefined, { onSaved }: Options = {}) {
+export function usePageAutosave(
+  pageId: number | undefined,
+  { onSaved, baseRevision, guarded = true }: Options = {}
+) {
   const [status, setStatus] = useState<AutosaveStatus>('idle');
+  const [conflict, setConflict] = useState<SaveConflict | null>(null);
+  const conflictRef = useRef<SaveConflict | null>(null);
+  const baseRef = useRef<string | undefined>(baseRevision);
+  const guardedRef = useRef(guarded);
+  guardedRef.current = guarded;
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const pending = useRef<AutosavePatch>({});
   const hasPending = useRef(false);
@@ -57,10 +93,10 @@ export function usePageAutosave(pageId: number | undefined, { onSaved }: Options
 
   const send = useCallback(
     async (keepalive = false) => {
-      if (!pageId || !hasPending.current) return;
+      if (!pageId || !hasPending.current || conflictRef.current) return;
       // Serialize saves so an older patch can never land after a newer one.
       if (inFlight.current) await inFlight.current;
-      if (!hasPending.current) return;
+      if (!hasPending.current || conflictRef.current) return;
       const body = pending.current;
       pending.current = {};
       hasPending.current = false;
@@ -71,12 +107,35 @@ export function usePageAutosave(pageId: number | undefined, { onSaved }: Options
           const res = await fetch(`/api/pages/${pageId}/autosave`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
+            body: JSON.stringify(
+              guardedRef.current && baseRef.current
+                ? { ...body, baseRevision: baseRef.current }
+                : body
+            ),
             credentials: 'include',
             keepalive,
           });
+          if (res.status === 409) {
+            const refused = await res.json().catch(() => null);
+            if (refused?.code === 'page_revision_conflict' && refused.page) {
+              // Keep the edits for the person's decision, and stop saving until it is made.
+              pending.current = { ...body, ...pending.current };
+              hasPending.current = true;
+              failures.current = 0;
+              clearTimers();
+              const found: SaveConflict = {
+                page: refused.page,
+                currentRevision: String(refused.currentRevision),
+              };
+              conflictRef.current = found;
+              setConflict(found);
+              setStatus('conflict');
+              return;
+            }
+          }
           if (!res.ok) throw new Error(`autosave ${res.status}`);
           const result = await res.json();
+          if (typeof result.revision === 'string') baseRef.current = result.revision;
           failures.current = 0;
           setSavedAt(new Date());
           setStatus(hasPending.current ? 'pending' : 'saved');
@@ -106,19 +165,46 @@ export function usePageAutosave(pageId: number | undefined, { onSaved }: Options
 
   const flush = useCallback(() => send(false), [send]);
 
-  /** Drop unsent edits (after a restore replaced the page they were made on). */
-  const reset = useCallback(() => {
+  /**
+   * Drop unsent edits (after a restore replaced the page they were made on, or the latest page
+   * was loaded). `revision` is the revision of the page now shown, the base of the next save.
+   */
+  const reset = useCallback((revision?: string) => {
     pending.current = {};
     hasPending.current = false;
     failures.current = 0;
     clearTimers();
+    conflictRef.current = null;
+    setConflict(null);
+    if (revision !== undefined) baseRef.current = revision;
     setStatus('idle');
+  }, []);
+
+  /** Drop the unsent edits and return the page as it is stored now, to show in their place. */
+  const loadLatest = useCallback((): PageWithRevision | null => {
+    const latest = conflictRef.current;
+    if (!latest) return null;
+    reset(latest.currentRevision);
+    return latest.page;
+  }, [reset]);
+
+  /** Save the unsent edits on top of the current page, deliberately replacing its changes. */
+  const keepMine = useCallback(() => {
+    const latest = conflictRef.current;
+    if (!latest) return;
+    baseRef.current = latest.currentRevision;
+    conflictRef.current = null;
+    setConflict(null);
+    setStatus('pending');
+    void sendRef.current?.(false);
   }, []);
 
   const queue = useCallback(
     (patch: AutosavePatch) => {
       pending.current = { ...pending.current, ...patch };
       hasPending.current = true;
+      // While a conflict waits for a decision, edits are only collected.
+      if (conflictRef.current) return;
       setStatus('pending');
       if (idleTimer.current) clearTimeout(idleTimer.current);
       idleTimer.current = setTimeout(() => void send(false), IDLE_DELAY_MS);
@@ -157,5 +243,5 @@ export function usePageAutosave(pageId: number | undefined, { onSaved }: Options
     };
   }, [pageId, send]);
 
-  return { status, savedAt, queue, flush, reset };
+  return { status, savedAt, queue, flush, reset, conflict, loadLatest, keepMine };
 }

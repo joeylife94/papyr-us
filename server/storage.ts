@@ -88,6 +88,7 @@ import type { PageTreeRow } from './services/page-tree.js';
 import type { TagPaneRow } from './services/tag-pane.js';
 import { postgresErrorOf } from './db-errors.js';
 import { defaultOrganizationId } from './organizations.js';
+import { PageRevisionConflictError, pageRevision } from './services/page-revision.js';
 import {
   MAX_INDEXED_LINKS,
   extractPageLinkIds,
@@ -411,10 +412,34 @@ export class DBStorage {
     });
   }
 
-  async updateWikiPage(id: number, page: UpdateWikiPage): Promise<WikiPage | undefined> {
+  async updateWikiPage(
+    id: number,
+    page: UpdateWikiPage,
+    options?: { ifRevision?: string }
+  ): Promise<WikiPage | undefined> {
     // Only the daily-note route gives out daily note slugs (#111).
     if (page.slug !== undefined && isReservedDailyNoteSlug(page.slug)) {
       throw new Error('This slug is reserved for daily notes');
+    }
+    if (options?.ifRevision !== undefined) {
+      const { ifRevision } = options;
+      // A save based on a revision (WP1): the page row is locked, its revision compared and the
+      // write made in one transaction, so of two saves based on the same revision only the first
+      // is written and the second sees the page it changed and is refused.
+      return this.db.transaction(async (tx: any) => {
+        const [locked] = await tx
+          .select()
+          .from(wikiPages)
+          .where(eq(wikiPages.id, id))
+          .for('update');
+        if (!locked) return undefined;
+        if (pageRevision(locked) !== ifRevision) throw new PageRevisionConflictError(locked);
+        const result = await tx.update(wikiPages).set(page).where(eq(wikiPages.id, id)).returning();
+        if (result[0] && page.content !== undefined) {
+          await this.writePageLinks(tx, id, result[0].content);
+        }
+        return result[0];
+      });
     }
     if (page.content === undefined) {
       const result = await this.db

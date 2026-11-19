@@ -21,6 +21,12 @@
  *   editor echoing blocks it has just synced, records no version, opens or extends no session,
  *   and skips the write.
  *
+ * - A save may name the revision it was based on (`baseRevision`, see page-revision.ts). When the
+ *   stored page has moved on, the save is refused with a `PageRevisionConflictError` before
+ *   anything is written: no page write, no session, no workflows. The refused text and the page
+ *   as it is then are kept as versions, so whichever side the editor gives up on can be
+ *   recovered. A save without a base behaves as before; the realtime server does not pass one.
+ *
  * Session state lives in this process (the app runs as a single instance); after a restart the
  * next autosave simply starts a new session, which can only add a version, never lose one.
  */
@@ -35,6 +41,7 @@ import {
 } from '../../shared/schema.js';
 import { blocksToMarkdown } from '../../shared/block-markdown.js';
 import logger from './logger.js';
+import { PageRevisionConflictError, pageRevision } from './page-revision.js';
 
 /** Idle time after which an autosave session closes (decision D2 on #103). */
 export const AUTOSAVE_SESSION_IDLE_MS = 2 * 60 * 1000;
@@ -50,9 +57,30 @@ export type PageSaveUpdate = UpdateWikiPage & { cover?: PageCover | null };
 
 export interface PageSaveStore {
   getPage(id: number): Promise<WikiPage | undefined>;
-  updatePage(id: number, data: UpdateWikiPage): Promise<WikiPage | undefined>;
-  /** Record `page` as the next version, with a short description of why it was taken. */
-  snapshotVersion(page: WikiPage, description: string): Promise<void>;
+  /**
+   * Write the update. With `ifRevision`, the stored page must still have that revision at the
+   * moment of the write (checked under the row lock, so concurrent saves cannot both pass);
+   * otherwise it throws a `PageRevisionConflictError` and writes nothing.
+   */
+  updatePage(
+    id: number,
+    data: UpdateWikiPage,
+    options?: { ifRevision?: string }
+  ): Promise<WikiPage | undefined>;
+  /**
+   * Record `page` as the next version, with a short description of why it was taken. With
+   * `unlessKept`, nothing is recorded when a version already holds this title and body.
+   */
+  snapshotVersion(
+    page: WikiPage,
+    description: string,
+    options?: { unlessKept?: boolean }
+  ): Promise<void>;
+}
+
+export interface SaveOptions {
+  /** The revision of the page the change was based on; a stale one refuses the save. */
+  baseRevision?: string;
 }
 
 export interface SessionClosedEvent {
@@ -182,7 +210,8 @@ export async function savePage(
   store: PageSaveStore,
   pageId: number,
   update: PageSaveUpdate,
-  mode: SaveMode
+  mode: SaveMode,
+  options: SaveOptions = {}
 ): Promise<{ before: WikiPage | undefined; after: WikiPage } | undefined> {
   // Routes only reach here after the page permission check found the page. If it still cannot
   // be read, skip versioning and sessions and let the update decide, as the PUT route did
@@ -204,6 +233,12 @@ export async function savePage(
   // the client sent alongside its blocks, as the editor has always sent both.
   if (data.blocks !== undefined && (mode === 'autosave' || data.content === undefined)) {
     data.content = derivePageContent(data.blocks);
+  }
+
+  const { baseRevision } = options;
+  if (before && baseRevision !== undefined && baseRevision !== pageRevision(before)) {
+    await keepRefusedWrite(store, before, data);
+    throw new PageRevisionConflictError(before);
   }
 
   const changed = before ? changedFields(before, data) : [];
@@ -243,9 +278,43 @@ export async function savePage(
   // answer with the stored page, which is what the write would have returned.
   if (before && changed.length === 0) return { before, after: before };
 
-  const after = await store.updatePage(pageId, data);
+  let after: WikiPage | undefined;
+  try {
+    after = await store.updatePage(
+      pageId,
+      data,
+      baseRevision !== undefined ? { ifRevision: baseRevision } : undefined
+    );
+  } catch (error) {
+    // Someone saved between the check above and the write: same answer as a stale base.
+    if (error instanceof PageRevisionConflictError)
+      await keepRefusedWrite(store, error.current, data);
+    throw error;
+  }
   if (!after) return undefined;
   return { before, after };
+}
+
+/**
+ * A save was refused because the page changed under it. Keep both sides in the version history,
+ * so that neither choice the editor offers (load the latest, keep mine) can lose text: the page as
+ * it is now (unless a version already holds it) and, when the refused save changes the
+ * title or body, the text it carried. The page itself is not written.
+ */
+async function keepRefusedWrite(store: PageSaveStore, current: WikiPage, data: UpdateWikiPage) {
+  await snapshotSafely(store, current, 'Latest when a save was refused', {
+    unlessKept: true,
+  });
+  if (!changedFields(current, data).some((field) => VERSIONED_FIELDS.includes(field))) return;
+  const refused = {
+    ...current,
+    title: data.title ?? current.title,
+    content: data.content ?? current.content,
+    blocks: data.blocks ?? current.blocks,
+  } as WikiPage;
+  await snapshotSafely(store, refused, 'Not saved: based on an older revision', {
+    unlessKept: true,
+  });
 }
 
 /** Close the page's autosave session (the editor left the page). */
@@ -260,9 +329,14 @@ export async function snapshotBeforeRestore(store: PageSaveStore, pageId: number
   if (current) await snapshotSafely(store, current, 'Before restore');
 }
 
-async function snapshotSafely(store: PageSaveStore, page: WikiPage, description: string) {
+async function snapshotSafely(
+  store: PageSaveStore,
+  page: WikiPage,
+  description: string,
+  options?: { unlessKept?: boolean }
+) {
   try {
-    await store.snapshotVersion(page, description);
+    await store.snapshotVersion(page, description, options);
   } catch (error) {
     // A failed snapshot must not block the save itself (same policy as before E1).
     logger.error('Failed to create page version', {
@@ -281,15 +355,39 @@ type DrizzleLike = {
 /** The production store: DBStorage for pages, `page_versions` for snapshots. */
 export function storagePageSaveStore(storage: {
   getWikiPage(id: number): Promise<WikiPage | undefined>;
-  updateWikiPage(id: number, page: UpdateWikiPage): Promise<WikiPage | undefined>;
+  updateWikiPage(
+    id: number,
+    page: UpdateWikiPage,
+    options?: { ifRevision?: string }
+  ): Promise<WikiPage | undefined>;
   db?: DrizzleLike;
 }): PageSaveStore {
   return {
     getPage: (id) => storage.getWikiPage(id),
-    updatePage: (id, data) => storage.updateWikiPage(id, data),
-    async snapshotVersion(page, description) {
+    updatePage: (id, data, options) =>
+      options ? storage.updateWikiPage(id, data, options) : storage.updateWikiPage(id, data),
+    async snapshotVersion(page, description, options) {
       const db = storage.db;
       if (!db) return;
+      if (options?.unlessKept) {
+        const sameText = await db
+          .select({ blocks: pageVersions.blocks })
+          .from(pageVersions)
+          .where(
+            and(
+              eq(pageVersions.pageId, page.id),
+              eq(pageVersions.title, page.title),
+              eq(pageVersions.content, page.content)
+            )
+          );
+        if (
+          sameText.some((row: { blocks: unknown }) =>
+            jsonEqual(row.blocks ?? [], page.blocks ?? [])
+          )
+        ) {
+          return;
+        }
+      }
       const [latest] = await db
         .select({ maxVersion: sql<number>`COALESCE(MAX(${pageVersions.versionNumber}), 0)` })
         .from(pageVersions)

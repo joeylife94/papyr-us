@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { AlertCircle, Check, Loader2 } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Check, Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { AutosaveStatus } from '@/hooks/usePageAutosave';
 
@@ -75,21 +76,109 @@ export function SaveStatus({ status }: { status: AutosaveStatus }) {
           ? '저장됨'
           : status === 'error'
             ? '저장 실패 · 다시 시도 중'
-            : '';
+            : status === 'conflict'
+              ? '저장되지 않음 · 문서가 바뀜'
+              : '';
   return (
     <span
       role="status"
       aria-live="polite"
       className={cn(
         'inline-flex min-h-6 items-center gap-1.5 font-mono text-xs',
-        status === 'error' ? 'text-destructive' : 'text-muted-foreground'
+        status === 'error' || status === 'conflict' ? 'text-destructive' : 'text-muted-foreground'
       )}
     >
       {status === 'saving' && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
       {status === 'saved' && <Check className="h-3.5 w-3.5 text-highlight" aria-hidden="true" />}
-      {status === 'error' && <AlertCircle className="h-3.5 w-3.5" aria-hidden="true" />}
+      {(status === 'error' || status === 'conflict') && (
+        <AlertCircle className="h-3.5 w-3.5" aria-hidden="true" />
+      )}
       {label}
     </span>
+  );
+}
+
+interface SaveConflictNoticeProps {
+  /** What this editor holds and has not been able to save, shown before it can be dropped. */
+  title: string;
+  content: string;
+  folder: string;
+  tags: string;
+  onLoadLatest: () => void;
+  onKeepMine: () => void;
+}
+
+/**
+ * Shown when a save was refused because someone else changed the page after this editor loaded
+ * it (WP1). Autosave is paused; the person chooses between the other person's text and their own,
+ * and both stay in the version history either way.
+ */
+export function SaveConflictNotice({
+  title,
+  content,
+  folder,
+  tags,
+  onLoadLatest,
+  onKeepMine,
+}: SaveConflictNoticeProps) {
+  return (
+    <section
+      role="alert"
+      data-testid="page-save-conflict"
+      aria-labelledby="page-save-conflict-title"
+      className="rounded-lg border border-warning/60 bg-warning/10 p-4"
+    >
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-warning" aria-hidden="true" />
+        <div className="min-w-0 flex-1 space-y-3">
+          <div className="space-y-1">
+            <h2 id="page-save-conflict-title" className="text-sm font-semibold text-foreground">
+              다른 사람이 이 문서를 수정했습니다
+            </h2>
+            <p className="text-[13px] leading-relaxed text-foreground-secondary">
+              내가 고친 내용은 아직 저장되지 않았고 자동 저장은 멈췄습니다. 어느 쪽을 고르더라도 두
+              내용 모두 버전 기록에 남아 있어 나중에 되돌릴 수 있습니다.
+            </p>
+          </div>
+          <details open className="group">
+            <summary className="cursor-pointer text-[13px] font-medium text-foreground">
+              내가 쓴 내용 보기
+            </summary>
+            <div
+              data-testid="page-save-conflict-mine"
+              className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-card p-3 font-mono text-xs text-foreground"
+            >
+              {[title, content].filter(Boolean).join('\n\n')}
+              {(folder || tags) && (
+                <span className="mt-2 block text-muted-foreground">
+                  {[folder && `폴더: ${folder}`, tags && `태그: ${tags}`]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </span>
+              )}
+            </div>
+          </details>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Button type="button" variant="outline" size="sm" onClick={onLoadLatest}>
+                최신 내용 불러오기
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                다른 사람이 저장한 내용을 보여 주고, 내가 고친 내용은 버립니다.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Button type="button" size="sm" onClick={onKeepMine}>
+                내 변경 유지
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                내 내용으로 다시 저장해 다른 사람의 변경을 덮어씁니다.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 

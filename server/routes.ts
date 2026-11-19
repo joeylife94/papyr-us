@@ -18,6 +18,7 @@ import { config } from './config.js';
 import {
   insertWikiPageSchema,
   updateWikiPageSchema,
+  type WikiPage,
   searchSchema,
   insertCalendarEventSchema,
   updateCalendarEventSchema,
@@ -86,6 +87,7 @@ import {
   setSessionClosedHandler,
   storagePageSaveStore,
 } from './services/page-save.js';
+import { PageRevisionConflictError, pageRevision } from './services/page-revision.js';
 import {
   buildPageTree,
   checkNewPage,
@@ -791,6 +793,26 @@ export async function registerRoutes(
     }
   });
 
+  // Base revision of a page write (WP1): optional; when sent it must be the token a read or an
+  // earlier save answered with. Returns undefined when absent and null when malformed.
+  const baseRevisionSchema = z.string().min(1).max(128);
+  const parseBaseRevision = (body: unknown): string | undefined | null => {
+    const value = (body as { baseRevision?: unknown } | undefined)?.baseRevision;
+    if (value === undefined) return undefined;
+    const parsed = baseRevisionSchema.safeParse(value);
+    return parsed.success ? parsed.data : null;
+  };
+  // A page as GET /api/pages/:id answers it: the stored fields plus the revision to base saves on.
+  const withRevision = <T extends WikiPage>(page: T) => ({ ...page, revision: pageRevision(page) });
+  // The 409 for a save based on an older revision: the page exactly as GET answers it now (the
+  // caller passed the editor check for this page, which includes reading it), and its revision.
+  const revisionConflictBody = (current: WikiPage) => ({
+    message: 'This page was changed by someone else',
+    code: 'page_revision_conflict',
+    currentRevision: pageRevision(current),
+    page: withRevision(current),
+  });
+
   app.get('/api/pages/:id', optionalAuth, requirePagePermission('viewer'), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
@@ -800,7 +822,7 @@ export async function registerRoutes(
         return res.status(404).json({ message: 'Page not found' });
       }
 
-      res.json(page);
+      res.json(withRevision(page));
     } catch (error) {
       res.status(400).json({ message: 'Invalid page ID' });
     }
@@ -820,7 +842,7 @@ export async function registerRoutes(
           return res.status(404).json({ message: 'Page not found' });
         }
 
-        res.json(page);
+        res.json(withRevision(page));
       } catch (error) {
         res.status(500).json({ message: 'Server error' });
       }
@@ -902,6 +924,10 @@ export async function registerRoutes(
       try {
         const id = parseInt(req.params.id);
         const updateData = updateWikiPageSchema.parse(req.body);
+        const baseRevision = parseBaseRevision(req.body);
+        if (baseRevision === null) {
+          return res.status(400).json({ message: 'Invalid base revision' });
+        }
         // Only the daily-note route gives out daily note slugs (#111).
         if (updateData.slug !== undefined && isReservedDailyNoteSlug(updateData.slug)) {
           return res.status(400).json({ message: 'This slug is reserved for daily notes' });
@@ -959,7 +985,7 @@ export async function registerRoutes(
 
         // One save pipeline (issue #103 E1): content is derived from blocks when only blocks are
         // sent, and the pre-save state is kept as one version, as before.
-        const saved = await savePage(pageSaveStore, id, updateData, 'manual');
+        const saved = await savePage(pageSaveStore, id, updateData, 'manual', { baseRevision });
         const page = saved?.after;
 
         if (!page) {
@@ -997,8 +1023,11 @@ export async function registerRoutes(
           }
         }
 
-        res.json(page);
+        res.json(withRevision(page));
       } catch (error) {
+        if (error instanceof PageRevisionConflictError) {
+          return res.status(409).json(revisionConflictBody(error.current));
+        }
         res.status(400).json(failureBody('Invalid update data', error));
       }
     }
@@ -1018,6 +1047,8 @@ export async function registerRoutes(
       // Page cover (issue #134): a preset or an image uploaded here, or null to remove it. Stored
       // as metadata.cover; the page's other metadata is kept.
       cover: pageCoverSchema.nullable().optional(),
+      // The revision of the page this change was based on (WP1); a stale one is refused (409).
+      baseRevision: baseRevisionSchema.optional(),
     })
     .strict();
 
@@ -1035,11 +1066,21 @@ export async function registerRoutes(
         return res.status(400).json(failureBody('Invalid autosave data', parsed.error));
       }
       try {
-        const saved = await savePage(pageSaveStore, id, parsed.data, 'autosave');
+        const { baseRevision, ...changes } = parsed.data;
+        const saved = await savePage(pageSaveStore, id, changes, 'autosave', { baseRevision });
         if (!saved) return res.status(404).json({ message: 'Page not found' });
         const { after } = saved;
-        res.json({ id: after.id, slug: after.slug, title: after.title, savedAt: new Date() });
+        res.json({
+          id: after.id,
+          slug: after.slug,
+          title: after.title,
+          savedAt: new Date(),
+          revision: pageRevision(after),
+        });
       } catch (error) {
+        if (error instanceof PageRevisionConflictError) {
+          return res.status(409).json(revisionConflictBody(error.current));
+        }
         logger.error('Autosave failed', { pageId: id, error: (error as Error)?.message });
         res.status(500).json({ message: 'Failed to save page' });
       }
