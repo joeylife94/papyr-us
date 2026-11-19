@@ -12,6 +12,7 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import { io, type Socket } from 'socket.io-client';
 import * as Y from 'yjs';
+import { YJS_SCHEMA_VERSION } from '../shared/yjs-blocks';
 import { createAuthenticatedApiContext, registerTestUser } from './e2e-helpers';
 
 const SILENCE_MS = 1500;
@@ -113,7 +114,7 @@ test.describe('Realtime collaboration follows current team membership', () => {
       const documentId = `page-${pageId}`;
       for (const socket of [ownerYjs, memberYjs]) {
         const init = next(socket, 'yjs:init');
-        socket.emit('yjs:join', { documentId, pageId });
+        socket.emit('yjs:join', { documentId, pageId, schema: YJS_SCHEMA_VERSION });
         expect(await init, 'yjs:init').toMatchObject({ canEdit: true });
       }
       for (const socket of [ownerCollab, memberCollab]) {
@@ -163,7 +164,7 @@ test.describe('Realtime collaboration follows current team membership', () => {
       expect(await yjsRevoked).toMatchObject({ code: 'ACCESS_REVOKED' });
       expect(await collabRevoked).toMatchObject({ code: 'ACCESS_REVOKED' });
       const rejoin = next(memberYjs, 'yjs:error');
-      memberYjs.emit('yjs:join', { documentId, pageId });
+      memberYjs.emit('yjs:join', { documentId, pageId, schema: YJS_SCHEMA_VERSION });
       expect(await rejoin).toMatchObject({ code: 'PERMISSION_DENIED' });
     } finally {
       for (const socket of sockets) socket.disconnect();
