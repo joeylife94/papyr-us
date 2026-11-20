@@ -2772,49 +2772,6 @@ export class DBStorage {
 
   // ---- end X1c P5 ----
 
-  // Accounts (`users`) and roster rows (`members`) are separate id spaces, linked only by email,
-  // the link `getUserTeamIds` already follows. Notifications address members, sessions carry a
-  // user id, so anything that compares the two goes through these three (issue #124 X1b).
-
-  /** The `members` rows of an account: those with exactly its email. Empty for an unknown user. */
-  async getMemberIdsForUser(userId: number): Promise<number[]> {
-    const rows: Array<{ id: number }> = await this.db
-      .select({ id: members.id })
-      .from(members)
-      .innerJoin(users, eq(users.email, members.email))
-      .where(eq(users.id, userId));
-    return rows.map((row) => Number(row.id));
-  }
-
-  /** The account behind a roster row: the user with exactly its email, or null. */
-  async getUserIdForMember(memberId: number): Promise<number | null> {
-    const [row] = await this.db
-      .select({ id: users.id })
-      .from(users)
-      .innerJoin(members, eq(members.email, users.email))
-      .where(eq(members.id, memberId))
-      .limit(1);
-    return row ? Number(row.id) : null;
-  }
-
-  /**
-   * The organization of a roster row: the one its account belongs to, or null when that account
-   * belongs to none (a removed account stays outside every organization). Only a row with no
-   * account at all is placed by its team's organization. Null when nothing places the row (or it
-   * is unknown); callers must then treat the member as outside every organization.
-   */
-  async getMemberOrganizationId(memberId: number): Promise<number | null> {
-    const [member] = await this.db
-      .select({ teamId: members.teamId })
-      .from(members)
-      .where(eq(members.id, memberId))
-      .limit(1);
-    if (!member) return null;
-    const userId = await this.getUserIdForMember(memberId);
-    if (userId !== null) return this.getUserOrganizationId(userId);
-    return member.teamId == null ? null : this.getTeamOrganizationId(Number(member.teamId));
-  }
-
   /**
    * The organization a new page belongs to: its team's, or for a team-less page its creator's.
    * Throws OrganizationRequiredError when neither gives one, so a page never lands in an
@@ -3104,27 +3061,29 @@ export class DBStorage {
     return result[0];
   }
 
-  // Notifications address `members` rows; a signed-in account owns the rows whose email matches
-  // its own (`getMemberIdsForUser`). Every read and write below is restricted to a list of member
-  // ids, and an empty list never becomes an unfiltered query (issue #124 X1b).
+  // Notifications are addressed to accounts (users.id) and belong to the organization they were
+  // created in (WP0a). Every method below filters on both the account and the organization, so a
+  // row of another organization is never listed, counted, opened, changed or deleted, and there is
+  // no unfiltered path.
 
-  async getNotifications(memberIds: number[]): Promise<Notification[]> {
-    if (memberIds.length === 0) return [];
+  async getNotifications(userId: number, organizationId: number): Promise<Notification[]> {
     return this.db
       .select()
       .from(notifications)
-      .where(inArray(notifications.recipientId, memberIds))
-      .orderBy(desc(notifications.createdAt));
+      .where(this.notificationScope(userId, organizationId))
+      .orderBy(desc(notifications.createdAt), desc(notifications.id));
   }
 
-  /** The notification when it is addressed to one of the account's member rows, else undefined. */
-  async getNotificationForUser(id: number, userId: number): Promise<Notification | undefined> {
-    const memberIds = await this.getMemberIdsForUser(userId);
-    if (memberIds.length === 0) return undefined;
+  /** The notification when it is addressed to the account in this organization, else undefined. */
+  async getNotificationForUser(
+    id: number,
+    userId: number,
+    organizationId: number
+  ): Promise<Notification | undefined> {
     const result = await this.db
       .select()
       .from(notifications)
-      .where(and(eq(notifications.id, id), inArray(notifications.recipientId, memberIds)));
+      .where(and(eq(notifications.id, id), this.notificationScope(userId, organizationId)));
     return result[0];
   }
 
@@ -3135,52 +3094,74 @@ export class DBStorage {
 
   async updateNotification(
     id: number,
-    notification: UpdateNotification,
-    memberIds: number[]
+    changes: UpdateNotification,
+    userId: number,
+    organizationId: number
   ): Promise<Notification | undefined> {
-    if (memberIds.length === 0) return undefined;
     const result = await this.db
       .update(notifications)
-      .set(notification)
-      .where(and(eq(notifications.id, id), inArray(notifications.recipientId, memberIds)))
+      .set(changes)
+      .where(and(eq(notifications.id, id), this.notificationScope(userId, organizationId)))
       .returning();
     return result[0];
   }
 
-  async deleteNotification(id: number, memberIds: number[]): Promise<boolean> {
-    if (memberIds.length === 0) return false;
+  async deleteNotification(id: number, userId: number, organizationId: number): Promise<boolean> {
     const result = await this.db
       .delete(notifications)
-      .where(and(eq(notifications.id, id), inArray(notifications.recipientId, memberIds)))
+      .where(and(eq(notifications.id, id), this.notificationScope(userId, organizationId)))
       .returning();
     return result.length > 0;
   }
 
-  async markNotificationAsRead(id: number, memberIds: number[]): Promise<Notification | undefined> {
-    if (memberIds.length === 0) return undefined;
+  async markNotificationAsRead(
+    id: number,
+    userId: number,
+    organizationId: number
+  ): Promise<Notification | undefined> {
     const result = await this.db
       .update(notifications)
       .set({ isRead: true })
-      .where(and(eq(notifications.id, id), inArray(notifications.recipientId, memberIds)))
+      .where(and(eq(notifications.id, id), this.notificationScope(userId, organizationId)))
       .returning();
     return result[0];
   }
 
-  async markAllNotificationsAsRead(memberIds: number[]): Promise<void> {
-    if (memberIds.length === 0) return;
+  async markAllNotificationsAsRead(userId: number, organizationId: number): Promise<void> {
     await this.db
       .update(notifications)
       .set({ isRead: true })
-      .where(inArray(notifications.recipientId, memberIds));
+      .where(this.notificationScope(userId, organizationId));
   }
 
-  async getUnreadNotificationCount(memberIds: number[]): Promise<number> {
-    if (memberIds.length === 0) return 0;
+  async getUnreadNotificationCount(userId: number, organizationId: number): Promise<number> {
     const result = await this.db
       .select({ count: sql`count(*)` })
       .from(notifications)
-      .where(and(inArray(notifications.recipientId, memberIds), eq(notifications.isRead, false)));
+      .where(and(this.notificationScope(userId, organizationId), eq(notifications.isRead, false)));
     return Number(result[0].count);
+  }
+
+  /** The rows of one account in one organization: the only filter the methods above use. */
+  private notificationScope(userId: number, organizationId: number) {
+    return and(
+      eq(notifications.recipientUserId, userId),
+      eq(notifications.organizationId, organizationId)
+    );
+  }
+
+  /**
+   * The organization a notification for this account would belong to: the organization of an
+   * active account, else null (unknown, deactivated, or without an organization).
+   */
+  async getNotificationRecipientOrganizationId(userId: number): Promise<number | null> {
+    const [row] = await this.db
+      .select({ organizationId: organizationMembers.organizationId })
+      .from(users)
+      .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
+      .where(and(eq(users.id, userId), eq(users.isActive, true)))
+      .limit(1);
+    return row ? Number(row.organizationId) : null;
   }
 
   async getTemplateCategories(): Promise<TemplateCategory[]> {

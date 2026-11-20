@@ -4,7 +4,6 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/hooks/use-theme';
 import { toast } from '@/hooks/use-toast';
-import { useMemberByEmail } from '@/hooks/useMember';
 import { useFeatureFlags } from '@/features/FeatureFlagsContext';
 import { useOrganization } from '@/hooks/useOrganization';
 import { Button } from '@/components/ui/button';
@@ -38,14 +37,17 @@ export function ThemeToggle({ className }: { className?: string }) {
   );
 }
 
-/** Notification bell for members of a team workspace; renders nothing when the feature is off. */
+/** Notification bell for a signed-in account of a team workspace; renders nothing when the feature is off. */
 export function ShellNotifications() {
   const { user } = useAuth();
   const { flags } = useFeatureFlags();
+  // The organization state the shell already loads (same query as the account menu): an account
+  // without an organization is answered 403 by every notification route, so the bell is not
+  // shown, and does not request, until the account is known to belong to one.
+  const { organization } = useOrganization();
+  // Notifications are addressed to the account itself: no roster row is involved.
   const enabled = flags.FEATURE_NOTIFICATIONS && flags.FEATURE_TEAMS;
-  // Notifications are addressed to the member record mapped from the user's email.
-  const { data: member } = useMemberByEmail(user?.email, enabled && !!user?.email);
-  return enabled ? <NotificationBell recipientId={member?.id} /> : null;
+  return enabled && user?.id && organization ? <NotificationBell /> : null;
 }
 
 function initials(name = '') {

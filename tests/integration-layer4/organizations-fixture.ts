@@ -1,6 +1,6 @@
 /**
  * Layer 4 fixture: bring a test schema built in the pre-organization shape to the shape of
- * drizzle/0022_add_organizations.sql (issue #124 X1a), 0024 and 0025 (X1c), so DBStorage runs
+ * drizzle/0022_add_organizations.sql (issue #124 X1a), 0024 and 0025 (X1c) and 0026 (WP0a), so DBStorage runs
  * against it.
  *
  * Most Layer 4 files hand-write their tables as they were before organizations and insert rows
@@ -40,6 +40,12 @@ const AI_ACCESS_MIGRATION = readFileSync(
   new URL('../../drizzle/0025_add_organization_member_ai_access.sql', import.meta.url),
   'utf8'
 );
+// 0026 (WP0a) addresses notifications to accounts. A no-op on files without a notifications
+// table; a file with the pre-0026 table (recipient_id) is converted as a deployment is.
+const NOTIFICATIONS_TO_ACCOUNTS_MIGRATION = readFileSync(
+  new URL('../../drizzle/0026_notifications_to_accounts.sql', import.meta.url),
+  'utf8'
+);
 
 /**
  * Applies 0022 to a pre-organization test schema and returns the default organization's id.
@@ -76,6 +82,7 @@ export async function addOrganizations(
     await client.query(MIGRATION);
     await client.query(AI_SETTING_MIGRATION);
     await client.query(AI_ACCESS_MIGRATION);
+    await client.query(NOTIFICATIONS_TO_ACCOUNTS_MIGRATION);
     const { rows } = await client.query(`SELECT id FROM organizations WHERE slug = 'default'`);
     const organizationId = Number(rows[0].id);
     // The trigger names its schema, so inserts through a pool without the search path work too.

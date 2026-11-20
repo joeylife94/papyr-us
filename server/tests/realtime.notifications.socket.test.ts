@@ -19,46 +19,55 @@ describe('Realtime notifications over Socket.IO', () => {
   let server: http.Server;
   let baseUrl: string;
   let ioServer: any;
-  let failMemberLookup = false;
   let registerRoutes: typeof import('../routes.js').registerRoutes;
 
-  // 테스트용 storage 더미 구현
-  // Notifications address members, sockets belong to accounts (#124 X1b). The account `recipientId`
-  // owns member row 900 (same email); account 900 exists too and owns no member row, so a member id
-  // that equals a user id must not reach that user.
+  // Notifications are addressed to accounts and sockets belong to accounts (WP0a): one id space.
+  // The recipient is account 4242. Account 900 exists too (its number was once a roster id) and
+  // must receive nothing. The sender is account 4243. Every account is in organization 1.
   const recipientId = 4242;
-  const recipientMemberId = 900;
-  // Member row 901 sits in the caller's organization through its team but has no account.
-  const memberWithoutAccount = 901;
-  const memberToUser = new Map<number, number>([[recipientMemberId, recipientId]]);
+  const senderId = recipientId + 1;
+  const namesakeId = 900;
+  const orgId = 1;
+  const storageCalls: string[] = [];
   const fakeStorage: any = {
     createNotification: async (n: any) => ({ id: 1, isRead: false, ...n }),
-    getUnreadNotificationCount: async (memberIds: number[]) => (memberIds.length ? 1 : 0),
-    getMemberIdsForUser: async (userId: number) => {
-      if (failMemberLookup) throw new Error('lookup failed');
-      return [...memberToUser].filter(([, u]) => u === userId).map(([m]) => m);
-    },
-    getUserIdForMember: async (memberId: number) => memberToUser.get(memberId) ?? null,
-    getMemberOrganizationId: async (memberId: number) =>
-      memberToUser.has(memberId) || memberId === memberWithoutAccount ? 1 : null,
-    getUserOrganizationId: async (_userId: number) => 1,
-    getNotificationForUser: async (id: number, userId: number) =>
-      id === 1 && userId === recipientId
-        ? { id: 1, recipientId: recipientMemberId, isRead: false }
+    getUnreadNotificationCount: async (userId: number, organizationId: number) =>
+      userId === recipientId && organizationId === orgId ? 1 : 0,
+    getNotificationRecipientOrganizationId: async (userId: number) =>
+      userId === recipientId || userId === senderId ? orgId : null,
+    getUserOrganizationId: async (_userId: number) => orgId,
+    getNotificationForUser: async (id: number, userId: number, organizationId: number) =>
+      id === 1 && userId === recipientId && organizationId === orgId
+        ? { id: 1, recipientUserId: recipientId, organizationId: orgId, isRead: false }
         : undefined,
     deleteNotification: async () => true,
     updateNotification: async (id: number, changes: any) => ({
       id,
-      recipientId: recipientMemberId,
+      recipientUserId: recipientId,
+      organizationId: orgId,
       isRead: false,
       ...changes,
     }),
     markNotificationAsRead: async (id: number) => ({
       id,
-      recipientId: recipientMemberId,
+      recipientUserId: recipientId,
+      organizationId: orgId,
       isRead: true,
     }),
     markAllNotificationsAsRead: async () => undefined,
+    // The roster is not consulted any more: any call to these is recorded and fails a test.
+    getMemberIdsForUser: async () => {
+      storageCalls.push('getMemberIdsForUser');
+      return [];
+    },
+    getUserIdForMember: async () => {
+      storageCalls.push('getUserIdForMember');
+      return null;
+    },
+    getMemberOrganizationId: async () => {
+      storageCalls.push('getMemberOrganizationId');
+      return null;
+    },
   };
 
   const connect = async (userId: number, role = 'user') => {
@@ -101,9 +110,10 @@ describe('Realtime notifications over Socket.IO', () => {
     fetch(`${baseUrl}/api/notifications`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Cookie: authCookieFor(asUserId) },
-      body: JSON.stringify({ type: 'test', title: 't', content: 'c', ...body }),
+      body: JSON.stringify({ type: 'mention', title: 't', content: 'c', ...body }),
     });
 
+  // Negative assertions (nothing arrives) need a grace period; positive ones wait with vi.waitFor.
   const settle = () => new Promise((resolve) => setTimeout(resolve, 400));
 
   beforeAll(async () => {
@@ -152,6 +162,9 @@ describe('Realtime notifications over Socket.IO', () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }, 15000);
 
+  const roomsOf = (client: ReturnType<typeof Client>) =>
+    [...(ioServer.of('/collab').sockets.get(client.id)?.rooms ?? [])].sort();
+
   it('refuses a refresh token as the socket session, as cookie or as Bearer', async () => {
     const refreshToken = jwt.sign({ id: recipientId, type: 'refresh' }, TEST_JWT_SECRET, {
       expiresIn: '30d',
@@ -185,169 +198,57 @@ describe('Realtime notifications over Socket.IO', () => {
     }
   });
 
-  it('emits notification:new to the authenticated user room when a notification is created', async () => {
-    const nsUrl = `${baseUrl}/collab`;
-    const client = Client(nsUrl, {
-      transports: ['polling'],
-      timeout: 4000,
-      reconnection: false,
-      extraHeaders: {
-        Cookie: authCookieFor(recipientId),
-      },
-    });
-
-    try {
-      await new Promise<void>((resolve, reject) => {
-        const t = setTimeout(() => reject(new Error('timeout waiting for socket connect')), 6000);
-        client.on('connect', () => {
-          clearTimeout(t);
-          resolve();
-        });
-        client.on('connect_error', (err) => {
-          clearTimeout(t);
-          reject(err);
-        });
-      });
-
-      await new Promise<void>((resolve, reject) => {
-        const t = setTimeout(() => reject(new Error('timeout waiting for join-member ack')), 3000);
-        client.emit('join-member', { memberId: recipientId }, () => {
-          clearTimeout(t);
-          resolve();
-        });
-      });
-
-      const received = new Promise<void>((resolve, reject) => {
-        const t = setTimeout(() => reject(new Error('timeout waiting for notification:new')), 8000);
-        client.on('notification:new', (payload: any) => {
-          try {
-            if (payload?.recipientId === recipientMemberId) {
-              clearTimeout(t);
-              resolve();
-            }
-          } catch (e) {
-            clearTimeout(t);
-            reject(e);
-          }
-        });
-        client.on('connect_error', (err) => {
-          clearTimeout(t);
-          reject(err);
-        });
-      });
-
-      const res = await fetch(`${baseUrl}/api/notifications`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Cookie: authCookieFor(recipientId),
-        },
-        body: JSON.stringify({
-          type: 'test',
-          title: 't',
-          content: 'c',
-          recipientId: recipientMemberId,
-        }),
-      });
-      if (!res.ok) throw new Error(`create notif failed: ${res.status}`);
-
-      await expect(received).resolves.toBeUndefined();
-    } finally {
-      client.close();
-    }
-  }, 15000);
-
-  it("rejects joining another user's notification room", async () => {
-    const nsUrl = `${baseUrl}/collab`;
-    const intruderId = recipientId + 1;
-    const client = Client(nsUrl, {
-      transports: ['polling'],
-      timeout: 4000,
-      reconnection: false,
-      extraHeaders: {
-        Cookie: authCookieFor(intruderId),
-      },
-    });
-
-    try {
-      await new Promise<void>((resolve, reject) => {
-        const t = setTimeout(() => reject(new Error('timeout waiting for socket connect')), 6000);
-        client.on('connect', () => {
-          clearTimeout(t);
-          resolve();
-        });
-        client.on('connect_error', (err) => {
-          clearTimeout(t);
-          reject(err);
-        });
-      });
-
-      const joinResult = await new Promise<{ ok: boolean; error?: string }>((resolve, reject) => {
-        const t = setTimeout(() => reject(new Error('timeout waiting for join-member ack')), 3000);
-        client.emit(
-          'join-member',
-          { memberId: recipientId },
-          (ack: { ok: boolean; error?: string }) => {
-            clearTimeout(t);
-            resolve(ack);
-          }
-        );
-      });
-
-      expect(joinResult).toEqual({ ok: false, error: 'Forbidden' });
-    } finally {
-      client.close();
-    }
-  }, 15000);
-
-  it('refuses a token with role admin that asks to join another id', async () => {
-    const admin = await connect(recipientId + 5, 'admin');
-    try {
-      expect(await joinMember(admin, recipientId)).toEqual({ ok: false, error: 'Forbidden' });
-      expect(await joinMember(admin, recipientMemberId)).toEqual({ ok: false, error: 'Forbidden' });
-    } finally {
-      admin.close();
-    }
-  }, 15000);
-
-  it("delivers a notification for member M to the account with M's email, not to user #M", async () => {
-    const owner = await connect(recipientId);
-    const namesake = await connect(recipientMemberId); // users.id equals the member id
+  it('emits notification:new and the unread count to the recipient account room only', async () => {
+    const recipient = await connect(recipientId);
+    const namesake = await connect(namesakeId);
     const adminBystander = await connect(recipientId + 7, 'admin');
     try {
-      const ownerSeen = collect(owner, 'notification:new');
+      const seen = collect(recipient, 'notification:new');
+      const count = collect(recipient, 'notification:unread-count');
       const namesakeSeen = collect(namesake, 'notification:new');
-      const bystanderSeen = collect(adminBystander, 'notification:new');
-      const ownerCount = collect(owner, 'notification:unread-count');
       const namesakeCount = collect(namesake, 'notification:unread-count');
+      const bystanderSeen = collect(adminBystander, 'notification:new');
 
-      const res = await postNotification(recipientId, { recipientId: recipientMemberId });
+      const res = await postNotification(senderId, { recipientUserId: recipientId });
       expect(res.status).toBe(201);
+      await vi.waitFor(() => expect(seen).toHaveLength(1), { timeout: 8000 });
+      await vi.waitFor(() => expect(count).toHaveLength(1), { timeout: 8000 });
       await settle();
 
-      expect(ownerSeen).toHaveLength(1);
-      expect(ownerSeen[0].recipientId).toBe(recipientMemberId);
-      expect(ownerCount).toEqual([{ recipientId: recipientMemberId, count: 1 }]);
+      expect(seen[0]).toMatchObject({
+        recipientUserId: recipientId,
+        senderUserId: senderId,
+        organizationId: orgId,
+      });
+      expect(count).toEqual([{ recipientUserId: recipientId, count: 1 }]);
       expect(namesakeSeen).toHaveLength(0);
       expect(namesakeCount).toHaveLength(0);
       expect(bystanderSeen).toHaveLength(0);
+      expect(storageCalls).toEqual([]);
     } finally {
-      owner.close();
+      recipient.close();
       namesake.close();
       adminBystander.close();
     }
   }, 20000);
 
-  it('emits nothing for a recipient member row that has no account', async () => {
-    const owner = await connect(recipientId);
+  it('a request that names a roster id creates nothing and emits nothing', async () => {
+    const recipient = await connect(recipientId);
+    const namesake = await connect(namesakeId);
     try {
-      const seen = collect(owner, 'notification:new');
-      const res = await postNotification(recipientId, { recipientId: memberWithoutAccount });
-      expect(res.status).toBe(201);
+      const seen = collect(recipient, 'notification:new');
+      const namesakeSeen = collect(namesake, 'notification:new');
+      const created = vi.spyOn(fakeStorage, 'createNotification');
+      const res = await postNotification(senderId, { recipientId: namesakeId });
+      expect(res.status).toBe(400);
       await settle();
+      expect(created).not.toHaveBeenCalled();
       expect(seen).toHaveLength(0);
+      expect(namesakeSeen).toHaveLength(0);
+      created.mockRestore();
     } finally {
-      owner.close();
+      recipient.close();
+      namesake.close();
     }
   }, 15000);
 
@@ -356,70 +257,64 @@ describe('Realtime notifications over Socket.IO', () => {
     const other = await connect(recipientId + 1);
     try {
       const ownerSeen = collect(owner, 'notification:deleted');
+      const ownerCount = collect(owner, 'notification:unread-count');
       const otherSeen = collect(other, 'notification:deleted');
+      const otherCount = collect(other, 'notification:unread-count');
       const res = await fetch(`${baseUrl}/api/notifications/1`, {
         method: 'DELETE',
         headers: { Cookie: authCookieFor(recipientId) },
       });
       expect(res.status).toBe(200);
+      await vi.waitFor(() => expect(ownerSeen).toHaveLength(1), { timeout: 8000 });
       await settle();
       expect(ownerSeen).toEqual([{ id: 1 }]);
+      expect(ownerCount).toEqual([{ recipientUserId: recipientId, count: 1 }]);
       expect(otherSeen).toHaveLength(0);
+      expect(otherCount).toHaveLength(0);
     } finally {
       owner.close();
       other.close();
     }
   }, 15000);
 
-  const roomsOf = (client: ReturnType<typeof Client>) =>
-    [...(ioServer.of('/collab').sockets.get(client.id)?.rooms ?? [])].sort();
+  describe('join-member', () => {
+    it('accepts the account own id without joining any additional room', async () => {
+      const owner = await connect(recipientId);
+      try {
+        const before = roomsOf(owner);
+        expect(before).toContain(`user:${recipientId}`);
+        expect(await joinMember(owner, recipientId)).toEqual({ ok: true });
+        expect(roomsOf(owner)).toEqual(before);
+      } finally {
+        owner.close();
+      }
+    });
 
-  it('accepts the caller own member id without joining any additional room', async () => {
-    const owner = await connect(recipientId);
-    try {
-      const before = roomsOf(owner);
-      expect(before).toContain(`user:${recipientId}`);
-      expect(await joinMember(owner, recipientMemberId)).toEqual({ ok: true });
-      expect(roomsOf(owner)).toEqual(before);
-      expect(roomsOf(owner)).not.toContain(`user:${recipientMemberId}`);
-    } finally {
-      owner.close();
-    }
-  }, 15000);
+    it('refuses any other id, joining nothing and without asking storage about the roster', async () => {
+      const other = await connect(recipientId + 1);
+      try {
+        const before = roomsOf(other);
+        expect(await joinMember(other, recipientId)).toEqual({ ok: false, error: 'Forbidden' });
+        expect(await joinMember(other, namesakeId)).toEqual({ ok: false, error: 'Forbidden' });
+        expect(roomsOf(other)).toEqual(before);
+        expect(storageCalls).toEqual([]);
+      } finally {
+        other.close();
+      }
+    });
 
-  it('refuses another account member id and another account user id, joining nothing', async () => {
-    const other = await connect(recipientId + 1);
-    try {
-      const before = roomsOf(other);
-      expect(await joinMember(other, recipientMemberId)).toEqual({ ok: false, error: 'Forbidden' });
-      expect(await joinMember(other, recipientId)).toEqual({ ok: false, error: 'Forbidden' });
-      expect(roomsOf(other)).toEqual(before);
-    } finally {
-      other.close();
-    }
-  }, 15000);
-
-  it('refuses when the member lookup fails', async () => {
-    const owner = await connect(recipientId);
-    try {
-      failMemberLookup = true;
-      expect(await joinMember(owner, recipientMemberId)).toEqual({ ok: false, error: 'Forbidden' });
-    } finally {
-      failMemberLookup = false;
-      owner.close();
-    }
-  }, 15000);
-
-  it('an admin-role token gets no room beyond its own, even for a member id it does not own', async () => {
-    const admin = await connect(recipientId + 5, 'admin');
-    try {
-      const before = roomsOf(admin);
-      expect(await joinMember(admin, recipientMemberId)).toEqual({ ok: false, error: 'Forbidden' });
-      expect(roomsOf(admin)).toEqual(before);
-    } finally {
-      admin.close();
-    }
-  }, 15000);
+    it('a token with role admin gets no room beyond its own', async () => {
+      const admin = await connect(recipientId + 5, 'admin');
+      try {
+        const before = roomsOf(admin);
+        expect(await joinMember(admin, recipientId)).toEqual({ ok: false, error: 'Forbidden' });
+        expect(await joinMember(admin, namesakeId)).toEqual({ ok: false, error: 'Forbidden' });
+        expect(roomsOf(admin)).toEqual(before);
+      } finally {
+        admin.close();
+      }
+    });
+  });
 
   const reachesOnlyRecipient = async (
     events: string[],
@@ -427,7 +322,7 @@ describe('Realtime notifications over Socket.IO', () => {
     expected: Record<string, any[]>
   ) => {
     const owner = await connect(recipientId);
-    const namesake = await connect(recipientMemberId);
+    const namesake = await connect(namesakeId);
     const other = await connect(recipientId + 1);
     const admin = await connect(recipientId + 7, 'admin');
     try {
@@ -443,6 +338,14 @@ describe('Realtime notifications over Socket.IO', () => {
       watch('admin', admin);
       const res = await act();
       expect(res.status).toBe(200);
+      for (const event of events) {
+        await vi.waitFor(
+          () => expect(seen.get('owner')![event]).toHaveLength(expected[event].length),
+          {
+            timeout: 8000,
+          }
+        );
+      }
       await settle();
       for (const event of events) {
         expect(seen.get('owner')![event], `owner ${event}`).toEqual(expected[event]);
@@ -469,9 +372,15 @@ describe('Realtime notifications over Socket.IO', () => {
         }),
       {
         'notification:updated': [
-          { id: 1, recipientId: recipientMemberId, isRead: false, title: 'renamed' },
+          {
+            id: 1,
+            recipientUserId: recipientId,
+            organizationId: orgId,
+            isRead: false,
+            title: 'renamed',
+          },
         ],
-        'notification:unread-count': [{ recipientId: recipientMemberId, count: 1 }],
+        'notification:unread-count': [{ recipientUserId: recipientId, count: 1 }],
       }
     );
   }, 20000);
@@ -485,13 +394,15 @@ describe('Realtime notifications over Socket.IO', () => {
           headers: { Cookie: authCookieFor(recipientId) },
         }),
       {
-        'notification:updated': [{ id: 1, recipientId: recipientMemberId, isRead: true }],
-        'notification:unread-count': [{ recipientId: recipientMemberId, count: 1 }],
+        'notification:updated': [
+          { id: 1, recipientUserId: recipientId, organizationId: orgId, isRead: true },
+        ],
+        'notification:unread-count': [{ recipientUserId: recipientId, count: 1 }],
       }
     );
   }, 20000);
 
-  it('read-all reaches only the caller account', async () => {
+  it('read-all reaches only the caller account, with one unread count', async () => {
     await reachesOnlyRecipient(
       ['notification:unread-count'],
       () =>
@@ -499,7 +410,7 @@ describe('Realtime notifications over Socket.IO', () => {
           method: 'PATCH',
           headers: { Cookie: authCookieFor(recipientId) },
         }),
-      { 'notification:unread-count': [{ recipientId: recipientMemberId, count: 1 }] }
+      { 'notification:unread-count': [{ recipientUserId: recipientId, count: 1 }] }
     );
   }, 20000);
 });

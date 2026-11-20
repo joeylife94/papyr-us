@@ -311,3 +311,87 @@ describe('a member of the workflow team', () => {
     expect(executeWorkflow).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('a send_notification action takes recipientUserIds', () => {
+  const action = (config: Record<string, unknown>) => ({
+    type: 'send_notification',
+    config: { message: 'hello', ...config },
+  });
+  const refusal = { error: 'Notification actions take recipientUserIds' };
+
+  it.each([
+    ['recipients', { recipients: [1, 2] }],
+    ['an empty recipients list', { recipients: [] }],
+    ['recipients next to recipientUserIds', { recipients: [1], recipientUserIds: [2] }],
+  ])('create refuses %s with 400 and writes nothing', async (_label, config) => {
+    const response = await request(app)
+      .post('/api/workflows')
+      .set(signedIn())
+      .send({ ...body, teamId: OWN_TEAM, actions: [action(config)] });
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual(refusal);
+    noWrites();
+  });
+
+  it.each([
+    ['recipients', { recipients: [1, 2] }],
+    ['recipients next to recipientUserIds', { recipients: [1], recipientUserIds: [2] }],
+  ])('update refuses %s with 400 and writes nothing', async (_label, config) => {
+    storage.getWorkflow.mockResolvedValue(workflowOf(OWN_TEAM));
+    const response = await request(app)
+      .put('/api/workflows/5')
+      .set(signedIn())
+      .send({ actions: [action(config)] });
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual(refusal);
+    noWrites();
+  });
+
+  it.each([['11'], [1.5], [0], [-1], [null]])(
+    'refuses a recipientUserIds entry that is not a positive integer: %j',
+    async (entry) => {
+      const response = await request(app)
+        .post('/api/workflows')
+        .set(signedIn())
+        .send({ ...body, teamId: OWN_TEAM, actions: [action({ recipientUserIds: [entry] })] });
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({
+        error: 'recipientUserIds must be an array of positive integers',
+      });
+      noWrites();
+    }
+  );
+
+  it('refuses a recipientUserIds that is not an array', async () => {
+    const response = await request(app)
+      .post('/api/workflows')
+      .set(signedIn())
+      .send({ ...body, teamId: OWN_TEAM, actions: [action({ recipientUserIds: 5 })] });
+    expect(response.status).toBe(400);
+    noWrites();
+  });
+
+  it('accepts recipientUserIds and an action with no recipients at all', async () => {
+    for (const config of [{ recipientUserIds: [3, 4] }, {}]) {
+      const response = await request(app)
+        .post('/api/workflows')
+        .set(signedIn())
+        .send({ ...body, teamId: OWN_TEAM, actions: [action(config)] });
+      expect(response.status).toBe(201);
+    }
+  });
+
+  it('does not touch send_email recipients', async () => {
+    const response = await request(app)
+      .post('/api/workflows')
+      .set(signedIn())
+      .send({
+        ...body,
+        teamId: OWN_TEAM,
+        actions: [
+          { type: 'send_email', config: { recipients: 'a@b.c', subject: 's', message: 'm' } },
+        ],
+      });
+    expect(response.status).toBe(201);
+  });
+});
