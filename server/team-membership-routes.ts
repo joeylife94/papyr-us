@@ -10,7 +10,7 @@
 import type { Express, Response } from 'express';
 import { z } from 'zod';
 import { teamRoles } from '../shared/schema.js';
-import { authMiddleware, buildRateLimiter, type AuthRequest } from './middleware.js';
+import { authMiddleware, buildAccountRateLimiter, type AuthRequest } from './middleware.js';
 import { TeamBusyError, type DBStorage } from './storage.js';
 import { notifyPageAccessChanged } from './services/page-access-events.js';
 import { TEAM_CANDIDATE_MAX_QUERY_LENGTH } from '../shared/team-members.js';
@@ -39,7 +39,7 @@ function failure(res: Response, error: unknown) {
 export function registerTeamMembershipRoutes(app: Express, storage: DBStorage) {
   // The search lists people of the caller's organization to someone who may not be its owner or
   // admin, so it is rate limited per caller on top of its own limits.
-  const rlCandidates = buildRateLimiter({ windowMs: 60_000, max: 30 });
+  const rlCandidates = buildAccountRateLimiter({ windowMs: 60_000, max: 30 });
 
   /** Whether the caller's account is still active; the read routes refuse a deactivated one. */
   const callerIsActive = async (userId: number) =>

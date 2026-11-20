@@ -6,6 +6,8 @@ import {
   requireAdmin,
   writeAuthGate,
   buildRateLimiter,
+  buildAccountRateLimiter,
+  parseTeamReference,
   requireAuthIfEnabled,
   requirePagePermission,
   requireTeamMembership,
@@ -172,8 +174,25 @@ function organizationRequired(req: AuthRequest, res: Response) {
 
 // A team to create: the display name is required and bounded; the URL name is optional (the
 // server makes one when it is missing or held). The organization is never taken from the request.
+/** A team as answered to a caller: never with its password hash. */
+function withoutPassword<T extends { password?: unknown }>(team: T): Omit<T, 'password'> {
+  const { password: _password, ...rest } = team;
+  return rest;
+}
+
 const createTeamSchema = insertTeamSchema.extend({
-  name: z.string().trim().min(1).max(100).optional(),
+  // A name that team-scoped routes would not read as a name (it starts with a number, such as
+  // `5` or `2024-plans`) is refused. Teams that already have such a name are left alone.
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(100)
+    .refine((value) => {
+      const reference = parseTeamReference(value);
+      return reference !== null && reference !== 'invalid' && 'name' in reference;
+    })
+    .optional(),
   displayName: z.string().trim().min(1).max(TEAM_DISPLAY_NAME_MAX_LENGTH),
 });
 
@@ -3659,11 +3678,14 @@ export async function registerRoutes(
       }
     });
 
-    // Any signed-in member of an organization may create a team in it and becomes its owner.
-    // The URL name is the caller's own (a platform admin or an API caller may name it) or made
-    // from the display name; either way a name that is already held, by any organization, is
-    // answered by making another one, so the answer never says that a name exists.
-    const rlTeamCreate = buildRateLimiter({ windowMs: 60_000, max: 10 });
+    // Any signed-in member of an organization may create a team in it and becomes its owner. The
+    // URL name is the caller's own (a platform admin or an API caller may name it) or made from
+    // the display name. Team names are unique across the instance: when a requested name is
+    // already held, by any organization, the team is created under a suffixed name instead of the
+    // request failing. So a caller who requests a name can tell from the answer whether it was
+    // free (before this a clash answered 500); nothing else about the other team is revealed, and
+    // a name the server makes itself is never taken from the caller.
+    const rlTeamCreate = buildAccountRateLimiter({ windowMs: 60_000, max: 10 });
     app.post(
       '/api/teams',
       optionalAuth,
@@ -3675,6 +3697,12 @@ export async function registerRoutes(
           const creatorUserId = req.user?.id;
           if (!creatorUserId) {
             return res.status(401).json({ error: 'Authentication required' });
+          }
+          // A deactivated account is answered like one without an organization
+          if ((await storage.getUserAccount(creatorUserId))?.isActive !== true) {
+            return res
+              .status(403)
+              .json({ error: 'Your account does not belong to an organization' });
           }
           const parsed = createTeamSchema.safeParse(req.body);
           if (!parsed.success) {
@@ -3688,7 +3716,7 @@ export async function registerRoutes(
                 : generateTeamUrlName(requestedName ?? rest.displayName);
             try {
               const team = await storage.createTeamWithOwner({ ...rest, name }, creatorUserId);
-              return res.status(201).json(team);
+              return res.status(201).json(withoutPassword(team));
             } catch (error) {
               const db = postgresErrorOf(error);
               const nameTaken =
@@ -3737,7 +3765,7 @@ export async function registerRoutes(
         if (!team) {
           return res.status(404).json({ error: 'Team not found' });
         }
-        res.json(team);
+        res.json(withoutPassword(team));
       } catch (error) {
         console.error('Error updating team:', error);
         res.status(500).json({ error: 'Failed to update team' });
