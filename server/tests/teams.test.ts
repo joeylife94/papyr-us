@@ -134,9 +134,9 @@ describe('Team Management API', () => {
     });
   }
 
-  it('TC-TEAM-001d: refuses a team without a name or display name (400)', async () => {
+  it('TC-TEAM-001d: refuses a team without a display name (400)', async () => {
     const token = jwt.sign({ id: 7, email: 'creator@example.com' }, config.jwtSecret);
-    for (const body of [{}, { name: 'only-name' }, { displayName: 'Only display' }]) {
+    for (const body of [{}, { name: 'only-name' }]) {
       const response = await request(app)
         .post('/api/teams')
         .set('Authorization', `Bearer ${token}`)
@@ -146,23 +146,101 @@ describe('Team Management API', () => {
     expect(storage.createTeamWithOwner).not.toHaveBeenCalled();
   });
 
-  it('TC-TEAM-001e: a name that is already taken is 409, not a server error', async () => {
-    (storage.createTeamWithOwner as vi.Mock).mockRejectedValue(
-      Object.assign(
-        new Error('duplicate key value violates unique constraint "teams_name_unique"'),
-        {
-          code: '23505',
-          constraint: 'teams_name_unique',
-        }
-      )
-    );
-    const token = jwt.sign({ id: 7, email: 'creator@example.com' }, config.jwtSecret);
+  const taken = () =>
+    Object.assign(new Error('duplicate key value violates unique constraint "teams_name_unique"'), {
+      code: '23505',
+      constraint: 'teams_name_unique',
+    });
+  const creator = () => jwt.sign({ id: 7, email: 'creator@example.com' }, config.jwtSecret);
+
+  it('TC-TEAM-001e: a name that is already held is answered by making another one, never by saying so', async () => {
+    (storage.createTeamWithOwner as vi.Mock)
+      .mockRejectedValueOnce(taken())
+      .mockImplementation(async (team: any) => ({ id: 9, ...team }));
     const response = await request(app)
       .post('/api/teams')
-      .set('Authorization', `Bearer ${token}`)
+      .set('Authorization', `Bearer ${creator()}`)
       .send({ name: 'taken', displayName: 'Taken' });
-    expect(response.status).toBe(409);
-    expect(JSON.stringify(response.body)).not.toContain('teams_name_unique');
+    expect(response.status).toBe(201);
+    expect(response.body.name).toMatch(/^taken-[a-z0-9]{5}$/);
+    expect(JSON.stringify(response.body)).not.toContain('exists');
+    expect(storage.createTeamWithOwner).toHaveBeenCalledTimes(2);
+  });
+
+  it('TC-TEAM-001f: five clashes in a row give a generic 503 that says nothing about names', async () => {
+    (storage.createTeamWithOwner as vi.Mock).mockRejectedValue(taken());
+    const response = await request(app)
+      .post('/api/teams')
+      .set('Authorization', `Bearer ${creator()}`)
+      .send({ displayName: 'Busy name' });
+    expect(response.status).toBe(503);
+    expect(response.body).toEqual({ error: 'Could not create the team, try again' });
+    expect(storage.createTeamWithOwner).toHaveBeenCalledTimes(5);
+  });
+
+  it('TC-TEAM-001g: the URL name is made by the server from the display name when none is sent', async () => {
+    (storage.createTeamWithOwner as vi.Mock).mockImplementation(async (team: any) => ({
+      id: 4,
+      ...team,
+    }));
+    const named = await request(app)
+      .post('/api/teams')
+      .set('Authorization', `Bearer ${creator()}`)
+      .send({ displayName: '  Design Guild  ' });
+    expect(named.status).toBe(201);
+    expect(named.body.displayName).toBe('Design Guild');
+    expect(named.body.name).toMatch(/^design-guild-[a-z0-9]{5}$/);
+    const korean = await request(app)
+      .post('/api/teams')
+      .set('Authorization', `Bearer ${creator()}`)
+      .send({ displayName: '디자인' });
+    expect(korean.body.name).toMatch(/^team-[a-z0-9]{5}$/);
+    const own = await request(app)
+      .post('/api/teams')
+      .set('Authorization', `Bearer ${creator()}`)
+      .send({ name: 'chosen-name', displayName: 'Chosen' });
+    expect(own.body.name).toBe('chosen-name');
+  });
+
+  it('TC-TEAM-001h: the display name is validated on the server (blank, too long, not text)', async () => {
+    for (const displayName of ['', '   ', 'x'.repeat(101), 5, null]) {
+      const response = await request(app)
+        .post('/api/teams')
+        .set('Authorization', `Bearer ${creator()}`)
+        .send({ displayName });
+      expect(response.status, JSON.stringify(displayName)).toBe(400);
+    }
+    expect(storage.createTeamWithOwner).not.toHaveBeenCalled();
+  });
+
+  it('TC-TEAM-001i: creating teams is rate limited per creator (the 11th in a minute is 429)', async () => {
+    mockConfig.rateLimitEnabled = true;
+    (storage.createTeamWithOwner as vi.Mock).mockImplementation(async (team: any) => ({
+      id: 5,
+      ...team,
+    }));
+    const other = jwt.sign({ id: 99, email: 'other@example.com' }, config.jwtSecret);
+    try {
+      for (let i = 0; i < 10; i += 1) {
+        const ok = await request(app)
+          .post('/api/teams')
+          .set('Authorization', `Bearer ${creator()}`)
+          .send({ displayName: `Team ${i}` });
+        expect(ok.status, `request ${i + 1}`).toBe(201);
+      }
+      const limited = await request(app)
+        .post('/api/teams')
+        .set('Authorization', `Bearer ${creator()}`)
+        .send({ displayName: 'One too many' });
+      expect(limited.status).toBe(429);
+      const fine = await request(app)
+        .post('/api/teams')
+        .set('Authorization', `Bearer ${other}`)
+        .send({ displayName: 'Another person' });
+      expect(fine.status).toBe(201);
+    } finally {
+      mockConfig.rateLimitEnabled = false;
+    }
   });
 
   it('TC-TEAM-002: should retrieve all teams', async () => {

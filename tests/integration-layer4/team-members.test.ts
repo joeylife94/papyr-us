@@ -61,7 +61,7 @@ const rows = async (text: string, params: unknown[] = []) =>
 
 async function seed() {
   await scoped.query(`
-    TRUNCATE team_members, members, wiki_pages, teams, organization_members, users
+    TRUNCATE page_permissions, team_members, members, wiki_pages, teams, organization_members, users
       RESTART IDENTITY CASCADE;
   `);
   for (const id of [
@@ -82,6 +82,7 @@ async function seed() {
     ]);
   }
   await scoped.query(`DELETE FROM organization_members WHERE user_id = $1`, [NOBODY]);
+  await scoped.query(`UPDATE organization_members SET role = 'member'`);
   await scoped.query(`UPDATE organization_members SET organization_id = $1 WHERE user_id = $2`, [
     acmeId,
     ACME_USER,
@@ -149,6 +150,12 @@ beforeAll(async () => {
       created_at TIMESTAMP NOT NULL DEFAULT NOW(), updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
       is_published BOOLEAN NOT NULL DEFAULT TRUE, metadata JSONB DEFAULT '{}',
       deleted_at TIMESTAMP
+    );
+    CREATE TABLE page_permissions (
+      id SERIAL PRIMARY KEY,
+      page_id INTEGER NOT NULL REFERENCES wiki_pages(id) ON DELETE CASCADE,
+      entity_type TEXT NOT NULL, entity_id INTEGER, permission TEXT NOT NULL, granted_by INTEGER,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(), updated_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
   `);
   defaultId = await addOrganizations(scoped);
@@ -586,13 +593,38 @@ describe('listings', () => {
   });
 
   it('candidates are active members of the team organization who are not in the team', async () => {
-    const candidates = await storage.listTeamMemberCandidates(TEAM, '');
-    expect(candidates).toEqual([{ name: 'User 7', email: email(ORG_ONLY) }]);
+    const result = await storage.listTeamMemberCandidates(TEAM, 'user7');
+    expect(result).toEqual({
+      candidates: [{ name: 'User 7', email: email(ORG_ONLY) }],
+      more: false,
+    });
+    // Members of the team and accounts of other organizations never show.
+    for (const q of ['user1@', 'user5@', 'user8@', 'user9@']) {
+      expect(await storage.listTeamMemberCandidates(TEAM, q)).toEqual({
+        candidates: [],
+        more: false,
+      });
+    }
     await scoped.query(`UPDATE users SET is_active = FALSE WHERE id = $1`, [ORG_ONLY]);
-    expect(await storage.listTeamMemberCandidates(TEAM, '')).toEqual([]);
-    // Other organizations never show: Acme's team offers only Acme's own accounts.
-    expect(await storage.listTeamMemberCandidates(ACME_TEAM, '')).toEqual([]);
-    expect(await storage.listTeamMemberCandidates(99999, '')).toEqual([]);
+    expect((await storage.listTeamMemberCandidates(TEAM, 'user7')).candidates).toEqual([]);
+    // Acme's team offers only Acme's own accounts; an unknown team offers nobody.
+    expect((await storage.listTeamMemberCandidates(ACME_TEAM, 'user')).candidates).toEqual([]);
+    expect((await storage.listTeamMemberCandidates(99999, 'user')).candidates).toEqual([]);
+  });
+
+  it('a query shorter than two characters returns nothing, however many people match', async () => {
+    for (const q of ['', ' ', 'u', ' u ', '7']) {
+      expect(await storage.listTeamMemberCandidates(TEAM, q)).toEqual({
+        candidates: [],
+        more: false,
+      });
+    }
+    expect((await storage.listTeamMemberCandidates(TEAM, 'us')).candidates).toHaveLength(1);
+    // Two characters are counted as characters, not bytes.
+    await scoped.query(
+      `INSERT INTO users (id, name, email) VALUES (30, '김민', 'kim@example.com')`
+    );
+    expect((await storage.listTeamMemberCandidates(TEAM, '김민')).candidates).toHaveLength(1);
   });
 
   it('searches name or email, case-insensitively, treating % _ and a backslash as plain characters', async () => {
@@ -602,16 +634,19 @@ describe('listings', () => {
          (23, 'Zed', 'zed@example.com')`
     );
     const names = async (q: string) =>
-      (await storage.listTeamMemberCandidates(TEAM, q)).map((c: any) => c.name);
+      (await storage.listTeamMemberCandidates(TEAM, q)).candidates.map((c: any) => c.name);
     expect(await names('LOVELACE')).toEqual(['Ada 100% Lovelace']);
     expect(await names('zed@')).toEqual(['Zed']);
-    expect(await names('%')).toEqual(['Ada 100% Lovelace']);
-    expect(await names('_')).toEqual(['Under_score']);
-    expect(await names('\\')).toEqual(['Back\\slash']);
+    expect(await names('0%')).toEqual(['Ada 100% Lovelace']);
+    expect(await names('r_')).toEqual(['Under_score']);
+    expect(await names('k\\s')).toEqual(['Back\\slash']);
+    // A wildcard is not a wildcard: "%%" and "__" match nothing here.
+    expect(await names('%%')).toEqual([]);
+    expect(await names('__')).toEqual([]);
     expect(await names('no such person')).toEqual([]);
   });
 
-  it('returns at most the limit', async () => {
+  it('returns at most ten, and says when there are more', async () => {
     for (let i = 0; i < 25; i++) {
       await scoped.query(`INSERT INTO users (id, name, email) VALUES ($1, $2, $3)`, [
         100 + i,
@@ -619,7 +654,245 @@ describe('listings', () => {
         `extra${i}@example.com`,
       ]);
     }
-    expect(await storage.listTeamMemberCandidates(TEAM, '')).toHaveLength(20);
-    expect(await storage.listTeamMemberCandidates(TEAM, '', 5)).toHaveLength(5);
+    const many = await storage.listTeamMemberCandidates(TEAM, 'extra');
+    expect(many.candidates).toHaveLength(10);
+    expect(many.more).toBe(true);
+    expect(many.candidates.map((c: any) => c.name)).toEqual(
+      Array.from({ length: 10 }, (_, i) => `Extra ${String(i).padStart(2, '0')}`)
+    );
+    // Exactly ten matches: nothing more; the eleventh makes it "more".
+    for (let i = 0; i < 10; i++) {
+      await scoped.query(`INSERT INTO users (id, name, email) VALUES ($1, $2, $3)`, [
+        200 + i,
+        `Tenth ${i}`,
+        `tenth${i}@example.com`,
+      ]);
+    }
+    const exact = await storage.listTeamMemberCandidates(TEAM, 'tenth');
+    expect(exact.candidates).toHaveLength(10);
+    expect(exact.more).toBe(false);
+    await scoped.query(
+      `INSERT INTO users (id, name, email) VALUES (210, 'Tenth X', 'tenthx@example.com')`
+    );
+    const over = await storage.listTeamMemberCandidates(TEAM, 'tenth');
+    expect(over.candidates).toHaveLength(10);
+    expect(over.more).toBe(true);
+  });
+});
+
+describe('team membership is team_members rows and nothing else', () => {
+  // A directory (`members`) row names a person and grants no team access.
+  const roster = async (userId: number, teamId: number) =>
+    scoped.query(
+      `INSERT INTO members (name, email, role, team_id) VALUES ($1, $1, 'dev', $2)
+       ON CONFLICT (email) DO UPDATE SET team_id = $2`,
+      [email(userId), teamId]
+    );
+  let pageId: number;
+  beforeEach(async () => {
+    pageId = Number(
+      (
+        await one(
+          `INSERT INTO wiki_pages (title, slug, content, author, team_id)
+           VALUES ('Team page', 'team-page', '', 'someone@example.com', $1) RETURNING id`,
+          [TEAM]
+        )
+      ).id
+    );
+  });
+
+  it('an account with only a directory row has no team, no role and no page access', async () => {
+    await roster(ORG_ONLY, TEAM);
+    expect(await storage.getUserTeamIds(ORG_ONLY)).toEqual([]);
+    expect(await storage.getUserTeamRole(ORG_ONLY, TEAM)).toBeNull();
+    expect(await storage.checkPagePermission(ORG_ONLY, pageId, 'viewer')).toBe(false);
+    expect((await storage.listTeamMembers(TEAM)).map((m: any) => m.userId)).not.toContain(ORG_ONLY);
+  });
+
+  it('being admitted to a second team keeps the first: both are team_members rows', async () => {
+    await scoped.query(
+      `INSERT INTO team_members (team_id, user_id, role) VALUES ($1, $2, 'member')`,
+      [TEAM, ORG_ONLY]
+    );
+    await roster(ORG_ONLY, TEAM);
+    expect((await storage.getUserTeamIds(ORG_ONLY)).sort()).toEqual([TEAM]);
+    await storage.admitTeamMember(OTHER_TEAM, OWNER_A, email(ORG_ONLY));
+    expect((await storage.getUserTeamIds(ORG_ONLY)).sort()).toEqual([TEAM, OTHER_TEAM].sort());
+    expect(await storage.getUserTeamRole(ORG_ONLY, TEAM)).toBe('member');
+    expect(await storage.checkPagePermission(ORG_ONLY, pageId, 'viewer')).toBe(true);
+  });
+
+  it('being admitted while on a directory row of another team gives that team nothing', async () => {
+    await roster(ORG_ONLY, TEAM);
+    await storage.admitTeamMember(OTHER_TEAM, OWNER_A, email(ORG_ONLY));
+    expect(await storage.getUserTeamIds(ORG_ONLY)).toEqual([OTHER_TEAM]);
+    expect(await storage.getUserTeamRole(ORG_ONLY, TEAM)).toBeNull();
+  });
+
+  it('removing a member who is also on the directory ends their access, role and the page', async () => {
+    await roster(MEMBER_A, TEAM);
+    expect(await storage.checkPagePermission(MEMBER_A, pageId, 'viewer')).toBe(true);
+    expect(await storage.removeTeamMember(TEAM, OWNER_A, MEMBER_A)).toMatchObject({ ok: true });
+    expect(await storage.getUserTeamIds(MEMBER_A)).toEqual([]);
+    expect(await storage.getUserTeamRole(MEMBER_A, TEAM)).toBeNull();
+    expect(await storage.checkPagePermission(MEMBER_A, pageId, 'viewer')).toBe(false);
+    // They are no longer a member to leave either: nothing is left to leave, and that is the truth.
+    expect(
+      await storage.removeTeamMember(TEAM, MEMBER_A, MEMBER_A, { leaving: true })
+    ).toMatchObject({ ok: false, status: 404 });
+  });
+
+  it('leaving ends the access of an account that is also on the directory', async () => {
+    await roster(MEMBER_B, TEAM);
+    expect(
+      await storage.removeTeamMember(TEAM, MEMBER_B, MEMBER_B, { leaving: true })
+    ).toMatchObject({ ok: true });
+    expect(await storage.getUserTeamIds(MEMBER_B)).toEqual([]);
+    expect(await storage.checkPagePermission(MEMBER_B, pageId, 'viewer')).toBe(false);
+  });
+
+  it('a directory row grants no admission rights either', async () => {
+    await roster(ORG_ONLY, TEAM);
+    expect(await storage.admitTeamMember(TEAM, ORG_ONLY, email(NOBODY))).toMatchObject({
+      ok: false,
+      status: 403,
+    });
+  });
+});
+
+describe('admission refuses a deactivated account like an unknown one', () => {
+  it('404 with the unknown-account body, and no row', async () => {
+    await scoped.query(`UPDATE users SET is_active = FALSE WHERE id = $1`, [ORG_ONLY]);
+    const inactive = await storage.admitTeamMember(TEAM, OWNER_A, email(ORG_ONLY));
+    const unknown = await storage.admitTeamMember(TEAM, OWNER_A, 'nobody-at-all@example.com');
+    expect(inactive).toEqual(unknown);
+    expect(inactive).toMatchObject({ ok: false, status: 404 });
+    expect(await roleOf(ORG_ONLY)).toBeNull();
+  });
+});
+
+describe('removing an organization member and the teams left without an owner', () => {
+  // OWNER_A owns the organization in these tests. Team "pair" has two owners, X and Y.
+  const X = OWNER_B;
+  const Y = ADMIN_A;
+  let pair: number;
+  beforeEach(async () => {
+    await scoped.query(`UPDATE organization_members SET role = 'owner' WHERE user_id = $1`, [
+      OWNER_A,
+    ]);
+    pair = Number(
+      (
+        await one(
+          `INSERT INTO teams (name, display_name, organization_id) VALUES ('pair', 'pair', $1) RETURNING id`,
+          [defaultId]
+        )
+      ).id
+    );
+    for (const id of [X, Y]) {
+      await scoped.query(
+        `INSERT INTO team_members (team_id, user_id, role) VALUES ($1, $2, 'owner')`,
+        [pair, id]
+      );
+    }
+  });
+  const ownerless = (result: any) => result.value.teamsLeftWithoutOwner.map((t: any) => t.id);
+
+  it('reports a team whose other owner lowered themselves first (a change under the team lock)', async () => {
+    const holder = await scoped.connect();
+    try {
+      await holder.query('BEGIN');
+      await holder.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [
+        `team-members:${pair}`,
+      ]);
+      const pending = storage.removeOrganizationMember(defaultId, OWNER_A, X);
+      await sleep(300);
+      // While the removal waits for the team's lock, the other owner lowers themselves.
+      await holder.query(
+        `UPDATE team_members SET role = 'member' WHERE team_id = $1 AND user_id = $2`,
+        [pair, Y]
+      );
+      await holder.query('COMMIT');
+      const result = await pending;
+      expect(result.ok).toBe(true);
+      expect(ownerless(result)).toContain(pair);
+    } finally {
+      holder.release();
+    }
+  });
+
+  it('whichever of the two wins, the report matches the team as it is left', async () => {
+    for (let round = 0; round < 10; round++) {
+      await seed();
+      await scoped.query(`UPDATE organization_members SET role = 'owner' WHERE user_id = $1`, [
+        OWNER_A,
+      ]);
+      pair = Number(
+        (
+          await one(
+            `INSERT INTO teams (name, display_name, organization_id) VALUES ('pair', 'pair', $1) RETURNING id`,
+            [defaultId]
+          )
+        ).id
+      );
+      for (const id of [X, Y]) {
+        await scoped.query(
+          `INSERT INTO team_members (team_id, user_id, role) VALUES ($1, $2, 'owner')`,
+          [pair, id]
+        );
+      }
+      const [removal] = await Promise.all([
+        storage.removeOrganizationMember(defaultId, OWNER_A, X),
+        storage.changeTeamMemberRole(pair, Y, Y, 'member'),
+      ]);
+      expect(removal.ok).toBe(true);
+      const left = await rows(
+        `SELECT count(*)::int AS n FROM team_members WHERE team_id = $1 AND role = 'owner'`,
+        [pair]
+      );
+      expect(ownerless(removal).includes(pair), `round ${round}`).toBe(left[0].n === 0);
+    }
+  });
+
+  it('reports a team whose remaining owner is deactivated', async () => {
+    await scoped.query(`UPDATE users SET is_active = FALSE WHERE id = $1`, [Y]);
+    const result = await storage.removeOrganizationMember(defaultId, OWNER_A, X);
+    expect(result.ok).toBe(true);
+    expect(ownerless(result)).toContain(pair);
+  });
+
+  it('reports a team whose remaining owner is no longer a member of the organization', async () => {
+    await scoped.query(`DELETE FROM organization_members WHERE user_id = $1`, [Y]);
+    const result = await storage.removeOrganizationMember(defaultId, OWNER_A, X);
+    expect(result.ok).toBe(true);
+    expect(ownerless(result)).toContain(pair);
+  });
+
+  it('does not report a team that keeps an active owner, or one the target did not own', async () => {
+    const result = await storage.removeOrganizationMember(defaultId, OWNER_A, X);
+    expect(result.ok).toBe(true);
+    expect(ownerless(result)).not.toContain(pair);
+    await scoped.query(
+      `INSERT INTO team_members (team_id, user_id, role) VALUES ($1, $2, 'member')`,
+      [pair, MEMBER_A]
+    );
+    await scoped.query(`DELETE FROM team_members WHERE team_id = $1 AND role = 'owner'`, [pair]);
+    const plain = await storage.removeOrganizationMember(defaultId, OWNER_A, MEMBER_A);
+    // MEMBER_A was a plain member of a team that is already ownerless: not this removal's doing.
+    expect(ownerless(plain)).not.toContain(pair);
+  });
+
+  it('team paths never take the organization lock: a team change is not held up by it', async () => {
+    const holder = await scoped.connect();
+    try {
+      await holder.query('BEGIN');
+      await holder.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [
+        `organization-members:${defaultId}`,
+      ]);
+      const result = await storage.changeTeamMemberRole(pair, X, Y, 'member');
+      expect(result.ok).toBe(true);
+      await holder.query('COMMIT');
+    } finally {
+      holder.release();
+    }
   });
 });

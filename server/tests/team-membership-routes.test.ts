@@ -127,6 +127,12 @@ function statesOf(teamId: number, actorId: number, targetId: number) {
 }
 
 function installStorage() {
+  storage.getUserAccount.mockImplementation(async (userId: number) => {
+    const account = accounts.get(userId);
+    return account
+      ? { id: userId, email: `u${userId}@example.com`, isActive: account.isActive }
+      : undefined;
+  });
   storage.getUserTeamRole.mockImplementation(async (userId: number, teamId: number) => {
     const account = accounts.get(userId);
     if (!account || account.organizationId === null) return null;
@@ -145,12 +151,13 @@ function installStorage() {
         joinedAt: '2025-01-01T00:00:00.000Z',
       }))
   );
-  storage.listTeamMemberCandidates.mockImplementation(async (teamId: number) =>
-    [...accounts.entries()]
-      .filter(([id, a]) => a.organizationId === teamOrganization.get(teamId) && a.isActive)
+  storage.listTeamMemberCandidates.mockImplementation(async (teamId: number) => ({
+    candidates: [...accounts.entries()]
+      .filter(([, a]) => a.organizationId === teamOrganization.get(teamId) && a.isActive)
       .filter(([id]) => roleOf(teamId, id) === null)
-      .map(([id]) => ({ name: `User ${id}`, email: `u${id}@example.com` }))
-  );
+      .map(([id]) => ({ name: `User ${id}`, email: `u${id}@example.com` })),
+    more: false,
+  }));
   storage.changeTeamMemberRole.mockImplementation(
     async (teamId: number, actorId: number, targetId: number, requested: Role) => {
       const decision = RealStorage.decideTeamRoleChange({
@@ -375,7 +382,10 @@ describe('GET /api/teams/:teamId/member-candidates', () => {
     for (const id of [OWNER, ADMIN]) {
       const res = await call(id, 'get', `/api/teams/${TEAM}/member-candidates?q=user`);
       expect(res.status).toBe(200);
-      expect(res.body).toEqual([{ name: `User ${ORG_ONLY}`, email: `u${ORG_ONLY}@example.com` }]);
+      expect(res.body).toEqual({
+        candidates: [{ name: `User ${ORG_ONLY}`, email: `u${ORG_ONLY}@example.com` }],
+        more: false,
+      });
     }
     expect(storage.listTeamMemberCandidates).toHaveBeenCalledWith(TEAM, 'user');
   });
@@ -390,6 +400,93 @@ describe('GET /api/teams/:teamId/member-candidates', () => {
     expect(long.status).toBe(400);
     expect(repeated.status).toBe(400);
     expect(storage.listTeamMemberCandidates).not.toHaveBeenCalled();
+  });
+});
+
+describe('the candidate search is limited', () => {
+  it('passes the more-flag of storage through, and nothing else about other people', async () => {
+    storage.listTeamMemberCandidates.mockResolvedValue({
+      candidates: [{ name: 'A', email: 'a@example.com' }],
+      more: true,
+    });
+    const res = await call(OWNER, 'get', `/api/teams/${TEAM}/member-candidates?q=ab`);
+    expect(res.body).toEqual({ candidates: [{ name: 'A', email: 'a@example.com' }], more: true });
+  });
+
+  it('is rate limited per caller: the 31st request in a minute is 429, another caller is not affected', async () => {
+    configMock.config.rateLimitEnabled = true;
+    try {
+      const url = `/api/teams/${TEAM}/member-candidates?q=ab`;
+      for (let i = 0; i < 30; i += 1) {
+        expect((await call(OWNER, 'get', url)).status, `request ${i + 1}`).toBe(200);
+      }
+      expect((await call(OWNER, 'get', url)).status).toBe(429);
+      expect((await call(ADMIN, 'get', url)).status).toBe(200);
+    } finally {
+      configMock.config.rateLimitEnabled = false;
+    }
+  });
+});
+
+describe('a deactivated caller', () => {
+  beforeEach(() => {
+    accounts.get(OWNER)!.isActive = false;
+    accounts.get(MEMBER)!.isActive = false;
+  });
+
+  it('is refused the member list like a non-member, and the picker like a non-manager', async () => {
+    const list = await call(MEMBER, 'get', `/api/teams/${TEAM}/members`);
+    expect(list.status).toBe(403);
+    expect(list.body).toEqual({ message: 'You are not a member of this team' });
+    const picker = await call(OWNER, 'get', `/api/teams/${TEAM}/member-candidates?q=ab`);
+    expect(picker.status).toBe(403);
+    expect(picker.body).toEqual({ message: 'Owner or admin role required' });
+    expect(storage.listTeamMembers).not.toHaveBeenCalled();
+    expect(storage.listTeamMemberCandidates).not.toHaveBeenCalled();
+  });
+
+  it('an account that does not exist is refused the same way', async () => {
+    const res = await call(777, 'get', `/api/teams/${TEAM}/members`);
+    expect(res.status).toBe(403);
+  });
+});
+
+describe('admission tells the admitted account’s sessions', () => {
+  it('announces a new membership once, and nothing for an existing one or a refusal', async () => {
+    await call(OWNER, 'post', `/api/teams/${TEAM}/memberships`, {
+      email: `u${ORG_ONLY}@example.com`,
+    });
+    expect(notifyPageAccessChanged).toHaveBeenCalledTimes(1);
+    expect(notifyPageAccessChanged).toHaveBeenCalledWith(ORG_ONLY);
+    await call(OWNER, 'post', `/api/teams/${TEAM}/memberships`, {
+      email: `u${ORG_ONLY}@example.com`,
+    });
+    await call(MEMBER, 'post', `/api/teams/${TEAM}/memberships`, {
+      email: `u${MEMBER_2}@example.com`,
+    });
+    await call(OWNER, 'post', `/api/teams/${TEAM}/memberships`, { email: 'nobody@example.com' });
+    expect(notifyPageAccessChanged).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('DBStorage.decideTeamAdmission', () => {
+  const actor = (role: Role) => ({ userId: 1, role, isActive: true });
+  it('admits for an owner and an admin only; a missing actor is refused like a plain member', () => {
+    expect(RealStorage.decideTeamAdmission({ actor: actor('owner') })).toEqual({
+      ok: true,
+      write: true,
+    });
+    expect(RealStorage.decideTeamAdmission({ actor: actor('admin') })).toEqual({
+      ok: true,
+      write: true,
+    });
+    for (const refused of [actor('member'), null]) {
+      expect(RealStorage.decideTeamAdmission({ actor: refused })).toEqual({
+        ok: false,
+        status: 403,
+        body: { message: 'Owner or admin role required' },
+      });
+    }
   });
 });
 

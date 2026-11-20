@@ -206,16 +206,18 @@ describe('the screen and the server agree (every combination)', () => {
     ]);
   });
 
-  it('adding is offered exactly to the roles the server lets admit', () => {
+  it('adding is offered exactly to the callers the server lets admit', () => {
     for (const caller of ROLES) {
-      const actor = { userId: 1, role: caller, isActive: true };
-      const manager = DBStorage.decideTeamRoleChange({
-        actor,
-        target: actor,
-        requested: caller,
-        activeOwnerCount: 2,
-      });
-      expect(canAddTeamMember(caller)).toBe(manager.ok);
+      for (const isActive of [true, false]) {
+        // An inactive actor is read as no membership by the server.
+        const actor = isActive ? { userId: 1, role: caller, isActive } : null;
+        const decision = DBStorage.decideTeamAdmission({ actor });
+        expect(canAddTeamMember(isActive ? caller : null), `${caller}, active=${isActive}`).toBe(
+          decision.ok
+        );
+      }
     }
+    expect(DBStorage.decideTeamAdmission({ actor: null }).ok).toBe(false);
+    expect(canAddTeamMember(undefined)).toBe(false);
   });
 });
