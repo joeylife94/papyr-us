@@ -73,6 +73,13 @@ if (!allowRemote && !LOCAL_HOSTS.has(host)) {
 
 const client = new pg.Client({ connectionString: databaseUrl });
 
+// Migrations tell the operator what they did or left undone with NOTICE messages that start with
+// four digits and a colon (for example "0028: converted 3 directory row(s) ..."). Those are
+// printed; every other notice stays quiet.
+client.on('notice', (notice) => {
+  if (/^\d{4}:/.test(notice.message)) console.log(`${label} ${notice.message}`);
+});
+
 try {
   await client.connect();
   const { rows } = await client.query(

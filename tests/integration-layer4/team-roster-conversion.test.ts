@@ -157,6 +157,33 @@ const recorded = async () =>
        JOIN users u ON u.id = tm.user_id JOIN teams t ON t.id = tm.team_id ORDER BY u.email`
   );
 const up = () => scoped.query(UP);
+/** Runs a migration file and returns the NOTICE messages it raised. */
+async function runWithNotices(sqlText: string, pool: Pool = scoped): Promise<string[]> {
+  const client = await pool.connect();
+  const notices: string[] = [];
+  client.on('notice', (notice) => notices.push(notice.message));
+  try {
+    await client.query(sqlText);
+  } finally {
+    client.removeAllListeners('notice');
+    client.release();
+  }
+  return notices;
+}
+const marker = async () =>
+  (await one(`SELECT obj_description(to_regclass('team_roster_conversions'), 'pg_class') AS c`))
+    ?.c ?? null;
+/** The table as `drizzle-kit push` creates it: no comment, no rows. */
+const createTableAsPushDoes = () =>
+  scoped.query(`
+    CREATE TABLE team_roster_conversions (
+      team_member_id integer PRIMARY KEY NOT NULL,
+      created_at timestamp DEFAULT now() NOT NULL
+    );
+    ALTER TABLE team_roster_conversions
+      ADD CONSTRAINT team_roster_conversions_team_member_id_team_members_id_fk
+      FOREIGN KEY (team_member_id) REFERENCES team_members(id) ON DELETE CASCADE ON UPDATE NO ACTION;
+  `);
 const down = () => scoped.query(DOWN);
 
 beforeAll(async () => {
@@ -268,13 +295,62 @@ describe('0028 up', () => {
     expect(await memberships()).toEqual(once);
   });
 
-  it('leaves a database that already has the record table alone (push created it)', async () => {
-    await scoped.query(
-      `CREATE TABLE team_roster_conversions (team_member_id integer PRIMARY KEY NOT NULL, created_at timestamp DEFAULT now() NOT NULL)`
-    );
-    const before = await memberships();
-    await up();
-    expect(await memberships()).toEqual(before);
+  it('marks what it did, says how many rows it converted, and is quiet the second time', async () => {
+    const notices = await runWithNotices(UP);
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatch(/^0028: /);
+    expect(notices[0]).toContain('3');
+    expect(await marker()).not.toBeNull();
+    expect(await runWithNotices(UP)).toEqual([]);
+  });
+
+  describe('a record table that is there but not marked (a schema push made it)', () => {
+    it('converts nothing on its own, says how many rows it left, and stays unmarked', async () => {
+      await createTableAsPushDoes();
+      const before = await memberships();
+      const notices = await runWithNotices(UP);
+      expect(await memberships()).toEqual(before);
+      expect(notices).toHaveLength(1);
+      expect(notices[0]).toMatch(/^0028: /);
+      expect(notices[0]).toContain('3 directory row(s)');
+      expect(notices[0]).toMatch(/operator/);
+      expect(await marker()).toBeNull();
+      // Asked again, it says the same and still changes nothing.
+      expect(await runWithNotices(UP)).toEqual(notices);
+      expect(await memberships()).toEqual(before);
+      expect(await marker()).toBeNull();
+    });
+
+    it('marks itself, silently, when no directory row would qualify (nothing is converted)', async () => {
+      await scoped.query(
+        `UPDATE members SET is_active = FALSE WHERE email IN ('roster-only@example.com', 'other-org-row-only@example.com', 'acme-user@example.com')`
+      );
+      await createTableAsPushDoes();
+      const before = await memberships();
+      expect(await runWithNotices(UP)).toEqual([]);
+      expect(await memberships()).toEqual(before);
+      expect(await marker()).not.toBeNull();
+    });
+
+    it('converts after the documented remedy: drop the empty table, run it again', async () => {
+      await createTableAsPushDoes();
+      await runWithNotices(UP);
+      await scoped.query(`DROP TABLE team_roster_conversions`);
+      const notices = await runWithNotices(UP);
+      expect(notices).toHaveLength(1);
+      expect(notices[0]).toContain('3');
+      expect(await recorded()).toHaveLength(3);
+      expect(await marker()).not.toBeNull();
+    });
+
+    it('converts nothing after the other remedy: declining by setting the marker', async () => {
+      await createTableAsPushDoes();
+      await scoped.query(`COMMENT ON TABLE team_roster_conversions IS 'declined by an operator'`);
+      const before = await memberships();
+      expect(await runWithNotices(UP)).toEqual([]);
+      expect(await memberships()).toEqual(before);
+      expect(await marker()).toBe('declined by an operator');
+    });
   });
 
   it('does nothing on a database without the tables (fresh install)', async () => {
@@ -297,6 +373,56 @@ describe('0028 up', () => {
     }
   });
 
+  it('fresh-install order (prepare, push, prepare, push) ends marked with nothing converted', async () => {
+    // prepare on a database without tables: nothing, and no record table
+    const fresh = `${SCHEMA}_order`;
+    await admin.query(`DROP SCHEMA IF EXISTS ${fresh} CASCADE`);
+    await admin.query(`CREATE SCHEMA ${fresh}`);
+    const pool = new Pool({
+      connectionString: (() => {
+        const url = new URL(DATABASE_URL!);
+        url.searchParams.set('options', `-c search_path=${fresh}`);
+        return url.toString();
+      })(),
+    });
+    try {
+      expect(await runWithNotices(UP, pool)).toEqual([]);
+      expect(
+        (await pool.query(`SELECT to_regclass('team_roster_conversions') AS t`)).rows[0].t
+      ).toBeNull();
+      // push: the tables, the record table unmarked and empty
+      await pool.query(`
+        CREATE TABLE users (id SERIAL PRIMARY KEY, email text NOT NULL UNIQUE);
+        CREATE TABLE teams (id SERIAL PRIMARY KEY, organization_id integer NOT NULL);
+        CREATE TABLE members (id SERIAL PRIMARY KEY, email text NOT NULL UNIQUE, team_id integer, is_active boolean NOT NULL DEFAULT TRUE);
+        CREATE TABLE organization_members (id SERIAL PRIMARY KEY, organization_id integer NOT NULL, user_id integer NOT NULL UNIQUE);
+        CREATE TABLE team_members (id SERIAL PRIMARY KEY, team_id integer NOT NULL, user_id integer NOT NULL, role text NOT NULL DEFAULT 'member', invited_by integer);
+        CREATE TABLE team_roster_conversions (team_member_id integer PRIMARY KEY NOT NULL, created_at timestamp DEFAULT now() NOT NULL);
+      `);
+      // prepare again: marks, quietly, converts nothing
+      expect(await runWithNotices(UP, pool)).toEqual([]);
+      const comment = (
+        await pool.query(
+          `SELECT obj_description(to_regclass('team_roster_conversions'), 'pg_class') AS c`
+        )
+      ).rows[0].c;
+      expect(comment).not.toBeNull();
+      expect((await pool.query(`SELECT count(*)::int AS n FROM team_members`)).rows[0].n).toBe(0);
+      // a directory row written afterwards (under the new rules) never becomes access
+      await pool.query(`
+        INSERT INTO users (email) VALUES ('late@example.com');
+        INSERT INTO organization_members (organization_id, user_id) SELECT 1, id FROM users;
+        INSERT INTO teams (organization_id) VALUES (1);
+        INSERT INTO members (email, team_id) VALUES ('late@example.com', 1);
+      `);
+      expect(await runWithNotices(UP, pool)).toEqual([]);
+      expect((await pool.query(`SELECT count(*)::int AS n FROM team_members`)).rows[0].n).toBe(0);
+    } finally {
+      await pool.end();
+      await admin.query(`DROP SCHEMA IF EXISTS ${fresh} CASCADE`);
+    }
+  });
+
   it('creates the record table with the names the schema declares', async () => {
     await up();
     const columns = await rows(
@@ -311,6 +437,7 @@ describe('0028 up', () => {
     const constraints = await rows(
       `SELECT conname FROM pg_constraint WHERE conrelid = 'team_roster_conversions'::regclass ORDER BY conname`
     );
+    expect(await marker()).not.toBeNull();
     expect(constraints.map((c: any) => c.conname)).toEqual([
       'team_roster_conversions_pkey',
       'team_roster_conversions_team_member_id_team_members_id_fk',
@@ -325,6 +452,9 @@ describe('0028 down', () => {
     await down();
     expect(await memberships()).toEqual(before);
     expect((await one(`SELECT to_regclass('team_roster_conversions') AS t`)).t).toBeNull();
+    // The marker went with the table: a later run converts again, and marks again.
+    await up();
+    expect(await marker()).not.toBeNull();
   });
 
   it('keeps a membership an owner added later, and one removed and added again', async () => {

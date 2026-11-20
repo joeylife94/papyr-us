@@ -14,28 +14,71 @@
 --     were ignored for it);
 --   - an inactive directory row, a row without a team, a row on another organization's team,
 --     an email that no account has, an account without an organization.
+-- One difference is a narrowing, not a page access: an account with a membership elsewhere and a
+-- directory row on a team used to be answered role `member` on that team by the role lookup
+-- (`getUserTeamRole`; no page access came from it). It is not converted, and leaving that team
+-- now answers 404.
 --
 -- Every row it creates is recorded in team_roster_conversions (by team_members.id), which
 -- drizzle/0028_convert_roster_team_access.down.sql reads to remove exactly those rows.
 --
--- Additive and idempotent. It converts once: when team_roster_conversions already exists (this
--- file ran before, or a schema push created the table) nothing is changed, so a directory row
--- written after the first run never turns into access. A database without the tables (a fresh
--- install) is left alone: push creates them, the record table included.
+-- It converts once, and says that it did with a comment on team_roster_conversions (a comment is
+-- not something a schema push creates, changes or removes). Three states:
+--   (a) the table is absent: convert, record, mark. The normal upgrade. The number of rows
+--       converted is raised as a NOTICE.
+--   (b) the table is there and marked: nothing (this file ran before, or an operator declined).
+--   (c) the table is there and not marked (a schema push made it, or this is a fresh install):
+--       nothing is converted, because directory rows written after the new rules took effect
+--       never gave access. When no directory row would qualify, the table is marked and the file
+--       stays quiet. When some would, nothing changes and a NOTICE starting with `0028:` says how
+--       many were left and that an operator must decide: drop the empty table and run this file
+--       again to convert them, or set the marker (COMMENT ON TABLE team_roster_conversions IS
+--       'declined') to leave them out.
+-- NOTICE messages of this file start with four digits and a colon, so a caller can print exactly
+-- those.
+--
+-- Additive and idempotent. A database without the tables (a fresh install) is left alone: push
+-- creates them, the record table included.
 -- Requires drizzle/0022_add_organizations.sql. Deployments apply this file after 0022 to 0025
 -- and before `drizzle-kit push`.
 
 DO $$
+DECLARE
+  affected integer;
 BEGIN
   IF to_regclass('users') IS NULL OR to_regclass('teams') IS NULL
      OR to_regclass('members') IS NULL OR to_regclass('team_members') IS NULL
      OR to_regclass('organization_members') IS NULL THEN
     RETURN;
   END IF;
+
   IF to_regclass('team_roster_conversions') IS NOT NULL THEN
+    -- (b) marked: nothing
+    IF obj_description('team_roster_conversions'::regclass, 'pg_class') IS NOT NULL THEN
+      RETURN;
+    END IF;
+    -- (c) not marked: count what would qualify, change nothing but the marker
+    SELECT count(*) INTO affected FROM (
+      SELECT DISTINCT t.id, u.id
+      FROM users u
+      JOIN organization_members om ON om.user_id = u.id
+      JOIN members m ON m.email = u.email AND m.is_active = TRUE AND m.team_id IS NOT NULL
+      JOIN teams t ON t.id = m.team_id AND t.organization_id = om.organization_id
+      WHERE NOT EXISTS (
+        SELECT 1 FROM team_members tm
+        JOIN teams other ON other.id = tm.team_id
+        WHERE tm.user_id = u.id AND other.organization_id = om.organization_id
+      )
+    ) qualifying;
+    IF affected = 0 THEN
+      COMMENT ON TABLE team_roster_conversions IS '0028: applied, nothing to convert';
+    ELSE
+      RAISE NOTICE '0028: % directory row(s) were not converted into team memberships: team_roster_conversions exists but is not marked, so this file did not run here before. An operator must decide: drop the empty table and run this file again to convert them, or set the marker (COMMENT ON TABLE team_roster_conversions IS ''declined'') to leave them out.', affected;
+    END IF;
     RETURN;
   END IF;
 
+  -- (a) absent: convert, record, mark
   CREATE TABLE team_roster_conversions (
     team_member_id integer PRIMARY KEY NOT NULL,
     created_at timestamp DEFAULT now() NOT NULL
@@ -57,6 +100,11 @@ BEGIN
       WHERE tm.user_id = u.id AND other.organization_id = om.organization_id
     )
     RETURNING id
+  ), recorded AS (
+    INSERT INTO team_roster_conversions (team_member_id) SELECT id FROM converted RETURNING 1
   )
-  INSERT INTO team_roster_conversions (team_member_id) SELECT id FROM converted;
+  SELECT count(*) INTO affected FROM recorded;
+
+  COMMENT ON TABLE team_roster_conversions IS '0028: applied';
+  RAISE NOTICE '0028: converted % directory row(s) into team memberships', affected;
 END $$;

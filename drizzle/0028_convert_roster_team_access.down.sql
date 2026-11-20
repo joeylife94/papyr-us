@@ -5,8 +5,9 @@
 -- was removed and added again, is a different row and stays.
 --
 -- Refuses, and changes nothing, while a recorded membership holds a role above member: an owner
--- raised it, and the previous application would drop that decision together with the row. Does
--- nothing when the record table is not there.
+-- raised it, and the previous application would drop that decision together with the row. The
+-- marker (a comment on the record table) goes with the table. Does nothing when the record
+-- table is not there.
 
 DO $$
 BEGIN
