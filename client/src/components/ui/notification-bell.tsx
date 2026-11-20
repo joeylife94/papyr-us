@@ -243,10 +243,17 @@ export function NotificationBell() {
   return (
     <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" className="relative">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="relative"
+          aria-label="알림"
+          data-testid="notification-bell"
+        >
           <Bell className="h-5 w-5" />
           {userId && unreadCount.count > 0 && (
             <Badge
+              data-testid="notification-unread-badge"
               variant="destructive"
               className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 text-xs flex items-center justify-center"
             >
@@ -280,6 +287,7 @@ export function NotificationBell() {
 
                     return (
                       <DropdownMenuItem
+                        data-testid="notification-item"
                         key={notification.id}
                         className="flex items-start gap-3 p-3 cursor-pointer hover:bg-accent"
                         onClick={() => handleNotificationClick(notification)}
@@ -324,6 +332,7 @@ export function NotificationBell() {
 
                 return (
                   <DropdownMenuItem
+                    data-testid="notification-item"
                     key={notification.id}
                     className="flex items-start gap-3 p-3 cursor-pointer hover:bg-accent opacity-75"
                     onClick={() => handleNotificationClick(notification)}
