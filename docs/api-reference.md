@@ -180,6 +180,11 @@
 | PATCH  | `/api/notifications/read-all` | JWT  | 전체 읽음 처리 |
 
 - 조직이 없는 계정은 읽기와 변경 모두 403 `Your account does not belong to an organization`입니다(#124 X1c).
+- 알림은 계정에게 갑니다. 모든 경로가 로그인한 계정 자신의, 지금 속한 조직의 알림만 다루고, 그 밖의 알림은 404입니다.
+- `GET /api/notifications`는 `{ notifications, pagination }`으로 답합니다.
+- `POST /api/notifications` 본문: `type`(`comment` \| `mention` \| `task_due` \| `task_assigned`), `title`(1~200자), `content`(2,000자까지), `recipientUserId`(같은 조직의 활성 계정), 선택으로 `relatedPageId`, `relatedTaskId`, `relatedCommentId`, `isRead`. 그 밖의 키(`recipientId`, `senderId`, `senderUserId`, `organizationId` 포함)가 있으면 400 `Invalid notification data`입니다. 보낸 사람과 조직은 서버가 정합니다.
+- `PUT /api/notifications/:id`는 `isRead`, `title`, `content`, `type`만 바꿉니다. 받는 사람, 보낸 사람, 조직, 연결된 기록은 저장된 값과 같을 때만 받아들입니다.
+- 규칙과 기존 알림의 이동은 [organizations-guide.md](organizations-guide.md#알림은-계정에게-갑니다)에 있습니다.
 
 ---
 

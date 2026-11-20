@@ -2,6 +2,7 @@ import express, { type Express, type Request, Response, NextFunction } from 'exp
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
+import { verifyAccessToken } from './auth-tokens.js';
 import cookieParser from 'cookie-parser';
 import { config } from './config.js';
 import helmet from 'helmet';
@@ -150,7 +151,7 @@ function getRequestToken(req: AuthRequest): string | undefined {
 function verifyRequestToken(req: AuthRequest): any {
   const token = getRequestToken(req);
   if (!token) return null;
-  return jwt.verify(token, config.jwtSecret);
+  return verifyAccessToken(token);
 }
 
 export function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {

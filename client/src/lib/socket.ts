@@ -182,18 +182,13 @@ class SocketManager {
     }
   }
 
-  // Convenience: join a member's room to receive notification events
-  joinMember(memberId: number | string): void {
-    if (!this.socket) return;
-    this.socket.emit('join-member', { memberId });
-  }
-
   onNotificationNew(callback: (notification: any) => void): void {
     this.on('notification:new', callback);
   }
 
+  // The account's own room is joined when the socket connects; nothing is joined by id.
   onNotificationUnreadCount(
-    callback: (data: { recipientId: number; count: number }) => void
+    callback: (data: { recipientUserId: number; count: number }) => void
   ): void {
     this.on('notification:unread-count', callback as any);
   }
@@ -221,7 +216,6 @@ const socketApi = {
   emit: socketManager.emit.bind(socketManager),
   on: socketManager.on.bind(socketManager),
   off: socketManager.off.bind(socketManager),
-  joinMember: socketManager.joinMember.bind(socketManager),
   onNotificationNew: socketManager.onNotificationNew.bind(socketManager),
   onNotificationUnreadCount: socketManager.onNotificationUnreadCount.bind(socketManager),
 };
