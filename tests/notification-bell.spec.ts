@@ -90,7 +90,19 @@ test.describe('Notification bell', () => {
       // ── C, who was not addressed ──
       const cPage = await cContext.newPage();
       await loginPageWithCookies(cPage, userC.email, userC.password);
+      // The screen is only evidence once the server has answered: wait for both responses and
+      // check what they say before looking at the screen.
+      const answered = (path: string) =>
+        cPage.waitForResponse(
+          (res) => new URL(res.url()).pathname === path && res.request().method() === 'GET'
+        );
+      const countAnswer = answered('/api/notifications/unread-count');
+      const listAnswer = answered('/api/notifications');
       await cPage.goto('/');
+      const countBody = await (await countAnswer).json();
+      const listBody = await (await listAnswer).json();
+      expect(Number(countBody.count)).toBe(0);
+      expect(listBody.notifications).toEqual([]);
       await expect(cPage.getByTestId('notification-bell')).toBeVisible();
       await expect(cPage.getByTestId('notification-unread-badge')).toHaveCount(0);
       await cPage.getByTestId('notification-bell').click();
