@@ -10,9 +10,10 @@
 import type { Express, Response } from 'express';
 import { z } from 'zod';
 import { teamRoles } from '../shared/schema.js';
-import { authMiddleware, type AuthRequest } from './middleware.js';
+import { authMiddleware, buildRateLimiter, type AuthRequest } from './middleware.js';
 import { TeamBusyError, type DBStorage } from './storage.js';
 import { notifyPageAccessChanged } from './services/page-access-events.js';
+import { TEAM_CANDIDATE_MAX_QUERY_LENGTH } from '../shared/team-members.js';
 
 // The body is strict: a key the route does not name (teamId, userId, organizationId) is refused.
 const changeRoleSchema = z.object({ role: z.enum(teamRoles) }).strict();
@@ -36,13 +37,23 @@ function failure(res: Response, error: unknown) {
 }
 
 export function registerTeamMembershipRoutes(app: Express, storage: DBStorage) {
+  // The search lists people of the caller's organization to someone who may not be its owner or
+  // admin, so it is rate limited per caller on top of its own limits.
+  const rlCandidates = buildRateLimiter({ windowMs: 60_000, max: 30 });
+
+  /** Whether the caller's account is still active; the read routes refuse a deactivated one. */
+  const callerIsActive = async (userId: number) =>
+    (await storage.getUserAccount(userId))?.isActive === true;
+
   // The team's members, for any member of the team.
   app.get('/api/teams/:teamId/members', authMiddleware, async (req: AuthRequest, res) => {
     const teamId = parseTeamId(req.params.teamId);
     const actorUserId = Number(req.user?.id);
     if (!teamId) return res.status(400).json({ message: 'Invalid team ID' });
     try {
-      const myRole = await storage.getUserTeamRole(actorUserId, teamId);
+      const myRole = (await callerIsActive(actorUserId))
+        ? await storage.getUserTeamRole(actorUserId, teamId)
+        : null;
       if (!myRole) return res.status(403).json({ message: 'You are not a member of this team' });
       const members = await storage.listTeamMembers(teamId);
       return res.json({ teamId, myRole, members });
@@ -51,25 +62,36 @@ export function registerTeamMembershipRoutes(app: Express, storage: DBStorage) {
     }
   });
 
-  // Accounts the caller may add: members of the team's organization that are not in the team yet.
-  app.get('/api/teams/:teamId/member-candidates', authMiddleware, async (req: AuthRequest, res) => {
-    const teamId = parseTeamId(req.params.teamId);
-    const actorUserId = Number(req.user?.id);
-    if (!teamId) return res.status(400).json({ message: 'Invalid team ID' });
-    const rawQuery = req.query.q;
-    if (rawQuery !== undefined && (typeof rawQuery !== 'string' || rawQuery.length > 100)) {
-      return res.status(400).json({ message: 'Invalid search' });
-    }
-    try {
-      const myRole = await storage.getUserTeamRole(actorUserId, teamId);
-      if (myRole !== 'owner' && myRole !== 'admin') {
-        return res.status(403).json({ message: 'Owner or admin role required' });
+  // Accounts the caller may add: members of the team's organization that are not in the team yet,
+  // for a search of at least two characters, ten at most, and whether there are more.
+  app.get(
+    '/api/teams/:teamId/member-candidates',
+    authMiddleware,
+    rlCandidates,
+    async (req: AuthRequest, res) => {
+      const teamId = parseTeamId(req.params.teamId);
+      const actorUserId = Number(req.user?.id);
+      if (!teamId) return res.status(400).json({ message: 'Invalid team ID' });
+      const rawQuery = req.query.q;
+      if (
+        rawQuery !== undefined &&
+        (typeof rawQuery !== 'string' || rawQuery.length > TEAM_CANDIDATE_MAX_QUERY_LENGTH)
+      ) {
+        return res.status(400).json({ message: 'Invalid search' });
       }
-      return res.json(await storage.listTeamMemberCandidates(teamId, rawQuery ?? ''));
-    } catch (error) {
-      return failure(res, error);
+      try {
+        const myRole = (await callerIsActive(actorUserId))
+          ? await storage.getUserTeamRole(actorUserId, teamId)
+          : null;
+        if (myRole !== 'owner' && myRole !== 'admin') {
+          return res.status(403).json({ message: 'Owner or admin role required' });
+        }
+        return res.json(await storage.listTeamMemberCandidates(teamId, rawQuery ?? ''));
+      } catch (error) {
+        return failure(res, error);
+      }
     }
-  });
+  );
 
   app.post('/api/teams/:teamId/memberships', authMiddleware, async (req: AuthRequest, res) => {
     const teamId = parseTeamId(req.params.teamId);
@@ -79,6 +101,8 @@ export function registerTeamMembershipRoutes(app: Express, storage: DBStorage) {
     try {
       const result = await storage.admitTeamMember(teamId, actorUserId, email);
       if (!result.ok) return res.status(result.status).json(result.body);
+      // A new membership changes what the account can reach: its open sessions re-check now
+      if (result.value.created) await notifyPageAccessChanged(result.value.membership.userId);
       return res.status(result.value.created ? 201 : 200).json(result.value.membership);
     } catch (error) {
       return failure(res, error);
