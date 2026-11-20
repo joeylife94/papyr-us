@@ -414,6 +414,24 @@ describe('tag changes equal what reading and writing the tags back did (real Pos
     }
   );
 
+  it('a remove-only bulk request keeps existing duplicates; one that adds (even nothing) collapses them', async () => {
+    const { bulkTagChange } = await import('../../server/services/bulk-tags.js');
+    for (const [add, remove] of [
+      [undefined, ['b']],
+      [[], ['b']],
+      [['x'], undefined],
+      [undefined, undefined],
+    ] as Array<[string[] | undefined, string[] | undefined]>) {
+      const existing = ['a', 'a', 'b'];
+      const id = await withTags(
+        `bulk-${JSON.stringify([add, remove])}`.replace(/\W+/g, '-'),
+        existing
+      );
+      const merged = await storage.mergePageTags(id, bulkTagChange(add, remove));
+      expect(merged.tags).toEqual(tagsBefore(existing, add, remove));
+    }
+  });
+
   it('leaves a trashed page untouched and does not answer it (the bulk route skips and does not count it)', async () => {
     const id = await withTags('merge-trashed', ['a']);
     await admin.query(`UPDATE ${SCHEMA}.wiki_pages SET deleted_at = NOW() WHERE id = $1`, [id]);

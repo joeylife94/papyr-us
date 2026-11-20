@@ -477,8 +477,18 @@ function EditablePageBody({
   // tells it to show the new text (and how often that happened).
   // The block components keep their own copy of a block's text (heading, to-do and code do not
   // follow their props), so when blocks are taken over from the stored page the body is mounted
-  // again; the person is never writing the body then (blocks they write collide instead).
-  const [bodyKey, setBodyKey] = useState(0);
+  // again (`bodyEpoch` is its key). The person is never writing the body then: blocks they write,
+  // or have focus in, collide instead of being taken over.
+  //
+  // Every emission of the body is tied to the epoch of the render whose callback carried it. Some
+  // blocks report their state from an effect with whatever body they last rendered with (a table
+  // does on every render), so right after the body was taken over, the old instance can still
+  // report the old body. `bodyEpochRef` moves on synchronously when blocks are adopted, while the
+  // state (and so the callbacks of renders made before the adoption took effect) keeps the old
+  // value until the new body renders; an emission whose epoch is not the current one is dropped.
+  const [bodyEpoch, setBodyEpoch] = useState(0);
+  const bodyEpochRef = useRef(0);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const [titleReplace, setTitleReplace] = useState<{ token: number; text: string } | undefined>();
   const [blocks, setBlocks] = useState<Block[]>(() => initialBlocksFor(page));
   // The blocks last shown, read synchronously: the Yjs sync hands back the blocks the page
@@ -501,7 +511,8 @@ function EditablePageBody({
       } else if (field === 'blocks') {
         blocksRef.current = initialBlocksFor(source);
         setBlocks(blocksRef.current);
-        setBodyKey((key) => key + 1);
+        bodyEpochRef.current += 1;
+        setBodyEpoch(bodyEpochRef.current);
       } else if (field === 'tags') setTagsText(source.tags.join(', '));
       else if (field === 'folder') setFolder(source.folder);
       else if (field === 'icon') setIcon(source.icon ?? null);
@@ -517,12 +528,17 @@ function EditablePageBody({
     page,
     guarded: !flags.FEATURE_COLLABORATION,
     adopt: adoptFields,
+    // Focus inside the body editor: it may hold input it has not emitted (an open table cell).
+    writing: () => (bodyRef.current?.contains(document.activeElement) ? ['blocks'] : []),
+    current: (field) => (field === 'blocks' ? blocksRef.current : undefined),
     onSaved: () => {
       // Lists and the sidebar show titles, icons and folders; refresh them quietly.
       void invalidatePageLists(queryClient);
     },
   });
 
+  // The epoch this render's callbacks belong to.
+  const emitterEpoch = bodyEpoch;
   const content = useMemo(() => blocksToContent(blocks), [blocks]);
   useEffect(() => onContentChange(content), [content, onContentChange]);
 
@@ -641,11 +657,12 @@ function EditablePageBody({
         <PageTagLinks tags={parseTags(tagsText)} />
         {actions}
       </header>
-      <div data-page-body className="min-w-0">
+      <div data-page-body ref={bodyRef} className="min-w-0">
         <BlockEditor
-          key={bodyKey}
+          key={bodyEpoch}
           blocks={blocks}
           onChange={(next) => {
+            if (emitterEpoch !== bodyEpochRef.current) return;
             if (jsonEqual(next, blocksRef.current)) return;
             blocksRef.current = next;
             setBlocks(next);

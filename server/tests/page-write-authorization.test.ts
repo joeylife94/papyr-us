@@ -185,7 +185,7 @@ describe('Bulk page operations need the single-page level on every listed page',
       .set(as(EDITOR))
       .send({ pageIds: [PAGE_A], addTags: ['t1'] });
     expect(ok.status).toBe(200);
-    expect(storage.mergePageTags).toHaveBeenCalledWith(PAGE_A, { add: ['t1'], remove: [] });
+    expect(storage.mergePageTags).toHaveBeenCalledWith(PAGE_A, { add: ['t1'], remove: undefined });
 
     storage.mergePageTags.mockClear();
     const denied = await request(app)

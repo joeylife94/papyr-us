@@ -687,3 +687,278 @@ async function openMixed(person: Person, slug: string) {
   await expect(rowField(page, `h-${slug}`)).toHaveValue('Heading original');
   return page;
 }
+
+// --- A block that reports its own state from an effect must not write the old body back ---
+
+const tableBlock = (
+  slug: string,
+  cells = [
+    ['', ''],
+    ['', ''],
+  ]
+) => ({
+  id: `t-${slug}`,
+  type: 'table',
+  content: '',
+  properties: { tableData: { rows: 2, cols: 2, cells, headers: true } },
+  order: 1,
+  children: [],
+});
+
+const paragraphAndTable = (slug: string, text: string) => [
+  { id: `p-${slug}`, type: 'paragraph', content: text, properties: {}, order: 0, children: [] },
+  tableBlock(slug),
+];
+
+async function createPageWith(owner: Person, editor: Person, slug: string, blocks: unknown[]) {
+  const created = await owner.api.post('/api/pages', {
+    data: {
+      title: `WP1 table ${slug}`,
+      slug,
+      content: 'x',
+      blocks,
+      folder: 'docs',
+      author: owner.email,
+      tags: [],
+    },
+  });
+  expect(created.status()).toBe(201);
+  const pageId: number = (await created.json()).id;
+  const grant = await owner.api.post(`/api/pages/${pageId}/permissions`, {
+    data: { entityType: 'user', entityId: editor.id, permission: 'editor' },
+  });
+  expect(grant.status()).toBe(201);
+  return pageId;
+}
+
+/** The bodies of the autosave requests a page sends. */
+function recordSaves(page: Page) {
+  const bodies: Array<Record<string, unknown>> = [];
+  page.on('request', (request) => {
+    if (request.method() === 'PUT' && request.url().endsWith('/autosave')) {
+      bodies.push(JSON.parse(request.postData() ?? '{}'));
+    }
+  });
+  return bodies;
+}
+
+test.describe('Blocks that report their own state', () => {
+  test('a table block does not write the old paragraph back after the body was adopted', async ({
+    browser,
+  }) => {
+    await withPeople(browser, 'wp1-table', async (alice, bob) => {
+      const slug = `wp1-table-${stamp()}`;
+      const pageId = await createPageWith(
+        alice,
+        bob,
+        slug,
+        paragraphAndTable(slug, 'Para original')
+      );
+      const bobPage = await openEditor(bob, slug, 'Para original');
+      const sent = recordSaves(bobPage);
+      await writeAs(alice, pageId, { blocks: paragraphAndTable(slug, 'Para by Alice') });
+
+      await bobPage.getByTestId('page-title').fill('Bob title');
+      await expect.poll(async () => (await storedPage(alice.api, pageId)).title).toBe('Bob title');
+      await expect(bobPage.getByTestId('page-save-conflict')).toHaveCount(0);
+      await expect(firstBlock(bobPage)).toHaveValue('Para by Alice');
+      expect(await storedText(alice.api, pageId)).toBe('Para by Alice');
+      // The resend carried the title only: no body computed from the old one went out.
+      expect(sent.filter((body) => 'blocks' in body)).toEqual([]);
+    });
+  });
+
+  test('a person with the cursor in a table cell is asked, not overwritten', async ({
+    browser,
+  }) => {
+    await withPeople(browser, 'wp1-table-cell', async (alice, bob) => {
+      const slug = `wp1-cell-${stamp()}`;
+      const pageId = await createPageWith(
+        alice,
+        bob,
+        slug,
+        paragraphAndTable(slug, 'Para original')
+      );
+      const bobPage = await openEditor(bob, slug, 'Para original');
+      await writeAs(alice, pageId, { blocks: paragraphAndTable(slug, 'Para by Alice') });
+
+      await bobPage.getByTestId('page-title').fill('Bob title');
+      await bobPage.locator('[data-page-body] td').first().click();
+      const cell = bobPage.locator('[data-page-body] td input');
+      await expect(cell).toBeVisible();
+      await cell.pressSequentially('Bob cell text');
+
+      const conflict = bobPage.getByTestId('page-save-conflict');
+      await expect(conflict).toBeVisible();
+      await expect(conflict.getByTestId('page-save-conflict-theirs-blocks')).toContainText(
+        'Para by Alice'
+      );
+      // What he was typing is still there, and Alice's paragraph is what is stored.
+      await expect(cell).toHaveValue('Bob cell text');
+      expect(await storedText(alice.api, pageId)).toBe('Para by Alice');
+      const contents = await versionContents(alice.api, pageId);
+      expect(contents.some((content) => content.includes('Para by Alice'))).toBe(true);
+    });
+  });
+
+  test('every block that keeps its own state shows the adopted body, and nothing stale is written later', async ({
+    browser,
+  }) => {
+    await withPeople(browser, 'wp1-local', async (alice, bob) => {
+      const slug = `wp1-local-${stamp()}`;
+      // Blocks whose components keep state copied from their props.
+      const make = (who: string) => {
+        const block = (
+          id: string,
+          type: string,
+          content: string,
+          order: number,
+          properties: Record<string, unknown> = {}
+        ) => ({ id: `${id}-${slug}`, type, content, properties, order, children: [] });
+        return [
+          block('h', 'heading1', `Heading ${who}`, 0),
+          block('c', 'checkbox', `Todo ${who}`, 1, { checked: who === 'alice' }),
+          block('k', 'code', `let code = '${who}'`, 2, {
+            language: who === 'alice' ? 'python' : 'javascript',
+          }),
+          block('i', 'image', '', 3, { url: `/uploads/${who}.png`, caption: `Caption ${who}` }),
+          block('e', 'embed', '', 4, { url: `https://example.com/${who}` }),
+          block('q', 'quote', `Quote ${who}`, 5, {
+            source: `Source ${who}`,
+            author: `Author ${who}`,
+          }),
+          block('l', 'callout', `Callout ${who}`, 6),
+          {
+            ...tableBlock(slug, [
+              [who, ''],
+              ['', ''],
+            ]),
+            id: `t-${slug}`,
+            order: 7,
+          },
+          block('p', 'paragraph', `Paragraph ${who}`, 8),
+        ];
+      };
+      const pageId = await createPageWith(alice, bob, slug, make('original'));
+      const bobPage = await context2(bob, slug);
+      const sent = recordSaves(bobPage);
+      await writeAs(alice, pageId, { blocks: make('alice') });
+
+      await bobPage.getByTestId('page-title').fill('Bob title');
+      await expect.poll(async () => (await storedPage(alice.api, pageId)).title).toBe('Bob title');
+      await expect(bobPage.getByTestId('page-save-conflict')).toHaveCount(0);
+      await expect(rowField(bobPage, `h-${slug}`)).toHaveValue('Heading alice');
+      await expect(rowField(bobPage, `k-${slug}`)).toHaveValue("let code = 'alice'");
+
+      // A stale emission could come at any later render: look again after the editor has had time
+      // to send anything it was going to (autosave goes out about a second after a change).
+      await bobPage.waitForTimeout(3000);
+      const stored = await storedPage(alice.api, pageId);
+      expect(stored.blocks).toEqual(make('alice'));
+      expect(sent.filter((body) => 'blocks' in body)).toEqual([]);
+    });
+  });
+});
+
+async function context2(person: Person, slug: string) {
+  const page = await person.context.newPage();
+  await page.goto(`/page/${slug}`);
+  await expect(page.getByTestId('page-title')).toHaveAttribute('contenteditable', 'true');
+  await expect(rowField(page, `h-${slug}`)).toHaveValue('Heading original');
+  return page;
+}
+
+// --- A page created from a draft, changed by something else right after it was created ---
+
+const draftBody = (page: Page) => page.locator('textarea').first();
+async function typeDraftBody(page: Page, text: string) {
+  await page.getByRole('button', { name: '단락', exact: true }).click();
+  await draftBody(page).fill(text);
+}
+
+/** Open /create, type the title, hold the create answer until `release()`, and return what is needed. */
+async function draftUntilCreated(person: Person) {
+  const page = await person.context.newPage();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  let created!: (value: { id: number; slug: string }) => void;
+  const createdPage = new Promise<{ id: number; slug: string }>((resolve) => (created = resolve));
+  await page.route('**/api/pages', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    const response = await route.fetch();
+    created(await response.json());
+    await gate;
+    return route.fulfill({ response });
+  });
+  await page.goto('/create');
+  await page.getByTestId('page-title').fill(`Draft ${stamp()}`);
+  return { page, release, createdPage };
+}
+
+test.describe('A page just created from a draft', () => {
+  test('a tag added by a workflow right after creation does not stop the draft being saved', async ({
+    browser,
+  }) => {
+    const bob = await newPerson(browser, 'wp1-new-tag');
+    try {
+      const { page, release, createdPage } = await draftUntilCreated(bob);
+      const { id, slug } = await createdPage;
+      let wrote = false;
+      await page.route('**/api/pages/*/autosave', async (route) => {
+        if (!wrote) {
+          wrote = true;
+          // What a `page_created` workflow does: change the page after it was created.
+          await writeAs(bob, id, { tags: ['added-by-workflow'] });
+        }
+        return route.continue();
+      });
+      // The draft goes on while the page is being created.
+      await typeDraftBody(page, 'Draft body');
+      release();
+
+      await expect(page).toHaveURL(new RegExp(`/page/${slug}$`));
+      await expect.poll(() => storedText(bob.api, id)).toBe('Draft body');
+      const stored = await storedPage(bob.api, id);
+      expect(stored.tags).toEqual(['added-by-workflow']);
+    } finally {
+      await bob.context.close();
+    }
+  });
+
+  test('a body changed right after creation stops the draft, keeps it on screen and offers the page', async ({
+    browser,
+  }) => {
+    const bob = await newPerson(browser, 'wp1-new-body');
+    try {
+      const { page, release, createdPage } = await draftUntilCreated(bob);
+      const { id, slug } = await createdPage;
+      let wrote = false;
+      await page.route('**/api/pages/*/autosave', async (route) => {
+        if (!wrote) {
+          wrote = true;
+          await writeAs(bob, id, { blocks: body('b-other', 'Written elsewhere') });
+        }
+        return route.continue();
+      });
+      await typeDraftBody(page, 'Draft body');
+      release();
+
+      const notice = page.getByTestId('new-page-changed-elsewhere');
+      await expect(notice).toBeVisible();
+      await expect(notice).toContainText('다른 곳에서 수정되었습니다');
+      await expect(notice).toContainText('버전 기록');
+      // No navigation by itself, the draft is still on screen, the page holds the other text.
+      await expect(page).toHaveURL(/\/create/);
+      await expect(draftBody(page)).toHaveValue('Draft body');
+      expect(await storedText(bob.api, id)).toBe('Written elsewhere');
+      const contents = await versionContents(bob.api, id);
+      expect(contents.some((content) => content.includes('Draft body'))).toBe(true);
+
+      await notice.getByRole('button', { name: '문서 열기' }).click();
+      await expect(page).toHaveURL(new RegExp(`/page/${slug}$`));
+      await expect(firstBlock(page)).toHaveValue('Written elsewhere');
+    } finally {
+      await bob.context.close();
+    }
+  });
+});

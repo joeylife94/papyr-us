@@ -1,4 +1,5 @@
 import type { Block, PageCover, WikiPage } from '@shared/schema';
+import { jsonEqual } from '@shared/json-equal';
 
 /**
  * The autosave state machine of one open page (issue #103 E2, WP1), kept apart from React so it
@@ -74,6 +75,14 @@ export interface AutosaveHandlers {
    * writing: show these values of `page` now (before anything is saved on top of them).
    */
   adopt?: (page: PageWithRevision, fields: PageField[]) => void;
+  /**
+   * Fields the person is writing right now without having emitted them yet (their focus is inside
+   * the body editor, which may hold input it has not reported). They count as written when a
+   * refusal is decided, so such a field is never silently replaced.
+   */
+  writing?: () => PageField[];
+  /** The value the editor shows for `field`, to save when the person keeps their version. */
+  current?: (field: PageField) => AutosavePatch[PageField];
 }
 
 export interface AutosaveOptions {
@@ -91,12 +100,77 @@ const RETRY_BASE_MS = 2000;
 const RETRY_MAX_MS = 30000;
 
 /** Fields of `page` that differ from what the editor last knew; unknown counts as different. */
-function changedSince(known: FieldRevisions | undefined, page: PageWithRevision): PageField[] {
+export function changedSince(
+  known: FieldRevisions | undefined,
+  page: PageWithRevision
+): PageField[] {
   return PAGE_FIELDS.filter((field) => {
     const before = known?.[field];
     const now = page.fieldRevisions?.[field];
     return before === undefined || now === undefined || before !== now;
   });
+}
+
+/** Whether the stored `page` already holds `value` for `field` (the same comparison as the echo guard). */
+function storedEquals(field: PageField, value: unknown, page: PageWithRevision): boolean {
+  const metadata = page.metadata as { cover?: unknown } | null | undefined;
+  switch (field) {
+    case 'icon':
+      return (value ?? null) === (page.icon ?? null);
+    case 'cover':
+      return jsonEqual(value ?? null, metadata?.cover ?? null);
+    default:
+      return jsonEqual(value, (page as Record<string, unknown>)[field]);
+  }
+}
+
+export type RefusalDecision =
+  | {
+      kind: 'rebase';
+      /** Changed in the stored page, not written here: show these before resending. */
+      adopt: PageField[];
+      /** Written here and already stored with the same value: nothing to resend for them. */
+      settled: PageField[];
+    }
+  | { kind: 'conflict'; fields: PageField[] };
+
+/**
+ * What to do with a save the server refused because the stored page moved on, given what the
+ * editor last knew of it (`known`), the page in the refusal and the patch that was refused. Pure,
+ * so the editor and the new-page screen decide alike.
+ *
+ * - A field that is written (in the patch, or being typed: `writing`) and changed in the stored
+ *   page collides, unless the stored value already equals the written one (an earlier save whose
+ *   answer was lost): that field is settled and not resent.
+ * - Nothing collides and `canRebase`: adopt the other changed fields and send the rest again.
+ * - Otherwise a conflict; when nothing collides (a second refusal in a row) it lists what changed.
+ */
+export function decideRefusal(input: {
+  known: FieldRevisions | undefined;
+  page: PageWithRevision;
+  patch: AutosavePatch;
+  writing?: PageField[];
+  canRebase: boolean;
+}): RefusalDecision {
+  const { known, page, patch, canRebase } = input;
+  const writing = input.writing ?? [];
+  const changed = changedSince(known, page);
+  const inPatch = Object.keys(patch) as PageField[];
+  const written = [...new Set([...inPatch, ...writing])];
+  const settled = changed.filter(
+    (field) =>
+      inPatch.includes(field) && !writing.includes(field) && storedEquals(field, patch[field], page)
+  );
+  const colliding = changed.filter((field) => written.includes(field) && !settled.includes(field));
+  if (colliding.length === 0 && (canRebase || settled.length > 0)) {
+    // Settling alone is no retry: only a resend of the rest uses up the one automatic re-base.
+    return {
+      kind: 'rebase',
+      adopt: changed.filter((field) => !written.includes(field)),
+      settled,
+    };
+  }
+  return { kind: 'conflict', fields: colliding.length > 0 ? colliding : changed };
 }
 
 export class AutosaveController {
@@ -115,6 +189,13 @@ export class AutosaveController {
   private retryTimer: ReturnType<typeof setTimeout> | undefined;
   private failures = 0;
   private autoRebases = 0;
+  /** Set by a silent re-base until its resend has gone out (or been stopped). */
+  private rebased: {
+    page: PageWithRevision;
+    revision: string;
+    adopted: PageField[];
+    carried: PageField[];
+  } | null = null;
   private mounted = true;
   private inFlight: Promise<void> | null = null;
 
@@ -181,6 +262,24 @@ export class AutosaveController {
     // Serialize saves so an older patch can never land after a newer one.
     if (this.inFlight) await this.inFlight;
     if (this.snapshot.conflict || !this.hasPending) return;
+    // The resend after a silent re-base carries only the fields that were refused. If the patch
+    // has gained a field that was just taken over from the stored page, what it holds was
+    // computed from the body before that: no silent resend, the person decides.
+    const rebased = this.rebased;
+    this.rebased = null;
+    if (rebased) {
+      const gained = rebased.adopted.filter(
+        (field) => field in this.pending && !rebased.carried.includes(field)
+      );
+      if (gained.length > 0) {
+        this.clearTimers();
+        this.set({
+          status: 'conflict',
+          conflict: { page: rebased.page, currentRevision: rebased.revision, fields: gained },
+        });
+        return;
+      }
+    }
     const body = this.pending;
     this.pending = {};
     this.hasPending = false;
@@ -239,35 +338,52 @@ export class AutosaveController {
   /** The fields being written that also changed in `page`; if none, whatever changed. */
   private collidingFields(page: PageWithRevision): PageField[] {
     const changed = changedSince(this.known, page);
-    const written = Object.keys(this.pending) as PageField[];
+    const written = [
+      ...new Set([...(Object.keys(this.pending) as PageField[]), ...this.writingNow()]),
+    ];
     const colliding = changed.filter((field) => written.includes(field));
     return colliding.length > 0 ? colliding : changed;
   }
 
+  private writingNow(): PageField[] {
+    return this.handlers.writing?.() ?? [];
+  }
+
   private refused(body: AutosavePatch, page: PageWithRevision, currentRevision: string) {
-    this.pending = { ...body, ...this.pending };
-    this.hasPending = true;
+    const merged: AutosavePatch = { ...body, ...this.pending };
     this.failures = 0;
     this.clearTimers();
-    const written = Object.keys(this.pending) as PageField[];
-    const changed = changedSince(this.known, page);
-    const colliding = changed.filter((field) => written.includes(field));
-    if (colliding.length === 0 && this.autoRebases < 1) {
-      // Nobody touched what is being written: take over the rest and send the same patch again.
-      this.autoRebases += 1;
-      this.handlers.adopt?.(
-        page,
-        changed.filter((field) => !written.includes(field))
-      );
+    const decision = decideRefusal({
+      known: this.known,
+      page,
+      patch: merged,
+      writing: this.writingNow(),
+      canRebase: this.autoRebases < 1,
+    });
+    if (decision.kind === 'rebase') {
+      // Nobody touched what is being written: take over the rest and send what is left again.
+      for (const field of decision.settled) delete merged[field];
+      const carried = Object.keys(merged) as PageField[];
+      this.pending = merged;
+      this.hasPending = carried.length > 0;
+      this.handlers.adopt?.(page, decision.adopt);
       this.base = currentRevision;
       this.known = page.fieldRevisions;
+      if (!this.hasPending) {
+        this.set({ status: 'saved' });
+        return;
+      }
+      this.autoRebases += 1;
+      this.rebased = { page, revision: currentRevision, adopted: decision.adopt, carried };
       this.set({ status: 'pending' });
       this.idleTimer = setTimeout(() => void this.send(false), 0);
       return;
     }
+    this.pending = merged;
+    this.hasPending = true;
     this.set({
       status: 'conflict',
-      conflict: { page, currentRevision, fields: this.collidingFields(page) },
+      conflict: { page, currentRevision, fields: decision.fields },
     });
   }
 
@@ -278,14 +394,26 @@ export class AutosaveController {
   keepMine() {
     const open = this.snapshot.conflict;
     if (!open) return;
-    const written = Object.keys(this.pending) as PageField[];
+    // The fields the notice lists are mine: they are saved as the editor shows them (also when
+    // the editor had not reported them yet), and never taken over from the stored page.
+    for (const field of open.fields) {
+      if (!(field in this.pending) && this.handlers.current) {
+        (this.pending as Record<string, unknown>)[field] = this.handlers.current(field);
+      }
+    }
+    const written = new Set([
+      ...(Object.keys(this.pending) as PageField[]),
+      ...this.writingNow(),
+      ...open.fields,
+    ]);
     this.handlers.adopt?.(
       open.page,
-      changedSince(this.known, open.page).filter((field) => !written.includes(field))
+      changedSince(this.known, open.page).filter((field) => !written.has(field))
     );
     this.base = open.currentRevision;
     this.known = open.page.fieldRevisions;
     this.autoRebases = 0;
+    this.hasPending = Object.keys(this.pending).length > 0;
     this.set({ conflict: null, status: 'pending' });
     void this.send(false);
   }
@@ -326,6 +454,7 @@ export class AutosaveController {
     this.hasPending = false;
     this.failures = 0;
     this.autoRebases = 0;
+    this.rebased = null;
     this.clearTimers();
     if (page) {
       this.base = page.revision;

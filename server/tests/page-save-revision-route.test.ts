@@ -228,6 +228,19 @@ describe('PUT /api/pages/:id/autosave with a base revision', () => {
     expect((await autosave(body)).status).toBe(401);
     expect(storage.updateWikiPage).not.toHaveBeenCalled();
   });
+
+  it('passes nothing for a list the request does not carry (a remove-only request keeps duplicates)', async () => {
+    storage.mergePageTags.mockClear();
+    storage.mergePageTags.mockResolvedValue({ ...stored });
+    const res = await request(app)
+      .post('/api/pages/bulk/tags')
+      .set(as(EDITOR))
+      .send({ pageIds: [PAGE], removeTags: ['b'] });
+    expect(res.status).toBe(200);
+    const [, change] = storage.mergePageTags.mock.calls[0];
+    expect(change.add).toBeUndefined();
+    expect(change.remove).toEqual(['b']);
+  });
 });
 
 describe('PUT /api/pages/:id with a base revision', () => {

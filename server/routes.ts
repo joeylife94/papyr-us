@@ -87,6 +87,7 @@ import {
   setSessionClosedHandler,
   storagePageSaveStore,
 } from './services/page-save.js';
+import { bulkTagChange } from './services/bulk-tags.js';
 import {
   PageRevisionConflictError,
   pageFieldRevisions,
@@ -1507,10 +1508,7 @@ export async function registerRoutes(
       // Each page's tags are merged in one statement against the tags it has at that moment, so a
       // tag someone saved in between is kept.
       for (const pageId of pageIds) {
-        const page = await storage.mergePageTags(pageId, {
-          add: Array.isArray(addTags) ? addTags : [],
-          remove: Array.isArray(removeTags) ? removeTags : [],
-        });
+        const page = await storage.mergePageTags(pageId, bulkTagChange(addTags, removeTags));
         if (page) updated++;
       }
 

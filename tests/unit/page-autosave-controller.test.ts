@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AutosaveController,
   IDLE_DELAY_MS,
+  decideRefusal,
   type PageWithRevision,
 } from '../../client/src/lib/page-autosave-controller';
 
@@ -360,7 +361,7 @@ describe('load latest', () => {
       () => conflictAnswer(stored('r2', rev('y', 'b1'))),
       () => Promise.reject(new Error('offline'))
     );
-    ctl.queue({ blocks: [] });
+    ctl.queue({ blocks: [{ id: 'mine' } as any] });
     await settle();
     const latest = await ctl.loadLatest();
     expect(latest?.revision).toBe('r2');
@@ -507,5 +508,207 @@ describe('metadata that is not the cover', () => {
     const snapshot = ctl.getSnapshot();
     expect(snapshot.status).toBe('conflict');
     expect(snapshot.conflict?.fields).toEqual([]);
+  });
+});
+
+describe('the body adopted in a silent re-base', () => {
+  it('is not silently resent when the patch gained it before the resend: the notice opens listing it', async () => {
+    const ctl = controller();
+    answers.push(() => conflictAnswer(stored('r2', rev('x', 'b1'))));
+    ctl.queue({ title: 'Mine' });
+    // The refusal is handled; the resend is scheduled but has not gone out.
+    await vi.advanceTimersByTimeAsync(IDLE_DELAY_MS);
+    expect(events).toEqual(['fetch PUT autosave', 'adopt blocks']);
+    // An emission computed from the body before the adoption is queued in between.
+    ctl.queue({ blocks: [{ id: 'stale body' } as any] });
+    await vi.advanceTimersByTimeAsync(IDLE_DELAY_MS + 5);
+
+    expect(saves()).toHaveLength(1);
+    const snapshot = ctl.getSnapshot();
+    expect(snapshot.status).toBe('conflict');
+    expect(snapshot.conflict?.fields).toEqual(['blocks']);
+    expect(snapshot.conflict?.currentRevision).toBe('r2');
+  });
+
+  it('is resent as before when nothing of it was queued', async () => {
+    const ctl = controller();
+    answers.push(
+      () => conflictAnswer(stored('r2', rev('x', 'b1'))),
+      () => savedAnswer('r3', rev('y', 'b1'))
+    );
+    ctl.queue({ title: 'Mine' });
+    await settle();
+    expect(saves()).toHaveLength(2);
+    expect(saves()[1].body).toEqual({ title: 'Mine', baseRevision: 'r2' });
+  });
+});
+
+describe('input the body editor has not emitted yet', () => {
+  it('counts as written when the person has focus in the body: a changed body is a conflict, not replaced', async () => {
+    const ctl = controller();
+    ctl.handlers = { ...ctl.handlers, writing: () => ['blocks'] };
+    answers.push(() => conflictAnswer(stored('r2', rev('x', 'b1'))));
+    ctl.queue({ title: 'Mine' });
+    await settle();
+    await settle(10000);
+    expect(events).toEqual(['fetch PUT autosave']);
+    expect(saves()).toHaveLength(1);
+    expect(ctl.getSnapshot().status).toBe('conflict');
+    expect(ctl.getSnapshot().conflict?.fields).toEqual(['blocks']);
+  });
+
+  it('is not a conflict when the body did not change, and nothing is adopted', async () => {
+    const ctl = controller();
+    ctl.handlers = { ...ctl.handlers, writing: () => ['blocks'] };
+    answers.push(
+      () => conflictAnswer(stored('r2', rev('x', 'b0', 't1'))),
+      () => savedAnswer('r3', rev('y', 'b0', 't1'))
+    );
+    ctl.queue({ title: 'Mine' });
+    await settle();
+    expect(events).toEqual(['fetch PUT autosave', 'adopt tags', 'fetch PUT autosave']);
+    expect(ctl.getSnapshot().conflict).toBeNull();
+  });
+
+  it('keep mine saves the body as the editor shows it, and does not take over the stored one', async () => {
+    const ctl = controller();
+    ctl.handlers = {
+      ...ctl.handlers,
+      writing: () => ['blocks'],
+      current: (field) => (field === 'blocks' ? [{ id: 'mine' } as any] : undefined),
+    };
+    answers.push(
+      () => conflictAnswer(stored('r2', rev('x', 'b1'))),
+      () => savedAnswer('r3')
+    );
+    ctl.queue({ title: 'Mine' });
+    await settle();
+    ctl.keepMine();
+    await settle(0);
+    expect(events).not.toContain('adopt blocks');
+    expect(saves()[1].body).toEqual({
+      title: 'Mine',
+      blocks: [{ id: 'mine' }],
+      baseRevision: 'r2',
+    });
+  });
+});
+
+describe('a save whose answer was lost', () => {
+  const cases: Array<[string, any, any, (v: any) => object]> = [
+    ['title', { title: 'Mine' }, rev('y'), (v) => ({ title: v.title })],
+    [
+      'body',
+      { blocks: [{ id: 'b', content: 'Mine' }] },
+      rev('x', 'b1'),
+      (v) => ({ blocks: v.blocks }),
+    ],
+    ['tags', { tags: ['mine'] }, rev('x', 'b0', 't1'), (v) => ({ tags: v.tags })],
+  ];
+  it.each(cases)(
+    'is not a collision with itself when the stored %s already is what was written',
+    async (_name, patch, tokens, stor) => {
+      const ctl = controller();
+      answers.push(
+        () => Promise.reject(new Error('answer lost')),
+        () => conflictAnswer(stored('r2', tokens, stor(patch)))
+      );
+      ctl.queue(patch);
+      await settle();
+      expect(ctl.getSnapshot().status).toBe('error');
+      await settle(2000);
+
+      expect(saves()).toHaveLength(2);
+      expect(ctl.getSnapshot()).toMatchObject({ status: 'saved', conflict: null });
+      expect(events.filter((e) => e.startsWith('adopt'))).toEqual(['adopt ']);
+      // The next save is based on the revision the refusal carried.
+      answers.push(() => savedAnswer('r3'));
+      ctl.queue({ folder: 'next' });
+      await settle();
+      expect(saves()[2].body.baseRevision).toBe('r2');
+    }
+  );
+
+  it('resends only what is not stored yet', async () => {
+    const ctl = controller();
+    answers.push(
+      () => Promise.reject(new Error('answer lost')),
+      () => conflictAnswer(stored('r2', rev('y'), { title: 'Mine' })),
+      () => savedAnswer('r3')
+    );
+    ctl.queue({ title: 'Mine', folder: 'docs-2' });
+    await settle();
+    await settle(2000);
+    expect(saves()).toHaveLength(3);
+    expect(saves()[2].body).toEqual({ folder: 'docs-2', baseRevision: 'r2' });
+  });
+
+  it('stays a conflict when the stored value is not equal (the server rewrote it)', async () => {
+    const ctl = controller();
+    answers.push(
+      () => Promise.reject(new Error('answer lost')),
+      () => conflictAnswer(stored('r2', rev('y'), { title: 'Mine (normalized)' }))
+    );
+    ctl.queue({ title: 'Mine' });
+    await settle();
+    await settle(2000);
+    expect(ctl.getSnapshot().status).toBe('conflict');
+    expect(ctl.getSnapshot().conflict?.fields).toEqual(['title']);
+  });
+});
+
+describe('decideRefusal', () => {
+  const page = (tokens: ReturnType<typeof rev>, extra: object = {}) => stored('r2', tokens, extra);
+  const known = rev('x');
+
+  it('re-bases when nothing written changed, adopting the other changed fields', () => {
+    expect(
+      decideRefusal({
+        known,
+        page: page(rev('x', 'b1', 't1')),
+        patch: { title: 'T' },
+        canRebase: true,
+      })
+    ).toEqual({ kind: 'rebase', adopt: ['blocks', 'tags'], settled: [] });
+  });
+
+  it('is a conflict on a written field that changed, and lists the colliding fields only', () => {
+    expect(
+      decideRefusal({
+        known,
+        page: page(rev('y', 'b1')),
+        patch: { title: 'T', folder: 'f' },
+        canRebase: true,
+      })
+    ).toEqual({ kind: 'conflict', fields: ['title'] });
+  });
+
+  it('counts a field being typed in as written', () => {
+    expect(
+      decideRefusal({
+        known,
+        page: page(rev('x', 'b1')),
+        patch: { title: 'T' },
+        writing: ['blocks'],
+        canRebase: true,
+      })
+    ).toEqual({ kind: 'conflict', fields: ['blocks'] });
+  });
+
+  it('is a conflict listing what changed when it may not re-base and nothing collides', () => {
+    expect(
+      decideRefusal({ known, page: page(rev('x', 'b1')), patch: { title: 'T' }, canRebase: false })
+    ).toEqual({ kind: 'conflict', fields: ['blocks'] });
+  });
+
+  it('settles a written field the stored page already holds, even when it may not re-base', () => {
+    expect(
+      decideRefusal({
+        known,
+        page: page(rev('y'), { title: 'T' }),
+        patch: { title: 'T' },
+        canRebase: false,
+      })
+    ).toEqual({ kind: 'rebase', adopt: [], settled: ['title'] });
   });
 });
