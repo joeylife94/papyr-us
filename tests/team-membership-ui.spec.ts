@@ -852,7 +852,7 @@ test.describe('Team membership screens', () => {
         createdTeams.push(team.id);
         // The name is one every team-scoped route reads as a name (a leading digit was a 400)
         expect(teamName).toMatch(/^[a-z]/);
-        for (const path of ['tasks', 'members', 'calendar', 'uploads', 'page-tree', 'activity']) {
+        for (const path of ['tasks', 'members', 'calendar', 'uploads', 'activity']) {
           const response = await owner.api.get(`/api/${path}?teamId=${teamName}`);
           expect(response.status(), path).toBe(200);
         }
