@@ -40,14 +40,13 @@ let admin: Pool;
 let scoped: Pool;
 let storage: any;
 
-const page = (title: string, author: string, content = '') => ({
+const page = (title: string, content = '') => ({
   title,
   slug: `${title.toLowerCase().replace(/\W+/g, '-')}`,
   content,
   blocks: [],
   folder: 'docs',
   tags: [],
-  author,
 });
 
 async function linksFrom(sourceId: number): Promise<number[]> {
@@ -145,11 +144,11 @@ describe('page links (real Postgres)', () => {
   });
 
   it('keeps links in step with content on create and update, skipping unknown and self ids', async () => {
-    const target = await storage.createWikiPage(page('Target', ALICE.email, 'body'), ALICE.id);
-    const other = await storage.createWikiPage(page('Other', ALICE.email, 'body'), ALICE.id);
+    const target = await storage.createWikiPage(page('Target', 'body'), { userId: ALICE.id });
+    const other = await storage.createWikiPage(page('Other', 'body'), { userId: ALICE.id });
     const source = await storage.createWikiPage(
-      page('Source', ALICE.email, `see [[page:${target.id}]] and [[page:99999]]`),
-      ALICE.id
+      page('Source', `see [[page:${target.id}]] and [[page:99999]]`),
+      { userId: ALICE.id }
     );
     expect(await linksFrom(source.id)).toEqual([target.id]);
 
@@ -172,10 +171,10 @@ describe('page links (real Postgres)', () => {
   });
 
   it('an id beyond the page id column breaks neither the index nor the title lookup', async () => {
-    const target = await storage.createWikiPage(page('Big id target', ALICE.email), ALICE.id);
+    const target = await storage.createWikiPage(page('Big id target'), { userId: ALICE.id });
     const source = await storage.createWikiPage(
-      page('Big id source', ALICE.email, `[[page:${target.id}]] [[page:9999999999]]`),
-      ALICE.id
+      page('Big id source', `[[page:${target.id}]] [[page:9999999999]]`),
+      { userId: ALICE.id }
     );
     expect(await linksFrom(source.id)).toEqual([target.id]);
 
@@ -185,9 +184,9 @@ describe('page links (real Postgres)', () => {
   });
 
   it('concurrent saves leave the index matching the content that won', async () => {
-    const a = await storage.createWikiPage(page('Race A', ALICE.email, 'a'), ALICE.id);
-    const b = await storage.createWikiPage(page('Race B', ALICE.email, 'b'), ALICE.id);
-    const source = await storage.createWikiPage(page('Race source', ALICE.email, ''), ALICE.id);
+    const a = await storage.createWikiPage(page('Race A', 'a'), { userId: ALICE.id });
+    const b = await storage.createWikiPage(page('Race B', 'b'), { userId: ALICE.id });
+    const source = await storage.createWikiPage(page('Race source', ''), { userId: ALICE.id });
     for (let round = 0; round < 5; round += 1) {
       await Promise.all(
         Array.from({ length: 8 }, (_, i) =>
@@ -206,25 +205,22 @@ describe('page links (real Postgres)', () => {
   });
 
   it('lists backlinks and picker results only from pages the viewer may read', async () => {
-    const target = await storage.createWikiPage(page('Shared Plan', ALICE.email, 'x'), ALICE.id);
+    const target = await storage.createWikiPage(page('Shared Plan', 'x'), { userId: ALICE.id });
     // Creating a page makes its creator the explicit owner, so personal pages are private.
     const { rows: owners } = await scoped.query(
       `SELECT entity_id FROM page_permissions WHERE page_id = $1 AND permission = 'owner'`,
       [target.id]
     );
     expect(owners).toEqual([{ entity_id: ALICE.id }]);
-    const aliceSource = await storage.createWikiPage(
-      page('Alice notes', ALICE.email, `[[page:${target.id}]]`),
-      ALICE.id
-    );
-    const bobSource = await storage.createWikiPage(
-      page('Bob secret', BOB.email, `[[page:${target.id}]]`),
-      BOB.id
-    );
-    const trashed = await storage.createWikiPage(
-      page('Old draft', ALICE.email, `[[page:${target.id}]]`),
-      ALICE.id
-    );
+    const aliceSource = await storage.createWikiPage(page('Alice notes', `[[page:${target.id}]]`), {
+      userId: ALICE.id,
+    });
+    const bobSource = await storage.createWikiPage(page('Bob secret', `[[page:${target.id}]]`), {
+      userId: BOB.id,
+    });
+    const trashed = await storage.createWikiPage(page('Old draft', `[[page:${target.id}]]`), {
+      userId: ALICE.id,
+    });
     await storage.trashPages([trashed.id]);
 
     const aliceBacklinks = (await storage.getReadableBacklinks(ALICE.id, target.id)).map(
@@ -250,9 +246,9 @@ describe('page links (real Postgres)', () => {
 
   it('ranks an exact title first, then titles starting with the query (#111 switcher)', async () => {
     // Created oldest first, so recency alone would list the exact title last.
-    const exact = await storage.createWikiPage(page('Roadmap', ALICE.email), ALICE.id);
-    const prefix = await storage.createWikiPage(page('Roadmap notes', ALICE.email), ALICE.id);
-    const contains = await storage.createWikiPage(page('Old roadmap', ALICE.email), ALICE.id);
+    const exact = await storage.createWikiPage(page('Roadmap'), { userId: ALICE.id });
+    const prefix = await storage.createWikiPage(page('Roadmap notes'), { userId: ALICE.id });
+    const contains = await storage.createWikiPage(page('Old roadmap'), { userId: ALICE.id });
 
     const found = await storage.searchLinkTargets(ALICE.id, { personalOnly: true }, 'ROADMAP');
     expect(found.map((p: any) => p.id)).toEqual([exact.id, prefix.id, contains.id]);

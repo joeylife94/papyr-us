@@ -99,25 +99,26 @@ const page = (slug: string, teamId: number | null = null) => ({
   content: '',
   folder: 'logs',
   tags: [],
-  author: 'someone@example.com',
   teamId,
 });
 
 describe('daily note guards (real Postgres)', () => {
   it('never lets an ordinary create take a daily note slug', async () => {
-    const team = await storage.createWikiPage(page(`daily-2026-10-27-t${TEAM}`, TEAM));
+    const team = await storage.createWikiPage(page(`daily-2026-10-27-t${TEAM}`, TEAM), {
+      automation: true,
+    });
     // A team-less page takes its creator's organization (issue #124 X1)
-    const personal = await storage.createWikiPage(page('daily-2026-10-27-u42'), MEMBER);
+    const personal = await storage.createWikiPage(page('daily-2026-10-27-u42'), { userId: MEMBER });
     expect(team.slug).toBe(`daily-2026-10-27-t${TEAM}-2`);
     expect(personal.slug).toBe('daily-2026-10-27-u42-2');
 
     // Slugs that only look similar are left alone.
-    const similar = await storage.createWikiPage(page('daily-standup-notes'), MEMBER);
+    const similar = await storage.createWikiPage(page('daily-standup-notes'), { userId: MEMBER });
     expect(similar.slug).toBe('daily-standup-notes');
   });
 
   it('refuses to rename a page to a daily note slug', async () => {
-    const created = await storage.createWikiPage(page('plain-page'), MEMBER);
+    const created = await storage.createWikiPage(page('plain-page'), { userId: MEMBER });
     await expect(
       storage.updateWikiPage(created.id, { slug: `daily-2026-10-27-t${TEAM}` })
     ).rejects.toThrow(/reserved/);
@@ -128,7 +129,7 @@ describe('daily note guards (real Postgres)', () => {
   });
 
   it('counts a grant to the user’s team in getUserPagePermission', async () => {
-    const note = await storage.createWikiPage(page('team-note', TEAM));
+    const note = await storage.createWikiPage(page('team-note', TEAM), { automation: true });
     await admin.query(
       `INSERT INTO ${SCHEMA}.page_permissions (page_id, entity_type, entity_id, permission)
        VALUES ($1, 'team', $2, 'editor'), ($1, 'team', 999, 'owner')`,

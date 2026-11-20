@@ -139,7 +139,6 @@ describe('page covers (real Postgres)', () => {
     await storage.insertImportedPages({
       teamId: null,
       userId: ALICE.userId,
-      author: ALICE.email,
       folder: 'docs',
       pages: [
         {

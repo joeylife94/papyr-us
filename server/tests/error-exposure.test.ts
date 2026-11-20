@@ -2,7 +2,9 @@ import { describe, it, expect, beforeAll, afterAll, vi, beforeEach } from 'vites
 import request from 'supertest';
 import express, { type Express } from 'express';
 import http from 'http';
+import jwt from 'jsonwebtoken';
 import { registerRoutes } from '../routes';
+import { config } from '../config';
 
 vi.mock('../storage', async (importOriginal) => {
   const actual = (await importOriginal()) as any;
@@ -14,6 +16,14 @@ import { storage } from '../storage.js';
 
 let app: Express;
 let server: http.Server;
+
+// Creating a page needs a session: the page records the account behind it.
+const signedIn = {
+  Authorization: `Bearer ${jwt.sign(
+    { id: 11, email: 'exposure-test@example.com', role: 'user' },
+    config.jwtSecret
+  )}`,
+};
 
 beforeAll(async () => {
   app = express();
@@ -42,7 +52,7 @@ describe('failed writes do not expose internal errors', () => {
   it('omits driver error details when a page insert fails', async () => {
     (storage.createWikiPage as any).mockRejectedValue(driverError());
 
-    const response = await request(app).post('/api/pages').send({
+    const response = await request(app).post('/api/pages').set(signedIn).send({
       title: 'Secret title',
       slug: 'secret-slug',
       content: 'secret body',
@@ -68,7 +78,10 @@ describe('failed writes do not expose internal errors', () => {
   });
 
   it('still returns validation issues for invalid input', async () => {
-    const response = await request(app).post('/api/pages').send({ title: 'No slug or body' });
+    const response = await request(app)
+      .post('/api/pages')
+      .set(signedIn)
+      .send({ title: 'No slug or body' });
 
     expect(response.status).toBe(400);
     expect(response.body.message).toBe('Invalid page data');

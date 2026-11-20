@@ -98,7 +98,8 @@ beforeAll(async () => {
     );
     CREATE TABLE page_permissions (
       id SERIAL PRIMARY KEY, page_id INTEGER NOT NULL, entity_type TEXT NOT NULL,
-      entity_id INTEGER, permission TEXT NOT NULL, created_at TIMESTAMP DEFAULT NOW()
+      entity_id INTEGER, permission TEXT NOT NULL, granted_by INTEGER,
+      created_at TIMESTAMP DEFAULT NOW()
     );
     -- wiki_pages as it was before E5 (no position column).
     CREATE TABLE wiki_pages (

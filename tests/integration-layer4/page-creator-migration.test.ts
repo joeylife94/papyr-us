@@ -353,7 +353,9 @@ describe('0027 down', () => {
     expect(
       (
         await scoped.query(
-          `SELECT 1 FROM pg_indexes WHERE indexname = 'idx_wiki_pages_created_by_user_id'`
+          `SELECT 1 FROM pg_indexes
+            WHERE schemaname = $1 AND indexname = 'idx_wiki_pages_created_by_user_id'`,
+          [SCHEMA]
         )
       ).rows
     ).toHaveLength(0);

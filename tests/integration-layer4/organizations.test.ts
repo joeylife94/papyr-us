@@ -46,6 +46,8 @@ const DOWN = read('0022_add_organizations.down.sql');
 const AI_SETTING = read('0024_add_organization_ai_setting.sql');
 // and 0025 (#124 X1c P5a) adds organization_members.ai_allowed.
 const AI_ACCESS = read('0025_add_organization_member_ai_access.sql');
+// and 0027 (WP0b) adds wiki_pages.created_by_user_id.
+const PAGE_CREATOR = read('0027_add_page_creator.sql');
 
 let admin: Pool;
 let scoped: Pool;
@@ -254,6 +256,7 @@ describe('0022 organizations migration (real Postgres)', () => {
     ).toBe(2);
     await scoped.query(AI_SETTING);
     await scoped.query(AI_ACCESS);
+    await scoped.query(PAGE_CREATOR);
   });
 });
 
@@ -418,10 +421,9 @@ describe('organization boundary in DBStorage (real Postgres)', () => {
           content: '',
           folder: 'orgs-new',
           tags: [],
-          author: 'x@example.com',
           teamId,
         },
-        creator
+        creator ? { userId: creator } : { automation: true }
       );
     expect((await created(null, CY)).organizationId).toBe(acme);
     expect((await created(acmeTeam, CY)).organizationId).toBe(acme);
