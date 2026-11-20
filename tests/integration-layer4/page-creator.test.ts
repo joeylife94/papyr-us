@@ -33,6 +33,7 @@ const scopedUrl = (() => {
 let admin: Pool;
 let scoped: Pool;
 let storage: any;
+let PageCreatorUnavailableError: new () => Error;
 let defaultOrg = 0;
 let counter = 0;
 
@@ -143,8 +144,9 @@ beforeAll(async () => {
   defaultOrg = await addOrganizations(scoped);
 
   process.env.DATABASE_URL = scopedUrl;
-  const { DBStorage } = await import('../../server/storage.js');
-  storage = new DBStorage();
+  const storageModule = await import('../../server/storage.js');
+  storage = new storageModule.DBStorage();
+  PageCreatorUnavailableError = storageModule.PageCreatorUnavailableError;
 });
 
 afterAll(async () => {
@@ -206,8 +208,12 @@ describe('createWikiPage', () => {
     const grantsBefore = (await scoped.query(`SELECT count(*)::int AS n FROM page_permissions`))
       .rows[0].n;
 
-    await expect(storage.createWikiPage(pageInput(), { userId: gone.id })).rejects.toThrow();
-    await expect(storage.createWikiPage(pageInput(), { userId: 987654 })).rejects.toThrow();
+    await expect(storage.createWikiPage(pageInput(), { userId: gone.id })).rejects.toBeInstanceOf(
+      PageCreatorUnavailableError
+    );
+    await expect(storage.createWikiPage(pageInput(), { userId: 987654 })).rejects.toBeInstanceOf(
+      PageCreatorUnavailableError
+    );
 
     expect(await pageCount()).toBe(before);
     expect((await scoped.query(`SELECT count(*)::int AS n FROM page_permissions`)).rows[0].n).toBe(
@@ -244,7 +250,7 @@ describe('duplicateWikiPage, findOrCreateDailyNote and insertImportedPages', () 
 
     await expect(
       storage.duplicateWikiPage(source.id, pageInput(), { userId: gone.id })
-    ).rejects.toThrow();
+    ).rejects.toBeInstanceOf(PageCreatorUnavailableError);
     expect(await pageCount()).toBe(before);
   });
 
@@ -340,7 +346,56 @@ describe('duplicateWikiPage, findOrCreateDailyNote and insertImportedPages', () 
           },
         ],
       })
-    ).rejects.toThrow();
+    ).rejects.toBeInstanceOf(PageCreatorUnavailableError);
+    expect(await pageCount()).toBe(before);
+  });
+
+  it('findOrCreateDailyNote writes nothing for an inactive creator', async () => {
+    const gone = await newUser('daily-gone', { active: false });
+    const before = await pageCount();
+    await expect(
+      storage.findOrCreateDailyNote({
+        slug: `daily-gone-${counter}`,
+        title: '2026-11-22',
+        folder: 'daily',
+        tags: [],
+        teamId: null,
+        userId: gone.id,
+      })
+    ).rejects.toBeInstanceOf(PageCreatorUnavailableError);
+    expect(await pageCount()).toBe(before);
+  });
+});
+
+describe('an account deactivated while it creates a page', () => {
+  it('cannot create a page: the account is read under a lock held until the page is written', async () => {
+    const ada = await newUser('deactivating');
+    const before = await pageCount();
+    // Another session deactivates the account and has not committed yet.
+    const holder = await scoped.connect();
+    try {
+      await holder.query('BEGIN');
+      await holder.query(`UPDATE users SET is_active = FALSE WHERE id = $1`, [ada.id]);
+
+      let settled = false;
+      const attempt = storage
+        .createWikiPage(pageInput(), { userId: ada.id })
+        .then(
+          () => 'created',
+          (error: unknown) => error
+        )
+        .finally(() => {
+          settled = true;
+        });
+      // The creation waits for the deactivation instead of reading the old, active row.
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      expect(settled).toBe(false);
+
+      await holder.query('COMMIT');
+      expect(await attempt).toBeInstanceOf(PageCreatorUnavailableError);
+    } finally {
+      holder.release();
+    }
     expect(await pageCount()).toBe(before);
   });
 });
@@ -388,28 +443,84 @@ describe('the creator id grants nothing', () => {
     ).toBe(1);
   });
 
-  it('the author rule is unchanged: a page whose author is an account email makes that account an owner', async () => {
-    const ada = await newUser('author-rule');
-    const bob = await newUser('author-rule-other');
+  async function pageWithAuthor(title: string, author: string, creatorId: number | null) {
+    const holder = await newUser(`holder-${counter}`);
     const { rows } = await scoped.query(
       `INSERT INTO wiki_pages (title, slug, content, author, created_by_user_id, organization_id)
-       VALUES ('By email', $1, '', $2, $3, $4) RETURNING id`,
-      [`by-email-${counter}`, ada.email, bob.id, defaultOrg]
+       VALUES ($1, $2, '', $3, $4, $5) RETURNING id`,
+      [
+        title,
+        `${title.toLowerCase().replace(/\W+/g, '-')}-${counter}`,
+        author,
+        creatorId,
+        defaultOrg,
+      ]
     );
     const pageId = Number(rows[0].id);
     // The page has a grant, so it is not an open legacy page.
     await scoped.query(
       `INSERT INTO page_permissions (page_id, entity_type, entity_id, permission, granted_by)
        VALUES ($1, 'user', $2, 'viewer', $2)`,
-      [pageId, bob.id]
+      [pageId, holder.id]
     );
+    return pageId;
+  }
+
+  it('a page without a recorded creator is owned by the account whose email is its author text', async () => {
+    const ada = await newUser('legacy-author');
+    const pageId = await pageWithAuthor('Legacy by email', ada.email, null);
 
     expect(await storage.checkPagePermission(ada.id, pageId, 'owner')).toBe(true);
     expect(
-      (await storage.searchLinkTargets(ada.id, { personalOnly: true }, 'By email')).length
+      (await storage.searchLinkTargets(ada.id, { personalOnly: true }, 'Legacy by email')).length
     ).toBe(1);
-    // The recorded creator is Bob, who holds only the viewer grant: it is the grant that counts.
-    expect(await storage.checkPagePermission(bob.id, pageId, 'editor')).toBe(false);
-    expect(await storage.checkPagePermission(bob.id, pageId, 'viewer')).toBe(true);
+    expect(
+      await storage.resolveReadablePageLinks(await storage.getPageViewer(ada.id), [pageId])
+    ).toHaveLength(1);
+  });
+
+  it('on a page with a recorded creator the author text decides nothing, even when it is another account email', async () => {
+    const creator = await newUser('real-creator');
+    const named = await newUser('named-by-text');
+    const pageId = await pageWithAuthor('Creator and email', named.email, creator.id);
+
+    for (const level of ['viewer', 'commenter', 'editor', 'owner'] as const) {
+      expect(await storage.checkPagePermission(named.id, pageId, level), level).toBe(false);
+    }
+    expect(await storage.getUserPagePermission(named.id, pageId)).toBeNull();
+    expect(
+      await storage.searchLinkTargets(named.id, { personalOnly: true }, 'Creator and email')
+    ).toEqual([]);
+    expect(
+      await storage.resolveReadablePageLinks(await storage.getPageViewer(named.id), [pageId])
+    ).toEqual([]);
+    expect(await storage.getReadableBacklinks(named.id, pageId)).toEqual([]);
+    expect(
+      (await storage.getReadableWikiPagesByFolder('docs', named.id)).map((p: any) => p.id)
+    ).not.toContain(pageId);
+  });
+
+  it('a page created by an account whose name equals another account email gives that account nothing', async () => {
+    const stranger = await newUser('stranger-by-name');
+    const odd = await newUser(`odd-${counter}`, { name: stranger.email });
+    const page = await storage.createWikiPage(pageInput({ title: 'Named like an email' }), {
+      userId: odd.id,
+    });
+    await storage.addPagePermission({
+      pageId: page.id,
+      entityType: 'user',
+      entityId: (await newUser('other-holder')).id,
+      permission: 'viewer',
+      grantedBy: odd.id,
+    });
+
+    expect((await rowOf(page.id)).author).toBe(stranger.email);
+    expect(await storage.checkPagePermission(stranger.id, page.id, 'viewer')).toBe(false);
+    expect(await storage.checkPagePermission(stranger.id, page.id, 'owner')).toBe(false);
+    expect(
+      await storage.searchLinkTargets(stranger.id, { personalOnly: true }, 'Named like an email')
+    ).toEqual([]);
+    // The creator keeps its owner grant.
+    expect(await storage.checkPagePermission(odd.id, page.id, 'owner')).toBe(true);
   });
 });

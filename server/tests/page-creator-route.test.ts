@@ -6,7 +6,8 @@
  * - POST /api/pages, POST /api/pages/:id/duplicate and POST /api/pages/import/markdown answer 401
  *   without a session and write nothing;
  * - with a session, storage is asked to create the page for `{ userId: <the session's id> }`;
- * - an `author` or a `createdByUserId` in the request never reaches storage.
+ * - an `author` or a `createdByUserId` in the request never reaches storage;
+ * - an account that cannot create pages (inactive or unknown) gets one fixed 403 on all three.
  * The same rules are proven against the real server by tests/security-page-creator.spec.ts.
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
@@ -69,6 +70,7 @@ vi.mock('../storage', async (importOriginal) => {
 
 import * as storageModule from '../storage.js';
 const storage: any = (storageModule as any).storage;
+const { PageCreatorUnavailableError } = storageModule as any;
 
 const USER = { id: 41, email: 'creator@example.com' };
 const SOURCE = {
@@ -190,6 +192,15 @@ describe.each([true, false])('page creation with ENFORCE_AUTH_WRITES=%s', (enfor
       expect(res.status).toBe(201);
       expect(route.pageArg(route.created())).not.toHaveProperty('author');
       expect(route.creatorArg(route.created())).toEqual({ userId: USER.id });
+    });
+
+    it('answers one fixed 403 for an account that cannot create pages', async () => {
+      route.created().mockRejectedValue(new PageCreatorUnavailableError());
+
+      const res = await route.send(USER);
+
+      expect(res.status).toBe(403);
+      expect(res.body).toEqual({ message: 'This account cannot create pages' });
     });
 
     it('does not pass a creator id from the request to storage', async () => {

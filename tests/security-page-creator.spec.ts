@@ -4,12 +4,18 @@
  * proven in server/tests/page-creator-route.test.ts (HTTP, mocked storage) and
  * tests/integration-layer4/page-creator.test.ts (SQL).
  *
+ * The mode with ENFORCE_AUTH_WRITES off (this server runs with it on) is proven by the route
+ * tests in server/tests/page-creator-route.test.ts, not here.
+ *
  * Rules under test:
  * - the creator and the author of a new page come from the session, never from the request: an
  *   `author` in the body is dropped, a `createdByUserId` is ignored, and naming another account's
  *   email as author gives that account no access to the page;
  * - creating a page without a session is refused: POST /api/pages, a duplicate and a markdown
  *   import all answer 401;
+ * - on a page with a recorded creator, an author text that equals another account's email makes
+ *   that account nothing: it cannot read or edit the page (ownership by author text applies only
+ *   to pages with no recorded creator);
  * - an account that made a page in the editor and was then removed from its organization is
  *   still refused as the first owner of a new organization (authored_pages): the page it made
  *   counts by its creator id, not by the author text.
@@ -133,6 +139,10 @@ test.describe('Pages record their creating account', () => {
     const stamp = `${Date.now()}-b`;
     const a = await signedIn('creator-out');
     const signedOut = await freshContext();
+    if (!DATABASE_URL) throw new Error('DATABASE_URL is required to count pages');
+    const db = new Pool({ connectionString: DATABASE_URL });
+    const pageRows = async () =>
+      Number((await db.query('SELECT count(*)::int AS n FROM wiki_pages')).rows[0].n);
     let pageId = 0;
     try {
       const created = await a.ctx.post('/api/pages', { data: pageBody(stamp) });
@@ -150,19 +160,67 @@ test.describe('Pages record their creating account', () => {
             }),
         ],
       ];
+      const rowsBefore = await pageRows();
       for (const [name, attempt] of attempts) {
         expect((await attempt()).status(), name).toBe(401);
       }
-      // Nothing was created by the refused calls.
-      const listed = await a.ctx.get(`/api/pages?q=${encodeURIComponent(`signed out ${stamp}`)}`);
-      expect(JSON.stringify(await listed.json())).not.toContain(`signed out ${stamp}`);
+      // The refused calls wrote no page row.
+      expect(await pageRows()).toBe(rowsBefore);
+    } finally {
+      if (pageId) await db.query('DELETE FROM wiki_pages WHERE id = $1', [pageId]).catch(() => {});
+      await db.end();
+      await Promise.all([a.ctx.dispose(), signedOut.dispose()]);
+    }
+  });
+
+  test('on a page with a recorded creator the author text names no owner', async () => {
+    test.setTimeout(120_000);
+    const stamp = `${Date.now()}-d`;
+    const named = await signedIn('creator-named');
+    // An account whose display name is another account's email.
+    const ctx = await freshContext();
+    let pageId = 0;
+    try {
+      const email = `creator-odd-${stamp}@example.com`;
+      const registered = await ctx.post('/api/auth/register', {
+        data: { name: named.email, email, password: 'Password123!' },
+      });
+      expect(registered.status()).toBe(201);
+      const odd = await createAuthenticatedApiContext(email, 'Password123!');
+      try {
+        const created = await odd.post('/api/pages', { data: pageBody(stamp) });
+        expect(created.status()).toBe(201);
+        const page = await created.json();
+        pageId = page.id;
+        expect(page.author).toBe(named.email);
+
+        // The page has a grant besides its creator's, so it is not an open page.
+        const holder = await signedIn('creator-holder');
+        try {
+          const share = await odd.post(`/api/pages/${page.id}/permissions`, {
+            data: { entityType: 'user', entityId: holder.id, permission: 'viewer' },
+          });
+          expect(share.status()).toBe(201);
+
+          expect((await named.ctx.get(`/api/pages/${page.id}`)).status()).toBe(403);
+          const edit = await named.ctx.put(`/api/pages/${page.id}`, {
+            data: { title: `taken ${stamp}` },
+          });
+          expect(edit.status()).toBe(403);
+          expect((await odd.get(`/api/pages/${page.id}`)).status()).toBe(200);
+        } finally {
+          await holder.ctx.dispose();
+        }
+      } finally {
+        await odd.dispose();
+      }
     } finally {
       if (DATABASE_URL && pageId) {
         const db = new Pool({ connectionString: DATABASE_URL });
         await db.query('DELETE FROM wiki_pages WHERE id = $1', [pageId]).catch(() => {});
         await db.end();
       }
-      await Promise.all([a.ctx.dispose(), signedOut.dispose()]);
+      await Promise.all([named.ctx.dispose(), ctx.dispose()]);
     }
   });
 

@@ -3,9 +3,11 @@
  *
  * - The backfill claims a creator only where one was recorded at creation: a page with exactly
  *   one user grant whose granter is the grantee (any level), written within five seconds after
- *   the page, for an account that exists. Every other page keeps null.
- * - Idempotent: a re-run changes nothing, and a value or a null set after the first run stays.
- *   A table that already has the column (a schema push made it) is left alone.
+ *   the page, for an account that exists and whose email or name is the page's author text (and
+ *   never for the author 'Automation'). Every other page keeps null.
+ * - It runs on every application and touches only pages whose creator is null: a re-run changes
+ *   nothing, a creator set by hand or by the application is never overwritten, and a table that
+ *   a schema push made (the column exists, empty) is filled exactly as prepare-first fills it.
  * - Names match what `drizzle-kit push` creates.
  * - The down file refuses while a page records a creator that applying 0027 again would not
  *   compute, and otherwise drops the column; applying 0027 afterwards restores the same values.
@@ -69,21 +71,31 @@ async function freshTables(tables = [USERS, PAGES, GRANTS]) {
 let pageCounter = 0;
 const AT = '2026-03-01 10:00:00';
 
-async function user(): Promise<number> {
+const emailOf = new Map<number, string>();
+const nameOf = new Map<number, string>();
+
+/** An account whose name is its email unless a name is given. */
+async function user(name?: string): Promise<number> {
   pageCounter += 1;
+  const email = `u${pageCounter}@example.com`;
   const { rows } = await scoped.query(
-    `INSERT INTO users (name, email) VALUES ($1, $1) RETURNING id`,
-    [`u${pageCounter}@example.com`]
+    `INSERT INTO users (name, email) VALUES ($1, $2) RETURNING id`,
+    [name ?? email, email]
   );
-  return Number(rows[0].id);
+  const id = Number(rows[0].id);
+  emailOf.set(id, email);
+  nameOf.set(id, name ?? email);
+  return id;
 }
 
-async function page(): Promise<number> {
+/** A page whose author text is the email of account `author` (a number) or the given text. */
+async function page(author: number | string = 'someone'): Promise<number> {
   pageCounter += 1;
+  const text = typeof author === 'number' ? emailOf.get(author)! : author;
   const { rows } = await scoped.query(
     `INSERT INTO wiki_pages (title, slug, content, author, created_at)
-     VALUES ('t', $1, '', 'someone', $2) RETURNING id`,
-    [`p${pageCounter}`, AT]
+     VALUES ('t', $1, '', $2, $3) RETURNING id`,
+    [`p${pageCounter}`, text, AT]
   );
   return Number(rows[0].id);
 }
@@ -155,14 +167,16 @@ beforeEach(async () => {
 
 describe('0027 backfill', () => {
   it('sets the creator of a page with one self-grant written at the same moment', async () => {
-    const [u, p] = [await user(), await page()];
+    const u = await user();
+    const p = await page(u);
     await grant(p, { entityId: u });
     await scoped.query(UP);
     expect(await creatorOf(p)).toBe(u);
   });
 
   it('sets it for a grant written 3 seconds later, and not for one 10 seconds later', async () => {
-    const [u, near, far] = [await user(), await page(), await page()];
+    const u = await user();
+    const [near, far] = [await page(u), await page(u)];
     await grant(near, { entityId: u, offset: '3 seconds' });
     await grant(far, { entityId: u, offset: '10 seconds' });
     await scoped.query(UP);
@@ -171,14 +185,16 @@ describe('0027 backfill', () => {
   });
 
   it('does not set it for a grant older than the page', async () => {
-    const [u, p] = [await user(), await page()];
+    const u = await user();
+    const p = await page(u);
     await grant(p, { entityId: u, offset: '-1 seconds' });
     await scoped.query(UP);
     expect(await creatorOf(p)).toBeNull();
   });
 
   it('accepts any level for the self-grant (a later change of level does not hide the creator)', async () => {
-    const [u, viewer, editor] = [await user(), await page(), await page()];
+    const u = await user();
+    const [viewer, editor] = [await page(u), await page(u)];
     await grant(viewer, { entityId: u, level: 'viewer' });
     await grant(editor, { entityId: u, level: 'editor' });
     await scoped.query(UP);
@@ -187,7 +203,8 @@ describe('0027 backfill', () => {
   });
 
   it('leaves a page with two self-grants without a creator', async () => {
-    const [a, b, p] = [await user(), await user(), await page()];
+    const [a, b] = [await user(), await user()];
+    const p = await page(a);
     await grant(p, { entityId: a });
     await grant(p, { entityId: b });
     await scoped.query(UP);
@@ -195,7 +212,8 @@ describe('0027 backfill', () => {
   });
 
   it('leaves a page whose only user grant was written by someone else without a creator', async () => {
-    const [a, b, p] = [await user(), await user(), await page()];
+    const [a, b] = [await user(), await user()];
+    const p = await page(a);
     await grant(p, { entityId: a, grantedBy: b });
     await grant(p, { entityId: b, grantedBy: null });
     await scoped.query(UP);
@@ -203,7 +221,8 @@ describe('0027 backfill', () => {
   });
 
   it('leaves a page with no grant, and a page with only a team or public grant, without a creator', async () => {
-    const [u, none, team, open] = [await user(), await page(), await page(), await page()];
+    const u = await user();
+    const [none, team, open] = [await page(u), await page(u), await page(u)];
     await grant(team, { entityId: u, type: 'team' });
     await grant(open, { entityId: null, type: 'public', grantedBy: u });
     await scoped.query(UP);
@@ -213,7 +232,8 @@ describe('0027 backfill', () => {
   });
 
   it('ignores grants to others and team grants next to the one self-grant (a shared or team page)', async () => {
-    const [creator, other, p] = [await user(), await user(), await page()];
+    const [creator, other] = [await user(), await user()];
+    const p = await page(creator);
     await grant(p, { entityId: creator });
     await grant(p, { entityId: other, grantedBy: creator, level: 'owner', offset: '1 day' });
     await grant(p, { entityId: 7, type: 'team', grantedBy: creator, level: 'editor' });
@@ -222,57 +242,122 @@ describe('0027 backfill', () => {
   });
 
   it('leaves a page whose granted account no longer exists without a creator', async () => {
-    const p = await page();
+    const p = await page('u987654@example.com');
     await grant(p, { entityId: 987654 });
     await scoped.query(UP);
     expect(await creatorOf(p)).toBeNull();
   });
 
   it('reports how many pages were set and how many stay empty', async () => {
-    const [u, set, unset] = [await user(), await page(), await page()];
+    const u = await user();
+    const [set] = [await page(u), await page(u)];
     await grant(set, { entityId: u });
-    expect(unset).toBeGreaterThan(0);
     await scoped.query(UP);
     expect(notices.join('\n')).toMatch(/0027: 1 page\(s\) got a creator, 1 page\(s\) have none/);
   });
-});
 
-describe('0027 is idempotent and leaves a table alone that has the column', () => {
-  it('a re-run changes nothing, and a creator set or cleared afterwards stays', async () => {
-    const [a, b, set, cleared, unset] = [
-      await user(),
-      await user(),
-      await page(),
-      await page(),
-      await page(),
-    ];
-    await grant(set, { entityId: a });
-    await grant(cleared, { entityId: a });
+  it('raises no notice when no page got a creator', async () => {
+    await page();
     await scoped.query(UP);
-    const first = await creators();
-    expect(first).toEqual({ [set]: a, [cleared]: a, [unset]: null });
-
-    await scoped.query(UP);
-    expect(await creators()).toEqual(first);
-
-    await scoped.query(`UPDATE wiki_pages SET created_by_user_id = $1 WHERE id = $2`, [b, unset]);
-    await scoped.query(`UPDATE wiki_pages SET created_by_user_id = NULL WHERE id = $1`, [cleared]);
-    await scoped.query(UP);
-    expect(await creators()).toEqual({ [set]: a, [cleared]: null, [unset]: b });
+    expect(notices.join('\n')).not.toMatch(/0027:/);
   });
 
-  it('does nothing to a table a push created with the column', async () => {
-    const [u, p] = [await user(), await page()];
+  it('accepts the account name as the author text, and an email in any page of the account', async () => {
+    const u = await user('Ada Lovelace');
+    const byName = await page('Ada Lovelace');
+    await grant(byName, { entityId: u });
+    await scoped.query(UP);
+    expect(await creatorOf(byName)).toBe(u);
+  });
+
+  it("leaves a page whose author text is not the grantee's email or name without a creator", async () => {
+    const [grantee, other] = [await user('Ada Lovelace'), await user('Grace Hopper')];
+    // Another owner of an anonymous page self-granting inside the window (no session, no grant).
+    const anonymous = await page('Anonymous');
+    await grant(anonymous, { entityId: grantee, offset: '2 seconds' });
+    // The creator's own grant is missing; a different account self-grants 4 seconds later.
+    const missing = await page(other);
+    await grant(missing, { entityId: grantee, offset: '4 seconds' });
+    // A renamed account: the author text is the old name.
+    const renamed = await page('Ada Old Name');
+    await grant(renamed, { entityId: grantee });
+    await scoped.query(UP);
+    expect(await creatorOf(anonymous)).toBeNull();
+    expect(await creatorOf(missing)).toBeNull();
+    expect(await creatorOf(renamed)).toBeNull();
+  });
+
+  it('never names an account for the automation label, whatever an account is called', async () => {
+    const u = await user('Automation');
+    const p = await page('Automation');
     await grant(p, { entityId: u });
-    await scoped.query(`
-      ALTER TABLE wiki_pages ADD COLUMN created_by_user_id integer;
-      ALTER TABLE wiki_pages ADD CONSTRAINT wiki_pages_created_by_user_id_users_id_fk
-        FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL;
-      CREATE INDEX idx_wiki_pages_created_by_user_id ON wiki_pages (created_by_user_id);
-    `);
     await scoped.query(UP);
     expect(await creatorOf(p)).toBeNull();
-    expect(notices.join('\n')).not.toMatch(/0027:/);
+  });
+});
+
+const PUSH_SHAPE = `
+  ALTER TABLE wiki_pages ADD COLUMN created_by_user_id integer;
+  ALTER TABLE wiki_pages ADD CONSTRAINT wiki_pages_created_by_user_id_users_id_fk
+    FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL;
+  CREATE INDEX idx_wiki_pages_created_by_user_id ON wiki_pages (created_by_user_id);
+`;
+
+describe('0027 runs on every application and touches only pages without a creator', () => {
+  it('a second and third run change nothing, and never overwrite a creator', async () => {
+    const [a, b] = [await user(), await user()];
+    const [set, handSet, unset] = [await page(a), await page(a), await page('someone')];
+    await grant(set, { entityId: a });
+    await grant(handSet, { entityId: a });
+    await scoped.query(UP);
+    const first = await creators();
+    expect(first).toEqual({ [set]: a, [handSet]: a, [unset]: null });
+
+    await scoped.query(UP);
+    await scoped.query(UP);
+    expect(await creators()).toEqual(first);
+    expect(notices.filter((n) => /0027:/.test(n))).toHaveLength(1);
+
+    // A creator set by hand or by the application is never overwritten.
+    await scoped.query(`UPDATE wiki_pages SET created_by_user_id = $1 WHERE id = $2`, [b, handSet]);
+    await scoped.query(`UPDATE wiki_pages SET created_by_user_id = $1 WHERE id = $2`, [b, unset]);
+    await scoped.query(UP);
+    expect(await creators()).toEqual({ [set]: a, [handSet]: b, [unset]: b });
+  });
+
+  it('fills again a creator cleared by hand on a page that still satisfies the conditions', async () => {
+    const a = await user();
+    const p = await page(a);
+    await grant(p, { entityId: a });
+    await scoped.query(UP);
+    await scoped.query(`UPDATE wiki_pages SET created_by_user_id = NULL WHERE id = $1`, [p]);
+    await scoped.query(UP);
+    expect(await creatorOf(p)).toBe(a);
+  });
+
+  it('push first, then prepare, fills exactly what prepare first fills', async () => {
+    const a = await user();
+    const [good, anonymous] = [await page(a), await page('Anonymous')];
+    await grant(good, { entityId: a });
+    await grant(anonymous, { entityId: a, offset: '2 seconds' });
+    // Prepare first.
+    await scoped.query(UP);
+    const prepareFirst = await creators();
+
+    // Push first: the same data, a column that exists and is empty.
+    await freshTables();
+    const b = await user();
+    const [good2, anonymous2] = [await page(b), await page('Anonymous')];
+    await grant(good2, { entityId: b });
+    await grant(anonymous2, { entityId: b, offset: '2 seconds' });
+    await scoped.query(PUSH_SHAPE);
+    expect(await creators()).toEqual({ [good2]: null, [anonymous2]: null });
+    await scoped.query(UP);
+    const pushFirst = await creators();
+
+    expect(Object.values(prepareFirst)).toEqual([a, null]);
+    expect(Object.values(pushFirst)).toEqual([b, null]);
+    expect(notices.filter((n) => /0027: 1 page\(s\) got a creator/.test(n)).length).toBe(2);
   });
 
   it('does nothing without a wiki_pages table', async () => {
@@ -322,7 +407,8 @@ describe('0027 names', () => {
 
 describe('0027 down', () => {
   it('refuses, changing nothing, while a page records a creator whose grant is gone', async () => {
-    const [u, p] = [await user(), await page()];
+    const u = await user();
+    const p = await page(u);
     await grant(p, { entityId: u });
     await scoped.query(UP);
     await scoped.query(`DELETE FROM page_permissions WHERE page_id = $1`, [p]);
@@ -333,7 +419,8 @@ describe('0027 down', () => {
   });
 
   it('refuses while a page records a creator the grants point away from', async () => {
-    const [a, b, p] = [await user(), await user(), await page()];
+    const [a, b] = [await user(), await user()];
+    const p = await page(a);
     await grant(p, { entityId: a });
     await scoped.query(UP);
     await scoped.query(`UPDATE wiki_pages SET created_by_user_id = $1 WHERE id = $2`, [b, p]);
@@ -342,8 +429,31 @@ describe('0027 down', () => {
     expect(await creatorOf(p)).toBe(b);
   });
 
+  it('refuses while a page records a creator its author text no longer names (a renamed account)', async () => {
+    const u = await user('Ada Lovelace');
+    const p = await page('Ada Lovelace');
+    await grant(p, { entityId: u });
+    await scoped.query(UP);
+    await scoped.query(`UPDATE users SET name = 'Ada King' WHERE id = $1`, [u]);
+
+    await expect(scoped.query(DOWN)).rejects.toThrow(/a page records a creator/);
+    expect(await hasColumn()).toBe(true);
+    expect(await creatorOf(p)).toBe(u);
+  });
+
+  it('refuses while a page with the automation author records a creator', async () => {
+    const u = await user('Automation');
+    const p = await page('Automation');
+    await grant(p, { entityId: u });
+    await scoped.query(PUSH_SHAPE);
+    await scoped.query(`UPDATE wiki_pages SET created_by_user_id = $1 WHERE id = $2`, [u, p]);
+
+    await expect(scoped.query(DOWN)).rejects.toThrow(/a page records a creator/);
+  });
+
   it('drops the index, key and column when every creator is the one the up file computes', async () => {
-    const [u, withCreator, without] = [await user(), await page(), await page()];
+    const u = await user();
+    const [withCreator, without] = [await page(u), await page('someone')];
     await grant(withCreator, { entityId: u });
     await scoped.query(UP);
     const before = await creators();

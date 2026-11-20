@@ -38,6 +38,9 @@ describe('document production paths', () => {
       })),
     };
     // The page's organization (issue #124 X1) is looked up once, before the insert attempts
+    // The create runs in a transaction whose savepoints are the same fake handle.
+    const fake = (storage as any).db;
+    fake.transaction = async (run: (tx: unknown) => unknown) => run(fake);
     (storage as any).organizationForNewPage = vi.fn(async () => 3);
 
     const created = await storage.createWikiPage(pageInput as any, { automation: true });
@@ -66,6 +69,9 @@ describe('document production paths', () => {
         })),
       })),
     };
+    // The create runs in a transaction whose savepoints are the same fake handle.
+    const fake = (storage as any).db;
+    fake.transaction = async (run: (tx: unknown) => unknown) => run(fake);
     (storage as any).organizationForNewPage = vi.fn(async () => 3);
 
     const created = await storage.createWikiPage(pageInput as any, { automation: true });
