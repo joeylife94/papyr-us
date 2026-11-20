@@ -12,7 +12,9 @@
  * - drizzle/0024_add_organization_ai_setting.sql (X1c): adds the per-organization AI setting,
  *   on for every organization that exists when it is added;
  * - drizzle/0025_add_organization_member_ai_access.sql (X1c): adds the per-member AI access,
- *   granted to every membership that exists when it is added.
+ *   granted to every membership that exists when it is added;
+ * - drizzle/0028_convert_roster_team_access.sql (WP2): turns the team access that directory
+ *   (`members`) rows gave into team_members rows, once, and records them.
  *
  * All add their columns and constraints under the names push expects, so push then has nothing
  * left to change. All are idempotent, so running this on every deploy is safe.
@@ -24,9 +26,9 @@
  *
  * --down applies the .down.sql files in reverse order. Each refuses while it would lose a
  * boundary (an organization with AI turned off, a member without AI access, more than one
- * organization, or templates of more than one), and then nothing is changed. Like
- * apply-fts-schema.mjs, the script refuses non-local database hosts unless --allow-remote is
- * given.
+ * organization, templates of more than one, or a converted team membership with a raised role),
+ * and then nothing is changed. Like apply-fts-schema.mjs, the script refuses non-local database
+ * hosts unless --allow-remote is given.
  */
 
 import { readFile } from 'node:fs/promises';
@@ -44,6 +46,7 @@ const MIGRATIONS = [
   '0023_add_template_organizations',
   '0024_add_organization_ai_setting',
   '0025_add_organization_member_ai_access',
+  '0028_convert_roster_team_access',
 ];
 const sqlPaths = (down ? [...MIGRATIONS].reverse() : MIGRATIONS).map((name) =>
   fileURLToPath(new URL(`../drizzle/${name}${down ? '.down' : ''}.sql`, import.meta.url))
