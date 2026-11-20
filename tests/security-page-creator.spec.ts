@@ -211,8 +211,7 @@ test.describe('Pages record their creating account', () => {
       expect((await leaver.ctx.get('/api/organization')).status()).not.toBe(200);
 
       // 3. Naming the account first owner of a new organization is refused.
-      const before = ((await (await admin.get('/api/admin/organizations')).json()) as any[])
-        .length;
+      const before = ((await (await admin.get('/api/admin/organizations')).json()) as any[]).length;
       const refused = await admin.post('/api/admin/organizations', {
         data: { name: 'Creator Target', slug: `creator-dst-${stamp}`, ownerEmail: leaver.email },
       });

@@ -242,8 +242,7 @@ async function executeAction(
         const newPage = await getWorkflowStorage().createWikiPage(
           {
             title: processedConfig.title || 'New Page',
-            slug:
-              processedConfig.title?.toLowerCase().replace(/\s+/g, '-') || `page-${Date.now()}`,
+            slug: processedConfig.title?.toLowerCase().replace(/\s+/g, '-') || `page-${Date.now()}`,
             content: processedConfig.content || '',
             folder: processedConfig.folder || 'docs',
             tags: processedConfig.tags || [],
