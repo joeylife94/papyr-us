@@ -3234,11 +3234,19 @@ export class DBStorage {
         .limit(1);
       // A deactivated account is answered like an unknown one.
       if (!account || account.isActive !== true) return notFound;
+      // The row is read FOR SHARE and held until this transaction ends: a removal of the account
+      // from the organization (removeOrganizationMember deletes this row) waits for the admission
+      // and then deletes the new membership with the rest, or has already finished and the row
+      // is gone. Lock order: this transaction takes the team lock, then this row lock; a removal
+      // takes the organization lock, the target's team locks (ascending), then deletes this row.
+      // After this read the admission asks for nothing the removal holds, so they cannot wait on
+      // each other in a circle.
       const [membership] = await tx
         .select({ organizationId: organizationMembers.organizationId })
         .from(organizationMembers)
         .where(eq(organizationMembers.userId, account.id))
-        .limit(1);
+        .limit(1)
+        .for('share');
       if (!membership || Number(membership.organizationId) !== state.organizationId) {
         return notFound;
       }

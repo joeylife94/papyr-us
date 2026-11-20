@@ -896,3 +896,87 @@ describe('removing an organization member and the teams left without an owner', 
     }
   });
 });
+
+describe('an admission cannot outlive a concurrent removal from the organization', () => {
+  // Lock order relied on: admission = team lock, then a share lock on the target's organization
+  // row; removal = organization lock, the target's team locks (ascending), then the exclusive
+  // delete of the organization row. Neither waits on something the other holds after it has
+  // passed that step, so the pair cannot deadlock.
+  const noMembership = async (userId: number) =>
+    (await rows(`SELECT 1 FROM team_members WHERE user_id = $1`, [userId])).length === 0;
+
+  beforeEach(async () => {
+    await scoped.query(`UPDATE organization_members SET role = 'owner' WHERE user_id = $1`, [
+      OWNER_A,
+    ]);
+  });
+
+  it('removal first (uncommitted): the admission waits for it and is then refused', async () => {
+    const holder = await scoped.connect();
+    try {
+      await holder.query('BEGIN');
+      await holder.query(`DELETE FROM organization_members WHERE user_id = $1`, [ORG_ONLY]);
+      let settled = false;
+      const pending = storage.admitTeamMember(TEAM, OWNER_A, email(ORG_ONLY)).then((r: any) => {
+        settled = true;
+        return r;
+      });
+      await sleep(400);
+      expect(settled, 'the admission waits for the removal').toBe(false);
+      await holder.query('COMMIT');
+      expect(await pending).toMatchObject({ ok: false, status: 404 });
+      expect(await noMembership(ORG_ONLY)).toBe(true);
+    } finally {
+      holder.release();
+    }
+  });
+
+  it('admission first (its row lock held): the removal waits for it and then deletes the new membership too', async () => {
+    const holder = await scoped.connect();
+    try {
+      // The admission's position between reading the organization row and inserting the row
+      await holder.query('BEGIN');
+      await holder.query(`SELECT 1 FROM organization_members WHERE user_id = $1 FOR SHARE`, [
+        ORG_ONLY,
+      ]);
+      let settled = false;
+      const removal = storage
+        .removeOrganizationMember(defaultId, OWNER_A, ORG_ONLY)
+        .then((r: any) => {
+          settled = true;
+          return r;
+        });
+      await sleep(400);
+      expect(settled, 'the removal waits for the admission').toBe(false);
+      await holder.query(
+        `INSERT INTO team_members (team_id, user_id, role) VALUES ($1, $2, 'member')`,
+        [TEAM, ORG_ONLY]
+      );
+      await holder.query('COMMIT');
+      expect(await removal).toMatchObject({ ok: true });
+      expect(await noMembership(ORG_ONLY)).toBe(true);
+    } finally {
+      holder.release();
+    }
+  });
+
+  it('interleaved at random: the account is admitted and removed, or refused, never left with a membership', async () => {
+    for (let round = 0; round < 40; round++) {
+      await seed();
+      await scoped.query(`UPDATE organization_members SET role = 'owner' WHERE user_id = $1`, [
+        OWNER_A,
+      ]);
+      const [first, second] = round % 2 === 0 ? [0, round % 7] : [round % 7, 0];
+      const [admission, removal] = await Promise.all([
+        sleep(first).then(() => storage.admitTeamMember(TEAM, OWNER_A, email(ORG_ONLY))),
+        sleep(second).then(() => storage.removeOrganizationMember(defaultId, OWNER_A, ORG_ONLY)),
+      ]);
+      expect(removal.ok, `round ${round}`).toBe(true);
+      expect(['created', 'refused'].includes(admission.ok ? 'created' : 'refused')).toBe(true);
+      expect(await noMembership(ORG_ONLY), `round ${round}: ${JSON.stringify(admission)}`).toBe(
+        true
+      );
+      expect(await storage.getUserTeamIds(ORG_ONLY)).toEqual([]);
+    }
+  });
+});
