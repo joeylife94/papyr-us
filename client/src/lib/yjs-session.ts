@@ -116,9 +116,42 @@ export class YjsSession {
     this.synced = false;
   }
 
+  /** Whether undo and redo of the person's own edits are available (a document they may edit). */
+  get canStep(): boolean {
+    return this.undoManager !== null && this.canEdit;
+  }
+
+  /**
+   * Undoes or redoes the person's last own edit. Never throws: an internal failure of the undo
+   * stack is logged and the stack is dropped, so it cannot fail again, and the page goes on with
+   * what it shows. Returns whether there was an undo stack to run.
+   */
+  step(kind: 'undo' | 'redo'): boolean {
+    const undo = this.undoManager;
+    if (!undo || !this.canEdit) return false;
+    try {
+      if (kind === 'undo') undo.undo();
+      else undo.redo();
+    } catch (error) {
+      console.error('[Yjs] Undo failed; the undo history was dropped:', error);
+      try {
+        undo.clear();
+      } catch {
+        // nothing more can be done with a broken stack
+      }
+    }
+    return true;
+  }
+
   /** Applies the updates held back during a composition (when it is over). */
   releaseHeld(): void {
-    if (this.options.composition?.isComposing() || this.held.length === 0) return;
+    if (this.options.composition?.isComposing()) return;
+    this.flushHeld();
+  }
+
+  /** Applies what was held, in the order it arrived. */
+  private flushHeld(): void {
+    if (this.held.length === 0) return;
     const pending = this.held;
     this.held = [];
     for (const bytes of pending) this.applyFromServer(bytes);
@@ -222,6 +255,10 @@ export class YjsSession {
         this.held.push(update);
         return;
       }
+      // No composition is open: whatever was held comes first, or this update (which may build on
+      // it) would wait for it in the document for ever. This is also the way out when the
+      // composition ended without the release path being told (a removed or unfocused field).
+      this.flushHeld();
       this.applyFromServer(update);
       this.options.onLog?.('Applied remote update');
     } catch (error) {

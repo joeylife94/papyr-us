@@ -232,17 +232,17 @@ export function useYjsCollaboration({
     // cannot (and it keeps no history for text that was set from the shared document).
     const inBlockRow = (target: EventTarget | null) =>
       target instanceof Element && target.closest('[data-block-row]') !== null;
-    const step = (kind: 'undo' | 'redo'): boolean => {
-      const undo = session.undoManager;
-      if (!undo || !session.canEdit) return false;
-      if (kind === 'undo') undo.undo();
-      else undo.redo();
-      return true;
+    // The browser's own undo must never run on a block's text, so the default is prevented before
+    // anything is attempted (session.step does not throw).
+    const step = (event: Event, kind: 'undo' | 'redo'): void => {
+      if (!session.canStep) return;
+      event.preventDefault();
+      session.step(kind);
     };
     const onBeforeInput = (event: InputEvent) => {
       if (event.inputType !== 'historyUndo' && event.inputType !== 'historyRedo') return;
       if (!inBlockRow(event.target)) return;
-      if (step(event.inputType === 'historyUndo' ? 'undo' : 'redo')) event.preventDefault();
+      step(event, event.inputType === 'historyUndo' ? 'undo' : 'redo');
     };
     // Bubble phase: a block's own handling of the key (undoing a Markdown shortcut) goes first
     const onKeyDown = (event: KeyboardEvent) => {
@@ -257,7 +257,7 @@ export function useYjsCollaboration({
           : key === 'y' && event.ctrlKey && !event.metaKey && !event.shiftKey
             ? 'redo'
             : null;
-      if (kind && step(kind)) event.preventDefault();
+      if (kind) step(event, kind);
     };
     document.addEventListener('beforeinput', onBeforeInput, true);
     document.addEventListener('keydown', onKeyDown);
