@@ -4,11 +4,11 @@ aliases: ['PAPYR_US_MASTER', 'Papyr.us v1.0 Master']
 project: 'Papyr.us'
 type: 'project-master'
 status: 'authoritative-contract'
-version: '0.96'
+version: '0.97'
 target: 'v1.0 + D1 frozen baseline; enterprise readiness (Issue #124), one bounded phase per PR'
 current_phase: 'Issue #124 — X0, X1a, X1b and X1c done; X1d next, alongside the collaboration packages of §10'
 priority: 'P1'
-last_updated: '2026-11-19'
+last_updated: '2026-11-20'
 repository: 'joeylife94/papyr-us'
 accepted_product_main_sha: '3b91e18f477e8187c4aa8c21708b6f8cf7b2f2d4'
 accepted_proof_main_sha: '1cb04799a8a1924f7697d12d64f0999dcd591fcc'
@@ -18,7 +18,7 @@ checkpoint_main_sha: 'd2f092b240d5ffe0937dd6d487934e32d5a631f3'
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.96**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.97**  
 > Current repository / Issue / PR / executable evidence overrides historical checkpoints, Scheduled Task prompts, and agent self-report.  
 > The accepted v1.0 product/proof baseline and D1 remain frozen as evidence. Progression after D1 runs as contract Issues under [`AGENTS.md`](AGENTS.md), one bounded phase per PR, and must not rewrite prior accepted evidence or widen buyer-facing claims without a new Proof.
 
@@ -402,3 +402,46 @@ The owner restated the destination on 2026-11-19: **a Notion-grade collaboration
 4. team membership screen; any organization member may create a team (owner decision, 2026-11-19);
 5. page sharing screen, and a per-team "members can edit team pages" setting, on for new teams and off for existing ones (owner decision, 2026-11-19);
 6. mentions in comments, and comments that notify.
+
+## 11. Notifications Are Addressed to Accounts (2026-11-20)
+
+### Changed
+
+Owner decision (2026-11-19): identity is the account. The team roster (`members`) stays as a directory and no longer decides who is notified. This is the first of two identity steps that mentions and comment notifications (§10, item 6) are built on; the second records the creating account on pages.
+
+| Area      | What exists now                                                                                                                                                                                                                                                                                                         |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Storage   | `notifications.recipient_user_id`, `sender_user_id`, `organization_id`; every read, count and write is filtered by the session account and its current organization                                                                                                                                                     |
+| API       | all notification routes need a session in both auth modes; another account's or organization's notification answers like an unknown one; creation takes `recipientUserId` (an active account of the caller's organization), person kinds only, bounded title and content; bodies that still name roster ids are refused |
+| Realtime  | delivery to the recipient account's room only; a socket can join only its own account's room                                                                                                                                                                                                                            |
+| Workflows | the notification action takes `recipientUserIds`; an action that still carries roster ids fails instead of guessing                                                                                                                                                                                                     |
+| Bell      | shown to every account that belongs to an organization                                                                                                                                                                                                                                                                  |
+| Migration | `0026`, applied by `db:orgs:prepare` with `0022`–`0025`: each notification moves to the account with exactly the roster row's email; what cannot be assigned is kept with its content and a reason in `notification_roster_archive`; reversible while that loses nothing                                                |
+
+Rules and operator notes are in [`docs/organizations-guide.md`](docs/organizations-guide.md#알림은-계정에게-갑니다).
+
+Process: one developer package against a brief, an independent review (no blocker; five items, all fixed and re-verified), integration on top of the X1c branch merged with current `main`.
+
+### Actually Executed
+
+On the integration head, Linux container, local PostgreSQL 16 (no Docker available), the container's Chromium:
+
+- `node scripts/verify-contributor.mjs` — **PASS**;
+- `npx vitest run --maxWorkers=2` with `CI=true` — 71 files, 1785 tests **PASS**; unit — 53 files, 792 tests **PASS**;
+- Layer 4, whole suite, run directly with `DATABASE_URL` — 30 files, 317 tests **PASS**;
+- migration `0026` by execution (developer and reviewer, separately): constructed roster data in every shape the header names, applied twice, pushed after, reverted byte for byte, fresh install order;
+- browser: `notification-bell`, `security-notifications-scope`, `auth-deactivated-account`, `organization-page`, `gj01-auth-team-entry` — 10 tests **PASS**;
+- reviewer mutations (organization filter, recipient check, room join, migration condition, inactive recipient, roster fallback in workflows, list shape) each failed at least one test.
+
+### Not Verified
+
+- the whole `test:gj` list, Layer 5, Layer 6 and Firebat were not run here: CI on the pull request is the reference;
+- realtime delivery in a browser (covered by the socket test only);
+- `0026` against production-shaped data or volumes.
+
+### Known limits
+
+- Running `db:push` before `db:orgs:prepare` on a database with notifications in the old shape: without a terminal the push applies nothing and still exits 0; with one it offers a column rename that must never be chosen (roster ids would be read as account ids). The deploy workflows run the right order.
+- Notifications whose roster row sat in another organization than the account are held, not shown (the one intended narrowing; the prepare step prints the count).
+- The automation screen has no input for notification recipients yet, so a notification action created there notifies nobody, as before.
+- A moved notification keeps related ids as they were, even when the related page belongs to another organization; reading that page is decided by the page's own access check.
