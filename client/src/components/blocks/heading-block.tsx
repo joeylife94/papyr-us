@@ -3,6 +3,7 @@ import { Block, BlockType } from '@shared/schema';
 import { Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useInlinePreview } from '@/components/page/inline-preview';
+import { useSyncedText } from '@/hooks/useSyncedText';
 
 interface HeadingBlockProps {
   block: Block;
@@ -23,8 +24,8 @@ export function HeadingBlock({
   onDelete,
   onAddBlock,
 }: HeadingBlockProps) {
-  const [content, setContent] = useState(block.content);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [content, setContent] = useSyncedText(block.id, block.content, textareaRef);
 
   // 포커스 시 자동 높이 조정
   useEffect(() => {

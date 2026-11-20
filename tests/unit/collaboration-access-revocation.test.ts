@@ -29,7 +29,7 @@ const yjsConfig: CollabConfig = {
 const REMOVED_USER = 7;
 const OTHER_USER = 8;
 
-/** Read access per user and page, and the user grant getUserPagePermission reports. */
+/** Read access per user and page, and the level at which canEditPage lets them edit. */
 function createStorage(
   canRead: Record<string, boolean>,
   grants: Record<string, 'viewer' | 'editor' | 'owner' | null>
@@ -40,9 +40,15 @@ function createStorage(
     checkPagePermission: vi.fn(
       async (userId: number, pageId: number) => canRead[`${userId}:${pageId}`] ?? false
     ),
+    // The legacy /collab channel still reads the user grant itself
     getUserPagePermission: vi.fn(
       async (userId: number, pageId: number) => grants[`${userId}:${pageId}`] ?? null
     ),
+    // canEditPage is checkPagePermission(…, 'editor'): the grant table says who may edit
+    canEditPage: vi.fn(async (userId: number, pageId: number) => {
+      const level = grants[`${userId}:${pageId}`] ?? null;
+      return level === 'editor' || level === 'owner';
+    }),
   };
 }
 

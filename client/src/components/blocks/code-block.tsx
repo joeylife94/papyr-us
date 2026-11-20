@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import { useSyncedText } from '@/hooks/useSyncedText';
 
 interface CodeBlockProps {
   block: Block;
@@ -58,10 +59,11 @@ export function CodeBlock({
   onDelete,
   onAddBlock,
 }: CodeBlockProps) {
-  const [content, setContent] = useState(block.content);
-  const [language, setLanguage] = useState(block.properties?.language || 'javascript');
-  const [isCopied, setIsCopied] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [content, setContent] = useSyncedText(block.id, block.content, textareaRef);
+  // Follows the block, so a collaborator's choice shows up
+  const language: string = block.properties?.language || 'javascript';
+  const [isCopied, setIsCopied] = useState(false);
   const { toast } = useToast();
 
   // 포커스 시 자동 높이 조정
@@ -91,7 +93,6 @@ export function CodeBlock({
   };
 
   const handleLanguageChange = (newLanguage: string) => {
-    setLanguage(newLanguage);
     onUpdate({
       properties: {
         ...block.properties,

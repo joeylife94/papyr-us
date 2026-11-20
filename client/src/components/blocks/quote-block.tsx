@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Quote, Trash2, Edit3, Check, X } from 'lucide-react';
 import { useInlinePreview } from '@/components/page/inline-preview';
+import { useSyncedText } from '@/hooks/useSyncedText';
 
 interface QuoteBlockProps {
   block: any;
@@ -27,13 +28,13 @@ export function QuoteBlock({
   onDelete,
   onAddBlock,
 }: QuoteBlockProps) {
-  const [content, setContent] = useState<string>(block.content || '');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [content, setContent] = useSyncedText(block.id, block.content || '', textareaRef);
   const source = block.properties?.source || '';
   const author = block.properties?.author || '';
   const [isEditing, setIsEditing] = useState(false);
   const [editSource, setEditSource] = useState(source || '');
   const [editAuthor, setEditAuthor] = useState(author || '');
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   // Inline Markdown, links and #tags render while the quote is not focused (#113 §2).
   const preview = useInlinePreview({
     content,
@@ -59,11 +60,6 @@ export function QuoteBlock({
   useEffect(() => {
     adjustHeight();
   }, [content]);
-
-  // Follow changes made elsewhere (a collaborator, a restore).
-  useEffect(() => {
-    if ((block.content || '') !== content) setContent(block.content || '');
-  }, [block.content]);
 
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setContent(e.target.value);

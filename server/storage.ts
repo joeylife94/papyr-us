@@ -2325,6 +2325,18 @@ export class DBStorage {
   }
 
   /**
+   * Whether the user may edit the page: `checkPagePermission(…, 'editor')`, named so that the
+   * realtime `/yjs` channel uses the rule the REST write routes apply. Only `/yjs` calls this.
+   * `GET /api/pages/:id/access` and the REST write middleware call `checkPagePermission`
+   * directly, so they give the same answer by construction except where the access route adds
+   * its own condition (it answers `canEdit: false` to a signed-out caller even on a publicly
+   * editable page, where this answers true). `userId` is undefined for a signed-out caller.
+   */
+  async canEditPage(userId: number | undefined, pageId: number): Promise<boolean> {
+    return this.checkPagePermission(userId, pageId, 'editor');
+  }
+
+  /**
    * Whether a grant on the page may name this grantee (issue #124 X1): a user or team of the
    * page's own organization. Public grants name nobody; other entity types are left to the
    * permission's own validation.

@@ -4,6 +4,7 @@ import { Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageLinkChip } from '@/components/page/page-links';
 import { useInlinePreview } from '@/components/page/inline-preview';
+import { useSyncedText } from '@/hooks/useSyncedText';
 import { extractPageLinkIds, hasPageLinks } from '@shared/page-links';
 
 interface ParagraphBlockProps {
@@ -51,8 +52,8 @@ export function ParagraphBlock({
   onMarkdownShortcut,
   placeholder = '단락을 입력하세요...',
 }: ParagraphBlockProps) {
-  const [content, setContent] = useState(block.content);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [content, setContent] = useSyncedText(block.id, block.content, textareaRef);
   const slashStartRef = useRef<number | null>(null);
   // Out of focus, links, inline Markdown and #tags render in place (#103 E6, #113 §2); the
   // textarea stays the editing surface and the block's one keyboard stop.
@@ -160,10 +161,7 @@ export function ParagraphBlock({
   /** Clear the slash text and reset when a slash command is selected externally */
   useEffect(() => {
     // When block content gets cleared from outside (slash command selected), reset tracking
-    if (block.content !== content) {
-      setContent(block.content);
-      slashStartRef.current = null;
-    }
+    if (block.content !== content) slashStartRef.current = null;
   }, [block.content]);
 
   return (

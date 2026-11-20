@@ -1,7 +1,11 @@
+import { useRef } from 'react';
 import { AlertCircle, Info, Lightbulb, AlertTriangle, CheckCircle, Flame } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useRemoteCaret } from '@/hooks/useSyncedText';
 
 export interface CalloutBlockProps {
+  /** The block's id, so a collaborator's typing does not move the caret (shared documents). */
+  blockId?: string;
   icon?: string; // Emoji or Lucide icon name
   color?: 'blue' | 'yellow' | 'red' | 'green' | 'purple' | 'gray' | 'orange';
   content: string;
@@ -58,6 +62,7 @@ const COLOR_STYLES = {
 };
 
 export function CalloutBlock({
+  blockId,
   icon = '💡',
   color = 'blue',
   content,
@@ -66,6 +71,8 @@ export function CalloutBlock({
   className = '',
 }: CalloutBlockProps) {
   const styles = COLOR_STYLES[color];
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  useRemoteCaret(blockId, textareaRef, content);
 
   // Render icon
   const renderIcon = () => {
@@ -93,6 +100,7 @@ export function CalloutBlock({
           <div className={cn('prose prose-sm max-w-none', styles.text)}>{content}</div>
         ) : (
           <textarea
+            ref={textareaRef}
             value={content}
             onChange={(e) => onContentChange?.(e.target.value)}
             placeholder="Write a callout..."
