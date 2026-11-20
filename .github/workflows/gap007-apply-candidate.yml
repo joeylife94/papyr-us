@@ -12,7 +12,7 @@ jobs:
       github.event.label.name == 'gap007-apply-candidate' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.head.ref == 'security/issue-58-gap007-reachability'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
