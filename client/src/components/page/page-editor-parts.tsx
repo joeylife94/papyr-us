@@ -196,7 +196,8 @@ export function SaveConflictNotice({
             </h2>
             <p className="text-[13px] leading-relaxed text-foreground-secondary">
               다른 사람, 내 다른 탭이나 창, 자동화 등 다른 곳에서 문서가 바뀌었고 내가 고친 부분과
-              겹쳐 저장하지 않았습니다. 자동 저장은 멈췄고, 아래에서 어느 쪽을 쓸지 고를 수 있습니다.
+              겹쳐 저장하지 않았습니다. 자동 저장은 멈췄고, 아래에서 어느 쪽을 쓸지 고를 수
+              있습니다.
             </p>
           </div>
           {fields.map((field) => {

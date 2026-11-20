@@ -185,15 +185,15 @@ describe('Bulk page operations need the single-page level on every listed page',
       .set(as(EDITOR))
       .send({ pageIds: [PAGE_A], addTags: ['t1'] });
     expect(ok.status).toBe(200);
-    expect(storage.updateWikiPage).toHaveBeenCalledWith(PAGE_A, { tags: ['t0', 't1'] });
+    expect(storage.mergePageTags).toHaveBeenCalledWith(PAGE_A, { add: ['t1'], remove: [] });
 
-    storage.updateWikiPage.mockClear();
+    storage.mergePageTags.mockClear();
     const denied = await request(app)
       .post('/api/pages/bulk/tags')
       .set(as(EDITOR))
       .send({ pageIds: [PAGE_A, PAGE_B], addTags: ['t1'] });
     expect(denied.status).toBe(403);
-    expect(storage.updateWikiPage).not.toHaveBeenCalled();
+    expect(storage.mergePageTags).not.toHaveBeenCalled();
   });
 
   it('deletes pages only when the caller owns every one of them', async () => {

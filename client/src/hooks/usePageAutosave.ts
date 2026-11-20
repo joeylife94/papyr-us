@@ -48,7 +48,6 @@ export function usePageAutosave(
   // One controller per page; the editor is mounted per page, so `page` is read once.
   const controller = useMemo(
     () => new AutosaveController({ pageId: pageId ?? 0, page, guarded }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [pageId]
   );
   controller.handlers = { onSaved, adopt };

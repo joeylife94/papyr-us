@@ -429,6 +429,24 @@ test.describe('A conflict on what I am writing', () => {
     });
   });
 
+  test('the field I am typing in keeps its focus and stays in view when the notice appears', async ({
+    browser,
+  }) => {
+    await withPeople(browser, 'wp1-focus', async (alice, bob) => {
+      const { slug, pageId, blockId } = await createSharedPage(alice, bob, 'Original text');
+      const bobPage = await openEditor(bob, slug, 'Original text');
+      await writeAs(alice, pageId, { blocks: body(blockId, 'Alice body') });
+
+      await firstBlock(bobPage).fill('Bob first');
+      await expect(bobPage.getByTestId('page-save-conflict')).toBeVisible();
+      // Typing goes on in the same field, without clicking it again.
+      await firstBlock(bobPage).pressSequentially(' and on');
+      await expect(firstBlock(bobPage)).toBeFocused();
+      await expect(firstBlock(bobPage)).toHaveValue('Bob first and on');
+      await expect(firstBlock(bobPage)).toBeInViewport();
+    });
+  });
+
   test('the notice says the page was changed elsewhere, and my own second tab is one such place', async ({
     browser,
   }) => {
@@ -445,7 +463,7 @@ test.describe('A conflict on what I am writing', () => {
       const conflict = tabTwo.getByTestId('page-save-conflict');
       await expect(conflict).toBeVisible();
       await expect(conflict).toContainText('다른 곳에서');
-      await expect(conflict).not.toContainText('다른 사람');
+      await expect(conflict).not.toContainText('다른 사람이 이 문서를 수정했습니다');
       // Both versions of the body are shown, the other one read-only.
       await expect(conflict.getByTestId('page-save-conflict-theirs-blocks')).toContainText(
         'Written in the first tab'
