@@ -56,13 +56,13 @@ export function createTeamErrorText(status: number): string {
     case 0:
       return BY_STATUS[0];
     case 400:
-      return '팀 이름을 확인하세요.';
+      return '팀 이름을 확인하세요. 1자 이상 100자 이하여야 합니다.';
     case 401:
       return BY_STATUS[401];
     case 403:
       return '이 계정은 어떤 조직에도 속해 있지 않아 팀을 만들 수 없습니다.';
-    case 409:
-      return '같은 주소의 팀이 이미 있습니다. 다시 시도하세요.';
+    case 503:
+      return '팀을 만들지 못했습니다. 잠시 후 다시 시도하세요.';
     case 429:
       return BY_STATUS[429];
     default:

@@ -13,8 +13,8 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
+import { TEAM_DISPLAY_NAME_MAX_LENGTH } from '@shared/team-members';
 import { createTeamErrorText } from './messages';
-import { teamUrlName } from './team-name';
 
 interface Props {
   open: boolean;
@@ -65,7 +65,6 @@ export function CreateTeamDialog({ open, onOpenChange, onNavigate }: Props) {
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            name: teamUrlName(trimmed),
             displayName: trimmed,
             ...(description.trim() ? { description: description.trim() } : {}),
           }),
@@ -116,7 +115,7 @@ export function CreateTeamDialog({ open, onOpenChange, onNavigate }: Props) {
               id="create-team-name"
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
-              maxLength={100}
+              maxLength={TEAM_DISPLAY_NAME_MAX_LENGTH}
               autoComplete="off"
               data-testid="create-team-name"
             />

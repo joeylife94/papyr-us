@@ -69,6 +69,7 @@ export function TeamMembersView({ teamId, teamName, teamDisplayName, userId }: P
   const [removing, setRemoving] = useState<TeamMemberRow | null>(null);
   const [leaving, setLeaving] = useState(false);
   const [selfChange, setSelfChange] = useState<TeamRole | null>(null);
+  const [grantingOwner, setGrantingOwner] = useState<TeamMemberRow | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const membersKey = ['/api/teams', teamId, 'members', userId];
 
@@ -249,6 +250,9 @@ export function TeamMembersView({ teamId, teamName, teamDisplayName, userId }: P
                         if (isSelf) {
                           // Your own role cannot be given back by you: ask first.
                           setSelfChange(role as TeamRole);
+                        } else if (role === 'owner') {
+                          // Handing someone the owner role is asked first too
+                          setGrantingOwner(member);
                         } else {
                           roleMutation.mutate({ target: member, role: role as TeamRole });
                         }
@@ -358,6 +362,33 @@ export function TeamMembersView({ teamId, teamName, teamDisplayName, userId }: P
               }}
             >
               낮추기
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={grantingOwner !== null}
+        onOpenChange={(open) => (!open ? setGrantingOwner(null) : undefined)}
+      >
+        <AlertDialogContent data-testid="team-grant-owner-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{grantingOwner?.name} 님을 팀 소유자로 지정할까요?</AlertDialogTitle>
+            <AlertDialogDescription>
+              소유자는 팀의 모든 멤버와 역할을 관리하고, 다른 소유자를 내보내거나 소유자 역할을 낮출
+              수 있습니다. 소유자 역할을 주고받는 것은 소유자만 할 수 있습니다.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>취소</AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="team-confirm-grant-owner"
+              onClick={() => {
+                if (grantingOwner) roleMutation.mutate({ target: grantingOwner, role: 'owner' });
+                setGrantingOwner(null);
+              }}
+            >
+              소유자로 지정
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
