@@ -74,8 +74,11 @@ if (!allowRemote && !LOCAL_HOSTS.has(host)) {
 }
 
 const client = new pg.Client({ connectionString: databaseUrl });
-// Migrations report counts as NOTICE messages (0027: pages that got a creator).
-client.on('notice', (message) => console.log(`${label} ${message.message}`));
+// A migration reports counts as a NOTICE that starts with its number (0027: pages that got a
+// creator); the "already exists, skipping" notices of the others stay quiet.
+client.on('notice', (message) => {
+  if (/^\d{4}: /.test(message.message)) console.log(`${label} ${message.message}`);
+});
 
 try {
   await client.connect();
