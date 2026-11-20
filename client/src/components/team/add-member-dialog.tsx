@@ -201,6 +201,8 @@ export function AddMemberDialog({ teamId, open, onOpenChange, onChanged }: Props
           placeholder="이름 또는 이메일로 검색"
           aria-label="조직 구성원 검색"
           maxLength={100}
+          // The term the typing pause has let through: what a search is (or is not) asked for
+          data-settled-term={term}
           data-testid="team-candidate-search"
         />
         {addError ? (

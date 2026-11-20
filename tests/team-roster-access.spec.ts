@@ -12,6 +12,13 @@ import { Pool } from 'pg';
 import { createAuthenticatedApiContext, registerTestUser } from './e2e-helpers';
 
 const DATABASE_URL = process.env.DATABASE_URL;
+// The spec removes the team it creates through the database: without it, it would leave data
+// behind, so it refuses to run at all.
+if (!DATABASE_URL) {
+  throw new Error(
+    'tests/team-roster-access.spec.ts needs DATABASE_URL: it removes the team it creates through the database'
+  );
+}
 
 type Person = { email: string; id: number; api: APIRequestContext };
 
@@ -159,7 +166,7 @@ test('an account that is only on a team’s directory is refused everywhere a te
     };
     expect(members.members.map((m) => m.email)).toEqual([owner.email]);
   } finally {
-    if (teamId !== undefined && DATABASE_URL) {
+    if (teamId !== undefined) {
       const db = new Pool({ connectionString: DATABASE_URL });
       try {
         await db.query(`DELETE FROM wiki_pages WHERE team_id = $1`, [teamId]);

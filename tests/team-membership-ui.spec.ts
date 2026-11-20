@@ -23,13 +23,20 @@ import {
 } from './e2e-helpers';
 
 const DATABASE_URL = process.env.DATABASE_URL;
+// The spec removes every team it creates through the database: without it, it would leave data
+// behind, so it refuses to run at all.
+if (!DATABASE_URL) {
+  throw new Error(
+    'tests/team-membership-ui.spec.ts needs DATABASE_URL: it removes the teams it creates and places accounts through the database'
+  );
+}
 const BASE_URL = process.env.BASE_URL || 'http://localhost:5003';
 
 // Every team a scenario creates is removed afterwards, with the pages it made (the spec leaves the
 // database as it found it, apart from the fresh accounts every spec registers).
 const createdTeams: number[] = [];
 async function removeCreatedTeams() {
-  if (!DATABASE_URL || createdTeams.length === 0) return;
+  if (createdTeams.length === 0) return;
   const ids = createdTeams.splice(0);
   const db = new Pool({ connectionString: DATABASE_URL });
   try {
@@ -316,7 +323,6 @@ test.describe('Team membership screens', () => {
     browser,
     request,
   }) => {
-    if (!DATABASE_URL) throw new Error('DATABASE_URL is required to place accounts');
     const nobody = await makePerson(request, 'nb');
     const db = new Pool({ connectionString: DATABASE_URL });
     try {
@@ -707,12 +713,21 @@ test.describe('Team membership screens', () => {
         await expect(c.page.getByTestId('team-candidates-hint')).toBeVisible();
         await c.page.getByTestId('team-candidate-search').fill('w');
         await expect(c.page.getByTestId('team-candidates-hint')).toBeVisible();
-        // Past the pause before a search goes out, nothing has been asked.
-        await c.page.waitForTimeout(600);
+        // The field says which term its pause has let through: once it names the one character,
+        // the window in which a search could have gone out has passed, and nothing was asked.
+        await expect(c.page.getByTestId('team-candidate-search')).toHaveAttribute(
+          'data-settled-term',
+          'w'
+        );
         expect(searches, 'one character asks nothing').toEqual([]);
         await c.page.getByTestId('team-candidate-search').fill(candidate.email);
+        await expect(c.page.getByTestId('team-candidate-search')).toHaveAttribute(
+          'data-settled-term',
+          candidate.email
+        );
         await expect(c.page.getByTestId(`team-candidate-${candidate.email}`)).toBeVisible();
         expect(searches).toHaveLength(1);
+        expect(searches[0]).toContain(encodeURIComponent(candidate.email));
         await expect(c.page.getByTestId('team-candidates-more')).toHaveCount(0);
 
         // The owner lowers this admin while the picker is open: the add is refused, in words.
@@ -810,6 +825,43 @@ test.describe('Team membership screens', () => {
         expect(overflow).toBeLessThanOrEqual(0);
       } finally {
         await phone.context.close();
+      }
+    } finally {
+      await owner.api.dispose();
+    }
+  });
+
+  test('the creator of a team named "2024 Plans" can open its tasks and members by the name it was given', async ({
+    browser,
+    request,
+  }) => {
+    const owner = await makePerson(request, 'dg');
+    try {
+      const o = await pageFor(browser, owner);
+      try {
+        await o.page.goto('/');
+        await o.page.getByTestId('create-team-entry').click();
+        await o.page.getByTestId('create-team-name').fill('2024 Plans');
+        await o.page.getByTestId('create-team-submit').click();
+        await expect(o.page).toHaveURL(/\/teams\/[^/]+\/team-members$/);
+        const teamName = new URL(o.page.url()).pathname.split('/')[2];
+        const team = (
+          (await (await owner.api.get('/api/teams')).json()) as Array<{ id: number; name: string }>
+        ).find((candidate) => candidate.name === teamName)!;
+        expect(team, 'the team is in the creator’s list').toBeTruthy();
+        createdTeams.push(team.id);
+        // The name is one every team-scoped route reads as a name (a leading digit was a 400)
+        expect(teamName).toMatch(/^[a-z]/);
+        for (const path of ['tasks', 'members', 'calendar', 'uploads', 'page-tree', 'activity']) {
+          const response = await owner.api.get(`/api/${path}?teamId=${teamName}`);
+          expect(response.status(), path).toBe(200);
+        }
+        await o.page.goto(`/teams/${teamName}/tasks`);
+        await expect(o.page.getByText('팀 정보를 불러오지', { exact: false })).toHaveCount(0);
+        await o.page.goto(`/teams/${teamName}/members`);
+        await expect(o.page.getByTestId('directory-not-membership')).toBeVisible();
+      } finally {
+        await o.context.close();
       }
     } finally {
       await owner.api.dispose();
