@@ -671,9 +671,11 @@ export const createNotificationRequestSchema = z
 export const updateNotificationRequestSchema = z
   .object({
     isRead: z.boolean().optional(),
-    title: z.string().optional(),
-    content: z.string().optional(),
-    type: z.string().optional(),
+    // Same bounds as at creation: a recipient editing their own row cannot store more than a
+    // sender could.
+    title: z.string().trim().min(1).max(200).optional(),
+    content: z.string().max(2000).optional(),
+    type: z.string().max(50).optional(),
     recipientUserId: z.number().int().positive().optional(),
     senderUserId: z.number().int().positive().nullable().optional(),
     organizationId: z.number().int().positive().optional(),

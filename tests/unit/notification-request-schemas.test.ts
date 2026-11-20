@@ -94,4 +94,17 @@ describe('updateNotificationRequestSchema', () => {
       expect(updateNotificationRequestSchema.safeParse({ [key]: 1 }).success).toBe(false);
     }
   );
+
+  it('bounds what a recipient can store on their own row, as at creation', () => {
+    const ok = (body: Record<string, unknown>) =>
+      updateNotificationRequestSchema.safeParse(body).success;
+    expect(ok({ title: 'a'.repeat(200) })).toBe(true);
+    expect(ok({ title: 'a'.repeat(201) })).toBe(false);
+    expect(ok({ title: '   ' })).toBe(false);
+    expect(updateNotificationRequestSchema.parse({ title: '  T  ' })).toEqual({ title: 'T' });
+    expect(ok({ content: 'c'.repeat(2000) })).toBe(true);
+    expect(ok({ content: 'c'.repeat(2001) })).toBe(false);
+    expect(ok({ content: '' })).toBe(true);
+    expect(ok({ type: 't'.repeat(51) })).toBe(false);
+  });
 });
