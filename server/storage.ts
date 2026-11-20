@@ -156,6 +156,17 @@ export class OrganizationRequiredError extends Error {
  */
 export type PageCreator = { userId: number } | { automation: true };
 
+/**
+ * Thrown, with nothing written, when the account that is to create a page is unknown or inactive.
+ * Routes answer it with one fixed 403.
+ */
+export class PageCreatorUnavailableError extends Error {
+  constructor() {
+    super('This account cannot create pages');
+    this.name = 'PageCreatorUnavailableError';
+  }
+}
+
 /** The author text of a page created by automation. */
 export const AUTOMATION_AUTHOR = 'Automation';
 
@@ -403,14 +414,25 @@ export class DBStorage {
    * right after the page, is what makes it the page's owner.
    */
   async createWikiPage(page: NewPage, creator: PageCreator): Promise<WikiPage> {
-    const recorded = await this.recordedPageCreator(this.db, creator);
-    const organizationId = await this.organizationForNewPage(page.teamId, recorded.createdByUserId);
-    const createdPage = await this.insertWithUniqueSlug(page.slug, async (slug) => {
-      const result = await this.db
-        .insert(wikiPages)
-        .values({ ...page, slug, organizationId, ...recorded })
-        .returning();
-      return result[0];
+    await this.assertPageCreatorActive(creator);
+    // The account row is read under a share lock in the same transaction as the insert, so an
+    // account deactivated meanwhile waits for the page and cannot slip one in afterwards.
+    const { createdPage, recorded } = await this.db.transaction(async (tx: any) => {
+      const recorded = await this.recordedPageCreator(tx, creator);
+      const organizationId = await this.organizationForNewPage(
+        page.teamId,
+        recorded.createdByUserId
+      );
+      const createdPage = await this.insertWithUniqueSlug(page.slug, (slug) =>
+        tx.transaction(async (savepoint: any) => {
+          const result = await savepoint
+            .insert(wikiPages)
+            .values({ ...page, slug, organizationId, ...recorded })
+            .returning();
+          return result[0];
+        })
+      );
+      return { createdPage, recorded };
     });
 
     if (recorded.createdByUserId !== undefined) {
@@ -429,6 +451,16 @@ export class DBStorage {
     return createdPage;
   }
 
+  /** Refuses an unknown or inactive account before anything else about the page is looked up. */
+  private async assertPageCreatorActive(creator: PageCreator): Promise<void> {
+    if (!('userId' in creator)) return;
+    const [account] = await this.db
+      .select({ isActive: users.isActive })
+      .from(users)
+      .where(eq(users.id, creator.userId));
+    if (!account || account.isActive !== true) throw new PageCreatorUnavailableError();
+  }
+
   /**
    * What a new page records about its creator: the account's id and name, or for automation no
    * account and the author "Automation". Throws, so nothing is written, when the account is
@@ -439,13 +471,13 @@ export class DBStorage {
     creator: PageCreator
   ): Promise<{ author: string; createdByUserId: number | undefined }> {
     if (!('userId' in creator)) return { author: AUTOMATION_AUTHOR, createdByUserId: undefined };
+    // Share-locked: a deactivation of this account waits for the transaction that creates the page.
     const [account] = await executor
       .select({ name: users.name, isActive: users.isActive })
       .from(users)
-      .where(eq(users.id, creator.userId));
-    if (!account || account.isActive !== true) {
-      throw new Error('The account creating the page is unknown or inactive');
-    }
+      .where(eq(users.id, creator.userId))
+      .for('share');
+    if (!account || account.isActive !== true) throw new PageCreatorUnavailableError();
     return { author: account.name, createdByUserId: creator.userId };
   }
 
@@ -469,6 +501,7 @@ export class DBStorage {
   ): Promise<WikiPage> {
     const referenced = databaseBlockSchemaIds(page.blocks);
     const creatorUserId = creator.userId;
+    await this.assertPageCreatorActive(creator);
     const organizationId = await this.organizationForNewPage(page.teamId, creatorUserId);
     return this.db.transaction(async (tx: any) => {
       const recorded = await this.recordedPageCreator(tx, creator);
@@ -993,7 +1026,15 @@ export class DBStorage {
       and(teamless, grant(sql`pp.entity_type = 'user' AND pp.entity_id = ${viewer.userId}`))!,
     ];
     if (viewer.email) {
-      conditions.push(and(teamless, hasPermissions, eq(wikiPages.author, viewer.email))!);
+      // The author text names an owner only on a page with no recorded creator (older pages).
+      conditions.push(
+        and(
+          teamless,
+          hasPermissions,
+          isNull(wikiPages.createdByUserId),
+          eq(wikiPages.author, viewer.email)
+        )!
+      );
     }
     if (viewer.teamIds.length > 0) {
       conditions.push(inArray(wikiPages.teamId, viewer.teamIds));
@@ -3587,8 +3628,10 @@ export class DBStorage {
     // On a team page, authorship and user-specific permissions only count while the user is a
     // member of that team, so removing a member revokes them without deleting any rows
     if (pageTeamId === null || isPageTeamMember) {
-      // Check if user is the page author (implicit owner)
-      if (page.length > 0) {
+      // A page with no recorded creator (older pages) is owned by the account whose email is its
+      // author text. On a page with a recorded creator the author text decides nothing: access
+      // comes from grants and team roles only.
+      if (page.length > 0 && page[0].createdByUserId == null) {
         const user = await this.db.select().from(users).where(eq(users.id, userId));
         if (user.length > 0 && page[0].author === user[0].email) {
           return true;
@@ -4412,6 +4455,7 @@ export class DBStorage {
     | { status: 'trashed' }
     | { status: 'conflict' }
   > {
+    await this.assertPageCreatorActive({ userId: note.userId });
     const organizationId = await this.organizationForNewPage(note.teamId, note.userId);
     try {
       return await this.db.transaction(async (tx: any) => {
@@ -4573,6 +4617,7 @@ export class DBStorage {
     }>;
   }): Promise<Array<{ id: number; slug: string }>> {
     if (input.pages.length === 0) return [];
+    await this.assertPageCreatorActive({ userId: input.userId });
     const organizationId = await this.organizationForNewPage(input.teamId, input.userId);
     return this.db.transaction(async (tx: any) => {
       const recorded = await this.recordedPageCreator(tx, { userId: input.userId });

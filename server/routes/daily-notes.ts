@@ -16,7 +16,7 @@
 import type { Express } from 'express';
 import { z } from 'zod';
 import { optionalAuth, type AuthRequest } from '../middleware.js';
-import type { DBStorage } from '../storage.js';
+import { PageCreatorUnavailableError, type DBStorage } from '../storage.js';
 import { resolvePageScope } from '../services/page-scope.js';
 import { triggerWorkflows } from '../services/workflow.js';
 import logger from '../services/logger.js';
@@ -95,6 +95,9 @@ export function registerDailyNoteRoutes(app: Express, storage: DBStorage) {
       }
       res.json({ page, created: result.status === 'created' });
     } catch (error) {
+      if (error instanceof PageCreatorUnavailableError) {
+        return res.status(403).json({ message: 'This account cannot create pages' });
+      }
       logger.error('Daily note failed', { error: (error as Error)?.message });
       res.status(500).json({ message: 'Failed to open the daily note' });
     }

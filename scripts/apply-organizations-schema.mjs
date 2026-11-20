@@ -77,7 +77,7 @@ const client = new pg.Client({ connectionString: databaseUrl });
 // A migration reports counts as a NOTICE that starts with its number (0027: pages that got a
 // creator); the "already exists, skipping" notices of the others stay quiet.
 client.on('notice', (message) => {
-  if (/^\d{4}: /.test(message.message)) console.log(`${label} ${message.message}`);
+  if (/^\d{4}[ :]/.test(message.message)) console.log(`${label} ${message.message}`);
 });
 
 try {
