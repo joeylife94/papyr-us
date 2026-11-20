@@ -22,6 +22,33 @@ import {
 const rows = (page: Page) => page.locator('[data-page-body] [data-block-row]');
 const field = (page: Page) => rows(page).first().locator('textarea');
 
+// The collaboration tests need a server started with the flag on; otherwise they are skipped.
+test.beforeEach(async ({ request }) => {
+  const flags = await (await request.get('/api/features')).json();
+  test.skip(!flags.FEATURE_COLLABORATION, 'FEATURE_COLLABORATION is disabled on this server');
+});
+
+/**
+ * Resolves when this browser's autosave has saved blocks that satisfy `accept` (a response, not a
+ * timer): create it before the step that leads to the save, await it after.
+ */
+function autosaved(page: Page, pageId: number, accept: (texts: string[]) => boolean) {
+  return page.waitForResponse((response) => {
+    const request = response.request();
+    if (request.method() !== 'PUT' || !response.url().endsWith(`/api/pages/${pageId}/autosave`)) {
+      return false;
+    }
+    if (!response.ok()) return false;
+    try {
+      const body = JSON.parse(request.postData() ?? '{}');
+      return Array.isArray(body.blocks) && accept(body.blocks.map((b: any) => b.content));
+    } catch {
+      return false;
+    }
+  });
+}
+const only = (text: string) => (texts: string[]) => texts.length === 1 && texts[0] === text;
+
 /** The text of every block of a page as the stored JSON has it. */
 async function storedBlocks(api: APIRequestContext, pageId: number) {
   const page = await (await api.get(`/api/pages/${pageId}`)).json();
@@ -126,9 +153,6 @@ test('two people type into one block before either sees the other: one block hol
   browser,
   request,
 }) => {
-  const flags = await (await request.get('/api/features')).json();
-  test.skip(!flags.FEATURE_COLLABORATION, 'FEATURE_COLLABORATION is disabled on this server');
-
   const { owner, guest, api, guestApi, pageId, slug } = await setup(request, 'Base');
   const a = await openEditor(browser, owner, slug);
   const b = await openEditor(browser, guest, slug);
@@ -150,6 +174,7 @@ test('two people type into one block before either sees the other: one block hol
     // Both sides' updates have reached the server and are waiting at the other browser
     await expect.poll(() => a.held() > 0 && b.held() > 0).toBe(true);
 
+    const saved = autosaved(a.page, pageId, only('beta-from-B Base alpha-from-A'));
     a.release();
     b.release();
     await expect(field(a.page)).toHaveValue('beta-from-B Base alpha-from-A');
@@ -158,10 +183,9 @@ test('two people type into one block before either sees the other: one block hol
     await expect(rows(b.page)).toHaveCount(1);
 
     // What is stored is that one block, with its own id
-    await expect
-      .poll(async () => (await storedBlocks(api, pageId)).map((x) => x.content))
-      .toEqual(['beta-from-B Base alpha-from-A']);
+    await saved;
     const blocks = await storedBlocks(api, pageId);
+    expect(blocks.map((x) => x.content)).toEqual(['beta-from-B Base alpha-from-A']);
     expect(new Set(blocks.map((x) => x.id)).size).toBe(blocks.length);
   } finally {
     await a.context.close();
@@ -176,9 +200,6 @@ test('two people typing at the same place, both held back, keep one block with b
   browser,
   request,
 }) => {
-  const flags = await (await request.get('/api/features')).json();
-  test.skip(!flags.FEATURE_COLLABORATION, 'FEATURE_COLLABORATION is disabled on this server');
-
   const { owner, guest, api, guestApi, pageId, slug } = await setup(request, 'Same');
   const a = await openEditor(browser, owner, slug);
   const b = await openEditor(browser, guest, slug);
@@ -192,10 +213,20 @@ test('two people typing at the same place, both held back, keep one block with b
     await a.page.keyboard.type(' ONE-from-A');
     await b.page.keyboard.type(' TWO-from-B');
     await expect.poll(() => a.held() > 0 && b.held() > 0).toBe(true);
+    const full = 'Same ONE-from-A TWO-from-B'.length;
+    const saved = autosaved(
+      a.page,
+      pageId,
+      (texts) =>
+        texts.length === 1 &&
+        texts[0].length === full &&
+        texts[0].startsWith('Same ') &&
+        texts[0].includes('ONE-from-A') &&
+        texts[0].includes('TWO-from-B')
+    );
     a.release();
     b.release();
 
-    const full = 'Same ONE-from-A TWO-from-B'.length;
     await expect
       .poll(async () => {
         const [x, y] = [await field(a.page).inputValue(), await field(b.page).inputValue()];
@@ -209,9 +240,8 @@ test('two people typing at the same place, both held back, keep one block with b
     expect(merged).toContain('TWO-from-B');
     await expect(rows(a.page)).toHaveCount(1);
     await expect(rows(b.page)).toHaveCount(1);
-    await expect
-      .poll(async () => (await storedBlocks(api, pageId)).map((x) => x.content))
-      .toEqual([merged]);
+    await saved;
+    expect((await storedBlocks(api, pageId)).map((x) => x.content)).toEqual([merged]);
   } finally {
     await a.context.close();
     await b.context.close();
@@ -225,9 +255,6 @@ test('typing while the other person types in the same block keeps every keystrok
   browser,
   request,
 }) => {
-  const flags = await (await request.get('/api/features')).json();
-  test.skip(!flags.FEATURE_COLLABORATION, 'FEATURE_COLLABORATION is disabled on this server');
-
   const { owner, guest, api, guestApi, pageId, slug } = await setup(request, 'Start Middle End');
   const a = await openEditor(browser, owner, slug);
   const b = await openEditor(browser, guest, slug);
@@ -239,12 +266,13 @@ test('typing while the other person types in the same block keeps every keystrok
     await a.page.keyboard.press('End');
     await field(b.page).click();
     await b.page.keyboard.press('Home');
+    const expected = `${typedB}Start Middle End${typedA}`;
+    const saved = autosaved(a.page, pageId, only(expected));
     await Promise.all([
       a.page.keyboard.type(typedA, { delay: 25 }),
       b.page.keyboard.type(typedB, { delay: 25 }),
     ]);
 
-    const expected = `${typedB}Start Middle End${typedA}`;
     await expect(field(a.page)).toHaveValue(expected);
     await expect(field(b.page)).toHaveValue(expected);
     await expect(rows(a.page)).toHaveCount(1);
@@ -256,9 +284,8 @@ test('typing while the other person types in the same block keeps every keystrok
     await expect
       .poll(() => caret(a.page))
       .toBe(typedB.length + 'Start Middle End'.length + typedA.length);
-    await expect
-      .poll(async () => (await storedBlocks(api, pageId)).map((x) => x.content))
-      .toEqual([expected]);
+    await saved;
+    expect((await storedBlocks(api, pageId)).map((x) => x.content)).toEqual([expected]);
   } finally {
     await a.context.close();
     await b.context.close();
@@ -272,9 +299,6 @@ test('a Korean composition in progress is not interrupted by a collaborator, and
   browser,
   request,
 }) => {
-  const flags = await (await request.get('/api/features')).json();
-  test.skip(!flags.FEATURE_COLLABORATION, 'FEATURE_COLLABORATION is disabled on this server');
-
   const { owner, guest, api, guestApi, pageId, slug } = await setup(request, 'Base');
   const a = await openEditor(browser, owner, slug);
   const b = await openEditor(browser, guest, slug);
@@ -320,16 +344,16 @@ test('a Korean composition in progress is not interrupted by a collaborator, and
     await compose('ㄱ');
     await compose('그');
     await compose('글');
+    const expected = 'Alice Base한글';
+    const saved = autosaved(a.page, pageId, only(expected));
     await cdp.send('Input.insertText', { text: '글' });
 
-    const expected = 'Alice Base한글';
     await expect(field(a.page)).toHaveValue(expected);
     await expect(field(b.page)).toHaveValue(expected);
     await expect(rows(a.page)).toHaveCount(1);
     await expect(rows(b.page)).toHaveCount(1);
-    await expect
-      .poll(async () => (await storedBlocks(api, pageId)).map((x) => x.content))
-      .toEqual([expected]);
+    await saved;
+    expect((await storedBlocks(api, pageId)).map((x) => x.content)).toEqual([expected]);
   } finally {
     await a.context.close();
     await b.context.close();
@@ -343,9 +367,6 @@ test('undo takes back only what the person typed themselves, not a collaborator�
   browser,
   request,
 }) => {
-  const flags = await (await request.get('/api/features')).json();
-  test.skip(!flags.FEATURE_COLLABORATION, 'FEATURE_COLLABORATION is disabled on this server');
-
   const { owner, guest, api, guestApi, pageId, slug } = await setup(request, 'Base');
   const a = await openEditor(browser, owner, slug);
   const b = await openEditor(browser, guest, slug);
@@ -364,13 +385,13 @@ test('undo takes back only what the person typed themselves, not a collaborator�
     await a.page.keyboard.press('Control+z');
     await expect(field(a.page)).toHaveValue('bob Base');
     await expect(field(b.page)).toHaveValue('bob Base');
+    const saved = autosaved(a.page, pageId, only('bob Base alice'));
     await a.page.keyboard.press('Control+Shift+z');
     await expect(field(a.page)).toHaveValue('bob Base alice');
     await expect(field(b.page)).toHaveValue('bob Base alice');
     await expect(rows(a.page)).toHaveCount(1);
-    await expect
-      .poll(async () => (await storedBlocks(api, pageId)).map((x) => x.content))
-      .toEqual(['bob Base alice']);
+    await saved;
+    expect((await storedBlocks(api, pageId)).map((x) => x.content)).toEqual(['bob Base alice']);
   } finally {
     await a.context.close();
     await b.context.close();

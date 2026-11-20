@@ -116,7 +116,7 @@ describe('collaboration memory lifecycle', () => {
       return readBlocks(doc.ydoc) as any[];
     };
 
-    it('loads stored blocks as they are', async () => {
+    it('loads stored blocks, read back with their properties and order filled in', async () => {
       const blocks = [{ id: 'b1', type: 'heading1', content: 'Title' }];
       expect(await seededBlocks({ content: 'Title', blocks })).toEqual([
         { id: 'b1', type: 'heading1', content: 'Title', properties: {}, order: 0 },
