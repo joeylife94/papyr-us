@@ -14,6 +14,7 @@ import type { AddressInfo } from 'net';
 import { Server as SocketIOServer } from 'socket.io';
 import { io as connect, type Socket } from 'socket.io-client';
 import * as Y from 'yjs';
+import jwt from 'jsonwebtoken';
 import { YjsSession, type OfflineChanges } from '../../client/src/lib/yjs-session.js';
 import { readBlocks, seedBlocks, updateBlock, insertBlock } from '../../shared/yjs-blocks.js';
 
@@ -73,8 +74,20 @@ const storage: any = {
   getUserPagePermission: async () => legacyPermission,
 };
 
+// Every socket signs in with a real access token: the realtime channel requires a session, and
+// switching that off (COLLAB_REQUIRE_AUTH=0) is refused outside a developer's machine.
+const TEST_JWT_SECRET = 'yjs-convergence-socket-test-secret';
+const TEST_USER_ID = 501;
+function signedIn() {
+  const token = jwt.sign({ id: TEST_USER_ID, email: 'editor@example.com' }, TEST_JWT_SECRET, {
+    expiresIn: '1h',
+  });
+  return { Authorization: `Bearer ${token}` };
+}
+
 beforeAll(async () => {
-  process.env.COLLAB_REQUIRE_AUTH = '0';
+  process.env.JWT_SECRET = TEST_JWT_SECRET;
+  process.env.COLLAB_REQUIRE_AUTH = '1';
   process.env.COLLAB_SAVE_DEBOUNCE_MS = '60000';
   process.env.COLLAB_MAX_CLIENTS_PER_DOC = '3';
   server = http.createServer();
@@ -166,6 +179,7 @@ async function join(): Promise<Client> {
     transports: ['websocket'],
     reconnection: false,
     forceNew: true,
+    extraHeaders: signedIn(),
   });
   sockets.push(socket);
   let composing = false;
@@ -427,6 +441,7 @@ describe('who may edit', () => {
       transports: ['websocket'],
       reconnection: false,
       forceNew: true,
+      extraHeaders: signedIn(),
     });
     sockets.push(socket);
     await new Promise<void>((resolve) => socket.on('connect', () => resolve()));
@@ -479,6 +494,7 @@ describe("a socket's right to edit belongs to the page it joined", () => {
       transports: ['websocket'],
       reconnection: false,
       forceNew: true,
+      extraHeaders: signedIn(),
     });
     sockets.push(socket);
     await new Promise<void>((resolve) => socket.on('connect', () => resolve()));
