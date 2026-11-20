@@ -13,7 +13,9 @@
  *   - two owners each demoting the other: exactly one commits and the organization keeps an owner;
  *   - two owners each lowering itself: exactly one commits, the other gets the last-owner refusal;
  *   - a change waits while another transaction holds the organization's lock.
- * DBStorage.getMemberOrganizationId: a roster row whose account has no organization is in none.
+ * Notifications stay in the organization they were created in (WP0a, R11): removing the account
+ * from its organization, or placing it as first owner of a new one, deletes none of them and
+ * lists none of them for the organization the account is in afterwards.
  * DBStorage.updateTeam: the route parses with updateTeamSchema first, so organizationId and id
  * are never written (the raw call is kept as documentation of why the route parses).
  * DBStorage.listOrganizationMembers / listOrganizationTeams: only the organization's own rows.
@@ -186,6 +188,22 @@ beforeAll(async () => {
     );
   `);
   defaultId = await addOrganizations(scoped);
+  // The notifications table in its current shape (drizzle/0026); the migration itself is proven
+  // by notifications-migration.test.ts.
+  // The first-owner footprint looks at comments (only the columns it reads).
+  await scoped.query(`
+    CREATE TABLE comments (
+      id SERIAL PRIMARY KEY, page_id INTEGER NOT NULL, author_user_id INTEGER
+    );
+    CREATE TABLE notifications (
+      id SERIAL PRIMARY KEY, type TEXT NOT NULL, title TEXT NOT NULL, content TEXT NOT NULL,
+      recipient_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      sender_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      related_page_id INTEGER, related_task_id INTEGER, related_comment_id INTEGER,
+      is_read BOOLEAN NOT NULL DEFAULT FALSE, created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
   acmeId = Number(
     (await one(`INSERT INTO organizations (slug, name) VALUES ('acme', 'Acme') RETURNING id`)).id
   );
@@ -591,30 +609,67 @@ describe('a deactivated owner does not count as an owner', () => {
   });
 });
 
-describe('getMemberOrganizationId', () => {
-  it("is the account's organization when the account has one", async () => {
-    const row = await one(`SELECT id FROM members WHERE email = $1`, [email(MEMBER)]);
-    expect(await storage.getMemberOrganizationId(row.id)).toBe(defaultId);
+describe('notifications stay in the organization they were created in (R11)', () => {
+  const addNotification = async (title: string, userId: number, organizationId: number) =>
+    (
+      await one(
+        `INSERT INTO notifications (type, title, content, recipient_user_id, organization_id)
+         VALUES ('mention', $1, 'body', $2, $3) RETURNING id`,
+        [title, userId, organizationId]
+      )
+    ).id;
+  const stored = async () =>
+    (await rows(`SELECT title FROM notifications ORDER BY id`)).map((r: any) => r.title);
+  // What the notification routes list: the session user and that user's current organization.
+  const listedFor = async (userId: number) => {
+    const organizationId = await storage.getUserOrganizationId(userId);
+    return organizationId === null
+      ? []
+      : (await storage.getNotifications(userId, organizationId)).map((r: any) => r.title);
+  };
+
+  it('removing the account from its organization deletes none of its notifications and lists none', async () => {
+    await addNotification('before-removal', MEMBER, defaultId);
+    await addNotification('someone-else', OWNER_A, defaultId);
+    expect(await listedFor(MEMBER)).toEqual(['before-removal']);
+
+    expect(await storage.removeOrganizationMember(defaultId, OWNER_A, MEMBER)).toMatchObject({
+      ok: true,
+    });
+
+    expect(await stored()).toEqual(['before-removal', 'someone-else']);
+    expect(await listedFor(MEMBER)).toEqual([]);
+    expect(await storage.getNotificationRecipientOrganizationId(MEMBER)).toBeNull();
+    expect(await listedFor(OWNER_A)).toEqual(['someone-else']);
   });
 
-  it('is null for a roster row whose account belongs to no organization, even in a team of one', async () => {
-    const row = await one(`SELECT id FROM members WHERE email = $1`, [email(GHOST)]);
-    // The row sits in a default-organization team; the account has been removed from every one.
-    expect(await storage.getMemberOrganizationId(row.id)).toBeNull();
-  });
+  it('placing the account as first owner of a new organization lists none of the old rows and keeps them', async () => {
+    const eligible = 7; // no roster row, no pages, no grants: nothing blocks the placement
+    await scoped.query(`INSERT INTO users (id, name, email) VALUES ($1, 'Eligible', $2)`, [
+      eligible,
+      email(eligible),
+    ]);
+    await addNotification('old-organization', eligible, defaultId);
+    expect(await listedFor(eligible)).toEqual(['old-organization']);
 
-  it('after removal, the roster row of the removed account is in no organization', async () => {
-    const row = await one(`SELECT id FROM members WHERE email = $1`, [email(MEMBER)]);
-    await storage.removeOrganizationMember(defaultId, OWNER_A, MEMBER);
-    expect(await storage.getMemberOrganizationId(row.id)).toBeNull();
-  });
+    const placed = await storage.createOrganizationWithOwner({
+      name: 'Fresh',
+      slug: 'fresh',
+      ownerEmail: email(eligible),
+    });
+    expect(placed.kind).toBe('created');
 
-  it('a row with no account at all is placed by its team, or by nothing without one', async () => {
-    const nobody = await one(`SELECT id FROM members WHERE email = 'nobody@example.com'`);
-    const orphan = await one(`SELECT id FROM members WHERE email = 'orphan@example.com'`);
-    expect(await storage.getMemberOrganizationId(nobody.id)).toBe(acmeId);
-    expect(await storage.getMemberOrganizationId(orphan.id)).toBeNull();
-    expect(await storage.getMemberOrganizationId(999999)).toBeNull();
+    expect(await stored()).toEqual(['old-organization']);
+    expect(await listedFor(eligible)).toEqual([]);
+    expect(await storage.getNotificationRecipientOrganizationId(eligible)).toBe(
+      placed.organization.id
+    );
+    // moved back, the row is there again: nothing was deleted
+    await scoped.query(`UPDATE organization_members SET organization_id = $1 WHERE user_id = $2`, [
+      defaultId,
+      eligible,
+    ]);
+    expect(await listedFor(eligible)).toEqual(['old-organization']);
   });
 });
 

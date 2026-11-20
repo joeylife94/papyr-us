@@ -77,8 +77,11 @@ if (!allowRemote && !LOCAL_HOSTS.has(host)) {
 }
 
 const client = new pg.Client({ connectionString: databaseUrl });
-// RAISE NOTICE output of the migrations (0026 prints how many notifications it assigned and held).
-client.on('notice', (notice) => console.log(`${label} ${notice.message}`));
+// 0026 prints how many notifications it assigned and held (RAISE NOTICE); the "already exists,
+// skipping" notices of the idempotent files are not repeated.
+client.on('notice', (notice) => {
+  if (notice.message.startsWith('0026 ')) console.log(`${label} ${notice.message}`);
+});
 
 try {
   await client.connect();
@@ -107,8 +110,11 @@ try {
         : 0;
       const held = (await client.query(`SELECT to_regclass('notification_roster_archive') AS t`))
         .rows[0].t
-        ? (await client.query('SELECT count(*)::int AS n FROM notification_roster_archive')).rows[0]
-            .n
+        ? (
+            await client.query(
+              `SELECT count(*)::int AS n FROM notification_roster_archive WHERE reason <> 'sender_unmapped'`
+            )
+          ).rows[0].n
         : 0;
       console.log(
         `${label} Organizations ready (${counts[0].organizations} organization(s), ` +

@@ -13,13 +13,15 @@ import {
 import { ScrollArea } from './scroll-area';
 import { useFeatureFlags } from '@/features/FeatureFlagsContext';
 
+// A notification is addressed to an account and belongs to one organization (WP0a).
 interface Notification {
   id: number;
-  type: 'comment' | 'mention' | 'task_due' | 'task_assigned';
+  type: string; // comment, mention, task_due, task_assigned, system; unknown values are tolerated
   title: string;
   content: string;
-  recipientId: number;
-  senderId: number | null;
+  recipientUserId: number;
+  organizationId: number;
+  senderUserId: number | null;
   relatedPageId: number | null;
   relatedTaskId: number | null;
   relatedCommentId: number | null;
@@ -27,57 +29,60 @@ interface Notification {
   createdAt: string;
 }
 
-interface NotificationBellProps {
-  recipientId?: number; // member.id
+// What GET /api/notifications answers.
+interface NotificationList {
+  notifications: Notification[];
+  pagination: { hasMore: boolean; nextCursor: string | null; count: number; total: number };
 }
 
-const notificationIcons = {
+const notificationIcons: Record<string, typeof Bell> = {
   comment: MessageSquare,
   mention: AtSign,
   task_due: Calendar,
   task_assigned: AlertTriangle,
 };
 
-const notificationColors = {
+const notificationColors: Record<string, string> = {
   comment: 'text-info',
   mention: 'text-highlight',
   task_due: 'text-warning',
   task_assigned: 'text-success',
 };
 
-import { useSocket } from '@/lib/socket';
+// A type this client does not know (for example `system`) renders with a neutral icon.
+const iconFor = (type: string) => notificationIcons[type] ?? Bell;
+const colorFor = (type: string) => notificationColors[type] ?? 'text-muted-foreground';
 
-export function NotificationBell({ recipientId }: NotificationBellProps) {
+import { useSocket } from '@/lib/socket';
+import { useAuth } from '@/hooks/useAuth';
+
+export function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false);
   const queryClient = useQueryClient();
   const { flags } = useFeatureFlags();
+  const { user } = useAuth();
   const enabled = flags.FEATURE_NOTIFICATIONS;
-  const { joinMember, onNotificationNew, onNotificationUnreadCount, off } = useSocket({ enabled });
+  // The signed-in account: the server decides what it may see, the id only keys the cache.
+  const userId: number | undefined = user?.id;
+  const { onNotificationNew, onNotificationUnreadCount, off } = useSocket({
+    enabled: enabled && !!userId,
+  });
 
-  if (!enabled) return null;
-
-  // Join member room and wire socket listeners
+  // Wire socket listeners (the account's own room is joined when the socket connects)
   useEffect(() => {
-    if (!enabled || !recipientId) return;
-    // join member room
-    joinMember(recipientId);
+    if (!enabled || !userId) return;
 
-    const handleNew = (notif: any) => {
-      if (!notif || notif.recipientId !== recipientId) return;
+    const handleNew = (notif: Notification | undefined) => {
+      if (!notif || notif.recipientUserId !== userId) return;
       // Optimistically update notifications list
-      queryClient.setQueryData<Notification[] | undefined>(['notifications', recipientId], (old) =>
-        old ? [notif, ...old] : [notif]
-      );
-      // Also bump unread count
-      queryClient.setQueryData<{ count: number } | undefined>(
-        ['notifications', 'unread-count', recipientId],
-        (old) => ({ count: (old?.count || 0) + 1 })
+      queryClient.setQueryData<Notification[] | undefined>(['notifications', userId], (old) =>
+        old ? [notif, ...old.filter((n) => n.id !== notif.id)] : [notif]
       );
     };
 
-    const handleCount = (data: { recipientId: number; count: number }) => {
-      if (!data || data.recipientId !== recipientId) return;
-      queryClient.setQueryData<{ count: number }>(['notifications', 'unread-count', recipientId], {
+    const handleCount = (data: { recipientUserId: number; count: number }) => {
+      if (!data || data.recipientUserId !== userId) return;
+      queryClient.setQueryData<{ count: number }>(['notifications', 'unread-count', userId], {
         count: data.count,
       });
     };
@@ -89,35 +94,28 @@ export function NotificationBell({ recipientId }: NotificationBellProps) {
       off('notification:new', handleNew as any);
       off('notification:unread-count', handleCount as any);
     };
-  }, [
-    enabled,
-    recipientId,
-    joinMember,
-    onNotificationNew,
-    onNotificationUnreadCount,
-    off,
-    queryClient,
-  ]);
+  }, [enabled, userId, onNotificationNew, onNotificationUnreadCount, off, queryClient]);
 
   // Fetch notifications
   const { data: notifications = [] } = useQuery<Notification[]>({
-    queryKey: ['notifications', recipientId],
-    enabled: !!recipientId,
+    queryKey: ['notifications', userId],
+    enabled: enabled && !!userId,
     queryFn: async () => {
-      const response = await fetch(`/api/notifications?recipientId=${recipientId}`);
+      const response = await fetch('/api/notifications');
       if (!response.ok) {
         throw new Error('Failed to fetch notifications');
       }
-      return response.json();
+      const body = (await response.json()) as NotificationList;
+      return Array.isArray(body?.notifications) ? body.notifications : [];
     },
   });
 
   // Fetch unread count
   const { data: unreadCount = { count: 0 } } = useQuery<{ count: number }>({
-    queryKey: ['notifications', 'unread-count', recipientId],
-    enabled: !!recipientId,
+    queryKey: ['notifications', 'unread-count', userId],
+    enabled: enabled && !!userId,
     queryFn: async () => {
-      const response = await fetch(`/api/notifications/unread-count?recipientId=${recipientId}`);
+      const response = await fetch('/api/notifications/unread-count');
       if (!response.ok) {
         throw new Error('Failed to fetch unread count');
       }
@@ -137,9 +135,9 @@ export function NotificationBell({ recipientId }: NotificationBellProps) {
       return response.json();
     },
     onSuccess: () => {
-      if (recipientId) {
-        queryClient.invalidateQueries({ queryKey: ['notifications', recipientId] });
-        queryClient.invalidateQueries({ queryKey: ['notifications', 'unread-count', recipientId] });
+      if (userId) {
+        queryClient.invalidateQueries({ queryKey: ['notifications', userId] });
+        queryClient.invalidateQueries({ queryKey: ['notifications', 'unread-count', userId] });
       }
     },
   });
@@ -149,8 +147,6 @@ export function NotificationBell({ recipientId }: NotificationBellProps) {
     mutationFn: async () => {
       const response = await fetch('/api/notifications/read-all', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recipientId }),
       });
       if (!response.ok) {
         throw new Error('Failed to mark all notifications as read');
@@ -158,10 +154,10 @@ export function NotificationBell({ recipientId }: NotificationBellProps) {
       return response.json();
     },
     onSuccess: () => {
-      if (recipientId) {
-        queryClient.invalidateQueries({ queryKey: ['notifications', recipientId] });
+      if (userId) {
+        queryClient.invalidateQueries({ queryKey: ['notifications', userId] });
         queryClient.invalidateQueries({
-          queryKey: ['notifications', 'unread-count', recipientId],
+          queryKey: ['notifications', 'unread-count', userId],
         });
       }
     },
@@ -178,10 +174,10 @@ export function NotificationBell({ recipientId }: NotificationBellProps) {
       }
     },
     onSuccess: () => {
-      if (recipientId) {
-        queryClient.invalidateQueries({ queryKey: ['notifications', recipientId] });
+      if (userId) {
+        queryClient.invalidateQueries({ queryKey: ['notifications', userId] });
         queryClient.invalidateQueries({
-          queryKey: ['notifications', 'unread-count', recipientId],
+          queryKey: ['notifications', 'unread-count', userId],
         });
       }
     },
@@ -239,6 +235,8 @@ export function NotificationBell({ recipientId }: NotificationBellProps) {
     return date.toLocaleDateString('ko-KR');
   };
 
+  if (!enabled) return null;
+
   const unreadNotifications = notifications.filter((n) => !n.isRead);
   const readNotifications = notifications.filter((n) => n.isRead);
 
@@ -247,7 +245,7 @@ export function NotificationBell({ recipientId }: NotificationBellProps) {
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="sm" className="relative">
           <Bell className="h-5 w-5" />
-          {recipientId && unreadCount.count > 0 && (
+          {userId && unreadCount.count > 0 && (
             <Badge
               variant="destructive"
               className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 text-xs flex items-center justify-center"
@@ -261,7 +259,7 @@ export function NotificationBell({ recipientId }: NotificationBellProps) {
       <DropdownMenuContent align="end" className="w-80">
         <div className="flex items-center justify-between p-4 border-b">
           <h3 className="font-semibold">알림</h3>
-          {recipientId && unreadCount.count > 0 && (
+          {userId && unreadCount.count > 0 && (
             <Button variant="ghost" size="sm" onClick={handleMarkAllAsRead} className="text-xs">
               모두 읽음 처리
             </Button>
@@ -277,8 +275,8 @@ export function NotificationBell({ recipientId }: NotificationBellProps) {
               {unreadNotifications.length > 0 && (
                 <>
                   {unreadNotifications.map((notification) => {
-                    const Icon = notificationIcons[notification.type];
-                    const iconColor = notificationColors[notification.type];
+                    const Icon = iconFor(notification.type);
+                    const iconColor = colorFor(notification.type);
 
                     return (
                       <DropdownMenuItem
@@ -321,8 +319,8 @@ export function NotificationBell({ recipientId }: NotificationBellProps) {
 
               {/* Read notifications */}
               {readNotifications.map((notification) => {
-                const Icon = notificationIcons[notification.type];
-                const iconColor = notificationColors[notification.type];
+                const Icon = iconFor(notification.type);
+                const iconColor = colorFor(notification.type);
 
                 return (
                   <DropdownMenuItem
