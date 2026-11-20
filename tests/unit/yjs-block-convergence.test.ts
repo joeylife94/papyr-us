@@ -203,6 +203,19 @@ describe('concurrent move, insert and delete', () => {
     expect(readBlocks(a)).toEqual(readBlocks(b));
   });
 
+  it('two concurrent inserts of one id leave one block, and a delete of it takes both inserts away', () => {
+    // Not reachable from the editor (ids are random); a crafted client can do it
+    const [a, b] = replicas(base());
+    insertBlock(a, 3, block('same', 'one'));
+    insertBlock(b, 3, block('same', 'two'));
+    exchange(a, b);
+    expect(ids(a).filter((id) => id === 'same')).toHaveLength(1);
+    // One block is left of the two inserts; deleting it removes the id for everyone
+    deleteBlock(a, 'same');
+    exchange(a, b);
+    for (const doc of [a, b]) expect(ids(doc)).toEqual(['a', 'b', 'c']);
+  });
+
   it('a delete wins over a concurrent move of the same block', () => {
     const [a, b] = replicas(base());
     deleteBlock(a, 'a');
@@ -290,6 +303,32 @@ describe('a reseeded server document and a client that kept its copy', () => {
       removed: 1,
     });
     expect(changesSince(baseline, baseline)).toBeNull();
+  });
+});
+
+describe('what is read back from the document', () => {
+  it('has the same key order on every replica, whatever order the changes arrived in', () => {
+    const [a, b] = replicas([
+      block('p', 'x', { properties: { zeta: 1, alpha: 2 }, parentId: 'r' }),
+    ]);
+    updateBlock(a, 'p', { properties: { zeta: 1, alpha: 2, mid: 3 }, note: 'n' });
+    updateBlock(b, 'p', { properties: { zeta: 1, alpha: 2, beta: 4 }, anchor: 'z' });
+    exchange(a, b);
+    const json = (doc: Y.Doc) => JSON.stringify(readBlocks(doc));
+    expect(json(a)).toBe(json(b));
+    const read = readBlocks(a)[0];
+    expect(Object.keys(read)).toEqual([
+      'id',
+      'type',
+      'content',
+      'properties',
+      'anchor',
+      'children',
+      'note',
+      'parentId',
+      'order',
+    ]);
+    expect(Object.keys(read.properties as object)).toEqual(['alpha', 'beta', 'mid', 'zeta']);
   });
 });
 
@@ -432,6 +471,28 @@ describe('what a collaborator sends is never trusted', () => {
 });
 
 describe('text edits', () => {
+  it('diffText always yields an edit that turns the old text into the new one, whatever the caret', () => {
+    let seed = 99;
+    const random = (n: number) => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed % n;
+    };
+    const word = () => Array.from({ length: random(7) }, () => 'ab😀'[random(3)]).join('');
+    for (let i = 0; i < 3000; i++) {
+      const previous = word();
+      const next = word();
+      const caret = random(3) === 0 ? undefined : random(next.length + 1);
+      const edit = diffText(previous, next, caret);
+      if (!edit) {
+        expect(previous).toBe(next);
+        continue;
+      }
+      const applied =
+        previous.slice(0, edit.index) + edit.insert + previous.slice(edit.index + edit.remove);
+      expect(applied, `${previous} -> ${next} @${caret}`).toBe(next);
+    }
+  });
+
   it('diffText finds the changed span, keeps an edit at the caret in repeated text and never splits a surrogate pair', () => {
     expect(diffText('hello', 'hello')).toBeNull();
     expect(diffText('hello', 'hello world')).toEqual({ index: 5, remove: 0, insert: ' world' });
@@ -439,6 +500,17 @@ describe('text edits', () => {
     expect(diffText('abcdef', 'abXYef')).toEqual({ index: 2, remove: 2, insert: 'XY' });
     // typing one more "a" after the first two: at the caret, not at the end of the run
     expect(diffText('aab', 'aaab', 3)).toEqual({ index: 2, remove: 0, insert: 'a' });
+    // text typed next to a repeat of itself: the edit sits on the side of the repeat the caret is on
+    expect(diffText('ab', 'aab', 1)).toEqual({ index: 0, remove: 0, insert: 'a' });
+    expect(diffText('ab', 'aab', 2)).toEqual({ index: 1, remove: 0, insert: 'a' });
+    expect(diffText('xa', 'xaa', 2)).toEqual({ index: 1, remove: 0, insert: 'a' });
+    expect(diffText('abab', 'ababab', 4)).toEqual({ index: 2, remove: 0, insert: 'ab' });
+    expect(diffText('abab', 'ababab', 2)).toEqual({ index: 0, remove: 0, insert: 'ab' });
+    expect(diffText('aaa', 'aaaa', 2)).toEqual({ index: 1, remove: 0, insert: 'a' });
+    // a deletion inside a run: the caret says which of the equal characters went
+    expect(diffText('aaa', 'aa', 0)).toEqual({ index: 0, remove: 1, insert: '' });
+    expect(diffText('aaa', 'aa', 1)).toEqual({ index: 1, remove: 1, insert: '' });
+    expect(diffText('aaa', 'aa', 2)).toEqual({ index: 2, remove: 1, insert: '' });
     // an emoji replaced by another one that shares its first code unit
     const edit = diffText('x😀y', 'x😁y')!;
     expect(edit.index).toBe(1);

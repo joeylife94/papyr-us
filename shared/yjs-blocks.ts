@@ -17,7 +17,10 @@
  * - edits to different fields or properties of a block both survive; the same property set to
  *   different values keeps one of them (last writer in Yjs order);
  * - two moves of one block leave it at one of the two destinations;
- * - a delete wins over an edit or a move of the same block;
+ * - a delete wins over an edit or a move of the same block, and over inserts of the same id: if
+ *   two peers insert a block with one id at the same moment, the merge shows one block, and
+ *   deleting it removes the id for everyone, so both inserts are gone (the editor never reuses an
+ *   id, so only a crafted client can reach this);
  * - two blocks inserted with the same id leave one block (the first in the order).
  *
  * Everything read from a document is untrusted (any editor can send any update): `readBlocks`
@@ -99,16 +102,27 @@ export function readBlock(value: unknown): Omit<Block, 'order'> | null {
     content:
       content instanceof Y.Text ? content.toString() : typeof content === 'string' ? content : '',
   };
+  // Keys come out in a fixed order (id, type, content, properties, then the rest by name, and the
+  // properties by name), not in the order this replica happened to receive them, so the same
+  // document reads back as byte-identical JSON on every replica.
   const props: Record<string, unknown> = {};
+  const propertyEntries: Array<[string, unknown]> = [];
   if (properties instanceof Y.Map) {
-    properties.forEach((v, k) => assignSafe(props, k, plain(v)));
+    properties.forEach((v, k) => propertyEntries.push([k, plain(v)]));
   } else if (properties && typeof properties === 'object' && !Array.isArray(properties)) {
-    for (const [k, v] of Object.entries(properties)) assignSafe(props, k, v);
+    propertyEntries.push(...Object.entries(properties));
+  }
+  for (const [k, v] of propertyEntries.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    assignSafe(props, k, v);
   }
   result.properties = props;
+  const extras: Array<[string, unknown]> = [];
   value.forEach((v, k) => {
-    if (!RESERVED_KEYS.has(k) && k !== 'order') assignSafe(result, k, plain(v));
+    if (!RESERVED_KEYS.has(k) && k !== 'order') extras.push([k, plain(v)]);
   });
+  for (const [k, v] of extras.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    assignSafe(result, k, v);
+  }
   return result as Omit<Block, 'order'>;
 }
 
@@ -220,18 +234,40 @@ export function diffText(
   const isHigh = (code: number) => code >= 0xd800 && code <= 0xdbff;
   const isLow = (code: number) => code >= 0xdc00 && code <= 0xdfff;
   const max = Math.min(previous.length, next.length);
-  let prefix = 0;
-  const prefixLimit = caret === undefined ? max : Math.max(0, Math.min(max, caret));
-  while (prefix < prefixLimit && previous.charCodeAt(prefix) === next.charCodeAt(prefix)) prefix++;
-  if (prefix > 0 && isHigh(previous.charCodeAt(prefix - 1))) prefix--;
-  let suffix = 0;
-  while (
-    suffix < max - prefix &&
-    previous.charCodeAt(previous.length - 1 - suffix) === next.charCodeAt(next.length - 1 - suffix)
-  ) {
-    suffix++;
+  const commonPrefix = (limit: number) => {
+    let n = 0;
+    while (n < limit && previous.charCodeAt(n) === next.charCodeAt(n)) n++;
+    return n;
+  };
+  const commonSuffix = (limit: number) => {
+    let n = 0;
+    while (
+      n < limit &&
+      previous.charCodeAt(previous.length - 1 - n) === next.charCodeAt(next.length - 1 - n)
+    ) {
+      n++;
+    }
+    return n;
+  };
+  let prefix: number;
+  let suffix: number;
+  if (caret === undefined) {
+    prefix = commonPrefix(max);
+    suffix = commonSuffix(max - prefix);
+  } else {
+    // The edit ends at the caret: what follows the caret is the unchanged tail and what precedes
+    // the edit is the unchanged head. Where the inserted text repeats what is next to it, this
+    // keeps the edit on the side of the repeat the caret is on. (The text is the same either way;
+    // the position is what a collaborator's caret is carried through.)
+    const tailLimit = Math.max(0, Math.min(max, next.length - caret));
+    suffix = commonSuffix(tailLimit);
+    if (suffix > 0 && isLow(previous.charCodeAt(previous.length - suffix))) suffix--;
+    prefix = commonPrefix(Math.min(max - suffix, Math.max(0, caret)));
   }
-  if (suffix > 0 && isLow(previous.charCodeAt(previous.length - suffix))) suffix--;
+  if (prefix > 0 && isHigh(previous.charCodeAt(prefix - 1))) prefix--;
+  if (caret === undefined && suffix > 0 && isLow(previous.charCodeAt(previous.length - suffix))) {
+    suffix--;
+  }
   return {
     index: prefix,
     remove: previous.length - prefix - suffix,
