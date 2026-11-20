@@ -79,7 +79,7 @@ export class YjsSession {
   epoch: string | null = null;
 
   private detachDoc: (() => void) | null = null;
-  // The blocks as they were when the connection last dropped (to find offline edits)
+  // The blocks as they were when a synced connection last dropped (to find offline edits)
   private baseline: Block[] | null = null;
   // Server updates held back while a person is composing text
   private held: Uint8Array[] = [];
@@ -183,9 +183,12 @@ export class YjsSession {
 
   private onDisconnect = () => {
     this.options.onLog?.('Disconnected from collaboration server');
+    // Offline editing starts where the server and this browser last agreed. A drop before the
+    // server's state arrived again is the same offline stretch: its starting point stands, or the
+    // edits made so far would count as the server's and never be handed over.
+    if (this.doc && this.synced) this.baseline = readBlocks(this.doc);
     this.synced = false;
     this.held = [];
-    if (this.doc) this.baseline = readBlocks(this.doc);
     this.status();
   };
 

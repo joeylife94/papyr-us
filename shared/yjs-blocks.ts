@@ -370,13 +370,43 @@ export function moveBlock(doc: Y.Doc, id: string, to: number): boolean {
 }
 
 /**
- * Changes a browser made to the page that a server document does not have: the text of every block
- * that is new or differs from `baseline`, and how many blocks of `baseline` are gone. Null when the
- * two are the same.
+ * Changes a browser made to the page that a server document does not have: what every block that
+ * is new or differs from `baseline` holds, as text a person can copy, and how many blocks of
+ * `baseline` are gone. Null when the two are the same.
  */
 export interface OfflineChanges {
   blocks: Array<{ id: string; type: string; text: string }>;
   removed: number;
+}
+
+/**
+ * A block as text to copy back: its text, then what it holds outside its text and `old` does not
+ * have. A table is its rows, cells separated by tabs (the form spreadsheets and editors paste);
+ * any other text property is a `name: value` line. Values that are not text (a ticked box, a
+ * flag) have nothing to copy: the block is still listed, with its text.
+ */
+function recoverableText(block: Block, old: Block | undefined): string {
+  const parts: string[] = [];
+  if (block.content) parts.push(block.content);
+  const before: Record<string, unknown> = old?.properties ?? {};
+  for (const [key, value] of Object.entries(block.properties ?? {})) {
+    if (jsonEqual(value, before[key])) continue;
+    const cells: unknown = key === 'tableData' ? (value as { cells?: unknown })?.cells : undefined;
+    if (Array.isArray(cells)) {
+      parts.push(
+        cells
+          .map((row) =>
+            Array.isArray(row)
+              ? row.map((cell) => (cell == null ? '' : String(cell))).join('\t')
+              : ''
+          )
+          .join('\n')
+      );
+    } else if (typeof value === 'string' && value.trim() !== '') {
+      parts.push(`${key}: ${value}`);
+    }
+  }
+  return parts.join('\n');
 }
 
 export function changesSince(baseline: Block[], current: Block[]): OfflineChanges | null {
@@ -390,7 +420,7 @@ export function changesSince(baseline: Block[], current: Block[]): OfflineChange
       old.type === block.type &&
       old.content === block.content &&
       jsonEqual(old.properties ?? {}, block.properties ?? {});
-    if (!same) blocks.push({ id: block.id, type: block.type, text: block.content });
+    if (!same) blocks.push({ id: block.id, type: block.type, text: recoverableText(block, old) });
   }
   const removed = baseline.filter((block) => !after.has(block.id)).length;
   return blocks.length === 0 && removed === 0 ? null : { blocks, removed };

@@ -1,6 +1,7 @@
 /**
  * The browser's session on the shared document (client/src/lib/yjs-session.ts), driven with a
- * stand-in socket: what it does with updates that arrive while a person is composing text.
+ * stand-in socket: what it does with updates that arrive while a person is composing text, with
+ * undo, and with edits made while the connection was down.
  */
 import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
@@ -127,5 +128,87 @@ describe('undo and redo', () => {
     session.canEdit = false;
     expect(session.canStep).toBe(false);
     expect(session.step('undo')).toBe(false);
+  });
+});
+
+describe('edits made while the connection was down', () => {
+  const paragraph = (id: string, content: string) => ({
+    id,
+    type: 'paragraph' as const,
+    content,
+    properties: {},
+    order: 0,
+    children: [],
+  });
+
+  function offlineSession() {
+    const server = new Y.Doc();
+    seedBlocks(server, [paragraph('b1', 'Base')]);
+    const socket = new FakeSocket();
+    const handedOver: unknown[] = [];
+    const session = new YjsSession(socket as any, {
+      documentId: 'page-1',
+      pageId: 1,
+      onBlocksChange: () => {},
+      onOfflineChanges: (changes) => handedOver.push(changes),
+    });
+    const init = (doc: Y.Doc, epoch: string) =>
+      socket.receive('yjs:init', {
+        stateVector: bytesToBase64(Y.encodeStateAsUpdate(doc)),
+        serverStateVector: bytesToBase64(Y.encodeStateVector(doc)),
+        epoch,
+        schema: YJS_SCHEMA_VERSION,
+        userCount: 1,
+        canEdit: true,
+      });
+    init(server, 'e1');
+    // The document the server builds again from what it stored, while this browser is away
+    const rebuilt = new Y.Doc();
+    seedBlocks(rebuilt, [paragraph('b1', 'Base')]);
+    return { socket, session, handedOver, init, rebuilt };
+  }
+
+  it('are handed over when the server rebuilt the document in the meantime', () => {
+    const { socket, session, handedOver, init, rebuilt } = offlineSession();
+    socket.receive('disconnect');
+    updateBlock(session.doc!, 'b1', { content: 'Base, typed offline' });
+    socket.receive('connect');
+    init(rebuilt, 'e2');
+
+    expect(handedOver).toEqual([
+      { blocks: [{ id: 'b1', type: 'paragraph', text: 'Base, typed offline' }], removed: 0 },
+    ]);
+    expect(readBlocks(session.doc!).map((b) => b.content)).toEqual(['Base']);
+  });
+
+  it('are still handed over when the connection dropped again before the server answered', () => {
+    const { socket, session, handedOver, init, rebuilt } = offlineSession();
+    socket.receive('disconnect');
+    updateBlock(session.doc!, 'b1', { content: 'Base, typed offline' });
+    // The connection comes back and drops again before the server's state arrives
+    socket.receive('connect');
+    socket.receive('disconnect');
+    socket.receive('connect');
+    init(rebuilt, 'e2');
+
+    expect(handedOver).toEqual([
+      { blocks: [{ id: 'b1', type: 'paragraph', text: 'Base, typed offline' }], removed: 0 },
+    ]);
+  });
+
+  it('are not reported when the server still has the same document', () => {
+    const { socket, session, handedOver, init } = offlineSession();
+    const server = new Y.Doc();
+    Y.applyUpdate(server, Y.encodeStateAsUpdate(session.doc!));
+    socket.receive('disconnect');
+    updateBlock(session.doc!, 'b1', { content: 'Base, typed offline' });
+    socket.receive('connect');
+    socket.receive('disconnect');
+    socket.receive('connect');
+    init(server, 'e1');
+
+    expect(handedOver).toEqual([]);
+    expect(readBlocks(session.doc!).map((b) => b.content)).toEqual(['Base, typed offline']);
+    expect(socket.emitted.filter(([event]) => event === 'yjs:update')).toHaveLength(1);
   });
 });

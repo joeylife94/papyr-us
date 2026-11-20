@@ -304,6 +304,50 @@ describe('a reseeded server document and a client that kept its copy', () => {
     });
     expect(changesSince(baseline, baseline)).toBeNull();
   });
+
+  it('hands over what a block holds outside its text: table cells, and changed text properties', () => {
+    const table = (cells: string[][]) =>
+      block('t1', '', {
+        type: 'table',
+        properties: { tableData: { rows: cells.length, cols: 2, cells, headers: true } },
+      });
+    const image = (caption: string) =>
+      block('i1', '', { type: 'image', properties: { imageUrl: '/uploads/a.png', caption } });
+    const todo = (checked: boolean) =>
+      block('c1', 'Ship it', { type: 'checkbox', properties: { checked } });
+    const baseline = [
+      table([
+        ['Name', 'Role'],
+        ['Ann', ''],
+      ]),
+      image(''),
+      todo(false),
+    ];
+    const current = [
+      table([
+        ['Name', 'Role'],
+        ['Ann', 'Owner'],
+        ['Ben', 'Editor'],
+      ]),
+      image('Launch day'),
+      todo(true),
+      block('t2', '', {
+        type: 'table',
+        properties: { tableData: { rows: 1, cols: 2, cells: [['new', 'table']], headers: false } },
+      }),
+    ];
+
+    expect(changesSince(baseline, current)).toEqual({
+      blocks: [
+        { id: 't1', type: 'table', text: 'Name\tRole\nAnn\tOwner\nBen\tEditor' },
+        // Only the property that changed: the image itself is still on the server's page
+        { id: 'i1', type: 'image', text: 'caption: Launch day' },
+        { id: 'c1', type: 'checkbox', text: 'Ship it' },
+        { id: 't2', type: 'table', text: 'new\ttable' },
+      ],
+      removed: 0,
+    });
+  });
 });
 
 describe('what is read back from the document', () => {
