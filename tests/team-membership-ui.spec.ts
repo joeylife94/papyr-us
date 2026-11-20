@@ -364,13 +364,13 @@ test.describe('Team membership screens', () => {
         await expect(o.page.getByTestId('create-team-error')).toContainText('팀 이름을 입력하세요');
         expect(creations).toEqual([]);
 
-        // The server says no (name taken): words, not JSON, and the dialog stays for another try.
+        // The server says no (it could not make the team now): words, not JSON, and the dialog stays for another try.
         await o.page.route('**/api/teams', async (route) => {
           if (route.request().method() === 'POST') {
             await route.fulfill({
-              status: 409,
+              status: 503,
               contentType: 'application/json',
-              body: JSON.stringify({ error: 'A team with this name already exists' }),
+              body: JSON.stringify({ error: 'Could not create the team, try again' }),
             });
           } else {
             await route.continue();
@@ -379,9 +379,9 @@ test.describe('Team membership screens', () => {
         await o.page.getByTestId('create-team-name').fill('Taken name');
         await o.page.getByTestId('create-team-submit').click();
         const error = o.page.getByTestId('create-team-error');
-        await expect(error).toContainText('같은 주소의 팀이 이미 있습니다');
+        await expect(error).toContainText('팀을 만들지 못했습니다');
         await expect(error).not.toContainText('{');
-        await expect(error).not.toContainText('409');
+        await expect(error).not.toContainText('503');
         await expect(o.page.getByTestId('create-team-dialog')).toBeVisible();
         expect(creations).toHaveLength(1);
       } finally {

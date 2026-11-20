@@ -329,7 +329,8 @@ export function TeamMembersView({ teamId, teamName, teamDisplayName, userId }: P
         와는 별개입니다.
       </p>
 
-      {canManage ? (
+      {/* Stays while it is open even if this person's role just changed, so a refusal can be read */}
+      {canManage || adding ? (
         <AddMemberDialog
           teamId={teamId}
           open={adding}
