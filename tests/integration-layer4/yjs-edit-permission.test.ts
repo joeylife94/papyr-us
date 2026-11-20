@@ -1,9 +1,9 @@
 /**
- * Layer 4: who may edit a page, on every surface, against real Postgres (WP5).
+ * Layer 4: who may edit a page on the realtime `/yjs` channel, against real Postgres (WP5).
  *
- * `DBStorage.canEditPage` is the one decision behind the page UI's edit mode, the REST write
- * routes and the realtime `/yjs` channel. It must equal `checkPagePermission(…, 'editor')` for
- * every grant shape: it may neither grant what that denies nor deny what that grants.
+ * `/yjs` decides with `DBStorage.canEditPage`, which must equal `checkPagePermission(…, 'editor')`
+ * (the rule REST writes apply) for every grant shape: it may neither grant what that denies nor
+ * deny what that grants. The REST routes themselves are not changed or exercised here.
  *
  * `/yjs` used to decide with `getUserPagePermission` (owner or editor). `CHANGED_ON_YJS` lists
  * every case where that rule and the shared one differ, so a change of the `/yjs` answer is a

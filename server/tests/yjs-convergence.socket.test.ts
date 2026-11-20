@@ -394,7 +394,7 @@ describe('a client that reconnects', () => {
 describe('who may edit', () => {
   it('follows canEditPage, not the permission rows /yjs used to read', async () => {
     resetPage([block('b1', 'one')]);
-    // A page the page UI and REST writes let this person edit (e.g. a legacy open page without
+    // A page REST writes let this person edit (e.g. a legacy open page without
     // permission rows), where the old /yjs rule found no permission
     canEditPage = true;
     legacyPermission = null;

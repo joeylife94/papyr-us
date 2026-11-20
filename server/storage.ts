@@ -2325,11 +2325,12 @@ export class DBStorage {
   }
 
   /**
-   * Whether the user may edit the page: the one decision behind the page UI's edit mode
-   * (`GET /api/pages/:id/access`), the REST write routes and the realtime `/yjs` channel. It is
-   * `checkPagePermission(…, 'editor')` and nothing else, so no surface can grant what another
-   * denies (legacy team-less pages, authorship, team managers, public editor grants all follow
-   * that one rule). `userId` is undefined for a signed-out caller.
+   * Whether the user may edit the page: `checkPagePermission(…, 'editor')`, named so that the
+   * realtime `/yjs` channel uses the rule the REST write routes apply. Only `/yjs` calls this.
+   * `GET /api/pages/:id/access` and the REST write middleware call `checkPagePermission`
+   * directly, so they give the same answer by construction except where the access route adds
+   * its own condition (it answers `canEdit: false` to a signed-out caller even on a publicly
+   * editable page, where this answers true). `userId` is undefined for a signed-out caller.
    */
   async canEditPage(userId: number | undefined, pageId: number): Promise<boolean> {
     return this.checkPagePermission(userId, pageId, 'editor');

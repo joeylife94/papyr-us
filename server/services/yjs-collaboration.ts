@@ -734,8 +734,8 @@ export function setupYjsCollaboration(io: SocketIOServer, storage: DBStorage) {
 
         // Whether the person may edit this page is decided here, for this page, and handed to the
         // join: it is stored with the document only if the join succeeds. It is
-        // checkPagePermission(…, 'editor'), the rule the REST write routes apply, so an editable
-        // page never refuses its editor's updates and a read-only one never accepts them.
+        // checkPagePermission(…, 'editor'), the rule the REST write routes apply, so a page
+        // REST lets the person edit is not refused here and one it denies is not accepted.
         const canEdit = await storage.canEditPage(userId, pageId);
         const userPermission: PermissionLevel = canEdit ? 'editor' : 'viewer';
 
