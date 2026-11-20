@@ -53,19 +53,15 @@ beforeAll(async () => {
   ({ httpServer: server } = await registerRoutes(app, storage));
 });
 
-// Notifications address `members` rows, not accounts (#124 X1b): user 1 owns member 11, and the
-// notification fixtures below are addressed to that member row.
+// Notifications are addressed to accounts (WP0a): user 1 in organization 1 receives the
+// notification fixtures below; user 2 is another account of the same organization.
 const USER_ID = 1;
-const MEMBER_ID = 11;
+const OTHER_USER_ID = 2;
 
 beforeEach(() => {
   vi.clearAllMocks();
-  (storage.getMemberIdsForUser as vi.Mock).mockImplementation(async (userId: number) =>
-    userId === USER_ID ? [MEMBER_ID] : []
-  );
   (storage.getUserOrganizationId as vi.Mock).mockResolvedValue(1);
-  (storage.getMemberOrganizationId as vi.Mock).mockResolvedValue(1);
-  (storage.getUserIdForMember as vi.Mock).mockResolvedValue(USER_ID);
+  (storage.getNotificationRecipientOrganizationId as vi.Mock).mockResolvedValue(1);
 });
 
 afterAll((done) => {
@@ -73,7 +69,6 @@ afterAll((done) => {
 });
 
 describe('Notification Management API', () => {
-  const recipientId = MEMBER_ID;
   const token = jwt.sign({ id: USER_ID, email: 'user@test.com', role: 'user' }, TEST_SECRET);
   // Use cookie-based auth to match the production auth model
   const authCookie = [`accessToken=${token}`];
@@ -82,7 +77,8 @@ describe('Notification Management API', () => {
     type: 'mention',
     title: 'You were mentioned',
     content: 'You were mentioned in a comment on the "Project Goals" page.',
-    recipientId: recipientId,
+    recipientUserId: USER_ID,
+    organizationId: 1,
     isRead: false,
   };
 
@@ -91,7 +87,7 @@ describe('Notification Management API', () => {
       type: 'task_assigned',
       title: 'New Task',
       content: 'You have been assigned a new task.',
-      recipientId,
+      recipientUserId: OTHER_USER_ID,
     };
     (storage.createNotification as vi.Mock).mockResolvedValue({
       ...newNotificationData,

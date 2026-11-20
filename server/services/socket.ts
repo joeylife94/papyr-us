@@ -896,18 +896,10 @@ export async function setupSocketIO(
           if (!authenticatedUserId) return reply({ ok: false, error: 'Authentication required' });
 
           // A socket is only ever in its own account's room (`user:<users.id>`, joined on
-          // connect). The token's role claim grants nothing here. The id is accepted when it is
-          // that account's id, or one of the member rows carrying the account's email (what the
-          // browser client sends); neither joins anything new.
-          let allowed = requestedMemberId === authenticatedUserId;
-          if (!allowed) {
-            try {
-              const ownMemberIds = await storage.getMemberIdsForUser(authenticatedUserId);
-              allowed = ownMemberIds.includes(requestedMemberId);
-            } catch {
-              allowed = false; // fail closed
-            }
-          }
+          // connect). The token's role claim grants nothing here. Notifications are addressed to
+          // accounts, so the only id accepted is the account's own: it joins nothing new, and
+          // every other id (including a roster id) is refused without consulting any record.
+          const allowed = requestedMemberId === authenticatedUserId;
           if (!allowed) {
             logger.warn('Denied unauthorized notification room join', {
               socketId: socket.id,

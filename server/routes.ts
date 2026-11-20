@@ -28,8 +28,8 @@ import {
   updateMemberSchema,
   insertTaskSchema,
   updateTaskSchema,
-  insertNotificationSchema,
-  updateNotificationSchema,
+  createNotificationRequestSchema,
+  updateNotificationRequestSchema,
   insertTemplateCategorySchema,
   updateTemplateCategorySchema,
   insertTemplateSchema,
@@ -3031,52 +3031,75 @@ export async function registerRoutes(
   });
 
   if (featureFlags.FEATURE_NOTIFICATIONS) {
-    // Notifications API. Rows address `members`; a signed-in account owns the rows of the member
-    // records carrying its own email (storage.getMemberIdsForUser). Anything else, including an
-    // unknown id, answers 404 (issue #124 X1b).
+    // Notifications API (WP0a). A notification is addressed to an account (users.id) and belongs
+    // to the organization it was created in. The caller's account and organization come from the
+    // session and from storage, never from the request; every storage call below takes both.
+    // Anything that is not the caller's, including an unknown id, answers 404.
     const notificationNotFound = { message: 'Notification not found' };
+    const noOrganization = { message: 'Your account does not belong to an organization' };
 
-    // Realtime: deliver to the room of the account behind the recipient member row, and nowhere
-    // else. A member row without an account has no room, so nothing is emitted.
+    // The account and organization a notification route acts for. Answers 401 without a session
+    // and 403 without an organization (a failed lookup counts as none) and returns null, before
+    // any notification row is read or written.
+    const notificationScope = async (
+      req: AuthRequest,
+      res: Response
+    ): Promise<{ userId: number; organizationId: number } | null> => {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ message: 'Authentication required' });
+        return null;
+      }
+      let organizationId: number | null | undefined = null;
+      try {
+        organizationId = await storage.getUserOrganizationId(userId);
+      } catch {
+        organizationId = null;
+      }
+      if (organizationId === null || organizationId === undefined) {
+        res.status(403).json(noOrganization);
+        return null;
+      }
+      return { userId, organizationId };
+    };
+
+    // Realtime: the row and the recipient's unread count go to the room of the recipient account,
+    // and nowhere else.
     const emitNotificationEvent = async (
       event: 'notification:new' | 'notification:updated',
-      notification: { recipientId: number }
+      notification: { recipientUserId: number; organizationId: number }
     ) => {
       const ns = io?.of('/collab');
       if (!ns) return;
-      const recipientUserId = await storage.getUserIdForMember(notification.recipientId);
-      if (recipientUserId === null || recipientUserId === undefined) return;
-      const memberIds = await storage.getMemberIdsForUser(recipientUserId);
-      ns.to(`user:${recipientUserId}`).emit(event, notification);
-      const count = await storage.getUnreadNotificationCount(memberIds);
-      ns.to(`user:${recipientUserId}`).emit('notification:unread-count', {
-        recipientId: notification.recipientId,
+      const room = `user:${notification.recipientUserId}`;
+      ns.to(room).emit(event, notification);
+      const count = await storage.getUnreadNotificationCount(
+        notification.recipientUserId,
+        notification.organizationId
+      );
+      ns.to(room).emit('notification:unread-count', {
+        recipientUserId: notification.recipientUserId,
         count,
       });
     };
 
-    // Whether `userId` may create a notification with this content: the recipient is in the
-    // caller's organization, the sender is the caller's own member row, and every related record
-    // is one the caller may read. Unknown records and records that cannot be read refuse alike.
+    // Whether `userId`, in `organizationId`, may create a notification with this content: the
+    // recipient is an active account of that organization, and every related record is one the
+    // caller may read. Unknown records and records that cannot be read refuse alike.
     const mayCreateNotification = async (
       userId: number,
+      organizationId: number,
       data: {
-        recipientId: number;
-        senderId?: number | null;
+        recipientUserId: number;
         relatedPageId?: number | null;
         relatedTaskId?: number | null;
         relatedCommentId?: number | null;
       }
     ): Promise<boolean> => {
-      const callerOrganizationId = await storage.getUserOrganizationId(userId);
-      if (callerOrganizationId === null || callerOrganizationId === undefined) return false;
-      const recipientOrganizationId = await storage.getMemberOrganizationId(data.recipientId);
-      if (recipientOrganizationId !== callerOrganizationId) return false;
-
-      if (data.senderId != null) {
-        const mine = await storage.getMemberIdsForUser(userId);
-        if (!mine.includes(data.senderId)) return false;
-      }
+      const recipientOrganizationId = await storage.getNotificationRecipientOrganizationId(
+        data.recipientUserId
+      );
+      if (recipientOrganizationId !== organizationId) return false;
 
       const readablePage = async (pageId: number): Promise<boolean> => {
         const page = await storage.getWikiPage(pageId);
@@ -3097,28 +3120,15 @@ export async function registerRoutes(
       return true;
     };
 
-    // An account without an organization has no notifications to read or change.
-    const accountHasOrganization = async (userId: number): Promise<boolean> => {
-      const organizationId = await storage.getUserOrganizationId(userId);
-      return organizationId !== null && organizationId !== undefined;
-    };
-    const noOrganization = { message: 'Your account does not belong to an organization' };
-
     app.get('/api/notifications', authMiddleware, async (req: AuthRequest, res) => {
       try {
-        const userId = req.user?.id;
-        if (!userId) {
-          return res.status(401).json({ message: 'Authentication required' });
-        }
-        if (!(await accountHasOrganization(userId))) {
-          return res.status(403).json(noOrganization);
-        }
+        const scope = await notificationScope(req, res);
+        if (!scope) return;
 
         const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
         const cursor = req.query.cursor as string | undefined;
 
-        const memberIds = await storage.getMemberIdsForUser(userId);
-        const notifications = memberIds.length ? await storage.getNotifications(memberIds) : [];
+        const notifications = await storage.getNotifications(scope.userId, scope.organizationId);
 
         // Apply cursor-based pagination
         let paginatedNotifications = notifications;
@@ -3157,16 +3167,9 @@ export async function registerRoutes(
 
     app.get('/api/notifications/unread-count', authMiddleware, async (req: AuthRequest, res) => {
       try {
-        const userId = req.user?.id;
-        if (!userId) {
-          return res.status(401).json({ message: 'Authentication required' });
-        }
-        if (!(await accountHasOrganization(userId))) {
-          return res.status(403).json(noOrganization);
-        }
-
-        const memberIds = await storage.getMemberIdsForUser(userId);
-        const count = memberIds.length ? await storage.getUnreadNotificationCount(memberIds) : 0;
+        const scope = await notificationScope(req, res);
+        if (!scope) return;
+        const count = await storage.getUnreadNotificationCount(scope.userId, scope.organizationId);
         res.json({ count });
       } catch (error) {
         res.status(500).json({ message: 'Server error' });
@@ -3175,15 +3178,14 @@ export async function registerRoutes(
 
     app.get('/api/notifications/:id', authMiddleware, async (req: AuthRequest, res) => {
       try {
-        const userId = req.user?.id;
-        if (!userId) {
-          return res.status(401).json({ message: 'Authentication required' });
-        }
-        if (!(await accountHasOrganization(userId))) {
-          return res.status(403).json(noOrganization);
-        }
+        const scope = await notificationScope(req, res);
+        if (!scope) return;
         const id = parseInt(req.params.id);
-        const notification = await storage.getNotificationForUser(id, userId);
+        const notification = await storage.getNotificationForUser(
+          id,
+          scope.userId,
+          scope.organizationId
+        );
 
         if (!notification) {
           return res.status(404).json(notificationNotFound);
@@ -3202,11 +3204,22 @@ export async function registerRoutes(
         if (!userId) {
           return res.status(401).json({ message: 'Authentication required' });
         }
-        const notificationData = insertNotificationSchema.parse(req.body);
-        if (!(await mayCreateNotification(userId, notificationData))) {
+        // Strict: a body that names a roster id, a sender or an organization is refused.
+        const notificationData = createNotificationRequestSchema.parse(req.body);
+        const organizationId = await storage.getUserOrganizationId(userId);
+        if (
+          organizationId === null ||
+          organizationId === undefined ||
+          !(await mayCreateNotification(userId, organizationId, notificationData))
+        ) {
           return res.status(400).json({ message: 'Invalid notification data' });
         }
-        const notification = await storage.createNotification(notificationData);
+        // The sender and the organization are the caller's, decided here and nowhere else.
+        const notification = await storage.createNotification({
+          ...notificationData,
+          senderUserId: userId,
+          organizationId,
+        });
         try {
           await emitNotificationEvent('notification:new', notification);
         } catch (emitErr) {
@@ -3221,24 +3234,22 @@ export async function registerRoutes(
 
     app.put('/api/notifications/:id', authMiddleware, async (req: AuthRequest, res) => {
       try {
-        const userId = req.user?.id;
-        if (!userId) {
-          return res.status(401).json({ message: 'Authentication required' });
-        }
-        if (!(await accountHasOrganization(userId))) {
-          return res.status(403).json(noOrganization);
-        }
+        const scope = await notificationScope(req, res);
+        if (!scope) return;
+        const { userId, organizationId } = scope;
         const id = parseInt(req.params.id);
         // Ownership check: fetch before updating
-        const existing = await storage.getNotificationForUser(id, userId);
+        const existing = await storage.getNotificationForUser(id, userId, organizationId);
         if (!existing) {
           return res.status(404).json(notificationNotFound);
         }
-        const updateData = updateNotificationSchema.parse(req.body);
-        // Content may change; who a notification is for, who sent it and what it points at may not.
+        const updateData = updateNotificationRequestSchema.parse(req.body);
+        // Content may change; who a notification is for, who sent it, the organization it belongs
+        // to and what it points at may not. Repeating the stored value is accepted.
         const fixedFields = [
-          'recipientId',
-          'senderId',
+          'recipientUserId',
+          'senderUserId',
+          'organizationId',
           'relatedPageId',
           'relatedTaskId',
           'relatedCommentId',
@@ -3254,8 +3265,7 @@ export async function registerRoutes(
         }
         // Nothing to write (the body only repeated stored values): answer with the row as it is.
         if (Object.keys(changes).length === 0) return res.json(existing);
-        const memberIds = await storage.getMemberIdsForUser(userId);
-        const notification = await storage.updateNotification(id, changes, memberIds);
+        const notification = await storage.updateNotification(id, changes, userId, organizationId);
 
         if (!notification) {
           return res.status(404).json(notificationNotFound);
@@ -3276,21 +3286,16 @@ export async function registerRoutes(
 
     app.delete('/api/notifications/:id', authMiddleware, async (req: AuthRequest, res) => {
       try {
-        const userId = req.user?.id;
-        if (!userId) {
-          return res.status(401).json({ message: 'Authentication required' });
-        }
-        if (!(await accountHasOrganization(userId))) {
-          return res.status(403).json(noOrganization);
-        }
+        const scope = await notificationScope(req, res);
+        if (!scope) return;
+        const { userId, organizationId } = scope;
         const id = parseInt(req.params.id);
         // Ownership check: fetch before deleting
-        const existing = await storage.getNotificationForUser(id, userId);
+        const existing = await storage.getNotificationForUser(id, userId, organizationId);
         if (!existing) {
           return res.status(404).json(notificationNotFound);
         }
-        const memberIds = await storage.getMemberIdsForUser(userId);
-        const deleted = await storage.deleteNotification(id, memberIds);
+        const deleted = await storage.deleteNotification(id, userId, organizationId);
 
         if (!deleted) {
           return res.status(404).json(notificationNotFound);
@@ -3301,9 +3306,9 @@ export async function registerRoutes(
           const ns = io?.of('/collab');
           if (ns) {
             ns.to(`user:${userId}`).emit('notification:deleted', { id });
-            const count = await storage.getUnreadNotificationCount(memberIds);
+            const count = await storage.getUnreadNotificationCount(userId, organizationId);
             ns.to(`user:${userId}`).emit('notification:unread-count', {
-              recipientId: existing.recipientId,
+              recipientUserId: userId,
               count,
             });
           }
@@ -3319,21 +3324,16 @@ export async function registerRoutes(
 
     app.patch('/api/notifications/:id/read', authMiddleware, async (req: AuthRequest, res) => {
       try {
-        const userId = req.user?.id;
-        if (!userId) {
-          return res.status(401).json({ message: 'Authentication required' });
-        }
-        if (!(await accountHasOrganization(userId))) {
-          return res.status(403).json(noOrganization);
-        }
+        const scope = await notificationScope(req, res);
+        if (!scope) return;
+        const { userId, organizationId } = scope;
         const id = parseInt(req.params.id);
         // Ownership check: fetch before marking as read
-        const existing = await storage.getNotificationForUser(id, userId);
+        const existing = await storage.getNotificationForUser(id, userId, organizationId);
         if (!existing) {
           return res.status(404).json(notificationNotFound);
         }
-        const memberIds = await storage.getMemberIdsForUser(userId);
-        const notification = await storage.markNotificationAsRead(id, memberIds);
+        const notification = await storage.markNotificationAsRead(id, userId, organizationId);
 
         if (!notification) {
           return res.status(404).json(notificationNotFound);
@@ -3354,29 +3354,22 @@ export async function registerRoutes(
 
     app.patch('/api/notifications/read-all', authMiddleware, async (req: AuthRequest, res) => {
       try {
-        // Use authenticated user's ID; never trust a client-supplied recipientId
-        const userId = req.user?.id;
-        if (!userId) {
-          return res.status(401).json({ message: 'Authentication required' });
-        }
-        if (!(await accountHasOrganization(userId))) {
-          return res.status(403).json(noOrganization);
-        }
+        // The authenticated account and its organization; nothing comes from the request
+        const scope = await notificationScope(req, res);
+        if (!scope) return;
+        const { userId, organizationId } = scope;
 
-        const memberIds = await storage.getMemberIdsForUser(userId);
-        if (memberIds.length) await storage.markAllNotificationsAsRead(memberIds);
+        await storage.markAllNotificationsAsRead(userId, organizationId);
 
-        // Realtime: emit unread count reset for the caller's own member rows
+        // Realtime: one unread count for the caller's own sockets
         try {
           const ns = io?.of('/collab');
-          if (ns && memberIds.length) {
-            const count = await storage.getUnreadNotificationCount(memberIds);
-            for (const memberId of memberIds) {
-              ns.to(`user:${userId}`).emit('notification:unread-count', {
-                recipientId: memberId,
-                count,
-              });
-            }
+          if (ns) {
+            const count = await storage.getUnreadNotificationCount(userId, organizationId);
+            ns.to(`user:${userId}`).emit('notification:unread-count', {
+              recipientUserId: userId,
+              count,
+            });
           }
         } catch (emitErr) {
           console.warn('Socket emit failed for notification:read-all', emitErr);
@@ -4302,6 +4295,21 @@ export async function registerRoutes(
           (!action.config?.message || !String(action.config.message).trim())
         ) {
           return 'Notification actions require a message in config';
+        }
+
+        if (action.type === 'send_notification') {
+          // Notifications are addressed to accounts (WP0a): a roster-id list is refused, never read.
+          if (action.config && 'recipients' in action.config) {
+            return 'Notification actions take recipientUserIds';
+          }
+          const ids = action.config?.recipientUserIds;
+          if (
+            ids !== undefined &&
+            (!Array.isArray(ids) ||
+              !ids.every((id: unknown) => Number.isInteger(id) && (id as number) > 0))
+          ) {
+            return 'recipientUserIds must be an array of positive integers';
+          }
         }
 
         if (action.type === 'send_email') {
