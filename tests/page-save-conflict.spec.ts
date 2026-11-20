@@ -476,3 +476,214 @@ test.describe('A conflict on what I am writing', () => {
     }
   });
 });
+
+// --- A save on a stale base is never answered 200, and an adopted body shows on every block ---
+
+test.describe('A stale base is never accepted, even for a save that changes nothing', () => {
+  test('typing a comma into the empty tags field after someone saved the body shows that body, and nothing is overwritten', async ({
+    browser,
+  }) => {
+    await withPeople(browser, 'wp1-noop-tags', async (alice, bob) => {
+      const { slug, pageId, blockId } = await createSharedPage(alice, bob, 'Original text');
+      const bobPage = await openEditor(bob, slug, 'Original text');
+      await writeAs(alice, pageId, { blocks: body(blockId, 'Alice body') });
+
+      await bobPage.getByPlaceholder('쉼표로 구분').pressSequentially(',');
+      // The save changes nothing, but it was based on an old page: the page is shown, not skipped.
+      await expect(firstBlock(bobPage)).toHaveValue('Alice body');
+      await expect(bobPage.getByTestId('page-save-conflict')).toHaveCount(0);
+
+      await firstBlock(bobPage).press('End');
+      await firstBlock(bobPage).pressSequentially(' and Bob');
+      await expect.poll(() => storedText(alice.api, pageId)).toBe('Alice body and Bob');
+      await expect(bobPage.getByTestId('page-save-conflict')).toHaveCount(0);
+    });
+  });
+
+  test('a trailing space in the title after someone saved the body shows that body, and nothing is overwritten', async ({
+    browser,
+  }) => {
+    await withPeople(browser, 'wp1-noop-title', async (alice, bob) => {
+      const { slug, pageId, blockId } = await createSharedPage(alice, bob, 'Original text');
+      const bobPage = await openEditor(bob, slug, 'Original text');
+      await writeAs(alice, pageId, { blocks: body(blockId, 'Alice body') });
+
+      const title = bobPage.getByTestId('page-title');
+      await title.click();
+      await title.press('End');
+      await title.pressSequentially(' ');
+      await expect(firstBlock(bobPage)).toHaveValue('Alice body');
+      await expect(bobPage.getByTestId('page-save-conflict')).toHaveCount(0);
+
+      await firstBlock(bobPage).press('End');
+      await firstBlock(bobPage).pressSequentially(' and Bob');
+      await expect.poll(() => storedText(alice.api, pageId)).toBe('Alice body and Bob');
+    });
+  });
+
+  test('metadata changed elsewhere (not the cover) is never a collision: my save goes through', async ({
+    browser,
+  }) => {
+    await withPeople(browser, 'wp1-meta', async (alice, bob) => {
+      const { slug, pageId, blockId } = await createSharedPage(alice, bob, 'Original text');
+      const bobPage = await openEditor(bob, slug, 'Original text');
+      const read = await storedPage(alice.api, pageId);
+      const changed = await alice.api.put(`/api/pages/${pageId}`, {
+        data: { baseRevision: read.revision, metadata: { note: 'set elsewhere' } },
+      });
+      expect(changed.status()).toBe(200);
+
+      await firstBlock(bobPage).fill('Bob typed this');
+      await expect.poll(() => storedText(alice.api, pageId)).toBe('Bob typed this');
+      await expect(bobPage.getByTestId('page-save-conflict')).toHaveCount(0);
+      expect((await storedPage(alice.api, pageId)).metadata).toEqual({ note: 'set elsewhere' });
+      expect(blockId).toBeTruthy();
+    });
+  });
+});
+
+/** A heading, a to-do, a code block and a paragraph, with the text of the first three given. */
+function mixedBlocks(slug: string, heading: string, todo: string, code: string) {
+  const block = (id: string, type: string, content: string, order: number, properties = {}) => ({
+    id: `${id}-${slug}`,
+    type,
+    content,
+    properties,
+    order,
+    children: [],
+  });
+  return [
+    block('h', 'heading1', heading, 0),
+    block('c', 'checkbox', todo, 1, { checked: false }),
+    block('k', 'code', code, 2, { language: 'javascript' }),
+    block('p', 'paragraph', 'A paragraph', 3),
+  ];
+}
+
+const rowField = (page: Page, id: string) =>
+  page.locator(`[data-page-body] [data-block-row="${id}"] textarea`).first();
+
+async function mixedPage(owner: Person, editor: Person) {
+  const slug = `wp1-mixed-${stamp()}`;
+  const created = await owner.api.post('/api/pages', {
+    data: {
+      title: `WP1 mixed ${slug}`,
+      slug,
+      content: 'x',
+      blocks: mixedBlocks(slug, 'Heading original', 'Todo original', 'let code = 1'),
+      folder: 'docs',
+      author: owner.email,
+      tags: [],
+    },
+  });
+  expect(created.status()).toBe(201);
+  const pageId: number = (await created.json()).id;
+  const grant = await owner.api.post(`/api/pages/${pageId}/permissions`, {
+    data: { entityType: 'user', entityId: editor.id, permission: 'editor' },
+  });
+  expect(grant.status()).toBe(201);
+  return { slug, pageId };
+}
+
+test.describe('An adopted body shows on every kind of block', () => {
+  test('a silent re-base shows the new heading, to-do and code, and a keystroke there keeps them', async ({
+    browser,
+  }) => {
+    await withPeople(browser, 'wp1-adopt', async (alice, bob) => {
+      const { slug, pageId } = await mixedPage(alice, bob);
+      const bobPage = await openMixed(bob, slug);
+      await writeAs(alice, pageId, {
+        blocks: mixedBlocks(slug, 'Heading by Alice', 'Todo by Alice', 'let code = 2'),
+      });
+
+      await bobPage.getByTestId('page-title').fill('Bob title');
+      await expect.poll(async () => (await storedPage(alice.api, pageId)).title).toBe('Bob title');
+      await expect(bobPage.getByTestId('page-save-conflict')).toHaveCount(0);
+      await expect(rowField(bobPage, `h-${slug}`)).toHaveValue('Heading by Alice');
+      await expect(rowField(bobPage, `c-${slug}`)).toHaveValue('Todo by Alice');
+      await expect(rowField(bobPage, `k-${slug}`)).toHaveValue('let code = 2');
+
+      // A keystroke in each of them keeps the other person's text.
+      for (const [id, expected] of [
+        ['h', 'Heading by Alice!'],
+        ['c', 'Todo by Alice!'],
+        ['k', 'let code = 2!'],
+      ]) {
+        await rowField(bobPage, `${id}-${slug}`).press('End');
+        await rowField(bobPage, `${id}-${slug}`).pressSequentially('!');
+        await expect
+          .poll(async () => {
+            const blocks = (await storedPage(alice.api, pageId)).blocks as Array<{
+              id: string;
+              content: string;
+            }>;
+            return blocks.find((b) => b.id === `${id}-${slug}`)?.content;
+          })
+          .toBe(expected);
+      }
+      const blocks = (await storedPage(alice.api, pageId)).blocks as Array<{ content: string }>;
+      expect(blocks.map((b) => b.content)).toEqual([
+        'Heading by Alice!',
+        'Todo by Alice!',
+        'let code = 2!',
+        'A paragraph',
+      ]);
+    });
+  });
+
+  test('Load latest shows the new heading, and a keystroke there keeps it', async ({ browser }) => {
+    await withPeople(browser, 'wp1-adopt-latest', async (alice, bob) => {
+      const { slug, pageId } = await mixedPage(alice, bob);
+      const bobPage = await openMixed(bob, slug);
+      await writeAs(alice, pageId, {
+        blocks: mixedBlocks(slug, 'Heading by Alice', 'Todo original', 'let code = 1'),
+      });
+
+      // Bob writes the body too (the paragraph), so this is a conflict he decides.
+      await rowField(bobPage, `p-${slug}`).fill('Paragraph by Bob');
+      const conflict = bobPage.getByTestId('page-save-conflict');
+      await expect(conflict).toBeVisible();
+      await conflict.getByRole('button', { name: '최신 내용 불러오기' }).click();
+      await expect(conflict).toBeHidden();
+      await expect(rowField(bobPage, `h-${slug}`)).toHaveValue('Heading by Alice');
+
+      await rowField(bobPage, `h-${slug}`).press('End');
+      await rowField(bobPage, `h-${slug}`).pressSequentially('!');
+      await expect
+        .poll(async () => (await storedPage(alice.api, pageId)).blocks[0].content)
+        .toBe('Heading by Alice!');
+      await expect(bobPage.getByTestId('page-save-conflict')).toHaveCount(0);
+    });
+  });
+
+  test('the title keeps its focus and caret while the body is adopted', async ({ browser }) => {
+    await withPeople(browser, 'wp1-adopt-focus', async (alice, bob) => {
+      const { slug, pageId } = await mixedPage(alice, bob);
+      const bobPage = await openMixed(bob, slug);
+      await writeAs(alice, pageId, {
+        blocks: mixedBlocks(slug, 'Heading by Alice', 'Todo by Alice', 'let code = 2'),
+      });
+
+      const title = bobPage.getByTestId('page-title');
+      await title.click();
+      await title.press('End');
+      await title.pressSequentially(' one');
+      await expect(rowField(bobPage, `h-${slug}`)).toHaveValue('Heading by Alice');
+      // Typing goes on in the title without clicking it again; the caret is where it was.
+      await expect(title).toBeFocused();
+      await title.pressSequentially(' two');
+      await expect(title).toContainText('one two');
+      await expect
+        .poll(async () => (await storedPage(alice.api, pageId)).title)
+        .toContain('one two');
+    });
+  });
+});
+
+async function openMixed(person: Person, slug: string) {
+  const page = await person.context.newPage();
+  await page.goto(`/page/${slug}`);
+  await expect(page.getByTestId('page-title')).toHaveAttribute('contenteditable', 'true');
+  await expect(rowField(page, `h-${slug}`)).toHaveValue('Heading original');
+  return page;
+}

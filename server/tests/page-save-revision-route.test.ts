@@ -15,7 +15,8 @@ import express from 'express';
 import http from 'http';
 import jwt from 'jsonwebtoken';
 import { registerRoutes } from '../routes';
-import { resetEditSessions } from '../services/page-save';
+import { hasOpenEditSession, resetEditSessions, savePage } from '../services/page-save';
+import { storagePageSaveStore } from '../services/page-save';
 import {
   PageRevisionConflictError,
   pageFieldRevisions,
@@ -287,5 +288,78 @@ describe('POST /api/pages/bulk/tags', () => {
     expect(res.body).toEqual({ updated: 1 });
     expect(storage.mergePageTags).toHaveBeenCalledWith(PAGE, { add: ['a'], remove: ['b'] });
     expect(storage.updateWikiPage).not.toHaveBeenCalled();
+  });
+});
+
+describe('a trashed page', () => {
+  it('answers 404 to a save with a base, as for a page that does not exist, and records nothing', async () => {
+    // Reads and the guarded write do not see trashed pages.
+    storage.getWikiPage.mockResolvedValue(undefined);
+    storage.updateWikiPage.mockResolvedValue(undefined);
+    const base = pageRevision(stored as any);
+    const res = await autosave({ baseRevision: base, blocks: block('mine') }, EDITOR);
+    expect(res.status).toBe(404);
+    expect(res.body.page).toBeUndefined();
+    expect(res.body.currentRevision).toBeUndefined();
+    const full = await put({ baseRevision: base, title: 'Mine' }, EDITOR);
+    expect(full.status).toBe(404);
+    expect(full.body.page).toBeUndefined();
+  });
+});
+
+describe('POST /api/pages', () => {
+  it('answers with the revision of the page it created, to base its first saves on', async () => {
+    storage.createWikiPage.mockImplementation(async (data: object) => ({
+      ...stored,
+      ...data,
+      id: 101,
+    }));
+    const res = await request(app)
+      .post('/api/pages')
+      .set(as(EDITOR))
+      .send({
+        title: 'New',
+        slug: 'new',
+        content: 'x',
+        blocks: block('x'),
+        folder: 'docs',
+        tags: [],
+        author: 'a',
+      });
+    expect(res.status).toBe(201);
+    expect(res.body.revision).toBe(pageRevision(res.body));
+    expect(res.body.fieldRevisions).toEqual(pageFieldRevisions(res.body));
+  });
+});
+
+describe('POST /api/pages/:id/versions/:versionId/restore', () => {
+  it('does not close the editing session (or fire its workflows) for a version that is not there', async () => {
+    // An open session for the page.
+    await savePage(storagePageSaveStore(storage), PAGE, { blocks: block('typing') }, 'autosave');
+    expect(hasOpenEditSession(PAGE)).toBe(true);
+    storage.getPageVersion = vi.fn().mockResolvedValue(undefined);
+    storage.restorePageVersion.mockResolvedValue({ missing: 'version' });
+
+    const res = await request(app)
+      .post(`/api/pages/${PAGE}/versions/9999/restore`)
+      .set(as(EDITOR))
+      .send({});
+    expect(res.status).toBe(404);
+    expect(hasOpenEditSession(PAGE)).toBe(true);
+    expect(storage.restorePageVersion).not.toHaveBeenCalled();
+  });
+
+  it('closes the session and restores for a version of the page', async () => {
+    await savePage(storagePageSaveStore(storage), PAGE, { blocks: block('typing') }, 'autosave');
+    storage.getPageVersion = vi.fn().mockResolvedValue({ id: 5, pageId: PAGE });
+    storage.restorePageVersion.mockResolvedValue({ page: { ...stored, title: 'Restored' } });
+    const res = await request(app)
+      .post(`/api/pages/${PAGE}/versions/5/restore`)
+      .set(as(EDITOR))
+      .send({});
+    expect(res.status).toBe(200);
+    expect(res.body.title).toBe('Restored');
+    expect(hasOpenEditSession(PAGE)).toBe(false);
+    expect(storage.restorePageVersion).toHaveBeenCalledWith(PAGE, 5);
   });
 });

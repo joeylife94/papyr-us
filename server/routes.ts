@@ -917,7 +917,8 @@ export async function registerRoutes(
           });
         });
 
-        res.status(201).json(page);
+        // The revision is what the editor bases its first saves on.
+        res.status(201).json(withRevision(page));
       } catch (error) {
         if (error instanceof OrganizationRequiredError) return organizationRequired(req, res);
         res.status(400).json(failureBody('Invalid page data', error));
@@ -1222,8 +1223,12 @@ export async function registerRoutes(
           return res.status(400).json({ error: 'Invalid page or version ID' });
         }
 
-        // The session closes first; then, in one transaction on the locked page, the page as it is
-        // now is kept as a version and replaced by the chosen one (DBStorage.restorePageVersion).
+        // The version must be one of this page before anything is closed or fired; then the
+        // session closes; then, in one transaction on the locked page (which checks again), the
+        // page as it is now is kept as a version and replaced by the chosen one.
+        if (!(await storage.getPageVersion(pageId, versionId))) {
+          return res.status(404).json({ error: 'Version not found' });
+        }
         await closeSessionForRestore(pageId);
         const restored = await storage.restorePageVersion(pageId, versionId);
         if ('missing' in restored) {

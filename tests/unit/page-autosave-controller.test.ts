@@ -400,3 +400,112 @@ describe('leaving with a conflict open', () => {
     expect(saves()[0].body).toEqual({ title: 'Typed last', baseRevision: 'r1' });
   });
 });
+
+describe('leaving while a save is in flight', () => {
+  it('keeps what was typed after it when that save is then refused on a colliding field', async () => {
+    const ctl = controller();
+    let release!: (r: Response) => void;
+    answers.push(
+      () => new Promise<Response>((resolve) => (release = resolve)),
+      () => reply(200, {})
+    );
+    ctl.queue({ blocks: [{ id: 'first' } as any] });
+    await settle();
+    ctl.queue({ blocks: [{ id: 'typed after the request left' } as any] });
+    const leaving = ctl.dispose();
+    // The refusal arrives only now, after leave() was called.
+    release(conflictAnswer(stored('r2', rev('x', 'b1'))));
+    await vi.advanceTimersByTimeAsync(5);
+    await leaving;
+
+    expect(saves()).toHaveLength(2);
+    expect(saves()[1].body).toEqual({
+      blocks: [{ id: 'typed after the request left' }],
+      baseRevision: 'r1',
+    });
+    expect(calls[calls.length - 1].url).toBe('/api/pages/7/checkpoint');
+  });
+
+  it('stores what was typed after it when that save succeeds', async () => {
+    const ctl = controller();
+    let release!: (r: Response) => void;
+    answers.push(
+      () => new Promise<Response>((resolve) => (release = resolve)),
+      () => savedAnswer('r3')
+    );
+    ctl.queue({ title: 'First' });
+    await settle();
+    ctl.queue({ title: 'Typed after' });
+    const leaving = ctl.dispose();
+    release(savedAnswer('r2'));
+    await vi.advanceTimersByTimeAsync(5);
+    await leaving;
+    expect(saves()).toHaveLength(2);
+    expect(saves()[1].body).toEqual({ title: 'Typed after', baseRevision: 'r2' });
+  });
+
+  it('keeps it when the save is silently re-based and the resend is refused again', async () => {
+    const ctl = controller();
+    let release!: (r: Response) => void;
+    answers.push(
+      () => new Promise<Response>((resolve) => (release = resolve)),
+      () => conflictAnswer(stored('r3', rev('x', 'b2'))),
+      () => reply(200, {})
+    );
+    ctl.queue({ title: 'Mine' });
+    await settle();
+    ctl.queue({ title: 'Mine, typed later' });
+    const leaving = ctl.dispose();
+    release(conflictAnswer(stored('r2', rev('x', 'b1'))));
+    await vi.advanceTimersByTimeAsync(5);
+    await leaving;
+    // First refusal re-based, the resend was refused again (a conflict), and the title typed since
+    // went out once more on the old base so the server records it.
+    expect(saves().map((c) => c.body.baseRevision)).toEqual(['r1', 'r2', 'r2']);
+    expect(saves()[2].body.title).toBe('Mine, typed later');
+  });
+});
+
+describe('a save that changes nothing, refused on a stale base', () => {
+  it('re-bases like any refusal: the other fields are adopted before the same patch is resent', async () => {
+    const ctl = controller();
+    // The tags save changes nothing, but the body was saved elsewhere: the server refuses (409).
+    answers.push(
+      () => conflictAnswer(stored('r2', rev('x', 'b1'))),
+      () => savedAnswer('r2', rev('x', 'b1'))
+    );
+    ctl.queue({ tags: [] });
+    await settle();
+    expect(events).toEqual(['fetch PUT autosave', 'adopt blocks', 'fetch PUT autosave']);
+    expect(saves()[1].body).toEqual({ tags: [], baseRevision: 'r2' });
+    expect(ctl.getSnapshot()).toMatchObject({ status: 'saved', conflict: null });
+  });
+});
+
+describe('metadata that is not the cover', () => {
+  it('is never a collision: nothing differs per field, so the re-base goes through', async () => {
+    const ctl = controller();
+    answers.push(
+      () => conflictAnswer(stored('r2', rev('x'))),
+      () => savedAnswer('r3', rev('y'))
+    );
+    ctl.queue({ title: 'Mine' });
+    await settle();
+    expect(saves()).toHaveLength(2);
+    expect(ctl.getSnapshot()).toMatchObject({ status: 'saved', conflict: null });
+  });
+
+  it('two refusals in a row for such changes open the notice with no field listed (the notice says so)', async () => {
+    const ctl = controller();
+    answers.push(
+      () => conflictAnswer(stored('r2', rev('x'))),
+      () => conflictAnswer(stored('r3', rev('x')))
+    );
+    ctl.queue({ title: 'Mine' });
+    await settle();
+    await settle(10000);
+    const snapshot = ctl.getSnapshot();
+    expect(snapshot.status).toBe('conflict');
+    expect(snapshot.conflict?.fields).toEqual([]);
+  });
+});

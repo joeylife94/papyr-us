@@ -334,3 +334,169 @@ describe('merging tags (real Postgres)', () => {
     expect(await storage.mergePageTags(999999, { add: ['x'] })).toBeUndefined();
   });
 });
+
+describe('a trashed page (real Postgres)', () => {
+  async function trashedPage(slug: string) {
+    const id = await createPage(slug, 'original');
+    const base = revision.pageRevision(await storage.getWikiPage(id));
+    await admin.query(`UPDATE ${SCHEMA}.wiki_pages SET deleted_at = NOW() WHERE id = $1`, [id]);
+    return { id, base };
+  }
+
+  it.each([
+    ['a stale base', 'stale-base'],
+    ['the current base', null],
+  ])(
+    'is not found for a save with %s: nothing is written, answered or recorded',
+    async (_n, given) => {
+      const { id, base } = await trashedPage(`trashed-${given ?? 'current'}`);
+      const result = await pipeline.savePage(store, id, { blocks: blocks('mine') }, 'autosave', {
+        baseRevision: given ?? base,
+      });
+      expect(result).toBeUndefined();
+      const { rows } = await admin.query(`SELECT content FROM ${SCHEMA}.wiki_pages WHERE id = $1`, [
+        id,
+      ]);
+      expect(rows[0].content).toBe('original');
+      expect(await versions(id)).toEqual([]);
+    }
+  );
+
+  it('is written by a save without a base as it always was', async () => {
+    const { id } = await trashedPage('trashed-no-base');
+    await pipeline.savePage(store, id, { blocks: blocks('written') }, 'autosave');
+    const { rows } = await admin.query(`SELECT content FROM ${SCHEMA}.wiki_pages WHERE id = $1`, [
+      id,
+    ]);
+    expect(rows[0].content).toBe('written');
+  });
+});
+
+describe('tag changes equal what reading and writing the tags back did (real Postgres)', () => {
+  /** What the bulk route and the workflow action computed before the merge was one statement. */
+  const tagsBefore = (existing: string[], add?: string[], remove?: string[]) => {
+    let tags = [...existing];
+    if (Array.isArray(add)) tags = Array.from(new Set([...tags, ...add]));
+    if (Array.isArray(remove)) tags = tags.filter((tag) => !remove.includes(tag));
+    return tags;
+  };
+  const withTags = async (slug: string, tags: string[]) => {
+    const id = await createPage(slug, 'x');
+    await admin.query(`UPDATE ${SCHEMA}.wiki_pages SET tags = $2 WHERE id = $1`, [id, tags]);
+    return id;
+  };
+
+  it.each([
+    [
+      'an existing duplicate is left as it is when only removing',
+      ['a', 'a', 'b'],
+      undefined,
+      ['b'],
+    ],
+    [
+      'an existing duplicate is collapsed when adding (a Set was built)',
+      ['a', 'a'],
+      ['x'],
+      undefined,
+    ],
+    ['adding nothing still collapses, as before', ['a', 'a', 'b'], [], undefined],
+    ['add then remove', ['a', 'b'], ['c', 'a'], ['b']],
+    ['removal wins over addition', ['a'], ['gone'], ['gone']],
+    ['empty tags', [], ['z', 'z'], ['q']],
+    ['neither', ['a', 'a'], undefined, undefined],
+  ] as Array<[string, string[], string[] | undefined, string[] | undefined]>)(
+    '%s',
+    async (name, existing, add, remove) => {
+      const id = await withTags(`merge-${name.replace(/\W+/g, '-')}`, existing);
+      const merged = await storage.mergePageTags(id, { add, remove });
+      expect(merged.tags).toEqual(tagsBefore(existing, add, remove));
+      expect((await storage.getWikiPage(id)).tags).toEqual(tagsBefore(existing, add, remove));
+    }
+  );
+
+  it('leaves a trashed page untouched and does not answer it (the bulk route skips and does not count it)', async () => {
+    const id = await withTags('merge-trashed', ['a']);
+    await admin.query(`UPDATE ${SCHEMA}.wiki_pages SET deleted_at = NOW() WHERE id = $1`, [id]);
+    expect(await storage.mergePageTags(id, { add: ['b'] })).toBeUndefined();
+    const { rows } = await admin.query(`SELECT tags FROM ${SCHEMA}.wiki_pages WHERE id = $1`, [id]);
+    expect(rows[0].tags).toEqual(['a']);
+  });
+
+  describe('the workflow add_tag action', () => {
+    let workflow: typeof import('../../server/services/workflow.js');
+    const runs: any[] = [];
+    const run = async (pageId: number, tags: unknown) => {
+      runs.length = 0;
+      await workflow.executeWorkflow(
+        {
+          id: 1,
+          name: 'tag',
+          conditions: [],
+          actions: [{ type: 'add_tag', config: { tags } }],
+        } as any,
+        { id: pageId }
+      );
+      return runs[runs.length - 1] as { status: string; results?: any[]; error?: string };
+    };
+
+    beforeAll(async () => {
+      workflow = await import('../../server/services/workflow.js');
+      workflow.initWorkflowService({
+        createWorkflowRun: async () => 1,
+        updateWorkflowRun: async (_id: number, update: any) => runs.push(update),
+        getWorkflowRun: async () => ({}),
+        searchWikiPages: (...args: any[]) => storage.searchWikiPages(...args),
+        mergePageTags: (...args: any[]) => storage.mergePageTags(...args),
+        updateWikiPage: (...args: any[]) => storage.updateWikiPage(...args),
+      } as any);
+    });
+
+    it('adds the tags, collapsing duplicates, and answers the resulting list', async () => {
+      const id = await withTags('wf-add', ['a', 'a', 'b']);
+      const outcome = await run(id, ['c', 'a']);
+      expect(outcome.status).toBe('success');
+      expect(outcome.results?.[0].result.tags).toEqual(tagsBefore(['a', 'a', 'b'], ['c', 'a']));
+      expect((await storage.getWikiPage(id)).tags).toEqual(['a', 'b', 'c']);
+    });
+
+    it('does not find a trashed page', async () => {
+      const id = await withTags('wf-trashed', ['a']);
+      await admin.query(`UPDATE ${SCHEMA}.wiki_pages SET deleted_at = NOW() WHERE id = $1`, [id]);
+      const outcome = await run(id, ['b']);
+      expect(outcome.status).toBe('failed');
+      expect(outcome.error).toBe('Page not found');
+      const { rows } = await admin.query(`SELECT tags FROM ${SCHEMA}.wiki_pages WHERE id = $1`, [
+        id,
+      ]);
+      expect(rows[0].tags).toEqual(['a']);
+    });
+
+    it('selects the page through the same search, with its bound of 1000 results', async () => {
+      await admin.query(
+        `INSERT INTO ${SCHEMA}.wiki_pages (title, slug, content, blocks, author, tags)
+         SELECT 'Filler ' || n, 'filler-' || n, 'x', '[]', 'author', '{}' FROM generate_series(1, 1005) n`
+      );
+      try {
+        const first = await storage.searchWikiPages({ query: '', limit: 1000, offset: 0 });
+        const { rows } = await admin.query(`SELECT id FROM ${SCHEMA}.wiki_pages`);
+        const outside = rows
+          .map((r: { id: number }) => r.id)
+          .find((id: number) => !first.pages.some((p: { id: number }) => p.id === id));
+        expect(outside).toBeDefined();
+        const outcome = await run(outside, ['b']);
+        expect(outcome.status).toBe('failed');
+        expect(outcome.error).toBe('Page not found');
+        const { rows: tags } = await admin.query(
+          `SELECT tags FROM ${SCHEMA}.wiki_pages WHERE id = $1`,
+          [outside]
+        );
+        expect(tags[0].tags).not.toContain('b');
+        // One inside the bound is found.
+        const inside = first.pages[0].id;
+        expect((await run(inside, ['b'])).status).toBe('success');
+      } finally {
+        await admin.query(`DELETE FROM ${SCHEMA}.wiki_pages WHERE slug LIKE 'filler-%'`);
+      }
+    });
+  });
+});

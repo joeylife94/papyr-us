@@ -475,6 +475,10 @@ function EditablePageBody({
   const [title, setTitle] = useState(page.title);
   // The title field is uncontrolled; when the page's title is taken over from elsewhere, this
   // tells it to show the new text (and how often that happened).
+  // The block components keep their own copy of a block's text (heading, to-do and code do not
+  // follow their props), so when blocks are taken over from the stored page the body is mounted
+  // again; the person is never writing the body then (blocks they write collide instead).
+  const [bodyKey, setBodyKey] = useState(0);
   const [titleReplace, setTitleReplace] = useState<{ token: number; text: string } | undefined>();
   const [blocks, setBlocks] = useState<Block[]>(() => initialBlocksFor(page));
   // The blocks last shown, read synchronously: the Yjs sync hands back the blocks the page
@@ -497,6 +501,7 @@ function EditablePageBody({
       } else if (field === 'blocks') {
         blocksRef.current = initialBlocksFor(source);
         setBlocks(blocksRef.current);
+        setBodyKey((key) => key + 1);
       } else if (field === 'tags') setTagsText(source.tags.join(', '));
       else if (field === 'folder') setFolder(source.folder);
       else if (field === 'icon') setIcon(source.icon ?? null);
@@ -638,6 +643,7 @@ function EditablePageBody({
       </header>
       <div data-page-body className="min-w-0">
         <BlockEditor
+          key={bodyKey}
           blocks={blocks}
           onChange={(next) => {
             if (jsonEqual(next, blocksRef.current)) return;

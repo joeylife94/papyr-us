@@ -180,14 +180,18 @@ function changedFields(page: WikiPage, update: UpdateWikiPage): string[] {
     .map(([key]) => key);
 }
 
-async function closeSession(pageId: number, reason: SessionClosedEvent['reason']) {
+async function closeSession(
+  pageId: number,
+  reason: SessionClosedEvent['reason'],
+  reported?: WikiPage
+) {
   const session = sessions.get(pageId);
   if (!session) return false;
   clearTimeout(session.idleTimer);
   sessions.delete(pageId);
   if (onSessionClosed) {
     try {
-      const page = await session.store.getPage(pageId);
+      const page = reported ?? (await session.store.getPage(pageId));
       if (page) onSessionClosed({ page, tagsAtStart: session.tagsAtStart, reason });
     } catch (error) {
       logger.error('Failed to report a closed edit session', {
@@ -243,17 +247,21 @@ export async function savePage(
   const changed = before ? changedFields(before, data) : [];
   const changesVersionedFields = changed.some((field) => VERSIONED_FIELDS.includes(field));
 
-  // A save that would change nothing is not a conflict, whatever its base: nothing is lost by it.
-  // It answers with the stored page, whose revision is what the editor bases its next save on.
-  // (A manual save still closes the autosave session, as before.)
+  // A 200 to a save that named a base means the base was current: a stale base is refused even
+  // when the save would change nothing, so the editor never takes the current revision without
+  // being shown the page it belongs to. A refused save that carries a change keeps it (and the
+  // page as it is) in the history; one that carries none has no text to keep.
+  if (before && baseRevision !== undefined && baseRevision !== pageRevision(before)) {
+    if (changed.length > 0) await keepRefusedWrite(store, before, data);
+    throw new PageRevisionConflictError(before);
+  }
+
+  // Nothing would change (e.g. the editor echoing blocks it has just synced): skip the write and
+  // answer with the stored page, which is what the write would have returned. (A manual save
+  // still closes the autosave session, as before.)
   if (before && changed.length === 0) {
     if (mode === 'manual') await closeSession(pageId, 'manual-save');
     return { before, after: before };
-  }
-
-  if (before && baseRevision !== undefined && baseRevision !== pageRevision(before)) {
-    await keepRefusedWrite(store, before, data);
-    throw new PageRevisionConflictError(before);
   }
 
   // What a written save does around the write: close or extend the autosave session and keep the
@@ -261,8 +269,10 @@ export async function savePage(
   const recordSessionEffects = async () => {
     if (!before) return;
     if (mode === 'manual') {
-      // A manual save closes the autosave session.
-      await closeSession(pageId, 'manual-save');
+      // A manual save closes the autosave session. After a based save's write the report is of
+      // the page as it was before that save (as it is when the session closes before the write),
+      // so tags the save itself adds are reported once, by the save, not again by the session.
+      await closeSession(pageId, 'manual-save', baseRevision !== undefined ? before : undefined);
       if (touchesBody(data) && changesVersionedFields) {
         await snapshotSafely(store, before, `Version`);
       }

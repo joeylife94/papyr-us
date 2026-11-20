@@ -433,7 +433,8 @@ export class DBStorage {
           .from(wikiPages)
           .where(eq(wikiPages.id, id))
           .for('update');
-        if (!locked) return undefined;
+        // A trashed page is not found, as for a read: no answer, no write, nothing recorded.
+        if (!locked || locked.deletedAt) return undefined;
         if (pageRevision(locked) !== ifRevision) throw new PageRevisionConflictError(locked);
         const result = await tx.update(wikiPages).set(page).where(eq(wikiPages.id, id)).returning();
         if (result[0] && page.content !== undefined) {
@@ -507,39 +508,52 @@ export class DBStorage {
     });
   }
 
+  /** A version of a page, or undefined when there is none with that id on that page. */
+  async getPageVersion(pageId: number, versionId: number) {
+    const [version] = await this.db
+      .select()
+      .from(pageVersions)
+      .where(and(eq(pageVersions.id, versionId), eq(pageVersions.pageId, pageId)));
+    return version;
+  }
+
   /**
    * Add and remove tags in one statement, against the tags the row has at that moment (a tag saved
-   * by someone else a moment ago is kept). Added tags keep their order and appear once; a tag that
-   * is both added and removed is removed. Nothing else on the page changes.
+   * by someone else a moment ago is kept). It gives the result the read-modify-write it replaces
+   * gave: when `add` is passed (even empty) the list is collapsed to its first occurrences with the
+   * added tags after them; without `add` the existing tags, duplicates included, are kept as they
+   * are; a tag that is both added and removed is removed. A trashed page is not touched and not
+   * answered. Nothing else on the page changes.
    */
   async mergePageTags(
     id: number,
     change: { add?: string[]; remove?: string[] }
   ): Promise<WikiPage | undefined> {
-    const list = (values: string[] | undefined) => {
-      const tags = (values ?? []).filter((tag): tag is string => typeof tag === 'string');
-      return tags.length > 0
+    const list = (values: unknown[]) =>
+      values.length > 0
         ? sql`ARRAY[${sql.join(
-            tags.map((tag) => sql`${tag}`),
+            values.map((tag) => sql`${String(tag)}`),
             sql`, `
           )}]::text[]`
         : sql`ARRAY[]::text[]`;
-    };
-    const [updated] = await this.db
-      .update(wikiPages)
-      .set({
-        tags: sql`ARRAY(
-          SELECT merged.tag
-            FROM (
+    const usable = (values: string[] | undefined) =>
+      (values ?? []).filter((tag) => typeof tag === 'string' || typeof tag === 'number');
+    const remove = list(usable(change.remove));
+    const kept = Array.isArray(change.add)
+      ? sql`SELECT merged.tag FROM (
               SELECT u.tag, MIN(u.position) AS position
-                FROM unnest(${wikiPages.tags} || ${list(change.add)}) WITH ORDINALITY AS u(tag, position)
+                FROM unnest(${wikiPages.tags} || ${list(usable(change.add))}) WITH ORDINALITY AS u(tag, position)
                GROUP BY u.tag
             ) AS merged
-           WHERE NOT (merged.tag = ANY(${list(change.remove)}))
-           ORDER BY merged.position
-        )`,
-      })
-      .where(eq(wikiPages.id, id))
+           WHERE NOT (merged.tag = ANY(${remove}))
+           ORDER BY merged.position`
+      : sql`SELECT u.tag FROM unnest(${wikiPages.tags}) WITH ORDINALITY AS u(tag, position)
+           WHERE NOT (u.tag = ANY(${remove}))
+           ORDER BY u.position`;
+    const [updated] = await this.db
+      .update(wikiPages)
+      .set({ tags: sql`ARRAY(${kept})` })
+      .where(and(eq(wikiPages.id, id), isNull(wikiPages.deletedAt)))
       .returning();
     return updated;
   }

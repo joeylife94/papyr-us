@@ -10,6 +10,7 @@ import {
   resetEditSessions,
   savePage,
   setAutosaveIdleMs,
+  setSessionClosedHandler,
   type PageSaveStore,
 } from '../../server/services/page-save';
 
@@ -102,6 +103,57 @@ describe('pageRevision', () => {
     const base = pageRevision(makePage());
     expect(pageRevision(makePage({ updatedAt: new Date(99999) }))).toBe(base);
     expect(pageRevision(makePage({ parentId: 4, position: 2 }))).toBe(base);
+  });
+});
+
+describe('the autosave session report of a manual save', () => {
+  async function run(withBase: boolean) {
+    resetEditSessions();
+    const { store, current } = makeStore(makePage());
+    const reports: Array<{ reason: string; tagsAtStart: string[]; tagsNow: string[] }> = [];
+    setSessionClosedHandler((event) =>
+      reports.push({
+        reason: event.reason,
+        tagsAtStart: event.tagsAtStart,
+        tagsNow: event.page.tags,
+      })
+    );
+    await savePage(store, 1, { content: 'edited', blocks: block('edited') }, 'autosave');
+    await savePage(store, 1, { tags: ['ops', 'manual-tag'] }, 'manual', {
+      baseRevision: withBase ? pageRevision(current()) : undefined,
+    });
+    return reports;
+  }
+  afterEach(() => setSessionClosedHandler(null));
+
+  it.each([
+    ['without', false],
+    ['with', true],
+  ])(
+    '%s a base reports the page as it was before the save, so a tag added by it is reported once',
+    async (_n, withBase) => {
+      const reports = await run(withBase);
+      expect(reports).toEqual([{ reason: 'manual-save', tagsAtStart: ['ops'], tagsNow: ['ops'] }]);
+    }
+  );
+
+  it('a manual save refused at the lock closes no session and fires nothing', async () => {
+    const { store, changeBehindTheBack } = makeStore(makePage());
+    const reports: string[] = [];
+    setSessionClosedHandler((event) => reports.push(event.reason));
+    await savePage(store, 1, { blocks: block('edited') }, 'autosave');
+    const base = pageRevision(makePage({ content: 'edited', blocks: block('edited') }));
+    const getPage = store.getPage;
+    store.getPage = async (id) => {
+      const page = await getPage(id);
+      changeBehindTheBack({ tags: ['raced'] });
+      return page;
+    };
+    await expect(
+      savePage(store, 1, { tags: ['mine'] }, 'manual', { baseRevision: base })
+    ).rejects.toBeInstanceOf(PageRevisionConflictError);
+    expect(reports).toEqual([]);
+    expect(hasOpenEditSession(1)).toBe(true);
   });
 });
 
@@ -211,17 +263,43 @@ describe('savePage with a base revision', () => {
     expect(current().content).toBe('mine');
   });
 
-  it('a stale save whose patch equals what is stored is not a conflict and records nothing', async () => {
+  it('a 200 to a save that named a base means the base was current: a stale base is refused even when nothing would change', async () => {
     const stored = makePage({ content: 'same', blocks: block('same') });
     const { store, updates, snapshots } = makeStore(stored);
-    const result = await savePage(store, 1, { blocks: block('same') }, 'autosave', {
-      baseRevision: pageRevision(makePage()),
-    });
+    await expect(
+      savePage(store, 1, { blocks: block('same') }, 'autosave', {
+        baseRevision: pageRevision(makePage()),
+      })
+    ).rejects.toMatchObject({ name: 'PageRevisionConflictError', current: stored });
     expect(updates).toEqual([]);
+    // There is no text to keep from a refused save that carries no change.
     expect(snapshots).toEqual([]);
     expect(hasOpenEditSession(1)).toBe(false);
-    // The answer carries the current revision, which is what the editor bases its next save on.
-    expect(pageRevision(result!.after)).toBe(pageRevision(stored));
+  });
+
+  it.each([
+    ['tags', { tags: ['ops'] }],
+    ['title', { title: 'Handbook' }],
+    ['properties and a body equal to the stored one', { folder: 'docs', blocks: block('same') }],
+  ])(
+    'a stale %s save that changes nothing is refused and records no version',
+    async (_n, patch) => {
+      const stored = makePage({ content: 'same', blocks: block('same') });
+      const { store, snapshots } = makeStore(stored);
+      await expect(
+        savePage(store, 1, patch as any, 'autosave', { baseRevision: pageRevision(makePage()) })
+      ).rejects.toBeInstanceOf(PageRevisionConflictError);
+      expect(snapshots).toEqual([]);
+    }
+  );
+
+  it('a save without a base that changes nothing is answered with the stored page, as before', async () => {
+    const stored = makePage();
+    const { store, updates, snapshots } = makeStore(stored);
+    const result = await savePage(store, 1, { blocks: block('v0') }, 'autosave');
+    expect(result).toEqual({ before: stored, after: stored });
+    expect(updates).toEqual([]);
+    expect(snapshots).toEqual([]);
   });
 
   it('a manual save that loses at the write opens no session and records no version of its own', async () => {

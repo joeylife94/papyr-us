@@ -64,7 +64,11 @@ describe('Wiki Page Management API', () => {
       const response = await request(app).post('/api/pages').send(newPageData);
 
       expect(response.status).toBe(201);
-      expect(response.body).toEqual(expectedPage);
+      expect(response.body).toEqual({
+        ...expectedPage,
+        revision: expect.any(String),
+        fieldRevisions: expect.any(Object),
+      });
       expect(storage.createWikiPage).toHaveBeenCalledWith(expect.objectContaining(newPageData));
     });
 

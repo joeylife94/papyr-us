@@ -108,7 +108,11 @@ export default function NewPage({ teamName, initialFolder = 'docs', parentId }: 
         credentials: 'include',
       });
       if (!res.ok) throw new Error(`create ${res.status}`);
-      const created: WikiPage = await res.json();
+      const created: WikiPage & { revision?: string } = await res.json();
+      // Once created the page is visible to others, so these saves name the revision they are
+      // based on (WP1) and move it on with each answer; a refusal ends them (see below).
+      let base = created.revision;
+      let refusedElsewhere = false;
 
       // Anything typed while the page was being created (or while these saves are in flight) is
       // saved before the view moves on, so the page never opens on an older state. A failed save
@@ -120,7 +124,7 @@ export default function NewPage({ teamName, initialFolder = 'docs', parentId }: 
       let failures = 0;
       while (snapshot(latest.current) !== snapshot(stored)) {
         const now = latest.current;
-        const saved = await fetch(`/api/pages/${created.id}/autosave`, {
+        const answer = await fetch(`/api/pages/${created.id}/autosave`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
@@ -131,11 +135,26 @@ export default function NewPage({ teamName, initialFolder = 'docs', parentId }: 
             folder: now.folder,
             tags: parseTags(now.tagsText),
             icon: now.icon,
+            ...(base ? { baseRevision: base } : {}),
           }),
         }).then(
-          (r) => r.ok,
-          () => false
+          async (r) => ({
+            ok: r.ok,
+            status: r.status,
+            revision: r.ok
+              ? ((await r.json().catch(() => null))?.revision as string | undefined)
+              : undefined,
+          }),
+          () => ({ ok: false, status: 0, revision: undefined })
         );
+        const saved = answer.ok;
+        if (answer.status === 409) {
+          // The page was changed elsewhere since it was created. The refused title and body are
+          // kept in its version history by the server; this draft does not overwrite the page.
+          refusedElsewhere = true;
+          break;
+        }
+        if (answer.revision) base = answer.revision;
         if (saved) {
           stored = now;
           failures = 0;
@@ -148,6 +167,14 @@ export default function NewPage({ teamName, initialFolder = 'docs', parentId }: 
             setTimeout(resolve, Math.min(RETRY_BASE_MS * 2 ** (failures - 1), RETRY_MAX_MS))
           );
         }
+      }
+      if (refusedElsewhere) {
+        toast({
+          title: '문서가 다른 곳에서 바뀌었습니다',
+          description:
+            '방금 입력한 내용은 저장하지 않았습니다. 제목과 본문은 버전 기록에서 찾을 수 있습니다.',
+          variant: 'destructive',
+        });
       }
       if (!mounted.current) return;
 

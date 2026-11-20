@@ -334,9 +334,19 @@ export class AutosaveController {
     this.set({ status: 'idle', conflict: null });
   }
 
-  /** Leaving the page: flush (or, with a conflict open, keep the typed text) and checkpoint. */
+  /**
+   * Leaving the page: whatever was typed and is not stored ends up stored or, when it collides
+   * with a change made elsewhere, in a "Not saved" version, whichever order the answers come in.
+   * A save that is still in flight is waited for first, because its answer (a refusal) decides
+   * which of the two the newer text needs.
+   */
   leave() {
-    const done = this.snapshot.conflict ? this.preserveRefused(true) : this.send(true);
+    const done = (async () => {
+      if (this.inFlight) await this.inFlight;
+      if (!this.snapshot.conflict) await this.send(true);
+      // The save just sent (or the one awaited) may have been refused on a colliding field.
+      if (this.snapshot.conflict) await this.preserveRefused(true);
+    })();
     return done.finally(() => {
       void this.fetchImpl(`/api/pages/${this.pageId}/checkpoint`, {
         method: 'POST',
