@@ -4,7 +4,7 @@ import { DBStorage } from '../storage.js';
 import logger from './logger.js';
 import { savePage, storagePageSaveStore } from './page-save.js';
 import { markdownToBlocks } from '../../shared/block-markdown.js';
-import jwt from 'jsonwebtoken';
+import { verifyAccessToken } from '../auth-tokens.js';
 import { config } from '../config.js';
 import { onPageAccessChanged } from './page-access-events.js';
 
@@ -140,7 +140,7 @@ function getSocketIdentity(socket: Socket, cfg: CollabConfig): SocketIdentity {
     extractCookieToken(socket.handshake.headers?.cookie as string | undefined);
   if (!token || typeof token !== 'string') return {};
   try {
-    const decoded = jwt.verify(token, config.jwtSecret) as { id: number; email?: string };
+    const decoded = verifyAccessToken(token) as { id: number; email?: string };
     return { userId: decoded.id, userEmail: decoded.email };
   } catch {
     return {};
