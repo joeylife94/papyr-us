@@ -59,6 +59,7 @@ import {
   listUploadedFiles,
   getFileInfo,
   getFileTeamId,
+  isSafeUploadFilename,
 } from './services/upload.js';
 import {
   smartSearch,
@@ -2523,6 +2524,9 @@ export async function registerRoutes(
   app.get('/api/uploads/images/:filename', authMiddleware, async (req: AuthRequest, res) => {
     try {
       const { filename } = req.params;
+      if (!isSafeUploadFilename(filename)) {
+        return res.status(400).json({ message: 'Invalid filename' });
+      }
 
       const fileTeamId = await getFileTeamId(filename, true);
 
@@ -2564,6 +2568,9 @@ export async function registerRoutes(
   app.get('/api/uploads/files/:filename', authMiddleware, async (req: AuthRequest, res) => {
     try {
       const { filename } = req.params;
+      if (!isSafeUploadFilename(filename)) {
+        return res.status(400).json({ message: 'Invalid filename' });
+      }
 
       const fileTeamId = await getFileTeamId(filename, false);
 
@@ -2640,6 +2647,11 @@ export async function registerRoutes(
 
         if (type !== 'images' && type !== 'files') {
           return res.status(400).json({ message: 'Invalid file type' });
+        }
+        // The name is one path segment of an upload, nothing else (a decoded parameter can hold
+        // separators). Checked before any lookup or file-system call.
+        if (!isSafeUploadFilename(filename)) {
+          return res.status(400).json({ message: 'Invalid filename' });
         }
 
         // Verify the requester belongs to the team that uploaded this file
