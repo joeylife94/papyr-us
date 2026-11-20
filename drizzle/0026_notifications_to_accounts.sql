@@ -20,6 +20,12 @@
 -- `sender_unmapped` keeps the roster ids (its content columns are null). Ids, is_read,
 -- timestamps and related ids of assigned notifications are unchanged.
 --
+-- For a moved notification, organization_id is the organization its recipient account belongs to
+-- now; it says whose list the row is in, not where the related record lives. related_page_id,
+-- related_task_id and related_comment_id are carried exactly as they were and are not checked
+-- against that organization. Nothing of a related record is returned through a notification: a
+-- page is read through its own route, which applies the page's own access check.
+--
 -- The columns, constraints and index are created under the names `drizzle-kit push` generates for
 -- shared/schema.ts, and recipient_id and sender_id are dropped, so a later push has nothing to
 -- change on these tables. Deployments apply this file after 0025 and before push (push alone
