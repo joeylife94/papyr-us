@@ -140,11 +140,12 @@ jobs:
         run: npx playwright test tests/security-folder-pages-access.spec.ts tests/security-team-page-access.spec.ts tests/security-team-page-management.spec.ts tests/security-team-delete-keeps-pages.spec.ts --project=chromium --reporter=dot
 
       # Realtime collaboration is off by default, so this run starts its own server with it on:
-      # open realtime sessions must lose access as soon as their user leaves the page's team.
-      - name: Run realtime collaboration access regression
+      # open realtime sessions must lose access as soon as their user leaves the page's team, and
+      # two people editing one block at the same time must end with the same text in one block.
+      - name: Run realtime collaboration specs (flag on)
         env:
           FEATURE_COLLABORATION: 'true'
-        run: npx playwright test tests/security-collab-access-revocation.spec.ts --project=chromium --reporter=dot
+        run: npx playwright test tests/security-collab-access-revocation.spec.ts tests/collaboration-concurrent.spec.ts tests/collaboration-sync.spec.ts tests/markdown-shortcuts.spec.ts --project=chromium --workers=1 --reporter=dot
 
       - name: Upload Playwright HTML report
         if: failure()

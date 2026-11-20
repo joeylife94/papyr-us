@@ -1,5 +1,64 @@
 # Yjs CRDT Real-time Collaboration Architecture
 
+> **Status, 2026-11-20.** Real-time editing is behind `FEATURE_COLLABORATION`, which is **off by
+> default**. This section says what the code does today; where the older sections below
+> disagree with it (they describe a `Y.Array<Block>` document and awareness-based cursors), this
+> section is right and the rest is history to be rewritten when the mode is turned on by
+> default.
+
+## What the code does today
+
+**Shared document** (`shared/yjs-blocks.ts`, the one module that converts between the stored
+JSON and the shared document, used for seeding and for saving):
+
+- `blockOrder`: a `Y.Array` of block ids. Moving a block changes only this array.
+- `blockMaps`: a `Y.Map` from block id to that block's `Y.Map`: `id` and `type` as values,
+  `content` as a `Y.Text`, `properties` as a `Y.Map`, any other stored field as a value.
+- The stored form does not change: `wiki_pages.blocks` JSON is still the only thing persisted.
+
+**What concurrent edits do** (each pinned by `tests/unit/yjs-block-convergence.test.ts`):
+
+| Two people at the same time                  | Result                                             |
+| -------------------------------------------- | -------------------------------------------------- |
+| type in the same block                       | merged character by character, one block           |
+| edit a block's text, a property and its type | all three survive                                  |
+| move a block and edit it                     | both apply                                         |
+| move the same block to two places            | one block, at one of the two places                |
+| delete a block and edit or move it           | the delete wins                                    |
+| set the same property to two values          | one of the two values                              |
+| edit different cells of one table            | one person's table (a table is one property value) |
+
+**Typing.** A local edit is the difference between the field's old and new text, applied as one
+`Y.Text` delete and insert placed by the caret. A remote change carries the focused field's
+caret and selection through it. While an input-method composition (Korean, Japanese, Chinese)
+is open in a field, incoming changes are held and applied when it ends. Undo and redo act on
+the person's own edits only.
+
+**Reconnecting.** Each loaded document has an epoch. A client that rejoins the same epoch keeps
+its document and merges; if the server has rebuilt the document since (idle unload, restart,
+version restore), the client starts from the server's state, and edits it made while
+disconnected are shown to the person to copy. They are neither merged nor dropped silently.
+
+**Who may edit over the realtime channel.** The same decision the REST write routes apply
+(`checkPagePermission(…, 'editor')`), made for the page being joined and kept with that
+document: a refused or failed join changes nothing about what the connection may do. Signing in
+is required unless `COLLAB_REQUIRE_AUTH=0`, which is refused in production.
+
+**Not done yet, and required before this is on by default:**
+
+- The shared document is not persisted; the server rebuilds it from JSON, and it lives in one
+  process (more than one server process diverges).
+- Each client's REST autosave still runs during a session.
+- Rights on an open connection are re-checked when team membership changes, not when a page's
+  grants change.
+- Presence is an avatar list and pointer positions; there are no carets or selections of
+  other people in the text.
+- No limit on the size of a shared document.
+
+---
+
+_The sections below predate the rewrite of the binding._
+
 ## 📋 Overview
 
 Papyr-us now uses **Yjs CRDT (Conflict-free Replicated Data Type)** for real-time collaborative editing. This provides **conflict-free concurrent editing** similar to Google Docs and Notion, where multiple users can edit simultaneously without race conditions or version conflicts.
