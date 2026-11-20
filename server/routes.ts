@@ -6,6 +6,8 @@ import {
   requireAdmin,
   writeAuthGate,
   buildRateLimiter,
+  buildAccountRateLimiter,
+  parseTeamReference,
   requireAuthIfEnabled,
   requirePagePermission,
   requireTeamMembership,
@@ -107,6 +109,8 @@ import passport from 'passport';
 import { eq, and, isNull } from 'drizzle-orm';
 import { ANONYMOUS_PAGE_VIEWER, DBStorage, OrganizationRequiredError } from './storage.js';
 import { createUserInDefaultOrganization } from './organizations.js';
+import { generateTeamUrlName } from './team-names.js';
+import { TEAM_DISPLAY_NAME_MAX_LENGTH } from '../shared/team-members.js';
 import { registerKnowledgeRoutes } from './routes/knowledge.js';
 import { buildKnowledgeGraph, suggestAiLinks } from './services/knowledge-graph.js';
 import { aiRefusalFor, aiUsableBy, requireOrganizationAi } from './organization-guards.js';
@@ -167,6 +171,30 @@ function organizationRequired(req: AuthRequest, res: Response) {
     ? res.status(403).json({ message: 'Your account does not belong to an organization' })
     : res.status(401).json({ message: 'Authentication required' });
 }
+
+// A team to create: the display name is required and bounded; the URL name is optional (the
+// server makes one when it is missing or held). The organization is never taken from the request.
+/** A team as answered to a caller: never with its password hash. */
+function withoutPassword<T extends { password?: unknown }>(team: T): Omit<T, 'password'> {
+  const { password: _password, ...rest } = team;
+  return rest;
+}
+
+const createTeamSchema = insertTeamSchema.extend({
+  // A name that team-scoped routes would not read as a name (it starts with a number, such as
+  // `5` or `2024-plans`) is refused. Teams that already have such a name are left alone.
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(100)
+    .refine((value) => {
+      const reference = parseTeamReference(value);
+      return reference !== null && reference !== 'invalid' && 'name' in reference;
+    })
+    .optional(),
+  displayName: z.string().trim().min(1).max(TEAM_DISPLAY_NAME_MAX_LENGTH),
+});
 
 export async function registerRoutes(
   app: Express,
@@ -3659,24 +3687,64 @@ export async function registerRoutes(
       }
     });
 
-    app.post('/api/teams', optionalAuth, requireAuthIfEnabled, async (req: AuthRequest, res) => {
-      try {
-        const validatedData = insertTeamSchema.parse(req.body);
-        // A team belongs to its creator's organization (issue #124 X1), so it needs a creator
-        const creatorUserId = req.user?.id;
-        if (!creatorUserId) {
-          return res.status(401).json({ error: 'Authentication required' });
+    // Any signed-in member of an organization may create a team in it and becomes its owner. The
+    // URL name is the caller's own (a platform admin or an API caller may name it) or made from
+    // the display name. Team names are unique across the instance: when a requested name is
+    // already held, by any organization, the team is created under a suffixed name instead of the
+    // request failing. So a caller who requests a name can tell from the answer whether it was
+    // free (before this a clash answered 500); nothing else about the other team is revealed, and
+    // a name the server makes itself is never taken from the caller.
+    const rlTeamCreate = buildAccountRateLimiter({ windowMs: 60_000, max: 10 });
+    app.post(
+      '/api/teams',
+      optionalAuth,
+      requireAuthIfEnabled,
+      rlTeamCreate,
+      async (req: AuthRequest, res) => {
+        try {
+          // A team belongs to its creator's organization (issue #124 X1), so it needs a creator
+          const creatorUserId = req.user?.id;
+          if (!creatorUserId) {
+            return res.status(401).json({ error: 'Authentication required' });
+          }
+          // A deactivated account is answered like one without an organization
+          if ((await storage.getUserAccount(creatorUserId))?.isActive !== true) {
+            return res
+              .status(403)
+              .json({ error: 'Your account does not belong to an organization' });
+          }
+          const parsed = createTeamSchema.safeParse(req.body);
+          if (!parsed.success) {
+            return res.status(400).json({ error: 'Invalid team data' });
+          }
+          const { name: requestedName, ...rest } = parsed.data;
+          for (let attempt = 0; attempt < 5; attempt += 1) {
+            const name =
+              attempt === 0 && requestedName
+                ? requestedName
+                : generateTeamUrlName(requestedName ?? rest.displayName);
+            try {
+              const team = await storage.createTeamWithOwner({ ...rest, name }, creatorUserId);
+              return res.status(201).json(withoutPassword(team));
+            } catch (error) {
+              const db = postgresErrorOf(error);
+              const nameTaken =
+                db?.code === '23505' && (!db.constraint || db.constraint.includes('name'));
+              if (!nameTaken) throw error;
+            }
+          }
+          return res.status(503).json({ error: 'Could not create the team, try again' });
+        } catch (error) {
+          if (error instanceof OrganizationRequiredError) {
+            return res
+              .status(403)
+              .json({ error: 'Your account does not belong to an organization' });
+          }
+          console.error('Error creating team:', error);
+          res.status(500).json({ error: 'Failed to create team' });
         }
-        const team = await storage.createTeamWithOwner(validatedData, creatorUserId);
-        res.status(201).json(team);
-      } catch (error) {
-        if (error instanceof OrganizationRequiredError) {
-          return res.status(403).json({ error: 'Your account does not belong to an organization' });
-        }
-        console.error('Error creating team:', error);
-        res.status(500).json({ error: 'Failed to create team' });
       }
-    });
+    );
 
     app.put('/api/teams/:id', optionalAuth, requireAuthIfEnabled, async (req: AuthRequest, res) => {
       try {
@@ -3706,7 +3774,7 @@ export async function registerRoutes(
         if (!team) {
           return res.status(404).json({ error: 'Team not found' });
         }
-        res.json(team);
+        res.json(withoutPassword(team));
       } catch (error) {
         console.error('Error updating team:', error);
         res.status(500).json({ error: 'Failed to update team' });
@@ -3857,9 +3925,9 @@ export async function registerRoutes(
         }
       }
 
-      // Only a current owner or admin of the team may add someone to it. A members row on a team
-      // counts as team membership for its email (getUserTeamIds), so this is the same rule as
-      // POST /api/teams/:teamId/memberships, with no exception for a team without members rows.
+      // A directory row names a person and grants nothing: it does not make its email a member
+      // of the team (that is POST /api/teams/:teamId/memberships). Writing the directory of a
+      // team still needs a current owner or admin of that team.
       if (memberData.teamId && req.user?.id) {
         const userRole = await storage.getUserTeamRole(req.user.id, memberData.teamId as number);
         if (!userRole) {
@@ -3895,8 +3963,8 @@ export async function registerRoutes(
       }
 
       const memberData = updateMemberSchema.parse(req.body);
-      // Moving the row to another team adds its email to that team (see POST /api/members), so it
-      // needs the same owner or admin role on the target team
+      // Moving a directory row to another team writes that team's directory, so it needs the same
+      // owner or admin role on the target team
       if (
         memberData.teamId !== undefined &&
         memberData.teamId !== null &&

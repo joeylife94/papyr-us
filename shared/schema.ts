@@ -539,6 +539,18 @@ export const teamMembers = pgTable('team_members', {
 
 export type TeamMember = typeof teamMembers.$inferSelect;
 
+/**
+ * The team_members rows that drizzle/0028_convert_roster_team_access.sql created from directory
+ * (`members`) rows, so that its down file removes exactly those and nothing an owner added or
+ * changed since. A row goes when its membership row goes.
+ */
+export const teamRosterConversions = pgTable('team_roster_conversions', {
+  teamMemberId: integer('team_member_id')
+    .primaryKey()
+    .references(() => teamMembers.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
 // Study progress & contribution stats schema
 export const progressStats = pgTable('progress_stats', {
   id: serial('id').primaryKey(),

@@ -152,6 +152,25 @@
 | POST   | `/api/teams/verify` | -           | 팀 비밀번호 검증 |
 
 - `PUT`과 `DELETE`는 `ENFORCE_AUTH_WRITES`와 무관하게 로그인이 필요하고, 팀 역할 검사는 그대로입니다. `PUT`은 정해진 팀 필드만 받으며(그 밖의 키는 무시), 바꿀 필드가 없으면 400 `Invalid team data`입니다(#124 X1c).
+- `POST /api/teams`는 로그인한 조직 구성원이면 누구나 쓸 수 있고, 만든 계정이 소유자가 됩니다. 본문은 `displayName`(1~100자)이 필수이고 `name`은 선택입니다. `name`을 생략하면 서버가 만들고, 요청한 `name`이 이미 있으면 접미사가 붙은 다른 이름으로 만들어집니다(409나 500이 아님). 숫자로 읽히는 `name`은 400 `Invalid team data`입니다. 요청이 너무 잦으면 429입니다.
+- 팀 생성과 수정 응답에는 팀 비밀번호 해시가 들어 있지 않습니다.
+
+### 팀 멤버십
+
+| Method | Endpoint                                 | Auth | Description                                   |
+| ------ | ---------------------------------------- | ---- | --------------------------------------------- |
+| GET    | `/api/teams/:teamId/members`             | JWT  | 팀 멤버 목록 (팀 멤버)                        |
+| GET    | `/api/teams/:teamId/member-candidates`   | JWT  | 추가할 계정 검색 (소유자·관리자)              |
+| POST   | `/api/teams/:teamId/memberships`         | JWT  | 계정을 팀에 추가 (소유자·관리자)              |
+| PATCH  | `/api/teams/:teamId/memberships/:userId` | JWT  | 역할 변경 (소유자·관리자, 규칙은 가이드 참고) |
+| DELETE | `/api/teams/:teamId/memberships/:userId` | JWT  | 멤버 내보내기 (소유자·관리자)                 |
+| DELETE | `/api/teams/:teamId/memberships/me`      | JWT  | 스스로 나가기                                 |
+
+- 팀 접근은 `team_members` 행으로만 정해집니다. 명단(`/api/members`)의 행은 접근을 주지 않습니다.
+- `member-candidates`는 `?q=`가 두 글자 이상일 때만 찾고, `{ candidates: [{ id, name, email }], more }`로 10명까지 답합니다. 같은 조직의 활성 계정만 나옵니다. 요청이 너무 잦으면 429입니다.
+- 추가는 `{ email }`을 받고 일반 멤버로 넣습니다. 새로 추가되면 201, 이미 멤버이면 200입니다. 다른 조직, 비활성, 없는 계정은 모두 404 `Registered user not found`입니다.
+- 비활성 계정의 호출은 멤버가 아닌 호출과 같은 응답을 받습니다.
+- 규칙은 [organizations-guide.md](organizations-guide.md#팀-멤버)에 있습니다.
 
 ---
 
