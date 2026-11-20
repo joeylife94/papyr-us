@@ -22,7 +22,7 @@ env:
 jobs:
   # ==================== Deploy to Render ====================
   deploy-render:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: ${{ github.event.inputs.environment || 'production' }}
     steps:
       - name: Checkout repository
@@ -47,7 +47,7 @@ jobs:
 
   # ==================== Deploy to Vercel ====================
   deploy-vercel:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: github.event.inputs.environment == 'staging' || github.event_name == 'release'
     environment: ${{ github.event.inputs.environment || 'production' }}
     steps:
@@ -82,7 +82,7 @@ jobs:
 
   # ==================== Database Migration ====================
   migrate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [deploy-render]
     if: github.event.inputs.environment == 'production' || github.event_name == 'release'
     environment: production
@@ -119,7 +119,7 @@ jobs:
 
   # ==================== Post-Deploy Verification ====================
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [deploy-render, migrate]
     if: always() && needs.deploy-render.result == 'success'
     environment: ${{ github.event.inputs.environment || 'production' }}
