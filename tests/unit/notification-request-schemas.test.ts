@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createNotificationRequestSchema,
+  memberNotificationTypes,
   updateNotificationRequestSchema,
 } from '../../shared/schema';
 
@@ -39,6 +40,33 @@ describe('createNotificationRequestSchema (a notification is addressed to an acc
     ['no title', { title: undefined }],
   ])('refuses %s', (_label, over) => {
     expect(createNotificationRequestSchema.safeParse({ ...base, ...over }).success).toBe(false);
+  });
+});
+
+describe('createNotificationRequestSchema bounds (what a person may send)', () => {
+  const parse = (over: Record<string, unknown>) =>
+    createNotificationRequestSchema.safeParse({ ...base, ...over });
+
+  it('trims the title and keeps 1 to 200 characters', () => {
+    expect(parse({ title: '  Hi  ' })).toMatchObject({ success: true, data: { title: 'Hi' } });
+    expect(parse({ title: 'x'.repeat(200) }).success).toBe(true);
+    expect(parse({ title: 'x'.repeat(201) }).success).toBe(false);
+    expect(parse({ title: '' }).success).toBe(false);
+    expect(parse({ title: '   ' }).success).toBe(false);
+  });
+
+  it('keeps the content at 2,000 characters or fewer, and allows it to be empty', () => {
+    expect(parse({ content: 'x'.repeat(2000) }).success).toBe(true);
+    expect(parse({ content: 'x'.repeat(2001) }).success).toBe(false);
+    expect(parse({ content: '' }).success).toBe(true);
+  });
+
+  it.each(memberNotificationTypes)('accepts the kind %s', (type) => {
+    expect(parse({ type }).success).toBe(true);
+  });
+
+  it.each(['system', 'test', '', 'MENTION', 'workflow'])('refuses the kind %j', (type) => {
+    expect(parse({ type }).success).toBe(false);
   });
 });
 

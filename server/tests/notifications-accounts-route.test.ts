@@ -318,6 +318,30 @@ for (const enforce of [true, false]) {
       });
 
       it.each([
+        ['the kind the server uses for workflow messages', { type: 'system' }],
+        ['an unknown kind', { type: 'anything' }],
+        ['an empty title', { title: '   ' }],
+        ['a title over 200 characters', { title: 'x'.repeat(201) }],
+        ['content over 2,000 characters', { content: 'x'.repeat(2001) }],
+      ])('refuses %s, and writes nothing', async (_label, over) => {
+        const res = await request(app).post('/api/notifications').set(signedIn()).send(body(over));
+        expect(res.status).toBe(400);
+        expect(res.body.message).toBe('Invalid notification data');
+        expect(storage.createNotification).not.toHaveBeenCalled();
+      });
+
+      it('stores the trimmed title', async () => {
+        const res = await request(app)
+          .post('/api/notifications')
+          .set(signedIn())
+          .send(body({ title: '  Hi  ' }));
+        expect(res.status).toBe(201);
+        expect(storage.createNotification).toHaveBeenCalledWith(
+          expect.objectContaining({ title: 'Hi' })
+        );
+      });
+
+      it.each([
         ['recipientId', { recipientId: 50 }],
         ['senderId', { senderId: 3 }],
         ['senderUserId', { senderUserId: 3 }],

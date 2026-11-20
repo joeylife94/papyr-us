@@ -47,12 +47,12 @@ test.describe('Notification bell', () => {
         data: { type: 'mention', title, content: 'A mentioned you', recipientUserId: bId },
       });
       expect(made.status()).toBe(201);
-      // A notification of a type the bell has no icon for (as workflows create) must not break it.
+      // A second kind a person may send; the list shows both.
       const system = await aApi.post('/api/notifications', {
         data: {
-          type: 'system',
+          type: 'task_due',
           title: `${title}-system`,
-          content: 'from a workflow',
+          content: 'a task is due',
           recipientUserId: bId,
         },
       });

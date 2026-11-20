@@ -110,7 +110,7 @@ describe('Realtime notifications over Socket.IO', () => {
     fetch(`${baseUrl}/api/notifications`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Cookie: authCookieFor(asUserId) },
-      body: JSON.stringify({ type: 'test', title: 't', content: 'c', ...body }),
+      body: JSON.stringify({ type: 'mention', title: 't', content: 'c', ...body }),
     });
 
   // Negative assertions (nothing arrives) need a grace period; positive ones wait with vi.waitFor.

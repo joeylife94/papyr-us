@@ -649,11 +649,15 @@ export const updateNotificationSchema = insertNotificationSchema.partial();
 // sender or the organization, which only the server decides.
 const optionalRelatedId = z.number().int().positive().nullable().optional();
 
+// The kinds a person may send. Kinds that only server code creates (the workflow's `system`) are
+// refused from the route; server-side creation does not go through it.
+export const memberNotificationTypes = ['comment', 'mention', 'task_due', 'task_assigned'] as const;
+
 export const createNotificationRequestSchema = z
   .object({
-    type: z.string(),
-    title: z.string(),
-    content: z.string(),
+    type: z.enum(memberNotificationTypes),
+    title: z.string().trim().min(1).max(200),
+    content: z.string().max(2000),
     recipientUserId: z.number().int().positive(),
     relatedPageId: optionalRelatedId,
     relatedTaskId: optionalRelatedId,
