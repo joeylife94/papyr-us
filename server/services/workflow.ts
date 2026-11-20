@@ -174,19 +174,15 @@ async function executeAction(
         if (!context.trigger?.id || !processedConfig.tags) {
           return { success: false, error: 'Missing page ID or tags' };
         }
-        // Fetch current page using searchWikiPages
-        const searchResult = await getWorkflowStorage().searchWikiPages({
-          query: '',
-          limit: 1000,
-          offset: 0,
+        // Merged in one statement against the page's tags at this moment: a tag saved by someone
+        // while the workflow ran is kept.
+        const tagged = await getWorkflowStorage().mergePageTags(context.trigger.id, {
+          add: Array.isArray(processedConfig.tags) ? processedConfig.tags : [processedConfig.tags],
         });
-        const page = searchResult.pages.find((p: any) => p.id === context.trigger.id);
-        if (!page) {
+        if (!tagged) {
           return { success: false, error: 'Page not found' };
         }
-        // Add new tags
-        const updatedTags = Array.from(new Set([...page.tags, ...processedConfig.tags]));
-        await getWorkflowStorage().updateWikiPage(context.trigger.id, { tags: updatedTags });
+        const updatedTags = tagged.tags;
         return { success: true, result: { tags: updatedTags } };
 
       case 'run_ai_summary':

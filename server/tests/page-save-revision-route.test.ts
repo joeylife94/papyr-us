@@ -16,7 +16,11 @@ import http from 'http';
 import jwt from 'jsonwebtoken';
 import { registerRoutes } from '../routes';
 import { resetEditSessions } from '../services/page-save';
-import { PageRevisionConflictError, pageRevision } from '../services/page-revision';
+import {
+  PageRevisionConflictError,
+  pageFieldRevisions,
+  pageRevision,
+} from '../services/page-revision';
 
 const TEST_SECRET = 'page-revision-route-test-secret';
 
@@ -157,6 +161,7 @@ describe('reading the revision', () => {
     const byId = await read();
     expect(byId.status).toBe(200);
     expect(byId.body.revision).toBe(pageRevision(stored as any));
+    expect(byId.body.fieldRevisions).toEqual(pageFieldRevisions(stored as any));
     const bySlug = await request(app).get('/api/pages/slug/plan').set(as(EDITOR));
     expect(bySlug.status).toBe(200);
     expect(bySlug.body.revision).toBe(byId.body.revision);
@@ -247,6 +252,40 @@ describe('PUT /api/pages/:id with a base revision', () => {
   it('a malformed base is refused with 400, and a viewer still gets 403', async () => {
     expect((await put({ baseRevision: 7, title: 'x' }, EDITOR)).status).toBe(400);
     expect((await put({ baseRevision: 'old', title: 'x' }, VIEWER)).status).toBe(403);
+    expect(storage.updateWikiPage).not.toHaveBeenCalled();
+  });
+});
+
+describe('field revisions', () => {
+  it('a save answers with the field revisions of the page it wrote; they change only for the field written', async () => {
+    const before = pageFieldRevisions(stored as any);
+    const res = await autosave({ tags: ['new'] }, EDITOR);
+    expect(res.status).toBe(200);
+    expect(res.body.fieldRevisions).toEqual(pageFieldRevisions(stored as any));
+    expect(res.body.fieldRevisions.tags).not.toBe(before.tags);
+    expect({ ...res.body.fieldRevisions, tags: before.tags }).toEqual(before);
+  });
+
+  it('the 409 carries the field revisions of the current page, as GET answers them', async () => {
+    const base = pageRevision(stored as any);
+    stored = { ...stored, folder: 'elsewhere' };
+    const refused = await autosave({ baseRevision: base, title: 'Mine' }, EDITOR);
+    expect(refused.status).toBe(409);
+    expect(refused.body.page.fieldRevisions).toEqual(pageFieldRevisions(stored as any));
+    expect(refused.body.page).toEqual((await read()).body);
+  });
+});
+
+describe('POST /api/pages/bulk/tags', () => {
+  it('merges against the stored tags in one statement instead of reading and writing them back', async () => {
+    storage.mergePageTags.mockResolvedValue({ ...stored });
+    const res = await request(app)
+      .post('/api/pages/bulk/tags')
+      .set(as(EDITOR))
+      .send({ pageIds: [PAGE], addTags: ['a'], removeTags: ['b'] });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ updated: 1 });
+    expect(storage.mergePageTags).toHaveBeenCalledWith(PAGE, { add: ['a'], remove: ['b'] });
     expect(storage.updateWikiPage).not.toHaveBeenCalled();
   });
 });

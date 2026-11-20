@@ -14,8 +14,14 @@
  * The tables live in their own schema so this file can run next to the other Layer 4 files.
  */
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { Pool } from 'pg';
 import { addOrganizations } from './organizations-fixture';
+
+const PAGE_LINKS_MIGRATION = readFileSync(
+  new URL('../../drizzle/0021_add_page_links.sql', import.meta.url),
+  'utf8'
+);
 
 const DATABASE_URL = process.env.DATABASE_URL;
 
@@ -75,6 +81,14 @@ async function createSchema() {
       created_at         TIMESTAMP NOT NULL DEFAULT NOW()
     )
   `);
+  // Every content write maintains the link index, so the fixture has the table.
+  const client = await admin.connect();
+  try {
+    await client.query(`SET search_path TO ${SCHEMA}`);
+    await client.query(PAGE_LINKS_MIGRATION);
+  } finally {
+    client.release();
+  }
   await admin.query(`
     CREATE OR REPLACE FUNCTION ${SCHEMA}.wiki_pages_search_vector_update() RETURNS trigger AS $$
     BEGIN
@@ -217,5 +231,106 @@ describe('saves based on a revision (real Postgres)', () => {
     await pipeline.savePage(store, id, { blocks: blocks('one') }, 'autosave');
     await pipeline.savePage(store, id, { blocks: blocks('two') }, 'autosave');
     expect((await storage.getWikiPage(id)).content).toBe('two');
+  });
+});
+
+async function waitForLockWaiter() {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const { rows } = await admin.query(
+      `SELECT 1 FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND datname = current_database()`
+    );
+    if (rows.length > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error('no statement is waiting for a row lock');
+}
+
+describe('restoring a version (real Postgres)', () => {
+  async function pageWithVersion(slug: string) {
+    const id = await createPage(slug, 'current');
+    const { rows } = await admin.query(
+      `INSERT INTO ${SCHEMA}.page_versions (page_id, title, content, blocks, author, version_number, change_description)
+       VALUES ($1, $2, 'old text', $3, 'author', 1, 'Version 1') RETURNING id`,
+      [id, `Page ${slug}`, JSON.stringify(blocks('old text'))]
+    );
+    return { id, versionId: rows[0].id as number };
+  }
+
+  it('restores the version and keeps the page as it was as the "Before restore" version', async () => {
+    const { id, versionId } = await pageWithVersion('restore-plain');
+    const result = await storage.restorePageVersion(id, versionId);
+    expect(result.page.content).toBe('old text');
+    const kept = await versions(id);
+    expect(kept[kept.length - 1]).toMatchObject({
+      content: 'current',
+      change_description: 'Before restore',
+    });
+    expect((await storage.getWikiPage(id)).content).toBe('old text');
+  });
+
+  it('a save that lands while the restore waits is what "Before restore" keeps, not lost', async () => {
+    const { id, versionId } = await pageWithVersion('restore-race');
+    const holder = await admin.connect();
+    try {
+      await holder.query('BEGIN');
+      await holder.query(
+        `UPDATE ${SCHEMA}.wiki_pages SET content = 'landed', blocks = $2 WHERE id = $1`,
+        [id, JSON.stringify(blocks('landed'))]
+      );
+      const restoring = storage.restorePageVersion(id, versionId);
+      await waitForLockWaiter();
+      await holder.query('COMMIT');
+      const result = await restoring;
+
+      expect(result.page.content).toBe('old text');
+      const kept = await versions(id);
+      expect(kept[kept.length - 1]).toMatchObject({
+        content: 'landed',
+        change_description: 'Before restore',
+      });
+    } finally {
+      holder.release();
+    }
+  });
+
+  it('reports a version or page that is not there without writing anything', async () => {
+    const { id } = await pageWithVersion('restore-missing');
+    expect(await storage.restorePageVersion(id, 999999)).toEqual({ missing: 'version' });
+    expect(await storage.restorePageVersion(999999, 1)).toEqual({ missing: 'page' });
+    expect((await storage.getWikiPage(id)).content).toBe('current');
+    expect(await versions(id)).toHaveLength(1);
+  });
+});
+
+describe('merging tags (real Postgres)', () => {
+  it('concurrent merges each keep their tag', async () => {
+    const id = await createPage('tags-race', 'x');
+    const names = Array.from({ length: 12 }, (_, index) => `tag-${index}`);
+    await Promise.all(names.map((name) => storage.mergePageTags(id, { add: [name] })));
+    const tags: string[] = (await storage.getWikiPage(id)).tags;
+    expect(new Set(tags)).toEqual(new Set(['ops', ...names]));
+    expect(tags).toHaveLength(names.length + 1);
+  });
+
+  it('adds in order without duplicates, and removal wins over addition', async () => {
+    const id = await createPage('tags-order', 'x');
+    expect((await storage.mergePageTags(id, { add: ['b', 'a', 'b', 'ops'] })).tags).toEqual([
+      'ops',
+      'b',
+      'a',
+    ]);
+    expect(
+      (await storage.mergePageTags(id, { add: ['c', 'gone'], remove: ['ops', 'gone'] })).tags
+    ).toEqual(['b', 'a', 'c']);
+  });
+
+  it('does not touch the title, body or versions, and answers undefined for a missing page', async () => {
+    const id = await createPage('tags-only', 'body');
+    const before = await versions(id);
+    await storage.mergePageTags(id, { add: ['new'] });
+    const page = await storage.getWikiPage(id);
+    expect(page.content).toBe('body');
+    expect(await versions(id)).toEqual(before);
+    expect(await storage.mergePageTags(999999, { add: ['x'] })).toBeUndefined();
   });
 });

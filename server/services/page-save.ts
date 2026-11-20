@@ -25,7 +25,11 @@
  *   stored page has moved on, the save is refused with a `PageRevisionConflictError` before
  *   anything is written: no page write, no session, no workflows. The refused text and the page
  *   as it is then are kept as versions, so whichever side the editor gives up on can be
- *   recovered. A save without a base behaves as before; the realtime server does not pass one.
+ *   recovered. A save without a base behaves as before (it records the session and version
+ *   effects first, then writes); the realtime server does not pass one. A save with a base
+ *   records them only after its write went through, so one that loses at the row lock leaves
+ *   nothing behind but the versions kept for the refusal. A save that would change nothing is
+ *   never refused.
  *
  * Session state lives in this process (the app runs as a single instance); after a restart the
  * next autosave simply starts a new session, which can only add a version, never lose one.
@@ -236,23 +240,34 @@ export async function savePage(
   }
 
   const { baseRevision } = options;
+  const changed = before ? changedFields(before, data) : [];
+  const changesVersionedFields = changed.some((field) => VERSIONED_FIELDS.includes(field));
+
+  // A save that would change nothing is not a conflict, whatever its base: nothing is lost by it.
+  // It answers with the stored page, whose revision is what the editor bases its next save on.
+  // (A manual save still closes the autosave session, as before.)
+  if (before && changed.length === 0) {
+    if (mode === 'manual') await closeSession(pageId, 'manual-save');
+    return { before, after: before };
+  }
+
   if (before && baseRevision !== undefined && baseRevision !== pageRevision(before)) {
     await keepRefusedWrite(store, before, data);
     throw new PageRevisionConflictError(before);
   }
 
-  const changed = before ? changedFields(before, data) : [];
-  const changesVersionedFields = changed.some((field) => VERSIONED_FIELDS.includes(field));
-
-  if (!before) {
-    // Nothing to snapshot.
-  } else if (mode === 'manual') {
-    // A manual save closes the autosave session even when it changes nothing, as before.
-    await closeSession(pageId, 'manual-save');
-    if (touchesBody(data) && changesVersionedFields) {
-      await snapshotSafely(store, before, `Version`);
+  // What a written save does around the write: close or extend the autosave session and keep the
+  // state before it as a version.
+  const recordSessionEffects = async () => {
+    if (!before) return;
+    if (mode === 'manual') {
+      // A manual save closes the autosave session.
+      await closeSession(pageId, 'manual-save');
+      if (touchesBody(data) && changesVersionedFields) {
+        await snapshotSafely(store, before, `Version`);
+      }
+      return;
     }
-  } else if (changed.length > 0) {
     let session = sessions.get(pageId);
     if (session) {
       clearTimeout(session.idleTimer);
@@ -272,11 +287,13 @@ export async function savePage(
       session.snapshotTaken = true;
       await snapshotSafely(store, before, 'Before editing session');
     }
-  }
+  };
 
-  // Nothing would change (e.g. the editor echoing blocks it has just synced): skip the write and
-  // answer with the stored page, which is what the write would have returned.
-  if (before && changed.length === 0) return { before, after: before };
+  // A save without a base (and the realtime server) records before it writes, as always. A save
+  // with a base can still lose at the row lock to a save that landed after the check above; it
+  // records only once its write has gone through, so a refused save leaves no session and no
+  // version behind but the ones kept for the refusal itself.
+  if (baseRevision === undefined) await recordSessionEffects();
 
   let after: WikiPage | undefined;
   try {
@@ -291,6 +308,7 @@ export async function savePage(
       await keepRefusedWrite(store, error.current, data);
     throw error;
   }
+  if (after && baseRevision !== undefined) await recordSessionEffects();
   if (!after) return undefined;
   return { before, after };
 }
@@ -322,11 +340,13 @@ export async function checkpointPage(pageId: number): Promise<boolean> {
   return closeSession(pageId, 'checkpoint');
 }
 
-/** Close any session and snapshot the current state, so a restore never loses the latest edit. */
-export async function snapshotBeforeRestore(store: PageSaveStore, pageId: number) {
-  await closeSession(pageId, 'restore');
-  const current = await store.getPage(pageId);
-  if (current) await snapshotSafely(store, current, 'Before restore');
+/**
+ * Close the page's autosave session before a restore, so its closing report (workflows) sees the
+ * page as the editor left it. The state the restore replaces is kept as a version by the restore
+ * itself, in the transaction that locks the page (`DBStorage.restorePageVersion`).
+ */
+export async function closeSessionForRestore(pageId: number): Promise<boolean> {
+  return closeSession(pageId, 'restore');
 }
 
 async function snapshotSafely(

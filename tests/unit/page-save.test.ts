@@ -9,7 +9,7 @@ import {
   savePage,
   setAutosaveIdleMs,
   setSessionClosedHandler,
-  snapshotBeforeRestore,
+  closeSessionForRestore,
   type PageSaveStore,
   type SessionClosedEvent,
 } from '../../server/services/page-save';
@@ -237,15 +237,13 @@ describe('savePage', () => {
     expect(snapshots.map((s) => s.content)).toEqual(['v0', 'auto']);
   });
 
-  it('a restore snapshots the current state first and closes the session', async () => {
+  it('a restore closes the open session (its own version is kept by the restore)', async () => {
     const { store, snapshots } = makeStore(makePage());
     await savePage(store, 1, { blocks: [{ content: 'latest' }] }, 'autosave');
-    await snapshotBeforeRestore(store, 1);
+    expect(await closeSessionForRestore(1)).toBe(true);
     expect(closed.map((e) => e.reason)).toEqual(['restore']);
-    expect(snapshots).toEqual([
-      { content: 'v0', description: 'Before editing session' },
-      { content: 'latest', description: 'Before restore' },
-    ]);
+    expect(snapshots).toEqual([{ content: 'v0', description: 'Before editing session' }]);
+    expect(hasOpenEditSession(1)).toBe(false);
   });
 
   it('a no-op autosave (the editor echoing synced blocks) records no version, session or write', async () => {

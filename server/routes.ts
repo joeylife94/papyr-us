@@ -83,11 +83,15 @@ import { triggerWorkflows, initWorkflowService, executeWorkflow } from './servic
 import {
   savePage,
   checkpointPage,
-  snapshotBeforeRestore,
+  closeSessionForRestore,
   setSessionClosedHandler,
   storagePageSaveStore,
 } from './services/page-save.js';
-import { PageRevisionConflictError, pageRevision } from './services/page-revision.js';
+import {
+  PageRevisionConflictError,
+  pageFieldRevisions,
+  pageRevision,
+} from './services/page-revision.js';
 import {
   buildPageTree,
   checkNewPage,
@@ -802,8 +806,13 @@ export async function registerRoutes(
     const parsed = baseRevisionSchema.safeParse(value);
     return parsed.success ? parsed.data : null;
   };
-  // A page as GET /api/pages/:id answers it: the stored fields plus the revision to base saves on.
-  const withRevision = <T extends WikiPage>(page: T) => ({ ...page, revision: pageRevision(page) });
+  // A page as GET /api/pages/:id answers it: the stored fields plus the revision to base saves on
+  // and, per field, which stored value it is (see page-revision.ts).
+  const withRevision = <T extends WikiPage>(page: T) => ({
+    ...page,
+    revision: pageRevision(page),
+    fieldRevisions: pageFieldRevisions(page),
+  });
   // The 409 for a save based on an older revision: the page exactly as GET answers it now (the
   // caller passed the editor check for this page, which includes reading it), and its revision.
   const revisionConflictBody = (current: WikiPage) => ({
@@ -1076,6 +1085,7 @@ export async function registerRoutes(
           title: after.title,
           savedAt: new Date(),
           revision: pageRevision(after),
+          fieldRevisions: pageFieldRevisions(after),
         });
       } catch (error) {
         if (error instanceof PageRevisionConflictError) {
@@ -1212,30 +1222,16 @@ export async function registerRoutes(
           return res.status(400).json({ error: 'Invalid page or version ID' });
         }
 
-        const db = (storage as any).db;
-        if (!db) return res.status(500).json({ error: 'Database not available' });
-
-        const [version] = await db
-          .select()
-          .from(pageVersions)
-          .where(and(eq(pageVersions.id, versionId), eq(pageVersions.pageId, pageId)));
-
-        if (!version) {
-          return res.status(404).json({ error: 'Version not found' });
+        // The session closes first; then, in one transaction on the locked page, the page as it is
+        // now is kept as a version and replaced by the chosen one (DBStorage.restorePageVersion).
+        await closeSessionForRestore(pageId);
+        const restored = await storage.restorePageVersion(pageId, versionId);
+        if ('missing' in restored) {
+          return res.status(404).json({
+            error: restored.missing === 'version' ? 'Version not found' : 'Page not found',
+          });
         }
-
-        // Keep the current state as a version first, so restoring never loses the latest edit.
-        await snapshotBeforeRestore(pageSaveStore, pageId);
-
-        const restoredPage = await storage.updateWikiPage(pageId, {
-          title: version.title,
-          content: version.content,
-          blocks: version.blocks as any,
-        });
-
-        if (!restoredPage) {
-          return res.status(404).json({ error: 'Page not found' });
-        }
+        const restoredPage = restored.page;
 
         // Editors with the page open get the restored blocks, and their next save cannot write
         // the pre-restore blocks back.
@@ -1503,20 +1499,14 @@ export async function registerRoutes(
 
       let updated = 0;
 
+      // Each page's tags are merged in one statement against the tags it has at that moment, so a
+      // tag someone saved in between is kept.
       for (const pageId of pageIds) {
-        const page = await storage.getWikiPage(pageId);
-        if (!page) continue;
-
-        let tags = [...page.tags];
-        if (Array.isArray(addTags)) {
-          tags = Array.from(new Set([...tags, ...addTags]));
-        }
-        if (Array.isArray(removeTags)) {
-          tags = tags.filter((t: string) => !removeTags.includes(t));
-        }
-
-        await storage.updateWikiPage(pageId, { tags });
-        updated++;
+        const page = await storage.mergePageTags(pageId, {
+          add: Array.isArray(addTags) ? addTags : [],
+          remove: Array.isArray(removeTags) ? removeTags : [],
+        });
+        if (page) updated++;
       }
 
       res.json({ updated });

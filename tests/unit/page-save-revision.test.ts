@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { UpdateWikiPage, WikiPage } from '../../shared/schema';
-import { PageRevisionConflictError, pageRevision } from '../../server/services/page-revision';
+import {
+  PageRevisionConflictError,
+  pageFieldRevisions,
+  pageRevision,
+} from '../../server/services/page-revision';
 import {
   hasOpenEditSession,
   resetEditSessions,
@@ -101,6 +105,34 @@ describe('pageRevision', () => {
   });
 });
 
+describe('pageFieldRevisions', () => {
+  it.each([
+    ['title', { title: 'Other' }],
+    ['blocks', { blocks: block('v1'), content: 'v1' }],
+    ['tags', { tags: ['ops', 'new'] }],
+    ['folder', { folder: 'ideas' }],
+    ['icon', { icon: '📘' }],
+    ['cover', { metadata: { cover: { type: 'preset', id: 'dawn' } } }],
+  ] as const)('a change to %s changes that field only', (field, change) => {
+    const before = pageFieldRevisions(makePage());
+    const after = pageFieldRevisions(makePage(change as Partial<WikiPage>));
+    for (const name of Object.keys(before) as Array<keyof typeof before>) {
+      if (name === field) expect(after[name]).not.toBe(before[name]);
+      else expect(after[name]).toBe(before[name]);
+    }
+  });
+
+  it('does not change with metadata other than the cover, or with the order of stored keys', () => {
+    const before = pageFieldRevisions(makePage());
+    expect(pageFieldRevisions(makePage({ metadata: { other: 1 } }))).toEqual(before);
+    expect(
+      pageFieldRevisions(
+        makePage({ blocks: [{ content: 'v0', type: 'paragraph', id: 'b0' }] as WikiPage['blocks'] })
+      )
+    ).toEqual(before);
+  });
+});
+
 describe('savePage with a base revision', () => {
   it('refuses a stale base: the page is not written and no editing session opens', async () => {
     const stale = pageRevision(makePage());
@@ -177,6 +209,66 @@ describe('savePage with a base revision', () => {
     expect(updates).toHaveLength(1);
     expect(ifRevisions).toEqual([undefined]);
     expect(current().content).toBe('mine');
+  });
+
+  it('a stale save whose patch equals what is stored is not a conflict and records nothing', async () => {
+    const stored = makePage({ content: 'same', blocks: block('same') });
+    const { store, updates, snapshots } = makeStore(stored);
+    const result = await savePage(store, 1, { blocks: block('same') }, 'autosave', {
+      baseRevision: pageRevision(makePage()),
+    });
+    expect(updates).toEqual([]);
+    expect(snapshots).toEqual([]);
+    expect(hasOpenEditSession(1)).toBe(false);
+    // The answer carries the current revision, which is what the editor bases its next save on.
+    expect(pageRevision(result!.after)).toBe(pageRevision(stored));
+  });
+
+  it('a manual save that loses at the write opens no session and records no version of its own', async () => {
+    const { store, changeBehindTheBack, snapshots, updates } = makeStore(makePage());
+    const base = pageRevision(makePage());
+    const getPage = store.getPage;
+    store.getPage = async (id) => {
+      const page = await getPage(id);
+      changeBehindTheBack({ content: 'raced', blocks: block('raced') });
+      return page;
+    };
+    await expect(
+      savePage(store, 1, { title: 'Mine', blocks: block('mine') }, 'manual', { baseRevision: base })
+    ).rejects.toBeInstanceOf(PageRevisionConflictError);
+    expect(updates).toEqual([]);
+    expect(hasOpenEditSession(1)).toBe(false);
+    expect(snapshots.map((s) => s.description)).toEqual([
+      'Latest when a save was refused',
+      'Not saved: based on an older revision',
+    ]);
+  });
+
+  it('an autosave that loses at the write does not open or extend an editing session', async () => {
+    const { store, changeBehindTheBack, snapshots } = makeStore(makePage());
+    const base = pageRevision(makePage());
+    const getPage = store.getPage;
+    store.getPage = async (id) => {
+      const page = await getPage(id);
+      changeBehindTheBack({ content: 'raced', blocks: block('raced') });
+      return page;
+    };
+    await expect(
+      savePage(store, 1, { blocks: block('mine') }, 'autosave', { baseRevision: base })
+    ).rejects.toBeInstanceOf(PageRevisionConflictError);
+    expect(hasOpenEditSession(1)).toBe(false);
+    expect(snapshots.some((s) => s.description === 'Before editing session')).toBe(false);
+  });
+
+  it('a guarded save that is written opens the session and keeps the state before it', async () => {
+    const { store, snapshots, current } = makeStore(makePage());
+    await savePage(store, 1, { blocks: block('v1') }, 'autosave', {
+      baseRevision: pageRevision(current()),
+    });
+    expect(hasOpenEditSession(1)).toBe(true);
+    expect(snapshots).toEqual([
+      { title: 'Handbook', content: 'v0', description: 'Before editing session' },
+    ]);
   });
 
   it('turns a refusal at write time (someone saved after the check) into the same conflict', async () => {

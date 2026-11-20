@@ -11,7 +11,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useCollaboration } from '@/hooks/useCollaboration';
 import { useFeatureFlags } from '@/features/FeatureFlagsContext';
 import { useWorkspaceScope } from '@/hooks/useActiveWorkspace';
-import { usePageAutosave, type PageWithRevision } from '@/hooks/usePageAutosave';
+import { usePageAutosave, type PageField, type PageWithRevision } from '@/hooks/usePageAutosave';
 import { CollaboratorCursors } from '@/components/collaboration/CollaboratorCursors';
 import { TypingIndicator } from '@/components/collaboration/TypingIndicator';
 import { CollaboratorPresence } from '@/components/collaboration/CollaboratorPresence';
@@ -85,6 +85,25 @@ export default function WikiPageView() {
     queryKey: [`/api/pages/slug/${slug}`],
     enabled: !!slug,
   });
+
+  // The editor bases its saves on the revision of the page it opens on. The page is cached for
+  // the session, so a page reopened from the cache may be older than what is stored now; it is
+  // read afresh on every visit, and the editor opens on that read.
+  const [readFreshFor, setReadFreshFor] = useState<string | null>(null);
+  useEffect(() => {
+    if (!slug) return;
+    let current = true;
+    queryClient
+      .fetchQuery({ queryKey: [`/api/pages/slug/${slug}`], staleTime: 0 })
+      .catch(() => undefined)
+      .finally(() => {
+        if (current) setReadFreshFor(slug);
+      });
+    return () => {
+      current = false;
+    };
+  }, [slug, queryClient]);
+  const awaitingFreshRead = !!slug && readFreshFor !== slug;
 
   // Edit rights decide between the in-place editor and the read-only view (issue #103 E2).
   const { data: access, isLoading: accessLoading } = useQuery<{ canEdit: boolean }>({
@@ -202,7 +221,7 @@ export default function WikiPageView() {
     setReloadKey((key) => key + 1);
   };
 
-  if (isLoading || (page && accessLoading)) {
+  if (isLoading || awaitingFreshRead || (page && accessLoading)) {
     return (
       <div className="mx-auto w-full max-w-3xl">
         <article className="px-1 py-5 sm:px-2 sm:py-8">
@@ -454,13 +473,9 @@ function EditablePageBody({
   const queryClient = useQueryClient();
   const { flags } = useFeatureFlags();
   const [title, setTitle] = useState(page.title);
-  // Set when the latest page replaced what the editor shows after a conflict: the title to start
-  // the (uncontrolled) title field from, and how often that happened, to remount it.
-  const [loadedLatest, setLoadedLatest] = useState<{
-    count: number;
-    reloadToken: number;
-    title: string;
-  } | null>(null);
+  // The title field is uncontrolled; when the page's title is taken over from elsewhere, this
+  // tells it to show the new text (and how often that happened).
+  const [titleReplace, setTitleReplace] = useState<{ token: number; text: string } | undefined>();
   const [blocks, setBlocks] = useState<Block[]>(() => initialBlocksFor(page));
   // The blocks last shown, read synchronously: the Yjs sync hands back the blocks the page
   // already has, and saving that echo would be a no-op autosave.
@@ -471,11 +486,32 @@ function EditablePageBody({
   const [cover, setCover] = useState<PageCoverValue | null>(() => readPageCover(page.metadata));
   const { data: folders = [] } = useQuery<string[]>({ queryKey: ['/api/folders'] });
 
+  // Show these fields of `source` in the editor in place of what is on screen. Called when the
+  // stored page differs from what the editor shows in fields the person is not writing (or after
+  // loading the latest page), before anything is saved on top of them.
+  const adoptFields = (source: PageWithRevision, fields: PageField[]) => {
+    for (const field of fields) {
+      if (field === 'title') {
+        setTitle(source.title);
+        setTitleReplace((previous) => ({ token: (previous?.token ?? 0) + 1, text: source.title }));
+      } else if (field === 'blocks') {
+        blocksRef.current = initialBlocksFor(source);
+        setBlocks(blocksRef.current);
+      } else if (field === 'tags') setTagsText(source.tags.join(', '));
+      else if (field === 'folder') setFolder(source.folder);
+      else if (field === 'icon') setIcon(source.icon ?? null);
+      else if (field === 'cover') setCover(readPageCover(source.metadata));
+    }
+  };
+  const showPage = (source: PageWithRevision) =>
+    adoptFields(source, ['title', 'blocks', 'tags', 'folder', 'icon', 'cover']);
+
   const { status, queue, flush, reset, conflict, loadLatest, keepMine } = usePageAutosave(page.id, {
     // Saves name the revision this editor loaded (WP1); with realtime collaboration on, the
     // collaboration server saves the page itself and a client's base would always be stale.
-    baseRevision: page.revision,
+    page,
     guarded: !flags.FEATURE_COLLABORATION,
+    adopt: adoptFields,
     onSaved: () => {
       // Lists and the sidebar show titles, icons and folders; refresh them quietly.
       void invalidatePageLists(queryClient);
@@ -485,17 +521,6 @@ function EditablePageBody({
   const content = useMemo(() => blocksToContent(blocks), [blocks]);
   useEffect(() => onContentChange(content), [content, onContentChange]);
 
-  // Show `source` in the editor: its title, body and properties replace what is on screen.
-  const showPage = (source: PageWithRevision) => {
-    setTitle(source.title);
-    blocksRef.current = initialBlocksFor(source);
-    setBlocks(blocksRef.current);
-    setFolder(source.folder);
-    setTagsText(source.tags.join(', '));
-    setIcon(source.icon ?? null);
-    setCover(readPageCover(source.metadata));
-  };
-
   // A restore replaced the page: drop unsent edits and show the restored state. The history
   // panel stays mounted (it lives in `actions`), so it can report and be closed normally.
   const firstRender = useRef(true);
@@ -504,24 +529,31 @@ function EditablePageBody({
       firstRender.current = false;
       return;
     }
-    reset(page.revision);
+    reset(page);
     showPage(page);
     // Only when the token changes; `page` is the refetched page by then.
   }, [reloadToken]);
 
-  // "Load latest" after a conflict: the other person's page replaces the unsent edits.
-  const handleLoadLatest = () => {
-    const latest = loadLatest();
+  // "Load latest" after a conflict: the page as it is stored now (read when the button is
+  // pressed) replaces the unsent edits.
+  const handleLoadLatest = async () => {
+    const latest = await loadLatest();
     if (!latest) return;
     showPage(latest);
-    setLoadedLatest((previous) => ({
-      count: (previous?.count ?? 0) + 1,
-      reloadToken,
-      title: latest.title,
-    }));
     queryClient.setQueryData([`/api/pages/slug/${page.slug}`], latest);
     void invalidatePageLists(queryClient);
   };
+
+  // The notice appears above the field the person may be typing in: focus stays where it is (the
+  // notice is announced as an alert, not focused), and the field is kept in view.
+  const conflictOpen = !!conflict;
+  useEffect(() => {
+    if (!conflictOpen) return;
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active !== document.body) {
+      active.scrollIntoView({ block: 'nearest' });
+    }
+  }, [conflictOpen]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -553,11 +585,10 @@ function EditablePageBody({
         </div>
         {conflict && (
           <SaveConflictNotice
-            title={title}
-            content={content}
-            folder={folder}
-            tags={tagsText}
-            onLoadLatest={handleLoadLatest}
+            fields={conflict.fields}
+            mine={{ title, content, folder, tags: tagsText, icon, cover }}
+            theirs={conflict.page}
+            onLoadLatest={() => void handleLoadLatest()}
             onKeepMine={keepMine}
           />
         )}
@@ -575,12 +606,9 @@ function EditablePageBody({
           {!cover && <AddPageCoverButton teamId={page.teamId ?? null} onChange={changeCover} />}
         </div>
         <PageTitle
-          key={`${reloadToken}-${loadedLatest?.count ?? 0}`}
-          initialTitle={
-            loadedLatest && loadedLatest.reloadToken === reloadToken
-              ? loadedLatest.title
-              : page.title
-          }
+          key={reloadToken}
+          initialTitle={page.title}
+          replaceWith={titleReplace}
           editable
           onEnter={focusFirstBlock}
           onChange={(next) => {

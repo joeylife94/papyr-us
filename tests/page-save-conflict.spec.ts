@@ -57,7 +57,7 @@ async function createSharedPage(owner: Person, editor: Person, text: string) {
     data: { entityType: 'user', entityId: editor.id, permission: 'editor' },
   });
   expect(grant.status()).toBe(201);
-  return { slug, pageId };
+  return { slug, pageId, title: `WP1 conflict ${slug}`, blockId: `b-${slug}` };
 }
 
 const firstBlock = (page: Page) =>
@@ -120,10 +120,12 @@ test.describe('Saving a page that someone else changed', () => {
       expect((await bobSaved).status()).toBe(409);
       const conflict = bobPage.getByTestId('page-save-conflict');
       await expect(conflict).toBeVisible();
-      await expect(conflict).toContainText('다른 사람이 이 문서를 수정했습니다');
+      await expect(conflict).toContainText('이 문서가 다른 곳에서 수정되었습니다');
       // Bob's text is still on his screen, and shown in the notice before it can be dropped.
       await expect(firstBlock(bobPage)).toHaveValue('Bob wrote this');
-      await expect(conflict.getByTestId('page-save-conflict-mine')).toContainText('Bob wrote this');
+      await expect(conflict.getByTestId('page-save-conflict-mine-blocks')).toContainText(
+        'Bob wrote this'
+      );
 
       // Nothing of Bob's was written, and his text was kept in the history.
       expect(await storedText(alice.api, pageId)).toBe('Alice wrote this');
@@ -247,6 +249,212 @@ test.describe('Page write routes and the base revision', () => {
       await owner.context.close();
       await editor.context.close();
       await viewer.context.close();
+    }
+  });
+});
+
+// --- Several writers: what the editor does when the other change is, or is not, in the way ---
+
+/** Person `person` saves `patch` through the API on the page's current revision (another tab, a
+ * workflow, a colleague: any writer other than the editor under test). */
+async function writeAs(person: Person, pageId: number, patch: Record<string, unknown>) {
+  const read = await (await person.api.get(`/api/pages/${pageId}`)).json();
+  const res = await person.api.put(`/api/pages/${pageId}/autosave`, {
+    data: { baseRevision: read.revision, ...patch },
+  });
+  expect(res.status()).toBe(200);
+}
+
+const body = (blockId: string, content: string) => [
+  { id: blockId, type: 'paragraph', content, properties: {}, order: 0, children: [] },
+];
+
+async function storedPage(api: APIRequestContext, pageId: number) {
+  return (await api.get(`/api/pages/${pageId}`)).json();
+}
+
+async function withPeople(
+  browser: Browser,
+  prefix: string,
+  run: (alice: Person, bob: Person) => Promise<void>
+) {
+  const alice = await newPerson(browser, `${prefix}-alice`);
+  const bob = await newPerson(browser, `${prefix}-bob`);
+  try {
+    await run(alice, bob);
+  } finally {
+    await alice.context.close();
+    await bob.context.close();
+  }
+}
+
+test.describe('Changes elsewhere that do not touch what I am writing', () => {
+  test('a body changed elsewhere while I rename: no notice, the body is shown and both survive', async ({
+    browser,
+  }) => {
+    await withPeople(browser, 'wp1-field', async (alice, bob) => {
+      const { slug, pageId, blockId } = await createSharedPage(alice, bob, 'Original text');
+      const bobPage = await openEditor(bob, slug, 'Original text');
+      await writeAs(alice, pageId, { blocks: body(blockId, 'Alice body') });
+
+      await bobPage.getByTestId('page-title').fill('Bob title');
+      await expect.poll(async () => (await storedPage(alice.api, pageId)).title).toBe('Bob title');
+      await expect(bobPage.getByTestId('page-save-conflict')).toHaveCount(0);
+      // Bob's screen shows what is stored: Alice's body.
+      await expect(firstBlock(bobPage)).toHaveValue('Alice body');
+      expect(await storedText(alice.api, pageId)).toBe('Alice body');
+
+      // Typing on from there is based on what he sees: nothing of Alice's is lost.
+      await firstBlock(bobPage).press('End');
+      const saved = autosave(bobPage, pageId);
+      await firstBlock(bobPage).pressSequentially(' and Bob');
+      await saved;
+      await expect.poll(() => storedText(alice.api, pageId)).toBe('Alice body and Bob');
+      expect((await storedPage(alice.api, pageId)).title).toBe('Bob title');
+    });
+  });
+
+  test('a tag added elsewhere (a workflow) does not turn my next keystroke into a conflict', async ({
+    browser,
+  }) => {
+    await withPeople(browser, 'wp1-tag', async (alice, bob) => {
+      const { slug, pageId } = await createSharedPage(alice, bob, 'Original text');
+      const bobPage = await openEditor(bob, slug, 'Original text');
+      await writeAs(alice, pageId, { tags: ['added-elsewhere'] });
+
+      await firstBlock(bobPage).fill('Bob typed this');
+      await expect.poll(() => storedText(alice.api, pageId)).toBe('Bob typed this');
+      await expect(bobPage.getByTestId('page-save-conflict')).toHaveCount(0);
+      expect((await storedPage(alice.api, pageId)).tags).toEqual(['added-elsewhere']);
+      await expect(bobPage.getByPlaceholder('쉼표로 구분')).toHaveValue('added-elsewhere');
+    });
+  });
+
+  test('a page reopened from the cache after someone edited it starts from the stored page', async ({
+    browser,
+  }) => {
+    await withPeople(browser, 'wp1-cache', async (alice, bob) => {
+      const { slug, pageId, title } = await createSharedPage(alice, bob, 'Original text');
+      const bobPage = await openEditor(bob, slug, 'Original text');
+      await bobPage.getByRole('link', { name: '내 문서' }).first().click();
+      await expect(bobPage.getByTestId('page-title')).toHaveCount(0);
+      await writeAs(alice, pageId, { blocks: body(`b-${slug}`, 'Alice body') });
+
+      await bobPage.getByRole('link', { name: title }).first().click();
+      await expect(firstBlock(bobPage)).toHaveValue('Alice body');
+      await firstBlock(bobPage).press('End');
+      const saved = autosave(bobPage, pageId);
+      await firstBlock(bobPage).pressSequentially(' and Bob');
+      expect((await saved).status()).toBe(200);
+      await expect(bobPage.getByTestId('page-save-conflict')).toHaveCount(0);
+      expect(await storedText(alice.api, pageId)).toBe('Alice body and Bob');
+    });
+  });
+});
+
+test.describe('A conflict on what I am writing', () => {
+  test('Keep mine shows what else changed, so typing on cannot overwrite it unseen', async ({
+    browser,
+  }) => {
+    await withPeople(browser, 'wp1-keepall', async (alice, bob) => {
+      const { slug, pageId, blockId } = await createSharedPage(alice, bob, 'Original text');
+      const bobPage = await openEditor(bob, slug, 'Original text');
+      await writeAs(alice, pageId, { title: 'Alice title', blocks: body(blockId, 'Alice body') });
+
+      await bobPage.getByTestId('page-title').fill('Bob title');
+      const conflict = bobPage.getByTestId('page-save-conflict');
+      await expect(conflict).toBeVisible();
+      await conflict.getByRole('button', { name: '내 변경 유지' }).click();
+      await expect(conflict).toBeHidden();
+
+      // What is on screen is what is stored: Bob's title on Alice's body.
+      await expect(bobPage.getByTestId('page-title')).toHaveText('Bob title');
+      await expect(firstBlock(bobPage)).toHaveValue('Alice body');
+      await expect.poll(async () => (await storedPage(alice.api, pageId)).title).toBe('Bob title');
+      expect(await storedText(alice.api, pageId)).toBe('Alice body');
+
+      await firstBlock(bobPage).press('End');
+      await firstBlock(bobPage).pressSequentially(' and Bob');
+      await expect.poll(() => storedText(alice.api, pageId)).toBe('Alice body and Bob');
+    });
+  });
+
+  test('text typed while the notice is open is kept in the history when the latest is loaded', async ({
+    browser,
+  }) => {
+    await withPeople(browser, 'wp1-typed', async (alice, bob) => {
+      const { slug, pageId, blockId } = await createSharedPage(alice, bob, 'Original text');
+      const bobPage = await openEditor(bob, slug, 'Original text');
+      await writeAs(alice, pageId, { blocks: body(blockId, 'Alice body') });
+
+      await firstBlock(bobPage).fill('Bob first');
+      const conflict = bobPage.getByTestId('page-save-conflict');
+      await expect(conflict).toBeVisible();
+      await firstBlock(bobPage).fill('Bob first and then more words typed with the notice open');
+      // Alice saves again before Bob decides: "Load latest" must show this one.
+      await writeAs(alice, pageId, { blocks: body(blockId, 'Alice second') });
+
+      await conflict.getByRole('button', { name: '최신 내용 불러오기' }).click();
+      await expect(conflict).toBeHidden();
+      await expect(firstBlock(bobPage)).toHaveValue('Alice second');
+      const contents = await versionContents(alice.api, pageId);
+      expect(contents.some((c) => c.includes('then more words typed with the notice open'))).toBe(
+        true
+      );
+    });
+  });
+
+  test('text typed while the notice is open is kept in the history when I leave the page', async ({
+    browser,
+  }) => {
+    await withPeople(browser, 'wp1-leave', async (alice, bob) => {
+      const { slug, pageId, blockId } = await createSharedPage(alice, bob, 'Original text');
+      const bobPage = await openEditor(bob, slug, 'Original text');
+      await writeAs(alice, pageId, { blocks: body(blockId, 'Alice body') });
+
+      await firstBlock(bobPage).fill('Bob first');
+      await expect(bobPage.getByTestId('page-save-conflict')).toBeVisible();
+      await firstBlock(bobPage).fill('Bob first and typed after the notice, then left');
+      await bobPage.getByRole('link', { name: '내 문서' }).first().click();
+      await expect(bobPage.getByTestId('page-title')).toHaveCount(0);
+
+      await expect
+        .poll(async () =>
+          (await versionContents(alice.api, pageId)).some((c) =>
+            c.includes('typed after the notice')
+          )
+        )
+        .toBe(true);
+      expect(await storedText(alice.api, pageId)).toBe('Alice body');
+    });
+  });
+
+  test('the notice says the page was changed elsewhere, and my own second tab is one such place', async ({
+    browser,
+  }) => {
+    const bob = await newPerson(browser, 'wp1-tabs-bob');
+    try {
+      const { slug, pageId } = await createSharedPage(bob, bob, 'Original text');
+      const tabOne = await openEditor(bob, slug, 'Original text');
+      const tabTwo = await openEditor(bob, slug, 'Original text');
+      const saved = autosave(tabOne, pageId);
+      await firstBlock(tabOne).fill('Written in the first tab');
+      expect((await saved).status()).toBe(200);
+
+      await firstBlock(tabTwo).fill('Written in the second tab');
+      const conflict = tabTwo.getByTestId('page-save-conflict');
+      await expect(conflict).toBeVisible();
+      await expect(conflict).toContainText('다른 곳에서');
+      await expect(conflict).not.toContainText('다른 사람');
+      // Both versions of the body are shown, the other one read-only.
+      await expect(conflict.getByTestId('page-save-conflict-theirs-blocks')).toContainText(
+        'Written in the first tab'
+      );
+      await expect(conflict.getByTestId('page-save-conflict-mine-blocks')).toContainText(
+        'Written in the second tab'
+      );
+    } finally {
+      await bob.context.close();
     }
   });
 });

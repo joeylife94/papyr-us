@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import {
   wikiPages,
   pageLinks,
+  pageVersions,
   type WikiPage,
   type InsertWikiPage,
   type UpdateWikiPage,
@@ -457,6 +458,90 @@ export class DBStorage {
       if (result[0]) await this.writePageLinks(tx, id, result[0].content);
       return result[0];
     });
+  }
+
+  /**
+   * Restore a version of a page. In one transaction on the locked page row, the page as it is at
+   * that moment is kept as a "Before restore" version and then replaced by the version's title and
+   * body, so a save that landed just before is in that version and a save that lands after waits
+   * for the restore instead of being overwritten unseen. Not guarded by a base revision: restoring
+   * is a deliberate act on a chosen version, and the state it replaces is kept.
+   */
+  async restorePageVersion(
+    pageId: number,
+    versionId: number
+  ): Promise<{ page: WikiPage } | { missing: 'page' | 'version' }> {
+    return this.db.transaction(async (tx: any) => {
+      const [locked] = await tx
+        .select()
+        .from(wikiPages)
+        .where(eq(wikiPages.id, pageId))
+        .for('update');
+      if (!locked) return { missing: 'page' as const };
+      const [version] = await tx
+        .select()
+        .from(pageVersions)
+        .where(and(eq(pageVersions.id, versionId), eq(pageVersions.pageId, pageId)));
+      if (!version) return { missing: 'version' as const };
+
+      const [latest] = await tx
+        .select({ maxVersion: sql<number>`COALESCE(MAX(${pageVersions.versionNumber}), 0)` })
+        .from(pageVersions)
+        .where(eq(pageVersions.pageId, pageId));
+      await tx.insert(pageVersions).values({
+        pageId,
+        title: locked.title,
+        content: locked.content,
+        blocks: locked.blocks || [],
+        author: locked.author,
+        versionNumber: Number(latest?.maxVersion || 0) + 1,
+        changeDescription: 'Before restore',
+      });
+      const [restored] = await tx
+        .update(wikiPages)
+        .set({ title: version.title, content: version.content, blocks: version.blocks as any })
+        .where(eq(wikiPages.id, pageId))
+        .returning();
+      await this.writePageLinks(tx, pageId, restored.content);
+      return { page: restored as WikiPage };
+    });
+  }
+
+  /**
+   * Add and remove tags in one statement, against the tags the row has at that moment (a tag saved
+   * by someone else a moment ago is kept). Added tags keep their order and appear once; a tag that
+   * is both added and removed is removed. Nothing else on the page changes.
+   */
+  async mergePageTags(
+    id: number,
+    change: { add?: string[]; remove?: string[] }
+  ): Promise<WikiPage | undefined> {
+    const list = (values: string[] | undefined) => {
+      const tags = (values ?? []).filter((tag): tag is string => typeof tag === 'string');
+      return tags.length > 0
+        ? sql`ARRAY[${sql.join(
+            tags.map((tag) => sql`${tag}`),
+            sql`, `
+          )}]::text[]`
+        : sql`ARRAY[]::text[]`;
+    };
+    const [updated] = await this.db
+      .update(wikiPages)
+      .set({
+        tags: sql`ARRAY(
+          SELECT merged.tag
+            FROM (
+              SELECT u.tag, MIN(u.position) AS position
+                FROM unnest(${wikiPages.tags} || ${list(change.add)}) WITH ORDINALITY AS u(tag, position)
+               GROUP BY u.tag
+            ) AS merged
+           WHERE NOT (merged.tag = ANY(${list(change.remove)}))
+           ORDER BY merged.position
+        )`,
+      })
+      .where(eq(wikiPages.id, id))
+      .returning();
+    return updated;
   }
 
   /**
