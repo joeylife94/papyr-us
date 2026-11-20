@@ -622,7 +622,7 @@ export const notifications = pgTable(
 // or writes it, and it has no foreign keys on purpose (it outlives the rows it describes).
 export const notificationRosterArchive = pgTable('notification_roster_archive', {
   notificationId: integer('notification_id').primaryKey(),
-  reason: text('reason').notNull(), // no_account, account_without_organization, other_organization, sender_unmapped
+  reason: text('reason').notNull(), // no_account, account_without_organization, other_organization, no_roster_row, sender_unmapped
   recipientMemberId: integer('recipient_member_id').notNull(),
   senderMemberId: integer('sender_member_id'),
   type: text('type'),

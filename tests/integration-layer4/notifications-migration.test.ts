@@ -399,7 +399,7 @@ describe('0026 up, on one notification of every kind', () => {
   it('prints how many rows were assigned and held, per reason', () => {
     expect(notices).toEqual([
       expect.stringContaining(
-        '5 assigned to accounts; held in notification_roster_archive: 2 no_account, 1 account_without_organization, 1 other_organization; 2 sender(s) unmapped'
+        '5 assigned to accounts; held in notification_roster_archive: 2 no_account, 1 account_without_organization, 1 other_organization, 0 no_roster_row; 2 sender(s) unmapped'
       ),
     ]);
   });
@@ -539,6 +539,66 @@ describe('0026 up, other shapes', () => {
     const before = await dumpOld();
     await expect(run(UP)).rejects.toThrow(/already holds a notification/);
     expect(await dumpOld()).toEqual(before);
+  });
+});
+
+describe('0026, a notification whose roster row no longer exists', () => {
+  const ORPHAN = 120;
+  /** The pre-0026 shape on a database where the old recipient foreign key was missing. */
+  async function buildWithOrphan() {
+    await buildBefore();
+    await scoped.query(
+      `ALTER TABLE notifications DROP CONSTRAINT notifications_recipient_id_members_id_fk`
+    );
+    await scoped.query(
+      `INSERT INTO notifications (id, type, title, content, recipient_id, sender_id, is_read, created_at,
+                                  related_page_id, related_task_id, related_comment_id)
+       VALUES ($1, 'mention', 'orphan', 'orphan body', 9999, $2, true, '2024-02-01 10:00:00', 1, 5, 5)`,
+      [ORPHAN, R.s]
+    );
+    return dumpOld();
+  }
+
+  it('is held with a reason that says so, never assigned, and the deploy goes on', async () => {
+    const original = await buildWithOrphan();
+    const notices = await run(UP);
+    const after = await dumpNew();
+    expect((after.notifications as any[]).map((n) => n.id)).not.toContain(ORPHAN);
+    const held = (after.archive as any[]).find((a) => a.notification_id === ORPHAN);
+    const was = original.find((o: any) => o.id === ORPHAN);
+    expect(held).toEqual({
+      notification_id: ORPHAN,
+      reason: 'no_roster_row',
+      recipient_member_id: 9999,
+      sender_member_id: R.s,
+      type: was.type,
+      title: was.title,
+      content: was.content,
+      related_page_id: was.related_page_id,
+      related_task_id: was.related_task_id,
+      related_comment_id: was.related_comment_id,
+      is_read: was.is_read,
+      created_at: was.created_at,
+    });
+    expect(notices[0]).toContain('1 no_roster_row');
+  });
+
+  it('a second run changes nothing', async () => {
+    await buildWithOrphan();
+    await run(UP);
+    const done = await dumpNew();
+    expect(await run(UP)).toEqual([]);
+    expect(await dumpNew()).toEqual(done);
+  });
+
+  it('down restores it byte for byte, and up applies again to the same result', async () => {
+    const original = await buildWithOrphan();
+    await run(UP);
+    const first = await dumpNew();
+    await run(DOWN);
+    expect(await dumpOld()).toEqual(original);
+    await run(UP);
+    expect(await dumpNew()).toEqual(first);
   });
 });
 

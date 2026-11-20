@@ -13,6 +13,8 @@
 --   other_organization            the roster row's team is in another organization than the
 --                                 account's (today the account reads it; the one place where this
 --                                 migration narrows what is shown, so the count is printed)
+--   no_roster_row                 no roster row has the notification's recipient_id (possible only
+--                                 where the old foreign key was missing; nobody could read it)
 -- The sender becomes the account with the sender roster row's email when that account belongs to
 -- the notification's organization. Otherwise it is null, and when a sender was set, an archive row
 -- `sender_unmapped` keeps the roster ids (its content columns are null). Ids, is_read,
@@ -37,6 +39,9 @@ DECLARE
   n_no_account integer;
   n_no_organization integer;
   n_other_organization integer;
+  n_no_roster_row integer;
+  n_unheld integer;
+  unheld_ids text;
   n_sender_unmapped integer;
 BEGIN
   IF to_regclass('notifications') IS NULL THEN
@@ -105,21 +110,23 @@ BEGIN
     (notification_id, reason, recipient_member_id, sender_member_id, type, title, content,
      related_page_id, related_task_id, related_comment_id, is_read, created_at)
   SELECT n.id,
-         CASE WHEN u.id IS NULL THEN 'no_account'
+         CASE WHEN r.id IS NULL THEN 'no_roster_row'
+              WHEN u.id IS NULL THEN 'no_account'
               WHEN om.id IS NULL THEN 'account_without_organization'
               ELSE 'other_organization' END,
          n.recipient_id, n.sender_id, n.type, n.title, n.content,
          n.related_page_id, n.related_task_id, n.related_comment_id, n.is_read, n.created_at
     FROM notifications n
-    JOIN members r ON r.id = n.recipient_id
+    LEFT JOIN members r ON r.id = n.recipient_id
     LEFT JOIN users u ON u.email = r.email
     LEFT JOIN organization_members om ON om.user_id = u.id
    WHERE n.recipient_user_id IS NULL;
 
   SELECT count(*) FILTER (WHERE reason = 'no_account'),
          count(*) FILTER (WHERE reason = 'account_without_organization'),
-         count(*) FILTER (WHERE reason = 'other_organization')
-    INTO n_no_account, n_no_organization, n_other_organization
+         count(*) FILTER (WHERE reason = 'other_organization'),
+         count(*) FILTER (WHERE reason = 'no_roster_row')
+    INTO n_no_account, n_no_organization, n_other_organization, n_no_roster_row
     FROM notification_roster_archive a
     JOIN notifications n ON n.id = a.notification_id
    WHERE n.recipient_user_id IS NULL;
@@ -128,8 +135,13 @@ BEGIN
    USING notification_roster_archive a
    WHERE a.notification_id = n.id AND n.recipient_user_id IS NULL;
 
-  IF EXISTS (SELECT 1 FROM notifications WHERE recipient_user_id IS NULL) THEN
-    RAISE EXCEPTION 'a notification could be neither assigned nor held';
+  -- Last line of defence: every row is assigned or held by now.
+  SELECT count(*), string_agg(id::text, ', ' ORDER BY id) FILTER (WHERE rn <= 10)
+    INTO n_unheld, unheld_ids
+    FROM (SELECT id, row_number() OVER (ORDER BY id) AS rn
+            FROM notifications WHERE recipient_user_id IS NULL) x;
+  IF n_unheld > 0 THEN
+    RAISE EXCEPTION 'a notification could be neither assigned nor held: % row(s), first ids %', n_unheld, unheld_ids;
   END IF;
 
   SELECT count(*) INTO n_assigned FROM notifications;
@@ -166,6 +178,6 @@ BEGIN
   -- The roster columns go, with their foreign keys and indexes.
   ALTER TABLE notifications DROP COLUMN recipient_id, DROP COLUMN sender_id;
 
-  RAISE NOTICE '0026 notifications: % assigned to accounts; held in notification_roster_archive: % no_account, % account_without_organization, % other_organization; % sender(s) unmapped',
-    n_assigned, n_no_account, n_no_organization, n_other_organization, n_sender_unmapped;
+  RAISE NOTICE '0026 notifications: % assigned to accounts; held in notification_roster_archive: % no_account, % account_without_organization, % other_organization, % no_roster_row; % sender(s) unmapped',
+    n_assigned, n_no_account, n_no_organization, n_other_organization, n_no_roster_row, n_sender_unmapped;
 END $$;

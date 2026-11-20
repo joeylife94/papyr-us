@@ -7,7 +7,8 @@
 --   - a notification has a sender account with no roster row (and no sender_unmapped archive row
 --     that remembers the roster sender);
 --   - a held row in notification_roster_archive refers to a roster row, page, task or comment that
---     no longer exists, or its id is taken in notifications.
+--     no longer exists, or its id is taken in notifications (a no_roster_row row never had a
+--     roster row: it comes back as it was, and the recipient foreign key is then added NOT VALID).
 -- Otherwise: adds recipient_id and sender_id, fills them by email (a sender with no account
 -- mapping comes back from the archive, or null when that roster row is gone, as ON DELETE SET
 -- NULL would do), re-inserts the held rows with their original ids, restores NOT NULL and the two
@@ -50,7 +51,8 @@ BEGIN
     END IF;
     IF EXISTS (SELECT 1 FROM notification_roster_archive a
                 WHERE a.reason <> 'sender_unmapped'
-                  AND (NOT EXISTS (SELECT 1 FROM members r WHERE r.id = a.recipient_member_id)
+                  AND ((a.reason <> 'no_roster_row'
+                        AND NOT EXISTS (SELECT 1 FROM members r WHERE r.id = a.recipient_member_id))
                        OR (a.related_page_id IS NOT NULL
                            AND NOT EXISTS (SELECT 1 FROM wiki_pages p WHERE p.id = a.related_page_id))
                        OR (a.related_task_id IS NOT NULL
@@ -106,9 +108,19 @@ BEGIN
   END IF;
 
   ALTER TABLE notifications ALTER COLUMN recipient_id SET NOT NULL;
+  -- A no_roster_row notification is restored as it was, without a roster row; the foreign key
+  -- then applies to later rows only (NOT VALID), as it did where that row came from.
+  IF EXISTS (SELECT 1 FROM notifications n
+              WHERE NOT EXISTS (SELECT 1 FROM members r WHERE r.id = n.recipient_id)) THEN
+    ALTER TABLE notifications
+      ADD CONSTRAINT notifications_recipient_id_members_id_fk
+        FOREIGN KEY (recipient_id) REFERENCES members(id) ON DELETE CASCADE NOT VALID;
+  ELSE
+    ALTER TABLE notifications
+      ADD CONSTRAINT notifications_recipient_id_members_id_fk
+        FOREIGN KEY (recipient_id) REFERENCES members(id) ON DELETE CASCADE;
+  END IF;
   ALTER TABLE notifications
-    ADD CONSTRAINT notifications_recipient_id_members_id_fk
-      FOREIGN KEY (recipient_id) REFERENCES members(id) ON DELETE CASCADE,
     ADD CONSTRAINT notifications_sender_id_members_id_fk
       FOREIGN KEY (sender_id) REFERENCES members(id) ON DELETE SET NULL;
 
