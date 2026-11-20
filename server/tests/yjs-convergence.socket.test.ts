@@ -48,20 +48,27 @@ let baseUrl: string;
 let manager: typeof import('../services/yjs-collaboration.js').yjsManager;
 let page: Stored;
 let canEditPage = true;
+// A second page the person may edit, a page they may not read, and a small room limit
+const OTHER_ID = 78;
+const OTHER_DOC = `page-${OTHER_ID}`;
+const HIDDEN_ID = 79;
+let otherPage: Stored;
 let legacyPermission: string | null = null;
 
 const sockets: Socket[] = [];
 const sessions: YjsSession[] = [];
 
 const storage: any = {
-  getWikiPage: async (id: number) => (id === PAGE_ID ? page : undefined),
+  getWikiPage: async (id: number) =>
+    id === PAGE_ID ? page : id === OTHER_ID ? otherPage : id === HIDDEN_ID ? page : undefined,
   updateWikiPage: async (id: number, data: Partial<Stored>) => {
     if (id !== PAGE_ID) return undefined;
     page = { ...page, ...data, updatedAt: new Date() };
     return page;
   },
-  checkPagePermission: async () => true,
-  canEditPage: async () => canEditPage,
+  checkPagePermission: async (_user: unknown, id: number) => id !== HIDDEN_ID,
+  // Like the real rule, an unknown page answers yes (the join then fails as not found)
+  canEditPage: async (_user: unknown, id: number) => (id === PAGE_ID ? canEditPage : true),
   // The rule /yjs used before it followed canEditPage; the server must not read it any more.
   getUserPagePermission: async () => legacyPermission,
 };
@@ -69,6 +76,7 @@ const storage: any = {
 beforeAll(async () => {
   process.env.COLLAB_REQUIRE_AUTH = '0';
   process.env.COLLAB_SAVE_DEBOUNCE_MS = '60000';
+  process.env.COLLAB_MAX_CLIENTS_PER_DOC = '3';
   server = http.createServer();
   io = new SocketIOServer(server, { cors: { origin: false } });
   const mod = await import('../services/yjs-collaboration.js');
@@ -92,10 +100,30 @@ afterEach(async () => {
     () => manager!.getDoc(DOC)?.clients.size ?? 0,
     (clients) => clients === 0
   );
+  await waitFor(
+    () => manager!.getDoc(OTHER_DOC)?.clients.size ?? 0,
+    (clients) => clients === 0
+  );
   await manager!.unloadDoc(DOC, 'ttl');
+  await manager!.unloadDoc(OTHER_DOC, 'ttl');
   canEditPage = true;
   legacyPermission = null;
 });
+
+function resetOtherPage() {
+  otherPage = {
+    id: OTHER_ID,
+    title: 'Other',
+    slug: 'other',
+    content: '',
+    blocks: [block('o1', 'other page')],
+    tags: [],
+    folder: 'docs',
+    author: 'a@example.com',
+    metadata: {},
+    updatedAt: new Date(),
+  };
+}
 
 function resetPage(blocks: any[]) {
   page = {
@@ -441,5 +469,131 @@ describe('what the server stores', () => {
     const check = new Y.Doc();
     seedBlocks(check, stored as any);
     expect(readBlocks(check)).toEqual(stored);
+  });
+});
+
+describe("a socket's right to edit belongs to the page it joined", () => {
+  /** A raw socket: joins as told and reports what the server answered. */
+  async function raw() {
+    const socket = connect(`${baseUrl}/yjs`, {
+      transports: ['websocket'],
+      reconnection: false,
+      forceNew: true,
+    });
+    sockets.push(socket);
+    await new Promise<void>((resolve) => socket.on('connect', () => resolve()));
+    const errors: string[] = [];
+    socket.on('yjs:error', (e: { code?: string; message: string }) =>
+      errors.push(e.code ?? e.message)
+    );
+    const inits: any[] = [];
+    socket.on('yjs:init', (payload) => inits.push(payload));
+    const answered = () => errors.length + inits.length;
+    return {
+      socket,
+      errors,
+      inits,
+      /** Sends a join and waits for the server's answer to it. */
+      async join(documentId: string, pageId: number, schema: number | null = 2) {
+        const before = answered();
+        socket.emit('yjs:join', {
+          documentId,
+          pageId,
+          ...(schema === null ? {} : { schema }),
+        });
+        await waitFor(answered, (n) => n > before);
+      },
+      /** An update that sets the text of block b1 on page 77, sent for `documentId`. */
+      async edit(documentId: string, text: string) {
+        // Any state this person was given that holds block b1 (page 77's)
+        const doc = new Y.Doc();
+        for (const init of inits) Y.applyUpdate(doc, Buffer.from(init.stateVector, 'base64'));
+        let update: Uint8Array | null = null;
+        doc.on('update', (u: Uint8Array) => (update = u));
+        expect(updateBlock(doc, 'b1', { content: text })).toBe(true);
+        const before = errors.length;
+        socket.emit('yjs:update', {
+          documentId,
+          update: Buffer.from(update!).toString('base64'),
+        });
+        socket.emit('yjs:save', { documentId, pageId: PAGE_ID });
+        // The server answers a refused update with an error; an accepted one with nothing
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        return errors.slice(before);
+      },
+    };
+  }
+
+  const viewerOnPage77 = async () => {
+    resetPage([block('b1', 'one')]);
+    resetOtherPage();
+    canEditPage = false;
+    const client = await raw();
+    await client.join(DOC, PAGE_ID);
+    expect(client.inits[0].canEdit).toBe(false);
+    return client;
+  };
+  const untouched = () => expect(serverBlocks()[0].content).toBe('one');
+
+  it('a join refused as outdated leaves the previous page and its rights as they were', async () => {
+    const client = await viewerOnPage77();
+    await client.join(OTHER_DOC, OTHER_ID, null); // editable page, no schema
+    expect(client.errors).toContain('CLIENT_OUTDATED');
+    expect(await client.edit(DOC, 'one, tampered')).toContain('EDIT_PERMISSION_REQUIRED');
+    untouched();
+    expect(page.blocks[0].content).toBe('one');
+  });
+
+  it('a join for a page that does not exist leaves the previous page and its rights as they were', async () => {
+    const client = await viewerOnPage77();
+    await client.join('page-99999', 99999);
+    expect(client.errors).toContain('PAGE_NOT_FOUND');
+    expect(await client.edit(DOC, 'one, tampered')).toContain('EDIT_PERMISSION_REQUIRED');
+    untouched();
+  });
+
+  it('a join refused for access leaves the previous page and its rights as they were', async () => {
+    const client = await viewerOnPage77();
+    await client.join(`page-${HIDDEN_ID}`, HIDDEN_ID);
+    expect(client.errors).toContain('PERMISSION_DENIED');
+    expect(await client.edit(DOC, 'one, tampered')).toContain('EDIT_PERMISSION_REQUIRED');
+    untouched();
+  });
+
+  it('a join refused because the room is full leaves the previous page and its rights as they were', async () => {
+    const client = await viewerOnPage77();
+    const fillers = [await raw(), await raw(), await raw()];
+    for (const filler of fillers) await filler.join(OTHER_DOC, OTHER_ID);
+    expect(fillers.map((f) => f.inits.length)).toEqual([1, 1, 1]); // room limit is 3
+    const before = client.errors.length;
+    await client.join(OTHER_DOC, OTHER_ID);
+    expect(client.errors.length).toBeGreaterThan(before);
+    expect(client.inits).toHaveLength(1);
+    expect(await client.edit(DOC, 'one, tampered')).toContain('EDIT_PERMISSION_REQUIRED');
+    untouched();
+  });
+
+  it("after a successful join to another page the right is that page's, and the old page is no longer joined", async () => {
+    const client = await viewerOnPage77();
+    await client.join(OTHER_DOC, OTHER_ID); // editable
+    expect(client.inits[1].canEdit).toBe(true);
+    expect(await client.edit(DOC, 'one, tampered')).toContain('NOT_JOINED');
+    untouched();
+  });
+
+  it('two joins sent back to back are decided one after the other', async () => {
+    resetPage([block('b1', 'one')]);
+    resetOtherPage();
+    canEditPage = false;
+    const client = await raw();
+    client.socket.emit('yjs:join', { documentId: OTHER_DOC, pageId: OTHER_ID, schema: 2 });
+    client.socket.emit('yjs:join', { documentId: DOC, pageId: PAGE_ID, schema: 2 });
+    await waitFor(
+      () => client.inits.length,
+      (n) => n === 2
+    );
+    // The last join won: page 77, where the person may only read
+    expect(await client.edit(DOC, 'one, tampered')).toContain('EDIT_PERMISSION_REQUIRED');
+    untouched();
   });
 });

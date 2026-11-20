@@ -225,6 +225,8 @@ class PageNotFoundError extends Error {
 export class YjsCollaborationManager {
   private docs = new Map<string, DocState>();
   private socketDocuments = new Map<string, string>();
+  // Counts a socket's successful joins, so a re-check that started before a rejoin is dropped
+  private joinSeq = new Map<string, number>();
   private saveLimiter = createSaveLimiter();
 
   constructor(
@@ -333,10 +335,32 @@ export class YjsCollaborationManager {
     return await this.createDoc(documentId, pageId);
   }
 
+  /** What a socket may do is tied to the document it joined: leaving one leaves no right behind. */
+  private clearSocketRights(socket: Socket): void {
+    socket.data.documentId = undefined;
+    socket.data.pageId = undefined;
+    socket.data.userPermission = null;
+    socket.data.canEdit = false;
+  }
+
+  /** Whether the socket is a member of this document (its room and its client set). */
+  isJoined(socket: Socket, documentId: string): boolean {
+    return (
+      this.socketDocuments.get(socket.id) === documentId && socket.data.documentId === documentId
+    );
+  }
+
+  /** Whether the socket joined `documentId` and was decided to be allowed to edit it. */
+  canEditIn(socket: Socket, documentId: string): boolean {
+    return this.isJoined(socket, documentId) && socket.data.canEdit === true;
+  }
+
   private detachSocketFromDocument(socket: Socket, documentId: string): void {
     const doc = this.docs.get(documentId);
     socket.leave(documentId);
     this.socketDocuments.delete(socket.id);
+    // A socket that is in no document holds no right to edit one
+    if (socket.data.documentId === documentId) this.clearSocketRights(socket);
     if (!doc) return;
 
     doc.clients.delete(socket.id);
@@ -347,16 +371,19 @@ export class YjsCollaborationManager {
     }
   }
 
+  /**
+   * Puts the socket into the document. Nothing about the socket changes until this has succeeded:
+   * a join that throws (page not found, room full, capacity) leaves the socket in the document it
+   * was in, with the rights it had there. `rights` are the edit decision made for exactly this
+   * page; they are stored together with the document they belong to. (Without `rights`, what the
+   * socket's data already holds is used, as unit tests that prepare a socket do.)
+   */
   async joinDocument(
     socket: Socket,
     documentId: string,
-    pageId: number
+    pageId: number,
+    rights?: { canEdit: boolean; permission: PermissionLevel | null }
   ): Promise<{ canEdit: boolean; permission: PermissionLevel | null }> {
-    const previousDocumentId = this.socketDocuments.get(socket.id);
-    if (previousDocumentId && previousDocumentId !== documentId) {
-      this.detachSocketFromDocument(socket, previousDocumentId);
-    }
-
     const doc = await this.getOrCreate(documentId, pageId);
     doc.lastAccessAt = Date.now();
 
@@ -364,6 +391,11 @@ export class YjsCollaborationManager {
       throw new Error(
         `Room is full (COLLAB_MAX_CLIENTS_PER_DOC=${this.cfg.maxClientsPerDoc}) for ${documentId}`
       );
+    }
+
+    const previousDocumentId = this.socketDocuments.get(socket.id);
+    if (previousDocumentId && previousDocumentId !== documentId) {
+      this.detachSocketFromDocument(socket, previousDocumentId);
     }
 
     if (doc.ttlTimer) {
@@ -376,8 +408,15 @@ export class YjsCollaborationManager {
     socket.join(documentId);
     this.ensureSnapshotTimer(doc);
 
-    const permission = (socket.data.userPermission as PermissionLevel | null) ?? null;
-    const canEdit = !!socket.data.canEdit;
+    const permission = rights
+      ? rights.permission
+      : ((socket.data.userPermission as PermissionLevel | null) ?? null);
+    const canEdit = rights ? rights.canEdit : !!socket.data.canEdit;
+    socket.data.documentId = documentId;
+    socket.data.pageId = pageId;
+    socket.data.userPermission = permission;
+    socket.data.canEdit = canEdit;
+    this.joinSeq.set(socket.id, (this.joinSeq.get(socket.id) ?? 0) + 1);
 
     logger.info('User joined Yjs document', {
       documentId,
@@ -403,16 +442,15 @@ export class YjsCollaborationManager {
       if (Number(socket.data.userId) !== userId || !documentId) continue;
       const parsed = parseDocumentId(documentId);
       if (!parsed.ok) continue;
-      const stillJoined = () => this.socketDocuments.get(socket.id) === documentId;
+      const seq = this.joinSeq.get(socket.id);
+      const stillJoined = () =>
+        this.socketDocuments.get(socket.id) === documentId && this.joinSeq.get(socket.id) === seq;
 
       const canRead = await this.storage.checkPagePermission(userId, parsed.pageId, 'viewer');
       if (!stillJoined()) continue;
       if (!canRead) {
         this.detachSocketFromDocument(socket, documentId);
-        socket.data.documentId = undefined;
-        socket.data.pageId = undefined;
-        socket.data.userPermission = null;
-        socket.data.canEdit = false;
+        this.clearSocketRights(socket);
         socket.emit('yjs:error', {
           message: 'Your access to this page has been revoked.',
           code: 'ACCESS_REVOKED',
@@ -425,6 +463,11 @@ export class YjsCollaborationManager {
       socket.data.userPermission = canEdit ? 'editor' : 'viewer';
       socket.data.canEdit = canEdit;
     }
+  }
+
+  /** Drops what is kept per socket once it has disconnected. */
+  forgetSocket(socket: Socket): void {
+    this.joinSeq.delete(socket.id);
   }
 
   leaveDocument(socket: Socket): void {
@@ -636,8 +679,14 @@ export function setupYjsCollaboration(io: SocketIOServer, storage: DBStorage) {
       userEmail: identity.userEmail,
     });
 
-    // Join document
-    socket.on('yjs:join', async (data: { documentId: string; pageId: number; userId?: number }) => {
+    // Join document. Joins of one socket run one after the other, so the decisions of two joins
+    // never interleave. A socket's rights change only when a join has succeeded (see
+    // joinDocument); a refused or failed join leaves the socket as it was.
+    let joins: Promise<void> = Promise.resolve();
+    socket.on('yjs:join', (data: { documentId: string; pageId: number; userId?: number }) => {
+      joins = joins.then(() => handleJoin(data));
+    });
+    const handleJoin = async (data: { documentId: string; pageId: number; userId?: number }) => {
       try {
         const { documentId } = data;
         const parsed = parseDocumentId(documentId);
@@ -674,27 +723,6 @@ export function setupYjsCollaboration(io: SocketIOServer, storage: DBStorage) {
           return;
         }
 
-        // Edit rights are exactly what the page UI and the REST write routes decide
-        // (checkPagePermission 'editor'), so an editable page never refuses its editor's updates
-        // and a read-only one never accepts them.
-        const canEdit = await storage.canEditPage(userId, pageId);
-        const userPermission: PermissionLevel = canEdit ? 'editor' : 'viewer';
-
-        // Store permission info in socket data for later checks
-        socket.data.userId = userId;
-        socket.data.pageId = pageId;
-        socket.data.userPermission = userPermission;
-        socket.data.canEdit = canEdit;
-
-        logger.info('User permission for Yjs document', {
-          socketId: socket.id,
-          userId,
-          pageId,
-          permission: userPermission,
-          canEdit,
-        });
-        // ===== END PERMISSION CHECK =====
-
         // Clients of another document shape would write into types this server never reads.
         if ((data as any).schema !== YJS_SCHEMA_VERSION) {
           socket.emit('yjs:error', {
@@ -704,8 +732,25 @@ export function setupYjsCollaboration(io: SocketIOServer, storage: DBStorage) {
           return;
         }
 
+        // Whether the person may edit this page is decided here, for this page, and handed to the
+        // join: it is stored with the document only if the join succeeds. It is
+        // checkPagePermission(…, 'editor'), the rule the REST write routes apply, so an editable
+        // page never refuses its editor's updates and a read-only one never accepts them.
+        const canEdit = await storage.canEditPage(userId, pageId);
+        const userPermission: PermissionLevel = canEdit ? 'editor' : 'viewer';
+
         // Join doc in manager (enforces max clients/doc and capacity)
-        const joinResult = await yjsManager!.joinDocument(socket, documentId, pageId);
+        const joinResult = await yjsManager!.joinDocument(socket, documentId, pageId, {
+          canEdit,
+          permission: userPermission,
+        });
+        logger.info('User permission for Yjs document', {
+          socketId: socket.id,
+          userId,
+          pageId,
+          permission: userPermission,
+          canEdit,
+        });
 
         const docState = yjsManager!.getDoc(documentId)!;
         const ydoc = docState.ydoc;
@@ -730,7 +775,6 @@ export function setupYjsCollaboration(io: SocketIOServer, storage: DBStorage) {
           permission: joinResult.permission,
           canEdit: joinResult.canEdit,
         });
-        socket.data.documentId = documentId;
 
         logger.info('Client joined Yjs document', {
           socketId: socket.id,
@@ -750,7 +794,7 @@ export function setupYjsCollaboration(io: SocketIOServer, storage: DBStorage) {
         });
         socket.emit('yjs:error', { message: 'Failed to join document' });
       }
-    });
+    };
 
     // Receive updates from client
     socket.on('yjs:update', async (data: { documentId: string; update: string }) => {
@@ -762,8 +806,7 @@ export function setupYjsCollaboration(io: SocketIOServer, storage: DBStorage) {
 
         const { documentId, update } = data;
 
-        const currentDocId = socket.data.documentId as string | undefined;
-        if (!currentDocId || currentDocId !== documentId) {
+        if (typeof documentId !== 'string' || !yjsManager!.isJoined(socket, documentId)) {
           socket.emit('yjs:error', {
             message: 'Not joined to this document',
             code: 'NOT_JOINED',
@@ -773,7 +816,7 @@ export function setupYjsCollaboration(io: SocketIOServer, storage: DBStorage) {
 
         // ===== PERMISSION CHECK =====
         // Only allow updates from users with edit permission
-        if (!socket.data.canEdit) {
+        if (!yjsManager!.canEditIn(socket, documentId)) {
           logger.warn('Blocked Yjs update from user without edit permission', {
             socketId: socket.id,
             documentId,
@@ -834,8 +877,7 @@ export function setupYjsCollaboration(io: SocketIOServer, storage: DBStorage) {
         return;
       }
       const { documentId, awarenessUpdate } = data;
-      const currentDocId = socket.data.documentId as string | undefined;
-      if (!currentDocId || currentDocId !== documentId) return;
+      if (typeof documentId !== 'string' || !yjsManager!.isJoined(socket, documentId)) return;
       // Broadcast awareness to other clients
       socket.to(documentId).emit('yjs:awareness', {
         socketId: socket.id,
@@ -847,14 +889,13 @@ export function setupYjsCollaboration(io: SocketIOServer, storage: DBStorage) {
     socket.on('yjs:save', async (data: { documentId: string; pageId: number }) => {
       try {
         const { documentId } = data;
-        const currentDocId = socket.data.documentId as string | undefined;
-        if (!currentDocId || currentDocId !== documentId) {
+        if (typeof documentId !== 'string' || !yjsManager!.isJoined(socket, documentId)) {
           socket.emit('yjs:saved', { success: false, error: 'Not joined' });
           return;
         }
 
         // Only allow manual save by editors/owners
-        if (!socket.data.canEdit) {
+        if (!yjsManager!.canEditIn(socket, documentId)) {
           socket.emit('yjs:saved', { success: false, error: 'Edit permission required' });
           return;
         }
@@ -871,6 +912,7 @@ export function setupYjsCollaboration(io: SocketIOServer, storage: DBStorage) {
 
     // Handle disconnect
     socket.on('disconnect', () => {
+      yjsManager?.forgetSocket(socket);
       const documentId = socket.data.documentId as string | undefined;
       if (documentId) {
         yjsManager?.leaveDocument(socket);
