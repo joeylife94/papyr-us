@@ -41,9 +41,13 @@ export function ThemeToggle({ className }: { className?: string }) {
 export function ShellNotifications() {
   const { user } = useAuth();
   const { flags } = useFeatureFlags();
+  // The organization state the shell already loads (same query as the account menu): an account
+  // without an organization is answered 403 by every notification route, so the bell is not
+  // shown, and does not request, until the account is known to belong to one.
+  const { organization } = useOrganization();
   // Notifications are addressed to the account itself: no roster row is involved.
   const enabled = flags.FEATURE_NOTIFICATIONS && flags.FEATURE_TEAMS;
-  return enabled && user?.id ? <NotificationBell /> : null;
+  return enabled && user?.id && organization ? <NotificationBell /> : null;
 }
 
 function initials(name = '') {
