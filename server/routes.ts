@@ -15,7 +15,7 @@ import {
 } from './middleware.js';
 import { config } from './config.js';
 import {
-  insertWikiPageSchema,
+  createPageRequestSchema,
   updateWikiPageSchema,
   searchSchema,
   insertCalendarEventSchema,
@@ -167,6 +167,20 @@ function organizationRequired(req: AuthRequest, res: Response) {
     ? res.status(403).json({ message: 'Your account does not belong to an organization' })
     : res.status(401).json({ message: 'Authentication required' });
 }
+
+// ---- WP0b: page creation always has an account behind it ----
+
+/**
+ * A page records the account that created it, taken from the session. Whatever
+ * ENFORCE_AUTH_WRITES says, a request without a session creates no page. Runs before the other
+ * checks of a creating route, so a signed-out caller gets the same 401 whatever else is wrong.
+ */
+const requireSessionToCreatePage: RequestHandler = (req: AuthRequest, res, next) => {
+  if (!req.user?.id) return res.status(401).json({ message: 'Authentication required' });
+  next();
+};
+
+// ---- end WP0b ----
 
 export async function registerRoutes(
   app: Express,
@@ -828,13 +842,16 @@ export async function registerRoutes(
     '/api/pages',
     optionalAuth,
     requireAuthIfEnabled,
+    requireSessionToCreatePage,
     requireTeamMembership,
     async (req: AuthRequest, res) => {
       try {
         // Removed temporary E2E triage logging. The instrumentation used to write
         // `test-server-received-posts.log` during debugging has been cleaned up.
 
-        const pageData = insertWikiPageSchema.parse(req.body);
+        // The author and the creator are the session's account, recorded by storage; an `author`
+        // in the body is dropped.
+        const pageData = createPageRequestSchema.parse(req.body);
 
         // If teamId is provided, find the actual team ID
         if (pageData.teamId && typeof pageData.teamId === 'string') {
@@ -860,11 +877,7 @@ export async function registerRoutes(
         });
         if (refused) return res.status(refused.status).json({ message: refused.message });
 
-        // Pass creator user ID for automatic owner permission assignment
-        const creatorUserId = req.user?.id;
-        const page = creatorUserId
-          ? await storage.createWikiPage(pageData, creatorUserId)
-          : await storage.createWikiPage(pageData);
+        const page = await storage.createWikiPage(pageData, { userId: req.user.id });
 
         // Trigger workflows for page_created event
         triggerWorkflows('page_created', {
@@ -907,8 +920,9 @@ export async function registerRoutes(
         // Get old page data for comparison and version snapshot
         const oldPage = await storage.getWikiPage(id);
 
-        // Authorship counts as ownership, the team decides who may access the page, and trash
-        // state is the owner's call, so changing any of them needs owner. A page can only move
+        // Authorship counts as ownership (a page whose author is an account's email is owned by
+        // that account), the team decides who may access the page, and trash state is the
+        // owner's call, so changing any of them needs owner. A page can only move
         // into a team the caller belongs to.
         const changesAuthor =
           updateData.author !== undefined && updateData.author !== oldPage?.author;
@@ -1340,6 +1354,7 @@ export async function registerRoutes(
     '/api/pages/:id/duplicate',
     optionalAuth,
     requireAuthIfEnabled,
+    requireSessionToCreatePage,
     requirePagePermission('viewer'),
     async (req: AuthRequest, res) => {
       try {
@@ -1364,7 +1379,6 @@ export async function registerRoutes(
           slug = `${baseSlug}-${suffix++}`;
         }
 
-        const author = (req as any).user?.email || (req as any).user?.name || original.author;
         // The copy gets its own copies of the page's inline databases (#113 §4), in the same
         // transaction as the page.
         const cloned = await storage.duplicateWikiPage(
@@ -1376,14 +1390,13 @@ export async function registerRoutes(
             blocks: original.blocks as any,
             folder: original.folder,
             tags: original.tags,
-            author,
             parentId: original.parentId,
             teamId: original.teamId,
             isPublished: false,
             // The copy keeps the cover only if it is valid (issue #134), as a write would.
             metadata: sanitizePageMetadata(original.metadata) as any,
           },
-          (req as any).user?.id
+          { userId: req.user.id }
         );
 
         res.status(201).json(cloned);
@@ -1519,6 +1532,7 @@ export async function registerRoutes(
     '/api/pages/import/markdown',
     optionalAuth,
     requireAuthIfEnabled,
+    requireSessionToCreatePage,
     requireTeamMembership,
     async (req: AuthRequest, res) => {
       try {
@@ -1547,8 +1561,6 @@ export async function registerRoutes(
           '-' +
           Date.now().toString(36);
 
-        const author = (req as any).user?.email || (req as any).user?.name || 'imported';
-
         const page = await storage.createWikiPage(
           {
             title: pageTitle,
@@ -1556,11 +1568,10 @@ export async function registerRoutes(
             content,
             folder: folder || 'docs',
             tags: Array.isArray(tags) ? tags : [],
-            author,
             teamId: pageTeamId,
             isPublished: true,
           },
-          (req as any).user?.id
+          { userId: req.user.id }
         );
 
         res.status(201).json(page);

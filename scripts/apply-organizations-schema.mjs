@@ -12,7 +12,10 @@
  * - drizzle/0024_add_organization_ai_setting.sql (X1c): adds the per-organization AI setting,
  *   on for every organization that exists when it is added;
  * - drizzle/0025_add_organization_member_ai_access.sql (X1c): adds the per-member AI access,
- *   granted to every membership that exists when it is added.
+ *   granted to every membership that exists when it is added;
+ * - drizzle/0027_add_page_creator.sql (WP0b): adds wiki_pages.created_by_user_id and claims a
+ *   creator only for pages whose creation grant proves one (it prints how many pages got one and
+ *   how many have none). It must run before push: push alone adds the column without the claim.
  *
  * All add their columns and constraints under the names push expects, so push then has nothing
  * left to change. All are idempotent, so running this on every deploy is safe.
@@ -24,7 +27,8 @@
  *
  * --down applies the .down.sql files in reverse order. Each refuses while it would lose a
  * boundary (an organization with AI turned off, a member without AI access, more than one
- * organization, or templates of more than one), and then nothing is changed. Like
+ * organization, templates of more than one, or a page that records a creator the up file would
+ * not compute again), and then nothing is changed. Like
  * apply-fts-schema.mjs, the script refuses non-local database hosts unless --allow-remote is
  * given.
  */
@@ -44,6 +48,7 @@ const MIGRATIONS = [
   '0023_add_template_organizations',
   '0024_add_organization_ai_setting',
   '0025_add_organization_member_ai_access',
+  '0027_add_page_creator',
 ];
 const sqlPaths = (down ? [...MIGRATIONS].reverse() : MIGRATIONS).map((name) =>
   fileURLToPath(new URL(`../drizzle/${name}${down ? '.down' : ''}.sql`, import.meta.url))
@@ -69,6 +74,8 @@ if (!allowRemote && !LOCAL_HOSTS.has(host)) {
 }
 
 const client = new pg.Client({ connectionString: databaseUrl });
+// Migrations report counts as NOTICE messages (0027: pages that got a creator).
+client.on('notice', (message) => console.log(`${label} ${message.message}`));
 
 try {
   await client.connect();

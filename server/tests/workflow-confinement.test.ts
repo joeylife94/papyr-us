@@ -218,12 +218,28 @@ describe('create_page and create_task', () => {
       { teamId: OTHER_TEAM, author: 'a@example.com' }
     );
     expect(run.status).toBe('success');
-    expect(storage.createWikiPage).toHaveBeenCalledWith(expect.objectContaining({ teamId: TEAM }));
+    expect(storage.createWikiPage).toHaveBeenCalledWith(expect.objectContaining({ teamId: TEAM }), {
+      automation: true,
+    });
   });
 
   it('create_page has a team even when the trigger carries none', async () => {
     await executeWorkflow(workflowWith({ type: 'create_page', config: { title: 'Made' } }), {});
-    expect(storage.createWikiPage).toHaveBeenCalledWith(expect.objectContaining({ teamId: TEAM }));
+    expect(storage.createWikiPage).toHaveBeenCalledWith(expect.objectContaining({ teamId: TEAM }), {
+      automation: true,
+    });
+  });
+
+  it('create_page is recorded as automation and takes no author from the trigger', async () => {
+    await executeWorkflow(workflowWith({ type: 'create_page', config: { title: 'Made' } }), {
+      teamId: TEAM,
+      author: 'someone@example.com',
+      createdByUserId: 77,
+    });
+    const [page, creator] = storage.createWikiPage.mock.calls[0];
+    expect(creator).toEqual({ automation: true });
+    expect(page).not.toHaveProperty('author');
+    expect(page).not.toHaveProperty('createdByUserId');
   });
 
   it("create_task puts the task in the workflow's team, not the trigger's", async () => {

@@ -1,6 +1,6 @@
 /**
  * Layer 4 fixture: bring a test schema built in the pre-organization shape to the shape of
- * drizzle/0022_add_organizations.sql (issue #124 X1a), 0024 and 0025 (X1c), so DBStorage runs
+ * drizzle/0022_add_organizations.sql (issue #124 X1a), 0024 and 0025 (X1c) and 0027 (WP0b), so DBStorage runs
  * against it.
  *
  * Most Layer 4 files hand-write their tables as they were before organizations and insert rows
@@ -41,6 +41,13 @@ const AI_ACCESS_MIGRATION = readFileSync(
   'utf8'
 );
 
+// 0027 (WP0b) adds wiki_pages.created_by_user_id, so every file describes an upgraded deployment
+// whose pages have no recorded creator unless a file sets one.
+const PAGE_CREATOR_MIGRATION = readFileSync(
+  new URL('../../drizzle/0027_add_page_creator.sql', import.meta.url),
+  'utf8'
+);
+
 /**
  * Applies 0022 to a pre-organization test schema and returns the default organization's id.
  * `schema` names the test schema when `pool` does not already use it as its search path.
@@ -76,6 +83,7 @@ export async function addOrganizations(
     await client.query(MIGRATION);
     await client.query(AI_SETTING_MIGRATION);
     await client.query(AI_ACCESS_MIGRATION);
+    await client.query(PAGE_CREATOR_MIGRATION);
     const { rows } = await client.query(`SELECT id FROM organizations WHERE slug = 'default'`);
     const organizationId = Number(rows[0].id);
     // The trigger names its schema, so inserts through a pool without the search path work too.

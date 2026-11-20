@@ -237,15 +237,20 @@ async function executeAction(
         if (workflowTeamOf(context) === null) {
           return { success: false, error: 'Workflow has no team' };
         }
-        const newPage = await getWorkflowStorage().createWikiPage({
-          title: processedConfig.title || 'New Page',
-          slug: processedConfig.title?.toLowerCase().replace(/\s+/g, '-') || `page-${Date.now()}`,
-          content: processedConfig.content || '',
-          folder: processedConfig.folder || 'docs',
-          tags: processedConfig.tags || [],
-          author: context.trigger?.author || 'automation',
-          teamId: workflowTeamOf(context),
-        });
+        // A workflow's page records automation as its creator: no account, and nothing is taken
+        // from the page that triggered it.
+        const newPage = await getWorkflowStorage().createWikiPage(
+          {
+            title: processedConfig.title || 'New Page',
+            slug:
+              processedConfig.title?.toLowerCase().replace(/\s+/g, '-') || `page-${Date.now()}`,
+            content: processedConfig.content || '',
+            folder: processedConfig.folder || 'docs',
+            tags: processedConfig.tags || [],
+            teamId: workflowTeamOf(context),
+          },
+          { automation: true }
+        );
         return { success: true, result: newPage };
 
       case 'add_comment':

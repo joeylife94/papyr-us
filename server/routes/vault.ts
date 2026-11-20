@@ -231,7 +231,6 @@ export function registerVaultRoutes(app: Express, storage: DBStorage) {
       const created = await storage.insertImportedPages({
         teamId: scope.teamId,
         userId,
-        author: String(req.user.email || req.user.name || 'imported'),
         folder: IMPORT_FOLDER,
         pages,
       });

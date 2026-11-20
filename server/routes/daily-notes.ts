@@ -55,7 +55,6 @@ export function registerDailyNoteRoutes(app: Express, storage: DBStorage) {
         title: date,
         folder: DAILY_NOTE_FOLDER,
         tags: [DAILY_NOTE_TAG],
-        author: scope.viewer.email || `user-${userId}`,
         teamId: scope.teamId,
         userId,
       });

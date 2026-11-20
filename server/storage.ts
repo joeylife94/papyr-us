@@ -4,7 +4,7 @@ import {
   pageLinks,
   pageViews,
   type WikiPage,
-  type InsertWikiPage,
+  type NewPage,
   type UpdateWikiPage,
   type Tag,
   type SearchParams,
@@ -146,6 +146,20 @@ export class OrganizationRequiredError extends Error {
     this.name = 'OrganizationRequiredError';
   }
 }
+
+// ---- WP0b: the account a page records as its creator ----
+
+/**
+ * Who a page is recorded as created by. Every path that creates a page names one, so the
+ * compiler finds a path that does not: an account (the session's, never the request's), or
+ * automation (a workflow), which has no account.
+ */
+export type PageCreator = { userId: number } | { automation: true };
+
+/** The author text of a page created by automation. */
+export const AUTOMATION_AUTHOR = 'Automation';
+
+// ---- end WP0b ----
 
 /** A trashed page as the trash list shows it: no body. */
 export type TrashedPage = Pick<
@@ -381,17 +395,26 @@ export class DBStorage {
     throw new Error('Failed to allocate a unique page slug');
   }
 
-  async createWikiPage(page: InsertWikiPage, creatorUserId?: number): Promise<WikiPage> {
-    const organizationId = await this.organizationForNewPage(page.teamId, creatorUserId);
+  /**
+   * Creates `page` for `creator`. The page records the creating account and its name as author
+   * (or, for automation, no account and the author "Automation"): both come from `creator`, so
+   * an `author` or `createdByUserId` carried by `page` is overwritten. An unknown or inactive
+   * account creates nothing. The creator id is provenance only; an account's owner grant, written
+   * right after the page, is what makes it the page's owner.
+   */
+  async createWikiPage(page: NewPage, creator: PageCreator): Promise<WikiPage> {
+    const recorded = await this.recordedPageCreator(this.db, creator);
+    const organizationId = await this.organizationForNewPage(page.teamId, recorded.createdByUserId);
     const createdPage = await this.insertWithUniqueSlug(page.slug, async (slug) => {
       const result = await this.db
         .insert(wikiPages)
-        .values({ ...page, slug, organizationId })
+        .values({ ...page, slug, organizationId, ...recorded })
         .returning();
       return result[0];
     });
 
-    if (creatorUserId) {
+    if (recorded.createdByUserId !== undefined) {
+      const creatorUserId = recorded.createdByUserId;
       try {
         await this.setPageOwner(createdPage.id, creatorUserId, creatorUserId);
       } catch (error) {
@@ -404,6 +427,26 @@ export class DBStorage {
       await this.replacePageLinks(createdPage.id, createdPage.content);
     }
     return createdPage;
+  }
+
+  /**
+   * What a new page records about its creator: the account's id and name, or for automation no
+   * account and the author "Automation". Throws, so nothing is written, when the account is
+   * unknown or inactive. Pass the transaction handle to read inside one.
+   */
+  private async recordedPageCreator(
+    executor: any,
+    creator: PageCreator
+  ): Promise<{ author: string; createdByUserId: number | undefined }> {
+    if (!('userId' in creator)) return { author: AUTOMATION_AUTHOR, createdByUserId: undefined };
+    const [account] = await executor
+      .select({ name: users.name, isActive: users.isActive })
+      .from(users)
+      .where(eq(users.id, creator.userId));
+    if (!account || account.isActive !== true) {
+      throw new Error('The account creating the page is unknown or inactive');
+    }
+    return { author: account.name, createdByUserId: creator.userId };
   }
 
   /**
@@ -421,12 +464,14 @@ export class DBStorage {
    */
   async duplicateWikiPage(
     sourcePageId: number,
-    page: InsertWikiPage,
-    creatorUserId?: number
+    page: NewPage,
+    creator: { userId: number }
   ): Promise<WikiPage> {
     const referenced = databaseBlockSchemaIds(page.blocks);
+    const creatorUserId = creator.userId;
     const organizationId = await this.organizationForNewPage(page.teamId, creatorUserId);
     return this.db.transaction(async (tx: any) => {
+      const recorded = await this.recordedPageCreator(tx, creator);
       const sources: DatabaseSchema[] =
         referenced.length === 0
           ? []
@@ -449,7 +494,7 @@ export class DBStorage {
         tx.transaction(async (savepoint: any) => {
           const result = await savepoint
             .insert(wikiPages)
-            .values({ ...page, slug, blocks, organizationId })
+            .values({ ...page, slug, blocks, organizationId, ...recorded })
             .returning();
           return result[0];
         })
@@ -508,20 +553,18 @@ export class DBStorage {
       }
 
       // As in createWikiPage, a failed owner grant is logged and does not undo the page.
-      if (creatorUserId) {
-        try {
-          await tx.transaction((savepoint: any) =>
-            savepoint.insert(pagePermissions).values({
-              pageId: copy.id,
-              entityType: 'user',
-              entityId: creatorUserId,
-              permission: 'owner',
-              grantedBy: creatorUserId,
-            })
-          );
-        } catch (error) {
-          console.error('Failed to set page owner permission:', error);
-        }
+      try {
+        await tx.transaction((savepoint: any) =>
+          savepoint.insert(pagePermissions).values({
+            pageId: copy.id,
+            entityType: 'user',
+            entityId: creatorUserId,
+            permission: 'owner',
+            grantedBy: creatorUserId,
+          })
+        );
+      } catch (error) {
+        console.error('Failed to set page owner permission:', error);
       }
 
       if (hasPageLinks(copy.content)) await this.writePageLinks(tx, copy.id, copy.content);
@@ -2203,7 +2246,9 @@ export class DBStorage {
         EXISTS (SELECT 1 FROM team_members tm JOIN teams t ON t.id = tm.team_id
           WHERE tm.user_id = u.id AND t.organization_id <> ${organizationId}) AS team_memberships,
         EXISTS (SELECT 1 FROM wiki_pages w
-          WHERE w.author = u.email AND w.organization_id <> ${organizationId}) AS authored_pages,
+          WHERE w.organization_id <> ${organizationId}
+            AND (w.created_by_user_id = u.id
+                 OR (w.created_by_user_id IS NULL AND w.author = u.email))) AS authored_pages,
         EXISTS (SELECT 1 FROM page_permissions pp JOIN wiki_pages w ON w.id = pp.page_id
           WHERE pp.entity_type = 'user' AND pp.entity_id = u.id
             AND w.organization_id <> ${organizationId}) AS page_grants,
@@ -4359,7 +4404,6 @@ export class DBStorage {
     title: string;
     folder: string;
     tags: string[];
-    author: string;
     teamId: number | null;
     userId: number;
   }): Promise<
@@ -4398,6 +4442,8 @@ export class DBStorage {
           return { status: 'found' as const, page: existing as WikiPage };
         }
 
+        // A new note records the account that opened it, as any created page does (WP0b).
+        const recorded = await this.recordedPageCreator(tx, { userId: note.userId });
         const [page] = await tx
           .insert(wikiPages)
           .values({
@@ -4417,9 +4463,9 @@ export class DBStorage {
             ],
             folder: note.folder,
             tags: note.tags,
-            author: note.author,
             teamId: note.teamId,
             organizationId,
+            ...recorded,
           })
           .returning();
         const grants: InsertPagePermission[] = [
@@ -4512,7 +4558,6 @@ export class DBStorage {
   async insertImportedPages(input: {
     teamId: number | null;
     userId: number;
-    author: string;
     folder: string;
     pages: Array<{
       id: number;
@@ -4530,6 +4575,7 @@ export class DBStorage {
     if (input.pages.length === 0) return [];
     const organizationId = await this.organizationForNewPage(input.teamId, input.userId);
     return this.db.transaction(async (tx: any) => {
+      const recorded = await this.recordedPageCreator(tx, { userId: input.userId });
       const created: Array<{ id: number; slug: string }> = [];
       for (const page of input.pages) {
         let row: { id: number; slug: string } | undefined;
@@ -4545,9 +4591,9 @@ export class DBStorage {
               blocks: [],
               folder: input.folder,
               tags: page.tags,
-              author: input.author,
               teamId: input.teamId,
               organizationId,
+              ...recorded,
               parentId: page.parentId,
               icon: page.icon,
               metadata: page.cover ? { cover: page.cover } : {},
