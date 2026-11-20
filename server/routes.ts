@@ -59,6 +59,7 @@ import {
   listUploadedFiles,
   getFileInfo,
   getFileTeamId,
+  isSafeUploadFilename,
 } from './services/upload.js';
 import {
   smartSearch,
@@ -411,6 +412,10 @@ export async function registerRoutes(
       if (!isPasswordValid) {
         return res.status(401).json({ message: 'Invalid credentials' });
       }
+      // Said only to someone who knows the password: a deactivated account gets no session.
+      if (!user.isActive) {
+        return res.status(403).json({ message: 'Account is deactivated' });
+      }
 
       const role =
         Array.isArray((config as any).adminEmails) &&
@@ -482,6 +487,10 @@ export async function registerRoutes(
       }
 
       const user = userResult[0];
+      // A deactivated account cannot extend its session
+      if (!user.isActive) {
+        return res.status(401).json({ message: 'Invalid refresh token' });
+      }
       const role = config.adminEmails.includes(user.email.toLowerCase()) ? 'admin' : 'user';
 
       // Issue new access token (7 days) and refresh token (30 days) - token rotation
@@ -565,6 +574,10 @@ export async function registerRoutes(
       '/api/auth/google/callback',
       passport.authenticate('google', { failureRedirect: '/login', session: false }),
       (req: any, res) => {
+        // A deactivated account gets no session through social sign-in either
+        if (req.user?.isActive === false) {
+          return res.redirect('/login?error=account_deactivated');
+        }
         const role = config.adminEmails.includes(req.user.email.toLowerCase()) ? 'admin' : 'user';
         const accessToken = jwt.sign(
           { id: req.user.id, email: req.user.email, role },
@@ -601,6 +614,10 @@ export async function registerRoutes(
       '/api/auth/github/callback',
       passport.authenticate('github', { failureRedirect: '/login', session: false }),
       (req: any, res) => {
+        // A deactivated account gets no session through social sign-in either
+        if (req.user?.isActive === false) {
+          return res.redirect('/login?error=account_deactivated');
+        }
         const role = config.adminEmails.includes(req.user.email.toLowerCase()) ? 'admin' : 'user';
         const accessToken = jwt.sign(
           { id: req.user.id, email: req.user.email, role },
@@ -2523,6 +2540,9 @@ export async function registerRoutes(
   app.get('/api/uploads/images/:filename', authMiddleware, async (req: AuthRequest, res) => {
     try {
       const { filename } = req.params;
+      if (!isSafeUploadFilename(filename)) {
+        return res.status(400).json({ message: 'Invalid filename' });
+      }
 
       const fileTeamId = await getFileTeamId(filename, true);
 
@@ -2564,6 +2584,9 @@ export async function registerRoutes(
   app.get('/api/uploads/files/:filename', authMiddleware, async (req: AuthRequest, res) => {
     try {
       const { filename } = req.params;
+      if (!isSafeUploadFilename(filename)) {
+        return res.status(400).json({ message: 'Invalid filename' });
+      }
 
       const fileTeamId = await getFileTeamId(filename, false);
 
@@ -2640,6 +2663,11 @@ export async function registerRoutes(
 
         if (type !== 'images' && type !== 'files') {
           return res.status(400).json({ message: 'Invalid file type' });
+        }
+        // The name is one path segment of an upload, nothing else (a decoded parameter can hold
+        // separators). Checked before any lookup or file-system call.
+        if (!isSafeUploadFilename(filename)) {
+          return res.status(400).json({ message: 'Invalid filename' });
         }
 
         // Verify the requester belongs to the team that uploaded this file

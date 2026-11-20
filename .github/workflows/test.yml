@@ -16,7 +16,7 @@ jobs:
   # ═══════════════════════════════════════════════════════════════════
   layer-0-static:
     name: 'Layer 0 · Static Gate'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -36,7 +36,7 @@ jobs:
   # ═══════════════════════════════════════════════════════════════════
   layer-1-unit:
     name: 'Layer 1 · Unit Tests'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: layer-0-static
     steps:
       - uses: actions/checkout@v4
@@ -53,7 +53,7 @@ jobs:
   # ═══════════════════════════════════════════════════════════════════
   layer-2-domain:
     name: 'Layer 2 · Domain Invariants'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: layer-0-static
     steps:
       - uses: actions/checkout@v4
@@ -70,7 +70,7 @@ jobs:
   # ═══════════════════════════════════════════════════════════════════
   layer-3-contract:
     name: 'Layer 3 · Contract Tests'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: layer-0-static
     steps:
       - uses: actions/checkout@v4
@@ -87,7 +87,7 @@ jobs:
   # ═══════════════════════════════════════════════════════════════════
   layer-4-integration:
     name: 'Layer 4 · Integration Tests'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [layer-1-unit, layer-2-domain, layer-3-contract]
     services:
       postgres:
@@ -124,7 +124,7 @@ jobs:
   # ═══════════════════════════════════════════════════════════════════
   layer-5-e2e:
     name: 'Layer 5 · E2E Tests'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: layer-4-integration
     services:
       postgres:
@@ -164,7 +164,7 @@ jobs:
   # ═══════════════════════════════════════════════════════════════════
   layer-6-visual:
     name: 'Layer 6 · Visual & A11y'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: layer-5-e2e
     services:
       postgres:
@@ -211,7 +211,7 @@ jobs:
   # ═══════════════════════════════════════════════════════════════════
   all-layers-sequential:
     name: 'All Layers · Sequential Smoke Run'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [layer-0-static, layer-1-unit, layer-2-domain, layer-3-contract]
     services:
       postgres:
