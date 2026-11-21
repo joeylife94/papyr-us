@@ -57,8 +57,14 @@ export interface SaveConflict {
   /** The page as it is stored now. */
   page: PageWithRevision;
   currentRevision: string;
-  /** The fields this editor is writing that also changed in the stored page. */
+  /** The fields this editor is writing (or has focus in) that also changed in the stored page. */
   fields: PageField[];
+  /**
+   * Of `fields`, those the person actually changed (their edit is waiting to be saved). A field
+   * that collides only because their focus is in it has nothing of theirs to keep: "keep mine"
+   * takes it from the stored page, and the notice shows it as changed elsewhere only.
+   */
+  mine: PageField[];
 }
 
 export interface AutosaveSnapshot {
@@ -81,8 +87,6 @@ export interface AutosaveHandlers {
    * refusal is decided, so such a field is never silently replaced.
    */
   writing?: () => PageField[];
-  /** The value the editor shows for `field`, to save when the person keeps their version. */
-  current?: (field: PageField) => AutosavePatch[PageField];
 }
 
 export interface AutosaveOptions {
@@ -243,8 +247,14 @@ export class AutosaveController {
     const open = this.snapshot.conflict;
     if (open) {
       // While a conflict waits for a decision, edits are only collected; what collides may grow.
-      const fields = this.collidingFields(open.page);
-      if (fields.join() !== open.fields.join()) this.set({ conflict: { ...open, fields } });
+      const next = this.conflictOf(
+        open.page,
+        open.currentRevision,
+        this.collidingFields(open.page)
+      );
+      if (next.fields.join() !== open.fields.join() || next.mine.join() !== open.mine.join()) {
+        this.set({ conflict: next });
+      }
       return;
     }
     this.set({ status: 'pending' });
@@ -275,7 +285,7 @@ export class AutosaveController {
         this.clearTimers();
         this.set({
           status: 'conflict',
-          conflict: { page: rebased.page, currentRevision: rebased.revision, fields: gained },
+          conflict: this.conflictOf(rebased.page, rebased.revision, gained),
         });
         return;
       }
@@ -345,6 +355,19 @@ export class AutosaveController {
     return colliding.length > 0 ? colliding : changed;
   }
 
+  private conflictOf(
+    page: PageWithRevision,
+    currentRevision: string,
+    fields: PageField[]
+  ): SaveConflict {
+    return {
+      page,
+      currentRevision,
+      fields,
+      mine: fields.filter((field) => field in this.pending),
+    };
+  }
+
   private writingNow(): PageField[] {
     return this.handlers.writing?.() ?? [];
   }
@@ -383,7 +406,7 @@ export class AutosaveController {
     this.hasPending = true;
     this.set({
       status: 'conflict',
-      conflict: { page, currentRevision, fields: decision.fields },
+      conflict: this.conflictOf(page, currentRevision, decision.fields),
     });
   }
 
@@ -394,18 +417,10 @@ export class AutosaveController {
   keepMine() {
     const open = this.snapshot.conflict;
     if (!open) return;
-    // The fields the notice lists are mine: they are saved as the editor shows them (also when
-    // the editor had not reported them yet), and never taken over from the stored page.
-    for (const field of open.fields) {
-      if (!(field in this.pending) && this.handlers.current) {
-        (this.pending as Record<string, unknown>)[field] = this.handlers.current(field);
-      }
-    }
-    const written = new Set([
-      ...(Object.keys(this.pending) as PageField[]),
-      ...this.writingNow(),
-      ...open.fields,
-    ]);
+    // Only what the person changed (their edit is pending) is written. Everything else that
+    // changed in the stored page, a field they merely had focus in included, is taken from it,
+    // exactly as "load latest" would, so the screen and the stored page agree afterwards.
+    const written = new Set(Object.keys(this.pending) as PageField[]);
     this.handlers.adopt?.(
       open.page,
       changedSince(this.known, open.page).filter((field) => !written.has(field))

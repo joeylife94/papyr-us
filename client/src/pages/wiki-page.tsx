@@ -530,7 +530,6 @@ function EditablePageBody({
     adopt: adoptFields,
     // Focus inside the body editor: it may hold input it has not emitted (an open table cell).
     writing: () => (bodyRef.current?.contains(document.activeElement) ? ['blocks'] : []),
-    current: (field) => (field === 'blocks' ? blocksRef.current : undefined),
     onSaved: () => {
       // Lists and the sidebar show titles, icons and folders; refresh them quietly.
       void invalidatePageLists(queryClient);
@@ -607,6 +606,7 @@ function EditablePageBody({
         {conflict && (
           <SaveConflictNotice
             fields={conflict.fields}
+            mineFields={conflict.mine}
             mine={{ title, content, folder, tags: tagsText, icon, cover }}
             theirs={conflict.page}
             onLoadLatest={() => void handleLoadLatest()}

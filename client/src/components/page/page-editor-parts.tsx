@@ -128,6 +128,8 @@ export interface ConflictMine {
 interface SaveConflictNoticeProps {
   /** The fields being written here that also changed in the stored page. */
   fields: PageField[];
+  /** Of `fields`, those the person changed; the others are shown as changed elsewhere only. */
+  mineFields: PageField[];
   mine: ConflictMine;
   /** The page as it is stored now. */
   theirs: PageWithRevision;
@@ -175,6 +177,7 @@ function versionsOf(field: PageField, mine: ConflictMine, theirs: PageWithRevisi
  */
 export function SaveConflictNotice({
   fields,
+  mineFields,
   mine,
   theirs,
   onLoadLatest,
@@ -202,16 +205,24 @@ export function SaveConflictNotice({
           </div>
           {fields.map((field) => {
             const [mineText, theirText] = versionsOf(field, mine, theirs);
+            // A field the person only has focus in has no change of theirs: it is shown as changed
+            // elsewhere, and "keep mine" takes it from the stored page.
+            const changedByMe = mineFields.includes(field);
             return (
               <div key={field} className="space-y-2">
                 <h3 className="text-[13px] font-medium text-foreground">
-                  겹친 부분: {FIELD_LABEL[field]}
+                  {changedByMe
+                    ? `겹친 부분: ${FIELD_LABEL[field]}`
+                    : `다른 곳에서 바뀐 부분: ${FIELD_LABEL[field]} (내가 바꾼 것은 없습니다)`}
                 </h3>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {[
-                    ['mine', '내 버전', mineText],
-                    ['theirs', '저장된 버전 (읽기 전용)', theirText],
-                  ].map(([side, label, text]) => (
+                <div className={cn('grid gap-2', changedByMe && 'sm:grid-cols-2')}>
+                  {(changedByMe
+                    ? [
+                        ['mine', '내 버전', mineText],
+                        ['theirs', '저장된 버전 (읽기 전용)', theirText],
+                      ]
+                    : [['theirs', '저장된 버전 (읽기 전용)', theirText]]
+                  ).map(([side, label, text]) => (
                     <div key={side} className="min-w-0 space-y-1">
                       <p className="text-xs text-muted-foreground">{label}</p>
                       <div

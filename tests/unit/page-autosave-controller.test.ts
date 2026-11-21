@@ -570,19 +570,36 @@ describe('input the body editor has not emitted yet', () => {
     expect(ctl.getSnapshot().conflict).toBeNull();
   });
 
-  it('keep mine saves the body as the editor shows it, and does not take over the stored one', async () => {
+  it('a body the person only has focus in is not theirs: keep mine adopts it and writes the title', async () => {
     const ctl = controller();
-    ctl.handlers = {
-      ...ctl.handlers,
-      writing: () => ['blocks'],
-      current: (field) => (field === 'blocks' ? [{ id: 'mine' } as any] : undefined),
-    };
+    ctl.handlers = { ...ctl.handlers, writing: () => ['blocks'] };
     answers.push(
       () => conflictAnswer(stored('r2', rev('x', 'b1'))),
       () => savedAnswer('r3')
     );
     ctl.queue({ title: 'Mine' });
     await settle();
+    // The collision is on the body, but nothing of the person's is in it.
+    expect(ctl.getSnapshot().conflict).toMatchObject({ fields: ['blocks'], mine: [] });
+    ctl.keepMine();
+    await settle(0);
+
+    expect(events).toEqual(['fetch PUT autosave', 'adopt blocks', 'fetch PUT autosave']);
+    expect(saves()[1].body).toEqual({ title: 'Mine', baseRevision: 'r2' });
+    expect(ctl.getSnapshot()).toMatchObject({ status: 'saved', conflict: null });
+  });
+
+  it('a body the person changed is theirs: keep mine writes it and adopts nothing', async () => {
+    const ctl = controller();
+    ctl.handlers = { ...ctl.handlers, writing: () => ['blocks'] };
+    answers.push(
+      () => conflictAnswer(stored('r2', rev('x', 'b1'))),
+      () => savedAnswer('r3')
+    );
+    ctl.queue({ title: 'Mine' });
+    await settle();
+    ctl.queue({ blocks: [{ id: 'mine' } as any] });
+    expect(ctl.getSnapshot().conflict).toMatchObject({ fields: ['blocks'], mine: ['blocks'] });
     ctl.keepMine();
     await settle(0);
     expect(events).not.toContain('adopt blocks');

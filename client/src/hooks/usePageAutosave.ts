@@ -43,14 +43,14 @@ interface Options extends AutosaveHandlers {
  */
 export function usePageAutosave(
   pageId: number | undefined,
-  { page, guarded = true, onSaved, adopt, writing, current }: Options = {}
+  { page, guarded = true, onSaved, adopt, writing }: Options = {}
 ) {
   // One controller per page; the editor is mounted per page, so `page` is read once.
   const controller = useMemo(
     () => new AutosaveController({ pageId: pageId ?? 0, page, guarded }),
     [pageId]
   );
-  controller.handlers = { onSaved, adopt, writing, current };
+  controller.handlers = { onSaved, adopt, writing };
   controller.guarded = guarded;
   const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
 

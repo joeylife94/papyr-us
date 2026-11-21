@@ -801,6 +801,32 @@ test.describe('Blocks that report their own state', () => {
     });
   });
 
+  test('keep mine does not write a body the person only clicked into', async ({ browser }) => {
+    await withPeople(browser, 'wp1-focus-keep', async (alice, bob) => {
+      const { slug, pageId, blockId } = await createSharedPage(alice, bob, 'Original text');
+      const bobPage = await openEditor(bob, slug, 'Original text');
+      await writeAs(alice, pageId, { blocks: body(blockId, 'Alice body') });
+
+      await bobPage.getByTestId('page-title').fill('Bob title');
+      // Clicks into the paragraph without typing: focus counts as writing it, but nothing is his.
+      await firstBlock(bobPage).click();
+      const conflict = bobPage.getByTestId('page-save-conflict');
+      await expect(conflict).toBeVisible();
+      await expect(conflict.getByTestId('page-save-conflict-theirs-blocks')).toContainText(
+        'Alice body'
+      );
+      // It is shown as changed elsewhere only: there is no "mine" column for it.
+      await expect(conflict.getByTestId('page-save-conflict-mine-blocks')).toHaveCount(0);
+
+      await conflict.getByRole('button', { name: '내 변경 유지' }).click();
+      await expect(conflict).toBeHidden();
+      await expect.poll(async () => (await storedPage(alice.api, pageId)).title).toBe('Bob title');
+      // Alice's body is still the body, and it is what Bob sees.
+      expect(await storedText(alice.api, pageId)).toBe('Alice body');
+      await expect(firstBlock(bobPage)).toHaveValue('Alice body');
+    });
+  });
+
   test('every block that keeps its own state shows the adopted body, and nothing stale is written later', async ({
     browser,
   }) => {
