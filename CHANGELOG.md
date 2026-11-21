@@ -23,6 +23,7 @@
 - **운영**: `/ready` 준비 상태 프로브(#125), PR마다 Golden Journey·P0 브라우저 스펙 실행(#87)
 - **조직 관리** (#124 X1c): 플랫폼 관리자의 조직 생성과 첫 소유자 지정(`/admin`의 `Organizations` 탭, `/api/admin/organizations*`), 조직 소유자·관리자의 구성원·역할·팀 목록·설정 화면(`/organization`, `/api/organization*`), 조직 AI 스위치(`organizations.ai_enabled`, 가역 마이그레이션 `drizzle/0024`)와 구성원별 AI 권한(`organization_members.ai_allowed`, `drizzle/0025`, `구성원` 탭에서 소유자·관리자가 부여)
 
+- **팀 멤버 편집 설정** (WP7): 팀 소유자·관리자가 "멤버가 팀 페이지를 편집할 수 있음"을 켜고 끔. 새 팀은 켜짐, 기존 팀은 꺼짐(가역 마이그레이션 `drizzle/0031`)
 - **페이지 공유 화면** (WP4): 페이지 소유자가 조직의 사람·팀에게 권한을 주고 바꾸고 회수하는 대화상자, 공개 접근(보기·댓글)과 공유 링크 관리, 다른 사람에게는 읽기 전용 접근 목록, 페이지 머리의 내 권한 표시(`/api/pages/:id/sharing`, `/share-candidates`)
 - **초대와 가입 정책** (#124 X1d): 조직 소유자·관리자가 `/organization`에서 초대 링크를 만들고 취소(한 번만 쓰는 토큰, 해시만 저장, 가역 마이그레이션 `drizzle/0029`). `SIGNUP_MODE`(`open` \| `invite_only` \| `closed`): 설정하지 않으면 `open`(이전과 같음), 저장소의 새 설치용 `.env` 예시는 `invite_only`. `TRUST_PROXY` 설정 추가
 - **댓글 멘션과 알림** (WP6): 댓글에서 `@`로 같은 조직의 구성원을 멘션(그 페이지를 읽을 수 있는 사람만 후보). 새 댓글은 페이지를 만든 사람에게, 답글은 스레드 참여자에게, 멘션은 멘션된 사람에게 알림. 알림을 누르면 그 댓글로 이동
