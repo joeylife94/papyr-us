@@ -114,6 +114,9 @@ export async function invite(
 export const joinUrl = (token: string) => `/join#token=${token}`;
 
 /** Every request URL a page makes, to prove what the server was (not) sent. */
+/** The header the application's own page sends: token routes answer nothing else. */
+export const SAME_ORIGIN = { Origin: BASE_URL };
+
 export function watchRequests(page: Page) {
   const urls: string[] = [];
   const bodies: string[] = [];

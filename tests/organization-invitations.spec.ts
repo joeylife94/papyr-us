@@ -19,7 +19,15 @@
  * invitation across the round trip in a cookie only the sign-in routes receive.
  */
 import { test, expect } from '@playwright/test';
-import { BASE_URL, invite, joinUrl, makeWorld, pageFor, watchRequests } from './invitation-world';
+import {
+  BASE_URL,
+  invite,
+  joinUrl,
+  makeWorld,
+  pageFor,
+  watchRequests,
+  SAME_ORIGIN,
+} from './invitation-world';
 
 const tokenOf = (link: string) => new URL(link).hash.replace('#token=', '');
 
@@ -72,13 +80,19 @@ test.describe('Organization invitations', () => {
       await expect(page.getByTestId('invitations-table')).not.toContainText(token);
 
       // The link works for a stranger, and does so once.
-      const preview = await request.post('/api/invitations/preview', { data: { token } });
+      const preview = await request.post('/api/invitations/preview', {
+        headers: SAME_ORIGIN,
+        data: { token },
+      });
       expect(preview.status()).toBe(200);
 
       // Revoking from the list ends it.
       await row.getByRole('button', { name: /초대 취소/ }).click();
       await expect(row).toContainText('취소됨');
-      const after = await request.post('/api/invitations/preview', { data: { token } });
+      const after = await request.post('/api/invitations/preview', {
+        headers: SAME_ORIGIN,
+        data: { token },
+      });
       expect(after.status()).toBe(404);
 
       // The token was only ever in the creation answer: no later request names it.
@@ -213,7 +227,10 @@ test.describe('Organization invitations', () => {
       const used = await invite(world.apis.owner);
       expect(
         (
-          await world.apis.loner.post('/api/invitations/accept', { data: { token: used.token } })
+          await world.apis.loner.post('/api/invitations/accept', {
+            headers: SAME_ORIGIN,
+            data: { token: used.token },
+          })
         ).status()
       ).toBe(200);
       const madeUp = 'A'.repeat(43);
@@ -236,6 +253,7 @@ test.describe('Organization invitations', () => {
       const bodies = new Set<string>();
       for (const token of [revoked.token, expired.token, used.token, madeUp]) {
         const response = await world.apis.member.post('/api/invitations/accept', {
+          headers: SAME_ORIGIN,
           data: { token },
         });
         expect(response.status()).toBe(404);
@@ -259,8 +277,12 @@ test.describe('Organization invitations', () => {
     const page = await context.newPage();
     try {
       await page.goto(joinUrl(token));
-      // The address the invitation was made for is filled in.
-      await expect(page.getByLabel('이메일')).toHaveValue(address);
+      // The page shows a masked hint of the address, never the whole of it.
+      await expect(page.getByTestId('join-signed-out')).toContainText(
+        '초대받은 주소: x***@example.com'
+      );
+      await expect(page.getByTestId('join-signed-out')).not.toContainText(address);
+      await expect(page.getByLabel('이메일')).toHaveValue('');
       await page.getByLabel('이메일').fill(`someone-else-${world.stamp}@example.com`);
       await page.getByLabel('이름').fill('Wrong Address');
       await page.getByLabel('비밀번호').fill('Password123!');
@@ -274,7 +296,10 @@ test.describe('Organization invitations', () => {
         ).rowCount
       ).toBe(0);
       // An account with another address is refused too, and the invitation stays pending.
-      const mismatch = await world.apis.loner.post('/api/invitations/accept', { data: { token } });
+      const mismatch = await world.apis.loner.post('/api/invitations/accept', {
+        headers: SAME_ORIGIN,
+        data: { token },
+      });
       expect(mismatch.status()).toBe(403);
       expect((await mismatch.json()).code).toBe('invitation_email_mismatch');
       const list = await (await world.apis.owner.get('/api/organization/invitations')).json();
@@ -394,7 +419,10 @@ test.describe('Organization invitations', () => {
       expect([403, 404]).toContain((await apis.member.get(`/api/pages/${pageId}`)).status());
 
       const { token } = await invite(apis.owner);
-      const joined = await apis.member.post('/api/invitations/accept', { data: { token } });
+      const joined = await apis.member.post('/api/invitations/accept', {
+        headers: SAME_ORIGIN,
+        data: { token },
+      });
       expect(joined.status()).toBe(200);
       expect((await joined.json()).status).toBe('joined');
 
@@ -446,11 +474,19 @@ test.describe('Organization invitations', () => {
       // The token travelled in a POST body, and no address carries it.
       expect(seen.bodies.some((b) => b.includes(token))).toBe(true);
       expect(seen.urls.filter((u) => u.includes(token))).toEqual([]);
-      // The page's own API calls do not carry the cookie.
-      const sent = await context.request.get('/api/auth/signup-policy');
-      expect(sent.status()).toBe(200);
-      const apiCookies = await context.cookies(`${BASE_URL}/api/organization`);
-      expect(apiCookies.find((c) => c.name === 'invitation_intent')).toBeUndefined();
+      // The cookie goes to the sign-in routes only: watch the headers of real requests.
+      const apiRequest = page.waitForRequest((r) => r.url().endsWith('/api/organization'));
+      await page.evaluate(() =>
+        (window as any).__ORIGINAL_FETCH__('/api/organization', { credentials: 'include' })
+      );
+      expect((await (await apiRequest).allHeaders()).cookie ?? '').not.toContain(
+        'invitation_intent'
+      );
+      const authRequest = page.waitForRequest((r) => r.url().endsWith('/api/auth/signup-policy'));
+      await page.evaluate(() =>
+        (window as any).__ORIGINAL_FETCH__('/api/auth/signup-policy', { credentials: 'include' })
+      );
+      expect((await (await authRequest).allHeaders()).cookie ?? '').toContain('invitation_intent');
       // The invitation was not used up by any of this.
       const list = await (await world.apis.owner.get('/api/organization/invitations')).json();
       expect(list[0].status).toBe('pending');
@@ -460,27 +496,77 @@ test.describe('Organization invitations', () => {
     }
   });
 
-  test('the registration page says what the sign-up policy is', async ({ browser }) => {
-    for (const [mode, shown, hidden] of [
-      ['open', null, ['register-invite-only', 'register-closed']],
-      ['invite_only', 'register-invite-only', ['register-closed']],
-      ['closed', 'register-closed', ['register-invite-only']],
-    ] as const) {
-      const context = await browser.newContext({ baseURL: BASE_URL });
-      try {
-        const page = await context.newPage();
-        await page.route('**/api/auth/signup-policy', (route) => route.fulfill({ json: { mode } }));
-        await page.goto('/register');
-        if (shown) await expect(page.getByTestId(shown)).toBeVisible();
-        for (const id of hidden) await expect(page.getByTestId(id)).toHaveCount(0);
-        if (mode === 'closed') {
-          await expect(page.getByRole('button', { name: 'Register', exact: true })).toHaveCount(0);
-        } else {
-          await expect(page.getByRole('button', { name: 'Register', exact: true })).toBeVisible();
-        }
-      } finally {
-        await context.close();
-      }
+  test('on a deployment that never set SIGNUP_MODE the registration page is the plain form', async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({ baseURL: BASE_URL });
+    try {
+      const page = await context.newPage();
+      const policy = page.waitForResponse((r) => r.url().endsWith('/api/auth/signup-policy'));
+      await page.goto('/register');
+      expect(await (await policy).json()).toEqual({ mode: 'open' });
+      await expect(page.getByRole('button', { name: 'Register', exact: true })).toBeVisible();
+      await expect(page.getByTestId('register-invite-only')).toHaveCount(0);
+      await expect(page.getByTestId('register-closed')).toHaveCount(0);
+    } finally {
+      await context.close();
     }
+  });
+
+  test('another site cannot choose the organization a visitor joins: a cross-site form post sets no invitation cookie', async ({
+    browser,
+    request,
+  }) => {
+    test.setTimeout(240_000);
+    const world = await makeWorld(request, 'xsite');
+    const { token } = await invite(world.apis.owner);
+    const context = await browser.newContext({ baseURL: BASE_URL });
+    const page = await context.newPage();
+    try {
+      // A page on another origin (served from the test, no network) posts a form to this app.
+      await page.route('http://other-site.example/**', (route) =>
+        route.fulfill({
+          contentType: 'text/html',
+          body: `<form id="f" method="post" action="${BASE_URL}/api/auth/oauth-invitation">
+                   <input name="token" value="${token}"></form>
+                 <script>document.getElementById('f').submit()</script>`,
+        })
+      );
+      const answered = page.waitForResponse((r) => r.url().endsWith('/api/auth/oauth-invitation'));
+      await page.goto('http://other-site.example/');
+      expect((await answered).status()).toBe(403);
+      expect(
+        (await context.cookies(BASE_URL)).find((c) => c.name === 'invitation_intent')
+      ).toBeUndefined();
+      // The same request made by this application's own page is accepted.
+      await page.goto(`${BASE_URL}/login`);
+      const own = await page.evaluate(async (t) => {
+        const r = await fetch('/api/auth/oauth-invitation', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: t }),
+        });
+        return r.status;
+      }, token);
+      expect(own).toBe(204);
+    } finally {
+      await context.close();
+      await world.dispose();
+    }
+  });
+
+  test('an address is taken when an account has it ignoring case, on an open deployment too', async ({
+    request,
+  }) => {
+    const base = `x1d-case-${Date.now()}@example.com`;
+    const first = await request.post('/api/auth/register', {
+      data: { name: 'Case One', email: base, password: 'Password123!' },
+    });
+    expect(first.status()).toBe(201);
+    const variant = await request.post('/api/auth/register', {
+      data: { name: 'Case Two', email: base.toUpperCase(), password: 'Password123!' },
+    });
+    expect(variant.status()).toBe(409);
   });
 });

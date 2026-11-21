@@ -15,6 +15,10 @@
  */
 import { test, expect } from '@playwright/test';
 import { spawn, type ChildProcess } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { Pool } from 'pg';
 import { createAuthenticatedApiContext } from './e2e-helpers';
 import {
   invite,
@@ -30,13 +34,20 @@ const INVITE_ONLY_PORT = SHARED_PORT + 1000;
 const CLOSED_PORT = SHARED_PORT + 1001;
 const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 const BOOTSTRAP_INVITE_ONLY = `bootstrap-io-${stamp}@example.com`;
+const BOOTSTRAP_INVITE_ONLY_B = `bootstrap-iob-${stamp}@example.com`;
 const BOOTSTRAP_CLOSED = `bootstrap-closed-${stamp}@example.com`;
 const origin = (port: number) => `http://localhost:${port}`;
 
 const children: ChildProcess[] = [];
+// What the spawned servers print goes to files in the temp directory; a server that fails to
+// start fails the spec with the end of its output.
+const LOG_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'papyr-signup-mode-'));
 
-async function startServer(mode: string, port: number, adminEmail: string) {
+async function startServer(mode: string, port: number, adminEmails: string) {
   if (!DATABASE_URL) throw new Error('DATABASE_URL is required');
+  const logPath = path.join(LOG_DIR, `server-${mode}.log`);
+  const out = fs.openSync(logPath, 'a');
+  let exited: number | null | undefined;
   const child = spawn('npx', ['tsx', 'server/index.ts'], {
     cwd: process.cwd(),
     env: {
@@ -45,21 +56,30 @@ async function startServer(mode: string, port: number, adminEmail: string) {
       NODE_ENV: 'test',
       ENFORCE_AUTH_WRITES: 'true',
       SIGNUP_MODE: mode,
-      ADMIN_EMAILS: adminEmail,
+      ADMIN_EMAILS: adminEmails,
     },
-    stdio: 'ignore',
+    stdio: ['ignore', out, out],
     detached: true,
   });
+  child.on('exit', (code) => {
+    exited = code;
+  });
   children.push(child);
+  const tail = () => fs.readFileSync(logPath, 'utf8').split('\n').slice(-40).join('\n');
   const deadline = Date.now() + 180_000;
   for (;;) {
+    if (exited !== undefined) {
+      throw new Error(`server for SIGNUP_MODE=${mode} exited (${exited}); ${logPath}:\n${tail()}`);
+    }
     try {
       const response = await fetch(`${origin(port)}/health`);
       if (response.ok) return;
     } catch {
       // not up yet
     }
-    if (Date.now() > deadline) throw new Error(`server for SIGNUP_MODE=${mode} did not start`);
+    if (Date.now() > deadline) {
+      throw new Error(`server for SIGNUP_MODE=${mode} did not start; ${logPath}:\n${tail()}`);
+    }
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
 }
@@ -82,7 +102,11 @@ test.describe.configure({ mode: 'serial' });
 test.beforeAll(async ({ browser }) => {
   test.setTimeout(600_000);
   await Promise.all([
-    startServer('invite_only', INVITE_ONLY_PORT, BOOTSTRAP_INVITE_ONLY),
+    startServer(
+      'invite_only',
+      INVITE_ONLY_PORT,
+      `${BOOTSTRAP_INVITE_ONLY},${BOOTSTRAP_INVITE_ONLY_B}`
+    ),
     startServer('closed', CLOSED_PORT, BOOTSTRAP_CLOSED),
   ]);
   // A development server compiles the client when it is first asked for it, which on a busy
@@ -121,9 +145,13 @@ test.describe('SIGNUP_MODE=invite_only', () => {
   }) => {
     test.setTimeout(240_000);
     const existing = await playwright.request.newContext({ baseURL: origin(SHARED_PORT) });
+    const db = new Pool({ connectionString: DATABASE_URL });
     const taken = `policy-taken-${stamp}@example.com`;
     expect((await existing.post('/api/auth/register', { data: body(taken) })).status()).toBe(201);
-    const api = await playwright.request.newContext({ baseURL: origin(INVITE_ONLY_PORT) });
+    const api = await playwright.request.newContext({
+      baseURL: origin(INVITE_ONLY_PORT),
+      extraHTTPHeaders: { Origin: origin(INVITE_ONLY_PORT) },
+    });
     try {
       const fresh = `policy-fresh-${stamp}@example.com`;
       const refusedFresh = await api.post('/api/auth/register', { data: body(fresh) });
@@ -149,9 +177,46 @@ test.describe('SIGNUP_MODE=invite_only', () => {
         data: body(`policy-other-${stamp}@example.com`),
       });
       expect(other.status()).toBe(403);
+
+      // The bootstrap account is placed in the default organization, as a member.
+      const placed = await db.query(
+        `SELECT o.slug, m.role FROM organization_members m
+           JOIN organizations o ON o.id = m.organization_id
+           JOIN users u ON u.id = m.user_id WHERE u.email = $1`,
+        [BOOTSTRAP_INVITE_ONLY]
+      );
+      expect(placed.rows).toEqual([{ slug: 'default', role: 'member' }]);
+      // The refused sign-ups created no account.
+      const refused = await db.query(`SELECT email FROM users WHERE email = ANY($1)`, [
+        [fresh, `policy-other-${stamp}@example.com`],
+      ]);
+      expect(refused.rows).toEqual([]);
+
+      // The bootstrap admits an address only while no account has it, ignoring case. First order:
+      // the lower-case address exists, so its upper-case form is an ordinary, refused address.
+      const variant = await api.post('/api/auth/register', {
+        data: body(BOOTSTRAP_INVITE_ONLY.toUpperCase()),
+      });
+      expect(variant.status()).toBe(409);
+      // Second order: an account with the upper-case form exists first (made on the open
+      // server), then the listed lower-case address cannot register as an administrator.
+      expect(
+        (
+          await existing.post('/api/auth/register', {
+            data: body(BOOTSTRAP_INVITE_ONLY_B.toUpperCase()),
+          })
+        ).status()
+      ).toBe(201);
+      const second = await api.post('/api/auth/register', { data: body(BOOTSTRAP_INVITE_ONLY_B) });
+      expect(second.status()).toBe(409);
+      const copies = await db.query(`SELECT email FROM users WHERE lower(email) = ANY($1)`, [
+        [BOOTSTRAP_INVITE_ONLY.toLowerCase(), BOOTSTRAP_INVITE_ONLY_B.toLowerCase()],
+      ]);
+      expect(copies.rows).toHaveLength(2);
     } finally {
       await api.dispose();
       await existing.dispose();
+      await db.end();
     }
   });
 
@@ -213,7 +278,10 @@ test.describe('SIGNUP_MODE=closed', () => {
     test.setTimeout(240_000);
     const world: World = await makeWorld(request, 'policy-closed');
     const { token, id } = await invite(world.apis.owner);
-    const api = await playwright.request.newContext({ baseURL: origin(CLOSED_PORT) });
+    const api = await playwright.request.newContext({
+      baseURL: origin(CLOSED_PORT),
+      extraHTTPHeaders: { Origin: origin(CLOSED_PORT) },
+    });
     try {
       for (const data of [
         body(`closed-plain-${stamp}@example.com`),
@@ -243,7 +311,10 @@ test.describe('SIGNUP_MODE=closed', () => {
         origin(CLOSED_PORT)
       );
       try {
-        const accepted = await loner.post('/api/invitations/accept', { data: { token } });
+        const accepted = await loner.post('/api/invitations/accept', {
+          headers: { Origin: origin(CLOSED_PORT) },
+          data: { token },
+        });
         expect(accepted.status()).toBe(200);
         expect((await accepted.json()).status).toBe('joined');
       } finally {
