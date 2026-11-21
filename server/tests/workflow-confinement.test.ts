@@ -63,6 +63,11 @@ beforeEach(() => {
   storage.getWorkflowRun.mockImplementation(async () => lastRun);
   storage.createComment.mockResolvedValue({ id: 1 });
   storage.updateWikiPage.mockResolvedValue({});
+  // The tags merge answers the tags the page ends up with.
+  storage.mergePageTags.mockImplementation(async (id: number, change: { add?: string[] }) => ({
+    id,
+    tags: change.add ?? [],
+  }));
   storage.createWikiPage.mockImplementation(async (data: any) => ({ id: 100, ...data }));
   storage.createTask.mockImplementation(async (data: any) => ({ id: 200, ...data }));
   storage.updateTask.mockResolvedValue({});
@@ -73,6 +78,7 @@ beforeEach(() => {
 const noWrites = () => {
   expect(storage.createComment).not.toHaveBeenCalled();
   expect(storage.updateWikiPage).not.toHaveBeenCalled();
+  expect(storage.mergePageTags).not.toHaveBeenCalled();
   expect(storage.createWikiPage).not.toHaveBeenCalled();
   expect(storage.createTask).not.toHaveBeenCalled();
   expect(storage.updateTask).not.toHaveBeenCalled();
@@ -167,7 +173,9 @@ describe.each(['add_comment', 'add_tag', 'move_page'])('%s', (type) => {
     if (type === 'add_comment') {
       expect(storage.createComment).toHaveBeenCalledWith(expect.objectContaining({ pageId: 43 }));
     } else if (type === 'add_tag') {
-      expect(storage.updateWikiPage).toHaveBeenCalledWith(43, { tags: ['old', 'x'] });
+      // The write is the atomic tags merge on the row that was loaded and checked.
+      expect(storage.mergePageTags).toHaveBeenCalledWith(43, { add: ['x'] });
+      expect(storage.updateWikiPage).not.toHaveBeenCalled();
     } else {
       expect(storage.updateWikiPage).toHaveBeenCalledWith(43, { folder: 'moved' });
     }
@@ -299,6 +307,9 @@ describe('writes use the id of the row that was loaded and checked', () => {
       expect(storage.getWikiPage).toHaveBeenCalledWith(12);
       if (type === 'add_comment') {
         expect(storage.createComment).toHaveBeenCalledWith(expect.objectContaining({ pageId: 12 }));
+      } else if (type === 'add_tag') {
+        expect(storage.mergePageTags).toHaveBeenCalledWith(12, { add: ['x'] });
+        expect(storage.updateWikiPage).not.toHaveBeenCalled();
       } else {
         expect(storage.updateWikiPage).toHaveBeenCalledWith(12, expect.any(Object));
       }

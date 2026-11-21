@@ -441,6 +441,8 @@ describe('tag changes equal what reading and writing the tags back did (real Pos
   });
 
   describe('the workflow add_tag action', () => {
+    const TEAM = 5;
+    const OTHER_TEAM = 9;
     let workflow: typeof import('../../server/services/workflow.js');
     const runs: any[] = [];
     const run = async (pageId: number, tags: unknown) => {
@@ -449,6 +451,7 @@ describe('tag changes equal what reading and writing the tags back did (real Pos
         {
           id: 1,
           name: 'tag',
+          teamId: TEAM,
           conditions: [],
           actions: [{ type: 'add_tag', config: { tags } }],
         } as any,
@@ -456,64 +459,73 @@ describe('tag changes equal what reading and writing the tags back did (real Pos
       );
       return runs[runs.length - 1] as { status: string; results?: any[]; error?: string };
     };
+    const pageOfTeam = async (slug: string, tags: string[], teamId: number | null = TEAM) => {
+      const id = await withTags(slug, tags);
+      await admin.query(`UPDATE ${SCHEMA}.wiki_pages SET team_id = $2 WHERE id = $1`, [id, teamId]);
+      return id;
+    };
+    const tagsOf = async (id: number) =>
+      (await admin.query(`SELECT tags FROM ${SCHEMA}.wiki_pages WHERE id = $1`, [id])).rows[0].tags;
 
     beforeAll(async () => {
       workflow = await import('../../server/services/workflow.js');
+      // Pages are read and tags merged through the real storage; runs are only recorded.
       workflow.initWorkflowService({
         createWorkflowRun: async () => 1,
         updateWorkflowRun: async (_id: number, update: any) => runs.push(update),
         getWorkflowRun: async () => ({}),
-        searchWikiPages: (...args: any[]) => storage.searchWikiPages(...args),
+        getWikiPage: (...args: any[]) => storage.getWikiPage(...args),
         mergePageTags: (...args: any[]) => storage.mergePageTags(...args),
-        updateWikiPage: (...args: any[]) => storage.updateWikiPage(...args),
       } as any);
     });
 
-    it('adds the tags, collapsing duplicates, and answers the resulting list', async () => {
-      const id = await withTags('wf-add', ['a', 'a', 'b']);
+    it('adds the tags to a page of its team, collapsing duplicates as the Set it replaces did', async () => {
+      const id = await pageOfTeam('wf-add', ['a', 'a', 'b']);
       const outcome = await run(id, ['c', 'a']);
       expect(outcome.status).toBe('success');
       expect(outcome.results?.[0].result.tags).toEqual(tagsBefore(['a', 'a', 'b'], ['c', 'a']));
-      expect((await storage.getWikiPage(id)).tags).toEqual(['a', 'b', 'c']);
+      expect(await tagsOf(id)).toEqual(['a', 'b', 'c']);
     });
 
-    it('does not find a trashed page', async () => {
-      const id = await withTags('wf-trashed', ['a']);
+    it('does not find a trashed page, and leaves it untouched', async () => {
+      const id = await pageOfTeam('wf-trashed', ['a']);
       await admin.query(`UPDATE ${SCHEMA}.wiki_pages SET deleted_at = NOW() WHERE id = $1`, [id]);
       const outcome = await run(id, ['b']);
       expect(outcome.status).toBe('failed');
       expect(outcome.error).toBe('Page not found');
-      const { rows } = await admin.query(`SELECT tags FROM ${SCHEMA}.wiki_pages WHERE id = $1`, [
-        id,
-      ]);
-      expect(rows[0].tags).toEqual(['a']);
+      expect(await tagsOf(id)).toEqual(['a']);
     });
 
-    it('selects the page through the same search, with its bound of 1000 results', async () => {
-      await admin.query(
-        `INSERT INTO ${SCHEMA}.wiki_pages (title, slug, content, blocks, author, tags)
-         SELECT 'Filler ' || n, 'filler-' || n, 'x', '[]', 'author', '{}' FROM generate_series(1, 1005) n`
-      );
+    it.each([
+      ['another team', OTHER_TEAM],
+      ['no team', null],
+    ])('does not find a page of %s, and leaves it untouched', async (_name, teamId) => {
+      const id = await pageOfTeam(`wf-team-${teamId}`, ['a'], teamId);
+      const outcome = await run(id, ['b']);
+      expect(outcome.status).toBe('failed');
+      expect(outcome.error).toBe('Page not found');
+      expect(await tagsOf(id)).toEqual(['a']);
+    });
+
+    it('keeps a tag someone saved while the workflow ran', async () => {
+      const id = await pageOfTeam('wf-concurrent', ['a']);
+      const holder = await admin.connect();
       try {
-        const first = await storage.searchWikiPages({ query: '', limit: 1000, offset: 0 });
-        const { rows } = await admin.query(`SELECT id FROM ${SCHEMA}.wiki_pages`);
-        const outside = rows
-          .map((r: { id: number }) => r.id)
-          .find((id: number) => !first.pages.some((p: { id: number }) => p.id === id));
-        expect(outside).toBeDefined();
-        const outcome = await run(outside, ['b']);
-        expect(outcome.status).toBe('failed');
-        expect(outcome.error).toBe('Page not found');
-        const { rows: tags } = await admin.query(
-          `SELECT tags FROM ${SCHEMA}.wiki_pages WHERE id = $1`,
-          [outside]
-        );
-        expect(tags[0].tags).not.toContain('b');
-        // One inside the bound is found.
-        const inside = first.pages[0].id;
-        expect((await run(inside, ['b'])).status).toBe('success');
+        // Someone's save is in flight (holding the row) when the workflow has read the page.
+        await holder.query('BEGIN');
+        await holder.query(`UPDATE ${SCHEMA}.wiki_pages SET tags = $2 WHERE id = $1`, [
+          id,
+          ['a', 'saved-meanwhile'],
+        ]);
+        const running = run(id, ['from-workflow']);
+        await waitForLockWaiter();
+        await holder.query('COMMIT');
+        const outcome = await running;
+        expect(outcome.status).toBe('success');
+        expect(await tagsOf(id)).toEqual(['a', 'saved-meanwhile', 'from-workflow']);
+        expect(outcome.results?.[0].result.tags).toEqual(['a', 'saved-meanwhile', 'from-workflow']);
       } finally {
-        await admin.query(`DELETE FROM ${SCHEMA}.wiki_pages WHERE slug LIKE 'filler-%'`);
+        holder.release();
       }
     });
   });
