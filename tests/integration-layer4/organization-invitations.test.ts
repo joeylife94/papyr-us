@@ -844,6 +844,97 @@ describe('an address is taken when an account has it ignoring case', () => {
   });
 });
 
+describe('three case variants of one address at the same moment', () => {
+  const variants = (base: string) => [
+    base.toLowerCase(),
+    base.toUpperCase(),
+    base[0].toUpperCase() + base.slice(1).toLowerCase(),
+  ];
+  const count = async (base: string) =>
+    (
+      await one(`SELECT count(*)::int AS n FROM users WHERE lower(email) = $1`, [
+        base.toLowerCase(),
+      ])
+    ).n;
+
+  it('sign-up into the default organization: exactly one account per address, and the others are told it is taken', async () => {
+    const { createUserInDefaultOrganization } = await import('../../server/organizations.js');
+    for (let round = 0; round < 10; round += 1) {
+      const base = `race-default-${round}@example.com`;
+      const results = await Promise.allSettled(
+        variants(base).map((email) =>
+          createUserInDefaultOrganization(storage.db, { name: 'Racer', email, provider: 'local' })
+        )
+      );
+      expect(
+        results.filter((r) => r.status === 'fulfilled'),
+        `round ${round}`
+      ).toHaveLength(1);
+      for (const r of results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[]) {
+        expect(r.reason.name).toBe('EmailTakenError');
+      }
+      expect(await count(base)).toBe(1);
+      // the account that exists is placed in the default organization
+      const placed = await one(
+        `SELECT m.organization_id FROM organization_members m JOIN users u ON u.id = m.user_id WHERE lower(u.email) = $1`,
+        [base.toLowerCase()]
+      );
+      expect(Number(placed.organization_id)).toBe(defaultId);
+    }
+  });
+
+  it('sign-up with an invitation: exactly one account per address, and the other invitations stay pending', async () => {
+    for (let round = 0; round < 10; round += 1) {
+      const base = `race-invite-${round}@example.com`;
+      // invitations of two organizations, so the organization lock alone cannot serialize them
+      const invites = await Promise.all(
+        variants(base).map((_, i) => (i === 1 ? create(ACME_OWNER, {}, acmeId) : create(OWNER)))
+      );
+      const results = await Promise.all(
+        variants(base).map((email, i) =>
+          storage.registerWithOrganizationInvitation(invites[i].token, {
+            name: 'Racer',
+            email,
+            hashedPassword: 'x',
+            provider: 'local',
+          })
+        )
+      );
+      expect(
+        results.filter((r: any) => r.kind === 'registered'),
+        `round ${round}`
+      ).toHaveLength(1);
+      expect(results.filter((r: any) => r.kind === 'email_taken')).toHaveLength(2);
+      expect(await count(base)).toBe(1);
+      const pending = await rows(
+        `SELECT 1 FROM organization_invitations WHERE accepted_at IS NULL AND revoked_at IS NULL AND id = ANY($1)`,
+        [invites.map((i) => i.invitation.id)]
+      );
+      expect(pending).toHaveLength(2);
+    }
+  });
+
+  it('the default-organization path and the invitation path racing for one address: one account', async () => {
+    const { createUserInDefaultOrganization } = await import('../../server/organizations.js');
+    for (let round = 0; round < 10; round += 1) {
+      const base = `race-mixed-${round}@example.com`;
+      const [a, b] = variants(base);
+      const { token } = await create(OWNER);
+      const results = await Promise.allSettled([
+        createUserInDefaultOrganization(storage.db, { name: 'A', email: a, provider: 'local' }),
+        storage.registerWithOrganizationInvitation(token, {
+          name: 'B',
+          email: b,
+          hashedPassword: 'x',
+          provider: 'local',
+        }),
+      ]);
+      expect(await count(base), `round ${round}`).toBe(1);
+      expect(results).toHaveLength(2);
+    }
+  });
+});
+
 describe('migration 0029', () => {
   const exists = async (client: Pool) =>
     (await client.query(`SELECT to_regclass('organization_invitations') AS t`)).rows[0].t !== null;

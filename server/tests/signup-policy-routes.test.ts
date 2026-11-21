@@ -321,3 +321,15 @@ describe('an address is taken when an account has it ignoring case', () => {
     expect(res.status).toBe(503);
   });
 });
+
+describe('two sign-ups for one address at once', () => {
+  it('the default-organization path answers the existing-address 409 when the account helper reports the address taken under its lock', async () => {
+    process.env.SIGNUP_MODE = 'open';
+    (createUserInDefaultOrganization as any).mockRejectedValueOnce(
+      Object.assign(new Error('email_taken'), { name: 'EmailTakenError' })
+    );
+    const res = await register(body());
+    expect(res.status).toBe(409);
+    expect(res.body.message).toBe('User with this email already exists');
+  });
+});

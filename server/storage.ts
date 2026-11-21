@@ -98,7 +98,7 @@ import type { RetrievedPageRow } from './services/retrieval.js';
 import type { PageTreeRow } from './services/page-tree.js';
 import type { TagPaneRow } from './services/tag-pane.js';
 import { postgresErrorOf } from './db-errors.js';
-import { defaultOrganizationId } from './organizations.js';
+import { defaultOrganizationId, lockAddressAndCheckTaken } from './organizations.js';
 import {
   MAX_PENDING_INVITATIONS,
   decideInvitationAcceptance,
@@ -3345,12 +3345,10 @@ export class DBStorage {
         ) {
           return { kind: 'email_mismatch' as const };
         }
-        const [taken] = await tx
-          .select({ id: users.id })
-          .from(users)
-          .where(sql`lower(${users.email}) = ${values.email.toLowerCase()}`)
-          .limit(1);
-        if (taken) return { kind: 'email_taken' as const };
+        // Organization lock (held) first, then the address lock; see lockAddressAndCheckTaken.
+        if (await lockAddressAndCheckTaken(tx, values.email)) {
+          return { kind: 'email_taken' as const };
+        }
         const [user] = await tx.insert(users).values(values).returning();
         await tx.insert(organizationMembers).values({
           organizationId,

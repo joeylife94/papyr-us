@@ -6,7 +6,7 @@ import { eq, sql } from 'drizzle-orm';
 import { config } from '../config.js';
 import { createUserInDefaultOrganization } from '../organizations.js';
 import {
-  INVITATION_INTENT_COOKIE,
+  invitationIntentCookie,
   decideSignup,
   isPlausibleInvitationToken,
 } from '../organization-invitations.js';
@@ -25,6 +25,7 @@ export type SocialSignInRefusal =
   | 'invitation_invalid'
   | 'invitation_email_mismatch'
   | 'email_taken'
+  | 'email_unverified'
   | 'organization_busy';
 
 function isVerified(entry: any): boolean {
@@ -32,18 +33,23 @@ function isVerified(entry: any): boolean {
 }
 
 /**
- * The address entry of a profile. GitHub returns all of the account's addresses (allRawEmails):
- * the primary verified one is used; a primary that is not verified is used as an unverified
- * address, never another entry's verification. Google returns one entry.
+ * The address entry a profile signs in with. GitHub (allRawEmails) returns every address of the
+ * account with its verification: the public profile address when GitHub reports one (what the
+ * account was matched on before addresses were read from the list), else the primary address;
+ * either counts only when the list marks that exact address verified. There is no fallback to an
+ * unverified address or to the first entry: null means there is no verified address to use.
+ * Google returns the one address it vouches for.
  */
 function addressEntryOf(provider: 'google' | 'github', profile: any): any {
   const entries: any[] = Array.isArray(profile.emails) ? profile.emails : [];
   if (provider === 'github') {
-    return (
-      entries.find((e) => e?.primary === true && isVerified(e)) ??
-      entries.find((e) => e?.primary === true) ??
-      entries[0]
-    );
+    const verified = entries.filter((e) => isVerified(e) && typeof e?.value === 'string');
+    const publicAddress = profile._json?.email;
+    if (typeof publicAddress === 'string' && publicAddress !== '') {
+      const entry = verified.find((e) => e.value === publicAddress);
+      if (entry) return entry;
+    }
+    return verified.find((e) => e.primary === true) ?? null;
   }
   return entries[0];
 }
@@ -65,6 +71,10 @@ async function signInSocialProfile(
 ) {
   const emailEntry = addressEntryOf(provider, profile);
   const email = emailEntry?.value;
+  if (!email && provider === 'github') {
+    // No verified address to sign in with.
+    return done(null, false, { code: 'email_unverified' satisfies SocialSignInRefusal });
+  }
   if (!email) {
     return done(
       new Error(`No email found from ${provider === 'google' ? 'Google' : 'GitHub'}`),
@@ -75,7 +85,7 @@ async function signInSocialProfile(
     provider === 'google'
       ? profile.displayName || email.split('@')[0]
       : profile.displayName || profile.username || email.split('@')[0];
-  const rawToken = req?.cookies?.[INVITATION_INTENT_COOKIE];
+  const rawToken = req?.cookies?.[invitationIntentCookie(config.isProduction).name];
   const hasToken = rawToken !== undefined && rawToken !== null && rawToken !== '';
 
   // An address is taken when an account has it ignoring case. The account with exactly this
@@ -127,6 +137,9 @@ async function signInSocialProfile(
 
 /** A busy organization is "try again", not a server error; anything else goes to the error handler. */
 function failSocialSignIn(error: any, done: (err: any, user?: any, info?: any) => void) {
+  if (error?.name === 'EmailTakenError') {
+    return done(null, false, { code: 'email_taken' satisfies SocialSignInRefusal });
+  }
   if (error?.name === 'OrganizationBusyError') {
     return done(null, false, { code: 'organization_busy' satisfies SocialSignInRefusal });
   }

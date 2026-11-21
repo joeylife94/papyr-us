@@ -53,7 +53,8 @@ const app = express();
     logger.warn(
       'TRUST_PROXY is not set: behind a reverse proxy every client shares the proxy address, ' +
         'so the per-address rate limits count all of them together. Set TRUST_PROXY to the number ' +
-        'of proxies in front of the server.'
+        'of proxy hops in front of the server (for example 1). Do not use true: it trusts any ' +
+        'client-supplied X-Forwarded-For, which also feeds the rate limits and ADMIN_IP_WHITELIST.'
     );
   }
 }

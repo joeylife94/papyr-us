@@ -41,11 +41,13 @@ const origin = (port: number) => `http://localhost:${port}`;
 const children: ChildProcess[] = [];
 // What the spawned servers print goes to files in the temp directory; a server that fails to
 // start fails the spec with the end of its output.
-const LOG_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'papyr-signup-mode-'));
+let logDir: string | undefined;
+const logDirectory = () =>
+  (logDir ??= fs.mkdtempSync(path.join(os.tmpdir(), 'papyr-signup-mode-')));
 
 async function startServer(mode: string, port: number, adminEmails: string) {
   if (!DATABASE_URL) throw new Error('DATABASE_URL is required');
-  const logPath = path.join(LOG_DIR, `server-${mode}.log`);
+  const logPath = path.join(logDirectory(), `server-${mode}.log`);
   const out = fs.openSync(logPath, 'a');
   let exited: number | null | undefined;
   const child = spawn('npx', ['tsx', 'server/index.ts'], {
@@ -130,6 +132,8 @@ test.beforeAll(async ({ browser }) => {
 
 test.afterAll(() => {
   stopServers();
+  // The captured output is only for a failure, which has already put it in the error.
+  if (logDir) fs.rmSync(logDir, { recursive: true, force: true });
 });
 
 const body = (email: string, extra: object = {}) => ({

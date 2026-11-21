@@ -21,7 +21,7 @@ import { authMiddleware, buildAccountRateLimiter, type AuthRequest } from './mid
 import { requireOrganizationRole, type OrganizationRequest } from './organization-guards.js';
 import {
   INVITATION_DEFAULT_DAYS,
-  INVITATION_INTENT_COOKIE,
+  invitationIntentCookie,
   INVITATION_INVALID_BODY,
   INVITATION_MAX_DAYS,
   isPlausibleInvitationToken,
@@ -37,8 +37,7 @@ export function invitationIntentCookieOptions() {
     httpOnly: true,
     secure: config.isProduction,
     sameSite: 'lax' as const,
-    // Only the sign-in routes see it; it is never sent to the API the page uses.
-    path: '/api/auth',
+    path: invitationIntentCookie(config.isProduction).path,
   };
 }
 
@@ -352,7 +351,7 @@ export function registerOrganizationInvitationRoutes(app: Express, storage: DBSt
     if (!parsed.success || !isPlausibleInvitationToken(parsed.data.token)) {
       return invalidInvitation(res);
     }
-    res.cookie(INVITATION_INTENT_COOKIE, parsed.data.token, {
+    res.cookie(invitationIntentCookie(config.isProduction).name, parsed.data.token, {
       ...invitationIntentCookieOptions(),
       maxAge: INTENT_COOKIE_MAX_AGE_MS,
     });

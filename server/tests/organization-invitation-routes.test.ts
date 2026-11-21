@@ -545,6 +545,26 @@ describe('the sign-in cookie that carries a token through a social sign-in', () 
     expect(cookie).toMatch(/Path=\/api\/auth(;|$)/);
     expect(cookie).toMatch(/SameSite=Lax/i);
     expect(cookie).toMatch(/Max-Age=600/);
+    expect(cookie).not.toMatch(/Secure/i);
+  });
+
+  it('HTTPS: a __Host- cookie (Secure, Path=/, no Domain) that a sibling subdomain cannot replace', async () => {
+    configMock.config.isProduction = true;
+    try {
+      const res = await call(null, 'post', '/api/auth/oauth-invitation', { token: TOKEN });
+      expect(res.status).toBe(204);
+      const cookie = String(res.headers['set-cookie']);
+      expect(cookie).toContain(`__Host-invitation_intent=${TOKEN}`);
+      expect(cookie).toMatch(/Path=\/(;|$)/);
+      expect(cookie).toMatch(/Secure/i);
+      expect(cookie).toMatch(/HttpOnly/i);
+      expect(cookie).toMatch(/SameSite=Lax/i);
+      expect(cookie).toMatch(/Max-Age=600/);
+      expect(cookie).not.toMatch(/Domain=/i);
+      expect(cookie).not.toMatch(/(^|[;,] ?)invitation_intent=/);
+    } finally {
+      configMock.config.isProduction = false;
+    }
   });
 });
 

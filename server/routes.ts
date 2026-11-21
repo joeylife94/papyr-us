@@ -115,7 +115,7 @@ import {
   requireSameOriginJson,
 } from './organization-invitation-routes.js';
 import {
-  INVITATION_INTENT_COOKIE,
+  invitationIntentCookie,
   INVITATION_INVALID_BODY,
   SIGNUP_REFUSAL_MESSAGES,
   decideSignup,
@@ -491,6 +491,9 @@ export async function registerRoutes(
         code: error.code,
         stack: error instanceof Error ? error.stack : undefined,
       });
+      if (error?.name === 'EmailTakenError') {
+        return res.status(409).json({ message: 'User with this email already exists' });
+      }
       if (error?.name === 'OrganizationBusyError') {
         return res.status(503).json({ message: 'Organization is busy, try again' });
       }
@@ -689,7 +692,10 @@ export async function registerRoutes(
     (provider: 'google' | 'github'): RequestHandler =>
     (req, res, next) => {
       passport.authenticate(provider, { session: false }, (err: unknown, user: any, info: any) => {
-        res.clearCookie(INVITATION_INTENT_COOKIE, invitationIntentCookieOptions());
+        res.clearCookie(
+          invitationIntentCookie(config.isProduction).name,
+          invitationIntentCookieOptions()
+        );
         if (err) return next(err);
         if (!user) {
           const code = typeof info?.code === 'string' ? info.code : null;

@@ -11,8 +11,18 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { OrganizationRole } from '../shared/schema.js';
 import type { SignupMode } from './config.js';
 
-/** The cookie that carries an invitation token through a social sign-in (httpOnly, sent only to /api/auth). */
-export const INVITATION_INTENT_COOKIE = 'invitation_intent';
+/**
+ * The cookie that carries an invitation token through a social sign-in. Where the app sets
+ * Secure cookies (HTTPS) it is a `__Host-` cookie, which the browser accepts only with Secure,
+ * Path=/ and no Domain, so a sibling subdomain cannot set or replace it; on plain HTTP
+ * (development) it is the ordinary name, kept to the sign-in routes by its path. Only the social
+ * sign-in callbacks read it, and only the name that matches the current mode.
+ */
+export function invitationIntentCookie(secure: boolean): { name: string; path: string } {
+  return secure
+    ? { name: '__Host-invitation_intent', path: '/' }
+    : { name: 'invitation_intent', path: '/api/auth' };
+}
 
 /** Bytes of randomness in a token (256 bits). */
 export const INVITATION_TOKEN_BYTES = 32;

@@ -33,6 +33,8 @@ export default function LoginPage() {
         return '이 초대는 다른 이메일 주소로 보낸 것입니다. 초대받은 주소의 계정으로 로그인하세요.';
       case 'email_taken':
         return '이미 가입된 이메일입니다. 기존 계정으로 로그인하세요.';
+      case 'email_unverified':
+        return 'GitHub 계정에 확인된(verified) 이메일 주소가 없습니다. GitHub에서 이메일을 확인한 뒤 다시 시도하세요.';
       case 'organization_busy':
         return '조직이 다른 변경을 처리 중입니다. 잠시 후 다시 시도하세요.';
       default:

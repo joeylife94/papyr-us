@@ -6,7 +6,7 @@
  * handle instead of DBStorage so the OAuth strategies (server/services/passport.ts), which
  * cannot import storage, place accounts the same way the registration route does.
  */
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import {
   DEFAULT_ORGANIZATION_SLUG,
   organizationMembers,
@@ -31,9 +31,40 @@ export async function defaultOrganizationId(db: any): Promise<number> {
   return Number(row.id);
 }
 
+/** An account already has this address, ignoring case. */
+export class EmailTakenError extends Error {
+  constructor() {
+    super('email_taken');
+    this.name = 'EmailTakenError';
+  }
+}
+
+/**
+ * Takes the transaction-scoped lock for one address (ignoring case) and says whether an account
+ * has it. Every path that creates an account calls this in the same transaction as its insert, so
+ * two sign-ups for case variants of one address are serialized and the second sees the first.
+ * Lock order: the address lock is the innermost one. A path that also needs an organization lock
+ * (sign-up with an invitation) takes the organization lock first; the default-organization
+ * paths take no organization lock, so no path holds an address lock while waiting for an
+ * organization lock and the two cannot deadlock.
+ */
+export async function lockAddressAndCheckTaken(tx: any, email: string): Promise<boolean> {
+  const address = email.toLowerCase();
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${'signup-address:' + address}, 0))`
+  );
+  const taken = await tx
+    .select({ id: users.id })
+    .from(users)
+    .where(sql`lower(${users.email}) = ${address}`)
+    .limit(1);
+  return taken.length > 0;
+}
+
 /**
  * Creates the account and its default-organization membership in one transaction, so no account
- * exists without an organization.
+ * exists without an organization. Throws EmailTakenError when an account has the address ignoring
+ * case (checked under the address lock, so concurrent sign-ups cannot both succeed).
  */
 export async function createUserInDefaultOrganization(
   db: any,
@@ -41,6 +72,7 @@ export async function createUserInDefaultOrganization(
 ): Promise<typeof users.$inferSelect> {
   const organizationId = await defaultOrganizationId(db);
   return db.transaction(async (tx: any) => {
+    if (await lockAddressAndCheckTaken(tx, values.email)) throw new EmailTakenError();
     const [user] = await tx.insert(users).values(values).returning();
     await tx
       .insert(organizationMembers)
