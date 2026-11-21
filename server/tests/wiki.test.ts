@@ -64,7 +64,11 @@ describe('Wiki Page Management API', () => {
       const response = await request(app).post('/api/pages').send(newPageData);
 
       expect(response.status).toBe(201);
-      expect(response.body).toEqual(expectedPage);
+      expect(response.body).toEqual({
+        ...expectedPage,
+        revision: expect.any(String),
+        fieldRevisions: expect.any(Object),
+      });
       expect(storage.createWikiPage).toHaveBeenCalledWith(expect.objectContaining(newPageData));
     });
 
@@ -88,7 +92,11 @@ describe('Wiki Page Management API', () => {
       const response = await request(app).get(`/api/pages/${mockPage.id}`);
 
       expect(response.status).toBe(200);
-      expect(response.body).toEqual(mockPage);
+      expect(response.body).toEqual({
+        ...mockPage,
+        revision: expect.any(String),
+        fieldRevisions: expect.any(Object),
+      });
       expect(storage.getWikiPage).toHaveBeenCalledWith(mockPage.id);
     });
 
@@ -110,7 +118,11 @@ describe('Wiki Page Management API', () => {
       const response = await request(app).get(`/api/pages/slug/${mockPage.slug}`);
 
       expect(response.status).toBe(200);
-      expect(response.body).toEqual(mockPage);
+      expect(response.body).toEqual({
+        ...mockPage,
+        revision: expect.any(String),
+        fieldRevisions: expect.any(Object),
+      });
       expect(storage.getWikiPageBySlug).toHaveBeenCalledWith(mockPage.slug);
     });
   });
@@ -124,7 +136,11 @@ describe('Wiki Page Management API', () => {
       const response = await request(app).put(`/api/pages/${mockPage.id}`).send(updateData);
 
       expect(response.status).toBe(200);
-      expect(response.body).toEqual(updatedPage);
+      expect(response.body).toEqual({
+        ...updatedPage,
+        revision: expect.any(String),
+        fieldRevisions: expect.any(Object),
+      });
       expect(storage.updateWikiPage).toHaveBeenCalledWith(mockPage.id, updateData);
     });
   });

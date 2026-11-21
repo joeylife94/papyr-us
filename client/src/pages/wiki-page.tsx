@@ -11,7 +11,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useCollaboration } from '@/hooks/useCollaboration';
 import { useFeatureFlags } from '@/features/FeatureFlagsContext';
 import { useWorkspaceScope } from '@/hooks/useActiveWorkspace';
-import { usePageAutosave } from '@/hooks/usePageAutosave';
+import { usePageAutosave, type PageField, type PageWithRevision } from '@/hooks/usePageAutosave';
 import { CollaboratorCursors } from '@/components/collaboration/CollaboratorCursors';
 import { TypingIndicator } from '@/components/collaboration/TypingIndicator';
 import { CollaboratorPresence } from '@/components/collaboration/CollaboratorPresence';
@@ -22,7 +22,12 @@ import { UnlinkedMentions } from '@/components/page/unlinked-mentions';
 import { PageHistory } from '@/components/page-history';
 import { BlockEditor } from '@/components/blocks/block-editor';
 import { PageReaderBody } from '@/components/database/page-reader-body';
-import { PageProperties, PageTitle, SaveStatus } from '@/components/page/page-editor-parts';
+import {
+  PageProperties,
+  PageTitle,
+  SaveConflictNotice,
+  SaveStatus,
+} from '@/components/page/page-editor-parts';
 import { PageIcon, PageIconPicker } from '@/components/page/page-icon';
 import { AddPageCoverButton, EditablePageCover, PageCover } from '@/components/page/page-cover';
 import { Backlinks } from '@/components/page/page-links';
@@ -76,10 +81,29 @@ export default function WikiPageView() {
     isLoading,
     error,
     refetch,
-  } = useQuery<WikiPage>({
+  } = useQuery<PageWithRevision>({
     queryKey: [`/api/pages/slug/${slug}`],
     enabled: !!slug,
   });
+
+  // The editor bases its saves on the revision of the page it opens on. The page is cached for
+  // the session, so a page reopened from the cache may be older than what is stored now; it is
+  // read afresh on every visit, and the editor opens on that read.
+  const [readFreshFor, setReadFreshFor] = useState<string | null>(null);
+  useEffect(() => {
+    if (!slug) return;
+    let current = true;
+    queryClient
+      .fetchQuery({ queryKey: [`/api/pages/slug/${slug}`], staleTime: 0 })
+      .catch(() => undefined)
+      .finally(() => {
+        if (current) setReadFreshFor(slug);
+      });
+    return () => {
+      current = false;
+    };
+  }, [slug, queryClient]);
+  const awaitingFreshRead = !!slug && readFreshFor !== slug;
 
   // Edit rights decide between the in-place editor and the read-only view (issue #103 E2).
   const { data: access, isLoading: accessLoading } = useQuery<{ canEdit: boolean }>({
@@ -197,7 +221,7 @@ export default function WikiPageView() {
     setReloadKey((key) => key + 1);
   };
 
-  if (isLoading || (page && accessLoading)) {
+  if (isLoading || awaitingFreshRead || (page && accessLoading)) {
     return (
       <div className="mx-auto w-full max-w-3xl">
         <article className="px-1 py-5 sm:px-2 sm:py-8">
@@ -375,7 +399,7 @@ export default function WikiPageView() {
 }
 
 interface BodyProps {
-  page: WikiPage;
+  page: PageWithRevision;
   actions: React.ReactNode;
   breadcrumb: (title: string, icon?: string | null) => React.ReactNode;
 }
@@ -447,7 +471,25 @@ function EditablePageBody({
   onContentChange,
 }: EditableBodyProps) {
   const queryClient = useQueryClient();
+  const { flags } = useFeatureFlags();
   const [title, setTitle] = useState(page.title);
+  // The title field is uncontrolled; when the page's title is taken over from elsewhere, this
+  // tells it to show the new text (and how often that happened).
+  // The block components keep their own copy of a block's text (heading, to-do and code do not
+  // follow their props), so when blocks are taken over from the stored page the body is mounted
+  // again (`bodyEpoch` is its key). The person is never writing the body then: blocks they write,
+  // or have focus in, collide instead of being taken over.
+  //
+  // Every emission of the body is tied to the epoch of the render whose callback carried it. Some
+  // blocks report their state from an effect with whatever body they last rendered with (a table
+  // does on every render), so right after the body was taken over, the old instance can still
+  // report the old body. `bodyEpochRef` moves on synchronously when blocks are adopted, while the
+  // state (and so the callbacks of renders made before the adoption took effect) keeps the old
+  // value until the new body renders; an emission whose epoch is not the current one is dropped.
+  const [bodyEpoch, setBodyEpoch] = useState(0);
+  const bodyEpochRef = useRef(0);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [titleReplace, setTitleReplace] = useState<{ token: number; text: string } | undefined>();
   const [blocks, setBlocks] = useState<Block[]>(() => initialBlocksFor(page));
   // The blocks last shown, read synchronously: the Yjs sync hands back the blocks the page
   // already has, and saving that echo would be a no-op autosave.
@@ -458,13 +500,44 @@ function EditablePageBody({
   const [cover, setCover] = useState<PageCoverValue | null>(() => readPageCover(page.metadata));
   const { data: folders = [] } = useQuery<string[]>({ queryKey: ['/api/folders'] });
 
-  const { status, queue, flush, reset } = usePageAutosave(page.id, {
+  // Show these fields of `source` in the editor in place of what is on screen. Called when the
+  // stored page differs from what the editor shows in fields the person is not writing (or after
+  // loading the latest page), before anything is saved on top of them.
+  const adoptFields = (source: PageWithRevision, fields: PageField[]) => {
+    for (const field of fields) {
+      if (field === 'title') {
+        setTitle(source.title);
+        setTitleReplace((previous) => ({ token: (previous?.token ?? 0) + 1, text: source.title }));
+      } else if (field === 'blocks') {
+        blocksRef.current = initialBlocksFor(source);
+        setBlocks(blocksRef.current);
+        bodyEpochRef.current += 1;
+        setBodyEpoch(bodyEpochRef.current);
+      } else if (field === 'tags') setTagsText(source.tags.join(', '));
+      else if (field === 'folder') setFolder(source.folder);
+      else if (field === 'icon') setIcon(source.icon ?? null);
+      else if (field === 'cover') setCover(readPageCover(source.metadata));
+    }
+  };
+  const showPage = (source: PageWithRevision) =>
+    adoptFields(source, ['title', 'blocks', 'tags', 'folder', 'icon', 'cover']);
+
+  const { status, queue, flush, reset, conflict, loadLatest, keepMine } = usePageAutosave(page.id, {
+    // Saves name the revision this editor loaded (WP1); with realtime collaboration on, the
+    // collaboration server saves the page itself and a client's base would always be stale.
+    page,
+    guarded: !flags.FEATURE_COLLABORATION,
+    adopt: adoptFields,
+    // Focus inside the body editor: it may hold input it has not emitted (an open table cell).
+    writing: () => (bodyRef.current?.contains(document.activeElement) ? ['blocks'] : []),
     onSaved: () => {
       // Lists and the sidebar show titles, icons and folders; refresh them quietly.
       void invalidatePageLists(queryClient);
     },
   });
 
+  // The epoch this render's callbacks belong to.
+  const emitterEpoch = bodyEpoch;
   const content = useMemo(() => blocksToContent(blocks), [blocks]);
   useEffect(() => onContentChange(content), [content, onContentChange]);
 
@@ -476,16 +549,31 @@ function EditablePageBody({
       firstRender.current = false;
       return;
     }
-    reset();
-    setTitle(page.title);
-    blocksRef.current = initialBlocksFor(page);
-    setBlocks(blocksRef.current);
-    setFolder(page.folder);
-    setTagsText(page.tags.join(', '));
-    setIcon(page.icon ?? null);
-    setCover(readPageCover(page.metadata));
+    reset(page);
+    showPage(page);
     // Only when the token changes; `page` is the refetched page by then.
   }, [reloadToken]);
+
+  // "Load latest" after a conflict: the page as it is stored now (read when the button is
+  // pressed) replaces the unsent edits.
+  const handleLoadLatest = async () => {
+    const latest = await loadLatest();
+    if (!latest) return;
+    showPage(latest);
+    queryClient.setQueryData([`/api/pages/slug/${page.slug}`], latest);
+    void invalidatePageLists(queryClient);
+  };
+
+  // The notice appears above the field the person may be typing in: focus stays where it is (the
+  // notice is announced as an alert, not focused), and the field is kept in view.
+  const conflictOpen = !!conflict;
+  useEffect(() => {
+    if (!conflictOpen) return;
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active !== document.body) {
+      active.scrollIntoView({ block: 'nearest' });
+    }
+  }, [conflictOpen]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -515,6 +603,16 @@ function EditablePageBody({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <SaveStatus status={status} />
         </div>
+        {conflict && (
+          <SaveConflictNotice
+            fields={conflict.fields}
+            mineFields={conflict.mine}
+            mine={{ title, content, folder, tags: tagsText, icon, cover }}
+            theirs={conflict.page}
+            onLoadLatest={() => void handleLoadLatest()}
+            onKeepMine={keepMine}
+          />
+        )}
         {cover && (
           <EditablePageCover cover={cover} teamId={page.teamId ?? null} onChange={changeCover} />
         )}
@@ -531,6 +629,7 @@ function EditablePageBody({
         <PageTitle
           key={reloadToken}
           initialTitle={page.title}
+          replaceWith={titleReplace}
           editable
           onEnter={focusFirstBlock}
           onChange={(next) => {
@@ -558,10 +657,12 @@ function EditablePageBody({
         <PageTagLinks tags={parseTags(tagsText)} />
         {actions}
       </header>
-      <div data-page-body className="min-w-0">
+      <div data-page-body ref={bodyRef} className="min-w-0">
         <BlockEditor
+          key={bodyEpoch}
           blocks={blocks}
           onChange={(next) => {
+            if (emitterEpoch !== bodyEpochRef.current) return;
             if (jsonEqual(next, blocksRef.current)) return;
             blocksRef.current = next;
             setBlocks(next);

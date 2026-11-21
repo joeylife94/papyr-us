@@ -74,12 +74,12 @@ describe('document production paths', () => {
   });
 
   it('uses production-resolvable and page-scoped version queries', () => {
-    const source = readFileSync('server/routes.ts', 'utf8');
-    expect(source).not.toContain("import('@shared/schema')");
-    expect(
-      source.match(
-        /where\(and\(eq\(pageVersions\.id, versionId\), eq\(pageVersions\.pageId, pageId\)\)\)/g
-      )
-    ).toHaveLength(2);
+    const scoped =
+      /where\(and\(eq\(pageVersions\.id, versionId\), eq\(pageVersions\.pageId, pageId\)\)\)/g;
+    const routes = readFileSync('server/routes.ts', 'utf8');
+    expect(routes).not.toContain("import('@shared/schema')");
+    // Reading one version, here; checking and restoring one are in storage.
+    expect(routes.match(scoped)).toHaveLength(1);
+    expect(readFileSync('server/storage.ts', 'utf8').match(scoped)).toHaveLength(2);
   });
 });

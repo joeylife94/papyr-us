@@ -242,18 +242,13 @@ describe('page save pipeline (real Postgres)', () => {
     expect((await storage.getWikiPage(id)).content).toBe('real edit');
   });
 
-  it('a restore keeps the latest state as a version before it is overwritten', async () => {
+  it('a restore closes the open session (the version before it is kept by the restore itself)', async () => {
     const id = await createPage('restore', 'r0');
     await pipeline.savePage(store, id, { content: 'r1' }, 'manual');
     await pipeline.savePage(store, id, { blocks: [{ content: 'latest edit' }] }, 'autosave');
+    expect(pipeline.hasOpenEditSession(id)).toBe(true);
 
-    await pipeline.snapshotBeforeRestore(store, id);
-    const all = await versions(id);
-    expect(all.at(-1)).toEqual({
-      version_number: 3,
-      content: 'latest edit',
-      change_description: 'Before restore',
-    });
+    await pipeline.closeSessionForRestore(id);
     expect(pipeline.hasOpenEditSession(id)).toBe(false);
   });
 });

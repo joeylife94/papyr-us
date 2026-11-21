@@ -245,13 +245,17 @@ async function executeAction(
         if (!context.trigger?.id || !processedConfig.tags) {
           return { success: false, error: 'Missing page ID or tags' };
         }
+        // The page is the workflow team's page (as everywhere in workflows); its tags are merged
+        // in one statement against the tags it has at that moment, so a tag saved by someone
+        // while the workflow ran is kept.
         const page = await getPageOfWorkflowTeam(context, context.trigger.id);
         if (!page) {
           return { success: false, error: 'Page not found' };
         }
-        // Add new tags
-        const updatedTags = Array.from(new Set([...page.tags, ...processedConfig.tags]));
-        await getWorkflowStorage().updateWikiPage(page.id, { tags: updatedTags });
+        const tagged = await getWorkflowStorage().mergePageTags(page.id, {
+          add: [...processedConfig.tags],
+        });
+        const updatedTags = tagged ? tagged.tags : page.tags;
         return { success: true, result: { tags: updatedTags } };
 
       case 'run_ai_summary':

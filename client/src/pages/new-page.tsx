@@ -13,12 +13,60 @@ import { invalidatePageLists } from '@/lib/queryClient';
 import { resolvePageTeamId, type PageTeamRef } from '@/lib/page-team-scope';
 import { getUserId, getUserName } from '@/lib/user';
 import type { Block, WikiPage } from '@shared/schema';
+import { jsonEqual } from '@shared/json-equal';
+import { Button } from '@/components/ui/button';
+import {
+  decideRefusal,
+  type AutosavePatch,
+  type FieldRevisions,
+  type PageField,
+  type PageWithRevision,
+} from '@/lib/page-autosave-controller';
 
 interface NewPageProps {
   teamName?: string;
   initialFolder?: string;
   /** Create the page as a child of this page (issue #103 E5). */
   parentId?: number;
+}
+
+type Draft = {
+  title: string;
+  blocks: Block[];
+  folder: string;
+  tagsText: string;
+  icon: string | null;
+};
+
+/** The fields of the draft that differ from what was last saved, as an autosave patch. */
+function draftPatch(stored: Draft, now: Draft): AutosavePatch {
+  const patch: AutosavePatch = {};
+  if (now.title.trim() && now.title.trim() !== stored.title.trim()) patch.title = now.title.trim();
+  if (!jsonEqual(now.blocks, stored.blocks)) patch.blocks = now.blocks;
+  if (now.folder !== stored.folder) patch.folder = now.folder;
+  if (!jsonEqual(parseTags(now.tagsText), parseTags(stored.tagsText))) {
+    patch.tags = parseTags(now.tagsText);
+  }
+  if (now.icon !== stored.icon) patch.icon = now.icon;
+  return patch;
+}
+
+/** `stored` after `field` of the draft was found to be stored already. */
+function settledDraft(stored: Draft, now: Draft, field: PageField): Draft {
+  switch (field) {
+    case 'title':
+      return { ...stored, title: now.title };
+    case 'blocks':
+      return { ...stored, blocks: now.blocks };
+    case 'tags':
+      return { ...stored, tagsText: now.tagsText };
+    case 'folder':
+      return { ...stored, folder: now.folder };
+    case 'icon':
+      return { ...stored, icon: now.icon };
+    default:
+      return stored;
+  }
 }
 
 const CREATE_DELAY_MS = 600;
@@ -51,6 +99,8 @@ export default function NewPage({ teamName, initialFolder = 'docs', parentId }: 
   const [touched, setTouched] = useState(false);
   const [creatingState, setCreatingState] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
+  // Set when the page the draft created was changed elsewhere in something the draft wrote.
+  const [elsewhere, setElsewhere] = useState<{ slug: string } | null>(null);
   const creating = useRef(false);
   const mounted = useRef(true);
   const latest = useRef({ title, blocks, folder, tagsText, icon });
@@ -108,7 +158,15 @@ export default function NewPage({ teamName, initialFolder = 'docs', parentId }: 
         credentials: 'include',
       });
       if (!res.ok) throw new Error(`create ${res.status}`);
-      const created: WikiPage = await res.json();
+      const created: WikiPage & { revision?: string; fieldRevisions?: FieldRevisions } =
+        await res.json();
+      // Once created the page is visible to others (and a `page_created` workflow may change it
+      // right away), so these saves name the revision they are based on (WP1), carry only the
+      // fields the draft has changed since the last save, and move the revision on with each
+      // answer. A refusal is decided as the editor decides it (`decideRefusal`).
+      let base = created.revision;
+      let known = created.fieldRevisions;
+      let rebases = 0;
 
       // Anything typed while the page was being created (or while these saves are in flight) is
       // saved before the view moves on, so the page never opens on an older state. A failed save
@@ -120,25 +178,63 @@ export default function NewPage({ teamName, initialFolder = 'docs', parentId }: 
       let failures = 0;
       while (snapshot(latest.current) !== snapshot(stored)) {
         const now = latest.current;
-        const saved = await fetch(`/api/pages/${created.id}/autosave`, {
+        const patch = draftPatch(stored, now);
+        const answer: {
+          ok: boolean;
+          status: number;
+          body: {
+            revision?: string;
+            fieldRevisions?: FieldRevisions;
+            page?: PageWithRevision;
+            currentRevision?: string;
+          } | null;
+        } = await fetch(`/api/pages/${created.id}/autosave`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
           keepalive: !mounted.current,
-          body: JSON.stringify({
-            ...(now.title.trim() ? { title: now.title.trim() } : {}),
-            blocks: now.blocks,
-            folder: now.folder,
-            tags: parseTags(now.tagsText),
-            icon: now.icon,
-          }),
+          body: JSON.stringify({ ...patch, ...(base ? { baseRevision: base } : {}) }),
         }).then(
-          (r) => r.ok,
-          () => false
+          async (r) => ({
+            ok: r.ok,
+            status: r.status,
+            body: await r.json().catch(() => null),
+          }),
+          () => ({ ok: false, status: 0, body: null })
         );
-        if (saved) {
+        if (answer.status === 409 && answer.body?.page) {
+          const refused = { page: answer.body.page, currentRevision: answer.body.currentRevision };
+          const decision = decideRefusal({
+            known,
+            page: refused.page,
+            patch,
+            canRebase: rebases < 1,
+          });
+          if (decision.kind === 'conflict') {
+            // A field the draft wrote also changed in the stored page: stop saving, keep the
+            // draft on screen, and let the person open the page. The server keeps the refused
+            // title and body in the page's history.
+            creating.current = true;
+            setCreatingState(false);
+            setSaveFailed(false);
+            setElsewhere({ slug: created.slug });
+            void invalidatePageLists(queryClient);
+            return;
+          }
+          // Nothing the draft wrote changed: resend on the new revision. Fields already stored
+          // with the draft's value need no resend.
+          for (const field of decision.settled) stored = settledDraft(stored, now, field);
+          if (decision.settled.length < Object.keys(patch).length) rebases += 1;
+          base = String(refused.currentRevision);
+          known = refused.page.fieldRevisions;
+          continue;
+        }
+        if (answer.body?.revision) base = answer.body.revision;
+        if (answer.body?.fieldRevisions) known = answer.body.fieldRevisions;
+        if (answer.ok) {
           stored = now;
           failures = 0;
+          rebases = 0;
           setSaveFailed(false);
         } else {
           if (!mounted.current) break;
@@ -210,6 +306,31 @@ export default function NewPage({ teamName, initialFolder = 'docs', parentId }: 
                 ? '문서를 만드는 중…'
                 : '입력을 시작하면 문서가 만들어집니다'}
           </p>
+          {elsewhere && (
+            <section
+              role="alert"
+              data-testid="new-page-changed-elsewhere"
+              className="break-keep rounded-lg border border-warning/60 bg-warning/10 p-4"
+            >
+              <h2 className="text-sm font-semibold text-foreground">
+                이 문서가 다른 곳에서 수정되었습니다
+              </h2>
+              <p className="mt-1 text-[13px] leading-relaxed text-foreground-secondary">
+                문서를 만든 직후 다른 곳에서 문서가 바뀌어, 방금 입력한 내용은 저장하지 않았고 자동
+                저장은 멈췄습니다. 입력한 제목과 본문은 이 문서의 버전 기록에 남아 있습니다. 문서를
+                열어 저장된 내용을 확인하세요.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mt-3"
+                onClick={() => navigate(`/page/${elsewhere.slug}`, { replace: true })}
+              >
+                문서 열기
+              </Button>
+            </section>
+          )}
           <PageIconPicker
             icon={icon}
             onChange={(next) => {

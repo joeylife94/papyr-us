@@ -47,6 +47,25 @@
 | POST   | `/api/pages/:id/versions/:versionId/restore`  | Editor      | 버전 복원                              |
 | GET    | `/api/pages/:id/export?format=md\|html\|json` | Viewer      | 페이지 내보내기                        |
 
+### 덮어쓰기 방지 (기준 리비전)
+
+- 페이지를 돌려주는 `GET /api/pages/:id`, `POST /api/pages`, `PUT /api/pages/:id`, `PUT /api/pages/:id/autosave`의 응답에는 `revision`(제목·본문·태그·폴더·아이콘·메타데이터 상태를 나타내는 불투명한 값)과 `fieldRevisions`(필드별 값: `title`, `blocks`, `tags`, `folder`, `icon`, `cover`)가 들어 있습니다.
+- `PUT /api/pages/:id`와 `PUT /api/pages/:id/autosave`는 선택 필드 `baseRevision`을 받습니다. 저장된 페이지가 그 리비전에서 바뀌었으면 아무것도 쓰지 않고 409로 답합니다. 바뀔 것이 없는 저장이라도 기준이 낡았으면 409입니다.
+
+  ```json
+  {
+    "message": "This page was changed by someone else",
+    "code": "page_revision_conflict",
+    "currentRevision": "…",
+    "page": { "…": "GET과 같은 형태, revision과 fieldRevisions 포함" }
+  }
+  ```
+
+- 거절된 저장의 제목과 본문, 그리고 그 시점의 저장된 페이지는 버전 기록에 남습니다(`Not saved: based on an older revision`, `Latest when a save was refused`).
+- `baseRevision`을 보내지 않는 호출(API 클라이언트, 가져오기, 실시간 편집 서버)은 이전과 같이 동작합니다.
+- 휴지통에 있는 페이지에 `baseRevision`을 보내면 404입니다.
+- 일괄 태그 변경과 워크플로의 `add_tag`는 태그를 한 문장으로 합쳐서, 그 사이에 다른 사람이 저장한 태그를 지우지 않습니다. 버전 복원은 복원 직전 상태를 같은 트랜잭션 안에서 버전으로 남기고, 없는 버전이면 편집 세션을 건드리지 않고 404입니다.
+
 ---
 
 ## 페이지 즐겨찾기 (Favorites)
