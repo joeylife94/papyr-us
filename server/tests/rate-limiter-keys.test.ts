@@ -123,9 +123,9 @@ describe('buildRateLimiter', () => {
     }
   );
 
-  it('a forged token in the session cookie is counted like one in the header', async () => {
-    const forged = unverifiedTokens(61)[0][1];
-    expect(await statuses(3, '10.0.4.1', { Cookie: `accessToken=${forged}` })).toEqual([
+  it('an unverified token in the session cookie is counted like one in the header', async () => {
+    const unverified = unverifiedTokens(61)[0][1];
+    expect(await statuses(3, '10.0.4.1', { Cookie: `accessToken=${unverified}` })).toEqual([
       200, 200, 429,
     ]);
     expect(await statuses(2, '10.0.4.1', { Cookie: `accessToken=${tokenFor(61)}` })).toEqual([
@@ -133,7 +133,7 @@ describe('buildRateLimiter', () => {
     ]);
   });
 
-  it('changing what a forged token claims does not give it a fresh allowance', async () => {
+  it('changing what an unverified token claims does not give it a fresh allowance', async () => {
     const results: number[] = [];
     for (const id of [71, 72, 73, 74]) {
       results.push((await hit('10.0.5.1', bearer(tokenFor(id, 'another-secret')))).status);
@@ -171,10 +171,10 @@ describe('the shared limiters on the real routes', () => {
       .set(headers)
       .send({ email: 'x@example.com', password: 'p' });
 
-  it('sign-in (rlAuth, 20 a minute): forged tokens naming an account do not use up its allowance', async () => {
-    const forged = unverifiedTokens(81)[0][1];
+  it('sign-in (rlAuth, 20 a minute): unverified tokens naming an account do not use up its allowance', async () => {
+    const unverified = unverifiedTokens(81)[0][1];
     const flood: number[] = [];
-    for (let i = 0; i < 22; i += 1) flood.push((await login(bearer(forged))).status);
+    for (let i = 0; i < 22; i += 1) flood.push((await login(bearer(unverified))).status);
     expect(flood.slice(0, 20).every((s) => s !== 429)).toBe(true);
     expect(flood.slice(20)).toEqual([429, 429]);
     // account 81 itself is not limited by that flood
@@ -187,11 +187,11 @@ describe('the shared limiters on the real routes', () => {
     expect((await login()).status).not.toBe(429);
   });
 
-  it('admin routes (rlAdmin, 30 a minute) count a forged token under the address too', async () => {
-    const forged = unverifiedTokens(101)[0][1];
+  it('admin routes (rlAdmin, 30 a minute) count an unverified token under the address too', async () => {
+    const unverified = unverifiedTokens(101)[0][1];
     const flood: number[] = [];
     for (let i = 0; i < 32; i += 1) {
-      flood.push((await request(server).get('/api/admin/session').set(bearer(forged))).status);
+      flood.push((await request(server).get('/api/admin/session').set(bearer(unverified))).status);
     }
     expect(flood.slice(30)).toEqual([429, 429]);
     const own = await request(server)

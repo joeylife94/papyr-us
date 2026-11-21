@@ -404,7 +404,8 @@ export async function registerRoutes(
   const rlAnalytics = buildRateLimiter({ windowMs: 60_000, max: 60 }); // analytics view recording
 
   // A sign-up that brings an invitation token is an acceptance without a session: limited per
-  // client address, which a forged session cookie cannot change (rlAuth keys on the cookie's claims).
+  // client address (the shared limiters key on the account only for a verified access token,
+  // otherwise on the address).
   const rlInvitationSignup = buildAddressRateLimiter({ windowMs: 60_000, max: 10 });
   const limitInvitationSignup: RequestHandler = (req, res, next) => {
     const token = req.body?.invitationToken;
