@@ -16,6 +16,43 @@ export function isDeployedEnvironment(): boolean {
   );
 }
 
+/**
+ * Who may create a new account (issue #124 X1d). `open` is how every deployment behaved before
+ * this setting existed and is what an unset SIGNUP_MODE means; the deployment templates this
+ * repository ships set `invite_only`.
+ */
+export const SIGNUP_MODES = ['open', 'invite_only', 'closed'] as const;
+export type SignupMode = (typeof SIGNUP_MODES)[number];
+
+/** Reads SIGNUP_MODE: unset or blank is `open` (`explicit` false); an unknown value is invalid. */
+export function parseSignupMode(
+  raw: string | undefined
+): { ok: true; mode: SignupMode; explicit: boolean } | { ok: false } {
+  const value = (raw ?? '').trim();
+  if (value === '') return { ok: true, mode: 'open', explicit: false };
+  return (SIGNUP_MODES as readonly string[]).includes(value)
+    ? { ok: true, mode: value as SignupMode, explicit: true }
+    : { ok: false };
+}
+
+/**
+ * TRUST_PROXY: how many proxies (a number), which proxies (names or addresses Express
+ * understands, comma separated) or whether all of them (true) to trust for the client address.
+ * Unset leaves Express's default, which is what every deployment ran with before the setting
+ * existed. Behind a reverse proxy without it, every client shares the proxy's address and the
+ * per-address rate limits count them together.
+ */
+export function parseTrustProxy(
+  raw: string | undefined
+): { ok: true; value: boolean | number | string | undefined } | { ok: false } {
+  const value = (raw ?? '').trim();
+  if (value === '') return { ok: true, value: undefined };
+  if (value === 'true') return { ok: true, value: true };
+  if (value === 'false') return { ok: true, value: false };
+  if (/^\d{1,3}$/.test(value)) return { ok: true, value: Number(value) };
+  return /^[A-Za-z0-9.:/_, -]+$/.test(value) ? { ok: true, value } : { ok: false };
+}
+
 // Security validation for production environment
 function validateProductionConfig() {
   const isProduction = process.env.NODE_ENV === 'production';
@@ -58,6 +95,16 @@ function validateProductionConfig() {
           'Remove COLLAB_REQUIRE_AUTH=0 from your staging/preview/CI environment.'
       );
     }
+  }
+
+  // An unknown SIGNUP_MODE stops the process: guessing a looser mode than the operator meant
+  // would let people in.
+  if (!parseSignupMode(process.env.SIGNUP_MODE).ok) {
+    errors.push(`SIGNUP_MODE must be one of: ${SIGNUP_MODES.join(', ')}`);
+  }
+
+  if (!parseTrustProxy(process.env.TRUST_PROXY).ok) {
+    errors.push('TRUST_PROXY must be true, false, a number of proxies, or a list of addresses');
   }
 
   // The shared admin password was removed (issue #124 X0). Say so instead of silently ignoring it.
@@ -108,6 +155,13 @@ export const config = {
     .split(',')
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean),
+
+  // Who may create an account (SIGNUP_MODE). Read when used, so a value is always the one the
+  // process was validated with at startup; falls back to `open` only when unset.
+  get signupMode(): SignupMode {
+    const parsed = parseSignupMode(process.env.SIGNUP_MODE);
+    return parsed.ok ? parsed.mode : 'closed';
+  },
 
   // AI configuration
   openaiApiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR,

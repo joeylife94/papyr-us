@@ -4,7 +4,7 @@ aliases: ['PAPYR_US_MASTER', 'Papyr.us v1.0 Master']
 project: 'Papyr.us'
 type: 'project-master'
 status: 'authoritative-contract'
-version: '1.00'
+version: '1.01'
 target: 'v1.0 + D1 frozen baseline; enterprise readiness (Issue #124), one bounded phase per PR'
 current_phase: 'Issue #124 — X0, X1a, X1b and X1c done; X1d next, alongside the collaboration packages of §10'
 priority: 'P1'
@@ -18,7 +18,7 @@ checkpoint_main_sha: 'd2f092b240d5ffe0937dd6d487934e32d5a631f3'
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v1.00**  
+> **AUTHORITATIVE PROJECT CONTRACT — v1.01**  
 > Current repository / Issue / PR / executable evidence overrides historical checkpoints, Scheduled Task prompts, and agent self-report.  
 > The accepted v1.0 product/proof baseline and D1 remain frozen as evidence. Progression after D1 runs as contract Issues under [`AGENTS.md`](AGENTS.md), one bounded phase per PR, and must not rewrite prior accepted evidence or widen buyer-facing claims without a new Proof.
 
@@ -570,3 +570,44 @@ On the package head, Linux container, local PostgreSQL 16, the container's Chrom
 - A page grant revoked in the same instant as a comment is written can still let that person receive its notification.
 - More than 20 distinct mentions in one comment become `@unknown`.
 - Notifications are not rewritten when a comment is edited.
+
+## 15. Issue #124 X1d — Invitations and Sign-up Policy (2026-11-21)
+
+### Changed
+
+The first way to bring a person into an organization other than `default`, and the switch that decides who may create an account. Owner decision (2026-11-21): new deployments sign up by invitation only; existing deployments keep open sign-up.
+
+| Area        | What exists now                                                                                                                                                                                                                    |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sign-up     | `SIGNUP_MODE` = `open` (unset; as before, with a startup warning) \| `invite_only` (invitation, or an `ADMIN_EMAILS` address while no account has it) \| `closed`; the same rules for email and Google/GitHub                      |
+| Invitations | owners invite member or admin, admins invite member; a single-use token of 32 random bytes, only its SHA-256 stored, shown once; expiry 1–30 days; 200 pending per organization; revoked when the inviter can no longer grant them |
+| Accepting   | an account without an organization joins with the invited role and no AI access; an account of another organization is refused and not moved; an existing account never joins inside the OAuth callback (it clicks on `/join`)     |
+| Requests    | the token travels only in request bodies and the URL fragment; token-carrying POSTs accept same-origin JSON only; one answer for every unusable token; per-account and per-address limits; `TRUST_PROXY` for proxies               |
+| Addresses   | taken ignoring case on every registration path, serialized per address; OAuth signs in to an existing account only on an exact match; GitHub signs in with a verified address only                                                 |
+| Migration   | `0029`: the invitations table; its down refuses while an invitation is pending                                                                                                                                                     |
+
+Rules and operator notes are in [`docs/organizations-guide.md`](docs/organizations-guide.md#가입과-초대-x1d).
+
+Process: one developer package against the X1d contract, three review rounds. The reviews found and the package fixed: another site could plant the invitation in a visitor's browser and have an existing account join its organization during social sign-in; a case variant of an `ADMIN_EMAILS` address opened a way past `invite_only`; the deployment templates would have switched existing deployments to invitation-only on pull; concurrent case variants could create several accounts; GitHub would have changed which account some users sign into; invitations of a demoted inviter revived on re-promotion; per-address limits could lock everyone out behind a proxy.
+
+### Actually Executed
+
+On the integration head (this package merged onto §14's branch), Linux container, local PostgreSQL 16, the container's Chromium:
+
+- `CI=true npx vitest run --maxWorkers=2` — 81 files, 2219 tests **PASS**; unit — 59 files, 929 tests **PASS**; Layer 4 — 36 files, 502 tests **PASS**;
+- `node scripts/verify-contributor.mjs` — **PASS** (developer, on the package head);
+- browser: `organization-invitations` (10), `signup-mode-server` (5, which starts its own `invite_only` and `closed` servers), `gj01-auth-team-entry`, `security-organizations`, `organization-page`, `auth-deactivated-account`, `admin-access`, `security-organization-members`, `team-membership-ui`, `comment-mentions`, `security-page-creator`, `notification-bell` — 51 tests **PASS**;
+- the prepare step with `0026`–`0029` together on a real database, in deploy order;
+- reviewer probes in a real browser (six cross-site ways to plant the invitation, all refused) and on Postgres (concurrent accepts, demote and remove against accept: no inconsistent round); reviewer mutations (twenty-seven across the rounds) each caught by at least one test.
+
+### Not Verified
+
+- a real Google or GitHub round trip, and real SMTP delivery (both covered with stand-ins);
+- the whole `test:gj` list, Layer 5, Layer 6 and Firebat: CI on the pull request is the reference.
+
+### Known limits
+
+- The `ADMIN_EMAILS` exception stays open until the real administrator registers.
+- Reactivating a deactivated inviter revives their pending invitations (deactivation has no API yet, X5).
+- The OAuth flow has no `state` check (pre-existing); a separate item.
+- Per-address limits share one bucket behind a proxy until `TRUST_PROXY` is set.

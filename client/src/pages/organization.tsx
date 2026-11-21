@@ -10,6 +10,7 @@ import { useOrganization } from '@/hooks/useOrganization';
 import { MembersTab } from '@/components/organization/members-tab';
 import { TeamsTab } from '@/components/organization/teams-tab';
 import { SettingsTab } from '@/components/organization/settings-tab';
+import { InvitationsTab } from '@/components/organization/invitations-tab';
 import { ROLE_LABELS } from '@/components/organization/messages';
 import { myAiLineFor } from '@/lib/ai-gate';
 
@@ -108,8 +109,11 @@ export default function OrganizationPage() {
           </Notice>
         ) : (
           <Tabs defaultValue="members" className="w-full">
-            <TabsList className="grid w-full max-w-md grid-cols-3">
+            <TabsList className="grid w-full max-w-lg grid-cols-4">
               <TabsTrigger value="members">구성원</TabsTrigger>
+              <TabsTrigger value="invitations" data-testid="invitations-trigger">
+                초대
+              </TabsTrigger>
               <TabsTrigger value="teams">팀</TabsTrigger>
               <TabsTrigger value="settings">설정</TabsTrigger>
             </TabsList>
@@ -119,6 +123,9 @@ export default function OrganizationPage() {
                 callerRole={organization.role}
                 organizationAiEnabled={organization.aiEnabled}
               />
+            </TabsContent>
+            <TabsContent value="invitations" className="mt-4">
+              <InvitationsTab userId={userId} callerRole={organization.role} />
             </TabsContent>
             <TabsContent value="teams" className="mt-4">
               <TeamsTab userId={userId} />

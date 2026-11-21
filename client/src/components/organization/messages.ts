@@ -30,6 +30,17 @@ const KNOWN_MESSAGES: Record<string, string> = {
   'Invalid role': '선택한 역할이 올바르지 않습니다.',
   'Invalid user ID': '구성원을 확인할 수 없습니다. 목록을 새로 고친 뒤 다시 시도하세요.',
   'Organization is busy, try again': '조직이 다른 변경을 처리 중입니다. 잠시 후 다시 시도하세요.',
+  'Only an organization owner can invite an admin':
+    '관리자를 초대할 수 있는 사람은 조직 소유자뿐입니다. 구성원으로 초대하세요.',
+  'Only an organization owner can revoke an invitation for an admin':
+    '관리자 초대는 조직 소유자만 취소할 수 있습니다.',
+  'The invitation is no longer pending': '이 초대는 이미 처리되어 취소할 수 없습니다.',
+  'Invitation not found': '이 초대를 찾을 수 없습니다. 목록을 새로 고친 뒤 다시 시도하세요.',
+  'Invalid invitation': '초대 값이 올바르지 않습니다. 이메일 형식과 만료 기간을 확인하세요.',
+  'This address already belongs to a member': '이 이메일은 이미 이 조직의 구성원입니다.',
+  'The organization is switched off': '조직이 꺼져 있어 초대를 만들 수 없습니다.',
+  'Too many pending invitations':
+    '대기 중인 초대가 너무 많습니다. 쓰지 않는 초대를 취소한 뒤 다시 시도하세요.',
 };
 
 const BY_STATUS: Record<number, string> = {
