@@ -6,7 +6,11 @@
  * - PUT /api/pages/:id, PUT /api/pages/:id/autosave and POST /api/pages/:id/versions/:id/restore
  *   answer 404 for a trashed page and write nothing: no update, no version snapshot;
  * - a bulk tag change skips a trashed page and counts only the pages it changed;
- * - a live page is saved as before, and restoring from the trash is still answered.
+ * - creating, editing and deleting a comment, granting access (`POST .../permissions`) and creating
+ *   a share link answer 404 for a trashed page and write nothing;
+ * - removing a grant or a share link on a trashed page is still allowed (it only narrows access),
+ *   and favouriting, duplicating and moving a trashed page are refused as before;
+ * - a live page is saved as before, and restoring a page from the trash is answered.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
@@ -155,3 +159,137 @@ describe.each([true, false])('with ENFORCE_AUTH_WRITES=%s', (enforce) => {
     expect(auto.status).toBe(200);
   });
 });
+
+describe.each([true, false])(
+  'rows that hang off a trashed page, with ENFORCE_AUTH_WRITES=%s',
+  (enforce) => {
+    const comment = { id: 9, pageId: TRASHED, authorUserId: EDITOR, content: 'c' };
+    beforeEach(() => {
+      mode.enforce = enforce;
+      storage.getComment.mockResolvedValue(comment);
+      storage.getUserOrganizationId.mockResolvedValue(1);
+      storage.isGranteeInPageOrganization.mockResolvedValue(true);
+    });
+
+    const noRowsWritten = () => {
+      for (const name of [
+        'createComment',
+        'updateComment',
+        'deleteComment',
+        'addPagePermission',
+        'setPagePublicAccess',
+        'createPublicLink',
+      ]) {
+        expect(storage[name], name).not.toHaveBeenCalled();
+      }
+    };
+
+    it('POST /api/pages/:pageId/comments answers 404 and creates nothing', async () => {
+      const res = await request(app)
+        .post(`/api/pages/${TRASHED}/comments`)
+        .set('Cookie', cookie)
+        .send({ content: 'hello' });
+      expect([res.status, res.body]).toEqual([404, { message: 'Page not found' }]);
+      noRowsWritten();
+    });
+
+    it('PUT and DELETE /api/comments/:id of a trashed page answer 404 and change nothing', async () => {
+      const put = await request(app)
+        .put('/api/comments/9')
+        .set('Cookie', cookie)
+        .send({ content: 'x' });
+      const del = await request(app).delete('/api/comments/9').set('Cookie', cookie);
+      expect([put.status, put.body]).toEqual([404, { message: 'Page not found' }]);
+      expect([del.status, del.body]).toEqual([404, { message: 'Page not found' }]);
+      noRowsWritten();
+    });
+
+    it('POST /api/pages/:id/permissions answers 404 and grants nothing', async () => {
+      for (const body of [
+        { entityType: 'user', entityId: 5, permission: 'viewer' },
+        { entityType: 'public', permission: 'viewer' },
+      ]) {
+        const res = await request(app)
+          .post(`/api/pages/${TRASHED}/permissions`)
+          .set('Cookie', cookie)
+          .send(body);
+        expect([res.status, res.body]).toEqual([404, { message: 'Page not found' }]);
+      }
+      noRowsWritten();
+    });
+
+    it('POST /api/pages/:id/share answers 404 and creates no link', async () => {
+      const res = await request(app)
+        .post(`/api/pages/${TRASHED}/share`)
+        .set('Cookie', cookie)
+        .send({ permission: 'viewer' });
+      expect([res.status, res.body]).toEqual([404, { message: 'Page not found' }]);
+      noRowsWritten();
+    });
+
+    it('removing a grant or a share link of a trashed page is still allowed', async () => {
+      storage.getPagePermissions.mockResolvedValue([
+        { id: 4, pageId: TRASHED, entityType: 'user', entityId: 5, permission: 'viewer' },
+      ]);
+      storage.removePagePermission.mockResolvedValue(true);
+      storage.deletePublicLinkForPage.mockResolvedValue(true);
+      const grant = await request(app)
+        .delete(`/api/pages/${TRASHED}/permissions/4`)
+        .set('Cookie', cookie);
+      expect(grant.status).toBe(200);
+      expect(storage.removePagePermission).toHaveBeenCalledWith(TRASHED, 4);
+    });
+
+    it('favouriting, duplicating and moving a trashed page are refused', async () => {
+      storage.getPageViewer.mockResolvedValue({ userId: EDITOR, teamIds: [] });
+      storage.isPageListableBy.mockResolvedValue(false);
+      const fav = await request(app).post(`/api/favorites/${TRASHED}`).set('Cookie', cookie);
+      const dup = await request(app)
+        .post(`/api/pages/${TRASHED}/duplicate`)
+        .set('Cookie', cookie)
+        .send({});
+      const move = await request(app)
+        .post(`/api/pages/${TRASHED}/move`)
+        .set('Cookie', cookie)
+        .send({ parentId: null });
+      expect([fav.status, dup.status, move.status]).toEqual([404, 404, 404]);
+      expect(storage.addPageFavorite).not.toHaveBeenCalled();
+      expect(storage.duplicateWikiPage).not.toHaveBeenCalled();
+    });
+
+    it('restoring a page from the trash is answered and the page is live afterwards', async () => {
+      let trashed = true;
+      storage.checkPagePermission.mockResolvedValue(true);
+      storage.getTrashedTogetherIds.mockImplementation(async () => (trashed ? [TRASHED] : []));
+      storage.restorePages.mockImplementation(async (ids: number[]) => {
+        trashed = false;
+        return ids.length;
+      });
+      storage.getWikiPage.mockImplementation(async (id: number) =>
+        id === TRASHED && !trashed
+          ? { ...livePage, id: TRASHED }
+          : id === LIVE
+            ? livePage
+            : undefined
+      );
+      const res = await request(app)
+        .post(`/api/trash/${TRASHED}/restore`)
+        .set('Cookie', cookie)
+        .send({});
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ id: TRASHED, restoredCount: 1 });
+      expect(storage.restorePages).toHaveBeenCalledWith([TRASHED]);
+      // and the page can be written again
+      storage.updateWikiPage.mockImplementation(async (id: number, data: any) => ({
+        ...livePage,
+        id,
+        ...data,
+      }));
+      const saved = await request(app)
+        .put(`/api/pages/${TRASHED}`)
+        .set('Cookie', cookie)
+        .send({ title: 'Back' });
+      expect(saved.status).toBe(200);
+    });
+  }
+);

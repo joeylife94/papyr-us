@@ -2252,6 +2252,7 @@ export async function registerRoutes(
     authMiddleware,
     rlCommentCreate,
     requirePagePermission('commenter'),
+    requireLivePage,
     async (req: AuthRequest, res) => {
       try {
         const pageId = parseInt(req.params.pageId);
@@ -2376,6 +2377,10 @@ export async function registerRoutes(
       if (!(await storage.checkPagePermission(userId, existing.pageId, 'viewer'))) {
         return res.status(404).json({ message: 'Comment not found' });
       }
+      // A comment of a page in the trash is not changed
+      if (!(await storage.getWikiPage(existing.pageId))) {
+        return res.status(404).json({ message: 'Page not found' });
+      }
       const isOwner = existing.authorUserId != null && existing.authorUserId === userId;
       if (!isOwner) {
         return res.status(403).json({ message: 'Only the comment author can edit this comment' });
@@ -2467,6 +2472,10 @@ export async function registerRoutes(
       if (!(await storage.checkPagePermission(userId, existing.pageId, 'viewer'))) {
         return res.status(404).json({ message: 'Comment not found' });
       }
+      // A comment of a page in the trash is not changed
+      if (!(await storage.getWikiPage(existing.pageId))) {
+        return res.status(404).json({ message: 'Page not found' });
+      }
       const isOwner = existing.authorUserId != null && existing.authorUserId === userId;
       if (isOwner) {
         if (!(await storage.checkPagePermission(userId, existing.pageId, 'commenter'))) {
@@ -2521,6 +2530,10 @@ export async function registerRoutes(
       const hasOwnerPermission = await storage.checkPagePermission(req.user?.id, pageId, 'owner');
       if (!hasOwnerPermission) {
         return res.status(403).json({ message: 'Only page owners can manage permissions' });
+      }
+      // Access to a page in the trash is not granted (removing a grant stays possible)
+      if (!(await storage.getWikiPage(pageId))) {
+        return res.status(404).json({ message: 'Page not found' });
       }
 
       // A user or team at any level, or the public at viewer or commenter (never above)
