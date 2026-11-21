@@ -109,6 +109,7 @@ import type { Request } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import passport from 'passport';
+import { oauthStateCookie, oauthStateCookieOptions } from './oauth-state.js';
 import { eq, and, isNull, sql } from 'drizzle-orm';
 import {
   ANONYMOUS_PAGE_VIEWER,
@@ -729,7 +730,8 @@ export async function registerRoutes(
       .json({ message: 'Logged out successfully' });
   });
 
-  // Passport automatically handles OAuth2 state/nonce validation. SameSite=Lax is required for cross-site top-level redirects.
+  // Each sign-in start sets a random `state` in a short-lived cookie (see oauth-state.ts) that the
+  // callback must see returned by the provider. SameSite=Lax is required for cross-site top-level redirects.
   // --- Social Auth Routes ---
 
   // The social sign-in callbacks: a person turned away by the sign-up policy (SIGNUP_MODE, issue
@@ -744,6 +746,8 @@ export async function registerRoutes(
           invitationIntentCookie(config.isProduction).name,
           invitationIntentCookieOptions()
         );
+        // The sign-in's state is single-use: cleared on every return, accepted or refused
+        res.clearCookie(oauthStateCookie(config.isProduction).name, oauthStateCookieOptions());
         if (err) return next(err);
         if (!user) {
           const code = typeof info?.code === 'string' ? info.code : null;

@@ -10,6 +10,7 @@ import {
   decideSignup,
   isPlausibleInvitationToken,
 } from '../organization-invitations.js';
+import { oauthStateStore } from '../oauth-state.js';
 import logger from './logger.js';
 
 // The passport strategies need access to the database.
@@ -174,6 +175,8 @@ export function initPassportStrategies(db: any, storage?: any) {
           clientSecret: config.googleClientSecret,
           callbackURL: '/api/auth/google/callback',
           passReqToCallback: true,
+          // A random state in a short-lived cookie, checked at the callback
+          store: oauthStateStore,
         },
         async (
           req: any,
@@ -206,6 +209,7 @@ export function initPassportStrategies(db: any, storage?: any) {
           clientSecret: config.githubClientSecret,
           callbackURL: '/api/auth/github/callback',
           passReqToCallback: true,
+          store: oauthStateStore,
           // All of the account's addresses, with their verification: the strategy only asks
           // GitHub for them when the scope names them.
           scope: ['user:email'],
