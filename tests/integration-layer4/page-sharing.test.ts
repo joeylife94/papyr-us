@@ -567,3 +567,251 @@ describe('the candidate search of the sharing dialog', () => {
     });
   });
 });
+
+type PublicRow = [number | null, string];
+const LEVEL_OF: Record<string, Level | null> = {
+  viewer: 'viewer',
+  commenter: 'commenter',
+  editor: 'viewer',
+  owner: 'viewer',
+  bogus: null,
+};
+/** What several public rows give together: the strongest honoured level. */
+const together = (rows: PublicRow[]): Level | null => {
+  let best: Level | null = null;
+  for (const [, permission] of rows) {
+    const level = LEVEL_OF[permission] ?? null;
+    if (level !== null && (best === null || RANK[level] > RANK[best])) best = level;
+  }
+  return best;
+};
+
+describe('several public rows of one page are decided the same way by every reader', () => {
+  const SETS: PublicRow[][] = [
+    [
+      [null, 'bogus'],
+      [null, 'viewer'],
+    ],
+    [
+      [null, 'viewer'],
+      [null, 'bogus'],
+    ],
+    [
+      [null, 'owner'],
+      [null, 'commenter'],
+    ],
+    [
+      [null, 'commenter'],
+      [null, 'owner'],
+    ],
+    [
+      [7, 'viewer'],
+      [null, 'commenter'],
+    ],
+    [[7, 'commenter']],
+    [
+      [null, 'bogus'],
+      [null, 'bogus'],
+    ],
+    [
+      [null, 'editor'],
+      [null, 'bogus'],
+      [null, 'viewer'],
+    ],
+  ];
+
+  it('checkPagePermission, the by-id read, the page list and the recipient reader all use the strongest honoured level', async () => {
+    const creator = await newUser('mr-creator');
+    const member = await newUser('mr-member');
+    const outsider = await newUser('mr-outsider', { organization: 'other' });
+    const viewers = {
+      member: await storage.getPageViewer(member.id),
+      outsider: await storage.getPageViewer(outsider.id),
+      anonymous: await storage.getPageViewer(undefined),
+    };
+    for (const set of SETS) {
+      const page = await newPage({
+        creator,
+        grants: [
+          ['user', creator.id, 'owner'],
+          ...set.map(
+            ([entityId, permission]) =>
+              ['public', entityId, permission] as [string, number | null, string]
+          ),
+        ],
+      });
+      const honoured = together(set);
+      const label = JSON.stringify(set);
+      for (const [who, userId] of [
+        ['signed out', undefined],
+        ['outsider', outsider.id],
+        ['member', member.id],
+      ] as Array<[string, number | undefined]>) {
+        for (const required of LEVELS) {
+          const expected = honoured !== null && RANK[honoured] >= RANK[required];
+          expect(
+            await storage.checkPagePermission(userId, page.id, required),
+            `${label}: ${who} needs ${required}`
+          ).toBe(expected);
+        }
+      }
+      for (const [who, viewer] of Object.entries(viewers)) {
+        const readable = (await storage.resolveReadablePageLinks(viewer, [page.id])).length === 1;
+        expect(readable, `${label}: ${who} reads by id (readableBy)`).toBe(honoured !== null);
+        const listed = (
+          await storage.searchWikiPages({ query: '' }, { readableBy: viewer })
+        ).pages.some((p: { id: number }) => p.id === page.id);
+        expect(listed, `${label}: ${who} lists (listableBy)`).toBe(
+          who === 'member' && honoured !== null
+        );
+      }
+      const readers = await storage.getReadableOrganizationMembers(defaultOrg, page.id, [
+        member.id,
+      ]);
+      expect(readers.has(member.id), `${label}: recipient reader`).toBe(honoured !== null);
+      const sharing = await storage.getPageSharing(page.id, creator.id, true);
+      expect(sharing.publicAccess?.level ?? null, `${label}: sharing view`).toBe(honoured);
+    }
+  });
+
+  it('setting the public level replaces every public row with one that names nobody; off removes them all; other grants stay', async () => {
+    const creator = await newUser('sp-creator');
+    const friend = await newUser('sp-friend');
+    const page = await newPage({
+      creator,
+      grants: [
+        ['user', creator.id, 'owner'],
+        ['user', friend.id, 'viewer'],
+        ['public', null, 'owner'],
+        ['public', 7, 'viewer'],
+        ['public', null, 'bogus'],
+      ],
+    });
+    const rows = async () =>
+      (
+        await scoped.query(
+          `SELECT entity_type, entity_id, permission FROM page_permissions WHERE page_id = $1 ORDER BY id`,
+          [page.id]
+        )
+      ).rows;
+    await storage.setPagePublicAccess(page.id, 'commenter', creator.id);
+    const after = await rows();
+    expect(after.filter((r: any) => r.entity_type === 'public')).toEqual([
+      { entity_type: 'public', entity_id: null, permission: 'commenter' },
+    ]);
+    expect(after.filter((r: any) => r.entity_type === 'user')).toHaveLength(2);
+    expect(await storage.checkPagePermission(undefined, page.id, 'commenter')).toBe(true);
+
+    await storage.setPagePublicAccess(page.id, 'viewer', creator.id);
+    expect((await rows()).filter((r: any) => r.entity_type === 'public')).toEqual([
+      { entity_type: 'public', entity_id: null, permission: 'viewer' },
+    ]);
+    await storage.setPagePublicAccess(page.id, null, creator.id);
+    expect((await rows()).filter((r: any) => r.entity_type === 'public')).toEqual([]);
+    expect(await storage.checkPagePermission(undefined, page.id, 'viewer')).toBe(false);
+    expect((await rows()).filter((r: any) => r.entity_type === 'user')).toHaveLength(2);
+  });
+});
+
+describe('a share link is deleted only through the page it belongs to', () => {
+  it('deletes the link of that page and nothing else, and says whether it did', async () => {
+    const creator = await newUser('dl-creator');
+    const mine = await newPage({ creator, grants: [['user', creator.id, 'owner']] });
+    const other = await newPage({ creator, grants: [['user', creator.id, 'owner']] });
+    const link = async (pageId: number, token: string) =>
+      scoped.query(
+        `INSERT INTO public_links (page_id, token, permission) VALUES ($1, $2, 'viewer')`,
+        [pageId, token]
+      );
+    await scoped.query(`CREATE TABLE IF NOT EXISTS public_links (
+      id SERIAL PRIMARY KEY, page_id INTEGER NOT NULL REFERENCES wiki_pages(id) ON DELETE CASCADE,
+      token TEXT NOT NULL UNIQUE, password TEXT, permission TEXT NOT NULL DEFAULT 'viewer',
+      expires_at TIMESTAMP, created_by INTEGER, created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      last_accessed_at TIMESTAMP, access_count INTEGER NOT NULL DEFAULT 0)`);
+    await link(mine.id, `mine-${mine.id}`);
+    await link(other.id, `other-${other.id}`);
+    expect(await storage.deletePublicLinkForPage(mine.id, `other-${other.id}`)).toBe(false);
+    expect(await storage.deletePublicLinkForPage(999999, `other-${other.id}`)).toBe(false);
+    expect(await storage.getPublicLink(`other-${other.id}`)).toBeDefined();
+    expect(await storage.deletePublicLinkForPage(other.id, `other-${other.id}`)).toBe(true);
+    expect(await storage.getPublicLink(`other-${other.id}`)).toBeUndefined();
+    expect(await storage.getPublicLink(`mine-${mine.id}`)).toBeDefined();
+    expect(await storage.deletePublicLinkForPage(other.id, `other-${other.id}`)).toBe(false);
+  });
+});
+
+describe('on a team page a person grant must be one that gives access', () => {
+  it('only a current member of the page team can be granted; a deactivated account, another organization and an unknown id cannot, on any page', async () => {
+    const creator = await newUser('tg-creator');
+    const teamId = await newTeam('tg-team');
+    const member = await newUser('tg-member');
+    const outsider = await newUser('tg-outsider');
+    const off = await newUser('tg-off', { active: false });
+    const foreign = await newUser('tg-foreign', { organization: 'other' });
+    await joinTeam(teamId, creator, 'owner');
+    await joinTeam(teamId, member);
+    await joinTeam(teamId, off);
+    const teamPage = await newPage({ creator, teamId, grants: [['user', creator.id, 'owner']] });
+    const plain = await newPage({ creator, grants: [['user', creator.id, 'owner']] });
+    const ok = (pageId: number, id: number) =>
+      storage.isGranteeInPageOrganization(pageId, 'user', id);
+    expect(await ok(teamPage.id, member.id)).toBe(true);
+    expect(await ok(teamPage.id, outsider.id)).toBe(false);
+    expect(await ok(teamPage.id, off.id)).toBe(false);
+    expect(await ok(teamPage.id, foreign.id)).toBe(false);
+    expect(await ok(teamPage.id, 987654)).toBe(false);
+    // A team-less page takes any active member of the organization
+    expect(await ok(plain.id, outsider.id)).toBe(true);
+    expect(await ok(plain.id, off.id)).toBe(false);
+    expect(await ok(plain.id, foreign.id)).toBe(false);
+    // Teams are decided as before
+    const otherTeam = await newTeam('tg-other-team');
+    expect(await storage.isGranteeInPageOrganization(teamPage.id, 'team', otherTeam)).toBe(true);
+  });
+
+  it('the person search of a team page lists current members of that team only; teams stay as they are', async () => {
+    const creator = await newUser('ts-creator', { name: 'Tess Caller' });
+    const teamId = await newTeam('ts-team', defaultOrg, 'Tess Squad');
+    const member = await newUser('ts-member', { name: 'Tess Member' });
+    await newUser('ts-other', { name: 'Tess Outside' });
+    await joinTeam(teamId, creator, 'owner');
+    await joinTeam(teamId, member);
+    const page = await newPage({ creator, teamId, grants: [['user', creator.id, 'owner']] });
+    const found = await storage.listPageShareCandidates(page.id, creator.id, 'tess');
+    expect(found.people.map((p: any) => p.userId)).toEqual([member.id]);
+    expect(found.teams.map((t: any) => t.name)).toEqual(['Tess Squad']);
+  });
+
+  it('an existing grant to a non-member is kept and marked as having no effect, for managers only', async () => {
+    const creator = await newUser('ne-creator');
+    const teamId = await newTeam('ne-team');
+    const member = await newUser('ne-member', { name: 'Neo Member' });
+    const stray = await newUser('ne-stray', { name: 'Neo Stray' });
+    await joinTeam(teamId, creator, 'owner');
+    await joinTeam(teamId, member);
+    const page = await newPage({
+      creator,
+      teamId,
+      grants: [
+        ['user', creator.id, 'owner'],
+        ['user', member.id, 'editor'],
+        ['user', stray.id, 'editor'],
+      ],
+    });
+    const asOwner = await storage.getPageSharing(page.id, creator.id, true);
+    const byName = Object.fromEntries(asOwner.entries.map((e: any) => [e.name, e]));
+    expect(byName['Neo Stray'].noEffect).toBe(true);
+    expect(byName['Neo Member'].noEffect).toBeUndefined();
+    expect(byName[creator.name].noEffect).toBeUndefined();
+    const asReader = await storage.getPageSharing(page.id, member.id, false);
+    for (const entry of asReader.entries) expect(entry).not.toHaveProperty('noEffect');
+    expect(
+      (
+        await scoped.query(`SELECT 1 FROM page_permissions WHERE page_id = $1 AND entity_id = $2`, [
+          page.id,
+          stray.id,
+        ])
+      ).rowCount
+    ).toBe(1);
+  });
+});

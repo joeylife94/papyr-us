@@ -13,7 +13,7 @@
  * The grant routes themselves (`/permissions`) stay in routes.ts; the helpers here validate a
  * grant and tell open realtime sessions that someone's access changed.
  */
-import type { Express } from 'express';
+import type { Express, NextFunction, Response } from 'express';
 import { authMiddleware, buildAccountRateLimiter, type AuthRequest } from './middleware.js';
 import type { DBStorage } from './storage.js';
 import { notifyPageAccessChanged } from './services/page-access-events.js';
@@ -91,6 +91,36 @@ export function toShareLink(link: PublicLink): PageShareLink {
   };
 }
 
+/** The largest page id the database holds; a larger one names no page. */
+export const MAX_PAGE_ID = 2147483647;
+
+export function parsePageIdParam(raw: string): number | null {
+  const id = Number(raw);
+  return Number.isInteger(id) && id > 0 && id <= MAX_PAGE_ID ? id : null;
+}
+
+/**
+ * Gate for the share link routes: the page in the path must exist (404) and the caller must own
+ * it (403). The permission check alone says yes for a page that does not exist, so existence is
+ * decided first. Runs after the session check.
+ */
+export function pageOwnerGate(storage: Pick<DBStorage, 'getWikiPage' | 'checkPagePermission'>) {
+  return async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const pageId = parsePageIdParam(req.params.id);
+      if (!pageId || !(await storage.getWikiPage(pageId))) {
+        return res.status(404).json({ message: 'Page not found' });
+      }
+      if (!(await storage.checkPagePermission(req.user?.id, pageId, 'owner'))) {
+        return res.status(403).json({ message: 'Only page owners can manage share links' });
+      }
+      next();
+    } catch {
+      return res.status(500).json({ message: 'Server error' });
+    }
+  };
+}
+
 export function registerPageSharingRoutes(app: Express, storage: DBStorage) {
   const rlCandidates = buildAccountRateLimiter({ windowMs: 60_000, max: 30 });
 
@@ -107,10 +137,7 @@ export function registerPageSharingRoutes(app: Express, storage: DBStorage) {
     return storage.getPageLevel(callerId, pageId);
   };
 
-  const parsePageId = (raw: string): number | null => {
-    const id = Number(raw);
-    return Number.isInteger(id) && id > 0 ? id : null;
-  };
+  const parsePageId = parsePageIdParam;
 
   app.get('/api/pages/:id/sharing', authMiddleware, async (req: AuthRequest, res) => {
     const pageId = parsePageId(req.params.id);

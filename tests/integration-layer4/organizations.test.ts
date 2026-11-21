@@ -438,7 +438,11 @@ describe('organization boundary in DBStorage (real Postgres)', () => {
 
   it("only lets grants name users and teams of the page's organization", async () => {
     const id = page['default-team'];
-    expect(await storage.isGranteeInPageOrganization(id, 'user', BEN)).toBe(true);
+    // A team-less page of the same organization takes any member of it; a team page takes members
+    // of its team (proven in page-sharing.test.ts)
+    const open = page['default-open'];
+    expect(await storage.isGranteeInPageOrganization(open, 'user', BEN)).toBe(true);
+    expect(await storage.isGranteeInPageOrganization(open, 'user', CY)).toBe(false);
     expect(await storage.isGranteeInPageOrganization(id, 'user', CY)).toBe(false);
     expect(await storage.isGranteeInPageOrganization(id, 'team', OLD_TEAM)).toBe(true);
     expect(await storage.isGranteeInPageOrganization(id, 'team', acmeTeam)).toBe(false);

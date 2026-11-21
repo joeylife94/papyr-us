@@ -28,6 +28,25 @@ export function effectivePublicLevel(stored: unknown): PublicGrantLevel | null {
   return null;
 }
 
+const PUBLIC_RANK: Record<PublicGrantLevel, number> = { viewer: 1, commenter: 2 };
+
+/**
+ * What the public rows of a page give together, for every reader: the strongest
+ * `effectivePublicLevel` over all of them, whatever their entity id. A row with an unknown level
+ * gives nothing. This agrees with the page lists, which read a page as public when any public row
+ * has one of the four levels.
+ */
+export function strongestPublicLevel(
+  rows: ReadonlyArray<{ permission: unknown }>
+): PublicGrantLevel | null {
+  let best: PublicGrantLevel | null = null;
+  for (const row of rows) {
+    const level = effectivePublicLevel(row.permission);
+    if (level !== null && (best === null || PUBLIC_RANK[level] > PUBLIC_RANK[best])) best = level;
+  }
+  return best;
+}
+
 /** The people and team search of the sharing dialog: same limits as the team member search. */
 export const SHARE_CANDIDATE_MIN_QUERY_LENGTH = 2;
 export const SHARE_CANDIDATE_LIMIT = 10;
@@ -44,6 +63,8 @@ export interface PageSharingEntry {
   entityId?: number;
   email?: string;
   former?: boolean;
+  /** A person granted on a team page without being a member of the team: it gives nothing. */
+  noEffect?: boolean;
 }
 
 /** Who has access to a page (the storage part of GET /api/pages/:id/sharing). */

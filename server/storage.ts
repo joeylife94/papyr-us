@@ -111,8 +111,8 @@ import { TEAM_CANDIDATE_LIMIT, TEAM_CANDIDATE_MIN_QUERY_LENGTH } from '../shared
 import {
   SHARE_CANDIDATE_LIMIT,
   SHARE_CANDIDATE_MIN_QUERY_LENGTH,
-  effectivePublicLevel,
   isPermissionLevel,
+  strongestPublicLevel,
   type PageSharingView,
 } from '../shared/page-sharing.js';
 import {
@@ -2143,10 +2143,11 @@ export class DBStorage {
     const levels: Record<string, number> = { viewer: 1, commenter: 2, editor: 3, owner: 4 };
     const reads = (permission: string) => (levels[permission] ?? 0) >= levels.viewer;
     const pageTeamId = page.teamId ? Number(page.teamId) : null;
-    // A public grant reads at the level it is honoured as (effectivePublicLevel), which is
-    // viewer or more for every stored level that is one of the four.
-    const publicGrant = grants.find((grant) => grant.entityType === 'public');
-    const publicLevel = effectivePublicLevel(publicGrant?.permission);
+    // The public rows read at the strongest level they are honoured as (strongestPublicLevel),
+    // which is viewer or more for every stored level that is one of the four.
+    const publicLevel = strongestPublicLevel(
+      grants.filter((grant) => grant.entityType === 'public')
+    );
     const everyone = publicLevel !== null && reads(publicLevel);
 
     const teamsOf = new Map<number, number[]>();
@@ -4363,9 +4364,11 @@ export class DBStorage {
 
     // Check public permissions first: a page shared publicly reads for anyone. A public grant
     // carries viewer or commenter at most: a stored editor or owner is honoured as viewer (the
-    // same rule as `readableBy` and `getReadableOrganizationMembers`, see effectivePublicLevel).
-    const publicPermission = permissions.find((p: PagePermission) => p.entityType === 'public');
-    const publicLevel = effectivePublicLevel(publicPermission?.permission);
+    // same rule as `readableBy` and `getReadableOrganizationMembers`: the strongest honoured level
+    // over all public rows, see strongestPublicLevel).
+    const publicLevel = strongestPublicLevel(
+      permissions.filter((p: PagePermission) => p.entityType === 'public')
+    );
     if (publicLevel !== null && permissionLevels[publicLevel] >= requiredLevel) {
       return true;
     }
@@ -4447,7 +4450,7 @@ export class DBStorage {
 
   /**
    * Whether a grant on the page may name this grantee (issue #124 X1): a user or team of the
-   * page's own organization. Public grants name nobody; other entity types are left to the
+   * page's own organization; a user must be active, and on a team page a member of that team. Public grants name nobody; other entity types are left to the
    * permission's own validation.
    */
   async isGranteeInPageOrganization(
@@ -4457,11 +4460,27 @@ export class DBStorage {
   ): Promise<boolean> {
     if (entityType !== 'user' && entityType !== 'team') return true;
     const [page] = await this.db
-      .select({ organizationId: wikiPages.organizationId })
+      .select({ organizationId: wikiPages.organizationId, teamId: wikiPages.teamId })
       .from(wikiPages)
       .where(eq(wikiPages.id, pageId));
     const id = Number(entityId);
     if (!page || !Number.isInteger(id) || id <= 0) return false;
+    if (entityType === 'user') {
+      // A deactivated account is not granted anything, and on a team page only a member of the
+      // team holds what a user grant gives
+      const [account] = await this.db
+        .select({ isActive: users.isActive })
+        .from(users)
+        .where(eq(users.id, id));
+      if (account?.isActive !== true) return false;
+      if (page.teamId) {
+        const [membership] = await this.db
+          .select({ id: teamMembers.id })
+          .from(teamMembers)
+          .where(and(eq(teamMembers.teamId, Number(page.teamId)), eq(teamMembers.userId, id)));
+        if (!membership) return false;
+      }
+    }
     const granteeOrganizationId =
       entityType === 'user'
         ? await this.getUserOrganizationId(id)
@@ -4573,6 +4592,21 @@ export class DBStorage {
       }
     }
 
+    // On a team page a person who is not in the team holds nothing from a user grant
+    const inPageTeam = new Set<number>();
+    if (forManager && page.teamId && userIds.length > 0) {
+      const rows = await this.db
+        .select({ userId: teamMembers.userId })
+        .from(teamMembers)
+        .where(
+          and(
+            eq(teamMembers.teamId, Number(page.teamId)),
+            inArray(teamMembers.userId, [...new Set(userIds)])
+          )
+        );
+      for (const row of rows) inPageTeam.add(Number(row.userId));
+    }
+
     const entries: PageSharingView['entries'] = [];
     for (const grant of grants) {
       if (grant.entityType !== 'user' && grant.entityType !== 'team') continue;
@@ -4591,6 +4625,7 @@ export class DBStorage {
             permission: grant.permission,
             isYou: entityId === callerId,
             ...(forManager && { grantId: grant.id, entityId, email: person.email }),
+            ...(forManager && page.teamId && !inPageTeam.has(entityId) && { noEffect: true }),
           });
         } else if (forManager) {
           entries.push({
@@ -4646,18 +4681,20 @@ export class DBStorage {
       baseline = { kind: 'restricted' };
     }
 
-    // The first public row decides, as in checkPagePermission
-    const publicGrant = grants.find((grant) => grant.entityType === 'public');
-    const publicLevel = effectivePublicLevel(publicGrant?.permission);
+    // The public rows decide together, as in checkPagePermission
+    const publicRows = grants.filter((grant) => grant.entityType === 'public');
+    const publicLevel = strongestPublicLevel(publicRows);
+    const rawRank: Record<string, number> = { owner: 4, editor: 3, commenter: 2, viewer: 1 };
+    const strongestStored = publicRows
+      .map((row) => row.permission)
+      .sort((a, b) => (rawRank[b] ?? 0) - (rawRank[a] ?? 0))[0];
     const publicAccess: PageSharingView['publicAccess'] =
-      publicGrant && publicLevel
+      publicRows.length > 0 && publicLevel
         ? {
             level: publicLevel,
             ...(forManager && {
-              grantId: publicGrant.id,
-              ...(publicGrant.permission !== publicLevel && {
-                storedLevel: publicGrant.permission,
-              }),
+              grantId: publicRows[0].id,
+              ...(strongestStored !== publicLevel && { storedLevel: strongestStored }),
             }),
           }
         : null;
@@ -4686,7 +4723,7 @@ export class DBStorage {
     const trimmed = query.trim();
     if ([...trimmed].length < SHARE_CANDIDATE_MIN_QUERY_LENGTH) return empty;
     const [page] = await this.db
-      .select({ organizationId: wikiPages.organizationId })
+      .select({ organizationId: wikiPages.organizationId, teamId: wikiPages.teamId })
       .from(wikiPages)
       .where(and(eq(wikiPages.id, pageId), isNull(wikiPages.deletedAt)));
     if (!page) return empty;
@@ -4694,12 +4731,17 @@ export class DBStorage {
     if ((await this.getUserOrganizationId(callerId)) !== organizationId) return empty;
 
     const needle = `%${trimmed.replace(/[\\%_]/g, (character) => `\\${character}`)}%`;
+    // On a team page only people who are in the team hold what a grant gives
+    const teamOnly = page.teamId
+      ? sql`AND EXISTS (SELECT 1 FROM team_members tm WHERE tm.team_id = ${Number(page.teamId)} AND tm.user_id = u.id)`
+      : sql``;
     const peopleResult = await this.db.execute(sql`
       SELECT u.id, u.name, u.email
       FROM organization_members om
       JOIN organizations o ON o.id = om.organization_id
       JOIN users u ON u.id = om.user_id
       WHERE om.organization_id = ${organizationId}
+        ${teamOnly}
         AND o.is_active = true
         AND u.is_active = true
         AND u.id <> ${callerId}
@@ -4731,6 +4773,30 @@ export class DBStorage {
       morePeople: peopleRows.length > SHARE_CANDIDATE_LIMIT,
       moreTeams: teamRows.length > SHARE_CANDIDATE_LIMIT,
     };
+  }
+
+  /**
+   * Sets the public access of a page to one row that names nobody at `level`, replacing every
+   * public row of the page in one statement; null removes them all. Other grants are untouched.
+   * Returns the row, or undefined when public access was removed.
+   */
+  async setPagePublicAccess(
+    pageId: number,
+    level: 'viewer' | 'commenter' | null,
+    grantedBy?: number
+  ): Promise<PagePermission | undefined> {
+    const result = await this.db.execute(sql`
+      WITH removed AS (
+        DELETE FROM page_permissions WHERE page_id = ${pageId} AND entity_type = 'public'
+      )
+      INSERT INTO page_permissions (page_id, entity_type, entity_id, permission, granted_by)
+      SELECT ${pageId}, 'public', NULL, ${level}::text, ${grantedBy ?? null}::integer
+      WHERE ${level}::text IS NOT NULL
+      RETURNING id, page_id AS "pageId", entity_type AS "entityType", entity_id AS "entityId",
+                permission, granted_by AS "grantedBy", created_at AS "createdAt",
+                updated_at AS "updatedAt"
+    `);
+    return (result.rows as PagePermission[])[0];
   }
 
   /** Whether the user is a current owner or admin of the team (see checkPagePermission). */
@@ -4888,6 +4954,15 @@ export class DBStorage {
     return result.length > 0;
   }
 
+  /** Deletes the link with this token when it belongs to this page; false when none did. */
+  async deletePublicLinkForPage(pageId: number, token: string): Promise<boolean> {
+    const result = await this.db
+      .delete(publicLinks)
+      .where(and(eq(publicLinks.token, token), eq(publicLinks.pageId, pageId)))
+      .returning();
+    return result.length > 0;
+  }
+
   /**
    * Delete public link by token
    */
@@ -4911,6 +4986,8 @@ export class DBStorage {
     error?: string;
     /** No link has this token (never made, or revoked): answered as not found, not as refused. */
     notFound?: boolean;
+    /** The link exists but its expiry has passed. */
+    expired?: boolean;
   }> {
     const link = await this.getPublicLink(token);
 
@@ -4920,7 +4997,7 @@ export class DBStorage {
 
     // Check expiration
     if (link.expiresAt && new Date(link.expiresAt) < new Date()) {
-      return { valid: false, error: 'Link expired' };
+      return { valid: false, error: 'Link expired', expired: true };
     }
 
     // Check password if required

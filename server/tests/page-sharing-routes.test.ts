@@ -141,6 +141,10 @@ beforeEach(() => {
   storage.addPagePermission.mockImplementation(async (data: any) => ({ id: 77, ...data }));
   storage.getPagePermissions.mockResolvedValue([]);
   storage.removePagePermission.mockResolvedValue(true);
+  storage.setPagePublicAccess.mockImplementation(async (pageId: number, level: string | null) =>
+    level ? { id: 78, pageId, entityType: 'public', entityId: null, permission: level } : undefined
+  );
+  storage.deletePublicLinkForPage.mockResolvedValue(true);
   storage.listTeamMembers.mockResolvedValue([]);
   storage.getPageSharing.mockResolvedValue(view);
   storage.getPagePublicLinks.mockResolvedValue([]);
@@ -166,18 +170,19 @@ describe('granting', () => {
       expect(res.body).toEqual({ message: 'Invalid permission data' });
     }
     expect(storage.addPagePermission).not.toHaveBeenCalled();
+    expect(storage.setPagePublicAccess).not.toHaveBeenCalled();
     expect(notify).not.toHaveBeenCalled();
   });
 
   it('accepts a public grant at viewer or commenter, naming nobody', async () => {
     for (const permission of ['viewer', 'commenter']) {
-      storage.addPagePermission.mockClear();
+      storage.setPagePublicAccess.mockClear();
       const res = await post(OWNER, { entityType: 'public', entityId: 55, permission });
       expect(res.status, permission).toBe(201);
-      expect(storage.addPagePermission).toHaveBeenCalledWith(
-        expect.objectContaining({ entityType: 'public', entityId: null, permission })
-      );
+      // One public row that names nobody replaces all the page's public rows
+      expect(storage.setPagePublicAccess).toHaveBeenCalledWith(PAGE, permission, OWNER);
     }
+    expect(storage.addPagePermission).not.toHaveBeenCalled();
   });
 
   it('refuses unknown entity types, unknown levels and a user or team without a valid id', async () => {
@@ -258,7 +263,11 @@ describe('removing a grant', () => {
     expect((await remove(OWNER, 2)).status).toBe(200);
     expect(notify.mock.calls.map((call) => call[0]).sort()).toEqual([41, 42]);
     notify.mockClear();
+    storage.removePagePermission.mockClear();
     expect((await remove(OWNER, 3)).status).toBe(200);
+    // Removing a public row removes every public row of the page
+    expect(storage.setPagePublicAccess).toHaveBeenCalledWith(PAGE, null);
+    expect(storage.removePagePermission).not.toHaveBeenCalled();
     expect(notify).not.toHaveBeenCalled();
   });
 
@@ -359,6 +368,64 @@ describe('share links', () => {
   });
 });
 
+describe('share links belong to their page and to its owner', () => {
+  const owned = (method: 'get' | 'post' | 'delete', id: number | undefined, path = '') => {
+    const req = (request(app) as any)[method](`/api/pages/${PAGE}/share${path}`);
+    return id ? req.set(cookieFor(id)) : req;
+  };
+
+  it('only an owner lists, creates or deletes links: editor, commenter, viewer, a member without access and another organization are refused; signed out gets 401', async () => {
+    levels[40] = 'commenter';
+    organizations[40] = ORG;
+    for (const id of [EDITOR, READER, 40, NO_ACCESS, OUTSIDER]) {
+      expect((await owned('get', id)).status, `list ${id}`).toBe(403);
+      expect((await owned('post', id).send({})).status, `create ${id}`).toBe(403);
+      expect((await owned('delete', id, '/tok')).status, `delete ${id}`).toBe(403);
+    }
+    for (const method of ['get', 'post', 'delete'] as const) {
+      expect((await owned(method, undefined, method === 'delete' ? '/tok' : '')).status).toBe(401);
+    }
+    expect(storage.getPagePublicLinks).not.toHaveBeenCalled();
+    expect(storage.createPublicLink).not.toHaveBeenCalled();
+    expect(storage.deletePublicLinkForPage).not.toHaveBeenCalled();
+  });
+
+  it('an unknown page is 404 even though the permission check says yes for a page that does not exist', async () => {
+    storage.checkPagePermission.mockResolvedValue(true);
+    for (const [method, path] of [
+      ['get', ''],
+      ['post', ''],
+      ['delete', '/tok'],
+    ] as const) {
+      const res = await (request(app) as any)
+        [method](`/api/pages/999/share${path}`)
+        .set(cookieFor(OWNER))
+        .send({});
+      expect(res.status, method).toBe(404);
+    }
+    expect(storage.deletePublicLinkForPage).not.toHaveBeenCalled();
+    expect(storage.createPublicLink).not.toHaveBeenCalled();
+  });
+
+  it('deletes by token within the page in the path; a token of another page answers 404', async () => {
+    expect((await owned('delete', OWNER, '/tok')).status).toBe(200);
+    expect(storage.deletePublicLinkForPage).toHaveBeenCalledWith(PAGE, 'tok');
+    expect(storage.deletePublicLinkByToken).not.toHaveBeenCalled();
+    storage.deletePublicLinkForPage.mockResolvedValue(false);
+    expect((await owned('delete', OWNER, '/elsewhere')).status).toBe(404);
+  });
+});
+
+describe('page ids beyond the database range', () => {
+  it('are 404 on the sharing view and the candidate search', async () => {
+    for (const path of ['sharing', 'share-candidates?q=ab']) {
+      const res = await request(app).get(`/api/pages/2147483648/${path}`).set(cookieFor(OWNER));
+      expect(res.status, path).toBe(404);
+    }
+    expect(storage.getWikiPage).not.toHaveBeenCalled();
+  });
+});
+
 describe('a link that is gone', () => {
   it('answers 404 for an unknown or revoked token and 403 where a password or the expiry is the reason', async () => {
     storage.verifyPublicLink.mockResolvedValue({
@@ -370,10 +437,21 @@ describe('a link that is gone', () => {
     expect(
       (await request(app).post('/api/share/gone/verify').set(cookieFor(READER)).send({})).status
     ).toBe(404);
-    for (const error of ['Password required', 'Invalid password', 'Link expired']) {
+    for (const error of ['Password required', 'Invalid password']) {
       storage.verifyPublicLink.mockResolvedValue({ valid: false, error });
-      expect((await request(app).get('/api/share/tok')).status, error).toBe(403);
+      const res = await request(app).get('/api/share/tok');
+      expect(res.status, error).toBe(403);
+      expect(res.body.code).toBeUndefined();
     }
+    // An expired link says so, apart from a request for a password
+    storage.verifyPublicLink.mockResolvedValue({
+      valid: false,
+      error: 'Link expired',
+      expired: true,
+    });
+    const expired = await request(app).get('/api/share/tok');
+    expect(expired.status).toBe(403);
+    expect(expired.body).toEqual({ message: 'Link expired', code: 'link_expired' });
   });
 });
 
