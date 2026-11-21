@@ -19,7 +19,6 @@
   - `server/services/i18n.ts` - 다국어 지원 (7개 언어)
   - `server/services/microservices.ts` - 마이크로서비스 아키텍처 준비
   - `server/services/version-history.ts` - 페이지 버전 히스토리
-  - `server/services/comment-notifications.ts` - 댓글 알림 시스템
   - `server/services/monitoring.ts` - Sentry/Prometheus 모니터링
   - `server/services/logger.ts` - Winston 구조화 로깅
   - `server/services/redis.ts` - Redis 캐싱/세션 관리

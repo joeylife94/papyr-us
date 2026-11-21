@@ -23,12 +23,14 @@
 - **운영**: `/ready` 준비 상태 프로브(#125), PR마다 Golden Journey·P0 브라우저 스펙 실행(#87)
 - **조직 관리** (#124 X1c): 플랫폼 관리자의 조직 생성과 첫 소유자 지정(`/admin`의 `Organizations` 탭, `/api/admin/organizations*`), 조직 소유자·관리자의 구성원·역할·팀 목록·설정 화면(`/organization`, `/api/organization*`), 조직 AI 스위치(`organizations.ai_enabled`, 가역 마이그레이션 `drizzle/0024`)와 구성원별 AI 권한(`organization_members.ai_allowed`, `drizzle/0025`, `구성원` 탭에서 소유자·관리자가 부여)
 
+- **댓글 멘션과 알림** (WP6): 댓글에서 `@`로 같은 조직의 구성원을 멘션(그 페이지를 읽을 수 있는 사람만 후보). 새 댓글은 페이지를 만든 사람에게, 답글은 스레드 참여자에게, 멘션은 멘션된 사람에게 알림. 알림을 누르면 그 댓글로 이동
 - **페이지 작성 계정** (WP0b): 페이지가 만든 계정(`wiki_pages.created_by_user_id`)을 서버가 기록. 가역 마이그레이션 `drizzle/0027`이 기존 페이지 중 확실한 것만 한 번 채움
 - **팀 멤버 화면** (WP2): 팀 소유자·관리자가 같은 조직의 계정을 찾아 추가하고, 역할을 바꾸고, 내보내는 화면(`/teams/<팀>/team-members`, `/api/teams/:teamId/members`·`member-candidates`·`memberships`). 조직 구성원이면 누구나 팀을 만들고 그 팀의 소유자가 됨. 주소용 팀 이름은 서버가 만듦
 - **알림은 계정에게** (WP0a): 알림의 받는 사람과 보낸 사람이 팀 명단 행이 아니라 계정이고(`notifications.recipient_user_id`, `sender_user_id`), 알림은 만들어진 조직에 머뭄(`organization_id`). 가역 마이그레이션 `drizzle/0026`이 기존 알림을 같은 이메일의 계정으로 옮기고, 옮길 수 없는 알림은 `notification_roster_archive`에 사유와 함께 보관. 종 아이콘은 조직이 있는 모든 계정에 표시
 
 ### Changed
 
+- 댓글 작성은 `ENFORCE_AUTH_WRITES`가 꺼져 있어도 로그인한 계정으로 동작(이전에는 그 모드에서 모든 댓글 작성이 401). 계정당 횟수 제한, 다른 페이지의 댓글을 `parentId`로 지정하면 400. 쓰이지 않던 `server/services/comment-notifications.ts`, `server/routes/notifications.ts` 삭제 (WP6)
 - 페이지 만들기·복제·가져오기는 `ENFORCE_AUTH_WRITES`와 무관하게 로그인이 필요하고, 작성자 표시는 계정 이름. 작성자 문자열이 이메일과 같으면 소유자로 보던 규칙은 작성 계정이 기록되지 않은 옛 페이지에만 적용. 워크플로가 만든 페이지의 작성자는 `Automation` (WP0b)
 - 팀 접근은 `team_members` 행으로만 정해짐. 팀 명단(`members`) 행이 주던 접근은 가역 마이그레이션 `drizzle/0028`이 팀 멤버십으로 한 번 옮기고 `team_roster_conversions`에 기록하며, 그 뒤 명단은 디렉터리로만 남음. 조직에서 구성원을 내보내면 활성 소유자가 없어진 팀을 응답으로 알림 (WP2)
 - `POST /api/notifications`는 `recipientUserId`(같은 조직의 활성 계정)를 받고, 사람이 보낼 수 있는 종류(`comment`, `mention`, `task_due`, `task_assigned`)와 길이(제목 200자, 내용 2,000자)를 제한. 예전 `recipientId`·`senderId`가 있는 본문은 400. 워크플로 알림 동작은 `recipientUserIds`를 사용 (WP0a)

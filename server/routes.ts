@@ -49,6 +49,7 @@ import {
   sanitizePageMetadata,
   type CalendarEvent,
   type Task,
+  type Notification,
 } from '../shared/schema.js';
 import {
   upload,
@@ -128,6 +129,16 @@ import { registerTagRoutes } from './routes/tags.js';
 import { contentWithLinkTitles, singlePageMarkdown } from './services/vault-export.js';
 import { pageLinkTokenIds } from './services/vault-format.js';
 import { featureFlags } from './features.js';
+import {
+  MENTION_SEARCH_MAX_LENGTH,
+  extractMentionIds,
+  stripUnlistedMentions,
+} from '../shared/comment-mentions.js';
+import {
+  failClosedPlan,
+  planCommentNotifications,
+  planEditNotifications,
+} from './services/comment-notify.js';
 import { postgresErrorOf } from './db-errors.js';
 import { registerDatabaseRoutes } from './routes/database.js';
 import { registerSyncedBlockRoutes } from './routes/synced-blocks.js';
@@ -1944,6 +1955,49 @@ export async function registerRoutes(
     });
   }
 
+  // Realtime: a notification row and its recipient's unread count go to the room of the recipient
+  // account (`user:<id>`), and nowhere else. The one emit path for every producer.
+  const emitNotificationEvent = async (
+    event: 'notification:new' | 'notification:updated',
+    notification: { recipientUserId: number; organizationId: number }
+  ) => {
+    const ns = io?.of('/collab');
+    if (!ns) return;
+    const room = `user:${notification.recipientUserId}`;
+    ns.to(room).emit(event, notification);
+    const count = await storage.getUnreadNotificationCount(
+      notification.recipientUserId,
+      notification.organizationId
+    );
+    ns.to(room).emit('notification:unread-count', {
+      recipientUserId: notification.recipientUserId,
+      count,
+    });
+  };
+
+  // Mentions are a feature of members: whether the account is an active member of the
+  // organization. A failed lookup counts as no.
+  const isActiveOrganizationMember = async (
+    userId: number | undefined,
+    organizationId: number
+  ): Promise<boolean> => {
+    if (!userId) return false;
+    try {
+      if ((await storage.getUserAccount(userId))?.isActive !== true) return false;
+      return (await storage.getUserOrganizationId(userId)) === organizationId;
+    } catch {
+      return false;
+    }
+  };
+  // What is logged about a failure: a name or database code, never the message (it can carry text).
+  const failureCode = (error: unknown): string =>
+    postgresErrorOf(error)?.code ?? (error instanceof Error ? error.name : 'unknown');
+  const commentsUnavailable = {
+    message: 'Comments are temporarily unavailable. Please try again.',
+  };
+  const rlCommentCreate = buildAccountRateLimiter({ windowMs: 60_000, max: 30 });
+  const rlCommentEdit = buildAccountRateLimiter({ windowMs: 60_000, max: 60 });
+
   // Comments API
   app.get(
     '/api/pages/:pageId/comments',
@@ -1953,16 +2007,113 @@ export async function registerRoutes(
       try {
         const pageId = parseInt(req.params.pageId);
         const comments = await storage.getCommentsByPageId(pageId);
-        res.json(comments);
+
+        // A comment that holds mention tokens carries the current names of the people they name,
+        // for a caller who is an active member of the page's organization, and only for those who
+        // are active members who may read the page. Anyone else (signed out, another
+        // organization) gets every token as the neutral label and no `mentions` field, whatever
+        // the ids: the answer does not tell them who is in the organization.
+        const tokenIds = new Map<number, number[]>();
+        for (const comment of comments) {
+          const ids = extractMentionIds(comment.content);
+          if (ids.length > 0) tokenIds.set(comment.id, ids);
+        }
+        if (tokenIds.size === 0) return res.json(comments);
+
+        const page = await storage.getWikiPage(pageId);
+        const callerId = (req as AuthRequest).user?.id;
+        const member = page
+          ? await isActiveOrganizationMember(callerId, Number(page.organizationId))
+          : false;
+        if (!page || !member) {
+          return res.json(
+            comments.map((comment) =>
+              tokenIds.has(comment.id)
+                ? { ...comment, content: stripUnlistedMentions(comment.content, new Set()) }
+                : comment
+            )
+          );
+        }
+
+        let names = new Map<number, string>();
+        try {
+          names = await storage.getReadableOrganizationMembers(
+            Number(page.organizationId),
+            pageId,
+            [...new Set([...tokenIds.values()].flat())]
+          );
+        } catch (error) {
+          logger.warn('Mention names could not be resolved', { pageId, code: failureCode(error) });
+        }
+        res.json(
+          comments.map((comment) => {
+            const ids = tokenIds.get(comment.id);
+            if (!ids) return comment;
+            return {
+              ...comment,
+              mentions: ids
+                .filter((id) => names.has(id))
+                .map((id) => ({ userId: id, name: names.get(id) as string })),
+            };
+          })
+        );
       } catch (error) {
         res.status(400).json({ message: 'Invalid page ID' });
       }
     }
   );
 
+  // The mention picker: people the caller may mention on this page, found by name. Candidates are
+  // active members of the page's organization who may read the page (each one is checked against
+  // the page before it is listed), so nobody who cannot read the page is ever offered. Id and name
+  // only. Limited per account; only members of the page's own organization may search.
+  const rlMentionCandidates = buildAccountRateLimiter({ windowMs: 60_000, max: 30 });
+  app.get(
+    '/api/pages/:pageId/mention-candidates',
+    authMiddleware,
+    rlMentionCandidates,
+    requirePagePermission('commenter'),
+    async (req: AuthRequest, res) => {
+      try {
+        const pageId = parseInt(req.params.pageId);
+        const callerId = Number(req.user?.id);
+        const rawQuery = req.query.q;
+        if (
+          rawQuery !== undefined &&
+          (typeof rawQuery !== 'string' || rawQuery.length > MENTION_SEARCH_MAX_LENGTH)
+        ) {
+          return res.status(400).json({ message: 'Invalid search' });
+        }
+        if ((await storage.getUserAccount(callerId))?.isActive !== true) {
+          return res.status(403).json({ message: 'Account is not active' });
+        }
+        const page = await storage.getWikiPage(pageId);
+        if (!page) return res.status(404).json({ message: 'Page not found' });
+        const callerOrganizationId = await storage.getUserOrganizationId(callerId);
+        if (callerOrganizationId === null || callerOrganizationId !== Number(page.organizationId)) {
+          return res.status(403).json({ message: 'Only members of the organization can mention' });
+        }
+        res.json(
+          await storage.listMentionCandidates(
+            callerOrganizationId,
+            pageId,
+            rawQuery ?? '',
+            callerId
+          )
+        );
+      } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+      }
+    }
+  );
+
   app.post(
     '/api/pages/:pageId/comments',
-    requireAuthIfEnabled,
+    // A comment always needs a session (the handler refused a request without one in both modes),
+    // so the session is verified here whatever ENFORCE_AUTH_WRITES says: the account limiter
+    // needs the verified account.
+    authMiddleware,
+    rlCommentCreate,
     requirePagePermission('commenter'),
     async (req: AuthRequest, res) => {
       try {
@@ -1983,10 +2134,68 @@ export async function registerRoutes(
           pageId,
           ...(req.body.parentId !== undefined && { parentId: req.body.parentId }),
         });
-        const comment = await storage.createComment(commentData);
 
-        // Get page information for trigger context
+        // A reply belongs to a comment of this same page.
+        const parentId = commentData.parentId ?? null;
+        if (parentId !== null) {
+          const parent = await storage.getComment(parentId);
+          if (!parent || parent.pageId !== pageId) {
+            return res.status(400).json({ message: 'Invalid comment data' });
+          }
+        }
+
+        // Mentions are validated and notifications decided before anything is written. When that
+        // cannot be done for a member's comment, nothing is stored and the client keeps the draft.
         const page = await storage.getWikiPage(pageId);
+        let plan = failClosedPlan(commentData.content);
+        if (page) {
+          const actorIsMember = await isActiveOrganizationMember(
+            authorUserId,
+            Number(page.organizationId)
+          );
+          try {
+            plan = await planCommentNotifications(storage, {
+              page: {
+                id: page.id,
+                title: page.title,
+                organizationId: Number(page.organizationId),
+                createdByUserId: page.createdByUserId ?? null,
+              },
+              actorUserId: authorUserId,
+              actorIsMember,
+              content: commentData.content,
+              parentId,
+            });
+          } catch (error) {
+            logger.error('Failed to plan comment notifications', {
+              pageId,
+              code: failureCode(error),
+            });
+            if (actorIsMember) return res.status(503).json(commentsUnavailable);
+            // A commenter outside the organization: stored without live mentions, nobody notified.
+          }
+        }
+        commentData.content = plan.content;
+        const drafts = featureFlags.FEATURE_NOTIFICATIONS ? plan.notifications : [];
+
+        let comment;
+        let created: Notification[] = [];
+        if (drafts.length === 0) {
+          comment = await storage.createComment(commentData);
+        } else {
+          const written = await storage.createCommentWithNotifications(commentData, drafts);
+          comment = written.comment;
+          created = written.notifications;
+        }
+
+        // Realtime delivery after the commit; a failure to emit never reaches the commenter.
+        for (const notification of created) {
+          emitNotificationEvent('notification:new', notification).catch((emitErr) => {
+            logger.warn('Socket emit failed for comment notification', {
+              code: failureCode(emitErr),
+            });
+          });
+        }
 
         // Trigger workflows for comment_added event
         if (page) {
@@ -2013,7 +2222,7 @@ export async function registerRoutes(
     }
   );
 
-  app.put('/api/comments/:id', authMiddleware, async (req: AuthRequest, res) => {
+  app.put('/api/comments/:id', authMiddleware, rlCommentEdit, async (req: AuthRequest, res) => {
     try {
       const id = parseInt(req.params.id);
       const userId = (req.user as any)?.id;
@@ -2040,7 +2249,59 @@ export async function registerRoutes(
 
       // updateCommentSchema already strips author/authorUserId to prevent identity tampering
       const updateData = updateCommentSchema.parse(req.body);
-      const comment = await storage.updateComment(id, updateData);
+      // Edited text keeps only mention tokens that name a current reader of the page, and a
+      // member's edit notifies each eligible account it newly mentions (`mention`, once per
+      // edit, never for a token that was already there). Notifications already sent are not
+      // rewritten. An edit by an account outside the organization keeps no token.
+      let drafts: Awaited<ReturnType<typeof planEditNotifications>>['notifications'] = [];
+      if (
+        typeof updateData.content === 'string' &&
+        extractMentionIds(updateData.content).length > 0
+      ) {
+        const page = await storage.getWikiPage(existing.pageId);
+        let plan = failClosedPlan(updateData.content);
+        if (page) {
+          const actorIsMember = await isActiveOrganizationMember(
+            userId,
+            Number(page.organizationId)
+          );
+          try {
+            plan = await planEditNotifications(storage, {
+              page: {
+                id: page.id,
+                title: page.title,
+                organizationId: Number(page.organizationId),
+                createdByUserId: page.createdByUserId ?? null,
+              },
+              actorUserId: userId,
+              actorIsMember,
+              content: updateData.content,
+              previousContent: existing.content,
+            });
+          } catch (error) {
+            logger.error('Failed to plan comment edit', { code: failureCode(error) });
+            if (actorIsMember) return res.status(503).json(commentsUnavailable);
+          }
+        }
+        updateData.content = plan.content;
+        if (featureFlags.FEATURE_NOTIFICATIONS) drafts = plan.notifications;
+      }
+      let comment;
+      let created: Notification[] = [];
+      if (drafts.length === 0) {
+        comment = await storage.updateComment(id, updateData);
+      } else {
+        const written = await storage.updateCommentWithNotifications(id, updateData, drafts);
+        comment = written.comment;
+        created = written.notifications;
+      }
+      for (const notification of created) {
+        emitNotificationEvent('notification:new', notification).catch((emitErr) => {
+          logger.warn('Socket emit failed for comment notification', {
+            code: failureCode(emitErr),
+          });
+        });
+      }
 
       if (!comment) {
         return res.status(404).json({ message: 'Comment not found' });
@@ -3129,26 +3390,6 @@ export async function registerRoutes(
         return null;
       }
       return { userId, organizationId };
-    };
-
-    // Realtime: the row and the recipient's unread count go to the room of the recipient account,
-    // and nowhere else.
-    const emitNotificationEvent = async (
-      event: 'notification:new' | 'notification:updated',
-      notification: { recipientUserId: number; organizationId: number }
-    ) => {
-      const ns = io?.of('/collab');
-      if (!ns) return;
-      const room = `user:${notification.recipientUserId}`;
-      ns.to(room).emit(event, notification);
-      const count = await storage.getUnreadNotificationCount(
-        notification.recipientUserId,
-        notification.organizationId
-      );
-      ns.to(room).emit('notification:unread-count', {
-        recipientUserId: notification.recipientUserId,
-        count,
-      });
     };
 
     // Whether `userId`, in `organizationId`, may create a notification with this content: the

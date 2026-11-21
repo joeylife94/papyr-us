@@ -365,3 +365,19 @@ describe('writes use the id of the row that was loaded and checked', () => {
     }
   );
 });
+
+describe('add_comment mentions', () => {
+  it('has no commenting account, so a mention token in its text becomes plain text and nobody is notified', async () => {
+    storage.getWikiPage.mockResolvedValue(page(44, TEAM));
+    const run = await executeWorkflow(
+      workflowWith({ type: 'add_comment', config: { message: 'hi [[user:5]] and [[user:6]]' } }),
+      { id: 44, teamId: TEAM }
+    );
+    expect(run.status).toBe('success');
+    expect(storage.createComment).toHaveBeenCalledWith(
+      expect.objectContaining({ pageId: 44, content: 'hi @unknown and @unknown' })
+    );
+    expect(storage.createNotification).not.toHaveBeenCalled();
+    expect(storage.createCommentWithNotifications).not.toHaveBeenCalled();
+  });
+});
