@@ -16,6 +16,25 @@ export function isDeployedEnvironment(): boolean {
   );
 }
 
+/**
+ * Who may create a new account (issue #124 X1d). `open` is how every deployment behaved before
+ * this setting existed and is what an unset SIGNUP_MODE means; the deployment templates this
+ * repository ships set `invite_only`.
+ */
+export const SIGNUP_MODES = ['open', 'invite_only', 'closed'] as const;
+export type SignupMode = (typeof SIGNUP_MODES)[number];
+
+/** Reads SIGNUP_MODE: unset or blank is `open` (`explicit` false); an unknown value is invalid. */
+export function parseSignupMode(
+  raw: string | undefined
+): { ok: true; mode: SignupMode; explicit: boolean } | { ok: false } {
+  const value = (raw ?? '').trim();
+  if (value === '') return { ok: true, mode: 'open', explicit: false };
+  return (SIGNUP_MODES as readonly string[]).includes(value)
+    ? { ok: true, mode: value as SignupMode, explicit: true }
+    : { ok: false };
+}
+
 // Security validation for production environment
 function validateProductionConfig() {
   const isProduction = process.env.NODE_ENV === 'production';
@@ -58,6 +77,12 @@ function validateProductionConfig() {
           'Remove COLLAB_REQUIRE_AUTH=0 from your staging/preview/CI environment.'
       );
     }
+  }
+
+  // An unknown SIGNUP_MODE stops the process: guessing a looser mode than the operator meant
+  // would let people in.
+  if (!parseSignupMode(process.env.SIGNUP_MODE).ok) {
+    errors.push(`SIGNUP_MODE must be one of: ${SIGNUP_MODES.join(', ')}`);
   }
 
   // The shared admin password was removed (issue #124 X0). Say so instead of silently ignoring it.
@@ -108,6 +133,13 @@ export const config = {
     .split(',')
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean),
+
+  // Who may create an account (SIGNUP_MODE). Read when used, so a value is always the one the
+  // process was validated with at startup; falls back to `open` only when unset.
+  get signupMode(): SignupMode {
+    const parsed = parseSignupMode(process.env.SIGNUP_MODE);
+    return parsed.ok ? parsed.mode : 'closed';
+  },
 
   // AI configuration
   openaiApiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR,

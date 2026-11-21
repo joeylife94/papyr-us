@@ -20,6 +20,7 @@ import { markShuttingDown, registerOperationalRoutes } from './operational.js';
 import { registerTeamMembershipRoutes } from './team-membership-routes.js';
 import { registerOrganizationRoutes } from './organization-routes.js';
 import { registerOrganizationAdminRoutes } from './organization-admin-routes.js';
+import { registerOrganizationInvitationRoutes } from './organization-invitation-routes.js';
 import { featureFlags } from './features.js';
 import { serveStaticAssets, serveIndex } from './static.js';
 import {
@@ -32,10 +33,27 @@ import {
 } from './middleware.js';
 import { DBStorage } from './storage.js';
 import { metricsMiddleware, setupMetrics } from './services/metrics.js';
-import { requestContextMiddleware } from './services/logger.js';
+import logger, { requestContextMiddleware } from './services/logger.js';
+import { SIGNUP_MODES, parseSignupMode } from './config.js';
 import { closeRedisConnections } from './services/redis.js';
 
 const app = express();
+
+// SIGNUP_MODE (issue #124 X1d). Checked here as well as in config.ts because the .env file is
+// read after the imports above are evaluated.
+{
+  const signup = parseSignupMode(process.env.SIGNUP_MODE);
+  if (!signup.ok) {
+    console.error(`[FATAL] SIGNUP_MODE must be one of: ${SIGNUP_MODES.join(', ')}`);
+    process.exit(1);
+  }
+  if (!signup.explicit) {
+    logger.warn(
+      'SIGNUP_MODE is not set: anyone can create an account (open sign-up). ' +
+        'Set SIGNUP_MODE=invite_only to let people in by organization invitation only, or closed.'
+    );
+  }
+}
 
 let storage: DBStorage;
 try {
@@ -74,6 +92,7 @@ setupSecurity(app);
   registerOperationalRoutes(app, storage);
   registerTeamMembershipRoutes(app, storage);
   registerOrganizationRoutes(app, storage);
+  registerOrganizationInvitationRoutes(app, storage);
   if (featureFlags.FEATURE_ADMIN) registerOrganizationAdminRoutes(app, storage);
   serveStaticAssets(app);
   const { httpServer } = await registerRoutes(app, storage);

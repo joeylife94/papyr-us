@@ -79,6 +79,7 @@ import {
   pagePermissions,
   publicLinks,
   teamMembers,
+  organizationInvitations,
   organizationMembers,
   organizations,
   organizationRoles,
@@ -98,6 +99,21 @@ import type { PageTreeRow } from './services/page-tree.js';
 import type { TagPaneRow } from './services/tag-pane.js';
 import { postgresErrorOf } from './db-errors.js';
 import { defaultOrganizationId } from './organizations.js';
+import {
+  MAX_PENDING_INVITATIONS,
+  decideInvitationAcceptance,
+  decideInvitationCreate,
+  decideInvitationRegistration,
+  decideInvitationRevoke,
+  digestsEqual,
+  generateInvitationToken,
+  hashInvitationToken,
+  invitationStatusOf,
+  invitationUsable,
+  isPlausibleInvitationToken,
+  type InvitationState,
+  type InvitationStatus,
+} from './organization-invitations.js';
 import {
   MAX_INDEXED_LINKS,
   extractPageLinkIds,
@@ -243,6 +259,54 @@ class FootprintRefusal extends Error {
 }
 // ---- end X1c P1 types ----
 
+// ---- X1d: invitations (organization-invitation-routes.ts) ----
+
+/** The outcome of an invitation mutation: a value, or the refusal to answer with. */
+export type InvitationMutationResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; status: number; body: { message: string; code?: string } };
+
+/** One invitation as the inviter's list shows it. The token and its hash are never part of it. */
+export interface InvitationListRow {
+  id: number;
+  email: string | null;
+  role: 'member' | 'admin';
+  status: InvitationStatus;
+  createdAt: Date;
+  expiresAt: Date;
+  createdByName: string | null;
+  acceptedAt: Date | null;
+  acceptedByName: string | null;
+  revokedAt: Date | null;
+}
+
+export type AcceptInvitationResult =
+  | { kind: 'joined'; organizationId: number; organizationName: string; role: 'member' | 'admin' }
+  | { kind: 'already_member'; organizationId: number; organizationName: string }
+  | { kind: 'invalid' }
+  | { kind: 'account_inactive' }
+  | { kind: 'email_mismatch' }
+  | { kind: 'other_organization' };
+
+export type RegisterWithInvitationResult =
+  | {
+      kind: 'registered';
+      user: typeof users.$inferSelect;
+      organizationId: number;
+      role: 'member' | 'admin';
+    }
+  | { kind: 'invalid' }
+  | { kind: 'email_mismatch' }
+  | { kind: 'email_taken' };
+
+/** An invitation row as read by token hash, with what the acceptance rules need. */
+interface InvitationRead {
+  id: number;
+  organizationName: string;
+  state: InvitationState;
+}
+// ---- end X1d types ----
+
 const ORGANIZATION_LOCK_TIMEOUT_MS = 5000;
 
 const ORGANIZATION_ROLE_RANK: Record<OrganizationRole, number> = { owner: 3, admin: 2, member: 1 };
@@ -296,6 +360,13 @@ const ORG_LAST_OWNER = refuseOrganization(409, 'Cannot remove the last organizat
 /** Whether taking the target out of the owners would leave the organization without an active owner. */
 function lastActiveOwner(activeOwnerCount: number, target: OrganizationMemberState): boolean {
   return activeOwnerCount - (target.isActive ? 1 : 0) < 1;
+}
+
+/** Thrown inside an invitation transaction so everything it did is rolled back. */
+class InvitationNotPending extends Error {
+  constructor() {
+    super('invitation_not_pending');
+  }
 }
 
 /** Another request holds the organization's member lock for too long; routes answer 503. */
@@ -2846,6 +2917,431 @@ export class DBStorage {
   }
 
   // ---- end X1c P5 ----
+
+  // ---- X1d: invitations and acceptance (organization-invitation-routes.ts) ----
+  //
+  // Every write runs in withOrganizationLocks on the invitation's organization, and decides from
+  // values read through its handle after the lock is taken. The invitation row is read again
+  // FOR UPDATE inside the lock, so two requests holding the same token are serialized and only
+  // the first finds it pending.
+
+  private invitationStateFromRow(row: any): InvitationState {
+    const creatorRole =
+      row.creator_role === null || row.creator_role === undefined
+        ? null
+        : normalizeOrganizationRole(row.creator_role);
+    return {
+      organizationId: Number(row.organization_id),
+      role: String(row.role),
+      email: row.email === null || row.email === undefined ? null : String(row.email),
+      status: invitationStatusOf({
+        acceptedAt: row.accepted_at,
+        revokedAt: row.revoked_at,
+        expired: row.expired === true,
+      }),
+      organizationActive: row.organization_active === true,
+      creator:
+        creatorRole !== null && row.creator_active !== null && row.creator_active !== undefined
+          ? { role: creatorRole, isActive: row.creator_active === true }
+          : null,
+    };
+  }
+
+  /**
+   * The invitation whose token has this hash, with its creator's membership in its organization.
+   * The stored hash is compared to the given one in constant time once more after the lookup.
+   * Pass the handle of withOrganizationLocks to read FOR UPDATE inside it.
+   */
+  private async readInvitationByHash(
+    tokenHash: string,
+    executor: OrganizationExecutor,
+    lock: boolean
+  ): Promise<InvitationRead | null> {
+    const result = await executor.execute(sql`
+      SELECT i.id, i.organization_id, i.email, i.role, i.token_hash, i.accepted_at, i.revoked_at,
+             (i.expires_at <= now()) AS expired,
+             o.is_active AS organization_active, o.name AS organization_name,
+             cm.role AS creator_role, cu.is_active AS creator_active
+        FROM organization_invitations i
+        JOIN organizations o ON o.id = i.organization_id
+        LEFT JOIN users cu ON cu.id = i.created_by_user_id
+        LEFT JOIN organization_members cm
+          ON cm.user_id = i.created_by_user_id AND cm.organization_id = i.organization_id
+       WHERE i.token_hash = ${tokenHash}
+       ${lock ? sql`FOR UPDATE OF i` : sql``}
+    `);
+    const row = (result.rows as any[])[0];
+    if (!row || !digestsEqual(String(row.token_hash), tokenHash)) return null;
+    return {
+      id: Number(row.id),
+      organizationName: String(row.organization_name),
+      state: this.invitationStateFromRow(row),
+    };
+  }
+
+  /** The organization an invitation token belongs to, to take its lock; null for an unknown token. */
+  private async invitationOrganizationId(tokenHash: string): Promise<number | null> {
+    const [row] = await this.db
+      .select({ organizationId: organizationInvitations.organizationId })
+      .from(organizationInvitations)
+      .where(eq(organizationInvitations.tokenHash, tokenHash))
+      .limit(1);
+    return row ? Number(row.organizationId) : null;
+  }
+
+  /** Marks a pending invitation used by this account. False when it was not pending after all. */
+  private async consumeInvitation(
+    tx: OrganizationTx,
+    invitationId: number,
+    userId: number
+  ): Promise<boolean> {
+    const result = await tx.execute(sql`
+      UPDATE organization_invitations
+         SET accepted_at = now(), accepted_by_user_id = ${userId}
+       WHERE id = ${invitationId} AND accepted_at IS NULL AND revoked_at IS NULL
+         AND expires_at > now()
+       RETURNING id
+    `);
+    return (result.rows as any[]).length === 1;
+  }
+
+  /**
+   * What the page for an invitation link may say before anything is accepted: the organization,
+   * the role and the address it was made for. Null for every token that cannot be used.
+   */
+  async previewOrganizationInvitation(
+    token: unknown
+  ): Promise<{ organizationName: string; role: 'member' | 'admin'; email: string | null } | null> {
+    if (!isPlausibleInvitationToken(token)) return null;
+    const found = await this.readInvitationByHash(hashInvitationToken(token), this.db, false);
+    if (!found || !invitationUsable(found.state)) return null;
+    return {
+      organizationName: found.organizationName,
+      role: found.state.role as 'member' | 'admin',
+      email: found.state.email,
+    };
+  }
+
+  /**
+   * Creates an invitation inside the organization lock. The actor's role is read again through
+   * the handle: an admin may invite a member, an owner a member or an admin, nobody an owner.
+   * Returns the token, which is not stored and cannot be read again.
+   */
+  async createOrganizationInvitation(
+    organizationId: number,
+    actorUserId: number,
+    input: { email: string | null; role: 'member' | 'admin'; expiresInDays: number }
+  ): Promise<
+    InvitationMutationResult<{
+      invitation: InvitationListRow;
+      token: string;
+      organizationName: string;
+      inviterName: string;
+    }>
+  > {
+    return this.withOrganizationLocks([organizationId], async (tx) => {
+      const membership = await this.getOrganizationMembership(actorUserId, tx);
+      if (!membership || membership.organizationId !== organizationId) return ORG_NO_ORGANIZATION;
+      const decision = decideInvitationCreate({
+        actor: { role: membership.role, isActive: true },
+        role: input.role,
+      });
+      if (!decision.ok) return decision;
+      const organization = await this.getOrganization(organizationId, tx);
+      if (!organization || !organization.isActive) return ORG_NO_ORGANIZATION;
+
+      const email = input.email === null ? null : input.email.trim().toLowerCase();
+      if (email !== null) {
+        const existing = await tx.execute(sql`
+          SELECT 1 FROM users u
+            JOIN organization_members m ON m.user_id = u.id
+           WHERE lower(u.email) = ${email} AND m.organization_id = ${organizationId}
+           LIMIT 1
+        `);
+        if ((existing.rows as any[]).length > 0) {
+          return {
+            ok: false as const,
+            status: 409,
+            body: { code: 'already_member', message: 'This address already belongs to a member' },
+          };
+        }
+      }
+      const pending = await tx.execute(sql`
+        SELECT count(*)::int AS n FROM organization_invitations
+         WHERE organization_id = ${organizationId}
+           AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now()
+      `);
+      if (Number((pending.rows as any[])[0]?.n ?? 0) >= MAX_PENDING_INVITATIONS) {
+        return {
+          ok: false as const,
+          status: 409,
+          body: { code: 'too_many_pending', message: 'Too many pending invitations' },
+        };
+      }
+
+      const token = generateInvitationToken();
+      const inserted = await tx.execute(sql`
+        INSERT INTO organization_invitations
+          (organization_id, email, role, token_hash, created_by_user_id, expires_at)
+        VALUES (${organizationId}, ${email}, ${input.role}, ${hashInvitationToken(token)},
+                ${actorUserId}, now() + make_interval(days => ${input.expiresInDays}))
+        RETURNING id
+      `);
+      const id = Number((inserted.rows as any[])[0].id);
+      const [row] = await this.listInvitationRows(tx, organizationId, id);
+      const [inviter] = await tx
+        .select({ name: users.name })
+        .from(users)
+        .where(eq(users.id, actorUserId))
+        .limit(1);
+      return {
+        ok: true as const,
+        value: {
+          invitation: row,
+          token,
+          organizationName: organization.name,
+          inviterName: inviter?.name ?? '',
+        },
+      };
+    });
+  }
+
+  private async listInvitationRows(
+    executor: OrganizationExecutor,
+    organizationId: number,
+    onlyId?: number
+  ): Promise<InvitationListRow[]> {
+    const result = await executor.execute(sql`
+      SELECT i.id, i.email, i.role, i.created_at, i.expires_at, i.accepted_at, i.revoked_at,
+             (i.expires_at <= now()) AS expired,
+             cu.name AS created_by_name, au.name AS accepted_by_name
+        FROM organization_invitations i
+        LEFT JOIN users cu ON cu.id = i.created_by_user_id
+        LEFT JOIN users au ON au.id = i.accepted_by_user_id
+       WHERE i.organization_id = ${organizationId}
+         ${onlyId === undefined ? sql`` : sql`AND i.id = ${onlyId}`}
+       ORDER BY i.created_at DESC, i.id DESC
+       LIMIT 500
+    `);
+    return (result.rows as any[]).map((row) => ({
+      id: Number(row.id),
+      email: row.email === null ? null : String(row.email),
+      role: row.role === 'admin' ? 'admin' : 'member',
+      status: invitationStatusOf({
+        acceptedAt: row.accepted_at,
+        revokedAt: row.revoked_at,
+        expired: row.expired === true,
+      }),
+      createdAt: new Date(row.created_at),
+      expiresAt: new Date(row.expires_at),
+      createdByName: row.created_by_name ?? null,
+      acceptedAt: row.accepted_at ? new Date(row.accepted_at) : null,
+      acceptedByName: row.accepted_by_name ?? null,
+      revokedAt: row.revoked_at ? new Date(row.revoked_at) : null,
+    }));
+  }
+
+  /** The organization's invitations, newest first. Never includes a token or its hash. */
+  async listOrganizationInvitations(organizationId: number): Promise<InvitationListRow[]> {
+    return this.listInvitationRows(this.db, organizationId);
+  }
+
+  /**
+   * Revokes a pending invitation of this organization inside its lock. An invitation of another
+   * organization is not found. An admin may revoke invitations for members only.
+   */
+  async revokeOrganizationInvitation(
+    organizationId: number,
+    actorUserId: number,
+    invitationId: number
+  ): Promise<InvitationMutationResult<{ id: number }>> {
+    return this.withOrganizationLocks([organizationId], async (tx) => {
+      const result = await tx.execute(sql`
+        SELECT id, role, accepted_at, revoked_at, (expires_at <= now()) AS expired
+          FROM organization_invitations
+         WHERE id = ${invitationId} AND organization_id = ${organizationId}
+         FOR UPDATE
+      `);
+      const row = (result.rows as any[])[0];
+      const membership = await this.getOrganizationMembership(actorUserId, tx);
+      const decision = decideInvitationRevoke({
+        actor:
+          membership && membership.organizationId === organizationId
+            ? { role: membership.role, isActive: true }
+            : null,
+        invitationRole: row ? String(row.role) : 'member',
+        status: row
+          ? invitationStatusOf({
+              acceptedAt: row.accepted_at,
+              revokedAt: row.revoked_at,
+              expired: row.expired === true,
+            })
+          : null,
+      });
+      if (!decision.ok) return decision;
+      await tx.execute(sql`
+        UPDATE organization_invitations SET revoked_at = now()
+         WHERE id = ${invitationId} AND accepted_at IS NULL AND revoked_at IS NULL
+      `);
+      return { ok: true as const, value: { id: invitationId } };
+    });
+  }
+
+  /**
+   * An existing account accepts an invitation. Decided inside the invitation's organization lock
+   * from the invitation row, the account row and the account's membership as they are then (see
+   * decideInvitationAcceptance); the membership starts without AI access. An account already in
+   * the organization uses the invitation up and nothing else changes; an account in another
+   * organization changes nothing and does not use the invitation up.
+   */
+  async acceptOrganizationInvitation(
+    token: unknown,
+    userId: number
+  ): Promise<AcceptInvitationResult> {
+    if (!isPlausibleInvitationToken(token)) return { kind: 'invalid' };
+    const tokenHash = hashInvitationToken(token);
+    const organizationId = await this.invitationOrganizationId(tokenHash);
+    if (organizationId === null) return { kind: 'invalid' };
+    return this.withOrganizationLocks([organizationId], async (tx) => {
+      const invitation = await this.readInvitationByHash(tokenHash, tx, true);
+      const [account] = await tx
+        .select({ id: users.id, email: users.email, isActive: users.isActive })
+        .from(users)
+        .where(eq(users.id, userId))
+        .for('update');
+      const [membership] = await tx
+        .select({ organizationId: organizationMembers.organizationId })
+        .from(organizationMembers)
+        .where(eq(organizationMembers.userId, userId))
+        .limit(1);
+      if (!invitation || !invitationUsable(invitation.state)) return { kind: 'invalid' as const };
+      if (!account) return { kind: 'account_inactive' as const };
+      let decision = decideInvitationAcceptance({
+        invitation: invitation.state,
+        accepter: {
+          isActive: account.isActive === true,
+          email: account.email,
+          organizationId: membership ? Number(membership.organizationId) : null,
+        },
+      });
+      if (decision.kind === 'join') {
+        const placed = await tx
+          .insert(organizationMembers)
+          .values({
+            organizationId,
+            userId,
+            role: decision.role,
+            // Invited members start without AI access; an owner or admin grants it.
+            aiAllowed: false,
+          })
+          .onConflictDoNothing({ target: organizationMembers.userId })
+          .returning({ id: organizationMembers.id });
+        if (placed.length === 0) {
+          // The account was placed elsewhere since it was read: nothing is changed.
+          const [now] = await tx
+            .select({ organizationId: organizationMembers.organizationId })
+            .from(organizationMembers)
+            .where(eq(organizationMembers.userId, userId))
+            .limit(1);
+          decision = {
+            kind:
+              Number(now?.organizationId) === organizationId
+                ? 'already_member'
+                : 'other_organization',
+          };
+        }
+      }
+      if (decision.kind === 'join' || decision.kind === 'already_member') {
+        if (!(await this.consumeInvitation(tx, invitation.id, userId))) {
+          // Not pending after all: undo the placement above by rolling the transaction back.
+          throw new InvitationNotPending();
+        }
+      }
+      switch (decision.kind) {
+        case 'join':
+          return {
+            kind: 'joined' as const,
+            organizationId,
+            organizationName: invitation.organizationName,
+            role: decision.role,
+          };
+        case 'already_member':
+          return {
+            kind: 'already_member' as const,
+            organizationId,
+            organizationName: invitation.organizationName,
+          };
+        default:
+          return decision;
+      }
+    }).catch((error) => {
+      if (error instanceof InvitationNotPending) return { kind: 'invalid' as const };
+      throw error;
+    });
+  }
+
+  /**
+   * Creates an account that joins the invitation's organization with the invited role, in one
+   * transaction under that organization's lock: the account, its membership (without AI access)
+   * and the use of the invitation commit together or not at all. The address of an account that
+   * exists is refused without using the invitation up. With `requireVerifiedEmail` (social
+   * sign-in), an invitation made for an address is accepted only when the provider verified it.
+   */
+  async registerWithOrganizationInvitation(
+    token: unknown,
+    values: typeof users.$inferInsert,
+    options: { emailVerified?: boolean } = {}
+  ): Promise<RegisterWithInvitationResult> {
+    if (!isPlausibleInvitationToken(token)) return { kind: 'invalid' };
+    const tokenHash = hashInvitationToken(token);
+    const organizationId = await this.invitationOrganizationId(tokenHash);
+    if (organizationId === null) return { kind: 'invalid' };
+    try {
+      return await this.withOrganizationLocks([organizationId], async (tx) => {
+        const invitation = await this.readInvitationByHash(tokenHash, tx, true);
+        const decision = decideInvitationRegistration({
+          invitation: invitation?.state ?? null,
+          email: values.email,
+        });
+        if (!invitation || decision.kind === 'invalid') return { kind: 'invalid' as const };
+        if (
+          decision.kind === 'email_mismatch' ||
+          (options.emailVerified === false && invitation.state.email !== null)
+        ) {
+          return { kind: 'email_mismatch' as const };
+        }
+        const [taken] = await tx
+          .select({ id: users.id })
+          .from(users)
+          .where(eq(users.email, values.email))
+          .limit(1);
+        if (taken) return { kind: 'email_taken' as const };
+        const [user] = await tx.insert(users).values(values).returning();
+        await tx.insert(organizationMembers).values({
+          organizationId,
+          userId: user.id,
+          role: decision.role,
+          aiAllowed: false,
+        });
+        if (!(await this.consumeInvitation(tx, invitation.id, user.id))) {
+          throw new InvitationNotPending();
+        }
+        return {
+          kind: 'registered' as const,
+          user,
+          organizationId,
+          role: decision.role,
+        };
+      });
+    } catch (error) {
+      if (error instanceof InvitationNotPending) return { kind: 'invalid' };
+      // Another sign-up took the address between the check and the insert.
+      if (postgresErrorOf(error)?.code === '23505') return { kind: 'email_taken' };
+      throw error;
+    }
+  }
+
+  // ---- end X1d ----
 
   /**
    * The organization a new page belongs to: its team's, or for a team-less page its creator's.

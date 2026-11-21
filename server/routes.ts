@@ -109,6 +109,13 @@ import passport from 'passport';
 import { eq, and, isNull } from 'drizzle-orm';
 import { ANONYMOUS_PAGE_VIEWER, DBStorage, OrganizationRequiredError } from './storage.js';
 import { createUserInDefaultOrganization } from './organizations.js';
+import { invitationIntentCookieOptions } from './organization-invitation-routes.js';
+import {
+  INVITATION_INTENT_COOKIE,
+  INVITATION_INVALID_BODY,
+  SIGNUP_REFUSAL_MESSAGES,
+  decideSignup,
+} from './organization-invitations.js';
 import { generateTeamUrlName } from './team-names.js';
 import { TEAM_DISPLAY_NAME_MAX_LENGTH } from '../shared/team-members.js';
 import { registerKnowledgeRoutes } from './routes/knowledge.js';
@@ -256,7 +263,7 @@ export async function registerRoutes(
   // Initialize Passport for OAuth strategies
   app.use(passport.initialize());
   const { initPassportStrategies } = await import('./services/passport.js');
-  initPassportStrategies(storage.db);
+  initPassportStrategies(storage.db, storage);
 
   // Setup Socket.IO / Yjs collaboration (feature-gated)
   // In personal mode, collaboration is disabled by default and should not:
@@ -363,20 +370,62 @@ export async function registerRoutes(
         });
       }
 
-      const existingUser = await storage.db.select().from(users).where(eq(users.email, email));
-      if (existingUser.length > 0) {
-        return res.status(409).json({ message: 'User with this email already exists' });
+      // Who may create an account (SIGNUP_MODE, issue #124 X1d). Decided before anything about
+      // existing accounts is said, so a refused sign-up learns nothing about them.
+      const rawInvitationToken = req.body?.invitationToken;
+      const signup = decideSignup({
+        mode: config.signupMode,
+        hasInvitationToken:
+          rawInvitationToken !== undefined &&
+          rawInvitationToken !== null &&
+          rawInvitationToken !== '',
+        isBootstrapAdmin: config.adminEmails.includes(email.toLowerCase()),
+      });
+      if (signup.kind === 'refused') {
+        return res
+          .status(signup.status)
+          .json({ code: signup.code, message: SIGNUP_REFUSAL_MESSAGES[signup.code] });
+      }
+
+      if (signup.kind === 'default_organization') {
+        const existingUser = await storage.db.select().from(users).where(eq(users.email, email));
+        if (existingUser.length > 0) {
+          return res.status(409).json({ message: 'User with this email already exists' });
+        }
       }
 
       const hashedPassword = await bcrypt.hash(password, 12);
 
-      // The account joins the default organization in the same transaction (issue #124 X1)
-      const newUser = await createUserInDefaultOrganization(storage.db, {
-        name,
-        email,
-        hashedPassword,
-        provider: 'local',
-      });
+      let newUser: typeof users.$inferSelect;
+      if (signup.kind === 'invitation') {
+        // The account, its membership (without AI access) and the use of the invitation commit
+        // together; one answer for every token that cannot be used.
+        const joined = await storage.registerWithOrganizationInvitation(rawInvitationToken, {
+          name,
+          email,
+          hashedPassword,
+          provider: 'local',
+        });
+        if (joined.kind === 'invalid') return res.status(404).json(INVITATION_INVALID_BODY);
+        if (joined.kind === 'email_mismatch') {
+          return res.status(403).json({
+            code: 'invitation_email_mismatch',
+            message: 'This invitation was made for a different email address',
+          });
+        }
+        if (joined.kind === 'email_taken') {
+          return res.status(409).json({ message: 'User with this email already exists' });
+        }
+        newUser = joined.user;
+      } else {
+        // The account joins the default organization in the same transaction (issue #124 X1)
+        newUser = await createUserInDefaultOrganization(storage.db, {
+          name,
+          email,
+          hashedPassword,
+          provider: 'local',
+        });
+      }
       if (process.env.E2E_DEBUG_AUTH === '1') {
         logger.debug('[E2E DEBUG] /api/auth/register response user', {
           id: newUser.id,
@@ -608,84 +657,101 @@ export async function registerRoutes(
   // Passport automatically handles OAuth2 state/nonce validation. SameSite=Lax is required for cross-site top-level redirects.
   // --- Social Auth Routes ---
 
+  // The social sign-in callbacks: a person turned away by the sign-up policy (SIGNUP_MODE, issue
+  // #124 X1d) goes back to the login page with the reason; every other failure behaves as it did
+  // (failure redirect without a reason, errors to the error handler). The invitation token that
+  // travelled in the cookie is cleared on every return.
+  const socialCallback =
+    (provider: 'google' | 'github'): RequestHandler =>
+    (req, res, next) => {
+      passport.authenticate(provider, { session: false }, (err: unknown, user: any, info: any) => {
+        res.clearCookie(INVITATION_INTENT_COOKIE, invitationIntentCookieOptions());
+        if (err) return next(err);
+        if (!user) {
+          const code = typeof info?.code === 'string' ? info.code : null;
+          return res.redirect(code && /^[a-z_]+$/.test(code) ? `/login?error=${code}` : '/login');
+        }
+        (req as any).user = user;
+        return next();
+      })(req, res, next);
+    };
+  // Where a social sign-in lands: home, or the invitation page when an invitation was carried
+  // through the round trip for an account that already existed.
+  const socialSuccessLocation = (req: any): string =>
+    typeof req.invitationOutcome === 'string' && /^[a-z_]+$/.test(req.invitationOutcome)
+      ? `/join?result=${req.invitationOutcome}`
+      : '/';
+
   // Google Auth
   if (config.googleClientId && config.googleClientSecret) {
     app.get('/api/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
-    app.get(
-      '/api/auth/google/callback',
-      passport.authenticate('google', { failureRedirect: '/login', session: false }),
-      (req: any, res) => {
-        // A deactivated account gets no session through social sign-in either
-        if (req.user?.isActive === false) {
-          return res.redirect('/login?error=account_deactivated');
-        }
-        const role = config.adminEmails.includes(req.user.email.toLowerCase()) ? 'admin' : 'user';
-        const accessToken = jwt.sign(
-          { id: req.user.id, email: req.user.email, role },
-          config.jwtSecret,
-          {
-            expiresIn: '1h',
-          }
-        );
-        const refreshToken = jwt.sign({ id: req.user.id, type: 'refresh' }, config.jwtSecret, {
-          expiresIn: '30d',
-        });
-        res
-          .cookie('accessToken', accessToken, {
-            httpOnly: true,
-            secure: config.isProduction,
-            sameSite: 'lax', // Lax required: callback arrives via cross-site IdP redirect
-            maxAge: 60 * 60 * 1000,
-          })
-          .cookie('refreshToken', refreshToken, {
-            httpOnly: true,
-            secure: config.isProduction,
-            sameSite: 'lax', // Lax required: callback arrives via cross-site IdP redirect
-            maxAge: 30 * 24 * 60 * 60 * 1000,
-          })
-          .redirect('/');
+    app.get('/api/auth/google/callback', socialCallback('google'), (req: any, res) => {
+      // A deactivated account gets no session through social sign-in either
+      if (req.user?.isActive === false) {
+        return res.redirect('/login?error=account_deactivated');
       }
-    );
+      const role = config.adminEmails.includes(req.user.email.toLowerCase()) ? 'admin' : 'user';
+      const accessToken = jwt.sign(
+        { id: req.user.id, email: req.user.email, role },
+        config.jwtSecret,
+        {
+          expiresIn: '1h',
+        }
+      );
+      const refreshToken = jwt.sign({ id: req.user.id, type: 'refresh' }, config.jwtSecret, {
+        expiresIn: '30d',
+      });
+      res
+        .cookie('accessToken', accessToken, {
+          httpOnly: true,
+          secure: config.isProduction,
+          sameSite: 'lax', // Lax required: callback arrives via cross-site IdP redirect
+          maxAge: 60 * 60 * 1000,
+        })
+        .cookie('refreshToken', refreshToken, {
+          httpOnly: true,
+          secure: config.isProduction,
+          sameSite: 'lax', // Lax required: callback arrives via cross-site IdP redirect
+          maxAge: 30 * 24 * 60 * 60 * 1000,
+        })
+        .redirect(socialSuccessLocation(req));
+    });
   }
 
   // GitHub Auth
   if (config.githubClientId && config.githubClientSecret) {
     app.get('/api/auth/github', passport.authenticate('github', { scope: ['user:email'] }));
-    app.get(
-      '/api/auth/github/callback',
-      passport.authenticate('github', { failureRedirect: '/login', session: false }),
-      (req: any, res) => {
-        // A deactivated account gets no session through social sign-in either
-        if (req.user?.isActive === false) {
-          return res.redirect('/login?error=account_deactivated');
-        }
-        const role = config.adminEmails.includes(req.user.email.toLowerCase()) ? 'admin' : 'user';
-        const accessToken = jwt.sign(
-          { id: req.user.id, email: req.user.email, role },
-          config.jwtSecret,
-          {
-            expiresIn: '1h',
-          }
-        );
-        const refreshToken = jwt.sign({ id: req.user.id, type: 'refresh' }, config.jwtSecret, {
-          expiresIn: '30d',
-        });
-        res
-          .cookie('accessToken', accessToken, {
-            httpOnly: true,
-            secure: config.isProduction,
-            sameSite: 'lax', // Lax required: callback arrives via cross-site IdP redirect
-            maxAge: 60 * 60 * 1000,
-          })
-          .cookie('refreshToken', refreshToken, {
-            httpOnly: true,
-            secure: config.isProduction,
-            sameSite: 'lax', // Lax required: callback arrives via cross-site IdP redirect
-            maxAge: 30 * 24 * 60 * 60 * 1000,
-          })
-          .redirect('/');
+    app.get('/api/auth/github/callback', socialCallback('github'), (req: any, res) => {
+      // A deactivated account gets no session through social sign-in either
+      if (req.user?.isActive === false) {
+        return res.redirect('/login?error=account_deactivated');
       }
-    );
+      const role = config.adminEmails.includes(req.user.email.toLowerCase()) ? 'admin' : 'user';
+      const accessToken = jwt.sign(
+        { id: req.user.id, email: req.user.email, role },
+        config.jwtSecret,
+        {
+          expiresIn: '1h',
+        }
+      );
+      const refreshToken = jwt.sign({ id: req.user.id, type: 'refresh' }, config.jwtSecret, {
+        expiresIn: '30d',
+      });
+      res
+        .cookie('accessToken', accessToken, {
+          httpOnly: true,
+          secure: config.isProduction,
+          sameSite: 'lax', // Lax required: callback arrives via cross-site IdP redirect
+          maxAge: 60 * 60 * 1000,
+        })
+        .cookie('refreshToken', refreshToken, {
+          httpOnly: true,
+          secure: config.isProduction,
+          sameSite: 'lax', // Lax required: callback arrives via cross-site IdP redirect
+          maxAge: 30 * 24 * 60 * 60 * 1000,
+        })
+        .redirect(socialSuccessLocation(req));
+    });
   }
 
   // Wiki Pages API
