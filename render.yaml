@@ -8,4 +8,7 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      # Who may create an account: invitation only (open and closed are the other choices)
+      - key: SIGNUP_MODE
+        value: invite_only
     autoDeploy: false

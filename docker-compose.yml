@@ -42,6 +42,8 @@ services:
       - .env
     environment:
       - NODE_ENV=production
+      # Who may create an account: invitation only unless the operator says otherwise (open, closed)
+      - SIGNUP_MODE=${SIGNUP_MODE:-invite_only}
       # Override DATABASE_URL for Docker internal network (env_file uses localhost)
       - DATABASE_URL=postgresql://papyrus_user:papyrus_password_2024@db:5432/papyrus_db
       # Connect to Redis when redis profile is active
