@@ -4,7 +4,7 @@ aliases: ['PAPYR_US_MASTER', 'Papyr.us v1.0 Master']
 project: 'Papyr.us'
 type: 'project-master'
 status: 'authoritative-contract'
-version: '1.04'
+version: '1.05'
 target: 'v1.0 + D1 frozen baseline; enterprise readiness (Issue #124), one bounded phase per PR'
 current_phase: 'Issue #124 — X0, X1a, X1b and X1c done; X1d next, alongside the collaboration packages of §10'
 priority: 'P1'
@@ -18,7 +18,7 @@ checkpoint_main_sha: 'd2f092b240d5ffe0937dd6d487934e32d5a631f3'
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v1.04**  
+> **AUTHORITATIVE PROJECT CONTRACT — v1.05**  
 > Current repository / Issue / PR / executable evidence overrides historical checkpoints, Scheduled Task prompts, and agent self-report.  
 > The accepted v1.0 product/proof baseline and D1 remain frozen as evidence. Progression after D1 runs as contract Issues under [`AGENTS.md`](AGENTS.md), one bounded phase per PR, and must not rewrite prior accepted evidence or widen buyer-facing claims without a new Proof.
 
@@ -730,3 +730,40 @@ On the package head, Linux container, local PostgreSQL 16, the container's Chrom
 - Team ids in query strings (`/api/pages?teamId=`, `/api/page-tree`, `/api/trash`) are still parsed loosely; membership is checked against the parsed id.
 - `POST /api/teams/verify` is unauthenticated and not rate limited; the directory `password` field is still sent to the admin page.
 - Pre-existing browser spec failures, also on the base: `auth-redirect.spec.ts:57` (register response times out) and `team-collaboration.spec.ts:93` (expects 404 for a non-member on a deleted team, the membership rule answers 403). Neither is in a CI list.
+
+## 19. Security Hardening 2 (2026-11-21)
+
+### Changed
+
+Closes most known limits recorded in §18. No schema change, no migration.
+
+| Area                      | What exists now                                                                                                                                                                                                                                                            |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Password checks           | `POST /api/teams/verify` and `POST /api/directory/verify` need a session and have their own per-account limit (10/min); a team is looked up only in the caller's organization, and any team it cannot find answers `{ isValid: false }`; a missing directory answers false |
+| Directory answers         | admin directory answers carry `hasPassword`, never the hash; the admin form keeps, replaces or explicitly removes the password                                                                                                                                             |
+| Team ids in query strings | only a strict id is a team id; on `/api/pages` any other string is a team name resolved in the caller's organization only (another organization's name answers as an unknown one); `/api/page-tree`, `/api/page-links/search` and `/api/trash` answer 400                  |
+| Trashed while open        | a realtime save of a page trashed while open is refused, not reported as saved; editors lose edit rights and get one `PAGE_NOT_EDITABLE`; restoring from the trash re-reads the open documents from the database and gives edit rights back                                |
+| Session read              | the verified session of a request is read once and reused within that request; no cache across requests                                                                                                                                                                    |
+
+Process: one developer package against a brief, one independent review (no security regression; one blocker in a new browser spec; mutation runs) and one round of review fixes (the restore path, flag tests, two lead decisions extending the package: `GET /api/trash` refuses a malformed team id, team names resolve only in the caller's organization), re-run.
+
+### Actually Executed
+
+On the package head, Linux container, local PostgreSQL 16, the container's Chromium:
+
+- `node scripts/verify-contributor.mjs` — **PASS**; `npx tsc --noEmit` — clean;
+- server suite — 93 files, 2681 tests **PASS**; unit — 62 files, 957 tests **PASS**; Layer 4 — 41 files, 574 tests **PASS**;
+- browser: `security-team-password-prompt`, `security-admin-directories` (both new, added to `test:gj`) and `security-collab-access-revocation` (extended: trash while open), twice in a row each — **PASS**; `page-tree`, `gj02-document-lifecycle`, `security-page-reads-scope`, `security-team-param-mismatch` — **PASS**.
+
+### Not Verified
+
+- an editor's screen after `PAGE_NOT_EDITABLE` in a real editor (the specs use raw sockets; the client logs the error as it does for revoked access);
+- the whole `test:gj` list, Layer 5, Layer 6 and Firebat: CI on the pull request is the reference.
+
+### Known limits
+
+- The team password gates only opening a team in the sidebar; team data is gated by team membership (as before). Whether the password should gate anything on the server is a product decision.
+- The client shows nothing when the server refuses an edit (`PAGE_NOT_EDITABLE`, `ACCESS_REVOKED`); edits typed after that are not saved until the page is reloaded.
+- A restore re-reads every open document of the page, so unsaved in-memory edits on it are replaced by the database content (as version restore does).
+- Access notices reach only sockets connected to the same server process.
+- Still open from §18: realtime connections stay open after account deactivation; two browser specs outside every CI list fail on the base.
