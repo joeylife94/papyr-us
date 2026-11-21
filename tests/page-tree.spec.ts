@@ -184,10 +184,15 @@ test('page tree rules hold against the database: team boundary, cycles, hidden p
     });
     expect(crossCreate.status()).toBe(403);
 
-    // A public editor grant on a team page does not let an outsider create pages in the team by
-    // leaving out teamId (the child would inherit the team).
-    const grant = await api.post(`/api/pages/${teamPage.id}/permissions`, {
+    // A public grant on a team page does not let an outsider create pages in the team by
+    // leaving out teamId (the child would inherit the team). A public grant carries commenter at
+    // most: editor is refused.
+    const refused = await api.post(`/api/pages/${teamPage.id}/permissions`, {
       data: { entityType: 'public', permission: 'editor' },
+    });
+    expect(refused.status()).toBe(400);
+    const grant = await api.post(`/api/pages/${teamPage.id}/permissions`, {
+      data: { entityType: 'public', permission: 'commenter' },
     });
     expect(grant.status()).toBe(201);
     const outsiderChild = await otherApi.post('/api/pages', {

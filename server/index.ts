@@ -18,6 +18,7 @@ import express from 'express';
 import { registerRoutes } from './routes.js';
 import { markShuttingDown, registerOperationalRoutes } from './operational.js';
 import { registerTeamMembershipRoutes } from './team-membership-routes.js';
+import { registerPageSharingRoutes } from './page-sharing-routes.js';
 import { registerOrganizationRoutes } from './organization-routes.js';
 import { registerOrganizationAdminRoutes } from './organization-admin-routes.js';
 import { featureFlags } from './features.js';
@@ -73,6 +74,7 @@ setupSecurity(app);
   // Register deterministic operational endpoints before the legacy route bundle.
   registerOperationalRoutes(app, storage);
   registerTeamMembershipRoutes(app, storage);
+  registerPageSharingRoutes(app, storage);
   registerOrganizationRoutes(app, storage);
   if (featureFlags.FEATURE_ADMIN) registerOrganizationAdminRoutes(app, storage);
   serveStaticAssets(app);

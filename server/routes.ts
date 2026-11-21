@@ -143,6 +143,8 @@ import { postgresErrorOf } from './db-errors.js';
 import { registerDatabaseRoutes } from './routes/database.js';
 import { registerSyncedBlockRoutes } from './routes/synced-blocks.js';
 import { readableLinkTarget, registerPageEmbedRoutes } from './routes/page-embeds.js';
+import { notifyGrantChanged, parsePermissionGrant, toShareLink } from './page-sharing-routes.js';
+import { PUBLIC_GRANT_LEVELS, effectivePublicLevel } from '../shared/page-sharing.js';
 
 interface MulterRequest extends Request {
   files?: any[];
@@ -2384,11 +2386,16 @@ export async function registerRoutes(
         return res.status(403).json({ message: 'Only page owners can manage permissions' });
       }
 
+      // A user or team at any level, or the public at viewer or commenter (never above)
+      const parsedGrant = parsePermissionGrant(req.body);
+      if (!parsedGrant) {
+        return res.status(400).json({ message: 'Invalid permission data' });
+      }
       const permissionData = {
         pageId,
-        entityType: req.body.entityType,
-        entityId: req.body.entityId,
-        permission: req.body.permission,
+        entityType: parsedGrant.entityType,
+        entityId: parsedGrant.entityId,
+        permission: parsedGrant.permission,
         grantedBy: req.user?.id,
       };
 
@@ -2405,6 +2412,8 @@ export async function registerRoutes(
       }
 
       const permission = await storage.addPagePermission(permissionData);
+      // The grantee's open sessions (every member of a granted team) check again now
+      await notifyGrantChanged(storage, permissionData);
       res.status(201).json(permission);
     } catch (error) {
       res.status(400).json(failureBody('Invalid permission data', error));
@@ -2427,10 +2436,15 @@ export async function registerRoutes(
         }
 
         // Only a permission of this page: owning one page grants nothing on another
+        const existing = (await storage.getPagePermissions(pageId)).find(
+          (grant: { id: number }) => grant.id === permissionId
+        );
         const deleted = await storage.removePagePermission(pageId, permissionId);
         if (!deleted) {
           return res.status(404).json({ message: 'Permission not found' });
         }
+        // The removed grantee's open sessions (every member of a removed team) check again now
+        if (existing) await notifyGrantChanged(storage, existing);
 
         res.json({ message: 'Permission removed successfully' });
       } catch (error) {
@@ -2452,8 +2466,9 @@ export async function registerRoutes(
         return res.status(403).json({ message: 'Insufficient permissions to view share links' });
       }
 
+      // The password hash never leaves the server: the answer says whether a link has one
       const links = await storage.getPagePublicLinks(pageId);
-      res.json(links);
+      res.json(links.map(toShareLink));
     } catch (error) {
       res.status(500).json(failureBody('Failed to get share links', error));
     }
@@ -2470,6 +2485,12 @@ export async function registerRoutes(
         return res.status(403).json({ message: 'Insufficient permissions to create share links' });
       }
 
+      // A public link, like a public grant, carries viewer or commenter at most
+      const linkPermission = req.body.permission ?? 'viewer';
+      if (!(PUBLIC_GRANT_LEVELS as readonly string[]).includes(linkPermission)) {
+        return res.status(400).json({ message: 'Invalid permission data' });
+      }
+
       // Generate random token
       const token = storage.generatePublicLinkToken();
 
@@ -2483,7 +2504,7 @@ export async function registerRoutes(
         pageId,
         token,
         password: hashedPassword,
-        permission: req.body.permission || 'viewer',
+        permission: linkPermission,
         expiresAt: req.body.expiresAt ? new Date(req.body.expiresAt) : undefined,
         createdBy: req.user?.id,
       };
@@ -2491,8 +2512,7 @@ export async function registerRoutes(
       const link = await storage.createPublicLink(linkData);
 
       // Don't send password hash to client
-      const { password, ...publicLink } = link;
-      res.status(201).json(publicLink);
+      res.status(201).json(toShareLink(link));
     } catch (error) {
       res.status(400).json(failureBody('Failed to create share link', error));
     }
@@ -2545,7 +2565,7 @@ export async function registerRoutes(
       // Return page with permission level
       res.json({
         page,
-        permission: link.permission,
+        permission: effectivePublicLevel(link.permission) ?? 'viewer',
         isPublicLink: true,
       });
     } catch (error) {
@@ -2565,7 +2585,10 @@ export async function registerRoutes(
         return res.status(403).json({ valid: false, message: verification.error });
       }
 
-      res.json({ valid: true, permission: verification.link?.permission });
+      res.json({
+        valid: true,
+        permission: effectivePublicLevel(verification.link?.permission) ?? 'viewer',
+      });
     } catch (error) {
       res.status(500).json({ valid: false, message: 'Verification failed' });
     }
