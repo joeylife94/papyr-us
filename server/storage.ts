@@ -415,14 +415,15 @@ export class DBStorage {
    */
   async createWikiPage(page: NewPage, creator: PageCreator): Promise<WikiPage> {
     await this.assertPageCreatorActive(creator);
+    // Looked up before the transaction: a transaction never waits for a second pool connection.
+    const organizationId = await this.organizationForNewPage(
+      page.teamId,
+      'userId' in creator ? creator.userId : undefined
+    );
     // The account row is read under a share lock in the same transaction as the insert, so an
     // account deactivated meanwhile waits for the page and cannot slip one in afterwards.
     const { createdPage, recorded } = await this.db.transaction(async (tx: any) => {
       const recorded = await this.recordedPageCreator(tx, creator);
-      const organizationId = await this.organizationForNewPage(
-        page.teamId,
-        recorded.createdByUserId
-      );
       const createdPage = await this.insertWithUniqueSlug(page.slug, (slug) =>
         tx.transaction(async (savepoint: any) => {
           const result = await savepoint

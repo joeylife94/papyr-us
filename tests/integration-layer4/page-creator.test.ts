@@ -367,6 +367,88 @@ describe('duplicateWikiPage, findOrCreateDailyNote and insertImportedPages', () 
   });
 });
 
+describe('concurrent page creation', () => {
+  it('30 creates at once, team and team-less, all complete with the default pool size', async () => {
+    const creators = [await newUser('burst-a'), await newUser('burst-b'), await newUser('burst-c')];
+    const team = await newTeam();
+    const before = await pageCount();
+    const attempts = Array.from({ length: 30 }, (_, index) =>
+      storage.createWikiPage(
+        pageInput(index % 2 === 0 ? { teamId: team } : {}),
+        index % 5 === 0 ? { automation: true } : { userId: creators[index % 3].id }
+      )
+    );
+    // A create holds a pool connection only while it needs no other one; with the pool at its
+    // default size all of them finish well inside this bound.
+    const outcome = await Promise.race([
+      Promise.allSettled(attempts),
+      new Promise((resolve) => setTimeout(() => resolve('timeout'), 15_000)),
+    ]);
+    expect(outcome).not.toBe('timeout');
+    const results = outcome as PromiseSettledResult<unknown>[];
+    // Automation cannot create team-less pages; every other create succeeds.
+    const rejected = results.filter((r) => r.status === 'rejected');
+    expect(rejected).toHaveLength(
+      Array.from({ length: 30 }).filter((_, i) => i % 5 === 0 && i % 2 === 1).length
+    );
+    expect(await pageCount()).toBe(before + 30 - rejected.length);
+  }, 25_000);
+});
+
+describe('concurrent copies, daily notes and imports', () => {
+  it('30 of them at once complete with the default pool size', async () => {
+    const who = await newUser('burst-other');
+    const source = await storage.createWikiPage(pageInput(), { userId: who.id });
+    const ids: number[] = await storage.reservePageIds(10);
+    const attempts: Promise<unknown>[] = [];
+    for (let i = 0; i < 10; i += 1) {
+      attempts.push(
+        storage.duplicateWikiPage(source.id, pageInput({ title: `Burst copy ${i}` }), {
+          userId: who.id,
+        })
+      );
+      attempts.push(
+        storage.findOrCreateDailyNote({
+          slug: `burst-daily-${counter}-${i}`,
+          title: `burst ${i}`,
+          folder: 'daily',
+          tags: [],
+          teamId: null,
+          userId: who.id,
+        })
+      );
+      attempts.push(
+        storage.insertImportedPages({
+          teamId: null,
+          userId: who.id,
+          folder: 'imported',
+          pages: [
+            {
+              id: ids[i],
+              title: `Burst import ${i}`,
+              slug: `burst-import-${counter}-${i}`,
+              content: '',
+              tags: [],
+              icon: null,
+              cover: null,
+              parentId: null,
+              linkTargets: [],
+            },
+          ],
+        })
+      );
+    }
+    const outcome = await Promise.race([
+      Promise.allSettled(attempts),
+      new Promise((resolve) => setTimeout(() => resolve('timeout'), 15_000)),
+    ]);
+    expect(outcome).not.toBe('timeout');
+    expect(
+      (outcome as PromiseSettledResult<unknown>[]).filter((r) => r.status === 'rejected')
+    ).toEqual([]);
+  }, 25_000);
+});
+
 describe('an account deactivated while it creates a page', () => {
   it('cannot create a page: the account is read under a lock held until the page is written', async () => {
     const ada = await newUser('deactivating');
