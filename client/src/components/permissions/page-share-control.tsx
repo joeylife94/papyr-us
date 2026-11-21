@@ -21,7 +21,7 @@ interface Props {
  */
 export function PageShareControl({ pageId, pageTitle, onCopyLink }: Props) {
   const [open, setOpen] = useState(false);
-  const { data } = usePageSharing(pageId);
+  const { data, isFetching } = usePageSharing(pageId);
 
   const action = headerAction(data);
   if (!data) {
@@ -63,6 +63,7 @@ export function PageShareControl({ pageId, pageTitle, onCopyLink }: Props) {
         open={open}
         onOpenChange={setOpen}
         data={data}
+        refreshing={isFetching}
       />
     </>
   );

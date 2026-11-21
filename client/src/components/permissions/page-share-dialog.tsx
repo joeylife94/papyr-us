@@ -42,6 +42,8 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   data: PageSharingResponse;
+  /** The list is being read again: row ids on screen may be out of date, so changes wait. */
+  refreshing?: boolean;
 }
 
 interface CandidatesResponse {
@@ -93,7 +95,14 @@ function LevelSelect({
  * organization, public access and share links. Anyone else who can read the page sees the names
  * and levels, nothing more. The server decides every change again; a refusal is shown in words.
  */
-export function PageShareDialog({ pageId, pageTitle, open, onOpenChange, data }: Props) {
+export function PageShareDialog({
+  pageId,
+  pageTitle,
+  open,
+  onOpenChange,
+  data,
+  refreshing = false,
+}: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -111,7 +120,7 @@ export function PageShareDialog({ pageId, pageTitle, open, onOpenChange, data }:
           </DialogDescription>
         </DialogHeader>
         {dialogMode(data) === 'manage' ? (
-          <ManageSharing pageId={pageId} data={data} open={open} />
+          <ManageSharing pageId={pageId} data={data} open={open} refreshing={refreshing} />
         ) : (
           <ReadOnlyAccess data={data} />
         )}
@@ -162,10 +171,12 @@ function ManageSharing({
   pageId,
   data,
   open,
+  refreshing,
 }: {
   pageId: number;
   data: PageSharingResponse;
   open: boolean;
+  refreshing: boolean;
 }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -266,7 +277,7 @@ function ManageSharing({
     }
   };
 
-  const busy = change.isPending;
+  const busy = change.isPending || refreshing;
   const hasEntry = (entityType: 'user' | 'team', entityId: number) =>
     data.entries.some((entry) => entry.entityType === entityType && entry.entityId === entityId);
   const publicState = publicControl(data.publicAccess);
