@@ -169,6 +169,7 @@ import {
 } from './page-sharing-routes.js';
 import { PUBLIC_GRANT_LEVELS, effectivePublicLevel } from '../shared/page-sharing.js';
 import { checkedPageId, parsePageIdParam } from './page-ids.js';
+import { parseTeamIdParam } from './team-ids.js';
 
 interface MulterRequest extends Request {
   files?: any[];
@@ -4116,16 +4117,20 @@ export async function registerRoutes(
 
     app.get('/api/teams/:id', optionalAuth, async (req: AuthRequest, res) => {
       try {
-        const id = parseInt(req.params.id);
+        const callerId = req.user?.id;
+        if (!callerId && config.enforceAuthForWrites) {
+          return res.status(401).json({ error: 'Authentication required' });
+        }
+        // Only a plain team id names a team; any other spelling names none
+        const id = parseTeamIdParam(req.params.id);
+        if (id === null) return res.status(404).json({ error: 'Team not found' });
 
         // Verify membership for the specific team
-        if (req.user?.id) {
-          const userTeamIds = await storage.getUserTeamIds(req.user.id);
+        if (callerId) {
+          const userTeamIds = await storage.getUserTeamIds(callerId);
           if (!userTeamIds.includes(id)) {
             return res.status(403).json({ error: 'You are not a member of this team' });
           }
-        } else if (config.enforceAuthForWrites) {
-          return res.status(401).json({ error: 'Authentication required' });
         }
 
         const team = await storage.getTeam(id);
@@ -4200,13 +4205,14 @@ export async function registerRoutes(
 
     app.put('/api/teams/:id', optionalAuth, requireAuthIfEnabled, async (req: AuthRequest, res) => {
       try {
-        const id = parseInt(req.params.id);
-
         // Always verify user's team membership and role for team updates
         const userId = req.user?.id;
         if (!userId) {
           return res.status(401).json({ error: 'Authentication required' });
         }
+        // Only a plain team id names a team; any other spelling names none
+        const id = parseTeamIdParam(req.params.id);
+        if (id === null) return res.status(404).json({ error: 'Team not found' });
         const userRole = await storage.getUserTeamRole(userId, id);
         if (!userRole) {
           return res.status(403).json({ error: 'You are not a member of this team' });
@@ -4271,13 +4277,14 @@ export async function registerRoutes(
       requireAuthIfEnabled,
       async (req: AuthRequest, res) => {
         try {
-          const id = parseInt(req.params.id);
-
           // Always verify user's team ownership for team deletion
           const userId = req.user?.id;
           if (!userId) {
             return res.status(401).json({ error: 'Authentication required' });
           }
+          // Only a plain team id names a team; any other spelling names none
+          const id = parseTeamIdParam(req.params.id);
+          if (id === null) return res.status(404).json({ error: 'Team not found' });
           const userRole = await storage.getUserTeamRole(userId, id);
           if (!userRole) {
             return res.status(403).json({ error: 'You are not a member of this team' });

@@ -14,19 +14,15 @@ import { authMiddleware, buildAccountRateLimiter, type AuthRequest } from './mid
 import { TeamBusyError, type DBStorage } from './storage.js';
 import { notifyPageAccessChanged } from './services/page-access-events.js';
 import { TEAM_CANDIDATE_MAX_QUERY_LENGTH } from '../shared/team-members.js';
+import { parseTeamIdParam } from './team-ids.js';
 
 // The body is strict: a key the route does not name (teamId, userId, organizationId) is refused.
 const changeRoleSchema = z.object({ role: z.enum(teamRoles) }).strict();
 
-function parseTeamId(raw: string): number | null {
-  const teamId = Number(raw);
-  return Number.isInteger(teamId) && teamId > 0 ? teamId : null;
-}
-
-function parseUserId(raw: string): number | null {
-  const userId = Number(raw);
-  return Number.isInteger(userId) && userId > 0 ? userId : null;
-}
+// One strict reader (digits only) for the team id and the account id in a URL, so a spelling such
+// as `1e1`, `0x10` or `5.0` names no team and no account instead of another one.
+const parseTeamId = parseTeamIdParam;
+const parseUserId = parseTeamIdParam;
 
 /** 503 while another change holds the team's lock, 500 for anything else (no internals shown). */
 function failure(res: Response, error: unknown) {
