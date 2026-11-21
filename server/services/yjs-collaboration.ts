@@ -6,7 +6,7 @@ import { savePage, storagePageSaveStore } from './page-save.js';
 import { markdownToBlocks } from '../../shared/block-markdown.js';
 import { verifyActiveAccessToken } from '../auth-tokens.js';
 import { config } from '../config.js';
-import { onPageAccessChanged, onPageGrantsChanged } from './page-access-events.js';
+import { onPageAccessChanged, onPageGrantsChanged, onPageRestored } from './page-access-events.js';
 
 /**
  * Collaboration robustness (Phase 3)
@@ -696,6 +696,10 @@ export function setupYjsCollaboration(io: SocketIOServer, storage: DBStorage) {
   // Sessions check page access once at join; check again when a user's access shrinks
   onPageAccessChanged((userId) => manager.revalidateUserAccess(userId));
   onPageGrantsChanged((pageId) => manager.revalidatePageAccess(pageId));
+  // A page restored from the trash: open documents re-read it and their editors can edit again
+  onPageRestored(async (pageId) => {
+    await manager.reloadFromDatabase(pageId);
+  });
 
   logger.info('Yjs collaboration server initialized', {
     saveDebounceMs: cfg.saveDebounceMs,

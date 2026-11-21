@@ -108,10 +108,10 @@ describe.each([true, false])('with ENFORCE_AUTH_WRITES=%s', (enforce) => {
     });
 
     it('answers 401 for a token that does not verify', async () => {
-      const forged = jwt.sign({ id: 5 }, 'another-secret');
+      const unverified = jwt.sign({ id: 5 }, 'another-secret');
       const res = await request(app)
         .post(path)
-        .set({ Authorization: `Bearer ${forged}` })
+        .set({ Authorization: `Bearer ${unverified}` })
         .send(body);
       expect(res.status).toBe(401);
       expect(s[method]).not.toHaveBeenCalled();
@@ -203,7 +203,7 @@ describe.each([true, false])('with ENFORCE_AUTH_WRITES=%s', (enforce) => {
       expect((await verify(other, { teamName: TEAM.name, password: 'right' })).status).toBe(200);
     });
 
-    it('does not count requests without a session against an account', async () => {
+    it('answers 401 to any number of requests without a session (they are never throttled)', async () => {
       mockConfig.rateLimitEnabled = true;
       for (let i = 0; i < 15; i++) {
         expect(

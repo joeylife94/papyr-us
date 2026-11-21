@@ -6,7 +6,7 @@ import { config } from '../config.js';
 import logger from './logger.js';
 import { isRedisEnabled, getRedisClient, getSubscriberClient } from './redis.js';
 import { createAdapter } from '@socket.io/redis-adapter';
-import { onPageAccessChanged, onPageGrantsChanged } from './page-access-events.js';
+import { onPageAccessChanged, onPageGrantsChanged, onPageRestored } from './page-access-events.js';
 
 type SaveReason = 'debounce' | 'interval' | 'ttl' | 'eviction';
 
@@ -233,6 +233,12 @@ export class CollaborationManager {
     session.users.set(connectionId, user);
     this.userSessions.set(connectionId, pageId);
     this.ensureSnapshotTimer(session);
+  }
+
+  /** The page came back from the trash: its session saves again (the next save finds out). */
+  reopenPage(pageId: number): void {
+    const session = this.sessions.get(pageId);
+    if (session) session.pageNotEditable = false;
   }
 
   leaveSession(connectionId: string): void {
@@ -676,6 +682,11 @@ export async function setupSocketIO(
     onPageGrantsChanged((pageId) =>
       revalidateCollabPageAccess(collabNamespace, storage, collaborationManager, pageId)
     );
+    // A page restored from the trash: its editors can edit again
+    onPageRestored(async (pageId) => {
+      collaborationManager.reopenPage(pageId);
+      await revalidateCollabPageAccess(collabNamespace, storage, collaborationManager, pageId);
+    });
   }
 
   // Check if authentication is required (can be disabled for testing, always on in production)

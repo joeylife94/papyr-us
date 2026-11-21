@@ -5,6 +5,9 @@
  * organization only. The right password of a team of another organization, a team that does not
  * exist and a team without a password all answer false, so the answers cannot be told apart; a
  * wrong password answers false; the right password of a team in the named organization answers true.
+ *
+ * Also `verifyDirectoryPassword`: a missing directory answers false; an existing directory without a
+ * password answers true (it asks for none); a protected one answers by its password.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
@@ -18,6 +21,11 @@ if (!DATABASE_URL) {
 }
 
 const SCHEMA = 'l4_sec2_team_password';
+const DIRECTORIES = `CREATE TABLE directories (
+  id SERIAL PRIMARY KEY, name TEXT NOT NULL UNIQUE, display_name TEXT NOT NULL, password TEXT,
+  is_visible BOOLEAN NOT NULL DEFAULT TRUE, "order" INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(), updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);`;
 const scopedUrl = (() => {
   const url = new URL(DATABASE_URL);
   url.searchParams.set('options', `-c search_path=${SCHEMA}`);
@@ -90,6 +98,14 @@ beforeAll(async () => {
   await admin.query(`CREATE SCHEMA ${SCHEMA}`);
   scoped = new Pool({ connectionString: scopedUrl });
   await scoped.query(TABLES);
+  await scoped.query(DIRECTORIES);
+  await scoped.query(
+    `INSERT INTO directories (name, display_name, password) VALUES ('open-dir', 'Open', NULL)`
+  );
+  await scoped.query(
+    `INSERT INTO directories (name, display_name, password) VALUES ('locked-dir', 'Locked', $1)`,
+    [await bcrypt.hash('dir-secret', 4)]
+  );
   defaultOrg = await addOrganizations(scoped);
   acmeOrg = Number(
     (
@@ -138,5 +154,21 @@ describe('verifyTeamPassword is scoped to one organization', () => {
   it('answers false for a team without a password', async () => {
     expect(await storage.verifyTeamPassword('home-open', '', defaultOrg)).toBe(false);
     expect(await storage.verifyTeamPassword('home-open', 'anything', defaultOrg)).toBe(false);
+  });
+});
+
+describe('verifyDirectoryPassword', () => {
+  it('answers false for a directory that does not exist', async () => {
+    expect(await storage.verifyDirectoryPassword('no-such-dir', 'anything')).toBe(false);
+    expect(await storage.verifyDirectoryPassword('no-such-dir', '')).toBe(false);
+  });
+
+  it('answers true for an existing directory without a password', async () => {
+    expect(await storage.verifyDirectoryPassword('open-dir', '')).toBe(true);
+  });
+
+  it('answers by the password of a protected directory', async () => {
+    expect(await storage.verifyDirectoryPassword('locked-dir', 'dir-secret')).toBe(true);
+    expect(await storage.verifyDirectoryPassword('locked-dir', 'wrong')).toBe(false);
   });
 });

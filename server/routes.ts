@@ -118,7 +118,7 @@ import {
   PageCreatorUnavailableError,
   TeamBusyError,
 } from './storage.js';
-import { notifyPageAccessChanged } from './services/page-access-events.js';
+import { notifyPageAccessChanged, notifyPageRestored } from './services/page-access-events.js';
 import { createUserInDefaultOrganization } from './organizations.js';
 import {
   buildAddressRateLimiter,
@@ -884,8 +884,17 @@ export async function registerRoutes(
         if (asId !== null) {
           resolvedTeamId = asId;
         } else if (typeof teamIdParam === 'string') {
-          const team = await storage.getTeamByName(teamIdParam);
-          if (team) {
+          // A name is looked up in the caller's organization only: a team of another
+          // organization, and any name when there is no caller organization, answers as a name
+          // that names no team.
+          const organizationId = req.user?.id
+            ? await storage.getUserOrganizationId(req.user.id)
+            : null;
+          const team =
+            organizationId === null || organizationId === undefined
+              ? undefined
+              : await storage.getTeamByName(teamIdParam);
+          if (team && Number(team.organizationId) === organizationId) {
             resolvedTeamId = team.id;
           }
         }
@@ -1484,9 +1493,10 @@ export async function registerRoutes(
   // trashed page in the instance, body included, to any signed-in user).
   app.get('/api/trash', requireAuthIfEnabled, async (req: AuthRequest, res) => {
     try {
-      // A team id that is not a strict id filters nothing: the listing is limited to what the
-      // caller may read either way.
-      const teamId = parseTeamIdParam(req.query.teamId) ?? undefined;
+      // A team id must be a strict id, like DELETE /api/trash (nothing in the client sends one)
+      const team = readTeamIdQuery(req.query.teamId);
+      if (!team.ok) return res.status(400).json({ error: 'Invalid team ID' });
+      const teamId = team.id;
       const viewer = await storage.getPageViewer(req.user?.id);
       res.json(await storage.getTrashPages(viewer, teamId));
     } catch (error) {
@@ -1520,6 +1530,10 @@ export async function registerRoutes(
           }
         }
         await storage.restorePages(together);
+        // Editors with a restored page open: their documents re-read it from the database (what a
+        // document held while the page was trashed is discarded, never written back) and they can
+        // edit again
+        for (const pageId of together) await notifyPageRestored(pageId);
         const restored = await storage.getWikiPage(id);
         res.json({ ...restored, restoredCount: together.length });
       } catch (error) {

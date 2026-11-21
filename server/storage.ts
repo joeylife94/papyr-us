@@ -2069,7 +2069,10 @@ export class DBStorage {
       .from(directories)
       .where(eq(directories.name, directoryName));
     const dir = result[0];
-    if (!dir || !dir.password) return true;
+    // A directory that does not exist is not verified. An existing directory without a password
+    // has nothing to verify, so it answers true (it asks for no password).
+    if (!dir) return false;
+    if (!dir.password) return true;
 
     // Only accept bcrypt hashed passwords (no plaintext fallback)
     if (!isBcryptHash(dir.password)) {

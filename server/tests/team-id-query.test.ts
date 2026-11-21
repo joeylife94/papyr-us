@@ -9,8 +9,7 @@
  *   the caller's own teams, never to the number it starts with);
  * - GET /api/page-tree and GET /api/page-links/search answer 400 `Invalid team ID` for any other
  *   spelling and read nothing;
- * - GET /api/trash lists without a team filter for any other spelling (it is limited to what the
- *   caller may read either way), never filtered to the number it starts with;
+ * - GET /api/trash answers 400 `Invalid team ID` and lists nothing for any other spelling;
  * - DELETE /api/trash (platform admin) answers 400 and deletes nothing for any other spelling, so
  *   a malformed team id never widens the deletion to every team.
  *
@@ -87,8 +86,13 @@ beforeEach(() => {
   }));
   s.getUserTeamIds.mockResolvedValue([MY_TEAM]);
   s.getUserTeamRole.mockResolvedValue('member');
+  s.getUserOrganizationId.mockResolvedValue(1);
   s.getTeamByName.mockImplementation(async (name: string) =>
-    name === '20-team' ? { id: NAMED_TEAM, name } : undefined
+    name === '20-team'
+      ? { id: NAMED_TEAM, name, organizationId: 1 }
+      : name === 'other-org-team'
+        ? { id: 50, name, organizationId: 2 }
+        : undefined
   );
   s.getPageViewer.mockImplementation(async (userId: number) => ({
     userId,
@@ -171,10 +175,10 @@ describe.each([true, false])('with ENFORCE_AUTH_WRITES=%s', (enforce) => {
       expect(s.searchLinkTargets).not.toHaveBeenCalled();
     });
 
-    it('GET /api/trash lists without a team filter', async () => {
+    it('GET /api/trash answers 400 and lists nothing', async () => {
       const res = await request(app).get(`/api/trash?teamId=${query}`).set(as(MEMBER));
-      expect(res.status).toBe(200);
-      expect(s.getTrashPages.mock.calls.map((call: any[]) => call[1])).toEqual([undefined]);
+      expect([res.status, res.body]).toEqual([400, { error: 'Invalid team ID' }]);
+      expect(s.getTrashPages).not.toHaveBeenCalled();
     });
 
     it('DELETE /api/trash answers 400 and deletes nothing', async () => {
@@ -220,5 +224,54 @@ describe('GET /api/page-links/search with ENFORCE_AUTH_WRITES=true', () => {
       .set(as(MEMBER));
     expect(res.status).toBe(200);
     expect(s.searchLinkTargets.mock.calls[0][1]).toEqual({ teamId: MY_TEAM });
+  });
+});
+
+describe('GET /api/pages?teamId=<name> looks the name up in the caller organization only', () => {
+  const teamsSearched = () =>
+    s.searchWikiPages.mock.calls.map((call: any[]) => call[0].teamId).sort();
+
+  describe.each([true, false])('with ENFORCE_AUTH_WRITES=%s', (enforce) => {
+    beforeEach(() => {
+      mockConfig.enforceAuthForWrites = enforce;
+    });
+
+    it('answers the name of a team of another organization exactly as an unknown name', async () => {
+      const otherOrganization = await request(app)
+        .get('/api/pages?teamId=other-org-team')
+        .set(as(MEMBER));
+      const searchedForOther = teamsSearched();
+      s.searchWikiPages.mockClear();
+      const unknown = await request(app).get('/api/pages?teamId=no-such-team').set(as(MEMBER));
+      expect([otherOrganization.status, otherOrganization.body]).toEqual([
+        unknown.status,
+        unknown.body,
+      ]);
+      expect(searchedForOther).toEqual(teamsSearched());
+      expect(searchedForOther).not.toContain('50');
+    });
+
+    it('resolves the name of a team in the caller organization', async () => {
+      s.getUserTeamIds.mockResolvedValue([MY_TEAM, NAMED_TEAM]);
+      const res = await request(app).get('/api/pages?teamId=20-team').set(as(MEMBER));
+      expect(res.status).toBe(200);
+      expect(teamsSearched()).toEqual([String(NAMED_TEAM)]);
+    });
+
+    it('an account without an organization resolves no name', async () => {
+      s.getUserOrganizationId.mockResolvedValue(null);
+      s.getUserTeamIds.mockResolvedValue([MY_TEAM, NAMED_TEAM]);
+      await request(app).get('/api/pages?teamId=20-team').set(as(MEMBER));
+      expect(teamsSearched()).not.toEqual([String(NAMED_TEAM)]);
+      expect(s.getTeamByName).not.toHaveBeenCalled();
+    });
+  });
+
+  it('without a session (enforcement off) never resolves a team name', async () => {
+    mockConfig.enforceAuthForWrites = false;
+    const res = await request(app).get('/api/pages?teamId=20-team');
+    expect(res.status).toBe(200);
+    expect(s.getTeamByName).not.toHaveBeenCalled();
+    expect(s.searchWikiPages.mock.calls.map((call: any[]) => call[0].teamId)).toEqual(['null']);
   });
 });
