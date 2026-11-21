@@ -1,7 +1,10 @@
 # Papyr.us Roadmap
 
-> **최종 업데이트**: 2026-02-27  
-> 완료된 에픽과 최근 변경 사항을 기록합니다. 미래 계획은 [NOTION_COMPARISON_AND_IMPROVEMENTS.md](./NOTION_COMPARISON_AND_IMPROVEMENTS.md) 참조.
+> **이 문서는 2026-02-27까지의 기록입니다.** (머리말 갱신: 2026-11-11)
+>
+> - 현재 방향과 남은 일: [설계 지도](./design/notion-obsidian-destination.md), [#124 엔터프라이즈 준비](https://github.com/joeylife94/papyr-us/issues/124), [1차 갈무리](./checkpoints/2026-11-11-checkpoint-1.md)
+> - 아래 "프로덕션 준비 완료" 항목 중 SSO/OIDC 통합, 국제화(i18n), 마이크로서비스 준비, Redis 분산 Rate Limiter, 감사 로그는 어디에도 연결되지 않은 코드였고 #125(#124 X0)에서 삭제됐습니다. 엔터프라이즈 SSO와 감사 로그는 #124 X2 ~ X4에서 다시 만듭니다.
+> - 이 저장소는 공개 프로덕션 준비 완료를 주장하지 않습니다([README](../README.md#known-limitations--non-claims)).
 
 ---
 

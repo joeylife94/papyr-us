@@ -5,6 +5,52 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 기반으로 하며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## [Unreleased] - 2026-11-11 기준 (1차 갈무리)
+
+2026-04 이후 릴리스 번호 없이 `main`에 쌓인 변경을 묶은 요약입니다. 항목별 근거는 각 PR에, 전체 정리는 [docs/checkpoints/2026-11-11-checkpoint-1.md](docs/checkpoints/2026-11-11-checkpoint-1.md)에 있습니다.
+
+> 아래 `[2.0.0]`의 일부 항목(Azure AD/Okta/Auth0/Generic OIDC SSO, i18n 서비스, 마이크로서비스 레지스트리, Redis 분산 Rate Limiter, 감사 로그, 서버 측 version-history 서비스)은 어디에도 연결되지 않은 코드였고 #125에서 삭제됐습니다. 그 릴리스 노트는 당시 기록으로만 남겨 둡니다.
+
+### Added
+
+- **v1.0 Proof와 D1** (2026-08 ~ 09): Golden Journey 8종, Firebat 운영 복구 증거, 의존성 보안 게이트(GAP-007), 합성 데이터 Proof 패키지, 팀 생성자 owner 멤버십(#66), 기존 사용자 팀 편입·회수(#70)
+- **B · Graphite UI** (#101): 디자인 토큰, 아이콘 레일·워크스페이스 패널·모바일 탭바, 문서 테이블 홈, 버전 기록 화면
+- **편집 경험** (#103): 제자리 편집과 자동 저장, 블록 드래그와 `Alt+↑/↓`, 페이지 아이콘, 사이드바 페이지 트리, `@` / `[[` 페이지 링크와 백링크
+- **연결된 노트** (#111): 실제 링크 기반 그래프와 로컬 그래프, 언급 찾기, 빠른 전환(`Ctrl/Cmd+O`), 데일리 노트, Markdown 단축 입력
+- **Phase 2** (#113): Markdown 충실 문서, 라이브 프리뷰, 볼트(`.zip`) 내보내기·가져오기, 인라인 데이터베이스(테이블·보드)
+- **Phase 3** (#133 ~ #137): 링크 호버 미리보기, 페이지 커버, 페이지 임베드와 동기화 블록 참조, 데이터베이스 갤러리·캘린더 뷰, 태그 패널
+- **조직** (#124 X1a, #149): `organizations` / `organization_members`, 가역 마이그레이션 `drizzle/0022`, `npm run db:orgs:prepare`
+- **운영**: `/ready` 준비 상태 프로브(#125), PR마다 Golden Journey·P0 브라우저 스펙 실행(#87)
+
+### Changed
+
+- 저장 파이프라인을 하나로 통합, 변경 없는 저장은 버전을 만들지 않음 (#108, #122)
+- 팀 없는 "열린" 페이지는 같은 조직의 로그인한 구성원에게만 열림 (#149)
+- 런타임 이미지와 CI를 Node.js 22로 이동 (#78)
+- 배포 순서: `db:fts:prepare` → `db:orgs:prepare` → `db:push` → `db:fts`
+
+### Security
+
+- 페이지 목록·쓰기 라우트에 페이지 권한 강제, 팀 페이지 접근은 현재 팀 멤버십 기준 (#79, #82, #96, #97)
+- 팀에서 빠지면 열려 있던 실시간 세션 종료 (#98), 페이지가 남은 팀 삭제 거부 (#99)
+- 쓰기 라우트가 내부 오류 원문을 반환하지 않음 (#91)
+- 동기화 블록, 페이지 복제, 폴더 목록, 휴지통 목록, 팀 디렉터리 행의 권한 경계 수정 (#116, #128, #129, #138, #140, #148)
+- 공유 관리자 비밀번호 제거: 플랫폼 관리자는 `ADMIN_EMAILS`에 있는 활성 계정이며 요청마다 DB로 확인 (#125)
+- 조직 간 읽기·쓰기 차단 (#149)
+- 인기 페이지 랭킹(`GET /api/analytics/popular`)을 호출자가 목록에서 볼 수 있는 페이지로 제한 (#141)
+- GAP-007 의존성 권고 해소 (#83, #106)
+
+### Removed
+
+- 연결되지 않은 서비스 7개: `sso.ts`, `audit-log.ts`, `rate-limiter.ts`, `microservices.ts`, `cdn.ts`, `i18n.ts`, `version-history.ts`, 그리고 `docs/i18n-guide.md` (#125)
+- 저장소에 커밋돼 있던 로컬 Playwright 산출물 (`pw-*.txt`, `pw-results.json`, `playwright-report/index.html`)
+
+### Known issues
+
+- CI 밖 레거시 브라우저 스펙 32건 실패 (#93)
+
+---
+
 ## [2.1.0] - 2026-03-31
 
 ### 🔒 보안 강화
