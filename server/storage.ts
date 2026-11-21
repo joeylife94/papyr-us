@@ -98,6 +98,8 @@ import type { PageTreeRow } from './services/page-tree.js';
 import type { TagPaneRow } from './services/tag-pane.js';
 import { postgresErrorOf } from './db-errors.js';
 import { defaultOrganizationId } from './organizations.js';
+import logger from './services/logger.js';
+import { MENTION_SEARCH_LIMIT, MENTION_SEARCH_MIN_LENGTH } from '../shared/comment-mentions.js';
 import {
   MAX_INDEXED_LINKS,
   extractPageLinkIds,
@@ -205,6 +207,11 @@ const MAX_SLUG_INSERT_ATTEMPTS = 100;
 const RESOLVE_LINKS_BATCH = 1000;
 /** Most synced blocks the picker list returns (`getReadableSyncedBlocks`). */
 const SYNCED_BLOCK_LIST_LIMIT = 200;
+/** Most recipients one comment is resolved for (mentions, thread participants, page creator). */
+const COMMENT_RECIPIENT_LIMIT = 50;
+/** Mention picker: rows read per batch and in all while looking for readers of the page. */
+const MENTION_SCAN_BATCH = 25;
+const MENTION_SCAN_LIMIT = 100;
 
 function isTeamPagesForeignKeyViolation(error: unknown): boolean {
   const dbError = postgresErrorOf(error);
@@ -2057,6 +2064,164 @@ export class DBStorage {
   async deleteComment(id: number): Promise<boolean> {
     const result = await this.db.delete(comments).where(eq(comments.id, id)).returning();
     return result.length > 0;
+  }
+
+  // ==================== Comment mentions and notifications (WP6) ====================
+
+  /** Ids, parents and author accounts of every comment of the page, for thread participants. */
+  async getPageCommentThreadRows(
+    pageId: number
+  ): Promise<Array<{ id: number; parentId: number | null; authorUserId: number | null }>> {
+    return this.db
+      .select({
+        id: comments.id,
+        parentId: comments.parentId,
+        authorUserId: comments.authorUserId,
+      })
+      .from(comments)
+      .where(eq(comments.pageId, pageId));
+  }
+
+  /**
+   * The accounts among `userIds` that are active members of the organization (and the
+   * organization is active) and may read the page, with their current names. Membership comes
+   * first: a page shared publicly is readable by anyone, which makes nobody outside the
+   * organization eligible. Account names only; never an email. Reads only, on the pool, so it
+   * must be called before a transaction is opened, never inside one.
+   */
+  async getReadableOrganizationMembers(
+    organizationId: number,
+    pageId: number,
+    userIds: number[]
+  ): Promise<Map<number, string>> {
+    const result = new Map<number, string>();
+    const wanted = [...new Set(userIds.filter((id) => Number.isInteger(id) && id > 0))].slice(
+      0,
+      COMMENT_RECIPIENT_LIMIT
+    );
+    if (wanted.length === 0) return result;
+    const rows = await this.db
+      .select({ id: users.id, name: users.name })
+      .from(organizationMembers)
+      .innerJoin(users, eq(users.id, organizationMembers.userId))
+      .innerJoin(organizations, eq(organizations.id, organizationMembers.organizationId))
+      .where(
+        and(
+          eq(organizationMembers.organizationId, organizationId),
+          eq(organizations.isActive, true),
+          eq(users.isActive, true),
+          inArray(users.id, wanted)
+        )
+      );
+    for (const row of rows) {
+      if ((await this.checkPagePermission(Number(row.id), pageId, 'viewer')) === true) {
+        result.set(Number(row.id), String(row.name));
+      }
+    }
+    return result;
+  }
+
+  /** The current names of active accounts (no organization condition), for naming a sender. */
+  async getActiveAccountNames(userIds: number[]): Promise<Map<number, string>> {
+    const wanted = [...new Set(userIds.filter((id) => Number.isInteger(id) && id > 0))];
+    const result = new Map<number, string>();
+    if (wanted.length === 0) return result;
+    const rows = await this.db
+      .select({ id: users.id, name: users.name })
+      .from(users)
+      .where(and(inArray(users.id, wanted), eq(users.isActive, true)));
+    for (const row of rows) result.set(Number(row.id), String(row.name));
+    return result;
+  }
+
+  /**
+   * Active members of the page's organization who may read the page and whose name contains the
+   * search (at least MENTION_SEARCH_MIN_LENGTH characters, else nothing is read), by name, at
+   * most MENTION_SEARCH_LIMIT of them, and whether there were more. Candidates are taken from
+   * the organization in batches and each one is checked with checkPagePermission before it is
+   * listed, so an account that cannot read the page is never returned; the scan stops after
+   * MENTION_SCAN_LIMIT name matches (a very common search on a restricted page can then miss
+   * later matches). Id and name only. Reads only, on the pool.
+   */
+  async listMentionCandidates(
+    organizationId: number,
+    pageId: number,
+    query: string,
+    excludeUserId: number
+  ): Promise<{ candidates: Array<{ id: number; name: string }>; more: boolean }> {
+    const trimmed = query.trim();
+    if ([...trimmed].length < MENTION_SEARCH_MIN_LENGTH) return { candidates: [], more: false };
+    const needle = '%' + trimmed.replace(/[\\%_]/g, (character) => `\\${character}`) + '%';
+    const found: Array<{ id: number; name: string }> = [];
+    for (let offset = 0; offset < MENTION_SCAN_LIMIT && found.length <= MENTION_SEARCH_LIMIT; ) {
+      const rows = await this.db
+        .select({ id: users.id, name: users.name })
+        .from(organizationMembers)
+        .innerJoin(users, eq(users.id, organizationMembers.userId))
+        .innerJoin(organizations, eq(organizations.id, organizationMembers.organizationId))
+        .where(
+          and(
+            eq(organizationMembers.organizationId, organizationId),
+            eq(organizations.isActive, true),
+            eq(users.isActive, true),
+            sql`${users.id} <> ${excludeUserId}`,
+            sql`${users.name} ILIKE ${needle}`
+          )
+        )
+        .orderBy(asc(users.name), asc(users.id))
+        .limit(MENTION_SCAN_BATCH)
+        .offset(offset);
+      if (rows.length === 0) break;
+      offset += rows.length;
+      for (const row of rows) {
+        if (found.length > MENTION_SEARCH_LIMIT) break;
+        if ((await this.checkPagePermission(Number(row.id), pageId, 'viewer')) === true) {
+          found.push({ id: Number(row.id), name: String(row.name) });
+        }
+      }
+      if (rows.length < MENTION_SCAN_BATCH) break;
+    }
+    return {
+      candidates: found.slice(0, MENTION_SEARCH_LIMIT),
+      more: found.length > MENTION_SEARCH_LIMIT,
+    };
+  }
+
+  /**
+   * Creates a comment and, in the same transaction, the notifications decided for it. The
+   * notifications are written inside a savepoint: if writing them fails (a recipient removed
+   * meanwhile, a constraint) they are all dropped and the comment is still committed, so
+   * notifying never fails a comment. Every query runs on the transaction handle; the recipients
+   * were resolved before it was opened.
+   */
+  async createCommentWithNotifications(
+    comment: InsertComment,
+    drafts: Array<Omit<InsertNotification, 'relatedCommentId'>>
+  ): Promise<{ comment: Comment; notifications: Notification[]; notificationsFailed: boolean }> {
+    return this.db.transaction(async (tx: any) => {
+      const [created] = await tx.insert(comments).values(comment).returning();
+      if (drafts.length === 0)
+        return { comment: created, notifications: [], notificationsFailed: false };
+      try {
+        const rows = await tx.transaction(async (savepoint: any) =>
+          savepoint
+            .insert(notifications)
+            .values(drafts.map((draft) => ({ ...draft, relatedCommentId: created.id })))
+            .returning()
+        );
+        return {
+          comment: created,
+          notifications: rows as Notification[],
+          notificationsFailed: false,
+        };
+      } catch (error) {
+        logger.warn('Comment notifications were not written', {
+          commentId: created.id,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+        return { comment: created, notifications: [], notificationsFailed: true };
+      }
+    });
   }
 
   async getTeams(): Promise<Team[]> {
