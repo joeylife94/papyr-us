@@ -4909,11 +4909,13 @@ export class DBStorage {
     valid: boolean;
     link?: PublicLink;
     error?: string;
+    /** No link has this token (never made, or revoked): answered as not found, not as refused. */
+    notFound?: boolean;
   }> {
     const link = await this.getPublicLink(token);
 
     if (!link) {
-      return { valid: false, error: 'Link not found' };
+      return { valid: false, error: 'Link not found', notFound: true };
     }
 
     // Check expiration

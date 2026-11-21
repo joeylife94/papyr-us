@@ -34,6 +34,7 @@ export default function SharedPage() {
         ? `/api/share/${token}?password=${encodeURIComponent(submittedPassword)}`
         : `/api/share/${token}`;
       const res = await fetch(url);
+      // 403 asks for the password; a link that is gone (revoked, never made) is a 404
       if (res.status === 403) {
         setPasswordError(true);
         throw new Error('Access denied');

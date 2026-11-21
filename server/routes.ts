@@ -2558,7 +2558,7 @@ export async function registerRoutes(
       const verification = await storage.verifyPublicLink(token, password);
 
       if (!verification.valid) {
-        return res.status(403).json({ message: verification.error });
+        return res.status(verification.notFound ? 404 : 403).json({ message: verification.error });
       }
 
       const link = verification.link!;
@@ -2589,7 +2589,9 @@ export async function registerRoutes(
       const verification = await storage.verifyPublicLink(token, password);
 
       if (!verification.valid) {
-        return res.status(403).json({ valid: false, message: verification.error });
+        return res
+          .status(verification.notFound ? 404 : 403)
+          .json({ valid: false, message: verification.error });
       }
 
       res.json({

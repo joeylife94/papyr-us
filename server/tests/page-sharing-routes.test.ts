@@ -359,6 +359,24 @@ describe('share links', () => {
   });
 });
 
+describe('a link that is gone', () => {
+  it('answers 404 for an unknown or revoked token and 403 where a password or the expiry is the reason', async () => {
+    storage.verifyPublicLink.mockResolvedValue({
+      valid: false,
+      error: 'Link not found',
+      notFound: true,
+    });
+    expect((await request(app).get('/api/share/gone')).status).toBe(404);
+    expect(
+      (await request(app).post('/api/share/gone/verify').set(cookieFor(READER)).send({})).status
+    ).toBe(404);
+    for (const error of ['Password required', 'Invalid password', 'Link expired']) {
+      storage.verifyPublicLink.mockResolvedValue({ valid: false, error });
+      expect((await request(app).get('/api/share/tok')).status, error).toBe(403);
+    }
+  });
+});
+
 describe('GET /api/pages/:id/sharing', () => {
   const get = (id?: number, pageId: number | string = PAGE) => {
     const req = request(app).get(`/api/pages/${pageId}/sharing`);
