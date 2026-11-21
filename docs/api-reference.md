@@ -51,6 +51,8 @@
 | POST   | `/api/pages/:id/versions/:versionId/restore`  | Editor      | 버전 복원                              |
 | GET    | `/api/pages/:id/export?format=md\|html\|json` | Viewer      | 페이지 내보내기                        |
 
+- 쿼리의 `teamId`(`/api/pages`, `/api/page-tree`, `/api/page-links/search`, `/api/trash`)는 0으로 시작하지 않는 숫자만 팀 id로 읽습니다. `/api/pages`에서는 그 밖의 문자열을 호출자 조직 안의 팀 이름으로 찾고(다른 조직의 팀 이름은 없는 이름과 같은 답), 나머지 라우트는 400 `Invalid team ID`입니다.
+
 ---
 
 ## 페이지 즐겨찾기 (Favorites)
@@ -195,11 +197,12 @@
 | POST   | `/api/teams`        | Conditional | 팀 생성          |
 | PUT    | `/api/teams/:id`    | JWT         | 팀 수정          |
 | DELETE | `/api/teams/:id`    | JWT         | 팀 삭제          |
-| POST   | `/api/teams/verify` | -           | 팀 비밀번호 검증 |
+| POST   | `/api/teams/verify` | JWT         | 팀 비밀번호 검증 |
 
 - `PUT`과 `DELETE`는 `ENFORCE_AUTH_WRITES`와 무관하게 로그인이 필요하고, 팀 역할 검사는 그대로입니다. `PUT`은 정해진 팀 필드만 받으며(그 밖의 키는 무시), 바꿀 필드가 없으면 400 `Invalid team data`입니다(#124 X1c).
 - `POST /api/teams`는 로그인한 조직 구성원이면 누구나 쓸 수 있고, 만든 계정이 소유자가 됩니다. 본문은 `displayName`(1~100자)이 필수이고 `name`은 선택입니다. `name`을 생략하면 서버가 만들고, 요청한 `name`이 이미 있으면 접미사가 붙은 다른 이름으로 만들어집니다(409나 500이 아님). 숫자로 읽히는 `name`은 400 `Invalid team data`입니다. 요청이 너무 잦으면 429입니다.
 - 팀 응답(`GET /api/teams`, `GET /api/teams/:id`, 생성·수정)에는 비밀번호 해시 대신 `hasPassword: boolean`만 들어 있습니다.
+- `POST /api/teams/verify`는 로그인이 필요하고(401), 계정당 1분에 10회로 제한됩니다(429). 팀은 호출자의 조직 안에서만 찾고, 다른 조직의 팀·없는 팀·비밀번호 없는 팀은 모두 200 `{ isValid: false }`입니다. 팀 비밀번호는 사이드바의 팀 열기를 막을 뿐이고, 팀 데이터 접근은 팀 멤버십이 정합니다.
 - `:id`(와 팀 멤버십 라우트의 `:teamId`·`:userId`)는 0으로 시작하지 않는 숫자만, 최대 2147483647입니다. `/api/teams/:id`에서 다른 표기는 404 `{ error: 'Team not found' }`(로그인이 필요한 곳에서는 401이 먼저), 멤버십 라우트에서는 기존 400입니다.
 
 ### 팀 멤버십
@@ -337,9 +340,13 @@
 | POST   | `/api/admin/directories`              | Admin | 디렉토리 생성                                   |
 | PATCH  | `/api/admin/directories/:id`          | Admin | 디렉토리 수정                                   |
 | DELETE | `/api/admin/directories/:id`          | Admin | 디렉토리 삭제                                   |
+| POST   | `/api/directory/verify`               | JWT   | 디렉토리 비밀번호 검증                          |
 | GET    | `/api/admin/organizations`            | Admin | 조직 목록 (구성원 수·소유자 수, 개인 정보 없음) |
 | POST   | `/api/admin/organizations`            | Admin | 조직 생성과 첫 소유자 지정                      |
 | POST   | `/api/admin/organizations/:id/owners` | Admin | 소유자 없는 조직의 구성원을 소유자로 지정       |
+
+- 디렉토리 응답에는 비밀번호 해시 대신 `hasPassword: boolean`만 들어 있습니다. 수정에서 비밀번호를 비우면 유지, `null`이면 제거, 값을 넣으면 교체입니다.
+- `POST /api/directory/verify`는 로그인이 필요하고 계정당 1분에 10회로 제한됩니다. 없는 디렉토리는 `{ success: false }`, 비밀번호 없는 디렉토리는 `{ success: true }`입니다.
 
 **조직 관리자 API (#124 X1c).** 플랫폼 관리자가 아니면(비로그인 포함) 403 `Forbidden: admin required`입니다.
 
@@ -392,6 +399,7 @@
 > `DELETE /api/pages/:id`는 이제 soft delete로 동작합니다. 페이지의 `deletedAt` 타임스탬프가 설정되며, 일반 조회에서 제외됩니다.
 
 - 휴지통의 페이지에는 쓰지 않습니다. `PUT /api/pages/:id`, 자동 저장, 버전 복원, 댓글 작성·수정·삭제, 권한 부여는 404 `{ message: 'Page not found' }`이고, 실시간 저장도 휴지통 페이지에는 아무것도 쓰지 않습니다. 권한·공유 링크 삭제는 그대로 됩니다.
+- 편집 중에 휴지통으로 간 페이지의 실시간 저장은 거절되고, 그 페이지를 연 편집자에게 `yjs:error`/`collab:error` `{ code: 'PAGE_NOT_EDITABLE' }`가 한 번 갑니다. 복원하면 열린 실시간 문서를 DB에서 다시 읽고 편집 권한을 되살립니다.
 - 휴지통에서 되살리는 길은 `POST /api/trash/:id/restore`입니다. `PUT /api/pages/:id`에 `{ deletedAt: null }`을 보내 되살리던 동작은 이제 404입니다.
 
 ---

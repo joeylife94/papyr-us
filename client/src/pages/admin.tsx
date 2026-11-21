@@ -28,8 +28,14 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
-import { Directory, InsertDirectory, Team as TeamRow, InsertTeam } from '@shared/schema';
+import {
+  Directory as DirectoryRow,
+  InsertDirectory,
+  Team as TeamRow,
+  InsertTeam,
+} from '@shared/schema';
 import { teamPasswordChange } from '@/lib/team-password';
+import { directorySubmission } from '@/lib/directory-form';
 import { AdminOrganizationsTab } from '@/components/organization/admin-organizations-tab';
 
 const directoryFormSchema = z.object({
@@ -63,6 +69,9 @@ const teamFormSchema = z.object({
   order: z.number().min(0).default(0),
 });
 
+/** A directory as the server answers it: `hasPassword` instead of the stored hash. */
+type Directory = Omit<DirectoryRow, 'password'> & { hasPassword?: boolean };
+
 /** A team as the server answers it: `hasPassword` instead of the stored hash. */
 type Team = Omit<TeamRow, 'password'> & { hasPassword?: boolean };
 
@@ -77,6 +86,8 @@ export default function AdminPage() {
     'directories'
   );
   const [editingDirectory, setEditingDirectory] = useState<Directory | null>(null);
+  // Editing a directory that has a password: ask for it to be removed (an empty field keeps it)
+  const [removeDirectoryPassword, setRemoveDirectoryPassword] = useState(false);
   const [editingTeam, setEditingTeam] = useState<Team | null>(null);
   // Editing a team that has a password: ask for it to be removed (an empty field keeps it)
   const [removeTeamPassword, setRemoveTeamPassword] = useState(false);
@@ -159,7 +170,7 @@ export default function AdminPage() {
   });
 
   const createDirectoryMutation = useMutation({
-    mutationFn: async (data: InsertDirectory) => {
+    mutationFn: async (data: Omit<InsertDirectory, 'password'> & { password?: string | null }) => {
       const response = await fetch('/api/admin/directories', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -187,7 +198,13 @@ export default function AdminPage() {
   });
 
   const updateDirectoryMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: number; data: Partial<Directory> }) => {
+    mutationFn: async ({
+      id,
+      data,
+    }: {
+      id: number;
+      data: Partial<Omit<InsertDirectory, 'password'>> & { password?: string | null };
+    }) => {
       const response = await fetch(`/api/admin/directories/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -199,6 +216,7 @@ export default function AdminPage() {
     onSuccess: () => {
       refetchDirectories();
       setEditingDirectory(null);
+      setRemoveDirectoryPassword(false);
       setIsDirectoryDialogOpen(false);
       directoryForm.reset();
       toast({
@@ -324,20 +342,19 @@ export default function AdminPage() {
 
   const onSubmit = (data: DirectoryFormData | TeamFormData) => {
     if (activeTab === 'directories') {
-      const directoryData = data as DirectoryFormData;
+      // The typed password is handled apart: an edited directory keeps the stored one (never sent
+      // to this page) unless a new one is typed or its removal is asked for
+      const { password: typedPassword, ...directoryFields } = data as DirectoryFormData;
+      const submission = directorySubmission({
+        fields: directoryFields,
+        typed: typedPassword ?? '',
+        removeRequested: removeDirectoryPassword,
+        editing: editingDirectory !== null,
+      });
       if (editingDirectory) {
-        updateDirectoryMutation.mutate({
-          id: editingDirectory.id,
-          data: {
-            ...directoryData,
-            password: directoryData.password || null,
-          },
-        });
+        updateDirectoryMutation.mutate({ id: editingDirectory.id, data: submission });
       } else {
-        createDirectoryMutation.mutate({
-          ...directoryData,
-          password: directoryData.password || undefined,
-        });
+        createDirectoryMutation.mutate(submission as InsertDirectory);
       }
     } else if (activeTab === 'teams') {
       // The typed password is handled apart: an edited team keeps the stored one (never sent to
@@ -376,10 +393,11 @@ export default function AdminPage() {
 
   const handleEdit = (directory: Directory) => {
     setEditingDirectory(directory);
+    setRemoveDirectoryPassword(false);
     directoryForm.reset({
       name: directory.name,
       displayName: directory.displayName,
-      password: directory.password || '',
+      password: '',
       isVisible: directory.isVisible,
       order: directory.order,
     });
@@ -497,6 +515,7 @@ export default function AdminPage() {
                   <Button
                     onClick={() => {
                       setEditingDirectory(null);
+                      setRemoveDirectoryPassword(false);
                       directoryForm.reset();
                     }}
                   >
@@ -552,10 +571,24 @@ export default function AdminPage() {
                             <FormControl>
                               <Input
                                 type="password"
-                                placeholder="Leave empty for no password"
+                                placeholder={
+                                  editingDirectory?.hasPassword
+                                    ? 'Leave empty to keep the current password'
+                                    : 'Leave empty for no password'
+                                }
                                 {...field}
                               />
                             </FormControl>
+                            {editingDirectory?.hasPassword && (
+                              <label className="flex items-center gap-2 text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={removeDirectoryPassword}
+                                  onChange={(e) => setRemoveDirectoryPassword(e.target.checked)}
+                                />
+                                Remove the password
+                              </label>
+                            )}
                             <FormMessage />
                           </FormItem>
                         )}
@@ -655,8 +688,8 @@ export default function AdminPage() {
                     </div>
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">Protected:</span>
-                      <Badge variant={directory.password ? 'destructive' : 'secondary'}>
-                        {directory.password ? 'Yes' : 'No'}
+                      <Badge variant={directory.hasPassword ? 'destructive' : 'secondary'}>
+                        {directory.hasPassword ? 'Yes' : 'No'}
                       </Badge>
                     </div>
                     <div className="flex items-center justify-between text-sm">

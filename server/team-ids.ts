@@ -13,3 +13,16 @@ export function parseTeamIdParam(raw: unknown): number | null {
   const id = Number(raw);
   return Number.isSafeInteger(id) && id <= MAX_TEAM_ID ? id : null;
 }
+
+/**
+ * A `teamId` read from a query string: no value (undefined or empty) names no team, a strict id
+ * is that team, and anything else (another spelling, a repeated parameter, an object) is refused,
+ * so a value that parseInt would turn into some team's number never selects that team.
+ */
+export function readTeamIdQuery(
+  raw: unknown
+): { ok: true; id: number | undefined } | { ok: false } {
+  if (raw === undefined || raw === '') return { ok: true, id: undefined };
+  const id = parseTeamIdParam(raw);
+  return id === null ? { ok: false } : { ok: true, id };
+}

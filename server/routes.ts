@@ -118,7 +118,7 @@ import {
   PageCreatorUnavailableError,
   TeamBusyError,
 } from './storage.js';
-import { notifyPageAccessChanged } from './services/page-access-events.js';
+import { notifyPageAccessChanged, notifyPageRestored } from './services/page-access-events.js';
 import { createUserInDefaultOrganization } from './organizations.js';
 import {
   buildAddressRateLimiter,
@@ -169,7 +169,7 @@ import {
 } from './page-sharing-routes.js';
 import { PUBLIC_GRANT_LEVELS, effectivePublicLevel } from '../shared/page-sharing.js';
 import { checkedPageId, parsePageIdParam } from './page-ids.js';
-import { parseTeamIdParam } from './team-ids.js';
+import { parseTeamIdParam, readTeamIdQuery } from './team-ids.js';
 
 interface MulterRequest extends Request {
   files?: any[];
@@ -245,6 +245,13 @@ function teamAnswer<T extends { password?: unknown }>(
 ): Omit<T, 'password'> & { hasPassword: boolean } {
   const { password, ...rest } = team;
   return { ...rest, hasPassword: typeof password === 'string' && password !== '' };
+}
+
+/** A directory as answered to an admin: never with its password hash, and with `hasPassword`. */
+function directoryAnswer<T extends { password?: unknown }>(
+  directory: T
+): Omit<T, 'password'> & { hasPassword: boolean } {
+  return teamAnswer(directory);
 }
 
 const createTeamSchema = insertTeamSchema.omit({ membersCanEdit: true }).extend({
@@ -866,17 +873,28 @@ export async function registerRoutes(
 
   app.get('/api/pages', optionalAuth, async (req: AuthRequest, res) => {
     try {
-      const teamIdParam = req.query.teamId as string;
+      const teamIdParam = req.query.teamId;
       const cursor = req.query.cursor as string | undefined;
 
-      // Resolve teamName string to numeric team ID
+      // A strict team id is an id; any other string is a team name (never a number read from its
+      // first digits). A name that names no team leaves the listing to the caller's own teams.
       let resolvedTeamId: number | undefined;
       if (teamIdParam) {
-        if (!isNaN(parseInt(teamIdParam))) {
-          resolvedTeamId = parseInt(teamIdParam);
-        } else {
-          const team = await storage.getTeamByName(teamIdParam);
-          if (team) {
+        const asId = parseTeamIdParam(teamIdParam);
+        if (asId !== null) {
+          resolvedTeamId = asId;
+        } else if (typeof teamIdParam === 'string') {
+          // A name is looked up in the caller's organization only: a team of another
+          // organization, and any name when there is no caller organization, answers as a name
+          // that names no team.
+          const organizationId = req.user?.id
+            ? await storage.getUserOrganizationId(req.user.id)
+            : null;
+          const team =
+            organizationId === null || organizationId === undefined
+              ? undefined
+              : await storage.getTeamByName(teamIdParam);
+          if (team && Number(team.organizationId) === organizationId) {
             resolvedTeamId = team.id;
           }
         }
@@ -1475,8 +1493,10 @@ export async function registerRoutes(
   // trashed page in the instance, body included, to any signed-in user).
   app.get('/api/trash', requireAuthIfEnabled, async (req: AuthRequest, res) => {
     try {
-      const teamParam = Number.parseInt(String(req.query.teamId ?? ''), 10);
-      const teamId = Number.isInteger(teamParam) && teamParam > 0 ? teamParam : undefined;
+      // A team id must be a strict id, like DELETE /api/trash (nothing in the client sends one)
+      const team = readTeamIdQuery(req.query.teamId);
+      if (!team.ok) return res.status(400).json({ error: 'Invalid team ID' });
+      const teamId = team.id;
       const viewer = await storage.getPageViewer(req.user?.id);
       res.json(await storage.getTrashPages(viewer, teamId));
     } catch (error) {
@@ -1510,6 +1530,10 @@ export async function registerRoutes(
           }
         }
         await storage.restorePages(together);
+        // Editors with a restored page open: their documents re-read it from the database (what a
+        // document held while the page was trashed is discarded, never written back) and they can
+        // edit again
+        for (const pageId of together) await notifyPageRestored(pageId);
         const restored = await storage.getWikiPage(id);
         res.json({ ...restored, restoredCount: together.length });
       } catch (error) {
@@ -1542,8 +1566,11 @@ export async function registerRoutes(
   // Empty entire trash
   app.delete('/api/trash', requireAuthIfEnabled, requireAdmin, async (req: AuthRequest, res) => {
     try {
-      const teamId = req.query.teamId ? parseInt(req.query.teamId as string) : undefined;
-      const count = await storage.emptyTrash(teamId);
+      // Emptying the trash of one team needs that team named as a strict id; any other spelling
+      // is refused rather than widened to every team.
+      const team = readTeamIdQuery(req.query.teamId);
+      if (!team.ok) return res.status(400).json({ error: 'Invalid team ID' });
+      const count = await storage.emptyTrash(team.id);
       res.json({ message: `${count} page(s) permanently deleted` });
     } catch (error) {
       logger.error('Error emptying trash:', { error });
@@ -2854,10 +2881,11 @@ export async function registerRoutes(
       let teamId: number | undefined;
 
       if (teamParam && teamParam !== 'null') {
-        teamId = parseInt(teamParam, 10);
-        if (!Number.isInteger(teamId) || teamId <= 0) {
+        const team = readTeamIdQuery(teamParam);
+        if (!team.ok || team.id === undefined) {
           return res.status(400).json({ message: 'Invalid team ID' });
         }
+        teamId = team.id;
         if (!req.user?.id) {
           return res.status(401).json({ message: 'Authentication required' });
         }
@@ -2949,10 +2977,11 @@ export async function registerRoutes(
     const teamParam = req.query.teamId as string | undefined;
     let teamId: number | undefined;
     if (teamParam) {
-      teamId = parseInt(teamParam, 10);
-      if (!Number.isInteger(teamId) || teamId <= 0) {
+      const team = readTeamIdQuery(teamParam);
+      if (!team.ok || team.id === undefined) {
         return res.status(400).json({ message: 'Invalid team ID' });
       }
+      teamId = team.id;
       const userTeamIds = req.user?.id ? await storage.getUserTeamIds(req.user.id) : [];
       if (!userTeamIds.includes(teamId)) {
         return res.status(403).json({ message: 'You are not a member of this team' });
@@ -3185,10 +3214,15 @@ export async function registerRoutes(
       res.json({ admin: true });
     });
 
-    // Directory password verification
-    app.post('/api/directory/verify', rlAdmin, async (req, res) => {
+    // Directory password verification: for a signed-in account, with a small per-account
+    // allowance. Directories belong to no organization, so the lookup is by name.
+    const rlDirectoryVerify = buildAccountRateLimiter({ windowMs: 60_000, max: 10 });
+    app.post('/api/directory/verify', authMiddleware, rlDirectoryVerify, async (req, res) => {
       try {
-        const { directoryName, password } = req.body;
+        const { directoryName, password } = req.body ?? {};
+        if (typeof directoryName !== 'string' || typeof password !== 'string') {
+          return res.json({ success: false });
+        }
         const isValid = await storage.verifyDirectoryPassword(directoryName, password);
         res.json({ success: isValid });
       } catch (error) {
@@ -3200,7 +3234,7 @@ export async function registerRoutes(
     app.get('/api/admin/directories', rlAdmin, requireAdmin, async (req, res) => {
       try {
         const directories = await storage.getDirectories();
-        res.json(directories);
+        res.json(directories.map(directoryAnswer));
       } catch (error) {
         res.status(500).json({ message: 'Server error' });
       }
@@ -3210,7 +3244,7 @@ export async function registerRoutes(
       try {
         const validatedData = insertDirectorySchema.parse(req.body);
         const directory = await storage.createDirectory(validatedData);
-        res.status(201).json(directory);
+        res.status(201).json(directoryAnswer(directory));
       } catch (error) {
         res.status(400).json({ message: 'Invalid directory data' });
       }
@@ -3224,7 +3258,7 @@ export async function registerRoutes(
         if (!directory) {
           return res.status(404).json({ message: 'Directory not found' });
         }
-        res.json(directory);
+        res.json(directoryAnswer(directory));
       } catch (error) {
         res.status(400).json({ message: 'Invalid directory data' });
       }
@@ -4325,10 +4359,21 @@ export async function registerRoutes(
       }
     );
 
-    app.post('/api/teams/verify', async (req, res) => {
+    // A team's password is checked for a signed-in account, in that account's organization only
+    // (a team of another organization answers as a team that does not exist), with a small
+    // per-account allowance.
+    const rlTeamVerify = buildAccountRateLimiter({ windowMs: 60_000, max: 10 });
+    app.post('/api/teams/verify', authMiddleware, rlTeamVerify, async (req: AuthRequest, res) => {
       try {
-        const { teamName, password } = req.body;
-        const isValid = await storage.verifyTeamPassword(teamName, password);
+        const { teamName, password } = req.body ?? {};
+        if (typeof teamName !== 'string' || typeof password !== 'string') {
+          return res.json({ isValid: false });
+        }
+        const organizationId = await storage.getUserOrganizationId(Number(req.user?.id));
+        if (organizationId === null || organizationId === undefined) {
+          return res.json({ isValid: false });
+        }
+        const isValid = await storage.verifyTeamPassword(teamName, password, organizationId);
         res.json({ isValid });
       } catch (error) {
         console.error('Error verifying team password:', error);

@@ -58,3 +58,32 @@ export async function notifyPageGrantsChanged(pageId: number): Promise<void> {
     }
   }
 }
+
+/**
+ * In-process notice that a page came back from the trash. Open realtime documents of that page
+ * re-read it from the database (so a document that stopped saving while the page was trashed
+ * neither keeps nor writes back what it held) and their editors get their edit right back.
+ */
+const restoredListeners = new Set<PageGrantsListener>();
+
+export function onPageRestored(listener: PageGrantsListener): () => void {
+  restoredListeners.add(listener);
+  return () => {
+    restoredListeners.delete(listener);
+  };
+}
+
+/** Resolves once every subscriber has finished; a failing subscriber is logged, not thrown. */
+export async function notifyPageRestored(pageId: number): Promise<void> {
+  const results = await Promise.allSettled(
+    [...restoredListeners].map((listener) => listener(pageId))
+  );
+  for (const result of results) {
+    if (result.status === 'rejected') {
+      logger.error('Failed to reopen realtime documents after a page restore', {
+        pageId,
+        error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+      });
+    }
+  }
+}

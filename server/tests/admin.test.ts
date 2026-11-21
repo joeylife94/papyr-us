@@ -159,7 +159,8 @@ describe('Admin directory management', () => {
       .set('Authorization', adminToken());
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual([mockDirectory]);
+    // An answer says whether a directory has a password, never what it is
+    expect(response.body).toEqual([{ ...mockDirectory, hasPassword: false }]);
   });
 
   it('TC-ADM-004: updates a directory, ignoring a stray adminPassword field', async () => {
@@ -188,7 +189,10 @@ describe('Admin directory management', () => {
     (storage.verifyDirectoryPassword as vi.Mock).mockResolvedValue(true);
     const payload = { directoryName: 'protected-docs', password: 'dir-password' };
 
-    const response = await request(app).post('/api/directory/verify').send(payload);
+    const response = await request(app)
+      .post('/api/directory/verify')
+      .set('Authorization', bearer({ id: MEMBER.id, email: MEMBER.email }))
+      .send(payload);
 
     expect(response.status).toBe(200);
     expect(response.body.success).toBe(true);

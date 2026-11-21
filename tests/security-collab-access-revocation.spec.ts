@@ -6,6 +6,10 @@
  * team's pages lose access at once (Yjs and the legacy /collab channel): they are told so, and
  * they neither receive nor send edits any more. Before the removal, both directions work.
  *
+ * A second rule: when a page is trashed while editors have it open, a save of it writes nothing, is
+ * not reported as saved, and each connected editor is told once (`PAGE_NOT_EDITABLE`) on both
+ * channels; the page restored from the trash is unchanged.
+ *
  * Realtime collaboration is feature-flagged off by default. Run this spec against a server started
  * with FEATURE_COLLABORATION=true; otherwise it is skipped.
  */
@@ -170,6 +174,116 @@ test.describe('Realtime collaboration follows current team membership', () => {
       if (teamId) await ownerRequest.delete(`/api/teams/${teamId}`).catch(() => {});
       await ownerRequest.dispose();
       await memberRequest.dispose();
+    }
+  });
+
+  test('a page trashed while open is not saved and its editors are told once', async ({
+    request,
+    baseURL,
+  }) => {
+    test.setTimeout(120_000);
+    const flags = await (await request.get('/api/features')).json();
+    test.skip(!flags.FEATURE_COLLABORATION, 'FEATURE_COLLABORATION is disabled on this server');
+
+    const stamp = Date.now();
+    const owner = await registerTestUser(request, 'cat-owner');
+    const ownerRequest = await createAuthenticatedApiContext(owner.email, owner.password);
+    const sockets: Socket[] = [];
+    let teamId: number | undefined;
+
+    try {
+      const teamResponse = await ownerRequest.post('/api/teams', {
+        data: { name: `cat-team-${stamp}`, displayName: `CAT Team ${stamp}` },
+      });
+      expect(teamResponse.status()).toBe(201);
+      teamId = Number((await teamResponse.json()).id);
+      const created = await ownerRequest.post('/api/pages', {
+        data: {
+          title: `Trashed while open ${stamp}`,
+          slug: `cat-${stamp}`,
+          content: 'seed',
+          folder: 'docs',
+          author: owner.email,
+          teamId,
+        },
+      });
+      expect(created.status()).toBe(201);
+      const pageId = Number((await created.json()).id);
+
+      const token = await accessToken(ownerRequest);
+      const firstYjs = await connect(baseURL!, '/yjs', token);
+      const secondYjs = await connect(baseURL!, '/yjs', token);
+      const firstCollab = await connect(baseURL!, '/collab', token);
+      const secondCollab = await connect(baseURL!, '/collab', token);
+      sockets.push(firstYjs, secondYjs, firstCollab, secondCollab);
+
+      const documentId = `page-${pageId}`;
+      for (const socket of [firstYjs, secondYjs]) {
+        const init = next(socket, 'yjs:init');
+        socket.emit('yjs:join', { documentId, pageId });
+        expect(await init, 'yjs:init').toMatchObject({ canEdit: true });
+      }
+      for (const socket of [firstCollab, secondCollab]) {
+        const users = next(socket, 'session-users');
+        socket.emit('join-document', { pageId, userName: 'spec' });
+        expect(await users, 'session-users').not.toBeNull();
+      }
+
+      // The page is trashed while both editors have it open
+      expect((await ownerRequest.delete(`/api/pages/${pageId}`)).status()).toBe(200);
+
+      // Every PAGE_NOT_EDITABLE each socket receives, to count them after a bounded window
+      const notEditable = (socket: Socket, event: string) => {
+        const seen: any[] = [];
+        socket.on(event, (payload: any) => {
+          if (payload?.code === 'PAGE_NOT_EDITABLE') seen.push(payload);
+        });
+        return seen;
+      };
+      const yjsSeen = [firstYjs, secondYjs].map((socket) => notEditable(socket, 'yjs:error'));
+      const collabSeen = [firstCollab, secondCollab].map((socket) =>
+        notEditable(socket, 'collab:error')
+      );
+
+      // Yjs: the save is refused, answered as not saved, and every client is told
+      const yjsTold = [next(firstYjs, 'yjs:error', 10_000), next(secondYjs, 'yjs:error', 10_000)];
+      const yjsAnswer = next(firstYjs, 'yjs:saved', 10_000);
+      firstYjs.emit('yjs:update', { documentId, update: yjsUpdate(`after trash ${stamp}`) });
+      firstYjs.emit('yjs:save', { documentId, pageId });
+      expect(await yjsAnswer).toMatchObject({ success: false });
+      for (const told of yjsTold) expect(await told).toMatchObject({ code: 'PAGE_NOT_EDITABLE' });
+
+      // Legacy channel: the same
+      const collabTold = [
+        next(firstCollab, 'collab:error', 15_000),
+        next(secondCollab, 'collab:error', 15_000),
+      ];
+      firstCollab.emit('document-change', {
+        pageId,
+        blockId: 'b1',
+        type: 'update',
+        data: {
+          blocks: [{ id: 'b1', type: 'paragraph', content: `after trash ${stamp}`, order: 0 }],
+        },
+      });
+      for (const told of collabTold)
+        expect(await told).toMatchObject({ code: 'PAGE_NOT_EDITABLE' });
+
+      // Told once: a bounded window (longer than the default save debounce of 3 s) brings no
+      // second event on either channel
+      await new Promise((resolve) => setTimeout(resolve, 3500));
+      for (const seen of [...yjsSeen, ...collabSeen]) expect(seen).toHaveLength(1);
+
+      // Nothing was written: the restored page still has its content
+      const restore = await ownerRequest.post(`/api/trash/${pageId}/restore`);
+      expect(restore.status()).toBe(200);
+      const restored = await ownerRequest.get(`/api/pages/${pageId}`);
+      expect(restored.status()).toBe(200);
+      expect((await restored.json()).content).toBe('seed');
+    } finally {
+      for (const socket of sockets) socket.disconnect();
+      if (teamId) await ownerRequest.delete(`/api/teams/${teamId}`).catch(() => {});
+      await ownerRequest.dispose();
     }
   });
 });

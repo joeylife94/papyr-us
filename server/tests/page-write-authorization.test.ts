@@ -361,9 +361,11 @@ describe('Trash listing is the caller’s', () => {
 
     await request(app).get(`/api/trash?teamId=${TEAM_A}`).set(as(EDITOR));
     expect(storage.getTrashPages).toHaveBeenLastCalledWith(viewer, TEAM_A);
-    // A malformed team id lists the whole (still filtered) trash instead of querying team NaN.
-    await request(app).get('/api/trash?teamId=abc').set(as(EDITOR));
-    expect(storage.getTrashPages).toHaveBeenLastCalledWith(viewer, undefined);
+    // A malformed team id is refused instead of being ignored.
+    storage.getTrashPages.mockClear();
+    const malformed = await request(app).get('/api/trash?teamId=abc').set(as(EDITOR));
+    expect([malformed.status, malformed.body]).toEqual([400, { error: 'Invalid team ID' }]);
+    expect(storage.getTrashPages).not.toHaveBeenCalled();
   });
 });
 

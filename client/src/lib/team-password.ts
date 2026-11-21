@@ -28,3 +28,17 @@ export function teamPasswordChange(input: {
   if (!input.editing) return { password: null };
   return input.removeRequested ? { password: null } : {};
 }
+
+/** What a team password check answered, for the prompt. */
+export type TeamVerifyOutcome = 'unlocked' | 'wrong' | 'sign-in' | 'throttled' | 'failed';
+
+/**
+ * Reads the answer of POST /api/teams/verify. Only a 200 that says `isValid: true` unlocks; the
+ * route needs a session (401) and allows a few checks a minute per account (429).
+ */
+export function teamVerifyOutcome(status: number, body: unknown): TeamVerifyOutcome {
+  if (status === 401) return 'sign-in';
+  if (status === 429) return 'throttled';
+  if (status !== 200) return 'failed';
+  return (body as { isValid?: unknown } | null)?.isValid === true ? 'unlocked' : 'wrong';
+}

@@ -2069,7 +2069,10 @@ export class DBStorage {
       .from(directories)
       .where(eq(directories.name, directoryName));
     const dir = result[0];
-    if (!dir || !dir.password) return true;
+    // A directory that does not exist is not verified. An existing directory without a password
+    // has nothing to verify, so it answers true (it asks for no password).
+    if (!dir) return false;
+    if (!dir.password) return true;
 
     // Only accept bcrypt hashed passwords (no plaintext fallback)
     if (!isBcryptHash(dir.password)) {
@@ -2585,8 +2588,20 @@ export class DBStorage {
     }
   }
 
-  async verifyTeamPassword(teamName: string, password: string): Promise<boolean> {
-    const team = await this.getTeamByName(teamName);
+  /**
+   * Whether `password` is the password of the team named `teamName` in `organizationId`. A team
+   * of another organization, a missing team and a team without a password all answer false.
+   */
+  async verifyTeamPassword(
+    teamName: string,
+    password: string,
+    organizationId: number
+  ): Promise<boolean> {
+    const [team] = await this.db
+      .select({ password: teams.password })
+      .from(teams)
+      .where(and(eq(teams.name, teamName), eq(teams.organizationId, organizationId)))
+      .limit(1);
     if (!team || !team.password) return false;
     return bcrypt.compare(password, team.password);
   }
