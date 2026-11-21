@@ -4,7 +4,7 @@ aliases: ['PAPYR_US_MASTER', 'Papyr.us v1.0 Master']
 project: 'Papyr.us'
 type: 'project-master'
 status: 'authoritative-contract'
-version: '0.99'
+version: '1.00'
 target: 'v1.0 + D1 frozen baseline; enterprise readiness (Issue #124), one bounded phase per PR'
 current_phase: 'Issue #124 — X0, X1a, X1b and X1c done; X1d next, alongside the collaboration packages of §10'
 priority: 'P1'
@@ -18,7 +18,7 @@ checkpoint_main_sha: 'd2f092b240d5ffe0937dd6d487934e32d5a631f3'
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.99**  
+> **AUTHORITATIVE PROJECT CONTRACT — v1.00**  
 > Current repository / Issue / PR / executable evidence overrides historical checkpoints, Scheduled Task prompts, and agent self-report.  
 > The accepted v1.0 product/proof baseline and D1 remain frozen as evidence. Progression after D1 runs as contract Issues under [`AGENTS.md`](AGENTS.md), one bounded phase per PR, and must not rewrite prior accepted evidence or widen buyer-facing claims without a new Proof.
 
@@ -532,3 +532,41 @@ On the integration head (this package on §12's branch), Linux container, local 
 - A creator of an older page made through the daily-note, duplicate, import or vault paths, whose owner grant was lowered or removed after the backfill, now holds only what the grant says (before, the email in the author text kept them owner). Accepted: grants decide.
 - Older editor-made pages without a recorded creator keep the author-text rule; a display name that equals another account's email can still name that account owner of such a page. Retiring the rule needs those pages' ownership turned into grants first: an owner decision.
 - `node scripts/apply-organizations-schema.mjs --down` refuses once a creator was recorded that `0027` would not compute again (any page made after the upgrade, a renamed creator): in practice the down path is usable only right after the upgrade.
+
+## 14. Comments Reach People (2026-11-21)
+
+### Changed
+
+§10, item 6, built on §11 (notifications to accounts) and §13 (page creator).
+
+| Area          | What exists now                                                                                                                                                                                                                                  |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Mentions      | `[[user:<id>]]` in a comment, picked from the page's readers in the same organization; tokens naming anyone else are stored as `@unknown`; a comment by someone outside the organization keeps no mention                                        |
+| Notifications | `comment` to the page's creator, `reply` to the thread's authors, `mention` to the mentioned (once per comment and person); never to the actor; only to active members of the page's organization who can read the page, re-checked when written |
+| Reading       | names of mentioned people only for active members of the page's organization                                                                                                                                                                     |
+| Writes        | comment and notifications in one transaction (notifications in a savepoint, so the comment survives); comment create and edit rate-limited per account; a reply's parent must be on the same page                                                |
+| Client        | mention picker in the comment box; a notification opens the page at the comment                                                                                                                                                                  |
+
+Rules are in [`docs/organizations-guide.md`](docs/organizations-guide.md#댓글-멘션과-알림).
+
+Process: one developer package against a brief, three review rounds. The reviews found and the package fixed: an account outside the organization could learn the organization's members and their names through mentions on a publicly shared page, and notify them; unbounded per-mention permission queries; a lost mention on edit; notifications written for people who had just left; comment text in logs; repeated notifications on re-added mentions. The page-read rule used for recipients was compared with `checkPagePermission` on 3640 random page and account combinations with no difference.
+
+### Actually Executed
+
+On the package head, Linux container, local PostgreSQL 16, the container's Chromium (developer and reviewer, separately):
+
+- `node scripts/verify-contributor.mjs` — **PASS**;
+- server suite — 76 files, 2025 tests **PASS**; unit — 58 files, 918 tests **PASS**; Layer 4 — 35 files, 458 tests **PASS** (the package file 27 after the last fixes);
+- browser: `comment-mentions` (3 tests), `notification-bell`, `security-notifications-scope` — **PASS** twice in a row;
+- reviewer mutations on the reader rule, the outsider rule, write-time eligibility, edit notifications, logging and the workflow path (16 on the final code) — all but one caught; the last one was closed with a test.
+
+### Not Verified
+
+- realtime delivery in a browser (the socket path is the one §11 tested); the server with `FEATURE_NOTIFICATIONS` off;
+- the whole `test:gj` list, Layer 5, Layer 6 and Firebat: CI on the pull request is the reference.
+
+### Known limits
+
+- A page grant revoked in the same instant as a comment is written can still let that person receive its notification.
+- More than 20 distinct mentions in one comment become `@unknown`.
+- Notifications are not rewritten when a comment is edited.
