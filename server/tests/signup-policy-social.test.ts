@@ -267,6 +267,73 @@ describe.each(['google', 'github'] as const)('%s sign-in', (provider) => {
   });
 });
 
+describe('an existing account is signed into only through an address the provider verified', () => {
+  const existingAccount = { id: 5, email: 'old@example.com', isActive: true };
+  beforeEach(() => {
+    store.db.where.mockResolvedValue([existingAccount]);
+  });
+
+  it.each([
+    ['false', false],
+    ['absent', undefined],
+    ['null', null],
+    ['the string "false"', 'false'],
+    ['an arbitrary string', 'yes'],
+  ])(
+    'Google: an address the provider reports as %s is refused with email_unverified',
+    async (_l, verified) => {
+      for (const mode of ['open', 'invite_only', 'closed']) {
+        process.env.SIGNUP_MODE = mode;
+        const shape = profile('old@example.com', verified as any);
+        // `profile` fills an omitted flag in; this case has no flag at all
+        if (verified === undefined) delete (shape.emails[0] as any).verified;
+        const out = await verify('google', shape, withToken);
+        expect(out.user).toBe(false);
+        expect(out.info).toEqual({ code: 'email_unverified' });
+        expect(out.req.invitationCarry).toBeUndefined();
+      }
+      expect(createUserInDefaultOrganization).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([true, 'true'])(
+    'Google: an address the provider reports verified (%s) signs in',
+    async (verified) => {
+      const out = await verify('google', profile('old@example.com', verified));
+      expect(out.user).toMatchObject({ id: 5 });
+    }
+  );
+
+  it('Google: a verified address that differs only in case is still not signed into', async () => {
+    store.db.where.mockResolvedValue([{ id: 5, email: 'Old@Example.com', isActive: true }]);
+    const out = await verify('google', profile('old@example.com', true));
+    expect(out.user).toBe(false);
+    expect(out.info).toEqual({ code: 'email_taken' });
+  });
+
+  it('GitHub: an existing account is signed into through a verified address only', async () => {
+    const entries = (verified: boolean) => ({
+      id: 'g-1',
+      username: 'octo',
+      displayName: 'Octo',
+      _json: { email: 'old@example.com' },
+      emails: [{ value: 'old@example.com', primary: true, verified }],
+    });
+    const refused = await verify('github', entries(false));
+    expect(refused.user).toBe(false);
+    expect(refused.info).toEqual({ code: 'email_unverified' });
+    const ok = await verify('github', entries(true));
+    expect(ok.user).toMatchObject({ id: 5 });
+  });
+
+  it('a new account keeps the sign-up rules: an unverified address still creates one in open mode', async () => {
+    store.db.where.mockResolvedValue([]);
+    process.env.SIGNUP_MODE = 'open';
+    const out = await verify('google', profile('new@example.com', false));
+    expect(out.user).toMatchObject({ id: 77, email: 'new@example.com' });
+  });
+});
+
 describe('the address a provider vouches for', () => {
   beforeEach(() => {
     process.env.SIGNUP_MODE = 'invite_only';

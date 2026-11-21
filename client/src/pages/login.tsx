@@ -34,7 +34,7 @@ export default function LoginPage() {
       case 'email_taken':
         return '이미 가입된 이메일입니다. 기존 계정으로 로그인하세요.';
       case 'email_unverified':
-        return 'GitHub 계정에 확인된(verified) 이메일 주소가 없습니다. GitHub에서 이메일을 확인한 뒤 다시 시도하세요.';
+        return '로그인 제공자(Google 또는 GitHub)에서 확인된(verified) 이메일 주소가 필요합니다. 제공자에서 이메일을 확인한 뒤 다시 시도하세요.';
       case 'oauth_state':
         return '로그인 요청을 확인하지 못했습니다. 로그인 버튼부터 다시 시도하세요.';
       case 'organization_busy':
