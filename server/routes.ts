@@ -109,7 +109,10 @@ import passport from 'passport';
 import { eq, and, isNull } from 'drizzle-orm';
 import { ANONYMOUS_PAGE_VIEWER, DBStorage, OrganizationRequiredError } from './storage.js';
 import { createUserInDefaultOrganization } from './organizations.js';
-import { invitationIntentCookieOptions } from './organization-invitation-routes.js';
+import {
+  buildAddressRateLimiter,
+  invitationIntentCookieOptions,
+} from './organization-invitation-routes.js';
 import {
   INVITATION_INTENT_COOKIE,
   INVITATION_INVALID_BODY,
@@ -330,8 +333,18 @@ export async function registerRoutes(
     rlAI(req, res, (err?: unknown) => (err ? next(err) : optionalAuth(req, res, next)));
   const rlAnalytics = buildRateLimiter({ windowMs: 60_000, max: 60 }); // analytics view recording
 
+  // A sign-up that brings an invitation token is an acceptance without a session: limited per
+  // client address, which a forged session cookie cannot change (rlAuth keys on the cookie's claims).
+  const rlInvitationSignup = buildAddressRateLimiter({ windowMs: 60_000, max: 10 });
+  const limitInvitationSignup: RequestHandler = (req, res, next) => {
+    const token = req.body?.invitationToken;
+    return token !== undefined && token !== null && token !== ''
+      ? rlInvitationSignup(req, res, next)
+      : next();
+  };
+
   // User Registration
-  app.post('/api/auth/register', rlAuth, async (req, res) => {
+  app.post('/api/auth/register', rlAuth, limitInvitationSignup, async (req, res) => {
     try {
       if (process.env.E2E_DEBUG_AUTH === '1') {
         logger.debug('[E2E DEBUG] /api/auth/register body', {

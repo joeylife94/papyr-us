@@ -245,3 +245,30 @@ describe('an unknown SIGNUP_MODE', () => {
     expect(createUserInDefaultOrganization).not.toHaveBeenCalled();
   });
 });
+
+describe('a sign-up that brings a token is limited per client address', () => {
+  const ORIGINAL_LIMIT = process.env.RATE_LIMIT_ENABLED;
+  afterEach(() => {
+    if (ORIGINAL_LIMIT === undefined) delete process.env.RATE_LIMIT_ENABLED;
+    else process.env.RATE_LIMIT_ENABLED = ORIGINAL_LIMIT;
+  });
+
+  it('the 11th in a minute is 429 even when every request carries a different forged session, and one without a token is not counted', async () => {
+    process.env.RATE_LIMIT_ENABLED = 'true';
+    process.env.SIGNUP_MODE = 'open';
+    store.registerWithOrganizationInvitation.mockResolvedValue({ kind: 'invalid' });
+    for (let i = 0; i < 10; i += 1) {
+      const res = await request(app)
+        .post('/api/auth/register')
+        .set('Cookie', [`accessToken=${Buffer.from(`{"id":${i}}`).toString('base64url')}.x.y`])
+        .send(body({ invitationToken: TOKEN }));
+      expect(res.status).toBe(404);
+    }
+    const limited = await register(body({ invitationToken: TOKEN }));
+    expect(limited.status).toBe(429);
+    expect(store.registerWithOrganizationInvitation).toHaveBeenCalledTimes(10);
+    // an ordinary sign-up (no token) is outside this limit
+    const plain = await register(body());
+    expect(plain.status).toBe(201);
+  });
+});
