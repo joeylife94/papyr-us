@@ -146,6 +146,7 @@ import { registerSyncedBlockRoutes } from './routes/synced-blocks.js';
 import { readableLinkTarget, registerPageEmbedRoutes } from './routes/page-embeds.js';
 import {
   notifyGrantChanged,
+  notifyPublicAccessChanged,
   pageOwnerGate,
   parsePermissionGrant,
   toShareLink,
@@ -2428,6 +2429,7 @@ export async function registerRoutes(
           : await storage.addPagePermission(permissionData);
       // The grantee's open sessions (every member of a granted team) check again now
       await notifyGrantChanged(storage, permissionData);
+      if (permissionData.entityType === 'public') await notifyPublicAccessChanged(pageId);
       res.status(201).json(permission);
     } catch (error) {
       res.status(400).json(failureBody('Invalid permission data', error));
@@ -2469,6 +2471,7 @@ export async function registerRoutes(
         }
         // The removed grantee's open sessions (every member of a removed team) check again now
         if (existing) await notifyGrantChanged(storage, existing);
+        if (existing?.entityType === 'public') await notifyPublicAccessChanged(pageId);
 
         res.json({ message: 'Permission removed successfully' });
       } catch (error) {
@@ -2576,12 +2579,10 @@ export async function registerRoutes(
       const verification = await storage.verifyPublicLink(token, password);
 
       if (!verification.valid) {
-        return res
-          .status(verification.notFound ? 404 : 403)
-          .json({
-            message: verification.error,
-            ...(verification.expired && { code: 'link_expired' }),
-          });
+        return res.status(verification.notFound ? 404 : 403).json({
+          message: verification.error,
+          ...(verification.expired && { code: 'link_expired' }),
+        });
       }
 
       const link = verification.link!;

@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Lock } from 'lucide-react';
 import { readPageCover } from '@shared/schema';
+import { shareLinkState } from '@/components/permissions/share-state';
 
 interface SharedPageResponse {
   page: {
@@ -34,8 +35,12 @@ export default function SharedPage() {
         ? `/api/share/${token}?password=${encodeURIComponent(submittedPassword)}`
         : `/api/share/${token}`;
       const res = await fetch(url);
-      // 403 asks for the password; a link that is gone (revoked, never made) is a 404
-      if (res.status === 403) {
+      // 403 asks for the password, unless the link has expired; a link that is gone (revoked,
+      // never made) is a 404
+      const body = res.status === 403 ? await res.json().catch(() => null) : null;
+      const state = shareLinkState(res.status, body);
+      if (state === 'expired') throw new Error('Link expired');
+      if (state === 'password') {
         setPasswordError(true);
         throw new Error('Access denied');
       }
@@ -87,6 +92,17 @@ export default function SharedPage() {
             Unlock
           </Button>
         </div>
+      </div>
+    );
+  }
+
+  if (!data && error && (error as Error).message === 'Link expired') {
+    return (
+      <div
+        className="max-w-4xl mx-auto px-4 py-12 text-center text-muted-foreground"
+        data-testid="share-link-expired"
+      >
+        링크가 만료되었습니다.
       </div>
     );
   }

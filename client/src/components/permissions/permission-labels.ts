@@ -1,29 +1,12 @@
 import { OrganizationApiError } from '@/components/organization/api';
 
-export type PageLevel = 'owner' | 'editor' | 'commenter' | 'viewer';
-
-/** The level names a person sees, from the strongest to the weakest. */
-export const LEVEL_LABELS: Record<PageLevel, string> = {
-  owner: '소유자',
-  editor: '편집 가능',
-  commenter: '댓글 가능',
-  viewer: '보기 가능',
-};
-
-/** The short names on the permission badge. */
-export const LEVEL_BADGE_LABELS: Record<PageLevel, string> = {
-  owner: '소유자',
-  editor: '편집자',
-  commenter: '댓글 작성자',
-  viewer: '보기',
-};
-
-export const LEVEL_DESCRIPTIONS: Record<PageLevel, string> = {
-  owner: '문서를 보고, 편집하고, 공유를 관리할 수 있습니다.',
-  editor: '문서를 보고 편집할 수 있습니다.',
-  commenter: '문서를 보고 댓글을 달 수 있습니다.',
-  viewer: '문서를 볼 수만 있습니다.',
-};
+export {
+  LEVEL_BADGE_LABELS,
+  LEVEL_DESCRIPTIONS,
+  LEVEL_LABELS,
+  isPageLevel,
+  type PageLevel,
+} from './share-state';
 
 /** Words for the refusals the sharing routes give; unknown messages fall back to the status. */
 const KNOWN_MESSAGES: Record<string, string> = {
@@ -51,8 +34,4 @@ export function shareErrorText(error: unknown): string {
     return BY_STATUS[error.status] ?? '처리하지 못했습니다. 잠시 후 다시 시도하세요.';
   }
   return '처리하지 못했습니다. 잠시 후 다시 시도하세요.';
-}
-
-export function isPageLevel(value: unknown): value is PageLevel {
-  return value === 'owner' || value === 'editor' || value === 'commenter' || value === 'viewer';
 }

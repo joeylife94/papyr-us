@@ -1,9 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   notifyPageAccessChanged,
+  notifyPageGrantsChanged,
   onPageAccessChanged,
+  onPageGrantsChanged,
 } from '../../server/services/page-access-events';
-import { revalidateCollabUserAccess } from '../../server/services/socket';
+import {
+  revalidateCollabPageAccess,
+  revalidateCollabUserAccess,
+} from '../../server/services/socket';
 import {
   YjsCollaborationManager,
   type CollabConfig,
@@ -188,5 +193,101 @@ describe('legacy /collab sessions are re-checked when access shrinks', () => {
     expect(lostEdit.data).toMatchObject({ pageId: 2, canEdit: false, userPermission: 'viewer' });
 
     expect(otherUser.data).toMatchObject({ pageId: 1, canEdit: true });
+  });
+});
+
+describe('open sessions on a page are re-checked when its public access changes', () => {
+  it('the page notice reaches every subscriber once, survives a failing one, and stops after unsubscribe', async () => {
+    const seen: number[] = [];
+    const unsubscribeOk = onPageGrantsChanged(async (pageId) => {
+      seen.push(pageId);
+    });
+    const unsubscribeFailing = onPageGrantsChanged(async () => {
+      throw new Error('subscriber failed');
+    });
+    await expect(notifyPageGrantsChanged(5)).resolves.toBeUndefined();
+    expect(seen).toEqual([5]);
+    unsubscribeOk();
+    unsubscribeFailing();
+    await notifyPageGrantsChanged(6);
+    expect(seen).toEqual([5]);
+  });
+
+  it('Yjs: every socket of the page is checked, with or without an account; other pages are not touched', async () => {
+    const anonymous = fakeSocket('anon', { canEdit: false });
+    const outsider = fakeSocket('outsider', { userId: OTHER_USER, canEdit: false });
+    const member = fakeSocket('member', { userId: REMOVED_USER, canEdit: true });
+    const elsewhere = fakeSocket('elsewhere', { userId: OTHER_USER, canEdit: false });
+    const namespace = {
+      sockets: new Map(
+        [anonymous, outsider, member, elsewhere].map((socket) => [socket.id, socket])
+      ),
+      to: vi.fn(() => ({ except: vi.fn(() => ({ emit: vi.fn() })), emit: vi.fn() })),
+    } as any;
+    const storage = createStorage(
+      // Public access was removed: the outsider and the signed-out socket lose read; the member keeps it
+      { [`${REMOVED_USER}:1`]: true, [`${OTHER_USER}:2`]: true },
+      { [`${REMOVED_USER}:1`]: 'editor' }
+    );
+    storage.checkPagePermission.mockImplementation(
+      async (userId: number | undefined, pageId: number) =>
+        userId === REMOVED_USER && pageId === 1 ? true : userId === OTHER_USER && pageId === 2
+    );
+    const manager = new YjsCollaborationManager(namespace, storage as any, yjsConfig);
+    for (const [socket, documentId, pageId] of [
+      [anonymous, 'page-1', 1],
+      [outsider, 'page-1', 1],
+      [member, 'page-1', 1],
+      [elsewhere, 'page-2', 2],
+    ] as const) {
+      await manager.joinDocument(socket as any, documentId, pageId);
+      socket.data.documentId = documentId;
+    }
+    storage.checkPagePermission.mockClear();
+
+    await manager.revalidatePageAccess(1);
+
+    for (const lost of [anonymous, outsider]) {
+      expect(lost.leave).toHaveBeenCalledWith('page-1');
+      expect(lost.emit).toHaveBeenCalledWith(
+        'yjs:error',
+        expect.objectContaining({ code: 'ACCESS_REVOKED' })
+      );
+    }
+    expect(storage.checkPagePermission).toHaveBeenCalledWith(undefined, 1, 'viewer');
+    expect(member.leave).not.toHaveBeenCalled();
+    expect(member.data).toMatchObject({ canEdit: true });
+    expect(elsewhere.leave).not.toHaveBeenCalled();
+    expect(storage.checkPagePermission).not.toHaveBeenCalledWith(OTHER_USER, 2, 'viewer');
+    manager.leaveDocument(member as any);
+    manager.leaveDocument(elsewhere as any);
+  });
+
+  it('legacy /collab: every socket of the page is checked; other pages are not touched', async () => {
+    const anonymous = fakeSocket('anon', { pageId: 1, canEdit: false });
+    const outsider = fakeSocket('outsider', { userIdNum: OTHER_USER, pageId: 1, canEdit: false });
+    const member = fakeSocket('member', { userIdNum: REMOVED_USER, pageId: 1, canEdit: true });
+    const elsewhere = fakeSocket('elsewhere', { userIdNum: OTHER_USER, pageId: 2, canEdit: false });
+    const namespace = {
+      sockets: new Map(
+        [anonymous, outsider, member, elsewhere].map((socket) => [socket.id, socket])
+      ),
+    } as any;
+    const storage = createStorage({}, { [`${REMOVED_USER}:1`]: 'viewer' });
+    storage.checkPagePermission.mockImplementation(
+      async (userId: number | undefined) => userId === REMOVED_USER
+    );
+    const collaborationManager = { leaveSession: vi.fn() };
+
+    await revalidateCollabPageAccess(namespace, storage as any, collaborationManager as any, 1);
+
+    expect(collaborationManager.leaveSession.mock.calls.map((call) => call[0]).sort()).toEqual([
+      'anon',
+      'outsider',
+    ]);
+    expect(anonymous.data).toMatchObject({ pageId: undefined, canEdit: false });
+    expect(member.data).toMatchObject({ pageId: 1, canEdit: false, userPermission: 'viewer' });
+    expect(elsewhere.data).toMatchObject({ pageId: 2 });
+    expect(elsewhere.leave).not.toHaveBeenCalled();
   });
 });

@@ -18,15 +18,22 @@ import {
   SHARE_CANDIDATE_LIMIT,
   SHARE_CANDIDATE_MIN_QUERY_LENGTH,
   SHARE_GRANT_LEVELS,
-  type PageSharingEntry,
   type PageSharingResponse,
 } from '@shared/page-sharing';
+import { shareErrorText } from './permission-labels';
 import {
   LEVEL_DESCRIPTIONS,
   LEVEL_LABELS,
-  shareErrorText,
+  baselineText,
+  canRemoveRow,
+  dialogMode,
+  entryLabel,
+  entryNote,
+  publicControl,
+  rowControl,
+  selectedLevel,
   type PageLevel,
-} from './permission-labels';
+} from './share-state';
 import { sharingKey } from './use-page-sharing';
 
 interface Props {
@@ -81,23 +88,6 @@ function LevelSelect({
   );
 }
 
-function baselineText(baseline: PageSharingResponse['baseline']): string {
-  if (baseline.kind === 'team') {
-    return `'${baseline.name}' 팀의 멤버는 이 문서를 볼 수 있습니다. 팀의 소유자와 관리자는 문서를 관리할 수 있습니다.`;
-  }
-  if (baseline.kind === 'organization') {
-    return '권한이 지정되지 않은 문서입니다. 조직의 모든 구성원이 볼 수 있습니다.';
-  }
-  return '아래에 있는 사람과 팀만 이 문서에 접근할 수 있습니다.';
-}
-
-function entryLabel(entry: PageSharingEntry): string {
-  if (entry.name === null) {
-    return entry.entityType === 'team' ? '삭제된 팀' : '조직을 떠난 계정';
-  }
-  return entry.name;
-}
-
 /**
  * The page's sharing. An owner manages it: who has access, adding people and teams of the page's
  * organization, public access and share links. Anyone else who can read the page sees the names
@@ -112,15 +102,15 @@ export function PageShareDialog({ pageId, pageTitle, open, onOpenChange, data }:
       >
         <DialogHeader>
           <DialogTitle className="break-words">
-            {data.canManage ? '문서 공유' : '이 문서에 접근할 수 있는 사람'}
+            {dialogMode(data) === 'manage' ? '문서 공유' : '이 문서에 접근할 수 있는 사람'}
           </DialogTitle>
           <DialogDescription className="break-words">
-            {data.canManage
+            {dialogMode(data) === 'manage'
               ? `'${pageTitle}'에 접근할 수 있는 사람과 팀을 정합니다.`
               : `'${pageTitle}' 문서의 접근 권한입니다. 문서 소유자만 바꿀 수 있습니다.`}
           </DialogDescription>
         </DialogHeader>
-        {data.canManage ? (
+        {dialogMode(data) === 'manage' ? (
           <ManageSharing pageId={pageId} data={data} open={open} />
         ) : (
           <ReadOnlyAccess data={data} />
@@ -279,7 +269,7 @@ function ManageSharing({
   const busy = change.isPending;
   const hasEntry = (entityType: 'user' | 'team', entityId: number) =>
     data.entries.some((entry) => entry.entityType === entityType && entry.entityId === entityId);
-  const publicValue = data.publicAccess?.level ?? 'off';
+  const publicState = publicControl(data.publicAccess);
   const candidates = candidatesQuery.data;
 
   return (
@@ -304,7 +294,8 @@ function ManageSharing({
         <ul className="divide-y divide-border rounded-md border border-border">
           {data.entries.map((entry) => {
             const label = entryLabel(entry);
-            const fixed = entry.permission === 'owner' || entry.isYou;
+            const control = rowControl(entry);
+            const note = entryNote(entry);
             return (
               <li
                 key={entry.grantId ?? label}
@@ -322,21 +313,26 @@ function ManageSharing({
                   {entry.email ? (
                     <div className="break-all text-xs text-foreground-secondary">{entry.email}</div>
                   ) : null}
+                  {note ? (
+                    <div className="text-xs text-destructive" data-testid="share-entry-note">
+                      {note}
+                    </div>
+                  ) : null}
                 </div>
-                {fixed && !entry.former ? (
+                {control === 'fixed' ? (
                   <Badge variant="outline">{LEVEL_LABELS[entry.permission]}</Badge>
                 ) : (
                   <LevelSelect
-                    value={entry.permission === 'owner' ? 'editor' : entry.permission}
+                    value={selectedLevel(entry)}
                     label={`${label}의 권한`}
-                    disabled={busy || entry.former === true}
+                    disabled={busy || control === 'former'}
                     testId={`share-level-${label}`}
                     onChange={(level) =>
                       entry.entityId !== undefined && grant(entry.entityType, entry.entityId, level)
                     }
                   />
                 )}
-                {!fixed || entry.former ? (
+                {canRemoveRow(entry) ? (
                   <Button
                     variant="ghost"
                     size="icon"
@@ -473,7 +469,7 @@ function ManageSharing({
         </p>
         <div className="flex flex-wrap items-center gap-3">
           <select
-            value={publicValue}
+            value={publicState.value}
             onChange={(event) => setPublic(event.target.value as 'off' | 'viewer' | 'commenter')}
             aria-label="공개 접근"
             disabled={busy}
@@ -484,10 +480,9 @@ function ManageSharing({
             <option value="viewer">누구나 보기</option>
             <option value="commenter">누구나 보기와 댓글</option>
           </select>
-          {data.publicAccess?.storedLevel ? (
+          {publicState.cappedNote ? (
             <span className="text-sm text-foreground-secondary" data-testid="share-public-capped">
-              이전에 '{data.publicAccess.storedLevel}'로 저장되어 있지만 '
-              {LEVEL_LABELS[data.publicAccess.level]}'으로 적용됩니다.
+              {publicState.cappedNote}
             </span>
           ) : null}
         </div>

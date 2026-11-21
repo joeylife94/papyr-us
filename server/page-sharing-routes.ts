@@ -16,7 +16,7 @@
 import type { Express, NextFunction, Response } from 'express';
 import { authMiddleware, buildAccountRateLimiter, type AuthRequest } from './middleware.js';
 import type { DBStorage } from './storage.js';
-import { notifyPageAccessChanged } from './services/page-access-events.js';
+import { notifyPageAccessChanged, notifyPageGrantsChanged } from './services/page-access-events.js';
 import logger from './services/logger.js';
 import {
   PUBLIC_GRANT_LEVELS,
@@ -73,6 +73,20 @@ export async function notifyGrantChanged(
     for (const userId of new Set(userIds)) await notifyPageAccessChanged(userId);
   } catch (error) {
     logger.warn('Realtime access re-check after a grant change failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/**
+ * A page's public access changed: every open realtime session on the page checks its access
+ * again, whoever it belongs to. A failure is logged and never fails the change.
+ */
+export async function notifyPublicAccessChanged(pageId: number): Promise<void> {
+  try {
+    await notifyPageGrantsChanged(pageId);
+  } catch (error) {
+    logger.warn('Realtime access re-check after a public access change failed', {
       error: error instanceof Error ? error.message : String(error),
     });
   }

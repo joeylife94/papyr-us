@@ -144,6 +144,30 @@ test.describe('Sharing a page from its screen', () => {
       await expect(dialog.getByTestId('share-search-hint')).toBeVisible();
       expect(searches).toBe(0);
 
+      // On a team page only members of the team are offered as people: X is in the organization
+      // but not in the team
+      const outsideTeamSearch = aPage.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname === `/api/pages/${pageId}/share-candidates` &&
+          response.url().includes(`Xenia${stamp}`) &&
+          response.status() === 200
+      );
+      await search.fill(`Xenia${stamp}`);
+      expect((await (await outsideTeamSearch).json()).people).toEqual([]);
+      await expect(dialog.getByTestId('share-search-empty')).toBeVisible();
+      const forgedNonMember = await a.ctx.post(`/api/pages/${pageId}/permissions`, {
+        data: { entityType: 'user', entityId: x.id, permission: 'viewer' },
+      });
+      expect(forgedNonMember.status()).toBe(400);
+      expect(
+        (
+          await db.query(`SELECT 1 FROM page_permissions WHERE page_id = $1 AND entity_id = $2`, [
+            pageId,
+            x.id,
+          ])
+        ).rowCount
+      ).toBe(0);
+
       // A person of another organization is not offered
       const foreignSearch = aPage.waitForResponse(
         (response) =>
@@ -153,7 +177,7 @@ test.describe('Sharing a page from its screen', () => {
       await search.fill(`Olga${stamp}`);
       expect((await (await foreignSearch).json()).people).toEqual([]);
       await expect(dialog.getByTestId('share-search-empty')).toBeVisible();
-      expect(searches).toBe(1);
+      expect(searches).toBe(2);
 
       const ownSearch = aPage.waitForResponse(
         (response) =>
@@ -352,11 +376,79 @@ test.describe('Sharing a page from its screen', () => {
       await expect(aPage.getByTestId('share-public-capped')).toBeVisible();
       await expect(aPage.getByTestId('share-public-level')).toHaveValue('viewer');
 
+      // Public access is one row: setting a level replaces every public row of the page
+      await db.query(
+        `INSERT INTO page_permissions (page_id, entity_type, entity_id, permission) VALUES ($1, 'public', 7, 'viewer')`,
+        [pageId]
+      );
+      const replaced = aPage.waitForResponse(isPermissionWrite(pageId, 'POST'));
+      await aPage.getByTestId('share-public-level').selectOption('commenter');
+      expect((await replaced).status()).toBe(201);
+      expect(
+        (
+          await db.query(
+            `SELECT entity_id, permission FROM page_permissions WHERE page_id = $1 AND entity_type = 'public'`,
+            [pageId]
+          )
+        ).rows
+      ).toEqual([{ entity_id: null, permission: 'commenter' }]);
+      await db.query(
+        `INSERT INTO page_permissions (page_id, entity_type, entity_id, permission) VALUES ($1, 'public', 7, 'viewer')`,
+        [pageId]
+      );
+
       // Turning public access off closes the page to the other organization again
       const publicOff = aPage.waitForResponse(isPermissionWrite(pageId, 'DELETE'));
       await aPage.getByTestId('share-public-level').selectOption('off');
       expect((await publicOff).status()).toBe(200);
       expect((await o.ctx.get(`/api/pages/${pageId}`)).status()).toBe(403);
+      expect(
+        (
+          await db.query(
+            `SELECT 1 FROM page_permissions WHERE page_id = $1 AND entity_type = 'public'`,
+            [pageId]
+          )
+        ).rowCount
+      ).toBe(0);
+
+      // An expired link says so and does not ask for a password
+      const expiredLink = await a.ctx.post(`/api/pages/${pageId}/share`, {
+        data: { expiresAt: new Date(Date.now() - 60_000).toISOString() },
+      });
+      expect(expiredLink.status()).toBe(201);
+      const expiredToken = (await expiredLink.json()).token as string;
+      const expiredBody = await signedOut.get(`/api/share/${expiredToken}`);
+      expect(expiredBody.status()).toBe(403);
+      expect((await expiredBody.json()).code).toBe('link_expired');
+      await visitor.goto(`/share/${expiredToken}`);
+      await expect(visitor.getByTestId('share-link-expired')).toHaveText('링크가 만료되었습니다.');
+      await expect(visitor.locator('input[type="password"]')).toHaveCount(0);
+
+      // Share links are the owner's, through their own page only: B (a viewer) and a made-up page
+      // cannot delete this link, and neither can A through another page of hers
+      const another = await a.ctx.post('/api/pages', {
+        data: {
+          title: `Other ${stamp}`,
+          slug: `share-other-${stamp}`,
+          content: 'x',
+          folder: 'share',
+          tags: [],
+        },
+      });
+      const otherPageId = (await another.json()).id as number;
+      expect((await b.ctx.delete(`/api/pages/${pageId}/share/${expiredToken}`)).status()).toBe(403);
+      expect((await o.ctx.delete(`/api/pages/99999999/share/${expiredToken}`)).status()).toBe(404);
+      expect((await o.ctx.delete(`/api/pages/${otherPageId}/share/${expiredToken}`)).status()).toBe(
+        403
+      );
+      expect((await a.ctx.delete(`/api/pages/${otherPageId}/share/${expiredToken}`)).status()).toBe(
+        404
+      );
+      expect((await b.ctx.get(`/api/pages/${pageId}/share`)).status()).toBe(403);
+      expect(
+        (await db.query(`SELECT 1 FROM public_links WHERE token = $1`, [expiredToken])).rowCount
+      ).toBe(1);
+      expect((await a.ctx.delete(`/api/pages/${pageId}/share/${expiredToken}`)).status()).toBe(200);
 
       // ── Removing B's grant keeps B a viewer through the team; A is never offered an owner row to remove ──
       await expect(aPage.getByTestId(`share-remove-${a.name}`)).toHaveCount(0);

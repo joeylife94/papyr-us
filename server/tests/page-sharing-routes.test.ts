@@ -50,16 +50,22 @@ vi.mock('../storage', async (importOriginal) => {
 });
 vi.mock('../services/page-access-events.js', () => ({
   notifyPageAccessChanged: vi.fn(async () => undefined),
+  notifyPageGrantsChanged: vi.fn(async () => undefined),
   onPageAccessChanged: vi.fn(),
+  onPageGrantsChanged: vi.fn(),
 }));
 
 import * as storageModule from '../storage.js';
-import { notifyPageAccessChanged } from '../services/page-access-events.js';
+import {
+  notifyPageAccessChanged,
+  notifyPageGrantsChanged,
+} from '../services/page-access-events.js';
 import { registerRoutes } from '../routes';
 import { registerPageSharingRoutes } from '../page-sharing-routes.js';
 
 const storage: any = (storageModule as any).storage;
 const notify = notifyPageAccessChanged as unknown as ReturnType<typeof vi.fn>;
+const notifyPage = notifyPageGrantsChanged as unknown as ReturnType<typeof vi.fn>;
 
 const ORG = 1;
 const OTHER_ORG = 2;
@@ -243,6 +249,26 @@ describe('granting', () => {
     storage.listTeamMembers.mockRejectedValue(new Error('db down'));
     const res = await post(OWNER, { entityType: 'team', entityId: 9, permission: 'viewer' });
     expect(res.status).toBe(201);
+  });
+});
+
+describe('public access changes tell the open sessions of the page', () => {
+  it('setting or removing public access re-checks every open session on the page, once; other grants and refused changes do not', async () => {
+    await post(OWNER, { entityType: 'public', permission: 'viewer' });
+    expect(notifyPage.mock.calls).toEqual([[PAGE]]);
+    notifyPage.mockClear();
+    storage.getPagePermissions.mockResolvedValue([
+      { id: 3, pageId: PAGE, entityType: 'public', entityId: null, permission: 'viewer' },
+    ]);
+    expect(
+      (await request(app).delete(`/api/pages/${PAGE}/permissions/3`).set(cookieFor(OWNER))).status
+    ).toBe(200);
+    expect(notifyPage.mock.calls).toEqual([[PAGE]]);
+    notifyPage.mockClear();
+    await post(OWNER, { entityType: 'user', entityId: READER, permission: 'editor' });
+    await post(OWNER, { entityType: 'public', permission: 'editor' });
+    await post(READER, { entityType: 'public', permission: 'viewer' });
+    expect(notifyPage).not.toHaveBeenCalled();
   });
 });
 

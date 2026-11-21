@@ -3,6 +3,7 @@ import { Share, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageShareDialog } from './page-share-dialog';
 import { PermissionBadge } from './permission-badge';
+import { headerAction } from './share-state';
 import { usePageSharing } from './use-page-sharing';
 
 interface Props {
@@ -22,14 +23,15 @@ export function PageShareControl({ pageId, pageTitle, onCopyLink }: Props) {
   const [open, setOpen] = useState(false);
   const { data } = usePageSharing(pageId);
 
+  const action = headerAction(data);
   if (!data) {
     return (
       <Button
         variant="ghost"
         size="icon"
         onClick={onCopyLink}
-        title="링크 공유"
-        aria-label="링크 공유"
+        title={action.label}
+        aria-label={action.label}
       >
         <Share className="h-4 w-4" />
       </Button>
@@ -44,7 +46,7 @@ export function PageShareControl({ pageId, pageTitle, onCopyLink }: Props) {
         size="sm"
         onClick={() => setOpen(true)}
         className="gap-1.5"
-        aria-label={data.canManage ? '문서 공유' : '접근 권한 보기'}
+        aria-label={action.label}
         title={data.canManage ? '문서 공유' : '이 문서에 접근할 수 있는 사람'}
         data-testid="page-share-button"
       >

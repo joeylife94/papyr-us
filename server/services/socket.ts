@@ -6,7 +6,7 @@ import { config } from '../config.js';
 import logger from './logger.js';
 import { isRedisEnabled, getRedisClient, getSubscriberClient } from './redis.js';
 import { createAdapter } from '@socket.io/redis-adapter';
-import { onPageAccessChanged } from './page-access-events.js';
+import { onPageAccessChanged, onPageGrantsChanged } from './page-access-events.js';
 
 type SaveReason = 'debounce' | 'interval' | 'ttl' | 'eviction';
 
@@ -522,31 +522,64 @@ export async function revalidateCollabUserAccess(
 ): Promise<void> {
   for (const socket of namespace.sockets.values()) {
     const data = socket.data as any;
-    const pageId = data.pageId as number | undefined;
-    if (data.userIdNum !== userId || !pageId) continue;
-
-    const canRead = await storage.checkPagePermission(userId, pageId, 'viewer');
-    if (data.pageId !== pageId) continue; // moved to another page meanwhile
-    if (!canRead) {
-      collaborationManager.leaveSession(socket.id);
-      data.pageId = undefined;
-      data.userPermission = null;
-      data.canEdit = false;
-      const roomName = `page:${pageId}`;
-      socket.leave(roomName);
-      socket.to(roomName).emit('user-left', { userId: String(userId), timestamp: Date.now() });
-      socket.emit('collab:error', {
-        message: 'Your access to this page has been revoked.',
-        code: 'ACCESS_REVOKED',
-      });
-      continue;
-    }
-
-    const userPermission = await storage.getUserPagePermission(userId, pageId);
-    if (data.pageId !== pageId) continue;
-    data.userPermission = userPermission;
-    data.canEdit = userPermission === 'owner' || userPermission === 'editor';
+    if (data.userIdNum !== userId || !data.pageId) continue;
+    await revalidateCollabSocket(socket, storage, collaborationManager, userId);
   }
+}
+
+/**
+ * The same check for every /collab socket on one page, whoever it belongs to (the page's public
+ * access changed, which names no account). A socket without an account is checked as signed out.
+ */
+export async function revalidateCollabPageAccess(
+  namespace: ReturnType<SocketIOServer['of']>,
+  storage: Pick<DBStorage, 'checkPagePermission' | 'getUserPagePermission'>,
+  collaborationManager: Pick<CollaborationManager, 'leaveSession'>,
+  pageId: number
+): Promise<void> {
+  for (const socket of namespace.sockets.values()) {
+    const data = socket.data as any;
+    if (data.pageId !== pageId) continue;
+    const userId = Number(data.userIdNum);
+    await revalidateCollabSocket(
+      socket,
+      storage,
+      collaborationManager,
+      Number.isInteger(userId) && userId > 0 ? userId : undefined
+    );
+  }
+}
+
+async function revalidateCollabSocket(
+  socket: any,
+  storage: Pick<DBStorage, 'checkPagePermission' | 'getUserPagePermission'>,
+  collaborationManager: Pick<CollaborationManager, 'leaveSession'>,
+  userId: number | undefined
+): Promise<void> {
+  const data = socket.data as any;
+  const pageId = data.pageId as number;
+  const canRead = await storage.checkPagePermission(userId, pageId, 'viewer');
+  if (data.pageId !== pageId) return; // moved to another page meanwhile
+  if (!canRead) {
+    collaborationManager.leaveSession(socket.id);
+    data.pageId = undefined;
+    data.userPermission = null;
+    data.canEdit = false;
+    const roomName = `page:${pageId}`;
+    socket.leave(roomName);
+    socket.to(roomName).emit('user-left', { userId: String(userId ?? ''), timestamp: Date.now() });
+    socket.emit('collab:error', {
+      message: 'Your access to this page has been revoked.',
+      code: 'ACCESS_REVOKED',
+    });
+    return;
+  }
+
+  const userPermission =
+    userId === undefined ? null : await storage.getUserPagePermission(userId, pageId);
+  if (data.pageId !== pageId) return;
+  data.userPermission = userPermission;
+  data.canEdit = userPermission === 'owner' || userPermission === 'editor';
 }
 
 export async function setupSocketIO(
@@ -604,6 +637,9 @@ export async function setupSocketIO(
     // Sessions check page access once at join; check again when a user's access shrinks
     onPageAccessChanged((userId) =>
       revalidateCollabUserAccess(collabNamespace, storage, collaborationManager, userId)
+    );
+    onPageGrantsChanged((pageId) =>
+      revalidateCollabPageAccess(collabNamespace, storage, collaborationManager, pageId)
     );
   }
 
