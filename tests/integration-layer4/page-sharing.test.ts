@@ -292,9 +292,7 @@ describe('a public grant carries viewer or commenter at most, for every reader',
         // In lists: only the page's own organization lists it, whatever the public grant says
         const listed = await storage.searchWikiPages({ query: '' }, { readableBy: viewer });
         const isListed = listed.pages.some((p: { id: number }) => p.id === page.id);
-        expect(isListed, `${who} lists a public ${stored} page`).toBe(
-          who === 'member' && reads
-        );
+        expect(isListed, `${who} lists a public ${stored} page`).toBe(who === 'member' && reads);
       }
     }
   });
@@ -529,7 +527,8 @@ describe('the candidate search of the sharing dialog', () => {
 
   it('returns nothing under two characters, ten at most with a flag for more, and takes % and _ literally', async () => {
     const creator = await newUser('c2-creator', { name: 'Mia Caller' });
-    for (let i = 0; i < 12; i++) await newUser(`c2-${i}`, { name: `Quill ${String(i).padStart(2, '0')}` });
+    for (let i = 0; i < 12; i++)
+      await newUser(`c2-${i}`, { name: `Quill ${String(i).padStart(2, '0')}` });
     await newUser('c2-pct', { name: 'Fifty%Off' });
     await newUser('c2-under', { name: 'Under_Score' });
     await newUser('c2-plain', { name: 'UnderXScore' });
@@ -547,9 +546,9 @@ describe('the candidate search of the sharing dialog', () => {
     const many = await storage.listPageShareCandidates(page.id, creator.id, 'Quill');
     expect(many.people).toHaveLength(10);
     expect(many.morePeople).toBe(true);
-    expect(
-      (await storage.listPageShareCandidates(page.id, creator.id, '%')).people
-    ).toHaveLength(0);
+    expect((await storage.listPageShareCandidates(page.id, creator.id, '%')).people).toHaveLength(
+      0
+    );
     const pct = await storage.listPageShareCandidates(page.id, creator.id, 'y%');
     expect(pct.people.map((p: any) => p.name)).toEqual(['Fifty%Off']);
     const under = await storage.listPageShareCandidates(page.id, creator.id, 'r_s');

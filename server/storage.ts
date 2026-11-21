@@ -4655,7 +4655,9 @@ export class DBStorage {
             level: publicLevel,
             ...(forManager && {
               grantId: publicGrant.id,
-              ...(publicGrant.permission !== publicLevel && { storedLevel: publicGrant.permission }),
+              ...(publicGrant.permission !== publicLevel && {
+                storedLevel: publicGrant.permission,
+              }),
             }),
           }
         : null;

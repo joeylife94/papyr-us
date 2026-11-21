@@ -124,9 +124,7 @@ beforeEach(() => {
   storage.getUserAccount.mockImplementation(async (id: number) =>
     id in organizations ? { id, email: `u${id}@example.com`, isActive: id !== INACTIVE } : undefined
   );
-  storage.getUserOrganizationId.mockImplementation(
-    async (id: number) => organizations[id] ?? null
-  );
+  storage.getUserOrganizationId.mockImplementation(async (id: number) => organizations[id] ?? null);
   storage.getWikiPage.mockImplementation(async (id: number) =>
     id === PAGE ? { id: PAGE, organizationId: ORG, title: 'Plan', teamId: null } : undefined
   );
@@ -155,7 +153,10 @@ beforeEach(() => {
 });
 
 const post = (id: number, body: unknown) =>
-  request(app).post(`/api/pages/${PAGE}/permissions`).set(cookieFor(id)).send(body as object);
+  request(app)
+    .post(`/api/pages/${PAGE}/permissions`)
+    .set(cookieFor(id))
+    .send(body as object);
 
 describe('granting', () => {
   it('refuses a public grant above commenter and writes nothing', async () => {
@@ -222,11 +223,7 @@ describe('granting', () => {
     expect(notify.mock.calls).toEqual([[READER]]);
 
     notify.mockClear();
-    storage.listTeamMembers.mockResolvedValue([
-      { userId: 41 },
-      { userId: 42 },
-      { userId: 41 },
-    ]);
+    storage.listTeamMembers.mockResolvedValue([{ userId: 41 }, { userId: 42 }, { userId: 41 }]);
     const res = await post(OWNER, { entityType: 'team', entityId: 9, permission: 'viewer' });
     expect(res.status).toBe(201);
     expect(storage.listTeamMembers).toHaveBeenCalledWith(9);
@@ -291,7 +288,10 @@ describe('share links', () => {
   };
 
   it('the list never carries the password hash, only whether there is one', async () => {
-    storage.getPagePublicLinks.mockResolvedValue([link, { ...link, id: 2, token: 't2', password: null }]);
+    storage.getPagePublicLinks.mockResolvedValue([
+      link,
+      { ...link, id: 2, token: 't2', password: null },
+    ]);
     const res = await request(app).get(`/api/pages/${PAGE}/share`).set(cookieFor(OWNER));
     expect(res.status).toBe(200);
     expect(JSON.stringify(res.body)).not.toContain('$2a$');
@@ -315,7 +315,11 @@ describe('share links', () => {
       .set(cookieFor(OWNER))
       .send({ password: 'secret-pass', permission: 'commenter' });
     expect(created.status).toBe(201);
-    expect(created.body).toMatchObject({ token: 'newtoken', permission: 'commenter', hasPassword: true });
+    expect(created.body).toMatchObject({
+      token: 'newtoken',
+      permission: 'commenter',
+      hasPassword: true,
+    });
     expect(JSON.stringify(created.body)).not.toContain('secret-pass');
     expect(created.body).not.toHaveProperty('password');
 
@@ -337,12 +341,18 @@ describe('share links', () => {
       ['commenter', 'commenter'],
       ['viewer', 'viewer'],
     ]) {
-      storage.verifyPublicLink.mockResolvedValue({ valid: true, link: { ...link, permission: stored } });
+      storage.verifyPublicLink.mockResolvedValue({
+        valid: true,
+        link: { ...link, permission: stored },
+      });
       storage.getWikiPage.mockResolvedValue({ id: PAGE, title: 'Plan', content: '' });
       const res = await request(app).get('/api/share/tok');
       expect(res.status).toBe(200);
       expect(res.body.permission, stored).toBe(shown);
-      const verify = await request(app).post('/api/share/tok/verify').set(cookieFor(READER)).send({});
+      const verify = await request(app)
+        .post('/api/share/tok/verify')
+        .set(cookieFor(READER))
+        .send({});
       expect(verify.status, JSON.stringify(verify.body)).toBe(200);
       expect(verify.body.permission, stored).toBe(shown);
     }
