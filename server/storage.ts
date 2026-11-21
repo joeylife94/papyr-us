@@ -2585,8 +2585,20 @@ export class DBStorage {
     }
   }
 
-  async verifyTeamPassword(teamName: string, password: string): Promise<boolean> {
-    const team = await this.getTeamByName(teamName);
+  /**
+   * Whether `password` is the password of the team named `teamName` in `organizationId`. A team
+   * of another organization, a missing team and a team without a password all answer false.
+   */
+  async verifyTeamPassword(
+    teamName: string,
+    password: string,
+    organizationId: number
+  ): Promise<boolean> {
+    const [team] = await this.db
+      .select({ password: teams.password })
+      .from(teams)
+      .where(and(eq(teams.name, teamName), eq(teams.organizationId, organizationId)))
+      .limit(1);
     if (!team || !team.password) return false;
     return bcrypt.compare(password, team.password);
   }

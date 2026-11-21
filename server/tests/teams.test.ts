@@ -472,9 +472,13 @@ describe('Team Management API', () => {
 
   it('TC-TEAM-004: should verify team password successfully', async () => {
     (storage.verifyTeamPassword as vi.Mock).mockResolvedValue(true);
+    (storage.getUserOrganizationId as vi.Mock).mockResolvedValue(1);
     const payload = { teamName: 'core-devs', password: 'password123' };
 
-    const response = await request(app).post('/api/teams/verify').send(payload);
+    const response = await request(app)
+      .post('/api/teams/verify')
+      .set('Authorization', `Bearer ${memberToken}`)
+      .send(payload);
 
     expect(response.status).toBe(200);
     expect(response.body.isValid).toBe(true);
@@ -482,9 +486,13 @@ describe('Team Management API', () => {
 
   it('TC-TEAM-005: should fail to verify incorrect team password', async () => {
     (storage.verifyTeamPassword as vi.Mock).mockResolvedValue(false);
+    (storage.getUserOrganizationId as vi.Mock).mockResolvedValue(1);
     const payload = { teamName: 'core-devs', password: 'wrongpassword' };
 
-    const response = await request(app).post('/api/teams/verify').send(payload);
+    const response = await request(app)
+      .post('/api/teams/verify')
+      .set('Authorization', `Bearer ${memberToken}`)
+      .send(payload);
 
     expect(response.status).toBe(200);
     expect(response.body.isValid).toBe(false);

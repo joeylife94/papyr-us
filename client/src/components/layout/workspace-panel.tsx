@@ -28,7 +28,7 @@ import { VaultMenu } from '@/components/vault/vault-menu';
 import { useShellNav } from './shell-nav';
 import { PageTree } from './page-tree';
 import { resolvePageTeamId } from '@/lib/page-team-scope';
-import { needsTeamPassword } from '@/lib/team-password';
+import { needsTeamPassword, teamVerifyOutcome } from '@/lib/team-password';
 
 interface WorkspacePanelProps {
   searchQuery: string;
@@ -115,8 +115,9 @@ export function WorkspacePanel({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ teamName: passwordPrompt.teamName, password: passwordInput }),
       });
-      const result = await response.json();
-      if (result.isValid) {
+      const result = await response.json().catch(() => null);
+      const outcome = teamVerifyOutcome(response.status, result);
+      if (outcome === 'unlocked') {
         setVerifiedTeams((prev) => [...prev, passwordPrompt.teamName]);
         toggle(`team-${passwordPrompt.teamId}`);
         setPasswordPrompt(null);
@@ -125,7 +126,14 @@ export function WorkspacePanel({
       } else {
         toast({
           title: '오류',
-          description: '비밀번호가 올바르지 않습니다.',
+          description:
+            outcome === 'wrong'
+              ? '비밀번호가 올바르지 않습니다.'
+              : outcome === 'sign-in'
+                ? '로그인한 뒤에 확인할 수 있습니다.'
+                : outcome === 'throttled'
+                  ? '시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.'
+                  : '비밀번호를 확인하지 못했습니다.',
           variant: 'destructive',
         });
       }

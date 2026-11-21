@@ -3185,10 +3185,15 @@ export async function registerRoutes(
       res.json({ admin: true });
     });
 
-    // Directory password verification
-    app.post('/api/directory/verify', rlAdmin, async (req, res) => {
+    // Directory password verification: for a signed-in account, with a small per-account
+    // allowance. Directories belong to no organization, so the lookup is by name.
+    const rlDirectoryVerify = buildAccountRateLimiter({ windowMs: 60_000, max: 10 });
+    app.post('/api/directory/verify', authMiddleware, rlDirectoryVerify, async (req, res) => {
       try {
-        const { directoryName, password } = req.body;
+        const { directoryName, password } = req.body ?? {};
+        if (typeof directoryName !== 'string' || typeof password !== 'string') {
+          return res.json({ success: false });
+        }
         const isValid = await storage.verifyDirectoryPassword(directoryName, password);
         res.json({ success: isValid });
       } catch (error) {
@@ -4325,10 +4330,21 @@ export async function registerRoutes(
       }
     );
 
-    app.post('/api/teams/verify', async (req, res) => {
+    // A team's password is checked for a signed-in account, in that account's organization only
+    // (a team of another organization answers as a team that does not exist), with a small
+    // per-account allowance.
+    const rlTeamVerify = buildAccountRateLimiter({ windowMs: 60_000, max: 10 });
+    app.post('/api/teams/verify', authMiddleware, rlTeamVerify, async (req: AuthRequest, res) => {
       try {
-        const { teamName, password } = req.body;
-        const isValid = await storage.verifyTeamPassword(teamName, password);
+        const { teamName, password } = req.body ?? {};
+        if (typeof teamName !== 'string' || typeof password !== 'string') {
+          return res.json({ isValid: false });
+        }
+        const organizationId = await storage.getUserOrganizationId(Number(req.user?.id));
+        if (organizationId === null || organizationId === undefined) {
+          return res.json({ isValid: false });
+        }
+        const isValid = await storage.verifyTeamPassword(teamName, password, organizationId);
         res.json({ isValid });
       } catch (error) {
         console.error('Error verifying team password:', error);
