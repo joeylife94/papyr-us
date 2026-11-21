@@ -1,4 +1,5 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
+import { registerTestUser, loginTestUser } from './e2e-helpers';
 
 /**
  * API Integration E2E Tests
@@ -17,15 +18,11 @@ import { test, expect, type APIRequestContext } from '@playwright/test';
  * (requireTeamRole) is not yet implemented and is not tested here.
  */
 
-/** Register a new user and return credentials. */
-async function registerUser(request: APIRequestContext, prefix = 'api') {
-  const email = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@example.com`;
-  const password = 'password123';
-  const resp = await request.post('/api/auth/register', {
-    data: { name: `${prefix} User`, email, password },
-  });
-  expect(resp.status()).toBe(201);
-  return { email, password };
+/** Register a fresh user with the shared helper (current password policy) and sign in. */
+async function registerAndLogin(request: APIRequestContext, prefix: string) {
+  const user = await registerTestUser(request, prefix);
+  await loginTestUser(request, user.email, user.password);
+  return user;
 }
 
 test.describe('Health Check API', () => {
@@ -46,7 +43,7 @@ test.describe('Health Check API', () => {
 
 test.describe('Auth API', () => {
   test('register → login → access authenticated resource', async ({ request }) => {
-    const { email, password } = await registerUser(request, 'auth-flow');
+    const { email, password } = await registerTestUser(request, 'auth-flow');
 
     // Login with the newly created user
     const loginResp = await request.post('/api/auth/login', {
@@ -78,7 +75,7 @@ test.describe('Auth API', () => {
   });
 
   test('reject duplicate registration with 409', async ({ request }) => {
-    const { email, password } = await registerUser(request, 'dup');
+    const { email, password } = await registerTestUser(request, 'dup');
 
     // Second registration with same email should be 409
     const second = await request.post('/api/auth/register', {
@@ -95,11 +92,7 @@ test.describe('Protected Routes – 401 without token vs 200 with token', () => 
   });
 
   test('/api/auth/me returns 200 with valid token', async ({ request }) => {
-    const { email, password } = await registerUser(request, 'me-check');
-    const loginResp = await request.post('/api/auth/login', {
-      data: { email, password },
-    });
-    expect(loginResp.status()).toBe(200);
+    const { email } = await registerAndLogin(request, 'me-check');
     const resp = await request.get('/api/auth/me');
     expect(resp.status()).toBe(200);
     const body = await resp.json();
@@ -140,11 +133,7 @@ test.describe('Admin Authorization – 403/200', () => {
 
   test('admin endpoint returns 403 for authenticated non-admin user', async ({ request }) => {
     // Register a regular user (not in ADMIN_EMAILS, role is not admin)
-    const { email, password } = await registerUser(request, 'non-admin');
-    const loginResp = await request.post('/api/auth/login', {
-      data: { email, password },
-    });
-    expect(loginResp.status()).toBe(200);
+    await registerAndLogin(request, 'non-admin');
     const resp = await request.get('/api/admin/directories');
     expect(resp.status()).toBe(403);
   });
@@ -160,11 +149,7 @@ test.describe('Admin Authorization – 403/200', () => {
 
 test.describe('Token-based Resource CRUD', () => {
   test('create and retrieve a page with cookie auth', async ({ request }) => {
-    const { email, password } = await registerUser(request, 'page-crud');
-    const loginResp = await request.post('/api/auth/login', {
-      data: { email, password },
-    });
-    expect(loginResp.status()).toBe(200);
+    await registerAndLogin(request, 'page-crud');
     const title = `Auth Page ${Date.now()}`;
     const slug = `auth-page-${Date.now()}`;
 
@@ -182,7 +167,7 @@ test.describe('Token-based Resource CRUD', () => {
     const created = await createResp.json();
     expect(created.slug).toBe(slug);
 
-    // Retrieve by slug (read endpoint may not require auth)
+    // Retrieve by slug with the same session
     const getResp = await request.get(`/api/pages/slug/${slug}`);
     expect(getResp.status()).toBe(200);
     const page = await getResp.json();
@@ -190,11 +175,7 @@ test.describe('Token-based Resource CRUD', () => {
   });
 
   test('create team and member with auth token', async ({ request }) => {
-    const { email, password } = await registerUser(request, 'team-crud');
-    const loginResp = await request.post('/api/auth/login', {
-      data: { email, password },
-    });
-    expect(loginResp.status()).toBe(200);
+    await registerAndLogin(request, 'team-crud');
     const ts = Date.now();
     const teamName = `auth-team-${ts}`;
 
@@ -228,6 +209,7 @@ test.describe('Token-based Resource CRUD', () => {
 
 test.describe('Pages API', () => {
   test('list pages returns pages array with pagination', async ({ request }) => {
+    await registerAndLogin(request, 'list-pages');
     const response = await request.get('/api/pages');
     expect(response.status()).toBe(200);
 
@@ -245,6 +227,7 @@ test.describe('Pages API', () => {
 
 test.describe('Search API', () => {
   test('search returns pages and pagination', async ({ request }) => {
+    await registerAndLogin(request, 'search-pages');
     const response = await request.get('/api/pages?q=test');
     expect(response.status()).toBe(200);
 

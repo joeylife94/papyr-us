@@ -1,54 +1,5 @@
-import { test, expect, type Page, type Response, request } from '@playwright/test';
-import { loginPageWithCookies } from './e2e-helpers';
-
-async function registerUser(page: Page, name: string, email: string, pass: string) {
-  // Prefer fast API-based registration; fall back to UI if needed
-  const ctx = await request.newContext({ baseURL: test.info().project.use?.baseURL as string });
-  const apiResp = await ctx.post('/api/auth/register', {
-    data: { name, email, password: pass },
-  });
-  if (apiResp.status() === 201 || apiResp.status() === 409) {
-    // 201: created, 409: already exists — both fine for tests
-    return;
-  }
-
-  // Fallback to UI registration if API path failed
-  await page.goto('/register');
-  await expect(page.getByRole('heading', { name: 'Register' })).toBeVisible();
-  await page.getByLabel('Name').fill(name);
-  await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password').fill(pass);
-  const responsePromise = page.waitForResponse(
-    (response: Response) =>
-      response.url().includes('/api/auth/register') && response.status() === 201
-  );
-  await page.getByRole('button', { name: 'Register' }).click();
-  await responsePromise;
-  await expect(page).toHaveURL('/login');
-}
-
-async function login(page: Page, email: string, password: string) {
-  // Prefer cookie-backed API login for speed and parity with production auth transport
-  try {
-    await loginPageWithCookies(page, email, password);
-    await page.goto('/', { waitUntil: 'domcontentloaded' });
-    return;
-  } catch {
-    // Fall through to UI login
-  }
-
-  // Fallback to UI login
-  await page.goto('/login');
-  await expect(page.getByRole('heading', { name: 'Login' })).toBeVisible();
-  await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password').fill(password);
-  const loginResponse = page.waitForResponse(
-    (response: Response) => response.url().includes('/api/auth/login') && response.status() === 200
-  );
-  await page.getByRole('button', { name: 'Login with Email' }).click();
-  await loginResponse;
-  await expect(page).toHaveURL('/');
-}
+import { test, expect } from '@playwright/test';
+import { registerTestUser } from './e2e-helpers';
 
 /**
  * Verify that when a write action is attempted without a valid token,
@@ -56,11 +7,11 @@ async function login(page: Page, email: string, password: string) {
  */
 test('401 -> redirects to /login with redirect param when accessing protected route', async ({
   page,
+  request,
 }) => {
-  const email = `e2e-401-${Date.now()}@example.com`;
-  const password = 'password123';
-
-  await registerUser(page, 'E2E401', email, password);
+  // A registered account exists, but this browser context never signs in.
+  await registerTestUser(request, 'e2e-401');
+  await page.context().clearCookies();
   // Ensure logged-out state AND disable the E2E ProtectedRoute bypass
   // (server injects __PLAYWRIGHT__=true via vite.ts when NODE_ENV=test)
   await page.addInitScript(() => {
