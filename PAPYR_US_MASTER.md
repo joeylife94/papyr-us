@@ -4,11 +4,11 @@ aliases: ['PAPYR_US_MASTER', 'Papyr.us v1.0 Master']
 project: 'Papyr.us'
 type: 'project-master'
 status: 'authoritative-contract'
-version: '0.94'
+version: '0.95'
 target: 'v1.0 + D1 frozen baseline; enterprise readiness (Issue #124), one bounded phase per PR'
-current_phase: 'Issue #124 — X0 and X1a merged; X1b next'
+current_phase: 'Issue #124 — X0, X1a and X1b done; X1c next'
 priority: 'P1'
-last_updated: '2026-11-11'
+last_updated: '2026-11-12'
 repository: 'joeylife94/papyr-us'
 accepted_product_main_sha: '3b91e18f477e8187c4aa8c21708b6f8cf7b2f2d4'
 accepted_proof_main_sha: '1cb04799a8a1924f7697d12d64f0999dcd591fcc'
@@ -18,7 +18,7 @@ checkpoint_main_sha: 'd2f092b240d5ffe0937dd6d487934e32d5a631f3'
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.94**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.95**  
 > Current repository / Issue / PR / executable evidence overrides historical checkpoints, Scheduled Task prompts, and agent self-report.  
 > The accepted v1.0 product/proof baseline and D1 remain frozen as evidence. Progression after D1 runs as contract Issues under [`AGENTS.md`](AGENTS.md), one bounded phase per PR, and must not rewrite prior accepted evidence or widen buyer-facing claims without a new Proof.
 
@@ -32,9 +32,9 @@ checkpoint_main_sha: 'd2f092b240d5ffe0937dd6d487934e32d5a631f3'
 
 **Current destination:** `ENTERPRISE READINESS — Issue #124` (owner direction change, 2026-11-02)
 
-**Current bounded milestone:** `#124 X1b — organization and team scope on the remaining shared surfaces` (not started)
+**Current bounded milestone:** `#124 X1c — organization management` (not started)
 
-**Progression state:** `X0 MERGED (PR #125) · X1a MERGED (PR #149) · X1b NEXT`
+**Progression state:** `X0 MERGED (PR #125) · X1a MERGED (PR #149) · X1b DONE (this change) · X1c NEXT`
 
 **Checkpoint:** `main` = `d2f092b240d5ffe0937dd6d487934e32d5a631f3` (2026-11-09). See §7, §8 and [`docs/checkpoints/2026-11-11-checkpoint-1.md`](docs/checkpoints/2026-11-11-checkpoint-1.md).
 
@@ -47,7 +47,7 @@ checkpoint_main_sha: 'd2f092b240d5ffe0937dd6d487934e32d5a631f3'
 - Issue #69 / PR #70 D1-02 existing-user admission + revocation — **ACCEPTED / MERGED / CLOSED**.
 - D1 — **ACCEPTED / FROZEN**.
 - Post-D1 product surface (Issues #76, #101, #103, #111, #113, #133–#137) — **MERGED / CLOSED** (§7).
-- Issue #124 X0 / PR #125, X1a / PR #149 — **MERGED**; Issue #124 remains **OPEN**.
+- Issue #124 X0 / PR #125, X1a / PR #149 — **MERGED**; X1b — **DONE** with the change that carries this version (§9); Issue #124 remains **OPEN**.
 - Issue #72 / PR #73 (D2-01 invitations) — **DRAFT / PAUSED**; absorbed into #124 X5.
 - Phase 5 / GAP-009..012, GAP-013..015, broad v1.1 expansion — **DEFERRED**.
 - Public production deployment — **NOT REQUIRED / NOT CLAIMED**.
@@ -158,7 +158,7 @@ The accepted D1-02 executable path proves:
 
 Accepted evidence supports authenticated small-team workspace flows, team-scoped page/document lifecycle, tested authorization boundaries, version recovery, team-scoped tasks/calendar, authenticated team-scoped PostgreSQL full-text retrieval with page-level authorization boundaries, bounded optional inline AI assistance, Firebat recovery evidence, D-014 dependency-security acceptance, reproducible synthetic buyer Proof, creator-owned team creation, D1-01 proof-path reconciliation, and the D1-02 existing-user admission/shared-use/revocation path.
 
-Work merged after D1 (§7) carries per-PR evidence and green CI on `main`, but it has **not** been packaged or human-reviewed as buyer-facing Proof. The buyer-facing claim set stays the one above until a new Proof package is accepted. Organizations exist as a tenant boundary since X1a; organization management, signup policy, SSO, audit trail and the other #124 phases do not exist yet.
+Work merged after D1 (§7) carries per-PR evidence and green CI on `main`, but it has **not** been packaged or human-reviewed as buyer-facing Proof. The buyer-facing claim set stays the one above until a new Proof package is accepted. Organizations exist as a tenant boundary since X1a, and X1b applies it to the remaining shared surfaces (§9); organization management, signup policy, SSO, audit trail and the other #124 phases do not exist yet.
 
 Do **not** claim without separate verification: public production deployment; embeddings/pgvector/hybrid-vector retrieval as current secure-search behavior; generated-citation/RAG production guarantees; broad AI-agent autonomy; production-ready SSO/OIDC, monitoring, S3 backup, microservices, enterprise infrastructure; HA/SLA/compliance; email invitation infrastructure; organization hierarchy; billing; broad role-management UI; or deferred Phase 5/v1.1 capabilities.
 
@@ -242,11 +242,11 @@ Range `8b037a0` → `d2f092b`: 303 commits, 395 files, +52,860 / −8,638 lines.
 
 Papyr.us targets enterprise-grade. This lifts the v1.0 Proof freeze **for the #124 scope only**; the frozen evidence in §1–§4 is not rewritten. The seven accepted decisions (multi-organization tenancy, OIDC first, Redis pub/sub plus Postgres persistence for Yjs, AI off by default for new organizations, 365-day audit retention, MFA required for organization owners and admins, phase order) are recorded on the Issue; changing one needs a new owner decision there.
 
-Phase order: X0 ✅ → X1 (X1a ✅, X1b, X1c, X1d) → X2 → X3 → X5 → X6 → X7 → X4 → X8 → X9.
+Phase order: X0 ✅ → X1 (X1a ✅, X1b ✅, X1c, X1d) → X2 → X3 → X5 → X6 → X7 → X4 → X8 → X9.
 
 ### Open items
 
-- **Issue #124** — in progress; X1b next.
+- **Issue #124** — in progress; X1c next (§9).
 - **Issue #141** (bug) — `GET /api/analytics/popular` ranked the most-viewed pages of every team and organization. Open on `d2f092b`; fixed right after this checkpoint on the same branch (§8, follow-up). The Issue closes when that change lands.
 - **Issue #93** — 32 failing legacy browser specs outside CI; waiting on three human decisions listed on the Issue.
 - **Issue #72 / PR #73** — D2-01 invitation draft, paused, based on `8b037a0`; absorbed into #124 X5.
@@ -295,3 +295,51 @@ Phase order: X0 ✅ → X1 (X1a ✅, X1b, X1c, X1d) → X2 → X3 → X5 → X6 
 `#124 X1b` — organization and team scope on templates, stats, activity feed, favorites, notifications, workflows, uploads and saved views. The popular pages list is already scoped (#141, follow-up above).
 
 This checkpoint does not change the state of the scheduled builder recorded in §6.
+
+## 9. Issue #124 X1b — Shared Surfaces (2026-11-12)
+
+### Changed
+
+X1a made organizations the boundary for pages and teams. X1b applies that boundary, and the team rules inside it, to the remaining shared surfaces. Rules and legacy-data handling are in [`docs/organizations-guide.md`](docs/organizations-guide.md).
+
+| Surface                           | Rule now enforced                                                                                                                                                                                                        |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Dashboard and overview stats      | always a session; counts only what the caller may list, their teams' tasks and their organization's accounts                                                                                                             |
+| Per-page analytics                | the page read rule on both routes; a view of an unreadable page is not recorded                                                                                                                                          |
+| Favorites                         | only live pages the caller may list are added and listed                                                                                                                                                                 |
+| Activity feed                     | the caller's teams' rows, and team-less rows whose target is a page the caller may list                                                                                                                                  |
+| Notifications (REST and realtime) | an account owns the notifications of the roster rows with its email; someone else's answers 404; a new one may only point at the caller's organization and readable targets; realtime reaches the recipient account only |
+| Workflows                         | a team is required; an event without a team fires nothing; every action and the test endpoint are confined to the workflow's team and its organization                                                                   |
+| Saved views                       | a team is required                                                                                                                                                                                                       |
+| Templates                         | organization data through `templates.organization_id` (additive, reversible migration `0023`); categories stay instance-wide and platform-admin only                                                                     |
+| Uploads                           | a session for upload, list, read and delete; sidecars record organization and uploader; team files to team members, team-less files to their organization                                                                |
+
+Cross-cutting: a write on any of these surfaces needs a session whether or not `ENFORCE_AUTH_WRITES` is on. Nothing pre-existing is deleted: team-less workflows and saved views stay stored and answer 404, and uploads without organization metadata count as the default organization's.
+
+Owner decisions recorded for this phase (2026-11-12): templates get an organization column rather than becoming read-only; a team is required for workflows and saved views rather than fanning team-less events out to every team of the organization.
+
+Also in this change set, found during the X1b audit and shipped separately first (PR #151): the upload routes accept only an upload's own file name.
+
+### Actually Executed
+
+On the integration head, Linux container, local PostgreSQL 16 (no Docker available):
+
+- `node scripts/verify-contributor.mjs` — **PASS** (static; unit 614; domain 27; contract 21; smoke 21; build);
+- `npx vitest run --maxWorkers=4` — 62 files, 1007 tests **PASS**;
+- Layer 4, whole suite, run directly with `DATABASE_URL` — 24 files, 178 tests **PASS**;
+- migration path on a database holding pre-X1b templates: `db:orgs:prepare` twice (same result, 3 of 3 templates in the default organization), then `drizzle-kit push`, which emitted only the four array-default statements it re-emits on every push; `--down` with one organization removed the column and kept the rows;
+- fresh-install path: prepare (nothing to migrate), push, prepare, push — no template change emitted.
+- Golden Journey suite (`test:gj`, now with the four new security specs) on a database prepared the CI way — 74 passed, 1 skipped (the collaboration spec, skipped while `FEATURE_COLLABORATION` is off, as in CI); P0 — 20 passed. Both were driven with the container's Chromium, not the build the repository's Playwright pins.
+
+Each package was written against a brief, proven with tests that fail on the previous code, and reviewed line by line before integration; no review ended with a blocking finding.
+
+### Not Verified
+
+- Layer 5, Layer 6 and the Firebat gate were not run here, and the browser suites above did not use the pinned browser build: CI on the X1b pull request is the reference;
+- a deploy on a real host with migration `0023`;
+- realtime notification delivery in a browser (proven with the socket test, not a page);
+- no new buyer-facing Proof artifact; the non-claims in §3 stand.
+
+### Exact Next Action
+
+`#124 X1c` — platform admins create organizations and name their first owner; organization management (members, roles, teams, settings); AI off by default for a new organization.

@@ -112,6 +112,8 @@ beforeEach(() => {
   storage.getUserTeamIds.mockImplementation(async (userId: number) =>
     userId === CALLER.id ? [OWN] : []
   );
+  // An upload is recorded under the uploader's organization (issue #124 X1b).
+  storage.getUserOrganizationId.mockResolvedValue(1);
   storage.getTeamByName.mockImplementation(async (name: string) =>
     TEAMS[name] ? { id: TEAMS[name], name } : undefined
   );
@@ -459,13 +461,19 @@ describe('file upload checks the team in the multipart body', () => {
   it('uploads into its own team', async () => {
     const res = await upload(`/api/upload?teamId=${OWN}`, String(OWN));
     expect(res.status).toBe(201);
-    expect(processUploadedFile).toHaveBeenCalledWith(expect.anything(), String(OWN));
+    expect(processUploadedFile).toHaveBeenCalledWith(expect.anything(), String(OWN), {
+      organizationId: 1,
+      uploadedBy: CALLER.id,
+    });
   });
 
   it('uploads a file with no team, as before', async () => {
     const res = await upload('/api/upload');
     expect(res.status).toBe(201);
-    expect(processUploadedFile).toHaveBeenCalledWith(expect.anything(), undefined);
+    expect(processUploadedFile).toHaveBeenCalledWith(expect.anything(), undefined, {
+      organizationId: 1,
+      uploadedBy: CALLER.id,
+    });
   });
 });
 

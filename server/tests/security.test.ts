@@ -64,7 +64,7 @@ vi.mock('../services/upload', async () => {
     listUploadedFiles: vi.fn().mockResolvedValue({ images: [], files: [] }),
     getFileInfo: vi.fn(),
     deleteUploadedFile: vi.fn(),
-    getFileTeamId: vi.fn(),
+    getFileMeta: vi.fn(),
   };
 });
 
@@ -98,7 +98,7 @@ vi.mock('../storage', async (importOriginal) => {
 });
 
 import * as storageModule from '../storage.js';
-import { getFileTeamId, listUploadedFiles, getFileInfo } from '../services/upload.js';
+import { getFileMeta, listUploadedFiles, getFileInfo } from '../services/upload.js';
 const storage: any = (storageModule as any).storage;
 
 // ─── Test fixtures ────────────────────────────────────────────────────────────
@@ -106,6 +106,14 @@ const USER_A_ID = 1;
 const USER_B_ID = 2;
 const TEAM_A_ID = 10;
 const TEAM_B_ID = 20;
+const UPLOAD_ORG_ID = 1;
+
+/** What the mocked file service reports for a sidecar: undefined = missing, null = no team. */
+function setSidecar(teamId: string | null | undefined) {
+  (getFileMeta as any).mockResolvedValue(
+    teamId === undefined ? undefined : { teamId, organizationId: UPLOAD_ORG_ID }
+  );
+}
 
 function makeToken(userId: number): string {
   return jwt.sign({ id: userId, email: `user${userId}@example.com`, role: 'user' }, TEST_SECRET, {
@@ -138,6 +146,10 @@ beforeEach(() => {
     if (userId === USER_B_ID) return [TEAM_B_ID];
     return [];
   });
+
+  // Everyone is in organization 1, the organization of the files below (issue #124 X1b).
+  storage.getUserOrganizationId.mockResolvedValue(UPLOAD_ORG_ID);
+  storage.getDefaultOrganizationId.mockResolvedValue(UPLOAD_ORG_ID);
 
   storage.getUserTeamRole.mockResolvedValue(null);
   // NOTE: checkPagePermission is intentionally NOT given a blanket mock here.
@@ -424,14 +436,28 @@ describe('4-2  Cross-team reassignment', () => {
 // 4-3  Notification IDOR
 // =============================================================================
 describe('4-3  Notification IDOR', () => {
+  // Notifications address member rows; an account owns the rows carrying its email (#124 X1b).
+  // The member ids are not the user ids on purpose.
+  const MEMBER_A_ID = 101;
+  const MEMBER_B_ID = 102;
   const notifForA = {
     id: 42,
     type: 'mention',
     title: 'Hi',
     content: 'Content',
-    recipientId: USER_A_ID,
+    recipientId: MEMBER_A_ID,
     isRead: false,
   };
+
+  beforeEach(() => {
+    storage.getMemberIdsForUser.mockImplementation(async (userId: number) =>
+      userId === USER_A_ID ? [MEMBER_A_ID] : userId === USER_B_ID ? [MEMBER_B_ID] : []
+    );
+    // Single-row lookups answer only for the recipient's account.
+    storage.getNotificationForUser.mockImplementation(async (_id: number, userId: number) =>
+      userId === USER_A_ID ? notifForA : undefined
+    );
+  });
 
   it('GET /api/notifications — requires authentication', async () => {
     const res = await request(app).get('/api/notifications');
@@ -442,8 +468,8 @@ describe('4-3  Notification IDOR', () => {
     storage.getNotifications.mockResolvedValue([notifForA]);
     const res = await request(app).get('/api/notifications').set(auth(tokenA));
     expect(res.status).toBe(200);
-    // storage should have been called with User A's ID, not a spoofed one
-    expect(storage.getNotifications).toHaveBeenCalledWith(USER_A_ID);
+    // storage should have been called with User A's member ids, not a user id or a spoofed one
+    expect(storage.getNotifications).toHaveBeenCalledWith([MEMBER_A_ID]);
   });
 
   it('GET /api/notifications/unread-count — requires authentication', async () => {
@@ -455,7 +481,7 @@ describe('4-3  Notification IDOR', () => {
     storage.getUnreadNotificationCount.mockResolvedValue(3);
     const res = await request(app).get('/api/notifications/unread-count').set(auth(tokenA));
     expect(res.status).toBe(200);
-    expect(storage.getUnreadNotificationCount).toHaveBeenCalledWith(USER_A_ID);
+    expect(storage.getUnreadNotificationCount).toHaveBeenCalledWith([MEMBER_A_ID]);
   });
 
   it('GET /api/notifications/:id — requires authentication', async () => {
@@ -463,38 +489,33 @@ describe('4-3  Notification IDOR', () => {
     expect(res.status).toBe(401);
   });
 
-  it('GET /api/notifications/:id — returns 403 when notification belongs to another user', async () => {
-    storage.getNotification.mockResolvedValue(notifForA);
+  it('GET /api/notifications/:id — returns 404 when notification belongs to another user', async () => {
     // User B tries to read User A's notification
     const res = await request(app).get('/api/notifications/42').set(auth(tokenB));
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
   });
 
   it('GET /api/notifications/:id — allows recipient to read own notification', async () => {
-    storage.getNotification.mockResolvedValue(notifForA);
     const res = await request(app).get('/api/notifications/42').set(auth(tokenA));
     expect(res.status).toBe(200);
   });
 
-  it('PUT /api/notifications/:id — returns 403 when notification belongs to another user', async () => {
-    storage.getNotification.mockResolvedValue(notifForA);
+  it('PUT /api/notifications/:id — returns 404 when notification belongs to another user', async () => {
     const res = await request(app)
       .put('/api/notifications/42')
       .set(auth(tokenB))
       .send({ isRead: true });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
   });
 
-  it('DELETE /api/notifications/:id — returns 403 when notification belongs to another user', async () => {
-    storage.getNotification.mockResolvedValue(notifForA);
+  it('DELETE /api/notifications/:id — returns 404 when notification belongs to another user', async () => {
     const res = await request(app).delete('/api/notifications/42').set(auth(tokenB));
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
   });
 
-  it('PATCH /api/notifications/:id/read — returns 403 when notification belongs to another user', async () => {
-    storage.getNotification.mockResolvedValue(notifForA);
+  it('PATCH /api/notifications/:id/read — returns 404 when notification belongs to another user', async () => {
     const res = await request(app).patch('/api/notifications/42/read').set(auth(tokenB));
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
   });
 
   it('PATCH /api/notifications/read-all — uses authenticated user ID, not body recipientId', async () => {
@@ -506,7 +527,7 @@ describe('4-3  Notification IDOR', () => {
       .set(auth(tokenA))
       .send({ recipientId: USER_B_ID });
     expect(res.status).toBe(200);
-    expect(storage.markAllNotificationsAsRead).toHaveBeenCalledWith(USER_A_ID);
+    expect(storage.markAllNotificationsAsRead).toHaveBeenCalledWith([MEMBER_A_ID]);
   });
 
   it('GET /api/notifications/:id — still requires JWT when ENFORCE_AUTH_WRITES is false', async () => {
@@ -718,20 +739,20 @@ describe('4-5  File download access control', () => {
   const filename = 'secret-image.png';
 
   it('GET /api/uploads/images/:filename — returns 401 without authentication', async () => {
-    (getFileTeamId as any).mockResolvedValue(String(TEAM_A_ID));
+    setSidecar(String(TEAM_A_ID));
     const res = await request(app).get(`/api/uploads/images/${filename}`);
     expect(res.status).toBe(401);
   });
 
   it("GET /api/uploads/images/:filename — returns 403 when user is not in file's team", async () => {
-    (getFileTeamId as any).mockResolvedValue(String(TEAM_A_ID));
+    setSidecar(String(TEAM_A_ID));
     // User B is in team 20; file is in team 10
     const res = await request(app).get(`/api/uploads/images/${filename}`).set(auth(tokenB));
     expect(res.status).toBe(403);
   });
 
   it("GET /api/uploads/images/:filename — allows member of the file's team", async () => {
-    (getFileTeamId as any).mockResolvedValue(String(TEAM_A_ID));
+    setSidecar(String(TEAM_A_ID));
     (getFileInfo as any).mockResolvedValue({
       path: __filename, // use this test file as a stand-in payload
       mimetype: 'image/png',
@@ -743,20 +764,20 @@ describe('4-5  File download access control', () => {
   });
 
   it('GET /api/uploads/files/:filename — returns 401 without authentication', async () => {
-    (getFileTeamId as any).mockResolvedValue(String(TEAM_A_ID));
+    setSidecar(String(TEAM_A_ID));
     const res = await request(app).get(`/api/uploads/files/report.pdf`);
     expect(res.status).toBe(401);
   });
 
   it("GET /api/uploads/files/:filename — returns 403 when user is not in file's team", async () => {
-    (getFileTeamId as any).mockResolvedValue(String(TEAM_A_ID));
+    setSidecar(String(TEAM_A_ID));
     const res = await request(app).get('/api/uploads/files/report.pdf').set(auth(tokenB));
     expect(res.status).toBe(403);
   });
 
   it('GET /api/uploads/files/:filename — allows files with no team ownership (public files)', async () => {
-    // getFileTeamId returning null = sidecar present but no teamId → explicitly public
-    (getFileTeamId as any).mockResolvedValue(null);
+    // a sidecar without a team: the file belongs to the caller's organization
+    setSidecar(null);
     (getFileInfo as any).mockResolvedValue({
       path: __filename,
       mimetype: 'application/pdf',
@@ -768,17 +789,17 @@ describe('4-5  File download access control', () => {
   });
 
   // ─── Fail-secure: missing metadata ─────────────────────────────────────────
-  // getFileTeamId returning undefined means the sidecar (.json) is missing or
+  // A missing sidecar (undefined) means the sidecar (.json) is missing or
   // unreadable.  The routes must deny access rather than silently allowing it.
 
   it('GET /api/uploads/images/:filename — returns 403 when file metadata is missing (fail-secure)', async () => {
-    (getFileTeamId as any).mockResolvedValue(undefined);
+    setSidecar(undefined);
     const res = await request(app).get('/api/uploads/images/orphaned-image.png').set(auth(tokenA));
     expect(res.status).toBe(403);
   });
 
   it('GET /api/uploads/files/:filename — returns 403 when file metadata is missing (fail-secure)', async () => {
-    (getFileTeamId as any).mockResolvedValue(undefined);
+    setSidecar(undefined);
     const res = await request(app).get('/api/uploads/files/orphaned-report.pdf').set(auth(tokenA));
     expect(res.status).toBe(403);
   });
@@ -786,7 +807,7 @@ describe('4-5  File download access control', () => {
   it('GET /api/uploads/images/:filename — returns 401 for unauthenticated requests regardless of metadata state', async () => {
     // authMiddleware runs before the metadata check, so anonymous requests
     // always get 401 first. The fail-secure 403 applies to authenticated users.
-    (getFileTeamId as any).mockResolvedValue(undefined);
+    setSidecar(undefined);
     const res = await request(app).get('/api/uploads/images/orphaned-image.png');
     expect(res.status).toBe(401);
   });
@@ -795,7 +816,7 @@ describe('4-5  File download access control', () => {
     const prev = config.enforceAuthForWrites;
     config.enforceAuthForWrites = false;
     try {
-      (getFileTeamId as any).mockResolvedValue(null);
+      setSidecar(null);
       const res = await request(app).get('/api/uploads/files/public.pdf');
       expect(res.status).toBe(401);
     } finally {
