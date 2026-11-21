@@ -157,6 +157,24 @@
 
 ---
 
+## 가입과 초대 (Invitations)
+
+| Method | Endpoint                            | Auth          | Description                                       |
+| ------ | ----------------------------------- | ------------- | ------------------------------------------------- |
+| GET    | `/api/auth/signup-policy`           | -             | 가입 방식 (`open` \| `invite_only` \| `closed`)   |
+| GET    | `/api/organization/invitations`     | 소유자·관리자 | 조직의 초대 목록 (토큰·해시 없음)                 |
+| POST   | `/api/organization/invitations`     | 소유자·관리자 | 초대 만들기. 응답에만 링크가 한 번 들어 있음      |
+| DELETE | `/api/organization/invitations/:id` | 소유자·관리자 | 초대 취소                                         |
+| POST   | `/api/invitations/preview`          | -             | `{ token }` → 조직 이름, 역할, 가려진 주소        |
+| POST   | `/api/invitations/accept`           | JWT           | `{ token }` 기존 계정으로 수락                    |
+| POST   | `/api/auth/oauth-invitation`        | -             | `{ token }` 소셜 로그인 왕복 동안 토큰 보관(쿠키) |
+
+- `POST /api/auth/register`는 선택 필드 `invitationToken`을 받습니다. 모드별 규칙과 응답(`signup_closed`, `signup_requires_invitation`, 409 `email_taken` 등)은 [organizations-guide.md](organizations-guide.md#가입과-초대-x1d)에 있습니다.
+- 토큰을 받는 POST는 같은 사이트에서 보낸 `application/json`만 받습니다(`Sec-Fetch-Site: same-origin` 또는 앱과 같은 호스트의 `Origin`). 그 밖에는 403입니다.
+- 사용할 수 없는 토큰(형식 오류, 없음, 만료, 사용됨, 취소, 조직 꺼짐, 초대자 권한 상실)은 모두 404 `{ code: "invitation_invalid" }`입니다.
+
+---
+
 ## 팀 (Teams)
 
 | Method | Endpoint            | Auth        | Description      |
