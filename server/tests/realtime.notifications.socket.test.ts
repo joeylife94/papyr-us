@@ -30,6 +30,8 @@ describe('Realtime notifications over Socket.IO', () => {
   const orgId = 1;
   const storageCalls: string[] = [];
   const fakeStorage: any = {
+    // Every account here is active: a session belongs to an active account
+    getUserAccount: async (id: number) => ({ id, email: `user-${id}@test.com`, isActive: true }),
     createNotification: async (n: any) => ({ id: 1, isRead: false, ...n }),
     getUnreadNotificationCount: async (userId: number, organizationId: number) =>
       userId === recipientId && organizationId === orgId ? 1 : 0,

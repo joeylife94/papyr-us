@@ -558,18 +558,18 @@ describe('GET /api/pages/:id/sharing', () => {
     expect((await get()).status).toBe(401);
   });
 
-  it('answers 404 alike for an unknown page, a member without access, another organization, a deactivated account and a bad id', async () => {
+  it('answers 404 alike for an unknown page, a member without access, another organization and a bad id; a deactivated account has no session', async () => {
     const answers = [
       await get(OWNER, 999),
       await get(NO_ACCESS),
       await get(OUTSIDER),
-      await get(INACTIVE),
       await get(OWNER, 'abc'),
     ];
     for (const res of answers) {
       expect(res.status).toBe(404);
       expect(res.body).toEqual({ message: 'Page not found' });
     }
+    expect((await get(INACTIVE)).status).toBe(401);
     expect(storage.getPageSharing).not.toHaveBeenCalled();
   });
 
@@ -619,9 +619,11 @@ describe('GET /api/pages/:id/share-candidates', () => {
     expect((await search(undefined)).status).toBe(401);
     expect((await search(READER)).status).toBe(403);
     expect((await search(EDITOR)).status).toBe(403);
-    for (const id of [NO_ACCESS, OUTSIDER, INACTIVE]) {
+    for (const id of [NO_ACCESS, OUTSIDER]) {
       expect((await search(id)).status, String(id)).toBe(404);
     }
+    // a deactivated account has no session
+    expect((await search(INACTIVE)).status).toBe(401);
     expect(storage.listPageShareCandidates).not.toHaveBeenCalled();
   });
 

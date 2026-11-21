@@ -124,19 +124,21 @@ export async function aiRefusalFor(
  * none), so it applies whatever ENFORCE_AUTH_WRITES says.
  */
 export function requireOrganizationAi(req: AuthRequest, res: Response, next: NextFunction): void {
-  // optionalAuth never sends a response; it only sets req.user when the token is valid.
+  // optionalAuth never sends a response; it only sets req.user when the token is a session of an
+  // active account, and continues either way.
   req.user = undefined;
-  optionalAuth(req, res, () => undefined);
-  const userId = sessionUserId(req);
-  if (userId === null) {
-    res.status(401).json({ message: 'Authentication required' });
-    return;
-  }
-  (async () => {
-    const refusal = await aiRefusalFor(await storageOf(req).catch(() => null), userId);
-    if (refusal) return res.status(refusal.status).json(refusal.body);
-    return next();
-  })();
+  optionalAuth(req, res, () => {
+    const userId = sessionUserId(req);
+    if (userId === null) {
+      res.status(401).json({ message: 'Authentication required' });
+      return;
+    }
+    (async () => {
+      const refusal = await aiRefusalFor(await storageOf(req).catch(() => null), userId);
+      if (refusal) return res.status(refusal.status).json(refusal.body);
+      return next();
+    })();
+  });
 }
 
 /**

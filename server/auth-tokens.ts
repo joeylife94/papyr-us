@@ -16,3 +16,49 @@ export function verifyAccessToken(token: string): any {
   }
   return payload;
 }
+
+/** The part of storage that tells whether an account may hold a session. */
+export type AccountActivityStore = {
+  getUserAccount(userId: number): Promise<{ isActive: boolean } | undefined>;
+};
+
+/** A valid token whose account is deactivated, missing, or not named by the token. */
+export class InactiveAccountError extends Error {
+  constructor() {
+    super('Account is not active');
+    this.name = 'InactiveAccountError';
+  }
+}
+
+/** The account could not be read, so no session can be confirmed. */
+export class AccountLookupError extends Error {
+  constructor(cause: unknown) {
+    super('Account lookup failed');
+    this.name = 'AccountLookupError';
+    (this as { cause?: unknown }).cause = cause;
+  }
+}
+
+/**
+ * Verifies `token` as an access token of an account that is active now, and returns its payload.
+ * The flag is read from storage on every call, so deactivating an account ends its sessions at
+ * once. Throws InactiveAccountError (the account is deactivated or missing, or the token names no
+ * account), AccountLookupError (the account could not be read) or the verification error of
+ * verifyAccessToken; nothing is accepted on a failure.
+ */
+export async function verifyActiveAccessToken(
+  token: string,
+  store: AccountActivityStore
+): Promise<any> {
+  const payload = verifyAccessToken(token);
+  const accountId = Number(payload.id);
+  if (!Number.isInteger(accountId) || accountId <= 0) throw new InactiveAccountError();
+  let account: { isActive: boolean } | undefined;
+  try {
+    account = await store.getUserAccount(accountId);
+  } catch (error) {
+    throw new AccountLookupError(error);
+  }
+  if (account?.isActive !== true) throw new InactiveAccountError();
+  return payload;
+}

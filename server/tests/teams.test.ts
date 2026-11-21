@@ -284,7 +284,7 @@ describe('Team Management API', () => {
     }
   });
 
-  it('TC-TEAM-001l: a deactivated account cannot create a team, in either auth mode', async () => {
+  it('TC-TEAM-001l: a deactivated account has no session and cannot create a team, in either auth mode', async () => {
     (storage.getUserAccount as vi.Mock).mockResolvedValue({
       id: 7,
       email: 'creator@example.com',
@@ -296,8 +296,10 @@ describe('Team Management API', () => {
         .post('/api/teams')
         .set('Authorization', `Bearer ${creator()}`)
         .send({ displayName: 'Nope' });
-      expect(response.status, `enforce=${enforce}`).toBe(403);
-      expect(response.body).toEqual({ error: 'Your account does not belong to an organization' });
+      expect(response.status, `enforce=${enforce}`).toBe(401);
+      expect(response.body).toEqual(
+        enforce ? { message: 'Invalid token' } : { error: 'Authentication required' }
+      );
     }
     mockConfig.enforceAuthForWrites = false;
     expect(storage.createTeamWithOwner).not.toHaveBeenCalled();

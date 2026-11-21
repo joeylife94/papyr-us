@@ -448,20 +448,18 @@ describe('a deactivated caller', () => {
     accounts.get(MEMBER)!.isActive = false;
   });
 
-  it('is refused the member list like a non-member, and the picker like a non-manager', async () => {
+  it('has no session: the member list and the picker are refused as signed out', async () => {
     const list = await call(MEMBER, 'get', `/api/teams/${TEAM}/members`);
-    expect(list.status).toBe(403);
-    expect(list.body).toEqual({ message: 'You are not a member of this team' });
+    expect(list.status).toBe(401);
     const picker = await call(OWNER, 'get', `/api/teams/${TEAM}/member-candidates?q=ab`);
-    expect(picker.status).toBe(403);
-    expect(picker.body).toEqual({ message: 'Owner or admin role required' });
+    expect(picker.status).toBe(401);
     expect(storage.listTeamMembers).not.toHaveBeenCalled();
     expect(storage.listTeamMemberCandidates).not.toHaveBeenCalled();
   });
 
-  it('an account that does not exist is refused the same way', async () => {
+  it('an account that does not exist has no session either', async () => {
     const res = await call(777, 'get', `/api/teams/${TEAM}/members`);
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(401);
   });
 });
 

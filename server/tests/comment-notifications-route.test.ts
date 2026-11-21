@@ -613,7 +613,8 @@ describe('mention picker', () => {
   });
 
   it('refuses a deactivated caller, a signed-out caller and an over-long search', async () => {
-    expect((await search(G, 'cy')).status).toBe(403);
+    // a deactivated account has no session: refused as signed out
+    expect((await search(G, 'cy')).status).toBe(401);
     expect((await request(app).get(`/api/pages/${PAGE_ID}/mention-candidates?q=cy`)).status).toBe(
       401
     );

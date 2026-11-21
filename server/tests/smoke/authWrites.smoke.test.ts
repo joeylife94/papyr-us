@@ -119,6 +119,12 @@ describe('Smoke: ENFORCE_AUTH_WRITES', () => {
     const cookieHeader = accessTokenCookieLine!.split(';')[0];
 
     // --- Step 3: Use the extracted cookie for the protected write request ---
+    // A session belongs to an active account, read for every request
+    (storage.getUserAccount as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: MOCK_USER.id,
+      email: MOCK_USER.email,
+      isActive: true,
+    });
     (storage.createWikiPage as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 1, title: 'T' });
 
     const payload = {
