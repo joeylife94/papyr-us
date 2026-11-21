@@ -135,11 +135,19 @@ describe.each([true, false])('with ENFORCE_AUTH_WRITES=%s', (enforce) => {
   });
 
   it('a signed-out caller is still asked to sign in first where a session is required', async () => {
-    if (enforce) {
-      expect((await request(app).get('/api/teams/1e1')).status).toBe(401);
-    }
-    expect((await request(app).put('/api/teams/1e1').send({ displayName: 'x' })).status).toBe(401);
-    expect((await request(app).delete('/api/teams/1e1')).status).toBe(401);
+    // GET asks for a session only under enforcement; without it a signed-out caller meets the id rule
+    const get = await request(app).get('/api/teams/1e1');
+    expect([get.status, get.body]).toEqual(
+      enforce ? [401, { error: 'Authentication required' }] : [404, { error: 'Team not found' }]
+    );
+    const put = await request(app).put('/api/teams/1e1').send({ displayName: 'x' });
+    // the write gate answers under enforcement, the handler otherwise
+    const refusal = enforce
+      ? { message: 'No token provided' }
+      : { error: 'Authentication required' };
+    expect([put.status, put.body]).toEqual([401, refusal]);
+    const del = await request(app).delete('/api/teams/1e1');
+    expect([del.status, del.body]).toEqual([401, refusal]);
   });
 
   it('the plain spelling works as before', async () => {

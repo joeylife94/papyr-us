@@ -122,18 +122,26 @@ describe.each([true, false])('with ENFORCE_AUTH_WRITES=%s', (enforce) => {
         request(app).post('/api/teams').set(bearer).send({ name: 'x' }),
       ];
       const results = await Promise.all(attempts);
-      if (enforce) {
-        expect(results.map((r) => r.status)).toEqual([401, 401, 401, 401]);
-      } else {
-        // without the write gate, only the route that always needs a session answers 401; the
-        // others see a signed-out caller
-        expect(results[0].status).toBe(401);
-      }
-      if (enforce) {
-        expect(storage.updateWikiPage).not.toHaveBeenCalled();
-        expect(storage.createTeam).not.toHaveBeenCalled();
-        expect(storage.createComment).not.toHaveBeenCalled();
-      }
+      // With enforcement the write gate refuses all four. Without it the PUT reaches its handler as
+      // a signed-out caller (development behaviour; its mocked update finds no page), while the
+      // routes that always need a session still answer 401.
+      const expected = enforce
+        ? [
+            [401, { message: 'Invalid token' }],
+            [401, { message: 'Invalid token' }],
+            [401, { message: 'Invalid token' }],
+            [401, { message: 'Invalid token' }],
+          ]
+        : [
+            [401, { message: 'Invalid token' }],
+            [404, { message: 'Page not found' }],
+            [401, { message: 'Invalid token' }],
+            [401, { error: 'Authentication required' }],
+          ];
+      expect(results.map((r) => [r.status, r.body])).toEqual(expected);
+      expect(storage.updateWikiPage).toHaveBeenCalledTimes(enforce ? 0 : 1);
+      expect(storage.createTeamWithOwner).not.toHaveBeenCalled();
+      expect(storage.createComment).not.toHaveBeenCalled();
       expect(permissionAskedFor().every((id: unknown) => id === undefined)).toBe(true);
     });
   });

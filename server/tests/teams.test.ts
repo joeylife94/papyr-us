@@ -409,12 +409,18 @@ describe('Team Management API', () => {
         ]);
         expect(JSON.stringify(signedIn.body)).not.toContain('$2a$');
         for (const team of signedIn.body) expect(team).not.toHaveProperty('password');
-        if (!enforce) {
-          const anonymous = await request(app).get('/api/teams');
-          expect(anonymous.status).toBe(200);
-          expect(anonymous.body.map((t: any) => t.hasPassword)).toEqual([true, false]);
-          expect(JSON.stringify(anonymous.body)).not.toContain('$2a$');
-        }
+        const anonymous = await request(app).get('/api/teams');
+        // Signed out: refused under enforcement, all teams (still without the hash) otherwise
+        expect(anonymous.status).toBe(enforce ? 401 : 200);
+        expect(anonymous.body).toEqual(
+          enforce
+            ? { error: 'Authentication required' }
+            : [
+                { ...locked, password: undefined, hasPassword: true },
+                { ...open, password: undefined, hasPassword: false },
+              ].map(({ password: _p, ...rest }) => rest)
+        );
+        expect(JSON.stringify(anonymous.body)).not.toContain('$2a$');
         mockConfig.enforceAuthForWrites = false;
       });
 
