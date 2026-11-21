@@ -50,6 +50,7 @@ import {
   type CalendarEvent,
   type Task,
   type Notification,
+  type PagePermission,
 } from '../shared/schema.js';
 import {
   upload,
@@ -2436,9 +2437,15 @@ export async function registerRoutes(
         }
 
         // Only a permission of this page: owning one page grants nothing on another
-        const existing = (await storage.getPagePermissions(pageId)).find(
-          (grant: { id: number }) => grant.id === permissionId
-        );
+        // (read first, only to know whom to tell; failing to read never blocks the removal)
+        let existing: PagePermission | undefined;
+        try {
+          existing = (await storage.getPagePermissions(pageId))?.find(
+            (grant: PagePermission) => grant.id === permissionId
+          );
+        } catch {
+          existing = undefined;
+        }
         const deleted = await storage.removePagePermission(pageId, permissionId);
         if (!deleted) {
           return res.status(404).json({ message: 'Permission not found' });
