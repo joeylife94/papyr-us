@@ -245,11 +245,17 @@ export default function AutomationPage() {
           </h1>
           <p className="text-muted-foreground mt-2">반복 작업을 자동화하고 팀 생산성을 높이세요</p>
         </div>
-        <Button className="gap-2" onClick={() => setShowCreateDialog(true)}>
+        <Button className="gap-2" disabled={!teamName} onClick={() => setShowCreateDialog(true)}>
           <Plus className="h-4 w-4" />
           워크플로우 만들기
         </Button>
       </div>
+      {!teamName && (
+        <p className="mb-6 text-sm text-muted-foreground" data-testid="automation-needs-team">
+          워크플로우는 팀에 속합니다. 새 워크플로우는 팀 워크스페이스의 자동화 화면에서 만들 수
+          있습니다.
+        </p>
+      )}
 
       {/* Workflow List */}
       {workflows && workflows.length === 0 ? (
@@ -260,13 +266,19 @@ export default function AutomationPage() {
             <p className="text-sm text-muted-foreground text-center max-w-md mb-4">
               첫 번째 자동화 워크플로우를 만들어 반복 작업을 자동화하세요.
             </p>
-            <Button onClick={() => setShowCreateDialog(true)}>워크플로우 만들기</Button>
+            <Button disabled={!teamName} onClick={() => setShowCreateDialog(true)}>
+              워크플로우 만들기
+            </Button>
           </CardContent>
         </Card>
       ) : (
         <div className="grid gap-4">
           {workflows?.map((workflow) => (
-            <Card key={workflow.id} className="hover:border-primary/50 transition-colors">
+            <Card
+              key={workflow.id}
+              data-testid="workflow-card"
+              className="hover:border-primary/50 transition-colors"
+            >
               <CardHeader>
                 <div className="flex items-start justify-between">
                   <div className="flex-1">

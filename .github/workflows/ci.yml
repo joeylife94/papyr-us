@@ -141,10 +141,11 @@ jobs:
 
       # Realtime collaboration is off by default, so this run starts its own server with it on:
       # open realtime sessions must lose access as soon as their user leaves the page's team.
+      # collaboration-sync covers two editors converging on one document (issue #93).
       - name: Run realtime collaboration access regression
         env:
           FEATURE_COLLABORATION: 'true'
-        run: npx playwright test tests/security-collab-access-revocation.spec.ts --project=chromium --reporter=dot
+        run: npx playwright test tests/security-collab-access-revocation.spec.ts tests/collaboration-sync.spec.ts --project=chromium --workers=1 --reporter=dot
 
       - name: Upload Playwright HTML report
         if: failure()
@@ -218,6 +219,10 @@ jobs:
       # Must-pass P0 scenarios from tests/e2e-p0-matrix.md (S1-S3; S4-S5 optional but kept green).
       - name: Run P0 scenario specs
         run: npm run test:p0 -- --reporter=dot,html
+
+      # API and browser regression specs that used to sit outside CI (issue #93).
+      - name: Run regression specs
+        run: npm run test:regression -- --reporter=dot,html
 
       - name: Upload Golden Journey report and artifacts
         if: failure()

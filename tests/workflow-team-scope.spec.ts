@@ -93,7 +93,7 @@ test.describe('Workflow Team Scope', () => {
     expect(found).toBeDefined();
   });
 
-  test('POST with unknown team name returns 400', async () => {
+  test('POST with unknown team name returns 404', async () => {
     const resp = await authRequest.post('/api/workflows', {
       data: {
         name: `Bad Team Workflow ${Date.now()}`,
@@ -105,6 +105,7 @@ test.describe('Workflow Team Scope', () => {
         createdBy: 'e2e-test',
       },
     });
-    expect(resp.status()).toBe(400);
+    // requireTeamMembership refuses an unknown team name before the handler runs.
+    expect(resp.status()).toBe(404);
   });
 });

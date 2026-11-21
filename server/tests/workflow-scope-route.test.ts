@@ -113,6 +113,7 @@ beforeEach(() => {
     userId === CALLER.id ? [OWN_TEAM] : []
   );
   storage.getTeamByName.mockResolvedValue({ id: OWN_TEAM });
+  storage.getUserAccount.mockResolvedValue({ id: CALLER.id, email: CALLER.email, isActive: true });
   storage.createWorkflow.mockImplementation(async (data: any) => ({ id: 9, ...data }));
   storage.updateWorkflow.mockImplementation(async (id: number, data: any) => ({
     ...workflowOf(OWN_TEAM),
@@ -307,5 +308,57 @@ describe('a member of the workflow team', () => {
       expect([200, 204]).toContain(response.status);
     }
     expect(executeWorkflow).toHaveBeenCalledTimes(1);
+  });
+});
+
+// The creator of a workflow is the signed-in account, read from the database. The automation
+// page sends none; a value a client does send is ignored, and it never changes afterwards.
+describe('the creator of a workflow comes from the session', () => {
+  const { createdBy: _ignored, ...bodyWithoutCreator } = body;
+
+  it('is set from the account when the body names none', async () => {
+    const response = await request(app)
+      .post('/api/workflows')
+      .set(signedIn())
+      .send({ ...bodyWithoutCreator, teamId: OWN_TEAM });
+    expect(response.status).toBe(201);
+    expect(storage.getUserAccount).toHaveBeenCalledWith(CALLER.id);
+    expect(storage.createWorkflow).toHaveBeenCalledWith(
+      expect.objectContaining({ createdBy: CALLER.email, teamId: OWN_TEAM })
+    );
+  });
+
+  it('replaces a creator sent by the client', async () => {
+    const response = await request(app)
+      .post('/api/workflows')
+      .set(signedIn())
+      .send({ ...body, createdBy: 'someone-else@example.com', teamId: OWN_TEAM });
+    expect(response.status).toBe(201);
+    expect(storage.createWorkflow).toHaveBeenCalledWith(
+      expect.objectContaining({ createdBy: CALLER.email })
+    );
+  });
+
+  it('creates nothing for a session whose account is gone or deactivated', async () => {
+    for (const account of [undefined, { id: CALLER.id, email: CALLER.email, isActive: false }]) {
+      storage.getUserAccount.mockResolvedValue(account);
+      const response = await request(app)
+        .post('/api/workflows')
+        .set(signedIn())
+        .send({ ...body, teamId: OWN_TEAM });
+      expect(response.status).toBe(401);
+    }
+    expect(storage.createWorkflow).not.toHaveBeenCalled();
+  });
+
+  it('cannot be changed by an update', async () => {
+    storage.getWorkflow.mockResolvedValue(workflowOf(OWN_TEAM));
+    const response = await request(app)
+      .put('/api/workflows/1')
+      .set(signedIn())
+      .send({ name: 'Renamed', createdBy: 'someone-else@example.com' });
+    expect(response.status).toBe(200);
+    const [, written] = storage.updateWorkflow.mock.calls[0];
+    expect(written).toEqual({ name: 'Renamed' });
   });
 });

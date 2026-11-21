@@ -64,6 +64,9 @@ test.describe('Workflow Automation UI', () => {
     await page.getByLabel(/워크플로우 이름/i).fill(workflowName);
     await page.getByLabel(/설명/i).fill('E2E UI 자동화 테스트 워크플로우');
 
+    // The default action (send notification) requires a message before the create button enables
+    await page.getByPlaceholder('알림 내용을 입력하세요').fill('E2E 알림 메시지');
+
     // Submit
     const submitBtn = page.getByRole('button', { name: /워크플로우 생성/i });
     await expect(submitBtn).toBeEnabled();
@@ -72,8 +75,11 @@ test.describe('Workflow Automation UI', () => {
     // Wait for dialog to close and the new workflow to appear in the list
     await expect(page.getByText(workflowName)).toBeVisible({ timeout: 15_000 });
 
-    // Verify the workflow card has the expected trigger badge
-    await expect(page.getByText('트리거')).toBeVisible();
+    // The dialog closes, and the new workflow's own card shows its trigger
+    await expect(page.getByRole('dialog')).toBeHidden();
+    const card = page.getByTestId('workflow-card').filter({ hasText: workflowName });
+    await expect(card).toHaveCount(1);
+    await expect(card.getByText('트리거', { exact: true })).toBeVisible();
 
     // --- Now check team B's page ---
     await page.goto(`/teams/${teamBName}/automation`);
@@ -84,5 +90,17 @@ test.describe('Workflow Automation UI', () => {
 
     // The workflow created for team A should NOT be visible here
     await expect(page.getByText(workflowName)).not.toBeVisible({ timeout: 5_000 });
+  });
+
+  test('outside a team the page lists but does not offer to create', async ({ page, baseURL }) => {
+    await loginPageWithCookies(page, email, password);
+    await page.goto(baseURL!);
+    await page.goto('/automation');
+
+    // A workflow belongs to a team, so the page says where to create one instead of failing later
+    await expect(page.getByTestId('automation-needs-team')).toBeVisible({ timeout: 30_000 });
+    for (const button of await page.getByRole('button', { name: /워크플로우 만들기/i }).all()) {
+      await expect(button).toBeDisabled();
+    }
   });
 });
