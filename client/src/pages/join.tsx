@@ -164,7 +164,6 @@ export default function JoinPage() {
       setToken(readStoredToken());
     }
     // Run once: the fragment is read on arrival only.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => {
     // An outcome from a social sign-in means the token was already used.
