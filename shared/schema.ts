@@ -515,6 +515,11 @@ export const teams = pgTable(
     color: text('color'), // Tailwind color class
     isActive: boolean('is_active').notNull().default(true),
     order: integer('order').notNull().default(0),
+    // Whether a plain member of the team edits the team's pages (WP7). The column's own default
+    // is off, so a row that is written without it, and every team that existed when the column
+    // was added, keeps members as viewers whatever order a deploy runs its steps in. A team is
+    // created with the setting on by DBStorage.createTeam and createTeamWithOwner.
+    membersCanEdit: boolean('members_can_edit').notNull().default(false),
     // Set by the server from the creator's organization (issue #124 X1); never changes.
     organizationId: integer('organization_id')
       .notNull()

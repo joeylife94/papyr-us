@@ -1,6 +1,6 @@
 /**
  * Layer 4 fixture: bring a test schema built in the pre-organization shape to the shape of
- * drizzle/0022_add_organizations.sql (issue #124 X1a), 0024 and 0025 (X1c), 0026 (WP0a) and 0027 (WP0b), so DBStorage runs
+ * drizzle/0022_add_organizations.sql (issue #124 X1a), 0024 and 0025 (X1c), 0026 (WP0a), 0027 (WP0b) and 0031 (WP7), so DBStorage runs
  * against it.
  *
  * Most Layer 4 files hand-write their tables as they were before organizations and insert rows
@@ -61,6 +61,14 @@ const INVITATIONS_MIGRATION = readFileSync(
   'utf8'
 );
 
+// 0031 (WP7) adds teams.members_can_edit, off for the teams that exist; teams a file inserts
+// later without the column are off too, so a file's teams keep members as viewers unless it says
+// otherwise.
+const TEAM_MEMBERS_CAN_EDIT_MIGRATION = readFileSync(
+  new URL('../../drizzle/0031_add_team_members_can_edit.sql', import.meta.url),
+  'utf8'
+);
+
 /**
  * Applies 0022 to a pre-organization test schema and returns the default organization's id.
  * `schema` names the test schema when `pool` does not already use it as its search path.
@@ -99,6 +107,7 @@ export async function addOrganizations(
     await client.query(NOTIFICATIONS_TO_ACCOUNTS_MIGRATION);
     await client.query(PAGE_CREATOR_MIGRATION);
     await client.query(INVITATIONS_MIGRATION);
+    await client.query(TEAM_MEMBERS_CAN_EDIT_MIGRATION);
     const { rows } = await client.query(`SELECT id FROM organizations WHERE slug = 'default'`);
     const organizationId = Number(rows[0].id);
     // The trigger names its schema, so inserts through a pool without the search path work too.

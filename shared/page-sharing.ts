@@ -71,7 +71,7 @@ export interface PageSharingEntry {
 export interface PageSharingView {
   /** What members get without a grant. */
   baseline:
-    | { kind: 'team'; name: string; level: 'viewer' }
+    | { kind: 'team'; name: string; level: 'viewer' | 'editor' }
     | { kind: 'organization'; level: 'viewer' }
     | { kind: 'restricted' };
   /** The public grant at the level it is honoured as; `storedLevel` only when it differs. */
