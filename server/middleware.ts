@@ -2,7 +2,6 @@ import express, { type Express, type Request, Response, NextFunction } from 'exp
 import { parsePageIdParam } from './page-ids.js';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
-import jwt from 'jsonwebtoken';
 import { verifyAccessToken, verifyActiveAccessToken, AccountLookupError } from './auth-tokens.js';
 import cookieParser from 'cookie-parser';
 import { config } from './config.js';
@@ -427,6 +426,25 @@ export function buildAccountRateLimiter(opts: { windowMs: number; max: number })
   });
 }
 
+/**
+ * The key a shared limiter counts a request under: the account named by a verified access token
+ * (the signature and kind are checked, not only decoded), otherwise the client address. A token
+ * that does not verify never names an account, so a request that is refused anyway cannot use up
+ * another account's allowance.
+ */
+export function rateLimitKey(req: Request): string {
+  try {
+    const token = getRequestToken(req as AuthRequest);
+    if (token) {
+      const accountId = Number(verifyAccessToken(token).id);
+      if (Number.isInteger(accountId) && accountId > 0) return `account:${accountId}`;
+    }
+  } catch {
+    // Not a session: counted by address
+  }
+  return `address:${req.ip || 'unknown'}`;
+}
+
 export function buildRateLimiter(opts?: { windowMs?: number; max?: number }) {
   return rateLimit({
     windowMs: opts?.windowMs ?? config.rateLimitWindowMs,
@@ -440,19 +458,7 @@ export function buildRateLimiter(opts?: { windowMs?: number; max?: number }) {
       if (config.adminIpWhitelist.some((w) => ip.includes(w))) return true;
       return false;
     },
-    keyGenerator: (req) => {
-      // Prefer user id/email from JWT, fallback to IP
-      try {
-        const token = getRequestToken(req as AuthRequest);
-        if (token) {
-          const payload: any = jwt.decode(token);
-          if (payload?.id || payload?.email) {
-            return `${payload.id || ''}|${payload.email || ''}`;
-          }
-        }
-      } catch {}
-      return req.ip || 'unknown';
-    },
+    keyGenerator: rateLimitKey,
   });
 }
 
