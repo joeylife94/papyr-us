@@ -159,6 +159,7 @@ test('page tree rules hold against the database: team boundary, cycles, hidden p
   expect(teamRes.status()).toBe(201);
   const team = await teamRes.json();
   const created: number[] = [];
+  let outsiderTeamId: number | null = null;
 
   try {
     const teamPage = await createPage(api, `Team Root ${stamp}`, { teamId: team.id });
@@ -184,12 +185,32 @@ test('page tree rules hold against the database: team boundary, cycles, hidden p
     });
     expect(crossCreate.status()).toBe(403);
 
-    // A public editor grant on a team page does not let an outsider create pages in the team by
-    // leaving out teamId (the child would inherit the team).
-    const grant = await api.post(`/api/pages/${teamPage.id}/permissions`, {
+    // Public access carries commenter at most: editor is refused, commenter is accepted
+    const refused = await api.post(`/api/pages/${teamPage.id}/permissions`, {
       data: { entityType: 'public', permission: 'editor' },
     });
+    expect(refused.status()).toBe(400);
+    const grant = await api.post(`/api/pages/${teamPage.id}/permissions`, {
+      data: { entityType: 'public', permission: 'commenter' },
+    });
     expect(grant.status()).toBe(201);
+
+    // An editor of a team page who is not in its team cannot create pages in the team by leaving
+    // out teamId (the child would inherit the team): the parent check passes through a grant to a
+    // team the outsider owns, so it is the team membership rule that answers 403.
+    const outsiderTeamRes = await otherApi.post('/api/teams', {
+      data: { name: `tree-outsider-${stamp}`, displayName: `Tree Outsider ${stamp}` },
+    });
+    expect(outsiderTeamRes.status()).toBe(201);
+    const outsiderTeam = await outsiderTeamRes.json();
+    outsiderTeamId = outsiderTeam.id;
+    const teamGrant = await api.post(`/api/pages/${teamPage.id}/permissions`, {
+      data: { entityType: 'team', entityId: outsiderTeam.id, permission: 'editor' },
+    });
+    expect(teamGrant.status()).toBe(201);
+    const outsiderAccess = await otherApi.get(`/api/pages/${teamPage.id}/access`);
+    expect(outsiderAccess.status()).toBe(200);
+    expect((await outsiderAccess.json()).canEdit).toBe(true);
     const outsiderChild = await otherApi.post('/api/pages', {
       data: {
         title: 'outsider',
@@ -233,6 +254,9 @@ test('page tree rules hold against the database: team boundary, cycles, hidden p
       await api.delete(`/api/trash/${id}`).catch(() => {});
     }
     await api.delete(`/api/teams/${team.id}`).catch(() => {});
+    if (outsiderTeamId !== null) {
+      await otherApi.delete(`/api/teams/${outsiderTeamId}`).catch(() => {});
+    }
     await api.dispose();
     await otherApi.dispose();
   }

@@ -29,3 +29,32 @@ export async function notifyPageAccessChanged(userId: number): Promise<void> {
     }
   }
 }
+
+/**
+ * In-process notice that who may read or edit one page changed for people who are not named by
+ * an account (the page's public access was lowered or removed). Open realtime sessions on that
+ * page, of any account or none, check their access again.
+ */
+type PageGrantsListener = (pageId: number) => Promise<void>;
+
+const pageListeners = new Set<PageGrantsListener>();
+
+export function onPageGrantsChanged(listener: PageGrantsListener): () => void {
+  pageListeners.add(listener);
+  return () => {
+    pageListeners.delete(listener);
+  };
+}
+
+/** Resolves once every subscriber has re-checked; a failing subscriber is logged, not thrown. */
+export async function notifyPageGrantsChanged(pageId: number): Promise<void> {
+  const results = await Promise.allSettled([...pageListeners].map((listener) => listener(pageId)));
+  for (const result of results) {
+    if (result.status === 'rejected') {
+      logger.error('Failed to re-check page access after a page grant change', {
+        pageId,
+        error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+      });
+    }
+  }
+}

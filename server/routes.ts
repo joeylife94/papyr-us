@@ -50,6 +50,7 @@ import {
   type CalendarEvent,
   type Task,
   type Notification,
+  type PagePermission,
 } from '../shared/schema.js';
 import {
   upload,
@@ -155,6 +156,15 @@ import { postgresErrorOf } from './db-errors.js';
 import { registerDatabaseRoutes } from './routes/database.js';
 import { registerSyncedBlockRoutes } from './routes/synced-blocks.js';
 import { readableLinkTarget, registerPageEmbedRoutes } from './routes/page-embeds.js';
+import {
+  notifyGrantChanged,
+  notifyPublicAccessChanged,
+  pageOwnerGate,
+  parsePermissionGrant,
+  toShareLink,
+} from './page-sharing-routes.js';
+import { PUBLIC_GRANT_LEVELS, effectivePublicLevel } from '../shared/page-sharing.js';
+import { checkedPageId, parsePageIdParam } from './page-ids.js';
 
 interface MulterRequest extends Request {
   files?: any[];
@@ -2455,7 +2465,8 @@ export async function registerRoutes(
   // Get all permissions for a page
   app.get('/api/pages/:id/permissions', authMiddleware, async (req: AuthRequest, res) => {
     try {
-      const pageId = parseInt(req.params.id);
+      const pageId = parsePageIdParam(req.params.id);
+      if (pageId === null) return res.status(404).json({ message: 'Page not found' });
 
       // Check if user has owner permission to view permissions
       const hasOwnerPermission = await storage.checkPagePermission(req.user?.id, pageId, 'owner');
@@ -2473,7 +2484,8 @@ export async function registerRoutes(
   // Add or update a permission for a page
   app.post('/api/pages/:id/permissions', authMiddleware, async (req: AuthRequest, res) => {
     try {
-      const pageId = parseInt(req.params.id);
+      const pageId = parsePageIdParam(req.params.id);
+      if (pageId === null) return res.status(404).json({ message: 'Page not found' });
 
       // Check if user has owner permission to manage permissions
       const hasOwnerPermission = await storage.checkPagePermission(req.user?.id, pageId, 'owner');
@@ -2481,11 +2493,16 @@ export async function registerRoutes(
         return res.status(403).json({ message: 'Only page owners can manage permissions' });
       }
 
+      // A user or team at any level, or the public at viewer or commenter (never above)
+      const parsedGrant = parsePermissionGrant(req.body);
+      if (!parsedGrant) {
+        return res.status(400).json({ message: 'Invalid permission data' });
+      }
       const permissionData = {
         pageId,
-        entityType: req.body.entityType,
-        entityId: req.body.entityId,
-        permission: req.body.permission,
+        entityType: parsedGrant.entityType,
+        entityId: parsedGrant.entityId,
+        permission: parsedGrant.permission,
         grantedBy: req.user?.id,
       };
 
@@ -2501,7 +2518,18 @@ export async function registerRoutes(
         return res.status(400).json({ message: 'Unknown user or team' });
       }
 
-      const permission = await storage.addPagePermission(permissionData);
+      // Public access is one row that names nobody; setting it replaces all the page's public rows
+      const permission =
+        permissionData.entityType === 'public'
+          ? await storage.setPagePublicAccess(
+              pageId,
+              permissionData.permission as 'viewer' | 'commenter',
+              req.user?.id
+            )
+          : await storage.addPagePermission(permissionData);
+      // The grantee's open sessions (every member of a granted team) check again now
+      await notifyGrantChanged(storage, permissionData);
+      if (permissionData.entityType === 'public') await notifyPublicAccessChanged(pageId);
       res.status(201).json(permission);
     } catch (error) {
       res.status(400).json(failureBody('Invalid permission data', error));
@@ -2514,7 +2542,8 @@ export async function registerRoutes(
     authMiddleware,
     async (req: AuthRequest, res) => {
       try {
-        const pageId = parseInt(req.params.id);
+        const pageId = parsePageIdParam(req.params.id);
+        if (pageId === null) return res.status(404).json({ message: 'Page not found' });
         const permissionId = parseInt(req.params.permissionId);
 
         // Check if user has owner permission to manage permissions
@@ -2524,10 +2553,26 @@ export async function registerRoutes(
         }
 
         // Only a permission of this page: owning one page grants nothing on another
-        const deleted = await storage.removePagePermission(pageId, permissionId);
+        // (read first, only to know whom to tell; failing to read never blocks the removal)
+        let existing: PagePermission | undefined;
+        try {
+          existing = (await storage.getPagePermissions(pageId))?.find(
+            (grant: PagePermission) => grant.id === permissionId
+          );
+        } catch {
+          existing = undefined;
+        }
+        // Removing a public row removes every public row of the page
+        const deleted =
+          existing?.entityType === 'public'
+            ? (await storage.setPagePublicAccess(pageId, null), true)
+            : await storage.removePagePermission(pageId, permissionId);
         if (!deleted) {
           return res.status(404).json({ message: 'Permission not found' });
         }
+        // The removed grantee's open sessions (every member of a removed team) check again now
+        if (existing) await notifyGrantChanged(storage, existing);
+        if (existing?.entityType === 'public') await notifyPublicAccessChanged(pageId);
 
         res.json({ message: 'Permission removed successfully' });
       } catch (error) {
@@ -2538,85 +2583,92 @@ export async function registerRoutes(
 
   // ==================== Public Links API ====================
 
+  // Share links are managed by the owner of the page in the path, and only through that page
+  const requireShareOwner = pageOwnerGate(storage);
+
   // Get all public links for a page
-  app.get('/api/pages/:id/share', authMiddleware, async (req: AuthRequest, res) => {
-    try {
-      const pageId = parseInt(req.params.id);
+  app.get(
+    '/api/pages/:id/share',
+    authMiddleware,
+    requireShareOwner,
+    async (req: AuthRequest, res) => {
+      try {
+        const pageId = checkedPageId(res);
 
-      // Check if user has owner or editor permission
-      const hasPermission = await storage.checkPagePermission(req.user?.id, pageId, 'editor');
-      if (!hasPermission) {
-        return res.status(403).json({ message: 'Insufficient permissions to view share links' });
+        // The password hash never leaves the server: the answer says whether a link has one
+        const links = await storage.getPagePublicLinks(pageId);
+        res.json(links.map(toShareLink));
+      } catch (error) {
+        res.status(500).json(failureBody('Failed to get share links', error));
       }
-
-      const links = await storage.getPagePublicLinks(pageId);
-      res.json(links);
-    } catch (error) {
-      res.status(500).json(failureBody('Failed to get share links', error));
     }
-  });
+  );
 
   // Create a public link for a page
-  app.post('/api/pages/:id/share', authMiddleware, async (req: AuthRequest, res) => {
-    try {
-      const pageId = parseInt(req.params.id);
+  app.post(
+    '/api/pages/:id/share',
+    authMiddleware,
+    requireShareOwner,
+    async (req: AuthRequest, res) => {
+      try {
+        const pageId = checkedPageId(res);
 
-      // Check if user has editor or owner permission
-      const hasPermission = await storage.checkPagePermission(req.user?.id, pageId, 'editor');
-      if (!hasPermission) {
-        return res.status(403).json({ message: 'Insufficient permissions to create share links' });
+        // A public link, like a public grant, carries viewer or commenter at most
+        const linkPermission = req.body.permission ?? 'viewer';
+        if (!(PUBLIC_GRANT_LEVELS as readonly string[]).includes(linkPermission)) {
+          return res.status(400).json({ message: 'Invalid permission data' });
+        }
+
+        // Generate random token
+        const token = storage.generatePublicLinkToken();
+
+        // Hash password if provided
+        let hashedPassword: string | undefined;
+        if (req.body.password) {
+          hashedPassword = await bcrypt.hash(req.body.password, 10);
+        }
+
+        const linkData = {
+          pageId,
+          token,
+          password: hashedPassword,
+          permission: linkPermission,
+          expiresAt: req.body.expiresAt ? new Date(req.body.expiresAt) : undefined,
+          createdBy: req.user?.id,
+        };
+
+        const link = await storage.createPublicLink(linkData);
+
+        // Don't send password hash to client
+        res.status(201).json(toShareLink(link));
+      } catch (error) {
+        res.status(400).json(failureBody('Failed to create share link', error));
       }
-
-      // Generate random token
-      const token = storage.generatePublicLinkToken();
-
-      // Hash password if provided
-      let hashedPassword: string | undefined;
-      if (req.body.password) {
-        hashedPassword = await bcrypt.hash(req.body.password, 10);
-      }
-
-      const linkData = {
-        pageId,
-        token,
-        password: hashedPassword,
-        permission: req.body.permission || 'viewer',
-        expiresAt: req.body.expiresAt ? new Date(req.body.expiresAt) : undefined,
-        createdBy: req.user?.id,
-      };
-
-      const link = await storage.createPublicLink(linkData);
-
-      // Don't send password hash to client
-      const { password, ...publicLink } = link;
-      res.status(201).json(publicLink);
-    } catch (error) {
-      res.status(400).json(failureBody('Failed to create share link', error));
     }
-  });
+  );
 
   // Delete a public link
-  app.delete('/api/pages/:id/share/:token', authMiddleware, async (req: AuthRequest, res) => {
-    try {
-      const pageId = parseInt(req.params.id);
-      const token = req.params.token;
+  app.delete(
+    '/api/pages/:id/share/:token',
+    authMiddleware,
+    requireShareOwner,
+    async (req: AuthRequest, res) => {
+      try {
+        const pageId = checkedPageId(res);
+        const token = req.params.token;
 
-      // Check if user has editor or owner permission
-      const hasPermission = await storage.checkPagePermission(req.user?.id, pageId, 'editor');
-      if (!hasPermission) {
-        return res.status(403).json({ message: 'Insufficient permissions to delete share links' });
+        // Only a link of the page in the path, and only by an owner of that page
+        const deleted = await storage.deletePublicLinkForPage(pageId, token);
+        if (!deleted) {
+          return res.status(404).json({ message: 'Share link not found' });
+        }
+
+        res.json({ message: 'Share link deleted successfully' });
+      } catch (error) {
+        res.status(500).json(failureBody('Failed to delete share link', error));
       }
-
-      const deleted = await storage.deletePublicLinkByToken(token);
-      if (!deleted) {
-        return res.status(404).json({ message: 'Share link not found' });
-      }
-
-      res.json({ message: 'Share link deleted successfully' });
-    } catch (error) {
-      res.status(500).json(failureBody('Failed to delete share link', error));
     }
-  });
+  );
 
   // Access a page via public link
   app.get('/api/share/:token', async (req, res) => {
@@ -2628,7 +2680,10 @@ export async function registerRoutes(
       const verification = await storage.verifyPublicLink(token, password);
 
       if (!verification.valid) {
-        return res.status(403).json({ message: verification.error });
+        return res.status(verification.notFound ? 404 : 403).json({
+          message: verification.error,
+          ...(verification.expired && { code: 'link_expired' }),
+        });
       }
 
       const link = verification.link!;
@@ -2642,7 +2697,7 @@ export async function registerRoutes(
       // Return page with permission level
       res.json({
         page,
-        permission: link.permission,
+        permission: effectivePublicLevel(link.permission) ?? 'viewer',
         isPublicLink: true,
       });
     } catch (error) {
@@ -2659,10 +2714,17 @@ export async function registerRoutes(
       const verification = await storage.verifyPublicLink(token, password);
 
       if (!verification.valid) {
-        return res.status(403).json({ valid: false, message: verification.error });
+        return res.status(verification.notFound ? 404 : 403).json({
+          valid: false,
+          message: verification.error,
+          ...(verification.expired && { code: 'link_expired' }),
+        });
       }
 
-      res.json({ valid: true, permission: verification.link?.permission });
+      res.json({
+        valid: true,
+        permission: effectivePublicLevel(verification.link?.permission) ?? 'viewer',
+      });
     } catch (error) {
       res.status(500).json({ valid: false, message: 'Verification failed' });
     }

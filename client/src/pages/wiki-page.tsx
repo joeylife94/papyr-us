@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TableOfContents } from '@/components/layout/table-of-contents';
 import { Comments } from '@/components/wiki/comments';
+import { PageShareControl } from '@/components/permissions/page-share-control';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useOrganization } from '@/hooks/useOrganization';
@@ -35,7 +36,7 @@ import { getUserId, getUserName } from '@/lib/user';
 import { jsonEqual } from '@shared/json-equal';
 import { formatDistanceToNow } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { Share, User, Clock, Calendar, AlertTriangle, Sparkles, Trash2 } from 'lucide-react';
+import { User, Clock, Calendar, AlertTriangle, Sparkles, Trash2 } from 'lucide-react';
 import {
   readPageCover,
   type Block,
@@ -95,6 +96,9 @@ export default function WikiPageView() {
   const { data: access, isLoading: accessLoading } = useQuery<{ canEdit: boolean }>({
     queryKey: [`/api/pages/${page?.id}/access`],
     enabled: !!page?.id,
+    // A change of this account's level (a new editor, a downgrade) shows without a reload
+    staleTime: 0,
+    refetchInterval: 30_000,
   });
   const canEdit = !!access?.canEdit;
 
@@ -273,15 +277,7 @@ export default function WikiPageView() {
         </Button>
       )}
       <div className="ml-auto flex items-center gap-1">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={handleShare}
-          title="링크 공유"
-          aria-label="링크 공유"
-        >
-          <Share className="h-4 w-4" />
-        </Button>
+        <PageShareControl pageId={page.id} pageTitle={page.title} onCopyLink={handleShare} />
         <Button
           variant="ghost"
           size="icon"

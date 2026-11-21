@@ -938,6 +938,37 @@ describe('reader resolution is a fixed number of queries and agrees with checkPa
         ],
       }),
       await makePage({ grants: [['public', null, 'viewer']] }),
+      // A public grant above commenter is honoured as viewer: it reads, like any public grant
+      await makePage({ grants: [['public', null, 'commenter']] }),
+      await makePage({ grants: [['public', null, 'editor']] }),
+      await makePage({ grants: [['public', null, 'owner']] }),
+      await makePage({ teamId: team, grants: [['public', null, 'editor']] }),
+      await makePage({ grants: [['public', null, 'bogus']] }),
+      // Several public rows: the strongest honoured level decides, whatever the row order
+      await makePage({
+        grants: [
+          ['public', null, 'bogus'],
+          ['public', null, 'viewer'],
+        ],
+      }),
+      await makePage({
+        grants: [
+          ['public', null, 'viewer'],
+          ['public', null, 'bogus'],
+        ],
+      }),
+      await makePage({
+        grants: [
+          ['public', null, 'owner'],
+          ['public', null, 'commenter'],
+        ],
+      }),
+      await makePage({
+        grants: [
+          ['public', 7, 'bogus'],
+          ['public', null, 'viewer'],
+        ],
+      }),
       await makePage({
         grants: [
           ['public', null, 'bogus'],
@@ -982,6 +1013,14 @@ describe('reader resolution is a fixed number of queries and agrees with checkPa
         expect(readers.has(person.id), `${person.email} on page ${page.id}`).toBe(
           Boolean(expected)
         );
+        if (members) {
+          // The SQL form used by the page lists and by-id reads says the same
+          const viewer = await storage.getPageViewer(person.id);
+          expect(
+            (await storage.resolveReadablePageLinks(viewer, [page.id])).length === 1,
+            `readableBy: ${person.email} on page ${page.id}`
+          ).toBe(Boolean(expected));
+        }
       }
     }
   });

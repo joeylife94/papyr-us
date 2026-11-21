@@ -6,7 +6,7 @@ import { savePage, storagePageSaveStore } from './page-save.js';
 import { markdownToBlocks } from '../../shared/block-markdown.js';
 import { verifyAccessToken } from '../auth-tokens.js';
 import { config } from '../config.js';
-import { onPageAccessChanged } from './page-access-events.js';
+import { onPageAccessChanged, onPageGrantsChanged } from './page-access-events.js';
 
 /**
  * Collaboration robustness (Phase 3)
@@ -385,30 +385,58 @@ export class YjsCollaborationManager {
     for (const socket of this.namespace.sockets.values()) {
       const documentId = this.socketDocuments.get(socket.id);
       if (Number(socket.data.userId) !== userId || !documentId) continue;
-      const parsed = parseDocumentId(documentId);
-      if (!parsed.ok) continue;
-      const stillJoined = () => this.socketDocuments.get(socket.id) === documentId;
-
-      const canRead = await this.storage.checkPagePermission(userId, parsed.pageId, 'viewer');
-      if (!stillJoined()) continue;
-      if (!canRead) {
-        this.detachSocketFromDocument(socket, documentId);
-        socket.data.documentId = undefined;
-        socket.data.pageId = undefined;
-        socket.data.userPermission = null;
-        socket.data.canEdit = false;
-        socket.emit('yjs:error', {
-          message: 'Your access to this page has been revoked.',
-          code: 'ACCESS_REVOKED',
-        });
-        continue;
-      }
-
-      const permission = await this.storage.getUserPagePermission(userId, parsed.pageId);
-      if (!stillJoined()) continue;
-      socket.data.userPermission = permission;
-      socket.data.canEdit = permission === 'owner' || permission === 'editor';
+      await this.revalidateSocket(socket, documentId, userId);
     }
+  }
+
+  /**
+   * The same check for every socket on one page, whoever it belongs to (a page's public access
+   * changed, which names no account). A socket without an account is checked as signed out.
+   */
+  async revalidatePageAccess(pageId: number): Promise<void> {
+    for (const socket of this.namespace.sockets.values()) {
+      const documentId = this.socketDocuments.get(socket.id);
+      if (!documentId) continue;
+      const parsed = parseDocumentId(documentId);
+      if (!parsed.ok || parsed.pageId !== pageId) continue;
+      const userId = Number(socket.data.userId);
+      await this.revalidateSocket(
+        socket,
+        documentId,
+        Number.isInteger(userId) && userId > 0 ? userId : undefined
+      );
+    }
+  }
+
+  private async revalidateSocket(
+    socket: Socket,
+    documentId: string,
+    userId: number | undefined
+  ): Promise<void> {
+    const parsed = parseDocumentId(documentId);
+    if (!parsed.ok) return;
+    const stillJoined = () => this.socketDocuments.get(socket.id) === documentId;
+
+    const canRead = await this.storage.checkPagePermission(userId, parsed.pageId, 'viewer');
+    if (!stillJoined()) return;
+    if (!canRead) {
+      this.detachSocketFromDocument(socket, documentId);
+      socket.data.documentId = undefined;
+      socket.data.pageId = undefined;
+      socket.data.userPermission = null;
+      socket.data.canEdit = false;
+      socket.emit('yjs:error', {
+        message: 'Your access to this page has been revoked.',
+        code: 'ACCESS_REVOKED',
+      });
+      return;
+    }
+
+    const permission =
+      userId === undefined ? null : await this.storage.getUserPagePermission(userId, parsed.pageId);
+    if (!stillJoined()) return;
+    socket.data.userPermission = permission;
+    socket.data.canEdit = permission === 'owner' || permission === 'editor';
   }
 
   leaveDocument(socket: Socket): void {
@@ -591,6 +619,7 @@ export function setupYjsCollaboration(io: SocketIOServer, storage: DBStorage) {
   yjsManager = manager;
   // Sessions check page access once at join; check again when a user's access shrinks
   onPageAccessChanged((userId) => manager.revalidateUserAccess(userId));
+  onPageGrantsChanged((pageId) => manager.revalidatePageAccess(pageId));
 
   logger.info('Yjs collaboration server initialized', {
     saveDebounceMs: cfg.saveDebounceMs,

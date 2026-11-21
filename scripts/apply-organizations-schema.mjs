@@ -25,6 +25,8 @@
  *   (`members`) rows gave into team_members rows, once, and records them.
  * - drizzle/0029_add_organization_invitations.sql (#124 X1d): adds organization_invitations
  *   (token hashes only); its down file refuses while an invitation is pending.
+ * - drizzle/0030_report_public_grant_levels.sql (WP4): changes nothing; reports how many public
+ *   grants above commenter exist (they are honoured as viewer).
  *
  * All add their columns and constraints under the names push expects, so push then has nothing
  * left to change. All are idempotent, so running this on every deploy is safe.
@@ -63,6 +65,7 @@ const MIGRATIONS = [
   '0027_add_page_creator',
   '0028_convert_roster_team_access',
   '0029_add_organization_invitations',
+  '0030_report_public_grant_levels',
 ];
 const sqlPaths = (down ? [...MIGRATIONS].reverse() : MIGRATIONS).map((name) =>
   fileURLToPath(new URL(`../drizzle/${name}${down ? '.down' : ''}.sql`, import.meta.url))
@@ -90,7 +93,7 @@ if (!allowRemote && !LOCAL_HOSTS.has(host)) {
 const client = new pg.Client({ connectionString: databaseUrl });
 // Migrations tell the operator what they did or left undone with NOTICE messages that start with
 // their four-digit number (for example "0026 notifications: 4 assigned ...", "0027: 6 page(s) got
-// a creator ..." or "0028: converted 3 directory row(s) ..."). Those are printed; every other
+// a creator ..." or "0028: converted 3 directory row(s) ..." or "0030 public grants: 2 above commenter ..."). Those are printed; every other
 // notice (the "already exists, skipping" of the idempotent files) stays quiet.
 client.on('notice', (notice) => {
   if (/^\d{4}[ :]/.test(notice.message)) console.log(`${label} ${notice.message}`);
