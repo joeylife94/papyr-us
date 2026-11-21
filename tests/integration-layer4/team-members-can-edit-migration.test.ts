@@ -23,6 +23,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { Pool } from 'pg';
+import { getTableConfig } from 'drizzle-orm/pg-core';
+import { teams } from '../../shared/schema';
 import { addOrganizations } from './organizations-fixture';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -399,6 +401,36 @@ describe('0031 up', () => {
     const notices = await run(UP, fresh);
     expect(notices.filter((message) => message.startsWith('0031'))).toEqual([]);
     expect(await rows(`SELECT to_regclass('teams') AS t`, [], fresh)).toEqual([{ t: null }]);
+  });
+});
+
+describe('the default of the column stays false', () => {
+  it('the schema definition is NOT NULL with default false (a push of a default true would turn every existing team on)', () => {
+    const column = getTableConfig(teams).columns.find((c) => c.name === 'members_can_edit');
+    expect(column).toBeDefined();
+    expect(column!.notNull).toBe(true);
+    expect(column!.hasDefault).toBe(true);
+    expect(column!.default).toBe(false);
+  });
+
+  it('the migration warns when the existing column has another default, and stays quiet otherwise', async () => {
+    await seedTeams();
+    await scoped.query(
+      `ALTER TABLE teams ADD COLUMN members_can_edit boolean DEFAULT false NOT NULL`
+    );
+    const quiet = await run(UP);
+    expect(quiet.filter((m) => m.includes('WARNING'))).toEqual([]);
+    await scoped.query(`ALTER TABLE teams ALTER COLUMN members_can_edit SET DEFAULT true`);
+    const warned = await run(UP);
+    expect(warned.filter((m) => m.startsWith('0031') && m.includes('WARNING'))).toEqual([
+      expect.stringMatching(/default true instead of false/),
+    ]);
+    expect(await flags()).toEqual([
+      'alpha:false',
+      'beta:false',
+      'retired:false',
+      'acme-team:false',
+    ]);
   });
 });
 

@@ -4200,6 +4200,11 @@ export async function registerRoutes(
         // "Members can edit team pages" is changed under the team's lock, which reads the
         // caller's role again; the other fields are written as before.
         const { membersCanEdit, ...otherFields } = parsed.data;
+        // The setting is changed on its own: a body that carries it carries nothing else, so a
+        // refused or failed second write can never leave the setting changed
+        if (membersCanEdit !== undefined && Object.keys(otherFields).length > 0) {
+          return res.status(400).json({ error: 'Invalid team data' });
+        }
         let team: Team | undefined;
         if (membersCanEdit !== undefined) {
           const result = await storage.setTeamMembersCanEdit(id, userId, membersCanEdit);

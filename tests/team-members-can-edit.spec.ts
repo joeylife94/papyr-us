@@ -165,7 +165,7 @@ test.describe('Members can edit team pages', () => {
         '멤버가 팀 페이지를 편집할 수 있음'
       );
       await expect(ownerPage.getByTestId('team-members-can-edit-meaning')).toContainText(
-        '편집할 수 있습니다'
+        '문서 공유(접근 관리)와 문서 삭제는 할 수 없습니다'
       );
       await ownerPage.goto(`/page/${slug}`);
       await ownerPage.getByTestId('page-share-button').click();

@@ -23,6 +23,7 @@ DO $$
 DECLARE
   affected integer;
   turned_on integer;
+  column_default text;
 BEGIN
   IF to_regclass('teams') IS NULL THEN
     RETURN;
@@ -36,6 +37,15 @@ BEGIN
       INTO turned_on, affected FROM teams;
     RAISE NOTICE '0031 members_can_edit: the column already exists, nothing changed (% team(s) have it on, % off)',
       turned_on, affected;
+    -- The default must stay false: a column created with default true (a schema push of a changed
+    -- definition) turns every team that existed then on. Nothing is changed here; say so.
+    SELECT pg_get_expr(d.adbin, d.adrelid) INTO column_default
+      FROM pg_attrdef d JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+     WHERE d.adrelid = to_regclass('teams') AND a.attname = 'members_can_edit';
+    IF column_default IS DISTINCT FROM 'false' THEN
+      RAISE NOTICE '0031 WARNING: teams.members_can_edit has the default % instead of false; teams created without the column set are on, and teams that existed when the column was added with that default may have been turned on. Check shared/schema.ts and the teams table.',
+        COALESCE(column_default, 'none');
+    END IF;
     RETURN;
   END IF;
 

@@ -618,22 +618,24 @@ describe('Team Management API', () => {
       expect(storage.updateTeam).not.toHaveBeenCalled();
     });
 
-    it('together with other fields: the setting goes through the lock, the other fields through updateTeam, and the answer is the team as it is now', async () => {
-      (storage.getUserTeamRole as vi.Mock).mockResolvedValue('owner');
-      (storage.setTeamMembersCanEdit as vi.Mock).mockResolvedValue(answer(true));
-      (storage.updateTeam as vi.Mock).mockResolvedValue({
-        ...mockTeam,
-        displayName: 'Renamed',
-        membersCanEdit: true,
-        password: '$2a$10$hash',
+    for (const enforce of [true, false]) {
+      it(`a body that carries the setting and anything else is 400 and nothing is written, with ENFORCE_AUTH_WRITES=${enforce}`, async () => {
+        mockConfig.enforceAuthForWrites = enforce;
+        (storage.getUserTeamRole as vi.Mock).mockResolvedValue('owner');
+        for (const body of [
+          { membersCanEdit: true, displayName: 'Renamed' },
+          { membersCanEdit: false, name: 'taken-name' },
+          { membersCanEdit: true, description: 'x' },
+        ]) {
+          const res = await put(body);
+          expect(res.status).toBe(400);
+          expect(res.body).toEqual({ error: 'Invalid team data' });
+        }
+        expect(storage.setTeamMembersCanEdit).not.toHaveBeenCalled();
+        expect(storage.updateTeam).not.toHaveBeenCalled();
+        expect(notified).toEqual([]);
       });
-      const res = await put({ membersCanEdit: true, displayName: 'Renamed' });
-      expect(res.status).toBe(200);
-      expect(storage.setTeamMembersCanEdit).toHaveBeenCalledWith(mockTeam.id, 7, true);
-      expect(storage.updateTeam).toHaveBeenCalledWith(mockTeam.id, { displayName: 'Renamed' });
-      expect(res.body).toMatchObject({ displayName: 'Renamed', membersCanEdit: true });
-      expect(res.body).not.toHaveProperty('password');
-    });
+    }
 
     it('a body without the setting never reaches the lock method', async () => {
       (storage.getUserTeamRole as vi.Mock).mockResolvedValue('owner');
