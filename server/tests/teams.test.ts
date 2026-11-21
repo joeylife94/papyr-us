@@ -377,7 +377,7 @@ describe('Team Management API', () => {
     const response = await request(app).get('/api/teams');
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual(teams);
+    expect(response.body).toEqual(teams.map((team) => ({ ...team, hasPassword: false })));
   });
 
   it('TC-TEAM-003: should retrieve a single team by ID', async () => {
@@ -386,7 +386,82 @@ describe('Team Management API', () => {
     const response = await request(app).get(`/api/teams/${mockTeam.id}`);
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual(mockTeam);
+    expect(response.body).toEqual({ ...mockTeam, hasPassword: false });
+  });
+
+  describe('team answers carry hasPassword and never the hash', () => {
+    const hash = '$2a$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ012345';
+    const locked = { ...mockTeam, id: 3, name: 'locked', password: hash };
+    const open = { ...mockTeam, id: 4, name: 'open', password: null };
+
+    for (const enforce of [true, false]) {
+      it(`GET /api/teams (ENFORCE_AUTH_WRITES=${enforce}): signed in or not`, async () => {
+        mockConfig.enforceAuthForWrites = enforce;
+        (storage.getTeams as vi.Mock).mockResolvedValue([locked, open]);
+        (storage.getUserTeamIds as vi.Mock).mockResolvedValue([3, 4]);
+        const signedIn = await request(app)
+          .get('/api/teams')
+          .set('Authorization', `Bearer ${memberToken}`);
+        expect(signedIn.status).toBe(200);
+        expect(signedIn.body.map((t: any) => [t.id, t.hasPassword])).toEqual([
+          [3, true],
+          [4, false],
+        ]);
+        expect(JSON.stringify(signedIn.body)).not.toContain('$2a$');
+        for (const team of signedIn.body) expect(team).not.toHaveProperty('password');
+        if (!enforce) {
+          const anonymous = await request(app).get('/api/teams');
+          expect(anonymous.status).toBe(200);
+          expect(anonymous.body.map((t: any) => t.hasPassword)).toEqual([true, false]);
+          expect(JSON.stringify(anonymous.body)).not.toContain('$2a$');
+        }
+        mockConfig.enforceAuthForWrites = false;
+      });
+
+      it(`GET /api/teams/:id (ENFORCE_AUTH_WRITES=${enforce})`, async () => {
+        mockConfig.enforceAuthForWrites = enforce;
+        (storage.getUserTeamIds as vi.Mock).mockResolvedValue([3, 4]);
+        (storage.getTeam as vi.Mock).mockImplementation(async (id: number) =>
+          id === 3 ? locked : open
+        );
+        const one = await request(app)
+          .get('/api/teams/3')
+          .set('Authorization', `Bearer ${memberToken}`);
+        expect(one.status).toBe(200);
+        expect(one.body).toMatchObject({ id: 3, name: 'locked', hasPassword: true });
+        expect(one.body).not.toHaveProperty('password');
+        const two = await request(app)
+          .get('/api/teams/4')
+          .set('Authorization', `Bearer ${memberToken}`);
+        expect(two.body).toMatchObject({ id: 4, hasPassword: false });
+        expect(JSON.stringify([one.body, two.body])).not.toContain('$2a$');
+        mockConfig.enforceAuthForWrites = false;
+      });
+    }
+
+    it('the created and the updated team say hasPassword too', async () => {
+      (storage.createTeamWithOwner as vi.Mock).mockImplementation(async (team: any) => ({
+        id: 5,
+        ...team,
+        password: hash,
+      }));
+      const created = await request(app)
+        .post('/api/teams')
+        .set('Authorization', `Bearer ${memberToken}`)
+        .send({ displayName: 'Locked', password: 'secret' });
+      expect(created.status).toBe(201);
+      expect(created.body.hasPassword).toBe(true);
+      expect(created.body).not.toHaveProperty('password');
+
+      (storage.getUserTeamRole as vi.Mock).mockResolvedValue('owner');
+      (storage.updateTeam as vi.Mock).mockResolvedValue({ ...open, displayName: 'Renamed' });
+      const updated = await request(app)
+        .put('/api/teams/4')
+        .set('Authorization', `Bearer ${memberToken}`)
+        .send({ displayName: 'Renamed' });
+      expect(updated.body.hasPassword).toBe(false);
+      expect(updated.body).not.toHaveProperty('password');
+    });
   });
 
   it('TC-TEAM-004: should verify team password successfully', async () => {
@@ -422,7 +497,7 @@ describe('Team Management API', () => {
       .send(updateData);
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual(updatedTeam);
+    expect(response.body).toEqual({ ...updatedTeam, hasPassword: false });
     expect(storage.updateTeam).toHaveBeenCalledWith(mockTeam.id, updateData);
   });
 

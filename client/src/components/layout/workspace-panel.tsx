@@ -28,6 +28,7 @@ import { VaultMenu } from '@/components/vault/vault-menu';
 import { useShellNav } from './shell-nav';
 import { PageTree } from './page-tree';
 import { resolvePageTeamId } from '@/lib/page-team-scope';
+import { needsTeamPassword } from '@/lib/team-password';
 
 interface WorkspacePanelProps {
   searchQuery: string;
@@ -99,7 +100,7 @@ export function WorkspacePanel({
   const toggle = (key: string) => setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
 
   const handleTeamClick = (team: any) => {
-    if (team.password && !verifiedTeams.includes(team.name)) {
+    if (needsTeamPassword(team, verifiedTeams)) {
       setPasswordPrompt({ teamName: team.name, teamId: team.id });
     } else {
       toggle(`team-${team.id}`);

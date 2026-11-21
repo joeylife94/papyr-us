@@ -235,10 +235,15 @@ function pageCreatorUnavailable(res: Response) {
 
 // A team to create: the display name is required and bounded; the URL name is optional (the
 // server makes one when it is missing or held). The organization is never taken from the request.
-/** A team as answered to a caller: never with its password hash. */
-function withoutPassword<T extends { password?: unknown }>(team: T): Omit<T, 'password'> {
-  const { password: _password, ...rest } = team;
-  return rest;
+/**
+ * A team as answered to a caller: never with its password hash, and with `hasPassword` saying
+ * whether one is set (the sidebar asks for the team's password from it).
+ */
+function teamAnswer<T extends { password?: unknown }>(
+  team: T
+): Omit<T, 'password'> & { hasPassword: boolean } {
+  const { password, ...rest } = team;
+  return { ...rest, hasPassword: typeof password === 'string' && password !== '' };
 }
 
 const createTeamSchema = insertTeamSchema.omit({ membersCanEdit: true }).extend({
@@ -4095,12 +4100,12 @@ export async function registerRoutes(
           const userTeamIds = await storage.getUserTeamIds(req.user.id);
           const allTeams = await storage.getTeams();
           const userTeams = allTeams.filter((t) => userTeamIds.includes(t.id));
-          return res.json(userTeams);
+          return res.json(userTeams.map(teamAnswer));
         }
         // If auth not enforced (dev mode), return all
         if (!config.enforceAuthForWrites) {
           const teams = await storage.getTeams();
-          return res.json(teams);
+          return res.json(teams.map(teamAnswer));
         }
         return res.status(401).json({ error: 'Authentication required' });
       } catch (error) {
@@ -4127,7 +4132,7 @@ export async function registerRoutes(
         if (!team) {
           return res.status(404).json({ error: 'Team not found' });
         }
-        res.json(team);
+        res.json(teamAnswer(team));
       } catch (error) {
         console.error('Error fetching team:', error);
         res.status(500).json({ error: 'Failed to fetch team' });
@@ -4172,7 +4177,7 @@ export async function registerRoutes(
                 : generateTeamUrlName(requestedName ?? rest.displayName);
             try {
               const team = await storage.createTeamWithOwner({ ...rest, name }, creatorUserId);
-              return res.status(201).json(withoutPassword(team));
+              return res.status(201).json(teamAnswer(team));
             } catch (error) {
               const db = postgresErrorOf(error);
               const nameTaken =
@@ -4250,7 +4255,7 @@ export async function registerRoutes(
         if (!team) {
           return res.status(404).json({ error: 'Team not found' });
         }
-        res.json(withoutPassword(team));
+        res.json(teamAnswer(team));
       } catch (error) {
         if (error instanceof TeamBusyError) {
           return res.status(503).json({ error: 'Team is busy, try again' });

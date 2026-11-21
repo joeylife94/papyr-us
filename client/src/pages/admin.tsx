@@ -28,7 +28,8 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
-import { Directory, InsertDirectory, Team, InsertTeam } from '@shared/schema';
+import { Directory, InsertDirectory, Team as TeamRow, InsertTeam } from '@shared/schema';
+import { teamPasswordChange } from '@/lib/team-password';
 import { AdminOrganizationsTab } from '@/components/organization/admin-organizations-tab';
 
 const directoryFormSchema = z.object({
@@ -62,6 +63,9 @@ const teamFormSchema = z.object({
   order: z.number().min(0).default(0),
 });
 
+/** A team as the server answers it: `hasPassword` instead of the stored hash. */
+type Team = Omit<TeamRow, 'password'> & { hasPassword?: boolean };
+
 type DirectoryFormData = z.infer<typeof directoryFormSchema>;
 type TeamFormData = z.infer<typeof teamFormSchema>;
 
@@ -74,6 +78,8 @@ export default function AdminPage() {
   );
   const [editingDirectory, setEditingDirectory] = useState<Directory | null>(null);
   const [editingTeam, setEditingTeam] = useState<Team | null>(null);
+  // Editing a team that has a password: ask for it to be removed (an empty field keeps it)
+  const [removeTeamPassword, setRemoveTeamPassword] = useState(false);
   const [isDirectoryDialogOpen, setIsDirectoryDialogOpen] = useState(false);
   const [isTeamDialogOpen, setIsTeamDialogOpen] = useState(false);
   const { toast } = useToast();
@@ -262,7 +268,7 @@ export default function AdminPage() {
   });
 
   const updateTeamMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: number; data: Partial<Team> }) => {
+    mutationFn: async ({ id, data }: { id: number; data: Partial<InsertTeam> }) => {
       const response = await fetch(`/api/teams/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -334,25 +340,35 @@ export default function AdminPage() {
         });
       }
     } else if (activeTab === 'teams') {
-      const teamData = data as TeamFormData;
+      // The typed password is handled apart: an edited team keeps the stored one (never sent to
+      // this page) unless a new one is typed or its removal is asked for
+      const { password: typedPassword, ...teamFields } = data as TeamFormData;
+      const fields = {
+        ...teamFields,
+        description: teamFields.description || null,
+        icon: teamFields.icon || null,
+        color: teamFields.color || null,
+      };
       if (editingTeam) {
         updateTeamMutation.mutate({
           id: editingTeam.id,
           data: {
-            ...teamData,
-            password: teamData.password || null,
-            description: teamData.description || null,
-            icon: teamData.icon || null,
-            color: teamData.color || null,
+            ...fields,
+            ...teamPasswordChange({
+              typed: typedPassword ?? '',
+              removeRequested: removeTeamPassword,
+              editing: true,
+            }),
           },
         });
       } else {
         createTeamMutation.mutate({
-          ...teamData,
-          password: teamData.password || null,
-          description: teamData.description || null,
-          icon: teamData.icon || null,
-          color: teamData.color || null,
+          ...fields,
+          ...teamPasswordChange({
+            typed: typedPassword ?? '',
+            removeRequested: false,
+            editing: false,
+          }),
         });
       }
     }
@@ -378,11 +394,12 @@ export default function AdminPage() {
 
   const handleEditTeam = (team: Team) => {
     setEditingTeam(team);
+    setRemoveTeamPassword(false);
     teamForm.reset({
       name: team.name,
       displayName: team.displayName,
       description: team.description || '',
-      password: team.password || '',
+      password: '',
       icon: team.icon || '',
       color: team.color || '',
       isActive: team.isActive,
@@ -684,6 +701,7 @@ export default function AdminPage() {
                   <Button
                     onClick={() => {
                       setEditingTeam(null);
+                      setRemoveTeamPassword(false);
                       teamForm.reset();
                     }}
                   >
@@ -751,10 +769,24 @@ export default function AdminPage() {
                             <FormControl>
                               <Input
                                 type="password"
-                                placeholder="Leave empty for no password"
+                                placeholder={
+                                  editingTeam?.hasPassword
+                                    ? 'Leave empty to keep the current password'
+                                    : 'Leave empty for no password'
+                                }
                                 {...field}
                               />
                             </FormControl>
+                            {editingTeam?.hasPassword && (
+                              <label className="flex items-center gap-2 text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={removeTeamPassword}
+                                  onChange={(e) => setRemoveTeamPassword(e.target.checked)}
+                                />
+                                Remove the password
+                              </label>
+                            )}
                             <FormMessage />
                           </FormItem>
                         )}
@@ -885,8 +917,8 @@ export default function AdminPage() {
                     </div>
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">Protected:</span>
-                      <Badge variant={team.password ? 'destructive' : 'secondary'}>
-                        {team.password ? 'Yes' : 'No'}
+                      <Badge variant={team.hasPassword ? 'destructive' : 'secondary'}>
+                        {team.hasPassword ? 'Yes' : 'No'}
                       </Badge>
                     </div>
                     <div className="flex items-center justify-between text-sm">
