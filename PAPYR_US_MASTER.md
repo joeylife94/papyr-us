@@ -4,11 +4,11 @@ aliases: ['PAPYR_US_MASTER', 'Papyr.us v1.0 Master']
 project: 'Papyr.us'
 type: 'project-master'
 status: 'authoritative-contract'
-version: '0.98'
+version: '0.99'
 target: 'v1.0 + D1 frozen baseline; enterprise readiness (Issue #124), one bounded phase per PR'
 current_phase: 'Issue #124 — X0, X1a, X1b and X1c done; X1d next, alongside the collaboration packages of §10'
 priority: 'P1'
-last_updated: '2026-11-20'
+last_updated: '2026-11-21'
 repository: 'joeylife94/papyr-us'
 accepted_product_main_sha: '3b91e18f477e8187c4aa8c21708b6f8cf7b2f2d4'
 accepted_proof_main_sha: '1cb04799a8a1924f7697d12d64f0999dcd591fcc'
@@ -18,7 +18,7 @@ checkpoint_main_sha: 'd2f092b240d5ffe0937dd6d487934e32d5a631f3'
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.98**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.99**  
 > Current repository / Issue / PR / executable evidence overrides historical checkpoints, Scheduled Task prompts, and agent self-report.  
 > The accepted v1.0 product/proof baseline and D1 remain frozen as evidence. Progression after D1 runs as contract Issues under [`AGENTS.md`](AGENTS.md), one bounded phase per PR, and must not rewrite prior accepted evidence or widen buyer-facing claims without a new Proof.
 
@@ -491,3 +491,44 @@ On the integration head (this package on §11's branch), Linux container, local 
 - Any organization member can create a team, becomes its owner, and can then search the organization's accounts by name or email (owner decision; rate limited).
 - The team list and team detail answers still carry the team password hash when a team has one (the sidebar reads it to decide whether to ask); replacing it with a flag needs a client change and is a separate item.
 - The directory can still be written for any email, and a directory row elsewhere still makes an account ineligible as an organization's first owner (`roster_rows`).
+
+## 13. Pages Record the Account That Created Them (2026-11-21)
+
+### Changed
+
+Owner decision (2026-11-19): identity is the account. This is the second identity step under §10 item 6 (mentions and comment notifications need to know who made a page); §11 was the first.
+
+| Area        | What exists now                                                                                                                                                                                                        |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Storage     | `wiki_pages.created_by_user_id`, set by the server from the session on every creating path (new page, duplicate, Markdown import, daily note, vault import); workflow-made pages have none and the author `Automation` |
+| Creation    | a session is required whatever `ENFORCE_AUTH_WRITES` says; an inactive account gets one 403; the account row is read with a share lock inside the creating transaction                                                 |
+| Author text | the account's name; a body's `author` or `createdByUserId` is ignored                                                                                                                                                  |
+| Ownership   | grants and team roles only. The older rule "author text equal to my email makes me owner" applies only to pages without a recorded creator                                                                             |
+| First owner | `authored_pages` is decided by the recorded creator; by the author text only for pages without one                                                                                                                     |
+| Migration   | `0027`: the column, and once per database a creator for pages whose single creation-time self-grant and author text agree; marked with a column comment so it never runs again                                         |
+
+Rules and operator notes are in [`docs/organizations-guide.md`](docs/organizations-guide.md#페이지는-만든-계정을-기록합니다).
+
+Process: one developer package against a brief, three review rounds. The reviews found and the package fixed: a display name could name a stranger as owner through the author-text rule (now limited to pages without a creator), the backfill could name an account that did not create the page (now the author text must agree), a transaction that waited for a second pool connection and hung the process under ten concurrent creates (now resolved before the transaction; proven with thirty), and a backfill that a rename could steer on a later deploy (now runs once).
+
+### Actually Executed
+
+On the integration head (this package on §12's branch), Linux container, local PostgreSQL 16, the container's Chromium:
+
+- `node scripts/verify-contributor.mjs` — **PASS** (developer, on the package head);
+- `CI=true npx vitest run --maxWorkers=2` — 74 files, 1978 tests **PASS**; unit — 54 files, 878 tests **PASS**;
+- Layer 4, whole suite, run directly with `DATABASE_URL` — 34 files, 433 tests **PASS**;
+- browser: `security-page-creator`, `security-page-write-access`, `security-page-reads-scope`, `security-page-duplicate`, `vault-roundtrip`, `security-daily-notes`, `gj02-document-lifecycle`, `gj03-authorization-boundary`, `team-membership-ui`, `notification-bell`, `security-organization-admin` — 37 tests **PASS**; `daily-note` failed in the full run and passed and failed once each alone (§10's known container-browser failure; CI is the reference);
+- the prepare step by execution on copies of real databases with `0026`, `0027` and `0028` together, in deploy order: each printed its line once and nothing on the next run; push after it changed nothing of theirs;
+- reviewer mutations (author-rule guards, backfill predicate, backfill disabled, body author let through, session check skipped, workflow creator, inactive creator, footprint by email) each failed at least one test.
+
+### Not Verified
+
+- the whole `test:gj` list, Layer 5, Layer 6 and Firebat were not run here: CI on the pull request is the reference;
+- the backfill against production-shaped data.
+
+### Known limits
+
+- A creator of an older page made through the daily-note, duplicate, import or vault paths, whose owner grant was lowered or removed after the backfill, now holds only what the grant says (before, the email in the author text kept them owner). Accepted: grants decide.
+- Older editor-made pages without a recorded creator keep the author-text rule; a display name that equals another account's email can still name that account owner of such a page. Retiring the rule needs those pages' ownership turned into grants first: an owner decision.
+- `node scripts/apply-organizations-schema.mjs --down` refuses once a creator was recorded that `0027` would not compute again (any page made after the upgrade, a renamed creator): in practice the down path is usable only right after the upgrade.

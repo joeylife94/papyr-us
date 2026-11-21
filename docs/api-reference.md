@@ -140,6 +140,15 @@
 
 ---
 
+## 페이지 작성 계정
+
+- `POST /api/pages`, `POST /api/pages/:id/duplicate`, Markdown 가져오기는 `ENFORCE_AUTH_WRITES`와 무관하게 로그인이 필요합니다(401). 비활성 계정은 403 `This account cannot create pages`입니다.
+- 만든 페이지의 `author`는 만든 계정의 이름이고 `createdByUserId`는 그 계정 번호입니다. 본문의 `author`, `createdByUserId`는 무시합니다.
+- 페이지를 돌려주는 모든 응답에 `createdByUserId`(번호 또는 `null`)가 들어 있습니다. 접근 권한은 이 값으로 정해지지 않습니다.
+- 규칙은 [organizations-guide.md](organizations-guide.md#페이지는-만든-계정을-기록합니다)에 있습니다.
+
+---
+
 ## 팀 (Teams)
 
 | Method | Endpoint            | Auth        | Description      |
