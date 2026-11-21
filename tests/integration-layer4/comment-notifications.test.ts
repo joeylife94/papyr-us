@@ -938,6 +938,12 @@ describe('reader resolution is a fixed number of queries and agrees with checkPa
         ],
       }),
       await makePage({ grants: [['public', null, 'viewer']] }),
+      // A public grant above commenter is honoured as viewer: it reads, like any public grant
+      await makePage({ grants: [['public', null, 'commenter']] }),
+      await makePage({ grants: [['public', null, 'editor']] }),
+      await makePage({ grants: [['public', null, 'owner']] }),
+      await makePage({ teamId: team, grants: [['public', null, 'editor']] }),
+      await makePage({ grants: [['public', null, 'bogus']] }),
       await makePage({
         grants: [
           ['public', null, 'bogus'],

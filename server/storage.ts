@@ -109,6 +109,13 @@ import {
 import { isReservedDailyNoteSlug } from '../shared/daily-notes.js';
 import { TEAM_CANDIDATE_LIMIT, TEAM_CANDIDATE_MIN_QUERY_LENGTH } from '../shared/team-members.js';
 import {
+  SHARE_CANDIDATE_LIMIT,
+  SHARE_CANDIDATE_MIN_QUERY_LENGTH,
+  effectivePublicLevel,
+  isPermissionLevel,
+  type PageSharingView,
+} from '../shared/page-sharing.js';
+import {
   DATABASE_LIMITS,
   checkRowData,
   databaseBlockSchemaIds,
@@ -1050,7 +1057,8 @@ export class DBStorage {
   /**
    * SQL form of `checkPagePermission(viewer, page, 'viewer')`, for listings that must never
    * reveal a page GET /api/pages/:id would refuse:
-   * - any page with a public grant;
+   * - any page with a public grant of one of the four levels (a public grant is honoured as
+   *   viewer or commenter at most, so every one of them reads: effectivePublicLevel);
    * - otherwise only pages of the viewer's own organization (issue #124 X1), and among those:
    *   - team pages: current members of the team, or a grant to one of the viewer's teams;
    *     authorship and user grants need membership, so they add nothing here;
@@ -2135,8 +2143,11 @@ export class DBStorage {
     const levels: Record<string, number> = { viewer: 1, commenter: 2, editor: 3, owner: 4 };
     const reads = (permission: string) => (levels[permission] ?? 0) >= levels.viewer;
     const pageTeamId = page.teamId ? Number(page.teamId) : null;
+    // A public grant reads at the level it is honoured as (effectivePublicLevel), which is
+    // viewer or more for every stored level that is one of the four.
     const publicGrant = grants.find((grant) => grant.entityType === 'public');
-    const everyone = publicGrant !== undefined && reads(publicGrant.permission);
+    const publicLevel = effectivePublicLevel(publicGrant?.permission);
+    const everyone = publicLevel !== null && reads(publicLevel);
 
     const teamsOf = new Map<number, number[]>();
     if (!everyone && !(grants.length === 0 && pageTeamId === null)) {
@@ -4350,12 +4361,12 @@ export class DBStorage {
     }
     const pageTeamId = page[0].teamId ? Number(page[0].teamId) : null;
 
-    // Check public permissions first: a page shared publicly reads for anyone
+    // Check public permissions first: a page shared publicly reads for anyone. A public grant
+    // carries viewer or commenter at most: a stored editor or owner is honoured as viewer (the
+    // same rule as `readableBy` and `getReadableOrganizationMembers`, see effectivePublicLevel).
     const publicPermission = permissions.find((p: PagePermission) => p.entityType === 'public');
-    if (
-      publicPermission &&
-      permissionLevels[publicPermission.permission as PermissionLevel] >= requiredLevel
-    ) {
+    const publicLevel = effectivePublicLevel(publicPermission?.permission);
+    if (publicLevel !== null && permissionLevels[publicLevel] >= requiredLevel) {
       return true;
     }
 
@@ -4463,6 +4474,261 @@ export class DBStorage {
    */
   async getPagePermissions(pageId: number): Promise<PagePermission[]> {
     return await this.db.select().from(pagePermissions).where(eq(pagePermissions.pageId, pageId));
+  }
+
+  /**
+   * The caller's own level on a page: the highest of owner, editor, commenter and viewer that
+   * `checkPagePermission` grants, or null for no read access and for an unknown page. Public
+   * grants count at the level they are honoured as.
+   */
+  async getPageLevel(userId: number | undefined, pageId: number): Promise<PermissionLevel | null> {
+    const [page] = await this.db
+      .select({ id: wikiPages.id })
+      .from(wikiPages)
+      .where(eq(wikiPages.id, pageId));
+    if (!page) return null;
+    if (!(await this.checkPagePermission(userId, pageId, 'viewer'))) return null;
+    for (const level of ['owner', 'editor', 'commenter'] as const) {
+      if (await this.checkPagePermission(userId, pageId, level)) return level;
+    }
+    return 'viewer';
+  }
+
+  /**
+   * Who has access to a page, by name, for the sharing dialog. Only people and teams of the
+   * page's own organization are named; a grant to an account or team of another organization is
+   * left out. `forManager` (the caller holds owner) adds the row ids, the entity ids and emails
+   * the dialog needs to change or remove a grant, and lists grants to accounts that are no longer
+   * active members (unnamed, so they can be removed). Other callers get names, levels and
+   * `isYou`, never an id or an email. A public grant reads at the level it is honoured as.
+   * Reads only, on the pool; null for an unknown or deleted page.
+   */
+  async getPageSharing(
+    pageId: number,
+    callerId: number,
+    forManager: boolean
+  ): Promise<PageSharingView | null> {
+    const [page] = await this.db
+      .select({
+        organizationId: wikiPages.organizationId,
+        teamId: wikiPages.teamId,
+      })
+      .from(wikiPages)
+      .where(and(eq(wikiPages.id, pageId), isNull(wikiPages.deletedAt)));
+    if (!page) return null;
+    const organizationId = Number(page.organizationId);
+
+    const grants: PagePermission[] = await this.db
+      .select()
+      .from(pagePermissions)
+      .where(eq(pagePermissions.pageId, pageId))
+      .orderBy(asc(pagePermissions.id));
+
+    const userIds = grants
+      .filter((grant) => grant.entityType === 'user' && grant.entityId !== null)
+      .map((grant) => Number(grant.entityId));
+    const teamIds = [
+      ...grants
+        .filter((grant) => grant.entityType === 'team' && grant.entityId !== null)
+        .map((grant) => Number(grant.entityId)),
+      ...(page.teamId ? [Number(page.teamId)] : []),
+    ];
+
+    const people = new Map<
+      number,
+      { name: string; email: string; isActive: boolean; organizationId: number | null }
+    >();
+    if (userIds.length > 0) {
+      const rows = await this.db
+        .select({
+          id: users.id,
+          name: users.name,
+          email: users.email,
+          isActive: users.isActive,
+          organizationId: organizationMembers.organizationId,
+        })
+        .from(users)
+        .leftJoin(organizationMembers, eq(organizationMembers.userId, users.id))
+        .where(inArray(users.id, [...new Set(userIds)]));
+      for (const row of rows) {
+        people.set(Number(row.id), {
+          name: String(row.name),
+          email: String(row.email),
+          isActive: row.isActive === true,
+          organizationId: row.organizationId === null ? null : Number(row.organizationId),
+        });
+      }
+    }
+    const teamNames = new Map<number, { name: string; organizationId: number }>();
+    if (teamIds.length > 0) {
+      const rows = await this.db
+        .select({ id: teams.id, name: teams.displayName, organizationId: teams.organizationId })
+        .from(teams)
+        .where(inArray(teams.id, [...new Set(teamIds)]));
+      for (const row of rows) {
+        teamNames.set(Number(row.id), {
+          name: String(row.name),
+          organizationId: Number(row.organizationId),
+        });
+      }
+    }
+
+    const entries: PageSharingView['entries'] = [];
+    for (const grant of grants) {
+      if (grant.entityType !== 'user' && grant.entityType !== 'team') continue;
+      if (!isPermissionLevel(grant.permission) || grant.entityId === null) continue;
+      const entityId = Number(grant.entityId);
+      if (grant.entityType === 'user') {
+        const person = people.get(entityId);
+        // Another organization's account is not named here: nothing it holds reaches this page
+        if (person && person.organizationId !== null && person.organizationId !== organizationId) {
+          continue;
+        }
+        if (person && person.organizationId === organizationId && person.isActive) {
+          entries.push({
+            entityType: 'user',
+            name: person.name,
+            permission: grant.permission,
+            isYou: entityId === callerId,
+            ...(forManager && { grantId: grant.id, entityId, email: person.email }),
+          });
+        } else if (forManager) {
+          entries.push({
+            entityType: 'user',
+            name: null,
+            permission: grant.permission,
+            isYou: false,
+            former: true,
+            grantId: grant.id,
+          });
+        }
+      } else {
+        const team = teamNames.get(entityId);
+        if (team && team.organizationId !== organizationId) continue;
+        if (team) {
+          entries.push({
+            entityType: 'team',
+            name: team.name,
+            permission: grant.permission,
+            isYou: false,
+            ...(forManager && { grantId: grant.id, entityId }),
+          });
+        } else if (forManager) {
+          entries.push({
+            entityType: 'team',
+            name: null,
+            permission: grant.permission,
+            isYou: false,
+            former: true,
+            grantId: grant.id,
+          });
+        }
+      }
+    }
+    const rank: Record<string, number> = { owner: 4, editor: 3, commenter: 2, viewer: 1 };
+    entries.sort(
+      (a, b) =>
+        rank[b.permission] - rank[a.permission] ||
+        (a.entityType === b.entityType ? 0 : a.entityType === 'user' ? -1 : 1) ||
+        String(a.name ?? '').localeCompare(String(b.name ?? ''))
+    );
+
+    let baseline: PageSharingView['baseline'];
+    if (page.teamId) {
+      baseline = {
+        kind: 'team',
+        name: teamNames.get(Number(page.teamId))?.name ?? '',
+        level: 'viewer',
+      };
+    } else if (grants.length === 0) {
+      baseline = { kind: 'organization', level: 'viewer' };
+    } else {
+      baseline = { kind: 'restricted' };
+    }
+
+    // The first public row decides, as in checkPagePermission
+    const publicGrant = grants.find((grant) => grant.entityType === 'public');
+    const publicLevel = effectivePublicLevel(publicGrant?.permission);
+    const publicAccess: PageSharingView['publicAccess'] =
+      publicGrant && publicLevel
+        ? {
+            level: publicLevel,
+            ...(forManager && {
+              grantId: publicGrant.id,
+              ...(publicGrant.permission !== publicLevel && { storedLevel: publicGrant.permission }),
+            }),
+          }
+        : null;
+
+    return { baseline, publicAccess, entries };
+  }
+
+  /**
+   * The sharing dialog's search: active members and teams of the page's organization whose name
+   * (or, for people, email) contains the search, at least SHARE_CANDIDATE_MIN_QUERY_LENGTH
+   * characters, SHARE_CANDIDATE_LIMIT of each at most, and whether there were more. Never the
+   * caller, and nothing at all when the caller does not belong to the page's organization.
+   * Reads only.
+   */
+  async listPageShareCandidates(
+    pageId: number,
+    callerId: number,
+    query: string
+  ): Promise<{
+    people: Array<{ userId: number; name: string; email: string }>;
+    teams: Array<{ teamId: number; name: string }>;
+    morePeople: boolean;
+    moreTeams: boolean;
+  }> {
+    const empty = { people: [], teams: [], morePeople: false, moreTeams: false };
+    const trimmed = query.trim();
+    if ([...trimmed].length < SHARE_CANDIDATE_MIN_QUERY_LENGTH) return empty;
+    const [page] = await this.db
+      .select({ organizationId: wikiPages.organizationId })
+      .from(wikiPages)
+      .where(and(eq(wikiPages.id, pageId), isNull(wikiPages.deletedAt)));
+    if (!page) return empty;
+    const organizationId = Number(page.organizationId);
+    if ((await this.getUserOrganizationId(callerId)) !== organizationId) return empty;
+
+    const needle = `%${trimmed.replace(/[\\%_]/g, (character) => `\\${character}`)}%`;
+    const peopleResult = await this.db.execute(sql`
+      SELECT u.id, u.name, u.email
+      FROM organization_members om
+      JOIN organizations o ON o.id = om.organization_id
+      JOIN users u ON u.id = om.user_id
+      WHERE om.organization_id = ${organizationId}
+        AND o.is_active = true
+        AND u.is_active = true
+        AND u.id <> ${callerId}
+        AND (u.name ILIKE ${needle} OR u.email ILIKE ${needle})
+      ORDER BY u.name, u.id
+      LIMIT ${SHARE_CANDIDATE_LIMIT + 1}
+    `);
+    const teamResult = await this.db.execute(sql`
+      SELECT t.id, t.display_name
+      FROM teams t
+      WHERE t.organization_id = ${organizationId}
+        AND t.is_active = true
+        AND (t.display_name ILIKE ${needle} OR t.name ILIKE ${needle})
+      ORDER BY t.display_name, t.id
+      LIMIT ${SHARE_CANDIDATE_LIMIT + 1}
+    `);
+    const peopleRows = peopleResult.rows as any[];
+    const teamRows = teamResult.rows as any[];
+    return {
+      people: peopleRows.slice(0, SHARE_CANDIDATE_LIMIT).map((row) => ({
+        userId: Number(row.id),
+        name: String(row.name),
+        email: String(row.email),
+      })),
+      teams: teamRows.slice(0, SHARE_CANDIDATE_LIMIT).map((row) => ({
+        teamId: Number(row.id),
+        name: String(row.display_name),
+      })),
+      morePeople: peopleRows.length > SHARE_CANDIDATE_LIMIT,
+      moreTeams: teamRows.length > SHARE_CANDIDATE_LIMIT,
+    };
   }
 
   /** Whether the user is a current owner or admin of the team (see checkPagePermission). */

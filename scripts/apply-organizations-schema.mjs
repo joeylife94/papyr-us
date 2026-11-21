@@ -60,6 +60,7 @@ const MIGRATIONS = [
   '0026_notifications_to_accounts',
   '0027_add_page_creator',
   '0028_convert_roster_team_access',
+  '0030_report_public_grant_levels',
 ];
 const sqlPaths = (down ? [...MIGRATIONS].reverse() : MIGRATIONS).map((name) =>
   fileURLToPath(new URL(`../drizzle/${name}${down ? '.down' : ''}.sql`, import.meta.url))
@@ -87,7 +88,7 @@ if (!allowRemote && !LOCAL_HOSTS.has(host)) {
 const client = new pg.Client({ connectionString: databaseUrl });
 // Migrations tell the operator what they did or left undone with NOTICE messages that start with
 // their four-digit number (for example "0026 notifications: 4 assigned ...", "0027: 6 page(s) got
-// a creator ..." or "0028: converted 3 directory row(s) ..."). Those are printed; every other
+// a creator ..." or "0028: converted 3 directory row(s) ..." or "0030 public grants: 2 above commenter ..."). Those are printed; every other
 // notice (the "already exists, skipping" of the idempotent files) stays quiet.
 client.on('notice', (notice) => {
   if (/^\d{4}[ :]/.test(notice.message)) console.log(`${label} ${notice.message}`);
