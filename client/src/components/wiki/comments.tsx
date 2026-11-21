@@ -143,12 +143,15 @@ export function Comments({ pageId }: CommentsProps) {
 
   const handleSubmitComment = () => {
     if (!newComment.trim()) return;
-    createCommentMutation.mutate({ content: draftToContent(newComment, newPicked) });
+    createCommentMutation.mutate({ content: draftToContent(newComment, newPicked).trim() });
   };
 
   const handleSubmitReply = (parentId: number) => {
     if (!replyContent.trim()) return;
-    createCommentMutation.mutate({ content: draftToContent(replyContent, replyPicked), parentId });
+    createCommentMutation.mutate({
+      content: draftToContent(replyContent, replyPicked).trim(),
+      parentId,
+    });
   };
 
   const handleEditComment = (comment: Comment) => {
@@ -165,7 +168,7 @@ export function Comments({ pageId }: CommentsProps) {
     if (!editContent.trim() || !editingId) return;
     updateCommentMutation.mutate({
       id: editingId,
-      content: draftToContent(editContent, editPicked),
+      content: draftToContent(editContent, editPicked).trim(),
     });
   };
 
