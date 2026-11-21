@@ -261,7 +261,8 @@ describe('comment notifications', () => {
       expect(storedContent()).toBe('hey @unknown!');
       // Nothing about the target comes back.
       const body = JSON.stringify(res.body);
-      for (const account of Object.values(accounts)) {
+      for (const [accountId, account] of Object.entries(accounts)) {
+        if (Number(accountId) === A) continue; // the commenter's own comment names its author
         expect(body).not.toContain(account.name);
         expect(body).not.toContain(account.email);
       }
