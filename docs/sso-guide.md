@@ -41,6 +41,17 @@ GITHUB_CLIENT_SECRET=xxx
 
 콜백 경로는 서버에 고정되어 있습니다(`/api/auth/google/callback`, `/api/auth/github/callback`). Provider 설정의 콜백 URL은 배포 도메인과 정확히 일치해야 합니다.
 
+### 로그인 요청 확인 (`state`)
+
+- 로그인을 시작할 때마다 서버가 임의의 `state`(32바이트)를 만들어 Provider에 보내고, 같은 값을 `HttpOnly`, `SameSite=Lax`, 10분짜리 쿠키에 둡니다. HTTPS에서는 `__Host-oauth_state`(경로 `/`, `Secure`), 그 밖에는 `oauth_state`(경로 `/api/auth`)입니다.
+- 콜백은 돌아온 `state`가 쿠키와 같을 때만 진행합니다. 없거나 다르면 `/login?error=oauth_state`로 돌아갑니다. 쿠키는 결과와 관계없이 콜백에서 지웁니다.
+- 서버 세션 저장소는 쓰지 않습니다.
+
+### 기존 계정에 로그인
+
+- 이미 있는 계정에는 Provider가 **인증됐다고 표시한** 주소로만 로그인합니다(Google `email_verified`, GitHub 이메일 목록의 verified 항목). 아니면 `/login?error=email_unverified`입니다.
+- 주소는 대소문자까지 같아야 하고, 대소문자만 다른 계정이 있으면 `email_taken`으로 거절합니다(이전과 같음).
+
 ---
 
 ## 토큰과 쿠키
@@ -55,6 +66,7 @@ GITHUB_CLIENT_SECRET=xxx
 - 토큰은 `localStorage`, `sessionStorage`, URL 파라미터에 저장하지 않습니다. 클라이언트는 `credentials: 'include'`로 요청합니다.
 - `SameSite=Lax`는 OAuth 콜백이 IdP에서 오는 cross-site GET 리다이렉트이기 때문에 선택한 값입니다.
 - 플랫폼 관리자 권한은 토큰 안의 값이 아니라, 요청마다 DB의 활성 사용자 이메일이 `ADMIN_EMAILS`에 있는지로 판정합니다([rbac-guide.md](./rbac-guide.md)).
+- 모든 로그인 요청은 토큰의 계정이 지금 활성인지 DB에서 확인합니다. 비활성이거나 없는 계정의 토큰은 로그인하지 않은 것으로 다룹니다(로그인이 필요한 라우트는 401, 실시간 연결 `/collab`·`/yjs`는 연결 거부). 계정을 읽지 못하면 로그인이 필요한 라우트는 500입니다.
 
 ---
 

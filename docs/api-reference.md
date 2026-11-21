@@ -19,6 +19,10 @@
 | PUT    | `/api/auth/profile`         | JWT    | 프로필 업데이트 (name)                     |
 | POST   | `/api/auth/change-password` | JWT    | 비밀번호 변경                              |
 
+- 로그인이 필요한 요청은 토큰의 계정이 지금 활성인지 확인합니다. 비활성이거나 없는 계정의 토큰은 401 `{ message: 'Invalid token' }`이고, 로그인이 선택인 라우트에서는 로그인하지 않은 호출자로 다룹니다.
+- 소셜 로그인 콜백은 시작할 때 만든 `state`가 돌아올 때만 진행하고(`/login?error=oauth_state`), 기존 계정에는 Provider가 인증한 주소로만 로그인합니다(`/login?error=email_unverified`). 자세한 내용은 [sso-guide.md](./sso-guide.md).
+- 공용 횟수 제한(`rlAuth`, `rlAdmin`, `rlUpload`, `rlAI` 등)은 서명이 확인된 access token이면 계정으로, 아니면 요청 주소로 셉니다.
+
 ### 비밀번호 정책
 
 - 최소 8자, 최대 128자
@@ -195,7 +199,8 @@
 
 - `PUT`과 `DELETE`는 `ENFORCE_AUTH_WRITES`와 무관하게 로그인이 필요하고, 팀 역할 검사는 그대로입니다. `PUT`은 정해진 팀 필드만 받으며(그 밖의 키는 무시), 바꿀 필드가 없으면 400 `Invalid team data`입니다(#124 X1c).
 - `POST /api/teams`는 로그인한 조직 구성원이면 누구나 쓸 수 있고, 만든 계정이 소유자가 됩니다. 본문은 `displayName`(1~100자)이 필수이고 `name`은 선택입니다. `name`을 생략하면 서버가 만들고, 요청한 `name`이 이미 있으면 접미사가 붙은 다른 이름으로 만들어집니다(409나 500이 아님). 숫자로 읽히는 `name`은 400 `Invalid team data`입니다. 요청이 너무 잦으면 429입니다.
-- 팀 생성과 수정 응답에는 팀 비밀번호 해시가 들어 있지 않습니다.
+- 팀 응답(`GET /api/teams`, `GET /api/teams/:id`, 생성·수정)에는 비밀번호 해시 대신 `hasPassword: boolean`만 들어 있습니다.
+- `:id`(와 팀 멤버십 라우트의 `:teamId`·`:userId`)는 0으로 시작하지 않는 숫자만, 최대 2147483647입니다. `/api/teams/:id`에서 다른 표기는 404 `{ error: 'Team not found' }`(로그인이 필요한 곳에서는 401이 먼저), 멤버십 라우트에서는 기존 400입니다.
 
 ### 팀 멤버십
 
@@ -385,6 +390,9 @@
 | DELETE | `/api/trash`             | Admin       | 휴지통 비우기 (전체 영구 삭제)    |
 
 > `DELETE /api/pages/:id`는 이제 soft delete로 동작합니다. 페이지의 `deletedAt` 타임스탬프가 설정되며, 일반 조회에서 제외됩니다.
+
+- 휴지통의 페이지에는 쓰지 않습니다. `PUT /api/pages/:id`, 자동 저장, 버전 복원, 댓글 작성·수정·삭제, 권한 부여는 404 `{ message: 'Page not found' }`이고, 실시간 저장도 휴지통 페이지에는 아무것도 쓰지 않습니다. 권한·공유 링크 삭제는 그대로 됩니다.
+- 휴지통에서 되살리는 길은 `POST /api/trash/:id/restore`입니다. `PUT /api/pages/:id`에 `{ deletedAt: null }`을 보내 되살리던 동작은 이제 404입니다.
 
 ---
 
