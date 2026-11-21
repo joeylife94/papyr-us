@@ -238,7 +238,10 @@ export class CollaborationManager {
   /** The page came back from the trash: its session saves again (the next save finds out). */
   reopenPage(pageId: number): void {
     const session = this.sessions.get(pageId);
-    if (session) session.pageNotEditable = false;
+    if (!session) return;
+    session.pageNotEditable = false;
+    // Periodic snapshots run again while anyone is connected
+    if (session.users.size > 0) this.ensureSnapshotTimer(session);
   }
 
   leaveSession(connectionId: string): void {

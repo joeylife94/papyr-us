@@ -531,21 +531,22 @@ export class YjsCollaborationManager {
         if (blocks.length > 0) yblocks.push(blocks);
       }, RELOAD_ORIGIN);
       doc.dirty = false;
-      if (doc.pageNotEditable) {
-        // The page is back: its editors get their edit right again
-        doc.pageNotEditable = false;
-        for (const socketId of Array.from(doc.clients)) {
-          const socket = this.namespace.sockets.get(socketId);
-          const userId = Number(socket?.data.userId);
-          if (socket) {
-            await this.revalidateSocket(
-              socket,
-              doc.documentId,
-              Number.isInteger(userId) && userId > 0 ? userId : undefined
-            );
-          }
+      doc.pageNotEditable = false;
+      // Every connected client's edit right is decided again from the page as it now is (a client
+      // that lost it while the page was in the trash gets it back if it still has the right), and
+      // periodic snapshots run again while anyone is connected.
+      for (const socketId of Array.from(doc.clients)) {
+        const socket = this.namespace.sockets.get(socketId);
+        const userId = Number(socket?.data.userId);
+        if (socket) {
+          await this.revalidateSocket(
+            socket,
+            doc.documentId,
+            Number.isInteger(userId) && userId > 0 ? userId : undefined
+          );
         }
       }
+      if (doc.clients.size > 0) this.ensureSnapshotTimer(doc);
     }
     logger.info('Reloaded Yjs documents from database', { pageId, documents: docs.length });
     return docs.length;

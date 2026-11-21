@@ -306,6 +306,8 @@ describe('a page restored from the trash after a refused realtime save', () => {
         .map((b: any) => b.id)
     ).toEqual(['restored']);
     expect(doc.pageNotEditable).toBe(false);
+    // Periodic snapshots run again
+    expect(doc.snapshotTimer).toBeDefined();
 
     // The editors can edit and save again
     updateWikiPage.mockClear();
@@ -352,6 +354,34 @@ describe('a page restored from the trash after a refused realtime save', () => {
     expect(doc.debounceTimer).toBeUndefined();
     expect(firstErrors.filter((e) => e.code === 'PAGE_NOT_EDITABLE')).toHaveLength(2);
     expect(secondErrors.filter((e) => e.code === 'PAGE_NOT_EDITABLE')).toHaveLength(1);
+  });
+
+  it('Yjs: a restore gives every connected editor its edit right back, even after a rejoin while trashed', async () => {
+    const PAGE_ID = 7;
+    const documentId = `page-${PAGE_ID}`;
+    const [first, second] = await Promise.all(EDITORS.map((id) => joinYjs(id, PAGE_ID)));
+    trashedPages.add(PAGE_ID);
+    const told = Promise.all([next(first, 'yjs:error'), next(second, 'yjs:error')]);
+    first.emit('yjs:update', { documentId, update: yjsUpdate('typed while trashed') });
+    for (const e of await told) expect(e).toMatchObject({ code: 'PAGE_NOT_EDITABLE' });
+    const doc = yjsModule.yjsManager.getDoc(documentId);
+    expect(doc.snapshotTimer).toBeUndefined();
+
+    // A third editor joins while the page is still in the trash, and nothing is saved
+    await joinYjs(4403, PAGE_ID);
+
+    expect((await restoreViaRoute(PAGE_ID)).status).toBe(200);
+    expect(doc.pageNotEditable).toBe(false);
+
+    // The first editor, refused before the rejoin, can edit again: its update is applied and saved
+    updateWikiPage.mockClear();
+    const firstErrors = record(first, 'yjs:error');
+    first.emit('yjs:update', { documentId, update: yjsUpdate('first after restore') });
+    const saved = next(first, 'yjs:saved');
+    first.emit('yjs:save', { documentId, pageId: PAGE_ID });
+    expect(await saved).toEqual({ success: true });
+    expect(storedBlocks.get(PAGE_ID)!.map((b: any) => b.id)).toContain('first after restore');
+    expect(firstErrors).toEqual([]);
   });
 
   it('legacy: editors can edit again and their saves persist', async () => {
@@ -426,5 +456,49 @@ describe('the pageNotEditable checks of the Yjs manager', () => {
     expect(await manager.saveDoc('page-8', 'manual')).toBe('saved');
     expect(updateWikiPage).toHaveBeenCalledTimes(1);
     await manager.unloadDoc('page-8', 'ttl');
+  });
+});
+
+describe('the legacy collaboration manager after a page comes back from the trash', () => {
+  it('runs periodic snapshots again while anyone is connected', async () => {
+    const { CollaborationManager } = await import('../services/socket.js');
+    let pageTrashed = true;
+    const storage: any = {
+      updateWikiPage: async () => (pageTrashed ? undefined : { id: 8 }),
+    };
+    const manager = new CollaborationManager(storage, {
+      requireAuth: true,
+      saveDebounceMs: 500,
+      snapshotIntervalMs: 5000,
+      docTtlMs: 60_000,
+      maxDocs: 10,
+      maxClientsPerDoc: 5,
+      rateLimitDocChangesPerSec: 100,
+      rateLimitCursorPerSec: 100,
+      rateLimitTypingPerSec: 100,
+      rateLimitSavesPerMin: 60,
+      maxPayloadBytes: 1024 * 1024,
+      maxRetainedChanges: 0,
+    });
+    manager.joinSession(8, 'connection-1', { id: 'u1', name: 'editor' } as any);
+    const session = manager.getSession(8)!;
+    expect(session.snapshotTimer).toBeDefined();
+
+    manager.addChange(8, {
+      pageId: 8,
+      blockId: 'b1',
+      type: 'update',
+      data: { blocks: [block('x')] },
+    } as any);
+    await manager.saveSession(8, 'debounce');
+    expect(session.pageNotEditable).toBe(true);
+    expect(session.snapshotTimer).toBeUndefined();
+
+    pageTrashed = false;
+    manager.reopenPage(8);
+    expect(session.pageNotEditable).toBe(false);
+    expect(session.snapshotTimer).toBeDefined();
+    manager.leaveSession('connection-1');
+    if (session.ttlTimer) clearTimeout(session.ttlTimer);
   });
 });
