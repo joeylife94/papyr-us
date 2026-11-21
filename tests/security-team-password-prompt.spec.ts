@@ -65,7 +65,10 @@ test('a signed-in member unlocks a protected team with its password only', async
     await page.getByRole('button', { name: '확인' }).click();
     const wrong = await wrongAnswer;
     expect([wrong.status(), await wrong.json()]).toEqual([200, { isValid: false }]);
-    await expect(page.getByText('비밀번호가 올바르지 않습니다.')).toBeVisible();
+    // The toast itself (Radix also repeats its text in a hidden live region)
+    await expect(
+      page.locator('li[data-state="open"]').filter({ hasText: '비밀번호가 올바르지 않습니다.' })
+    ).toBeVisible();
     // The prompt stays open, so the team is still locked
     await expect(page.getByRole('heading', { name: '비밀번호가 필요합니다' })).toBeVisible();
 

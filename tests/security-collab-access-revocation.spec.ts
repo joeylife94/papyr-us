@@ -232,7 +232,20 @@ test.describe('Realtime collaboration follows current team membership', () => {
       // The page is trashed while both editors have it open
       expect((await ownerRequest.delete(`/api/pages/${pageId}`)).status()).toBe(200);
 
-      // Yjs: the save is refused, answered as not saved, and every client is told once
+      // Every PAGE_NOT_EDITABLE each socket receives, to count them after a bounded window
+      const notEditable = (socket: Socket, event: string) => {
+        const seen: any[] = [];
+        socket.on(event, (payload: any) => {
+          if (payload?.code === 'PAGE_NOT_EDITABLE') seen.push(payload);
+        });
+        return seen;
+      };
+      const yjsSeen = [firstYjs, secondYjs].map((socket) => notEditable(socket, 'yjs:error'));
+      const collabSeen = [firstCollab, secondCollab].map((socket) =>
+        notEditable(socket, 'collab:error')
+      );
+
+      // Yjs: the save is refused, answered as not saved, and every client is told
       const yjsTold = [next(firstYjs, 'yjs:error', 10_000), next(secondYjs, 'yjs:error', 10_000)];
       const yjsAnswer = next(firstYjs, 'yjs:saved', 10_000);
       firstYjs.emit('yjs:update', { documentId, update: yjsUpdate(`after trash ${stamp}`) });
@@ -255,6 +268,11 @@ test.describe('Realtime collaboration follows current team membership', () => {
       });
       for (const told of collabTold)
         expect(await told).toMatchObject({ code: 'PAGE_NOT_EDITABLE' });
+
+      // Told once: a bounded window (longer than the default save debounce of 3 s) brings no
+      // second event on either channel
+      await new Promise((resolve) => setTimeout(resolve, 3500));
+      for (const seen of [...yjsSeen, ...collabSeen]) expect(seen).toHaveLength(1);
 
       // Nothing was written: the restored page still has its content
       const restore = await ownerRequest.post(`/api/trash/${pageId}/restore`);
