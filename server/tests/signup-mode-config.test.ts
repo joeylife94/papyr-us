@@ -48,3 +48,32 @@ describe('loading the configuration', () => {
     }
   );
 });
+
+describe('TRUST_PROXY', () => {
+  it('unset is left to Express, and valid values are read as the proxies they name', async () => {
+    const { parseTrustProxy } = await import('../config');
+    expect(parseTrustProxy(undefined)).toEqual({ ok: true, value: undefined });
+    expect(parseTrustProxy('  ')).toEqual({ ok: true, value: undefined });
+    expect(parseTrustProxy('true')).toEqual({ ok: true, value: true });
+    expect(parseTrustProxy('false')).toEqual({ ok: true, value: false });
+    expect(parseTrustProxy('1')).toEqual({ ok: true, value: 1 });
+    expect(parseTrustProxy('loopback, 10.0.0.0/8')).toEqual({
+      ok: true,
+      value: 'loopback, 10.0.0.0/8',
+    });
+    for (const bad of ['$(x)', 'a;b', '<script>']) {
+      expect(parseTrustProxy(bad), bad).toEqual({ ok: false });
+    }
+  });
+
+  it('an invalid value stops the process at load', async () => {
+    process.env.TRUST_PROXY = 'a;b';
+    try {
+      const out = await loadConfig(undefined);
+      expect(out.exited).toBe(true);
+      expect(out.messages).toContain('TRUST_PROXY must be');
+    } finally {
+      delete process.env.TRUST_PROXY;
+    }
+  });
+});
