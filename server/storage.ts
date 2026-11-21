@@ -3336,7 +3336,10 @@ export class DBStorage {
     } catch (error) {
       if (error instanceof InvitationNotPending) return { kind: 'invalid' };
       // Another sign-up took the address between the check and the insert.
-      if (postgresErrorOf(error)?.code === '23505') return { kind: 'email_taken' };
+      const violation = postgresErrorOf(error);
+      if (violation?.code === '23505' && /email/.test(violation.constraint ?? '')) {
+        return { kind: 'email_taken' };
+      }
       throw error;
     }
   }
