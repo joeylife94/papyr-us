@@ -9,6 +9,9 @@ import { ScrollArea } from '../ui/scroll-area';
 import { Skeleton } from '../ui/skeleton';
 import { PageIcon } from '../page/page-icon';
 import { cn } from '@/lib/utils';
+import { useOrganization } from '@/hooks/useOrganization';
+import { useAiRefusal } from '@/hooks/useAiRefusal';
+import { aiRefusalCodeOf, type AiRefusalCode } from '@/lib/ai-gate';
 import {
   Network,
   Search,
@@ -133,6 +136,13 @@ function GraphLegend({ palette, className }: { palette: GraphPalette; className?
   );
 }
 
+/** The graph request was refused because the caller may not use AI (ai_disabled, ai_not_granted). */
+class GraphAiRefusal extends Error {
+  constructor(readonly code: AiRefusalCode) {
+    super(code);
+  }
+}
+
 export function KnowledgeGraph({ teamId }: KnowledgeGraphProps) {
   const navigate = useNavigate();
   const palette = useGraphPalette();
@@ -145,7 +155,12 @@ export function KnowledgeGraph({ teamId }: KnowledgeGraphProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
-  const [includeAILinks, setIncludeAILinks] = useState(false);
+  const [aiLinksRequested, setIncludeAILinks] = useState(false);
+  // AI links send page content to the AI provider: only for a member granted AI in an
+  // organization with AI on (never while it loads or when it failed to load)
+  const { aiAvailable: aiEnabled } = useOrganization();
+  const onAiRefusal = useAiRefusal();
+  const includeAILinks = aiLinksRequested && aiEnabled;
 
   const params = new URLSearchParams();
   if (teamId) params.append('teamId', teamId);
@@ -156,11 +171,32 @@ export function KnowledgeGraph({ teamId }: KnowledgeGraphProps) {
     isLoading,
     isFetching,
     isError,
+    error,
     refetch,
   } = useQuery<GraphData>({
     queryKey: [`/api/knowledge-graph${query ? `?${query}` : ''}`],
+    queryFn: async () => {
+      const response = await fetch(`/api/knowledge-graph${query ? `?${query}` : ''}`, {
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        const code = await aiRefusalCodeOf(response);
+        if (code) throw new GraphAiRefusal(code);
+        throw new Error(`${response.status}: ${(await response.text()) || response.statusText}`);
+      }
+      return response.json();
+    },
     staleTime: 30_000,
   });
+
+  // The server refused the AI links: say why, ask for the organization again, and show the
+  // graph without them.
+  const refusal = error instanceof GraphAiRefusal ? error.code : null;
+  useEffect(() => {
+    if (!refusal) return;
+    setIncludeAILinks(false);
+    onAiRefusal(refusal);
+  }, [refusal, onAiRefusal]);
 
   const nodes = useMemo(() => graph?.nodes ?? [], [graph]);
   const links = useMemo(() => graph?.links ?? [], [graph]);
@@ -287,26 +323,28 @@ export function KnowledgeGraph({ teamId }: KnowledgeGraphProps) {
               className="pl-9"
             />
           </div>
-          <Button
-            variant={includeAILinks ? 'default' : 'outline'}
-            onClick={() => setIncludeAILinks(!includeAILinks)}
-            disabled={includeAILinks && isFetching}
-            aria-pressed={includeAILinks}
-            className="gap-2"
-          >
-            {includeAILinks && isFetching ? (
-              <RefreshCw aria-hidden="true" className="h-4 w-4 animate-spin" />
-            ) : (
-              <span aria-hidden="true" className="font-mono text-[11px]">
-                AI
-              </span>
-            )}
-            {includeAILinks && isFetching
-              ? 'AI 링크 생성 중...'
-              : includeAILinks
-                ? 'AI 링크 ON'
-                : 'AI 링크 OFF'}
-          </Button>
+          {aiEnabled && (
+            <Button
+              variant={includeAILinks ? 'default' : 'outline'}
+              onClick={() => setIncludeAILinks(!includeAILinks)}
+              disabled={includeAILinks && isFetching}
+              aria-pressed={includeAILinks}
+              className="gap-2"
+            >
+              {includeAILinks && isFetching ? (
+                <RefreshCw aria-hidden="true" className="h-4 w-4 animate-spin" />
+              ) : (
+                <span aria-hidden="true" className="font-mono text-[11px]">
+                  AI
+                </span>
+              )}
+              {includeAILinks && isFetching
+                ? 'AI 링크 생성 중...'
+                : includeAILinks
+                  ? 'AI 링크 ON'
+                  : 'AI 링크 OFF'}
+            </Button>
+          )}
           <Button
             variant="outline"
             size="icon"
@@ -339,7 +377,8 @@ export function KnowledgeGraph({ teamId }: KnowledgeGraphProps) {
           className="relative h-[420px] min-w-0 bg-muted/20 md:h-auto md:flex-1"
           aria-hidden="true"
         >
-          {isLoading ? (
+          {/* A refused AI-links request is not an error: the graph without them loads next. */}
+          {isLoading || refusal ? (
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="text-center">
                 <RefreshCw className="mx-auto mb-2 h-8 w-8 animate-spin text-highlight" />

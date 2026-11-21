@@ -54,7 +54,7 @@ try {
   } else {
     const hashedPassword = await bcrypt.hash(password, 12);
     // Like every account, the admin account joins the default organization (issue #124 X1),
-    // in the same transaction. Platform admin rights come from ADMIN_EMAILS, not from this.
+    // in the same transaction (created with AI on, as the application does: #124 X1c). Platform admin rights come from ADMIN_EMAILS, not from this.
     const client = await pool.connect();
     let inserted;
     try {
@@ -66,12 +66,12 @@ try {
         [name, email, hashedPassword]
       );
       await client.query(
-        `INSERT INTO organizations (slug, name) VALUES ('default', 'Default')
+        `INSERT INTO organizations (slug, name, ai_enabled) VALUES ('default', 'Default', TRUE)
          ON CONFLICT (slug) DO NOTHING`
       );
       await client.query(
-        `INSERT INTO organization_members (organization_id, user_id, role)
-         SELECT id, $1, 'member' FROM organizations WHERE slug = 'default'
+        `INSERT INTO organization_members (organization_id, user_id, role, ai_allowed)
+         SELECT id, $1, 'member', TRUE FROM organizations WHERE slug = 'default'
          ON CONFLICT (user_id) DO NOTHING`,
         [inserted.rows[0].id]
       );

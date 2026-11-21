@@ -19,6 +19,8 @@ import {
   MicOff,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useAiRefusal } from '@/hooks/useAiRefusal';
+import { aiRefusalCodeOf } from '@/lib/ai-gate';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -51,6 +53,9 @@ export function AICopilotSidebar({
   const [isListening, setIsListening] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
+  const onAiRefusal = useAiRefusal();
+  // Set once the server has refused AI: no further request until the organization is re-read.
+  const refusedRef = useRef(false);
 
   // Quick actions
   const quickActions = [
@@ -68,7 +73,7 @@ export function AICopilotSidebar({
 
   // Send message to AI
   const sendMessage = async (content: string) => {
-    if (!content.trim() || isLoading) return;
+    if (!content.trim() || isLoading || refusedRef.current) return;
 
     const userMessage: Message = {
       role: 'user',
@@ -102,6 +107,13 @@ export function AICopilotSidebar({
       });
 
       if (!response.ok) {
+        // Refused because AI is off or not granted: say why and let every entry point follow.
+        const refusal = await aiRefusalCodeOf(response);
+        if (refusal) {
+          refusedRef.current = true;
+          onAiRefusal(refusal);
+          return;
+        }
         throw new Error('Failed to get AI response');
       }
 

@@ -8,6 +8,7 @@ import { TableOfContents } from '@/components/layout/table-of-contents';
 import { Comments } from '@/components/wiki/comments';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
+import { useOrganization } from '@/hooks/useOrganization';
 import { useCollaboration } from '@/hooks/useCollaboration';
 import { useFeatureFlags } from '@/features/FeatureFlagsContext';
 import { useWorkspaceScope } from '@/hooks/useActiveWorkspace';
@@ -61,6 +62,7 @@ export default function WikiPageView() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { flags } = useFeatureFlags();
+  const { organization, aiAvailable } = useOrganization();
   const workspaceScope = useWorkspaceScope();
   const workspace = workspaceScope.kind === 'team' ? workspaceScope.workspace : null;
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
@@ -80,6 +82,14 @@ export default function WikiPageView() {
     queryKey: [`/api/pages/slug/${slug}`],
     enabled: !!slug,
   });
+
+  // AI on a page is offered only to a member granted AI in an organization with AI on, and only
+  // when the page belongs to that same organization (false while either is loading or failed)
+  const aiOfferedOnPage =
+    aiAvailable &&
+    organization != null &&
+    page?.organizationId != null &&
+    Number(page.organizationId) === organization.id;
 
   // Edit rights decide between the in-place editor and the read-only view (issue #103 E2).
   const { data: access, isLoading: accessLoading } = useQuery<{ canEdit: boolean }>({
@@ -248,18 +258,20 @@ export default function WikiPageView() {
         currentUpdatedAt={page.updatedAt}
         onRestored={handleRestored}
       />
-      <Button
-        variant={showAICopilot ? 'default' : 'outline'}
-        size="sm"
-        onClick={() => {
-          setShowAICopilot(!showAICopilot);
-          setIsCopilotMinimized(false);
-        }}
-        className="gap-2"
-      >
-        <Sparkles className="h-4 w-4" />
-        AI 코파일럿
-      </Button>
+      {aiOfferedOnPage && (
+        <Button
+          variant={showAICopilot ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => {
+            setShowAICopilot(!showAICopilot);
+            setIsCopilotMinimized(false);
+          }}
+          className="gap-2"
+        >
+          <Sparkles className="h-4 w-4" />
+          AI 코파일럿
+        </Button>
+      )}
       <div className="ml-auto flex items-center gap-1">
         <Button
           variant="ghost"
@@ -331,6 +343,7 @@ export default function WikiPageView() {
               reloadToken={reloadKey}
               page={page}
               teamName={workspace?.name}
+              aiOfferedOnPage={aiOfferedOnPage}
               actions={actions}
               breadcrumb={breadcrumb}
               onContentChange={setLiveContent}
@@ -352,14 +365,19 @@ export default function WikiPageView() {
           </section>
 
           <section className="mt-12">
-            <RelatedPages pageId={page.id} pageTitle={page.title} pageContent={content} />
+            <RelatedPages
+              pageId={page.id}
+              pageTitle={page.title}
+              pageContent={content}
+              enabled={aiOfferedOnPage}
+            />
           </section>
         </article>
       </div>
 
       <TableOfContents headings={headings} />
 
-      {showAICopilot && (
+      {aiOfferedOnPage && showAICopilot && (
         <AICopilotSidebar
           pageId={page.id}
           pageTitle={page.title}
@@ -429,6 +447,8 @@ function ReadOnlyPageBody({ page, actions, breadcrumb }: BodyProps) {
 
 interface EditableBodyProps extends BodyProps {
   teamName?: string;
+  /** AI is allowed on this page (the caller's organization has AI on and owns the page). */
+  aiOfferedOnPage: boolean;
   /** Changes after a restore: reset the editor to the restored page without remounting it. */
   reloadToken: number;
   onContentChange: (content: string) => void;
@@ -441,6 +461,7 @@ interface EditableBodyProps extends BodyProps {
 function EditablePageBody({
   page,
   teamName,
+  aiOfferedOnPage,
   reloadToken,
   actions,
   breadcrumb,
@@ -569,6 +590,7 @@ function EditablePageBody({
           }}
           teamName={teamName}
           pageId={page.id}
+          aiOfferedOnPage={aiOfferedOnPage}
           userId={getUserId()}
           userName={getUserName()}
           useYjs={true}

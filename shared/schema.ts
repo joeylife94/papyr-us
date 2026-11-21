@@ -420,6 +420,8 @@ export const organizations = pgTable('organizations', {
   slug: text('slug').notNull().unique(),
   name: text('name').notNull(),
   isActive: boolean('is_active').notNull().default(true),
+  // Off for organizations created through the admin API; 0024 turned it on for organizations that existed before.
+  aiEnabled: boolean('ai_enabled').notNull().default(false),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
@@ -437,6 +439,8 @@ export const organizationMembers = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     role: text('role').notNull().default('member'), // 'owner', 'admin', 'member'
+    // AI use is granted per member (#124 X1c): a member may use AI only while this is true and the organization has AI on.
+    aiAllowed: boolean('ai_allowed').notNull().default(false),
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
   (table) => [uniqueIndex('organization_members_user_id_unique').on(table.userId)]

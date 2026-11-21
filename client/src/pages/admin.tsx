@@ -29,6 +29,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { Directory, InsertDirectory, Team, InsertTeam } from '@shared/schema';
+import { AdminOrganizationsTab } from '@/components/organization/admin-organizations-tab';
 
 const directoryFormSchema = z.object({
   name: z
@@ -68,7 +69,9 @@ export default function AdminPage() {
   const navigate = useNavigate();
   const { isAuthenticated, isLoading: isAuthLoading, user } = useAuth();
   const userId: number | undefined = user?.id;
-  const [activeTab, setActiveTab] = useState<'directories' | 'teams'>('directories');
+  const [activeTab, setActiveTab] = useState<'directories' | 'teams' | 'organizations'>(
+    'directories'
+  );
   const [editingDirectory, setEditingDirectory] = useState<Directory | null>(null);
   const [editingTeam, setEditingTeam] = useState<Team | null>(null);
   const [isDirectoryDialogOpen, setIsDirectoryDialogOpen] = useState(false);
@@ -452,12 +455,15 @@ export default function AdminPage() {
 
         <Tabs
           value={activeTab}
-          onValueChange={(value) => setActiveTab(value as 'directories' | 'teams')}
+          onValueChange={(value) =>
+            setActiveTab(value as 'directories' | 'teams' | 'organizations')
+          }
           className="w-full"
         >
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="directories">Directories</TabsTrigger>
             <TabsTrigger value="teams">Teams</TabsTrigger>
+            <TabsTrigger value="organizations">Organizations</TabsTrigger>
           </TabsList>
 
           <TabsContent value="directories" className="space-y-6">
@@ -909,6 +915,10 @@ export default function AdminPage() {
                 </CardContent>
               </Card>
             )}
+          </TabsContent>
+
+          <TabsContent value="organizations" className="space-y-6">
+            <AdminOrganizationsTab userId={userId} />
           </TabsContent>
         </Tabs>
       </div>

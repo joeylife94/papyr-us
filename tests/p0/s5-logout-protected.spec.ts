@@ -132,6 +132,12 @@ test.describe('[S5] 로그아웃 후 보호 페이지 접근 차단', () => {
       // Step 3: 브라우저 쿠키도 제거 (세션 완전 종료)
       await page.context().clearCookies();
 
+      // ERR_ABORTED 방지 (S5-d 와 같은 이유): 만료된 세션을 감지한 현재 페이지가 스스로 /login 으로
+      // 이동하는 중이면, 그 이동이 끝난 뒤에 "/" 로 간다. 두 이동이 겹치면 아래 goto 가 끊긴다.
+      await page.waitForLoadState('networkidle').catch(() => null);
+      await page.waitForURL(/\/login/, { timeout: 5_000 }).catch(() => null);
+      await page.waitForLoadState('domcontentloaded').catch(() => null);
+
       // Step 4: ProtectedRoute 우회 방지
       await page.addInitScript(() => {
         Object.defineProperty(window, '__PLAYWRIGHT__', {

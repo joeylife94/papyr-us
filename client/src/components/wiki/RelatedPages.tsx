@@ -9,13 +9,18 @@ interface RelatedPagesProps {
   pageId: number;
   pageTitle: string;
   pageContent: string;
+  /** AI is allowed on this page: the caller's organization has AI on and owns the page. */
+  enabled: boolean;
 }
 
 /**
  * AI-recommended related pages. Backlinks ("이 문서를 링크한 문서") come from the page_links index
  * instead (components/page/backlinks.tsx, issue #103 E6).
  */
-export function RelatedPages({ pageId, pageTitle, pageContent }: RelatedPagesProps) {
+export function RelatedPages({ pageId, pageTitle, pageContent, enabled }: RelatedPagesProps) {
+  // The request sends the page content to the AI provider: only when AI is allowed on this page
+  const aiEnabled = enabled;
+
   // Fetch AI-recommended related pages
   const { data: aiRelated, isLoading: aiLoading } = useQuery<{
     relatedPages: Array<{
@@ -44,8 +49,12 @@ export function RelatedPages({ pageId, pageTitle, pageContent }: RelatedPagesPro
       }
       return response.json();
     },
-    enabled: !!pageId && !!pageTitle,
+    enabled: aiEnabled && !!pageId && !!pageTitle,
   });
+
+  if (!aiEnabled) {
+    return null;
+  }
 
   if (aiLoading) {
     return (

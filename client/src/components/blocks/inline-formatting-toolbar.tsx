@@ -15,6 +15,9 @@ import {
 import { Button } from '@/components/ui/button';
 import { useFeatureFlags } from '@/features/FeatureFlagsContext';
 import { http } from '@/lib/http';
+import { aiRefusalCodeOf } from '@/lib/ai-gate';
+import { useAiRefusal } from '@/hooks/useAiRefusal';
+import { useOrganization } from '@/hooks/useOrganization';
 import { useToast } from '@/hooks/use-toast';
 
 interface InlineFormatAction {
@@ -114,9 +117,16 @@ interface InlineFormattingToolbarProps {
    * Receives the textarea element and the prefix/suffix to wrap the selection.
    */
   onFormat?: (textarea: HTMLTextAreaElement, prefix: string, suffix: string) => void;
+  /** AI actions are allowed for the page being edited (default true). */
+  /** AI may be offered on this page (the page belongs to the caller's organization). Not the member's grant. */
+  aiOfferedOnPage?: boolean;
 }
 
-export function InlineFormattingToolbar({ containerRef, onFormat }: InlineFormattingToolbarProps) {
+export function InlineFormattingToolbar({
+  containerRef,
+  onFormat,
+  aiOfferedOnPage = true,
+}: InlineFormattingToolbarProps) {
   const [visible, setVisible] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const [activeTextarea, setActiveTextarea] = useState<HTMLTextAreaElement | null>(null);
@@ -125,7 +135,12 @@ export function InlineFormattingToolbar({ containerRef, onFormat }: InlineFormat
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { flags } = useFeatureFlags();
   const { toast } = useToast();
-  const showAI = flags.FEATURE_AI_SEARCH;
+  const { aiAvailable } = useOrganization();
+  const onAiRefusal = useAiRefusal();
+  // No AI action while the organization is loading or failed to load, or unless it has AI on and
+  // the caller has been granted AI. (`aiOfferedOnPage` is the page check;
+  // the member's grant is `organization.aiAllowed`, read through `aiAvailable`.)
+  const showAI = flags.FEATURE_AI_SEARCH && aiOfferedOnPage && aiAvailable;
 
   const checkSelection = useCallback(() => {
     const container = containerRef.current;
@@ -290,7 +305,14 @@ export function InlineFormattingToolbar({ containerRef, onFormat }: InlineFormat
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, text: selectedText }),
       });
-      if (!res.ok) throw new Error('AI request failed');
+      if (!res.ok) {
+        const refusal = await aiRefusalCodeOf(res);
+        if (refusal) {
+          onAiRefusal(refusal);
+          return;
+        }
+        throw new Error('AI request failed');
+      }
       const data = await res.json();
       const replacement = data.result ?? data.text ?? selectedText;
 

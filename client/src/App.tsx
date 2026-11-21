@@ -22,6 +22,7 @@ import CalendarPageWrapper from '@/components/CalendarPageWrapper';
 import NewPage from '@/pages/new-page';
 import EditRedirect from '@/pages/edit-redirect';
 import AdminPage from '@/pages/admin';
+import OrganizationPage from '@/pages/organization';
 import Members from '@/pages/members';
 import FileManager from '@/pages/file-manager';
 import DashboardPage from '@/pages/dashboard';
@@ -182,6 +183,7 @@ function App() {
                           </FeatureGate>
                         }
                       />
+                      <Route path="/organization" element={<OrganizationPage />} />
                       <Route
                         path="/members"
                         element={

@@ -4,11 +4,11 @@ aliases: ['PAPYR_US_MASTER', 'Papyr.us v1.0 Master']
 project: 'Papyr.us'
 type: 'project-master'
 status: 'authoritative-contract'
-version: '0.95'
+version: '0.96'
 target: 'v1.0 + D1 frozen baseline; enterprise readiness (Issue #124), one bounded phase per PR'
-current_phase: 'Issue #124 — X0, X1a and X1b done; X1c next'
+current_phase: 'Issue #124 — X0, X1a, X1b and X1c done; X1d next, alongside the collaboration packages of §10'
 priority: 'P1'
-last_updated: '2026-11-12'
+last_updated: '2026-11-19'
 repository: 'joeylife94/papyr-us'
 accepted_product_main_sha: '3b91e18f477e8187c4aa8c21708b6f8cf7b2f2d4'
 accepted_proof_main_sha: '1cb04799a8a1924f7697d12d64f0999dcd591fcc'
@@ -18,7 +18,7 @@ checkpoint_main_sha: 'd2f092b240d5ffe0937dd6d487934e32d5a631f3'
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v0.95**  
+> **AUTHORITATIVE PROJECT CONTRACT — v0.96**  
 > Current repository / Issue / PR / executable evidence overrides historical checkpoints, Scheduled Task prompts, and agent self-report.  
 > The accepted v1.0 product/proof baseline and D1 remain frozen as evidence. Progression after D1 runs as contract Issues under [`AGENTS.md`](AGENTS.md), one bounded phase per PR, and must not rewrite prior accepted evidence or widen buyer-facing claims without a new Proof.
 
@@ -32,9 +32,9 @@ checkpoint_main_sha: 'd2f092b240d5ffe0937dd6d487934e32d5a631f3'
 
 **Current destination:** `ENTERPRISE READINESS — Issue #124` (owner direction change, 2026-11-02)
 
-**Current bounded milestone:** `#124 X1c — organization management` (not started)
+**Current bounded milestone:** `#124 X1c — organization management` (done with the change that carries this version, §10)
 
-**Progression state:** `X0 MERGED (PR #125) · X1a MERGED (PR #149) · X1b DONE (this change) · X1c NEXT`
+**Progression state:** `X0 MERGED (PR #125) · X1a MERGED (PR #149) · X1b DONE (PR #152, open) · X1c DONE (this change) · X1d NEXT`
 
 **Checkpoint:** `main` = `d2f092b240d5ffe0937dd6d487934e32d5a631f3` (2026-11-09). See §7, §8 and [`docs/checkpoints/2026-11-11-checkpoint-1.md`](docs/checkpoints/2026-11-11-checkpoint-1.md).
 
@@ -47,7 +47,7 @@ checkpoint_main_sha: 'd2f092b240d5ffe0937dd6d487934e32d5a631f3'
 - Issue #69 / PR #70 D1-02 existing-user admission + revocation — **ACCEPTED / MERGED / CLOSED**.
 - D1 — **ACCEPTED / FROZEN**.
 - Post-D1 product surface (Issues #76, #101, #103, #111, #113, #133–#137) — **MERGED / CLOSED** (§7).
-- Issue #124 X0 / PR #125, X1a / PR #149 — **MERGED**; X1b — **DONE** with the change that carries this version (§9); Issue #124 remains **OPEN**.
+- Issue #124 X0 / PR #125, X1a / PR #149 — **MERGED**; X1b — **DONE** (§9, PR #152); X1c — **DONE** with the change that carries this version (§10); Issue #124 remains **OPEN**.
 - Issue #72 / PR #73 (D2-01 invitations) — **DRAFT / PAUSED**; absorbed into #124 X5.
 - Phase 5 / GAP-009..012, GAP-013..015, broad v1.1 expansion — **DEFERRED**.
 - Public production deployment — **NOT REQUIRED / NOT CLAIMED**.
@@ -158,7 +158,7 @@ The accepted D1-02 executable path proves:
 
 Accepted evidence supports authenticated small-team workspace flows, team-scoped page/document lifecycle, tested authorization boundaries, version recovery, team-scoped tasks/calendar, authenticated team-scoped PostgreSQL full-text retrieval with page-level authorization boundaries, bounded optional inline AI assistance, Firebat recovery evidence, D-014 dependency-security acceptance, reproducible synthetic buyer Proof, creator-owned team creation, D1-01 proof-path reconciliation, and the D1-02 existing-user admission/shared-use/revocation path.
 
-Work merged after D1 (§7) carries per-PR evidence and green CI on `main`, but it has **not** been packaged or human-reviewed as buyer-facing Proof. The buyer-facing claim set stays the one above until a new Proof package is accepted. Organizations exist as a tenant boundary since X1a, and X1b applies it to the remaining shared surfaces (§9); organization management, signup policy, SSO, audit trail and the other #124 phases do not exist yet.
+Work merged after D1 (§7) carries per-PR evidence and green CI on `main`, but it has **not** been packaged or human-reviewed as buyer-facing Proof. The buyer-facing claim set stays the one above until a new Proof package is accepted. Organizations exist as a tenant boundary since X1a, X1b applies it to the remaining shared surfaces (§9), and X1c adds organization management and per-member AI access (§10); signup policy, SSO, audit trail and the other #124 phases do not exist yet.
 
 Do **not** claim without separate verification: public production deployment; embeddings/pgvector/hybrid-vector retrieval as current secure-search behavior; generated-citation/RAG production guarantees; broad AI-agent autonomy; production-ready SSO/OIDC, monitoring, S3 backup, microservices, enterprise infrastructure; HA/SLA/compliance; email invitation infrastructure; organization hierarchy; billing; broad role-management UI; or deferred Phase 5/v1.1 capabilities.
 
@@ -242,11 +242,11 @@ Range `8b037a0` → `d2f092b`: 303 commits, 395 files, +52,860 / −8,638 lines.
 
 Papyr.us targets enterprise-grade. This lifts the v1.0 Proof freeze **for the #124 scope only**; the frozen evidence in §1–§4 is not rewritten. The seven accepted decisions (multi-organization tenancy, OIDC first, Redis pub/sub plus Postgres persistence for Yjs, AI off by default for new organizations, 365-day audit retention, MFA required for organization owners and admins, phase order) are recorded on the Issue; changing one needs a new owner decision there.
 
-Phase order: X0 ✅ → X1 (X1a ✅, X1b ✅, X1c, X1d) → X2 → X3 → X5 → X6 → X7 → X4 → X8 → X9.
+Phase order: X0 ✅ → X1 (X1a ✅, X1b ✅, X1c ✅, X1d) → X2 → X3 → X5 → X6 → X7 → X4 → X8 → X9.
 
 ### Open items
 
-- **Issue #124** — in progress; X1c next (§9).
+- **Issue #124** — in progress; X1d next (§10).
 - **Issue #141** (bug) — `GET /api/analytics/popular` ranked the most-viewed pages of every team and organization. Open on `d2f092b`; fixed right after this checkpoint on the same branch (§8, follow-up). The Issue closes when that change lands.
 - **Issue #93** — 32 failing legacy browser specs outside CI; waiting on three human decisions listed on the Issue.
 - **Issue #72 / PR #73** — D2-01 invitation draft, paused, based on `8b037a0`; absorbed into #124 X5.
@@ -342,4 +342,63 @@ Each package was written against a brief, proven with tests that fail on the pre
 
 ### Exact Next Action
 
-`#124 X1c` — platform admins create organizations and name their first owner; organization management (members, roles, teams, settings); AI off by default for a new organization.
+`#124 X1c` — done; see §10.
+
+## 10. Issue #124 X1c — Organization Management and AI Access (2026-11-19)
+
+### Changed
+
+X1a and X1b made organizations a boundary. X1c makes them manageable, and makes AI something an organization and its members are given rather than something every account has. Rules, roles and migration notes are in [`docs/organizations-guide.md`](docs/organizations-guide.md); routes in [`docs/api-reference.md`](docs/api-reference.md).
+
+| Area              | What exists now                                                                                                                                                                                                                                                                                                                                                                         |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Platform admin    | lists organizations (counts only, no member data), creates one and names its first owner, and may name an owner for an organization that has none; no power over an organization that has an owner                                                                                                                                                                                      |
+| First owner       | only an account with nothing in another organization (role above member, team membership, authored page, page grant, comment, roster row); nothing is moved or cleaned up implicitly                                                                                                                                                                                                    |
+| Owners and admins | `/organization`: members and roles, removal, the organization's teams (read only), name and AI switch; decisions run inside a per-organization lock on values re-read after the lock; the last active owner cannot leave or be lowered                                                                                                                                                  |
+| Removal           | deletes the membership, the member's team memberships and user grants in that organization; keeps the account, its pages, comments and roster rows; a removed account reaches nothing of the organization and is not put back by a later deploy                                                                                                                                         |
+| AI                | two conditions: the organization's switch (`organizations.ai_enabled`, on for organizations that existed, off for new ones) and the member's own grant (`organization_members.ai_allowed`, given per member by owners and admins); every path to a provider checks both, a page's AI also follows the page's organization, and screens offer AI only to someone the server would accept |
+| Workflows         | creating, changing, switching on or test-running a workflow with the AI summary action needs the caller's AI access; event runs follow the organization switch                                                                                                                                                                                                                          |
+| Also              | a platform admin has no comment override; comment authors act only while they may comment on the page; team update and delete always need a session; migration 0022 places accounts once                                                                                                                                                                                                |
+
+Migrations `0024` and `0025` are additive and reversible, applied with `0022` and `0023` by `db:orgs:prepare` in one transaction; the down path refuses while it would widen AI access or merge tenants.
+
+Owner decisions recorded for this phase (2026-11-12): first owner only for an untouched account; no way to add further members until invitations (X1d); AI stays on in `default`; the platform admin's comment override is removed; **AI is granted per member** by owners and admins.
+
+Process: seven work packages, each written by a developer against a brief, reviewed line by line before integration, and re-verified on the integration branch. Reviews found and the packages fixed, among others: a page of an AI-off organization being sent to a provider when opened by a member of an AI-on organization; a removed member still editing own comments on a publicly shared page; removed members being put back into `default` by the next deploy.
+
+### Actually Executed
+
+On the integration head, Linux container, local PostgreSQL 16 (no Docker available), the container's Chromium rather than the build Playwright pins:
+
+- `node scripts/verify-contributor.mjs` — **PASS** (static; unit 761; domain 27; contract 21; smoke 21; build);
+- `npx vitest run --maxWorkers=3` — 70 files, 1683 tests **PASS**;
+- Layer 4, whole suite, run directly with `DATABASE_URL` — 29 files, 296 tests **PASS**;
+- migrations by execution: the prepare script twice on database copies (existing organizations keep AI on, existing members keep their grant, a later "off" and a later revocation survive a re-run, an account without a membership stays without one), then `drizzle-kit push`, which emitted nothing for the organization tables; `--down` refused while an organization had AI off or a member lacked the grant and changed nothing; the upgrade-from-before-organizations and fresh-install orders were executed by the reviewer on scratch databases;
+- Golden Journey suite (`test:gj`, 96 tests with the nine new specs) on a database prepared the CI way — 94 passed, 1 skipped (the collaboration test, skipped while `FEATURE_COLLABORATION` is off, as in CI), 1 failed: `local-graph.spec.ts`, which passed 3 of 3 when run alone afterwards; P0 — 20 passed.
+
+### Not Verified
+
+- `tests/daily-note.spec.ts` fails with this container's Chromium on unchanged `main` as well (4 of 4) and passed in the full run above; CI with the pinned browser is the reference for it and for `local-graph`;
+- Layer 5, Layer 6 and the Firebat gate were not run here: CI on the X1c pull request is the reference;
+- a deploy on a real host with migrations `0024` and `0025`; the production workflow starts the application before it migrates, so between the two the new code reads a column that is not there yet (the same pattern as earlier organization migrations);
+- the Google and GitHub sign-up paths were covered by route and Layer 4 tests of the shared function, not through a provider;
+- no new buyer-facing Proof artifact; the non-claims in §3 stand.
+
+### Known limits
+
+- "Nothing elsewhere" for a first owner holds at the moment of the move, not as a database invariant.
+- Two admins acting together can restore AI access an owner revoked from one of them (lower, grant, promote). Closing it means letting only owners promote to admin: an owner decision.
+- Revoking a member's AI access does not stop workflows that member switched on.
+- A team left without an owner by a removal has no way to get one yet.
+- Running `db:push` before `db:orgs:prepare` on a database that already has organizations leaves every member without AI access.
+
+### Exact Next Action
+
+The owner restated the destination on 2026-11-19: **a Notion-grade collaboration tool**. An audit of the code against that (2026-11-19) found the product a sound single-author team wiki that a team cannot yet collaborate in through its own screens. Order of work from here, product gaps interleaved with the #124 phases without reordering them:
+
+1. saves that refuse to overwrite a newer page (stale-write guard) — in progress;
+2. real-time editing that converges (the Yjs binding; flag stays off) — in progress;
+3. `#124 X1d` — invitations into an organization and sign-up policy;
+4. team membership screen; any organization member may create a team (owner decision, 2026-11-19);
+5. page sharing screen, and a per-team "members can edit team pages" setting, on for new teams and off for existing ones (owner decision, 2026-11-19);
+6. mentions in comments, and comments that notify.

@@ -56,6 +56,8 @@ vi.mock('../services/workflow', () => ({
   triggerWorkflows: vi.fn().mockResolvedValue(undefined),
   initWorkflowService: vi.fn(),
   executeWorkflow: vi.fn().mockResolvedValue({ id: 1, status: 'success' }),
+  // these workflows never use the AI action (the route asks, #124 X1c P5a)
+  workflowUsesAi: () => false,
 }));
 
 vi.mock('../storage', async (importOriginal) => {

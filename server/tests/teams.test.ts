@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import type { Express } from 'express';
 import express from 'express';
@@ -6,6 +6,22 @@ import http from 'http';
 import jwt from 'jsonwebtoken';
 import { registerRoutes } from '../routes';
 import { config } from '../config';
+
+const mockConfig = vi.hoisted(() => ({
+  jwtSecret: 'teams-test-secret',
+  adminEmails: [] as string[],
+  // The legacy generic tests below run unsigned, as with the default test environment.
+  enforceAuthForWrites: false,
+  rateLimitEnabled: false,
+  rateLimitWindowMs: 60_000,
+  rateLimitMax: 1000,
+  adminIpWhitelist: [] as string[],
+  port: 5001,
+  host: '0.0.0.0',
+  isProduction: false,
+  isReplit: false,
+}));
+vi.mock('../config', () => ({ config: mockConfig }));
 
 // Mock the storage module
 vi.mock('../storage', async (importOriginal) => {
@@ -18,6 +34,7 @@ import { storage } from '../storage.js';
 
 let app: Express;
 let server: http.Server;
+const memberToken = jwt.sign({ id: 7, email: 'owner@example.com' }, config.jwtSecret);
 
 beforeAll(async () => {
   app = express();
@@ -128,16 +145,136 @@ describe('Team Management API', () => {
     const updatedTeam = { ...mockTeam, ...updateData };
     (storage.updateTeam as vi.Mock).mockResolvedValue(updatedTeam);
 
-    const response = await request(app).put(`/api/teams/${mockTeam.id}`).send(updateData);
+    (storage.getUserTeamRole as vi.Mock).mockResolvedValue('owner');
+
+    const response = await request(app)
+      .put(`/api/teams/${mockTeam.id}`)
+      .set('Authorization', `Bearer ${memberToken}`)
+      .send(updateData);
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual(updatedTeam);
+    expect(storage.updateTeam).toHaveBeenCalledWith(mockTeam.id, updateData);
+  });
+
+  describe('PUT /api/teams/:id (organization management)', () => {
+    afterEach(() => {
+      mockConfig.enforceAuthForWrites = false;
+    });
+
+    it('TC-TEAM-006b: a body naming organizationId or id reaches updateTeam without them', async () => {
+      (storage.getUserTeamRole as vi.Mock).mockResolvedValue('admin');
+      (storage.updateTeam as vi.Mock).mockResolvedValue({ ...mockTeam, displayName: 'x' });
+
+      const response = await request(app)
+        .put(`/api/teams/${mockTeam.id}`)
+        .set('Authorization', `Bearer ${memberToken}`)
+        .send({ organizationId: 2, id: 99, createdAt: '2020-01-01', displayName: 'x' });
+
+      expect(response.status).toBe(200);
+      expect(storage.updateTeam).toHaveBeenCalledTimes(1);
+      const [teamId, written] = (storage.updateTeam as vi.Mock).mock.calls[0];
+      expect(teamId).toBe(mockTeam.id);
+      expect(written).toEqual({ displayName: 'x' });
+      expect(written).not.toHaveProperty('organizationId');
+    });
+
+    it('TC-TEAM-006c: an invalid body is 400 { error } and nothing is written', async () => {
+      (storage.getUserTeamRole as vi.Mock).mockResolvedValue('owner');
+
+      const response = await request(app)
+        .put(`/api/teams/${mockTeam.id}`)
+        .set('Authorization', `Bearer ${memberToken}`)
+        .send({ displayName: 42 });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'Invalid team data' });
+      expect(storage.updateTeam).not.toHaveBeenCalled();
+    });
+
+    for (const enforce of [true, false]) {
+      it(`TC-TEAM-006d: signed out is 401 with ENFORCE_AUTH_WRITES=${enforce}`, async () => {
+        mockConfig.enforceAuthForWrites = enforce;
+
+        const response = await request(app)
+          .put(`/api/teams/${mockTeam.id}`)
+          .send({ displayName: 'x' });
+
+        expect(response.status).toBe(401);
+        expect(storage.updateTeam).not.toHaveBeenCalled();
+      });
+
+      it(`TC-TEAM-006e: a signed-in owner updates with ENFORCE_AUTH_WRITES=${enforce}`, async () => {
+        mockConfig.enforceAuthForWrites = enforce;
+        (storage.getUserTeamRole as vi.Mock).mockResolvedValue('owner');
+        (storage.updateTeam as vi.Mock).mockResolvedValue(mockTeam);
+
+        const response = await request(app)
+          .put(`/api/teams/${mockTeam.id}`)
+          .set('Authorization', `Bearer ${memberToken}`)
+          .send({ displayName: 'x' });
+
+        expect(response.status).toBe(200);
+      });
+    }
+
+    it('TC-TEAM-006f: a body that parses to nothing is 400 and nothing is written', async () => {
+      (storage.getUserTeamRole as vi.Mock).mockResolvedValue('owner');
+      for (const body of [{}, { organizationId: 2 }, { id: 5, createdAt: '2020-01-01' }]) {
+        const response = await request(app)
+          .put(`/api/teams/${mockTeam.id}`)
+          .set('Authorization', `Bearer ${memberToken}`)
+          .send(body);
+        expect(response.status).toBe(400);
+        expect(response.body).toEqual({ error: 'Invalid team data' });
+      }
+      expect(storage.updateTeam).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('DELETE /api/teams/:id (session in every mode)', () => {
+    afterEach(() => {
+      mockConfig.enforceAuthForWrites = false;
+    });
+
+    for (const enforce of [true, false]) {
+      it(`signed out is 401 with ENFORCE_AUTH_WRITES=${enforce}`, async () => {
+        mockConfig.enforceAuthForWrites = enforce;
+        const response = await request(app).delete(`/api/teams/${mockTeam.id}`);
+        expect(response.status).toBe(401);
+        expect(storage.getUserTeamRole).not.toHaveBeenCalled();
+        expect(storage.deleteTeam).not.toHaveBeenCalled();
+      });
+
+      it(`a signed-in owner deletes with ENFORCE_AUTH_WRITES=${enforce}`, async () => {
+        mockConfig.enforceAuthForWrites = enforce;
+        (storage.getUserTeamRole as vi.Mock).mockResolvedValue('owner');
+        (storage.deleteTeam as vi.Mock).mockResolvedValue('deleted');
+        const response = await request(app)
+          .delete(`/api/teams/${mockTeam.id}`)
+          .set('Authorization', `Bearer ${memberToken}`);
+        expect(response.status).toBe(204);
+      });
+
+      it(`a signed-in non-owner is 403 with ENFORCE_AUTH_WRITES=${enforce}`, async () => {
+        mockConfig.enforceAuthForWrites = enforce;
+        (storage.getUserTeamRole as vi.Mock).mockResolvedValue('admin');
+        const response = await request(app)
+          .delete(`/api/teams/${mockTeam.id}`)
+          .set('Authorization', `Bearer ${memberToken}`);
+        expect(response.status).toBe(403);
+        expect(storage.deleteTeam).not.toHaveBeenCalled();
+      });
+    }
   });
 
   it('TC-TEAM-007: should delete a team', async () => {
     (storage.deleteTeam as vi.Mock).mockResolvedValue('deleted');
 
-    const response = await request(app).delete(`/api/teams/${mockTeam.id}`);
+    (storage.getUserTeamRole as vi.Mock).mockResolvedValue('owner');
+    const response = await request(app)
+      .delete(`/api/teams/${mockTeam.id}`)
+      .set('Authorization', `Bearer ${memberToken}`);
 
     expect(response.status).toBe(204);
   });
@@ -145,7 +282,10 @@ describe('Team Management API', () => {
   it('TC-TEAM-008: refuses to delete a team that still has pages', async () => {
     (storage.deleteTeam as vi.Mock).mockResolvedValue('has-pages');
 
-    const response = await request(app).delete(`/api/teams/${mockTeam.id}`);
+    (storage.getUserTeamRole as vi.Mock).mockResolvedValue('owner');
+    const response = await request(app)
+      .delete(`/api/teams/${mockTeam.id}`)
+      .set('Authorization', `Bearer ${memberToken}`);
 
     expect(response.status).toBe(409);
     expect(response.body.error).toMatch(/still has pages/);
@@ -154,7 +294,10 @@ describe('Team Management API', () => {
   it('TC-TEAM-009: reports a missing team as not found', async () => {
     (storage.deleteTeam as vi.Mock).mockResolvedValue('not-found');
 
-    const response = await request(app).delete(`/api/teams/${mockTeam.id}`);
+    (storage.getUserTeamRole as vi.Mock).mockResolvedValue('owner');
+    const response = await request(app)
+      .delete(`/api/teams/${mockTeam.id}`)
+      .set('Authorization', `Bearer ${memberToken}`);
 
     expect(response.status).toBe(404);
   });

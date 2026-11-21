@@ -1,9 +1,8 @@
-import type { Express, NextFunction, Response } from 'express';
+import type { Express, NextFunction, RequestHandler, Response } from 'express';
 import { createServer, type Server as HttpServer } from 'http';
 import { Server as SocketIoServer } from 'socket.io';
 import {
   authMiddleware,
-  isPlatformAdmin,
   requireAdmin,
   writeAuthGate,
   buildRateLimiter,
@@ -36,6 +35,7 @@ import {
   insertTemplateSchema,
   updateTemplateSchema,
   insertTeamSchema,
+  updateTeamSchema,
   insertSavedViewSchema,
   updateSavedViewSchema,
   pageFavorites,
@@ -75,7 +75,12 @@ import {
 import * as aiService from './services/ai.js';
 import { aiAssistant } from './services/ai-assistant.js';
 import { z } from 'zod';
-import { triggerWorkflows, initWorkflowService, executeWorkflow } from './services/workflow.js';
+import {
+  triggerWorkflows,
+  initWorkflowService,
+  executeWorkflow,
+  workflowUsesAi,
+} from './services/workflow.js';
 import {
   savePage,
   checkpointPage,
@@ -104,6 +109,7 @@ import { ANONYMOUS_PAGE_VIEWER, DBStorage, OrganizationRequiredError } from './s
 import { createUserInDefaultOrganization } from './organizations.js';
 import { registerKnowledgeRoutes } from './routes/knowledge.js';
 import { buildKnowledgeGraph, suggestAiLinks } from './services/knowledge-graph.js';
+import { aiRefusalFor, aiUsableBy, requireOrganizationAi } from './organization-guards.js';
 import { isReservedDailyNoteSlug } from '../shared/daily-notes.js';
 import { isPageId } from '../shared/page-links.js';
 import { draftPageExcerpt, excerptLinkIds, renderPageExcerpt } from '../shared/page-excerpt.js';
@@ -277,6 +283,16 @@ export async function registerRoutes(
   const rlAdmin = buildRateLimiter({ windowMs: 60_000, max: 30 });
   const rlUpload = buildRateLimiter({ windowMs: 60_000, max: 30 });
   const rlAI = buildRateLimiter({ windowMs: 60_000, max: 15 }); // AI endpoints are expensive
+  // Rate limit, then the caller's AI access (the organization's switch and the member's own grant):
+  // content reaches a provider only when both hold
+  const aiGate: RequestHandler = (req, res, next) =>
+    rlAI(req, res, (err?: unknown) =>
+      err ? next(err) : requireOrganizationAi(req as AuthRequest, res, next)
+    );
+  // Rate limit, then the session (read whatever ENFORCE_AUTH_WRITES says): the AI search degrades
+  // by the caller's AI access instead of refusing
+  const aiSession: RequestHandler = (req, res, next) =>
+    rlAI(req, res, (err?: unknown) => (err ? next(err) : optionalAuth(req, res, next)));
   const rlAnalytics = buildRateLimiter({ windowMs: 60_000, max: 60 }); // analytics view recording
 
   // User Registration
@@ -1956,13 +1972,18 @@ export async function registerRoutes(
         return res.status(404).json({ message: 'Comment not found' });
       }
 
-      // Owner-based authorization: only the comment author or a platform admin may edit
+      // A caller who cannot view the comment's page is answered as for an unknown comment. The
+      // author may then edit only while they may still comment on the page (the level creating
+      // a comment requires); anyone else who can view the page is refused.
+      if (!(await storage.checkPagePermission(userId, existing.pageId, 'viewer'))) {
+        return res.status(404).json({ message: 'Comment not found' });
+      }
       const isOwner = existing.authorUserId != null && existing.authorUserId === userId;
-      const isAdmin = !isOwner && (await isPlatformAdmin(storage, req.user));
-      if (!isOwner && !isAdmin) {
-        return res
-          .status(403)
-          .json({ message: 'Only the comment author or an admin can edit this comment' });
+      if (!isOwner) {
+        return res.status(403).json({ message: 'Only the comment author can edit this comment' });
+      }
+      if (!(await storage.checkPagePermission(userId, existing.pageId, 'commenter'))) {
+        return res.status(404).json({ message: 'Comment not found' });
       }
 
       // updateCommentSchema already strips author/authorUserId to prevent identity tampering
@@ -1990,17 +2011,20 @@ export async function registerRoutes(
         return res.status(404).json({ message: 'Comment not found' });
       }
 
-      // Owner-based authorization: comment author, page editor, or platform admin may delete
-      const isOwner = existing.authorUserId != null && existing.authorUserId === userId;
-      const isAdmin = !isOwner && (await isPlatformAdmin(storage, req.user));
-      let isPageEditor = false;
-      if (!isOwner && !isAdmin) {
-        isPageEditor = await storage.checkPagePermission(userId, existing.pageId, 'editor');
+      // A caller who cannot view the comment's page is answered as for an unknown comment. The
+      // author may then delete only while they may still comment on the page; anyone else needs
+      // to be a page editor.
+      if (!(await storage.checkPagePermission(userId, existing.pageId, 'viewer'))) {
+        return res.status(404).json({ message: 'Comment not found' });
       }
-
-      if (!isOwner && !isAdmin && !isPageEditor) {
+      const isOwner = existing.authorUserId != null && existing.authorUserId === userId;
+      if (isOwner) {
+        if (!(await storage.checkPagePermission(userId, existing.pageId, 'commenter'))) {
+          return res.status(404).json({ message: 'Comment not found' });
+        }
+      } else if (!(await storage.checkPagePermission(userId, existing.pageId, 'editor'))) {
         return res.status(403).json({
-          message: 'Only the comment author, page editor, or admin can delete this comment',
+          message: 'Only the comment author or a page editor can delete this comment',
         });
       }
 
@@ -3089,11 +3113,21 @@ export async function registerRoutes(
       return true;
     };
 
+    // An account without an organization has no notifications to read or change.
+    const accountHasOrganization = async (userId: number): Promise<boolean> => {
+      const organizationId = await storage.getUserOrganizationId(userId);
+      return organizationId !== null && organizationId !== undefined;
+    };
+    const noOrganization = { message: 'Your account does not belong to an organization' };
+
     app.get('/api/notifications', authMiddleware, async (req: AuthRequest, res) => {
       try {
         const userId = req.user?.id;
         if (!userId) {
           return res.status(401).json({ message: 'Authentication required' });
+        }
+        if (!(await accountHasOrganization(userId))) {
+          return res.status(403).json(noOrganization);
         }
 
         const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
@@ -3143,6 +3177,9 @@ export async function registerRoutes(
         if (!userId) {
           return res.status(401).json({ message: 'Authentication required' });
         }
+        if (!(await accountHasOrganization(userId))) {
+          return res.status(403).json(noOrganization);
+        }
 
         const memberIds = await storage.getMemberIdsForUser(userId);
         const count = memberIds.length ? await storage.getUnreadNotificationCount(memberIds) : 0;
@@ -3157,6 +3194,9 @@ export async function registerRoutes(
         const userId = req.user?.id;
         if (!userId) {
           return res.status(401).json({ message: 'Authentication required' });
+        }
+        if (!(await accountHasOrganization(userId))) {
+          return res.status(403).json(noOrganization);
         }
         const id = parseInt(req.params.id);
         const notification = await storage.getNotificationForUser(id, userId);
@@ -3200,6 +3240,9 @@ export async function registerRoutes(
         const userId = req.user?.id;
         if (!userId) {
           return res.status(401).json({ message: 'Authentication required' });
+        }
+        if (!(await accountHasOrganization(userId))) {
+          return res.status(403).json(noOrganization);
         }
         const id = parseInt(req.params.id);
         // Ownership check: fetch before updating
@@ -3253,6 +3296,9 @@ export async function registerRoutes(
         if (!userId) {
           return res.status(401).json({ message: 'Authentication required' });
         }
+        if (!(await accountHasOrganization(userId))) {
+          return res.status(403).json(noOrganization);
+        }
         const id = parseInt(req.params.id);
         // Ownership check: fetch before deleting
         const existing = await storage.getNotificationForUser(id, userId);
@@ -3293,6 +3339,9 @@ export async function registerRoutes(
         if (!userId) {
           return res.status(401).json({ message: 'Authentication required' });
         }
+        if (!(await accountHasOrganization(userId))) {
+          return res.status(403).json(noOrganization);
+        }
         const id = parseInt(req.params.id);
         // Ownership check: fetch before marking as read
         const existing = await storage.getNotificationForUser(id, userId);
@@ -3325,6 +3374,9 @@ export async function registerRoutes(
         const userId = req.user?.id;
         if (!userId) {
           return res.status(401).json({ message: 'Authentication required' });
+        }
+        if (!(await accountHasOrganization(userId))) {
+          return res.status(403).json(noOrganization);
         }
 
         const memberIds = await storage.getMemberIdsForUser(userId);
@@ -3639,19 +3691,25 @@ export async function registerRoutes(
 
         // Always verify user's team membership and role for team updates
         const userId = req.user?.id;
-        if (userId) {
-          const userRole = await storage.getUserTeamRole(userId, id);
-          if (!userRole) {
-            return res.status(403).json({ error: 'You are not a member of this team' });
-          }
-          if (userRole === 'member') {
-            return res.status(403).json({ error: 'Admin or owner role required to update team' });
-          }
-        } else if (config.enforceAuthForWrites) {
+        if (!userId) {
           return res.status(401).json({ error: 'Authentication required' });
         }
+        const userRole = await storage.getUserTeamRole(userId, id);
+        if (!userRole) {
+          return res.status(403).json({ error: 'You are not a member of this team' });
+        }
+        if (userRole === 'member') {
+          return res.status(403).json({ error: 'Admin or owner role required to update team' });
+        }
 
-        const team = await storage.updateTeam(id, req.body);
+        // Only the columns updateTeamSchema allows are written; the team's organization and id
+        // are never taken from the request.
+        const parsed = updateTeamSchema.safeParse(req.body);
+        if (!parsed.success || Object.keys(parsed.data).length === 0) {
+          return res.status(400).json({ error: 'Invalid team data' });
+        }
+
+        const team = await storage.updateTeam(id, parsed.data);
         if (!team) {
           return res.status(404).json({ error: 'Team not found' });
         }
@@ -3672,16 +3730,15 @@ export async function registerRoutes(
 
           // Always verify user's team ownership for team deletion
           const userId = req.user?.id;
-          if (userId) {
-            const userRole = await storage.getUserTeamRole(userId, id);
-            if (!userRole) {
-              return res.status(403).json({ error: 'You are not a member of this team' });
-            }
-            if (userRole !== 'owner') {
-              return res.status(403).json({ error: 'Owner role required to delete team' });
-            }
-          } else if (config.enforceAuthForWrites) {
+          if (!userId) {
             return res.status(401).json({ error: 'Authentication required' });
+          }
+          const userRole = await storage.getUserTeamRole(userId, id);
+          if (!userRole) {
+            return res.status(403).json({ error: 'You are not a member of this team' });
+          }
+          if (userRole !== 'owner') {
+            return res.status(403).json({ error: 'Owner role required to delete team' });
           }
 
           const result = await storage.deleteTeam(id);
@@ -3905,7 +3962,7 @@ export async function registerRoutes(
   });
 
   // AI ??��??API
-  app.post('/api/ai/generate', rlAI, requireAuthIfEnabled, async (req, res) => {
+  app.post('/api/ai/generate', aiGate, requireAuthIfEnabled, async (req, res) => {
     try {
       const { prompt, type } = req.body;
       const { generateContent } = await import('./services/ai.js');
@@ -3918,7 +3975,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post('/api/ai/improve', rlAI, requireAuthIfEnabled, async (req, res) => {
+  app.post('/api/ai/improve', aiGate, requireAuthIfEnabled, async (req, res) => {
     try {
       const { content, title } = req.body;
       const { generateContentSuggestions } = await import('./services/ai.js');
@@ -3937,7 +3994,7 @@ export async function registerRoutes(
   // retrieval (top-k, ranked in the database) → optional LLM re-ranking over the
   // retrieved candidates only. The LLM never sees more than `limit` snippets, so
   // token cost is bounded by the request rather than by workspace size.
-  app.post('/api/ai/search', rlAI, requireAuthIfEnabled, async (req: AuthRequest, res) => {
+  app.post('/api/ai/search', aiSession, requireAuthIfEnabled, async (req: AuthRequest, res) => {
     try {
       const { query, teamId, limit } = req.body;
 
@@ -4019,7 +4076,7 @@ export async function registerRoutes(
       // ordering is returned and the request still succeeds — retrieval does not
       // depend on AI.
       let outcome = applyAiReranking(retrieved, null);
-      if (isAIAvailable()) {
+      if (isAIAvailable() && (await aiUsableBy(storage, req.user.id))) {
         try {
           const candidates = retrieved.slice(0, MAX_AI_RERANK_CANDIDATES);
           const scored = await smartSearch(
@@ -4056,7 +4113,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post('/api/ai/search-suggestions', rlAI, requireAuthIfEnabled, async (req, res) => {
+  app.post('/api/ai/search-suggestions', aiGate, requireAuthIfEnabled, async (req, res) => {
     try {
       const { query } = req.body;
 
@@ -4076,7 +4133,7 @@ export async function registerRoutes(
   });
 
   // AI Copilot Chat
-  app.post('/api/ai/copilot/chat', rlAI, requireAuthIfEnabled, async (req, res) => {
+  app.post('/api/ai/copilot/chat', aiGate, requireAuthIfEnabled, async (req, res) => {
     try {
       const { messages, context } = req.body;
 
@@ -4096,7 +4153,7 @@ export async function registerRoutes(
   });
 
   // Extract tasks from content
-  app.post('/api/ai/extract-tasks', rlAI, requireAuthIfEnabled, async (req, res) => {
+  app.post('/api/ai/extract-tasks', aiGate, requireAuthIfEnabled, async (req, res) => {
     try {
       const { content } = req.body;
 
@@ -4116,12 +4173,29 @@ export async function registerRoutes(
   });
 
   // Find related pages
-  app.post('/api/ai/related-pages', rlAI, requireAuthIfEnabled, async (req: AuthRequest, res) => {
+  app.post('/api/ai/related-pages', aiGate, requireAuthIfEnabled, async (req: AuthRequest, res) => {
     try {
       const { content, title, pageId } = req.body;
 
       if (!content || !title) {
         return res.status(400).json({ error: 'Content and title are required' });
+      }
+
+      // AI on a page follows the page's organization: a named page must exist, be readable by the
+      // caller and belong to the caller's organization. One answer for every refusal.
+      const relatedViewer = await storage.getPageViewer(req.user?.id);
+      if (pageId !== undefined && pageId !== null) {
+        const namedPage = Number.isInteger(Number(pageId))
+          ? await storage.getWikiPage(Number(pageId))
+          : undefined;
+        if (
+          !namedPage ||
+          relatedViewer.organizationId == null ||
+          Number(namedPage.organizationId) !== Number(relatedViewer.organizationId) ||
+          !(await storage.checkPagePermission(req.user?.id, namedPage.id, 'viewer'))
+        ) {
+          return res.status(404).json({ message: 'Page not found' });
+        }
       }
 
       // Scope pages to the authenticated user's accessible teams ? never pass undefined
@@ -4132,7 +4206,10 @@ export async function registerRoutes(
       // Aggregate pages across ALL of the user's teams ? not just the first one
       const relatedPageResults = await Promise.all(
         userTeamIdsForRelated.map((tid) =>
-          storage.searchWikiPages({ query: '', teamId: String(tid), limit: 100, offset: 0 })
+          storage.searchWikiPages(
+            { query: '', teamId: String(tid), limit: 100, offset: 0 },
+            { readableBy: relatedViewer }
+          )
         )
       );
       const searchResults = { pages: relatedPageResults.flatMap((r: any) => r.pages) };
@@ -4160,12 +4237,22 @@ export async function registerRoutes(
   // page-link, legacy [[Title]], tag and optional AI edges. Never carries page content.
   app.get(
     '/api/knowledge-graph',
+    optionalAuth,
     requireAuthIfEnabled,
     requireTeamMembership,
     async (req: AuthRequest, res) => {
       try {
         const teamParam = typeof req.query.teamId === 'string' ? req.query.teamId : undefined;
         const includeAILinks = req.query.includeAI === 'true';
+
+        // AI links send page content to the provider: only for a caller who may use AI
+        if (includeAILinks) {
+          if (!req.user?.id) {
+            return res.status(401).json({ message: 'Authentication required' });
+          }
+          const refusal = await aiRefusalFor(storage, req.user.id);
+          if (refusal) return res.status(refusal.status).json(refusal.body);
+        }
 
         // Use team IDs already resolved by requireTeamMembership middleware
         const userTeamIds: number[] = (req as any).userTeamIds ?? [];
@@ -4329,6 +4416,11 @@ export async function registerRoutes(
           if (!teamId) {
             return res.status(400).json({ error: 'teamId is required' });
           }
+          // Saving a workflow with the AI action needs the caller's AI access
+          if (workflowUsesAi(req.body?.actions)) {
+            const refusal = await aiRefusalFor(storage, req.user!.id);
+            if (refusal) return res.status(refusal.status).json(refusal.body);
+          }
           const workflowData = { ...req.body, teamId };
           // Validate action configs
           const actionValidationError = validateWorkflowActions(workflowData.actions);
@@ -4354,6 +4446,13 @@ export async function registerRoutes(
         try {
           const existingWorkflow = await loadWorkflowForMember(req, res);
           if (!existingWorkflow) return;
+          // The actions after this write need the caller's AI access when they include AI
+          const actionsAfter =
+            'actions' in (req.body ?? {}) ? req.body.actions : existingWorkflow.actions;
+          if (workflowUsesAi(actionsAfter)) {
+            const refusal = await aiRefusalFor(storage, req.user!.id);
+            if (refusal) return res.status(refusal.status).json(refusal.body);
+          }
           const workflowData = { ...req.body };
           // A workflow always keeps a team. A named target team was resolved and membership
           // checked by requireTeamMembership (any source that names a team names the same one).
@@ -4408,6 +4507,11 @@ export async function registerRoutes(
           const existingWorkflow = await loadWorkflowForMember(req, res);
           if (!existingWorkflow) return;
           const { isActive } = req.body;
+          // Anything that could turn an AI workflow on needs the caller's AI access
+          if (isActive !== false && workflowUsesAi(existingWorkflow.actions)) {
+            const refusal = await aiRefusalFor(storage, req.user!.id);
+            if (refusal) return res.status(refusal.status).json(refusal.body);
+          }
           const workflow = await storage.toggleWorkflow(existingWorkflow.id, isActive);
           if (!workflow) {
             return res.status(404).json({ error: 'Workflow not found' });
@@ -4430,6 +4534,10 @@ export async function registerRoutes(
         try {
           const workflow = await loadWorkflowForMember(req, res);
           if (!workflow) return;
+          if (workflowUsesAi(workflow.actions)) {
+            const refusal = await aiRefusalFor(storage, req.user!.id);
+            if (refusal) return res.status(refusal.status).json(refusal.body);
+          }
           const triggerData = req.body.triggerData || {};
           const run = await executeWorkflow(workflow, triggerData);
           res.json({ dryRun: true, run });
@@ -4667,7 +4775,7 @@ export async function registerRoutes(
   });
 
   // AI text assistance
-  app.post('/api/ai/assist', rlAI, requireAuthIfEnabled, async (req, res) => {
+  app.post('/api/ai/assist', aiGate, requireAuthIfEnabled, async (req, res) => {
     try {
       const { command, text, language, targetCase } = req.body;
 
@@ -4692,7 +4800,7 @@ export async function registerRoutes(
   });
 
   // AI block generation
-  app.post('/api/ai/generate-block', rlAI, requireAuthIfEnabled, async (req, res) => {
+  app.post('/api/ai/generate-block', aiGate, requireAuthIfEnabled, async (req, res) => {
     try {
       const { prompt, blockType } = req.body;
 
@@ -4715,7 +4823,7 @@ export async function registerRoutes(
   });
 
   // AI smart suggestions
-  app.post('/api/ai/suggestions', rlAI, requireAuthIfEnabled, async (req, res) => {
+  app.post('/api/ai/suggestions', aiGate, requireAuthIfEnabled, async (req, res) => {
     try {
       const { text, cursorPosition } = req.body;
 
@@ -4734,7 +4842,7 @@ export async function registerRoutes(
   });
 
   // AI auto-format
-  app.post('/api/ai/auto-format', rlAI, requireAuthIfEnabled, async (req, res) => {
+  app.post('/api/ai/auto-format', aiGate, requireAuthIfEnabled, async (req, res) => {
     try {
       const { text } = req.body;
 
@@ -4753,7 +4861,7 @@ export async function registerRoutes(
   });
 
   // Inline AI action on selected text (summarize | rewrite | taskify)
-  app.post('/api/ai/inline', rlAI, requireAuthIfEnabled, async (req, res) => {
+  app.post('/api/ai/inline', aiGate, requireAuthIfEnabled, async (req, res) => {
     try {
       const { action, text } = req.body;
 

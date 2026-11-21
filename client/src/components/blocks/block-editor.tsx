@@ -68,6 +68,8 @@ interface BlockEditorProps {
   onChange: (blocks: Block[]) => void;
   teamName?: string;
   pageId?: number;
+  /** AI actions are allowed on this page (default true: a page being created is the caller's own). */
+  aiOfferedOnPage?: boolean;
   userId?: string;
   userName?: string;
   useYjs?: boolean; // Enable Yjs CRDT collaboration (default: false)
@@ -80,6 +82,7 @@ export function BlockEditor({
   onChange,
   teamName,
   pageId,
+  aiOfferedOnPage = true,
   userId,
   userName,
   useYjs = false, // Default to false for backward compatibility
@@ -1203,7 +1206,10 @@ export function BlockEditor({
         />
 
         {/* Inline Formatting Toolbar (appears on text selection) */}
-        <InlineFormattingToolbar containerRef={editorContainerRef} />
+        <InlineFormattingToolbar
+          containerRef={editorContainerRef}
+          aiOfferedOnPage={aiOfferedOnPage}
+        />
       </div>
     </EmbedScopeProvider>
   );
