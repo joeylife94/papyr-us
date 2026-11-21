@@ -32,6 +32,7 @@ import http from 'http';
 import jwt from 'jsonwebtoken';
 import cookieParser from 'cookie-parser';
 import { registerRoutes } from '../routes';
+import logger from '../services/logger';
 
 const TEST_SECRET = 'comment-notifications-secret';
 
@@ -276,17 +277,65 @@ describe('comment notifications', () => {
     expect(storedContent()).toBe(`@unknown and [[user:${C}]]`);
   });
 
-  it('a commenter of another organization on a publicly shared page reaches only members of the page organization', async () => {
-    publicPage = true;
-    page = { ...page, organizationId: ORG };
-    const res = await post(H, {
-      content: `hi [[user:${C}]] [[user:${A}]] [[user:${F}]] [[user:${G}]]`,
+  describe('a commenter outside the page organization (publicly shared page)', () => {
+    beforeEach(() => {
+      publicPage = true;
     });
-    expect(res.status).toBe(201);
-    expect(written()).toEqual({
-      [C]: ['mention', ORG, H],
-      [A]: ['mention', ORG, H],
-      [B]: ['comment', ORG, H],
+
+    it('mentions nobody: the stored text and the answer are the same whatever the ids were', async () => {
+      const eligible = await post(H, { content: `hi [[user:${C}]] [[user:${A}]]` });
+      const stored1 = storedContent();
+      storage.createCommentWithNotifications.mockClear();
+      storage.createComment.mockClear();
+      const ineligible = await post(H, { content: `hi [[user:${E}]] [[user:${G}]]` });
+      const stored2 = storedContent();
+      storage.createCommentWithNotifications.mockClear();
+      storage.createComment.mockClear();
+      const unknown = await post(H, { content: 'hi [[user:9999]] [[user:9998]]' });
+      for (const res of [eligible, ineligible, unknown]) {
+        expect(res.status).toBe(201);
+        expect(res.body.content).toBe('hi @unknown @unknown');
+      }
+      expect(stored1).toBe('hi @unknown @unknown');
+      expect(stored2).toBe('hi @unknown @unknown');
+      expect(JSON.stringify([eligible.body, ineligible.body, unknown.body])).not.toContain('user:');
+    });
+
+    it('sends no mention notification, while the page creator is still told of a top-level comment', async () => {
+      const res = await post(H, {
+        content: `hi [[user:${C}]] [[user:${A}]] [[user:${F}]] [[user:${G}]]`,
+      });
+      expect(res.status).toBe(201);
+      expect(written()).toEqual({ [B]: ['comment', ORG, H] });
+    });
+
+    it('still notifies the thread of a reply by the usual rules', async () => {
+      threadRows = [{ id: 1, parentId: null, authorUserId: C }];
+      const res = await post(H, { content: `[[user:${D}]]`, parentId: 1 });
+      expect(res.status).toBe(201);
+      expect(written()).toEqual({ [C]: ['reply', ORG, H] });
+    });
+
+    it('an edit keeps no token and notifies nobody', async () => {
+      storage.getComment.mockResolvedValue({
+        id: 1,
+        pageId: PAGE_ID,
+        authorUserId: H,
+        content: 'x',
+      });
+      storage.updateComment.mockImplementation(async (id: number, data: any) => ({ id, ...data }));
+      const eligible = await request(app)
+        .put('/api/comments/1')
+        .set(as(H))
+        .send({ content: `[[user:${C}]]` });
+      const unknown = await request(app)
+        .put('/api/comments/1')
+        .set(as(H))
+        .send({ content: '[[user:9999]]' });
+      expect(eligible.status).toBe(200);
+      expect(eligible.body).toEqual(unknown.body);
+      expect(storage.updateComment).toHaveBeenCalledWith(1, { content: '@unknown' });
+      expect(storage.updateCommentWithNotifications).not.toHaveBeenCalled();
     });
   });
 
@@ -365,12 +414,38 @@ describe('comment notifications', () => {
       expect(res.body).toMatchObject({ id: 500, content: 'still posted' });
     });
 
-    it('when the recipients could not be worked out: stored without live mentions, nobody notified', async () => {
+    it('when the recipients of a member comment cannot be worked out: 503, nothing stored', async () => {
       storage.getReadableOrganizationMembers.mockRejectedValue(new Error('db down'));
       const res = await post(A, { content: `hi [[user:${C}]]` });
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(503);
+      expect(res.body).toEqual({
+        message: 'Comments are temporarily unavailable. Please try again.',
+      });
+      expect(storage.createComment).not.toHaveBeenCalled();
       expect(storage.createCommentWithNotifications).not.toHaveBeenCalled();
+    });
+
+    it('when the recipients of an outsider comment cannot be worked out: stored without mentions', async () => {
+      publicPage = true;
+      storage.getReadableOrganizationMembers.mockRejectedValue(new Error('db down'));
+      const res = await post(H, { content: `hi [[user:${C}]]` });
+      expect(res.status).toBe(201);
       expect(storedContent()).toBe('hi @unknown');
+    });
+
+    it('logs no comment text when planning fails', async () => {
+      const lines: string[] = [];
+      const spy = vi.spyOn(logger, 'error').mockImplementation(((...args: unknown[]) => {
+        lines.push(JSON.stringify(args));
+        return logger;
+      }) as any);
+      storage.getReadableOrganizationMembers.mockRejectedValue(
+        new Error('Failed query: params: secret comment text')
+      );
+      await post(A, { content: `secret comment text [[user:${C}]]` });
+      spy.mockRestore();
+      expect(lines.length).toBeGreaterThan(0);
+      expect(lines.join('')).not.toContain('secret comment text');
     });
   });
 
@@ -408,6 +483,25 @@ describe('comment list with mentions', () => {
     expect(body).not.toContain('@example.com');
   });
 
+  it('gives an outsider and a signed-out reader no names and no tokens, whatever the ids', async () => {
+    publicPage = true;
+    storage.getCommentsByPageId.mockResolvedValue([
+      { id: 1, content: `a [[user:${C}]] b [[user:${E}]] c [[user:9999]]`, pageId: PAGE_ID },
+      { id: 2, content: 'plain', pageId: PAGE_ID },
+    ]);
+    for (const res of [
+      await request(app).get(`/api/pages/${PAGE_ID}/comments`).set(as(H)),
+      await request(app).get(`/api/pages/${PAGE_ID}/comments`),
+      await request(app).get(`/api/pages/${PAGE_ID}/comments`).set(as(G)),
+    ]) {
+      expect(res.status).toBe(200);
+      expect(res.body[0].content).toBe('a @unknown b @unknown c @unknown');
+      expect(res.body[0]).not.toHaveProperty('mentions');
+      expect(JSON.stringify(res.body)).not.toContain('Cy Mentioned');
+    }
+    expect(storage.getReadableOrganizationMembers).not.toHaveBeenCalled();
+  });
+
   it('names nobody when the lookup fails', async () => {
     storage.getCommentsByPageId.mockResolvedValue([
       { id: 1, content: `a [[user:${C}]]`, pageId: PAGE_ID },
@@ -420,17 +514,71 @@ describe('comment list with mentions', () => {
 });
 
 describe('editing a comment', () => {
-  it('keeps only mention tokens that name a current reader of the page, and notifies nobody', async () => {
-    storage.getComment.mockResolvedValue({ id: 1, pageId: PAGE_ID, authorUserId: A, content: 'x' });
+  beforeEach(() => {
     storage.updateComment.mockImplementation(async (id: number, data: any) => ({ id, ...data }));
-    const res = await request(app)
-      .put('/api/comments/1')
-      .set(as(A))
-      .send({ content: `[[user:${C}]] [[user:${H}]]` });
+    storage.updateCommentWithNotifications.mockImplementation(
+      async (id: number, data: any, drafts: any[]) => ({
+        comment: { id, ...data },
+        notifications: drafts.map((draft, index) => ({ id: 700 + index, ...draft })),
+        notificationsFailed: false,
+      })
+    );
+  });
+  const existing = (content: string) =>
+    storage.getComment.mockResolvedValue({ id: 1, pageId: PAGE_ID, authorUserId: A, content });
+  const edit = (content: string) =>
+    request(app).put('/api/comments/1').set(as(A)).send({ content });
+
+  it('keeps only mention tokens that name a current reader of the page', async () => {
+    existing('x');
+    const res = await edit(`[[user:${C}]] [[user:${H}]]`);
     expect(res.status).toBe(200);
-    expect(storage.updateComment).toHaveBeenCalledWith(1, { content: `[[user:${C}]] @unknown` });
+    expect(storage.updateCommentWithNotifications.mock.calls[0][1]).toEqual({
+      content: `[[user:${C}]] @unknown`,
+    });
+  });
+
+  it('notifies an eligible member the edit newly mentions, once, as a mention', async () => {
+    existing('x');
+    const res = await edit(`see [[user:${C}]]`);
+    expect(res.status).toBe(200);
+    const drafts = storage.updateCommentWithNotifications.mock.calls[0][2];
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0]).toMatchObject({
+      type: 'mention',
+      recipientUserId: C,
+      organizationId: ORG,
+      senderUserId: A,
+      content: 'see @Cy Mentioned',
+    });
+  });
+
+  it('does not notify again for a token that was already there, nor for the editor, nor an edit without mentions', async () => {
+    existing(`old [[user:${C}]]`);
+    const again = await edit(`new words [[user:${C}]] [[user:${A}]]`);
+    expect(again.status).toBe(200);
+    expect(storage.updateCommentWithNotifications).not.toHaveBeenCalled();
+    const plain = await edit('just text');
+    expect(plain.status).toBe(200);
+    expect(storage.updateCommentWithNotifications).not.toHaveBeenCalled();
     expect(storage.createNotification).not.toHaveBeenCalled();
-    expect(storage.createCommentWithNotifications).not.toHaveBeenCalled();
+  });
+
+  it('notifies nobody for an added mention of someone who cannot read the page', async () => {
+    existing('x');
+    const res = await edit(`[[user:${E}]] [[user:${F}]]`);
+    expect(res.status).toBe(200);
+    expect(storage.updateCommentWithNotifications).not.toHaveBeenCalled();
+    expect(storage.updateComment).toHaveBeenCalledWith(1, { content: '@unknown @unknown' });
+  });
+
+  it('answers 503 and stores nothing when the recipients cannot be worked out', async () => {
+    existing('x');
+    storage.getReadableOrganizationMembers.mockRejectedValue(new Error('db down'));
+    const res = await edit(`[[user:${C}]]`);
+    expect(res.status).toBe(503);
+    expect(storage.updateComment).not.toHaveBeenCalled();
+    expect(storage.updateCommentWithNotifications).not.toHaveBeenCalled();
   });
 });
 
@@ -445,10 +593,15 @@ describe('mention picker', () => {
     storage.listMentionCandidates.mockResolvedValue({
       candidates: [{ id: C, name: 'Cy Mentioned' }],
       more: false,
+      truncated: true,
     });
     const res = await search(A, 'cy');
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ candidates: [{ id: C, name: 'Cy Mentioned' }], more: false });
+    expect(res.body).toEqual({
+      candidates: [{ id: C, name: 'Cy Mentioned' }],
+      more: false,
+      truncated: true,
+    });
     expect(storage.listMentionCandidates).toHaveBeenCalledWith(ORG, PAGE_ID, 'cy', A);
   });
 

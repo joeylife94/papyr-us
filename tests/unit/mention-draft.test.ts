@@ -42,10 +42,17 @@ describe('mention draft', () => {
     expect(labelFor({ id: 1, name: 'Kim' }, picked)).toBe('Kim');
   });
 
-  it('shows a stored comment as editable text and back', () => {
+  it('shows a stored comment as editable text and back, keeping a token it cannot name', () => {
     const stored = 'ping [[user:1]] and [[user:9]]';
     const draft = contentToDraft(stored, new Map([[1, 'Alice']]));
-    expect(draft.text).toBe('ping @Alice and @unknown');
-    expect(draftToContent(draft.text, draft.picked)).toBe('ping [[user:1]] and @unknown');
+    expect(draft.text).toBe('ping @Alice and [[user:9]]');
+    expect(draftToContent(draft.text, draft.picked)).toBe(stored);
+  });
+
+  it('never turns an unnamed mention into literal text on the way to editing', () => {
+    const draft = contentToDraft('[[user:9]] [[user:10]]', new Map());
+    expect(draft.text).toBe('[[user:9]] [[user:10]]');
+    expect(draft.picked).toEqual([]);
+    expect(draftToContent(draft.text, draft.picked)).toBe('[[user:9]] [[user:10]]');
   });
 });

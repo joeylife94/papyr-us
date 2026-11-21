@@ -17,10 +17,14 @@
  *
  * The tables live in their own schema so this file can run next to the other Layer 4 files.
  */
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { Pool } from 'pg';
+import logger from '../../server/services/logger';
 import { addOrganizations } from './organizations-fixture';
-import { planCommentNotifications } from '../../server/services/comment-notify';
+import {
+  planCommentNotifications,
+  planEditNotifications,
+} from '../../server/services/comment-notify';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 
@@ -179,6 +183,26 @@ async function addComment(pageId: number, author: Person | null, parentId: numbe
   return Number(rows[0].id);
 }
 
+/** Whether the account is an active member of the organization (what the route decides). */
+async function isMember(userId: number, organizationId: number) {
+  const { rowCount } = await scoped.query(
+    `SELECT 1 FROM users u JOIN organization_members om ON om.user_id = u.id
+      WHERE u.id = $1 AND u.is_active AND om.organization_id = $2`,
+    [userId, organizationId]
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+const pageInfo = async (pageId: number) => {
+  const row = (await scoped.query(`SELECT * FROM wiki_pages WHERE id = $1`, [pageId])).rows[0];
+  return {
+    id: pageId,
+    title: row.title as string,
+    organizationId: Number(row.organization_id),
+    createdByUserId: row.created_by_user_id === null ? null : Number(row.created_by_user_id),
+  };
+};
+
 /** Plans and writes a comment the way the route does; returns what was written. */
 async function comment(
   page: { id: number },
@@ -186,15 +210,11 @@ async function comment(
   content: string,
   parentId: number | null = null
 ) {
-  const row = (await scoped.query(`SELECT * FROM wiki_pages WHERE id = $1`, [page.id])).rows[0];
+  const info = await pageInfo(page.id);
   const plan = await planCommentNotifications(storage, {
-    page: {
-      id: page.id,
-      title: row.title,
-      organizationId: Number(row.organization_id),
-      createdByUserId: row.created_by_user_id === null ? null : Number(row.created_by_user_id),
-    },
+    page: info,
     actorUserId: actor.id,
+    actorIsMember: await isMember(actor.id, info.organizationId),
     content,
     parentId,
   });
@@ -421,30 +441,60 @@ describe('what a comment writes', () => {
     }
   });
 
-  it('a commenter of another organization on a publicly shared page: recipients are the page organization’s readers, the notification is the page organization’s', async () => {
+  it('a commenter outside the organization on a publicly shared page mentions nobody: same stored text for any ids, creator still told, notification in the page organization', async () => {
     const creator = await newUser('x-creator');
     const member = await newUser('x-member');
-    const outsiderCreator = await newUser('x-outsider-peer', { organization: 'other' });
+    const blocked = await newUser('x-blocked');
+    const outsiderPeer = await newUser('x-outsider-peer', { organization: 'other' });
     const visitor = await newUser('x-visitor', { name: 'Vic Visitor', organization: 'other' });
     const page = await newPage({
       creator,
       grants: [
         ['user', creator.id, 'owner'],
+        ['user', member.id, 'viewer'],
         ['public', null, 'commenter'],
       ],
     });
-    const written = await comment(
+    const eligible = await comment(
       page,
       visitor,
-      `hi [[user:${member.id}]] [[user:${outsiderCreator.id}]]`
+      `hi [[user:${member.id}]] [[user:${creator.id}]]`
     );
-    expect(recipients(written)).toEqual({ [member.id]: 'mention', [creator.id]: 'comment' });
-    for (const row of written.notifications) {
-      expect(row.organizationId).toBe(defaultOrg);
-      expect(row.senderUserId).toBe(visitor.id);
+    const ineligible = await comment(
+      page,
+      visitor,
+      `hi [[user:${blocked.id}]] [[user:${outsiderPeer.id}]]`
+    );
+    const unknown = await comment(page, visitor, 'hi [[user:99999998]] [[user:99999999]]');
+    for (const written of [eligible, ineligible, unknown]) {
+      expect(written.comment.content).toBe('hi @unknown @unknown');
+      expect(recipients(written)).toEqual({ [creator.id]: 'comment' });
+      for (const row of written.notifications) {
+        expect(row.organizationId).toBe(defaultOrg);
+        expect(row.senderUserId).toBe(visitor.id);
+      }
     }
-    // The other organization's account got nothing, and its token is not stored live.
-    expect(written.comment.content).toBe(`hi [[user:${member.id}]] @unknown`);
+    const mentions = await scoped.query(
+      `SELECT 1 FROM notifications WHERE related_page_id = $1 AND type = 'mention'`,
+      [page.id]
+    );
+    expect(mentions.rowCount).toBe(0);
+  });
+
+  it('an edit by an account outside the organization keeps no token and notifies nobody', async () => {
+    const creator = await newUser('xe-creator');
+    const member = await newUser('xe-member');
+    const visitor = await newUser('xe-visitor', { organization: 'other' });
+    const page = await newPage({ creator, grants: [['public', null, 'commenter']] });
+    const info = await pageInfo(page.id);
+    const plan = await planEditNotifications(storage, {
+      page: info,
+      actorUserId: visitor.id,
+      actorIsMember: await isMember(visitor.id, info.organizationId),
+      content: `[[user:${member.id}]] [[user:99999999]]`,
+      previousContent: 'x',
+    });
+    expect(plan).toEqual({ content: '@unknown @unknown', notifications: [] });
   });
 
   it('a removed creator and a deactivated participant are not notified', async () => {
@@ -460,46 +510,108 @@ describe('what a comment writes', () => {
   });
 });
 
+const draftFor = (recipient: number, sender: number, pageId: number, over: any = {}) => ({
+  type: 'comment',
+  title: 't',
+  content: 'c',
+  recipientUserId: recipient,
+  organizationId: defaultOrg,
+  senderUserId: sender,
+  relatedPageId: pageId,
+  isRead: false,
+  ...over,
+});
+
 describe('failure mode of the notification write', () => {
-  it('a notification that cannot be written is dropped with all the others; the comment is committed', async () => {
+  it('a recipient who no longer exists is skipped and the others are still written', async () => {
     const a = await newUser('fm-a');
     const b = await newUser('fm-b');
+    const c = await newUser('fm-c');
     const page = await newPage({ creator: b });
-    const comments = async () =>
-      (await scoped.query(`SELECT count(*)::int AS n FROM comments WHERE page_id = $1`, [page.id]))
-        .rows[0].n as number;
-    const before = await notificationCount();
-
     const result = await storage.createCommentWithNotifications(
       { content: 'x', author: a.email, authorUserId: a.id, pageId: page.id },
       [
-        {
-          type: 'comment',
-          title: 't',
-          content: 'c',
-          recipientUserId: b.id,
-          organizationId: defaultOrg,
-          senderUserId: a.id,
-          relatedPageId: page.id,
-          isRead: false,
-        },
-        {
-          type: 'comment',
-          title: 't',
-          content: 'c',
-          recipientUserId: 987654321, // no such account: the foreign key refuses it
-          organizationId: defaultOrg,
-          senderUserId: a.id,
-          relatedPageId: page.id,
-          isRead: false,
-        },
+        draftFor(b.id, a.id, page.id),
+        draftFor(987654321, a.id, page.id),
+        draftFor(c.id, a.id, page.id),
       ]
     );
+    expect(result.notificationsFailed).toBe(false);
+    expect(result.notifications.map((n: any) => n.recipientUserId).sort()).toEqual(
+      [b.id, c.id].sort()
+    );
+  });
+
+  it('a recipient removed from the organization, deactivated, or in an inactive organization between planning and writing gets nothing; the others still do', async () => {
+    const a = await newUser('wr-a');
+    const creator = await newUser('wr-creator');
+    const stays = await newUser('wr-stays');
+    const removed = await newUser('wr-removed');
+    const deactivated = await newUser('wr-deactivated');
+    const page = await newPage({ creator });
+    const info = await pageInfo(page.id);
+    const plan = await planCommentNotifications(storage, {
+      page: info,
+      actorUserId: a.id,
+      actorIsMember: true,
+      content: `[[user:${stays.id}]] [[user:${removed.id}]] [[user:${deactivated.id}]]`,
+      parentId: null,
+    });
+    expect(plan.notifications.map((n) => n.recipientUserId).sort()).toEqual(
+      [stays.id, removed.id, deactivated.id, creator.id].sort()
+    );
+    // They leave after the plan was made.
+    await scoped.query(`DELETE FROM organization_members WHERE user_id = $1`, [removed.id]);
+    await scoped.query(`UPDATE users SET is_active = FALSE WHERE id = $1`, [deactivated.id]);
+    const written = await storage.createCommentWithNotifications(
+      { content: plan.content, author: a.email, authorUserId: a.id, pageId: page.id },
+      plan.notifications
+    );
+    expect(written.notificationsFailed).toBe(false);
+    expect(written.notifications.map((n: any) => n.recipientUserId).sort()).toEqual(
+      [stays.id, creator.id].sort()
+    );
+    const rows = await scoped.query(
+      `SELECT recipient_user_id FROM notifications WHERE related_comment_id = $1`,
+      [written.comment.id]
+    );
+    expect(rows.rows.map((r: any) => r.recipient_user_id).sort()).toEqual(
+      [stays.id, creator.id].sort()
+    );
+  });
+
+  it('a notification that cannot be written is dropped with all the others; the comment is committed and nothing of it is logged', async () => {
+    const a = await newUser('fm2-a');
+    const b = await newUser('fm2-b');
+    const page = await newPage({ creator: b });
+    const before = await notificationCount();
+    const logged: string[] = [];
+    const spy = vi.spyOn(logger, 'warn').mockImplementation(((...args: unknown[]) => {
+      logged.push(JSON.stringify(args));
+      return logger;
+    }) as any);
+    const secret = 'secret-comment-text-fm2';
+    const result = await storage.createCommentWithNotifications(
+      { content: secret, author: a.email, authorUserId: a.id, pageId: page.id },
+      [
+        draftFor(b.id, a.id, page.id, { title: secret }),
+        // a title the table refuses (NOT NULL): the whole notification write fails
+        draftFor(a.id, a.id, page.id, { title: null, content: secret }),
+      ]
+    );
+    spy.mockRestore();
     expect(result.notificationsFailed).toBe(true);
     expect(result.notifications).toEqual([]);
     expect(result.comment.id).toBeGreaterThan(0);
-    expect(await comments()).toBe(1);
+    expect(
+      (await scoped.query(`SELECT count(*)::int AS n FROM comments WHERE page_id = $1`, [page.id]))
+        .rows[0].n
+    ).toBe(1);
     expect(await notificationCount()).toBe(before);
+    expect(logged.length).toBe(1);
+    expect(logged[0]).toContain(String(result.comment.id));
+    expect(logged[0]).not.toContain(secret);
+    expect(logged[0]).not.toContain(a.email);
   });
 
   it('a comment that cannot be written writes no notification', async () => {
@@ -597,14 +709,19 @@ describe('mention picker', () => {
       ],
     });
     const found = await storage.listMentionCandidates(defaultOrg, page.id, 'z', caller.id);
-    expect(found).toEqual({ candidates: [], more: false }); // one character reads nothing
+    expect(found).toEqual({ candidates: [], more: false, truncated: false }); // one character reads nothing
     const two = await storage.listMentionCandidates(defaultOrg, page.id, 'zo', caller.id);
-    expect(two).toEqual({ candidates: [{ id: reader.id, name: 'Zoe Reader' }], more: false });
+    expect(two).toEqual({
+      candidates: [{ id: reader.id, name: 'Zoe Reader' }],
+      more: false,
+      truncated: false,
+    });
     // Matches by name that cannot read the page, or are not members, list nobody.
     for (const search of ['za', 'zi', 'zan', 'zig']) {
       expect(await storage.listMentionCandidates(defaultOrg, page.id, search, caller.id)).toEqual({
         candidates: [],
         more: false,
+        truncated: false,
       });
     }
     // Only id and name leave storage.
@@ -651,5 +768,263 @@ describe('mention picker', () => {
     });
     const found = await storage.listMentionCandidates(defaultOrg, page.id, 'sky', caller.id);
     expect(found.candidates.map((c: any) => c.id)).toEqual([reader.id]);
+  });
+});
+
+describe('edits', () => {
+  it('an edit writes mention notifications for added mentions only, in the same transaction, and does not rewrite earlier ones', async () => {
+    const a = await newUser('e-a', { name: 'Eve Editor' });
+    const creator = await newUser('e-creator');
+    const kept = await newUser('e-kept', { name: 'Kay Kept' });
+    const added = await newUser('e-added', { name: 'Ada Added' });
+    const page = await newPage({ creator });
+    const first = await comment(page, a, `hi [[user:${kept.id}]]`);
+    const commentId = first.comment.id as number;
+    const keptRow = first.notifications.find((n: any) => n.recipientUserId === kept.id);
+
+    const info = await pageInfo(page.id);
+    const plan = await planEditNotifications(storage, {
+      page: info,
+      actorUserId: a.id,
+      actorIsMember: true,
+      content: `hi [[user:${kept.id}]] and [[user:${added.id}]] and [[user:${a.id}]]`,
+      previousContent: first.comment.content,
+    });
+    expect(plan.notifications.map((n) => [n.recipientUserId, n.type])).toEqual([
+      [added.id, 'mention'],
+    ]);
+    const edited = await storage.updateCommentWithNotifications(
+      commentId,
+      { content: plan.content },
+      plan.notifications
+    );
+    expect(edited.comment.content).toBe(plan.content);
+    expect(edited.notifications).toHaveLength(1);
+    expect(edited.notifications[0]).toMatchObject({
+      recipientUserId: added.id,
+      type: 'mention',
+      relatedCommentId: commentId,
+      organizationId: defaultOrg,
+      senderUserId: a.id,
+    });
+    expect(edited.notifications[0].content).toBe('hi @Kay Kept and @Ada Added and @Eve Editor');
+    const keptNow = (await scoped.query(`SELECT * FROM notifications WHERE id = $1`, [keptRow.id]))
+      .rows[0];
+    expect(keptNow.content).toBe(keptRow.content);
+    expect(
+      (
+        await scoped.query(
+          `SELECT count(*)::int AS n FROM notifications WHERE related_comment_id = $1 AND recipient_user_id = $2`,
+          [commentId, kept.id]
+        )
+      ).rows[0].n
+    ).toBe(1);
+    // Editing a comment that is gone writes nothing.
+    const gone = await storage.updateCommentWithNotifications(
+      987654321,
+      { content: 'x' },
+      plan.notifications
+    );
+    expect(gone.comment).toBeUndefined();
+    expect(gone.notifications).toEqual([]);
+  });
+});
+
+/** Runs `work` and returns how many queries went through the pool while it ran. */
+async function queriesDuring(work: () => Promise<unknown>) {
+  const pool = storage.pool;
+  const original = pool.query.bind(pool);
+  let count = 0;
+  pool.query = (...args: unknown[]) => {
+    count += 1;
+    return original(...args);
+  };
+  try {
+    await work();
+  } finally {
+    pool.query = original;
+  }
+  return count;
+}
+
+describe('reader resolution is a fixed number of queries and agrees with checkPagePermission', () => {
+  it('names 50 mentioned accounts, and all of them, in at most 6 queries', async () => {
+    const creator = await newUser('n-creator');
+    const crowd: Person[] = [];
+    for (let i = 0; i < 50; i++) crowd.push(await newUser(`n-${i}`));
+    const page = await newPage({ creator });
+    const ids = crowd.map((p) => p.id);
+    let names = new Map<number, string>();
+    const used = await queriesDuring(async () => {
+      names = await storage.getReadableOrganizationMembers(defaultOrg, page.id, ids);
+    });
+    expect(names.size).toBe(50);
+    expect(used).toBeLessThanOrEqual(6);
+    // The same for 5 ids: the count does not grow with the number of accounts.
+    const fewer = await queriesDuring(() =>
+      storage.getReadableOrganizationMembers(defaultOrg, page.id, ids.slice(0, 5))
+    );
+    expect(fewer).toBe(used);
+  });
+
+  it('gives the same answer as checkPagePermission(viewer) for every kind of account on every kind of page', async () => {
+    const team = (
+      await scoped.query(
+        `INSERT INTO teams (name, display_name, organization_id) VALUES ('eq-team', 'eq', $1) RETURNING id`,
+        [defaultOrg]
+      )
+    ).rows[0].id as number;
+    const otherTeam = (
+      await scoped.query(
+        `INSERT INTO teams (name, display_name, organization_id) VALUES ('eq-team2', 'eq2', $1) RETURNING id`,
+        [defaultOrg]
+      )
+    ).rows[0].id as number;
+    const creator = await newUser('eq-creator');
+    const plain = await newUser('eq-plain');
+    const granted = await newUser('eq-granted');
+    const teamMember = await newUser('eq-teammember');
+    const otherTeamMember = await newUser('eq-otherteam');
+    const teamGranted = await newUser('eq-teamgranted');
+    const authorByEmail = await newUser('eq-author');
+    const outsider = await newUser('eq-outsider', { organization: 'other' });
+    for (const [user, teamId] of [
+      [teamMember, team],
+      [otherTeamMember, otherTeam],
+      [teamGranted, otherTeam],
+    ] as Array<[Person, number]>) {
+      await scoped.query(`INSERT INTO team_members (team_id, user_id) VALUES ($1, $2)`, [
+        teamId,
+        user.id,
+      ]);
+    }
+    const everyone = [
+      creator,
+      plain,
+      granted,
+      teamMember,
+      otherTeamMember,
+      teamGranted,
+      authorByEmail,
+      outsider,
+    ];
+    const makePage = async (options: {
+      teamId?: number;
+      creator?: Person | null;
+      author?: string;
+      grants?: Array<[string, number | null, string]>;
+    }) => {
+      const page = await newPage({
+        creator: options.creator === undefined ? creator : options.creator,
+        author: options.author,
+        grants: options.grants,
+      });
+      if (options.teamId) {
+        await scoped.query(`UPDATE wiki_pages SET team_id = $1 WHERE id = $2`, [
+          options.teamId,
+          page.id,
+        ]);
+      }
+      return page;
+    };
+    const pages = [
+      await makePage({}),
+      await makePage({ grants: [['user', creator.id, 'owner']] }),
+      await makePage({ grants: [['user', granted.id, 'viewer']] }),
+      await makePage({
+        grants: [
+          ['user', granted.id, 'commenter'],
+          ['team', otherTeam, 'viewer'],
+        ],
+      }),
+      await makePage({ grants: [['public', null, 'viewer']] }),
+      await makePage({
+        grants: [
+          ['public', null, 'bogus'],
+          ['user', granted.id, 'editor'],
+        ],
+      }),
+      await makePage({ teamId: team }),
+      await makePage({
+        teamId: team,
+        grants: [
+          ['user', granted.id, 'viewer'],
+          ['team', otherTeam, 'editor'],
+        ],
+      }),
+      await makePage({
+        creator: null,
+        author: authorByEmail.email,
+        grants: [['user', creator.id, 'owner']],
+      }),
+      await makePage({
+        creator: null,
+        author: authorByEmail.email,
+        teamId: team,
+        grants: [['user', creator.id, 'owner']],
+      }),
+      await makePage({
+        creator,
+        author: authorByEmail.email,
+        grants: [['user', creator.id, 'owner']],
+      }),
+    ];
+    for (const page of pages) {
+      const readers = await storage.getReadableOrganizationMembers(
+        defaultOrg,
+        page.id,
+        everyone.map((p) => p.id)
+      );
+      for (const person of everyone) {
+        const members = person !== outsider;
+        const expected =
+          members && (await storage.checkPagePermission(person.id, page.id, 'viewer'));
+        expect(readers.has(person.id), `${person.email} on page ${page.id}`).toBe(
+          Boolean(expected)
+        );
+      }
+    }
+  });
+});
+
+describe('mention names in the comment list', () => {
+  it('every eligible mention of the page is named, however many comments carry them', async () => {
+    const creator = await newUser('l-creator');
+    const crowd: Person[] = [];
+    for (let i = 0; i < 60; i++) crowd.push(await newUser(`l-${i}`));
+    const page = await newPage({ creator });
+    const ids = crowd.map((p) => p.id);
+    const named = await storage.getReadableOrganizationMembers(defaultOrg, page.id, ids);
+    expect([...named.keys()].sort()).toEqual([...ids].sort());
+  });
+});
+
+describe('mention picker cost and completeness', () => {
+  it('uses a bounded number of queries and says when the scan was cut short', async () => {
+    const caller = await newUser('t-caller', { name: 'Tess Caller' });
+    for (let i = 0; i < 230; i++) await newUser(`t-b${i}`, { name: `Tess Blocked ${i}` });
+    const reader = await newUser('t-reader', { name: 'Tess Zzz Reader' });
+    const page = await newPage({
+      creator: caller,
+      grants: [
+        ['user', caller.id, 'owner'],
+        ['user', reader.id, 'viewer'],
+      ],
+    });
+    let result: any;
+    const used = await queriesDuring(async () => {
+      result = await storage.listMentionCandidates(defaultOrg, page.id, 'tess', caller.id);
+    });
+    // 231 matches other than the caller: the scan stops at its bound, and says so.
+    expect(result.truncated).toBe(true);
+    expect(result.more).toBe(false);
+    expect(used).toBeLessThanOrEqual(4 * 6);
+    // A search that narrows it down finds the reader and is not cut short.
+    const narrow = await storage.listMentionCandidates(defaultOrg, page.id, 'zzz', caller.id);
+    expect(narrow).toEqual({
+      candidates: [{ id: reader.id, name: 'Tess Zzz Reader' }],
+      more: false,
+      truncated: false,
+    });
   });
 });

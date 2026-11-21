@@ -2109,7 +2109,10 @@ export async function registerRoutes(
 
   app.post(
     '/api/pages/:pageId/comments',
-    requireAuthIfEnabled,
+    // A comment always needs a session (the handler refused a request without one in both modes),
+    // so the session is verified here whatever ENFORCE_AUTH_WRITES says: the account limiter
+    // needs the verified account.
+    authMiddleware,
     rlCommentCreate,
     requirePagePermission('commenter'),
     async (req: AuthRequest, res) => {
