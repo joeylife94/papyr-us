@@ -2517,7 +2517,8 @@ export class DBStorage {
 
   /** Creates a team in `organizationId` with no owner (issue #124 X1: the caller picks the org). */
   async createTeam(team: InsertTeam, organizationId: number): Promise<Team> {
-    const teamValues = { ...team, organizationId };
+    // A team is created with "members can edit team pages" on, whatever the input says (WP7)
+    const teamValues = { ...team, organizationId, membersCanEdit: true };
     if (teamValues.password) {
       teamValues.password = await bcrypt.hash(teamValues.password, 10);
     }
@@ -2532,7 +2533,8 @@ export class DBStorage {
   async createTeamWithOwner(team: InsertTeam, creatorUserId: number): Promise<Team> {
     const organizationId = await this.getUserOrganizationId(creatorUserId);
     if (organizationId === null) throw new OrganizationRequiredError();
-    const teamValues = { ...team, organizationId };
+    // A team is created with "members can edit team pages" on, whatever the input says (WP7)
+    const teamValues = { ...team, organizationId, membersCanEdit: true };
     if (teamValues.password) {
       teamValues.password = await bcrypt.hash(teamValues.password, 10);
     }
@@ -4219,6 +4221,53 @@ export class DBStorage {
   }
 
   /**
+   * Turns the team's "members can edit team pages" setting on or off, inside the team lock. The
+   * actor's role is read after the lock is taken, through the lock's handle: only an active owner
+   * or admin of the team (a member of the team's own organization) may, anyone else, a team that
+   * does not exist included, gets the same refusal. `changed` says the value differs from the
+   * stored one (nothing is written otherwise); `memberIds` are the team's members, whose open
+   * realtime sessions must re-check their page access after a change.
+   */
+  async setTeamMembersCanEdit(
+    teamId: number,
+    actorUserId: number,
+    value: boolean,
+    options: { lockTimeoutMs?: number } = {}
+  ): Promise<TeamMutationResult<{ team: Team; changed: boolean; memberIds: number[] }>> {
+    return this.withTeamLock(
+      teamId,
+      async (tx) => {
+        const state = await this.readTeamRoles(tx, teamId, actorUserId, actorUserId);
+        const decision = DBStorage.decideTeamAdmission({ actor: state.actor });
+        if (!decision.ok) return decision;
+        const [current] = await tx.select().from(teams).where(eq(teams.id, teamId)).limit(1);
+        if (!current) return TEAM_MANAGER_REQUIRED;
+        const changed = current.membersCanEdit !== value;
+        const [team] = changed
+          ? await tx
+              .update(teams)
+              .set({ membersCanEdit: value, updatedAt: new Date() })
+              .where(eq(teams.id, teamId))
+              .returning()
+          : [current];
+        const members = await tx
+          .select({ userId: teamMembers.userId })
+          .from(teamMembers)
+          .where(eq(teamMembers.teamId, teamId));
+        return {
+          ok: true as const,
+          value: {
+            team,
+            changed,
+            memberIds: members.map((row: { userId: number }) => Number(row.userId)),
+          },
+        };
+      },
+      options
+    );
+  }
+
+  /**
    * The members of a team, highest role first, then by name. Only accounts that are also members
    * of the team's organization are listed.
    */
@@ -4932,6 +4981,17 @@ export class DBStorage {
       return true;
     }
 
+    // and, while the team's "members can edit team pages" setting is on, comment and edit. The
+    // setting gives editor at most: owner rights (permissions, delete, moving the page to
+    // another team) come from a grant or from the team's owner and admin roles only.
+    if (
+      isPageTeamMember &&
+      requiredLevel <= permissionLevels.editor &&
+      (await this.teamMembersCanEdit(pageTeamId!))
+    ) {
+      return true;
+    }
+
     // Current team owners and admins manage every page of their team, so a page never ends up
     // unmanageable when its own owner leaves the team
     if (isPageTeamMember && (await this.isTeamManager(userId, pageTeamId!))) {
@@ -5208,7 +5268,8 @@ export class DBStorage {
       baseline = {
         kind: 'team',
         name: teamNames.get(Number(page.teamId))?.name ?? '',
-        level: 'viewer',
+        // What a plain member of the team holds without a grant: the team's own setting
+        level: (await this.teamMembersCanEdit(Number(page.teamId))) ? 'editor' : 'viewer',
       };
     } else if (grants.length === 0) {
       baseline = { kind: 'organization', level: 'viewer' };
@@ -5342,6 +5403,19 @@ export class DBStorage {
     });
   }
 
+  /**
+   * Whether the team's "members can edit team pages" setting is on. An unknown team is off. Read
+   * on the pool; callers that already hold a transaction must not call it.
+   */
+  private async teamMembersCanEdit(teamId: number): Promise<boolean> {
+    const [team] = await this.db
+      .select({ membersCanEdit: teams.membersCanEdit })
+      .from(teams)
+      .where(eq(teams.id, teamId))
+      .limit(1);
+    return team?.membersCanEdit === true;
+  }
+
   /** Whether the user is a current owner or admin of the team (see checkPagePermission). */
   private async isTeamManager(userId: number, teamId: number): Promise<boolean> {
     const role = await this.getUserTeamRole(userId, teamId);
@@ -5363,10 +5437,14 @@ export class DBStorage {
       return null;
     }
     const userTeamIds = await this.getUserTeamIds(userId);
+    // What the team's "members can edit team pages" setting gives a current member (editor), on
+    // top of whatever the member's grants give: the stronger of the two is returned
+    let fromTeamSetting: PermissionLevel | null = null;
     if (page?.teamId) {
       const teamId = Number(page.teamId);
       if (!userTeamIds.includes(teamId)) return null;
       if (await this.isTeamManager(userId, teamId)) return 'owner';
+      if (await this.teamMembersCanEdit(teamId)) fromTeamSetting = 'editor';
     }
 
     // The user's own grants, plus grants to a team they currently belong to, as in
@@ -5385,7 +5463,7 @@ export class DBStorage {
       .where(and(eq(pagePermissions.pageId, pageId), or(...grantees)));
 
     if (permissions.length === 0) {
-      return null;
+      return fromTeamSetting;
     }
 
     // Return highest permission level
@@ -5396,11 +5474,14 @@ export class DBStorage {
       owner: 4,
     };
 
-    const highest = permissions.reduce((max: PermissionLevel, p: PagePermission) => {
-      const level = permissionLevels[p.permission as PermissionLevel];
-      const maxLevel = permissionLevels[max as PermissionLevel];
-      return level > maxLevel ? (p.permission as PermissionLevel) : max;
-    }, 'viewer' as PermissionLevel);
+    const highest = permissions.reduce(
+      (max: PermissionLevel, p: PagePermission) => {
+        const level = permissionLevels[p.permission as PermissionLevel];
+        const maxLevel = permissionLevels[max as PermissionLevel];
+        return level > maxLevel ? (p.permission as PermissionLevel) : max;
+      },
+      fromTeamSetting ?? ('viewer' as PermissionLevel)
+    );
 
     return highest;
   }

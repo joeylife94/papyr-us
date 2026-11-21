@@ -17,7 +17,7 @@
  *   page without permissions is open only to signed-in members of its organization.
  */
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { pagePermissions, users, wikiPages } from '../../shared/schema.js';
+import { pagePermissions, teams, users, wikiPages } from '../../shared/schema.js';
 
 const TEAM_A = 10;
 const TEAM_B = 20;
@@ -52,6 +52,8 @@ function createStorage(options: {
   organizationByUser?: Record<number, number | null>;
   /** The page's organization; ORG when not given. */
   pageOrganizationId?: number;
+  /** Teams whose "members can edit team pages" setting is on; none when not given. */
+  teamsMembersCanEdit?: number[];
 }) {
   const pageRow = {
     id: PAGE_ID,
@@ -81,6 +83,17 @@ function createStorage(options: {
         : permissionRows;
     }
     if (table === users) return [AUTHOR, TEAMMATE, OUTSIDER].filter((user) => user.id === caller);
+    // The page's team and its setting
+    if (table === teams) {
+      return [
+        {
+          id: options.page.teamId,
+          membersCanEdit: (options.teamsMembersCanEdit ?? []).includes(
+            options.page.teamId as number
+          ),
+        },
+      ];
+    }
     throw new Error('unexpected table');
   };
 
@@ -88,7 +101,11 @@ function createStorage(options: {
   instance.db = {
     select: () => ({
       from: (table: unknown) => ({
-        where: () => Promise.resolve(rowsFor(table)),
+        where: () => {
+          const rows = rowsFor(table);
+          // `.limit(1)` is awaited too, so the answer is both a promise and has limit()
+          return Object.assign(Promise.resolve(rows), { limit: () => Promise.resolve(rows) });
+        },
       }),
     }),
   };
@@ -319,6 +336,95 @@ describe('team owners and admins manage their team pages', () => {
     });
     expect(await allowedLevels(storage, TEAMMATE.id)).toEqual([]);
     expect(await storage.getUserPagePermission(TEAMMATE.id, PAGE_ID)).toBeNull();
+  });
+});
+
+describe('members can edit team pages (per-team setting)', () => {
+  const page = { teamId: TEAM_A, author: 'someone-else@example.com' };
+  const base = {
+    page,
+    teamsByUser: { [TEAMMATE.id]: [TEAM_A], [AUTHOR.id]: [TEAM_B], [OUTSIDER.id]: [] },
+  };
+
+  it('off: a plain member reads, nothing more; realtime gives nothing without a grant', async () => {
+    const storage = createStorage({ ...base, permissions: [] });
+    expect(await allowedLevels(storage, TEAMMATE.id)).toEqual(['viewer']);
+    expect(await storage.getUserPagePermission(TEAMMATE.id, PAGE_ID)).toBeNull();
+  });
+
+  it('on: a plain member reads, comments and edits, never owns; realtime says editor', async () => {
+    const storage = createStorage({ ...base, permissions: [], teamsMembersCanEdit: [TEAM_A] });
+    expect(await allowedLevels(storage, TEAMMATE.id)).toEqual(['viewer', 'commenter', 'editor']);
+    expect(await storage.getUserPagePermission(TEAMMATE.id, PAGE_ID)).toBe('editor');
+  });
+
+  it('on: the setting reaches the team’s members only, not members of another team, outsiders or signed-out callers', async () => {
+    const storage = createStorage({ ...base, permissions: [], teamsMembersCanEdit: [TEAM_A] });
+    expect(await allowedLevels(storage, AUTHOR.id)).toEqual([]);
+    expect(await allowedLevels(storage, OUTSIDER.id)).toEqual([]);
+    expect(await allowedLevels(storage, undefined)).toEqual([]);
+    expect(await storage.getUserPagePermission(AUTHOR.id, PAGE_ID)).toBeNull();
+  });
+
+  it('on for another team only: no effect on this team’s page', async () => {
+    const storage = createStorage({ ...base, permissions: [], teamsMembersCanEdit: [TEAM_B] });
+    expect(await allowedLevels(storage, TEAMMATE.id)).toEqual(['viewer']);
+  });
+
+  it('on: the stronger of the setting and a grant wins, in REST and in realtime', async () => {
+    const ownerGrant = createStorage({
+      ...base,
+      permissions: [{ entityType: 'user', entityId: TEAMMATE.id, permission: 'owner' }],
+      teamsMembersCanEdit: [TEAM_A],
+    });
+    expect(await allowedLevels(ownerGrant, TEAMMATE.id)).toEqual(LEVELS);
+    expect(await ownerGrant.getUserPagePermission(TEAMMATE.id, PAGE_ID)).toBe('owner');
+
+    const viewerGrant = createStorage({
+      ...base,
+      permissions: [{ entityType: 'user', entityId: TEAMMATE.id, permission: 'viewer' }],
+      teamsMembersCanEdit: [TEAM_A],
+    });
+    expect(await allowedLevels(viewerGrant, TEAMMATE.id)).toEqual([
+      'viewer',
+      'commenter',
+      'editor',
+    ]);
+    expect(await viewerGrant.getUserPagePermission(TEAMMATE.id, PAGE_ID)).toBe('editor');
+  });
+
+  it('on: team owners and admins stay owners', async () => {
+    for (const role of ['owner', 'admin'] as const) {
+      const storage = createStorage({
+        ...base,
+        permissions: [],
+        rolesByUser: { [TEAMMATE.id]: role },
+        teamsMembersCanEdit: [TEAM_A],
+      });
+      expect(await allowedLevels(storage, TEAMMATE.id)).toEqual(LEVELS);
+      expect(await storage.getUserPagePermission(TEAMMATE.id, PAGE_ID)).toBe('owner');
+    }
+  });
+
+  it('on: a member of another organization gets nothing, whatever the setting', async () => {
+    const storage = createStorage({
+      ...base,
+      permissions: [],
+      organizationByUser: { [TEAMMATE.id]: OTHER_ORG },
+      teamsMembersCanEdit: [TEAM_A],
+    });
+    expect(await allowedLevels(storage, TEAMMATE.id)).toEqual([]);
+    expect(await storage.getUserPagePermission(TEAMMATE.id, PAGE_ID)).toBeNull();
+  });
+
+  it('team-less pages ignore the setting', async () => {
+    const storage = createStorage({
+      page: { teamId: null, author: 'someone-else@example.com' },
+      permissions: [{ entityType: 'user', entityId: AUTHOR.id, permission: 'owner' }],
+      teamsByUser: { [TEAMMATE.id]: [TEAM_A] },
+      teamsMembersCanEdit: [TEAM_A],
+    });
+    expect(await allowedLevels(storage, TEAMMATE.id)).toEqual([]);
   });
 });
 

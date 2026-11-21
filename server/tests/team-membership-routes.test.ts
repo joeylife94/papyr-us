@@ -375,6 +375,20 @@ describe('GET /api/teams/:teamId/members', () => {
       expect((await call(OWNER, 'get', `/api/teams/${id}/members`)).status).toBe(400);
     }
   });
+
+  it('says whether members can edit team pages, to every member', async () => {
+    for (const [stored, role] of [
+      [true, MEMBER],
+      [false, MEMBER],
+      [true, OWNER],
+      [false, ADMIN],
+    ] as Array<[boolean, number]>) {
+      storage.getTeam.mockResolvedValue({ id: TEAM, membersCanEdit: stored });
+      const res = await call(role, 'get', `/api/teams/${TEAM}/members`);
+      expect(res.status).toBe(200);
+      expect(res.body.membersCanEdit).toBe(stored);
+    }
+  });
 });
 
 describe('GET /api/teams/:teamId/member-candidates', () => {

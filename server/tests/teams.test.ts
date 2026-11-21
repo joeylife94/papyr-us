@@ -7,6 +7,7 @@ import jwt from 'jsonwebtoken';
 import { registerRoutes } from '../routes';
 import { config } from '../config';
 import { parseTeamReference } from '../middleware';
+import { onPageAccessChanged } from '../services/page-access-events.js';
 
 const mockConfig = vi.hoisted(() => ({
   jwtSecret: 'teams-test-secret',
@@ -495,6 +496,168 @@ describe('Team Management API', () => {
         expect(response.body).toEqual({ error: 'Invalid team data' });
       }
       expect(storage.updateTeam).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('PUT /api/teams/:id with membersCanEdit (members can edit team pages)', () => {
+    const answer = (membersCanEdit: boolean, changed = true) => ({
+      ok: true,
+      value: {
+        team: { ...mockTeam, membersCanEdit, password: '$2a$10$hash' },
+        changed,
+        memberIds: [7, 8, 9],
+      },
+    });
+    const put = (body: unknown) =>
+      request(app)
+        .put(`/api/teams/${mockTeam.id}`)
+        .set('Authorization', `Bearer ${memberToken}`)
+        .send(body as object);
+    let notified: number[];
+    let stopListening: () => void;
+    beforeEach(() => {
+      notified = [];
+      stopListening = onPageAccessChanged(async (userId) => {
+        notified.push(userId);
+      });
+    });
+    afterEach(() => {
+      stopListening();
+      mockConfig.enforceAuthForWrites = false;
+    });
+
+    for (const role of ['owner', 'admin']) {
+      it(`a team ${role} turns it on or off through the team lock, answered without the password hash, and every member's open sessions re-check`, async () => {
+        (storage.getUserTeamRole as vi.Mock).mockResolvedValue(role);
+        (storage.setTeamMembersCanEdit as vi.Mock).mockResolvedValue(answer(true));
+
+        const res = await put({ membersCanEdit: true });
+
+        expect(res.status).toBe(200);
+        expect(res.body.membersCanEdit).toBe(true);
+        expect(res.body).not.toHaveProperty('password');
+        expect(storage.setTeamMembersCanEdit).toHaveBeenCalledWith(mockTeam.id, 7, true);
+        expect(storage.updateTeam).not.toHaveBeenCalled();
+        expect(notified.sort()).toEqual([7, 8, 9]);
+      });
+    }
+
+    it('a value that did not change is answered and notifies nobody', async () => {
+      (storage.getUserTeamRole as vi.Mock).mockResolvedValue('owner');
+      (storage.setTeamMembersCanEdit as vi.Mock).mockResolvedValue(answer(false, false));
+      const res = await put({ membersCanEdit: false });
+      expect(res.status).toBe(200);
+      expect(notified).toEqual([]);
+    });
+
+    it('a plain member is refused in the existing 403 shape and nothing is written', async () => {
+      (storage.getUserTeamRole as vi.Mock).mockResolvedValue('member');
+      const res = await put({ membersCanEdit: true });
+      expect(res.status).toBe(403);
+      expect(res.body).toEqual({ error: 'Admin or owner role required to update team' });
+      expect(storage.setTeamMembersCanEdit).not.toHaveBeenCalled();
+      expect(notified).toEqual([]);
+    });
+
+    it('someone who is not in the team is refused in the existing 403 shape', async () => {
+      (storage.getUserTeamRole as vi.Mock).mockResolvedValue(null);
+      const res = await put({ membersCanEdit: true });
+      expect(res.status).toBe(403);
+      expect(res.body).toEqual({ error: 'You are not a member of this team' });
+      expect(storage.setTeamMembersCanEdit).not.toHaveBeenCalled();
+    });
+
+    for (const enforce of [true, false]) {
+      it(`signed out is 401 with ENFORCE_AUTH_WRITES=${enforce}`, async () => {
+        mockConfig.enforceAuthForWrites = enforce;
+        const res = await request(app)
+          .put(`/api/teams/${mockTeam.id}`)
+          .send({ membersCanEdit: true });
+        expect(res.status).toBe(401);
+        expect(storage.setTeamMembersCanEdit).not.toHaveBeenCalled();
+      });
+
+      it(`a signed-in owner changes it with ENFORCE_AUTH_WRITES=${enforce}`, async () => {
+        mockConfig.enforceAuthForWrites = enforce;
+        (storage.getUserTeamRole as vi.Mock).mockResolvedValue('owner');
+        (storage.setTeamMembersCanEdit as vi.Mock).mockResolvedValue(answer(true));
+        expect((await put({ membersCanEdit: true })).status).toBe(200);
+      });
+    }
+
+    it('a role lost between the check and the lock is refused by the lock’s own answer, with the same shape', async () => {
+      (storage.getUserTeamRole as vi.Mock).mockResolvedValue('admin');
+      (storage.setTeamMembersCanEdit as vi.Mock).mockResolvedValue({
+        ok: false,
+        status: 403,
+        body: { message: 'Owner or admin role required' },
+      });
+      const res = await put({ membersCanEdit: true });
+      expect(res.status).toBe(403);
+      expect(res.body).toEqual({ error: 'Admin or owner role required to update team' });
+      expect(notified).toEqual([]);
+    });
+
+    it('a busy team is 503 and says nothing else', async () => {
+      (storage.getUserTeamRole as vi.Mock).mockResolvedValue('owner');
+      const { TeamBusyError } = await import('../storage.js');
+      (storage.setTeamMembersCanEdit as vi.Mock).mockRejectedValue(new TeamBusyError());
+      const res = await put({ membersCanEdit: true });
+      expect(res.status).toBe(503);
+      expect(res.body).toEqual({ error: 'Team is busy, try again' });
+    });
+
+    it('anything but a boolean is 400 and nothing is written', async () => {
+      (storage.getUserTeamRole as vi.Mock).mockResolvedValue('owner');
+      for (const value of ['true', 1, null, 'yes', {}]) {
+        const res = await put({ membersCanEdit: value });
+        expect(res.status).toBe(400);
+        expect(res.body).toEqual({ error: 'Invalid team data' });
+      }
+      expect(storage.setTeamMembersCanEdit).not.toHaveBeenCalled();
+      expect(storage.updateTeam).not.toHaveBeenCalled();
+    });
+
+    for (const enforce of [true, false]) {
+      it(`a body that carries the setting and anything else is 400 and nothing is written, with ENFORCE_AUTH_WRITES=${enforce}`, async () => {
+        mockConfig.enforceAuthForWrites = enforce;
+        (storage.getUserTeamRole as vi.Mock).mockResolvedValue('owner');
+        for (const body of [
+          { membersCanEdit: true, displayName: 'Renamed' },
+          { membersCanEdit: false, name: 'taken-name' },
+          { membersCanEdit: true, description: 'x' },
+        ]) {
+          const res = await put(body);
+          expect(res.status).toBe(400);
+          expect(res.body).toEqual({ error: 'Invalid team data' });
+        }
+        expect(storage.setTeamMembersCanEdit).not.toHaveBeenCalled();
+        expect(storage.updateTeam).not.toHaveBeenCalled();
+        expect(notified).toEqual([]);
+      });
+    }
+
+    it('a body without the setting never reaches the lock method', async () => {
+      (storage.getUserTeamRole as vi.Mock).mockResolvedValue('owner');
+      (storage.updateTeam as vi.Mock).mockResolvedValue(mockTeam);
+      await put({ displayName: 'x' });
+      expect(storage.setTeamMembersCanEdit).not.toHaveBeenCalled();
+    });
+
+    it('a team is created with the setting on whatever the body says: the route never passes it on', async () => {
+      (storage.createTeamWithOwner as vi.Mock).mockImplementation(async (team: any) => ({
+        id: 9,
+        ...team,
+        membersCanEdit: true,
+      }));
+      const res = await request(app)
+        .post('/api/teams')
+        .set('Authorization', `Bearer ${memberToken}`)
+        .send({ displayName: 'Fresh', membersCanEdit: false });
+      expect(res.status).toBe(201);
+      const [written] = (storage.createTeamWithOwner as vi.Mock).mock.calls[0];
+      expect(written).not.toHaveProperty('membersCanEdit');
+      expect(res.body.membersCanEdit).toBe(true);
     });
   });
 

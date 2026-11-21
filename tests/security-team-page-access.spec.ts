@@ -91,6 +91,12 @@ test.describe('Team page access follows current team membership', () => {
       expect(teamResponse.status()).toBe(201);
       const team = await teamResponse.json();
       teamIds.push(team.id);
+      // Members are viewers of this team's pages: the setting "members can edit team pages" (on
+      // for a new team) is turned off for it
+      const settingOff = await ownerRequest.put(`/api/teams/${team.id}`, {
+        data: { membersCanEdit: false },
+      });
+      expect(settingOff.status()).toBe(200);
 
       const outsiderTeamResponse = await outsiderRequest.post('/api/teams', {
         data: { name: `tpa-other-${stamp}`, displayName: `TPA Other ${stamp}` },

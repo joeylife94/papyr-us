@@ -66,7 +66,9 @@ export function entryNote(entry: PageSharingEntry): string | null {
 
 export function baselineText(baseline: PageSharingResponse['baseline']): string {
   if (baseline.kind === 'team') {
-    return `'${baseline.name}' 팀의 멤버는 이 문서를 볼 수 있습니다. 팀의 소유자와 관리자는 문서를 관리할 수 있습니다.`;
+    // What a plain member holds without a grant follows the team's own setting
+    const action = baseline.level === 'editor' ? '편집할' : '볼';
+    return `'${baseline.name}' 팀의 멤버는 이 문서를 ${action} 수 있습니다. 팀의 소유자와 관리자는 문서를 관리할 수 있습니다.`;
   }
   if (baseline.kind === 'organization') {
     return '권한이 지정되지 않은 문서입니다. 조직의 모든 구성원이 볼 수 있습니다.';

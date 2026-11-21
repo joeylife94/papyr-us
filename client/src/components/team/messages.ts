@@ -71,3 +71,12 @@ export function createTeamErrorText(status: number): string {
 }
 
 export const TEAM_ROLE_LABELS = { owner: '소유자', admin: '관리자', member: '멤버' } as const;
+
+/** The team setting "members can edit team pages" (WP7), as the team screen words it. */
+export const MEMBERS_CAN_EDIT_LABEL = '멤버가 팀 페이지를 편집할 수 있음';
+
+export function membersCanEditMeaning(on: boolean): string {
+  return on
+    ? '켜짐: 멤버는 팀 문서를 편집하고, 이전 버전 복원, 다른 사람의 댓글 삭제, 문서 이동·복제, 데이터베이스와 동기화 블록 만들기를 할 수 있습니다. 문서 공유(접근 관리)와 문서 삭제는 할 수 없습니다.'
+    : '꺼짐: 이 팀의 멤버는 팀 문서를 볼 수만 있습니다. 편집하려면 문서마다 권한을 받아야 합니다.';
+}

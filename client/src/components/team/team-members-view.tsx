@@ -4,6 +4,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { LogOut, UserMinus, UserPlus } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,7 +26,12 @@ import {
 import { OrganizationApiError, organizationRequest } from '@/components/organization/api';
 import { useToast } from '@/hooks/use-toast';
 import { AddMemberDialog } from './add-member-dialog';
-import { teamErrorText, TEAM_ROLE_LABELS } from './messages';
+import {
+  MEMBERS_CAN_EDIT_LABEL,
+  membersCanEditMeaning,
+  teamErrorText,
+  TEAM_ROLE_LABELS,
+} from './messages';
 import {
   allowedTeamRoleOptions,
   canAddTeamMember,
@@ -47,6 +54,8 @@ interface TeamMembersResponse {
   /** The caller's own role in the team (a roster-only member counts as 'member'). */
   myRole: TeamRole;
   members: TeamMemberRow[];
+  /** Whether plain members edit the team's pages (the team's own setting). */
+  membersCanEdit: boolean;
 }
 
 interface Props {
@@ -101,6 +110,24 @@ export function TeamMembersView({ teamId, teamName, teamDisplayName, userId }: P
       toast({
         title: '역할을 바꿨습니다',
         description: `${target.name} 님의 역할: ${TEAM_ROLE_LABELS[role]}`,
+      });
+    },
+    onError: onFailure,
+  });
+
+  const settingMutation = useMutation({
+    mutationFn: (next: boolean) =>
+      organizationRequest<{ membersCanEdit: boolean }>(`/api/teams/${teamId}`, {
+        method: 'PUT',
+        body: { membersCanEdit: next },
+      }),
+    onMutate: () => setActionError(null),
+    onSuccess: (_result, next) => {
+      refresh();
+      queryClient.invalidateQueries({ queryKey: ['/api/teams'] });
+      toast({
+        title: next ? '멤버가 편집할 수 있습니다' : '멤버는 볼 수만 있습니다',
+        description: membersCanEditMeaning(next),
       });
     },
     onError: onFailure,
@@ -193,6 +220,33 @@ export function TeamMembersView({ teamId, teamName, teamDisplayName, userId }: P
           </Button>
         ) : null}
       </div>
+
+      <section
+        className="flex items-start justify-between gap-4 rounded-md border border-border p-4"
+        data-testid="team-members-can-edit"
+      >
+        <div className="space-y-1">
+          <Label htmlFor="team-members-can-edit-switch">{MEMBERS_CAN_EDIT_LABEL}</Label>
+          <p
+            className="text-sm text-foreground-secondary"
+            data-testid="team-members-can-edit-meaning"
+          >
+            {membersCanEditMeaning(data.membersCanEdit)}
+          </p>
+          {!canManage ? (
+            <p className="text-sm text-foreground-secondary">
+              이 설정은 팀 소유자와 관리자가 바꿉니다.
+            </p>
+          ) : null}
+        </div>
+        <Switch
+          id="team-members-can-edit-switch"
+          checked={data.membersCanEdit}
+          disabled={!canManage || settingMutation.isPending}
+          onCheckedChange={(next) => settingMutation.mutate(next)}
+          data-testid="team-members-can-edit-switch"
+        />
+      </section>
 
       {actionError ? (
         <p

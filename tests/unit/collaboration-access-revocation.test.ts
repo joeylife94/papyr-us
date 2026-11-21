@@ -291,3 +291,46 @@ describe('open sessions on a page are re-checked when its public access changes'
     expect(elsewhere.leave).not.toHaveBeenCalled();
   });
 });
+
+describe('open sessions gain edit rights when a team lets its members edit', () => {
+  it('Yjs: a read-only session of the member becomes writable at the re-check, without rejoining', async () => {
+    const socket = fakeSocket('read-only', { userId: REMOVED_USER, canEdit: false });
+    const namespace = {
+      sockets: new Map([[socket.id, socket]]),
+      to: vi.fn(() => ({ except: vi.fn(() => ({ emit: vi.fn() })), emit: vi.fn() })),
+    } as any;
+    const grants: Record<string, 'viewer' | 'editor' | 'owner' | null> = {
+      [`${REMOVED_USER}:4`]: null,
+    };
+    const storage = createStorage({ [`${REMOVED_USER}:4`]: true }, grants);
+    const manager = new YjsCollaborationManager(namespace, storage as any, yjsConfig);
+    await manager.joinDocument(socket as any, 'page-4', 4);
+    socket.data.documentId = 'page-4';
+
+    // the team's setting is turned on: the member's realtime level becomes editor
+    grants[`${REMOVED_USER}:4`] = 'editor';
+    await manager.revalidateUserAccess(REMOVED_USER);
+
+    expect(socket.leave).not.toHaveBeenCalled();
+    expect(socket.data).toMatchObject({ documentId: 'page-4', canEdit: true });
+    manager.leaveDocument(socket as any);
+  });
+
+  it('legacy /collab: a read-only session of the member becomes writable at the re-check', async () => {
+    const socket = fakeSocket('read-only', { userIdNum: REMOVED_USER, pageId: 5, canEdit: false });
+    const namespace = { sockets: new Map([[socket.id, socket]]) } as any;
+    const storage = createStorage(
+      { [`${REMOVED_USER}:5`]: true },
+      { [`${REMOVED_USER}:5`]: 'editor' }
+    );
+
+    await revalidateCollabUserAccess(
+      namespace,
+      storage as any,
+      { leaveSession: vi.fn() } as any,
+      REMOVED_USER
+    );
+
+    expect(socket.data).toMatchObject({ pageId: 5, canEdit: true, userPermission: 'editor' });
+  });
+});

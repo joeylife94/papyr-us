@@ -56,6 +56,12 @@ test('structured blocks reach a reader as Markdown, with a table of contents', a
       })
     ).json();
     teamId = team.id;
+    // The team member only reads: the team's setting "members can edit team pages" (on for a new
+    // team) is turned off for it
+    const settingOff = await ownerApi.put(`/api/teams/${teamId}`, {
+      data: { membersCanEdit: false },
+    });
+    expect(settingOff.status()).toBe(200);
     const admitted = await ownerApi.post(`/api/teams/${teamId}/memberships`, {
       data: { email: member.email },
     });

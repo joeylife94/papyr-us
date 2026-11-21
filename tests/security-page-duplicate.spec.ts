@@ -87,6 +87,10 @@ test.describe('Duplicating a page needs the rights to create its copy', () => {
       expect(response.status(), `create team ${name}`).toBe(201);
       const { id } = (await response.json()) as { id: number };
       teamIds.push(id);
+      // Members of these teams are viewers until granted more: the setting "members can edit
+      // team pages" (on for a new team) is turned off
+      const settingOff = await ctx.put(`/api/teams/${id}`, { data: { membersCanEdit: false } });
+      expect(settingOff.status(), `turn off members can edit for ${name}`).toBe(200);
       return id;
     };
     team = await createTeam(ownerRequest, 'dup-team');

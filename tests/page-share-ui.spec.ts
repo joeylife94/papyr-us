@@ -99,6 +99,12 @@ test.describe('Sharing a page from its screen', () => {
       });
       expect(team.status()).toBe(201);
       const teamId = (await team.json()).id as number;
+      // B is a viewer of the team's pages until A grants more: the team's setting "members can
+      // edit team pages" (on for a new team) is off for this team
+      const settingOff = await a.ctx.put(`/api/teams/${teamId}`, {
+        data: { membersCanEdit: false },
+      });
+      expect(settingOff.status()).toBe(200);
       const admitted = await a.ctx.post(`/api/teams/${teamId}/memberships`, {
         data: { email: b.email },
       });

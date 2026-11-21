@@ -56,7 +56,9 @@ export function registerTeamMembershipRoutes(app: Express, storage: DBStorage) {
         : null;
       if (!myRole) return res.status(403).json({ message: 'You are not a member of this team' });
       const members = await storage.listTeamMembers(teamId);
-      return res.json({ teamId, myRole, members });
+      // Whether members edit the team's pages: every member sees it, owners and admins change it
+      const membersCanEdit = (await storage.getTeam(teamId))?.membersCanEdit === true;
+      return res.json({ teamId, myRole, members, membersCanEdit });
     } catch (error) {
       return failure(res, error);
     }

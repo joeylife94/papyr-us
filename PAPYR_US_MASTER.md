@@ -4,7 +4,7 @@ aliases: ['PAPYR_US_MASTER', 'Papyr.us v1.0 Master']
 project: 'Papyr.us'
 type: 'project-master'
 status: 'authoritative-contract'
-version: '1.02'
+version: '1.03'
 target: 'v1.0 + D1 frozen baseline; enterprise readiness (Issue #124), one bounded phase per PR'
 current_phase: 'Issue #124 — X0, X1a, X1b and X1c done; X1d next, alongside the collaboration packages of §10'
 priority: 'P1'
@@ -18,7 +18,7 @@ checkpoint_main_sha: 'd2f092b240d5ffe0937dd6d487934e32d5a631f3'
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v1.02**  
+> **AUTHORITATIVE PROJECT CONTRACT — v1.03**  
 > Current repository / Issue / PR / executable evidence overrides historical checkpoints, Scheduled Task prompts, and agent self-report.  
 > The accepted v1.0 product/proof baseline and D1 remain frozen as evidence. Progression after D1 runs as contract Issues under [`AGENTS.md`](AGENTS.md), one bounded phase per PR, and must not rewrite prior accepted evidence or widen buyer-facing claims without a new Proof.
 
@@ -652,3 +652,38 @@ On the integration head (this package merged onto §15's branch), Linux containe
 - Realtime edit rights do not count a team grant to another team on a team page (flag off by default).
 - Owners of older pages through the author text are not listed in the dialog.
 - An owner can lower or remove their own grant through the API (the dialog does not offer it).
+
+## 17. Team Members Can Edit Team Pages (2026-11-21)
+
+### Changed
+
+Owner decision O1 (2026-11-19): a per-team setting, on for teams created from now on, off for teams that already exist, so no existing team's rights widen silently.
+
+| Area        | What exists now                                                                                                                                                                                                                  |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rule        | with `teams.members_can_edit` on, a plain member of the page's team is an editor of that team's pages (REST and realtime); never owner; a stronger grant still wins; another team's setting never applies                        |
+| Default     | the database default is `false`; the application creates every new team with `true`. A database default of `true` would let a schema push that runs before the prepare step turn every existing team on; a test pins the default |
+| Migration   | `0031`: existing teams off whatever the deploy order; warns if the column's default is not false; down drops the column (members become viewers again)                                                                           |
+| Changing it | team owners and admins, from the team members screen; decided under the team lock on the role read after the lock; a request that carries the setting carries nothing else; turning it off re-checks members' realtime sessions  |
+
+Rules are in [`docs/organizations-guide.md`](docs/organizations-guide.md#팀-멤버).
+
+Process: one developer package against a brief and one independent review (no blocker). The review rebuilt an upgraded database and compared 24 page shapes × 11 callers × 7 readers before and after in five deploy orders (identical), compared the setting with an explicit editor grant on 27 routes (identical, never owner), and turned the setting off during a live realtime session (edits refused at once). Its two fixes (a test pinning the default; a mixed request refused) were made and re-run.
+
+### Actually Executed
+
+On the package head (developer and reviewer, separately), Linux container, local PostgreSQL 16, the container's Chromium:
+
+- `node scripts/verify-contributor.mjs` — **PASS**;
+- server suite — 82 files, 2272 tests **PASS**; unit — 60 files, 945 tests **PASS**; Layer 4 — 40 files, 563 tests **PASS**;
+- browser: `team-members-can-edit` and the eight specs whose setup now turns the setting off, plus twenty unchanged team-related specs — **PASS**;
+- `0031` by execution: prepare first, push first, prepare twice, down then up, fresh install.
+
+### Not Verified
+
+- the whole `test:gj` list, Layer 5, Layer 6 and Firebat: CI on the pull request is the reference.
+
+### Known limits
+
+- Teams the previous release creates between the prepare step and the new code serving start off.
+- Pre-existing, for a later security pass: storage permission checks do not look at `users.is_active` (a deactivated account with a still-valid access token keeps its page rights); an editor's autosave to a trashed page is accepted; the team update route parses its id loosely.

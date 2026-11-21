@@ -27,6 +27,9 @@
  *   (token hashes only); its down file refuses while an invitation is pending.
  * - drizzle/0030_report_public_grant_levels.sql (WP4): changes nothing; reports how many public
  *   grants above commenter exist (they are honoured as viewer).
+ * - drizzle/0031_add_team_members_can_edit.sql (WP7): adds teams.members_can_edit, off for every
+ *   team that exists (a team is created with it on by the application); prints how many teams it
+ *   set to false. A schema push that ran first creates the same column with the same default.
  *
  * All add their columns and constraints under the names push expects, so push then has nothing
  * left to change. All are idempotent, so running this on every deploy is safe.
@@ -40,7 +43,7 @@
  * boundary (an organization with AI turned off, a member without AI access, more than one
  * organization, templates of more than one, a page that records a creator the up file would not
  * compute again, a converted team membership with a raised role, or an invitation that is still
- * pending) or would misdeliver or lose a notification (a recipient or sender account with no
+ * pending; 0031's down file refuses nothing and reports how many teams had the setting on) or would misdeliver or lose a notification (a recipient or sender account with no
  * roster row, a notification of an organization its recipient has left, an archived notification
  * whose records are gone), and then nothing is changed. Like apply-fts-schema.mjs, the script
  * refuses non-local database hosts unless --allow-remote is given.
@@ -66,6 +69,7 @@ const MIGRATIONS = [
   '0028_convert_roster_team_access',
   '0029_add_organization_invitations',
   '0030_report_public_grant_levels',
+  '0031_add_team_members_can_edit',
 ];
 const sqlPaths = (down ? [...MIGRATIONS].reverse() : MIGRATIONS).map((name) =>
   fileURLToPath(new URL(`../drizzle/${name}${down ? '.down' : ''}.sql`, import.meta.url))
@@ -93,7 +97,7 @@ if (!allowRemote && !LOCAL_HOSTS.has(host)) {
 const client = new pg.Client({ connectionString: databaseUrl });
 // Migrations tell the operator what they did or left undone with NOTICE messages that start with
 // their four-digit number (for example "0026 notifications: 4 assigned ...", "0027: 6 page(s) got
-// a creator ..." or "0028: converted 3 directory row(s) ..." or "0030 public grants: 2 above commenter ..."). Those are printed; every other
+// a creator ..." or "0028: converted 3 directory row(s) ..." or "0030 public grants: 2 above commenter ..." or "0031 members_can_edit: 3 existing team(s) set to false ..."). Those are printed; every other
 // notice (the "already exists, skipping" of the idempotent files) stays quiet.
 client.on('notice', (notice) => {
   if (/^\d{4}[ :]/.test(notice.message)) console.log(`${label} ${notice.message}`);
