@@ -53,8 +53,19 @@ beforeAll(async () => {
   ({ httpServer: server } = await registerRoutes(app, storage));
 });
 
+// Notifications address `members` rows, not accounts (#124 X1b): user 1 owns member 11, and the
+// notification fixtures below are addressed to that member row.
+const USER_ID = 1;
+const MEMBER_ID = 11;
+
 beforeEach(() => {
   vi.clearAllMocks();
+  (storage.getMemberIdsForUser as vi.Mock).mockImplementation(async (userId: number) =>
+    userId === USER_ID ? [MEMBER_ID] : []
+  );
+  (storage.getUserOrganizationId as vi.Mock).mockResolvedValue(1);
+  (storage.getMemberOrganizationId as vi.Mock).mockResolvedValue(1);
+  (storage.getUserIdForMember as vi.Mock).mockResolvedValue(USER_ID);
 });
 
 afterAll((done) => {
@@ -62,8 +73,8 @@ afterAll((done) => {
 });
 
 describe('Notification Management API', () => {
-  const recipientId = 1;
-  const token = jwt.sign({ id: recipientId, email: 'user@test.com', role: 'user' }, TEST_SECRET);
+  const recipientId = MEMBER_ID;
+  const token = jwt.sign({ id: USER_ID, email: 'user@test.com', role: 'user' }, TEST_SECRET);
   // Use cookie-based auth to match the production auth model
   const authCookie = [`accessToken=${token}`];
   const mockNotification = {
@@ -121,7 +132,7 @@ describe('Notification Management API', () => {
 
   it('TC-NOTIF-004: should mark a single notification as read', async () => {
     const readNotification = { ...mockNotification, isRead: true };
-    (storage.getNotification as vi.Mock).mockResolvedValue(mockNotification);
+    (storage.getNotificationForUser as vi.Mock).mockResolvedValue(mockNotification);
     (storage.markNotificationAsRead as vi.Mock).mockResolvedValue(readNotification);
 
     const response = await request(app)
@@ -144,7 +155,7 @@ describe('Notification Management API', () => {
   });
 
   it('TC-NOTIF-006: should delete a notification', async () => {
-    (storage.getNotification as vi.Mock).mockResolvedValue(mockNotification);
+    (storage.getNotificationForUser as vi.Mock).mockResolvedValue(mockNotification);
     (storage.deleteNotification as vi.Mock).mockResolvedValue({ success: true });
 
     const response = await request(app)

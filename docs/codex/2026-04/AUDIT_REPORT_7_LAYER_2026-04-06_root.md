@@ -1,3 +1,7 @@
+> **보관 메모 (2026-11-11):** 저장소 루트의 `AUDIT_REPORT.md`였던 2026-04-06 독립 감사 보고서입니다.
+> 아래 RED FLAG(Layer 5/6 skip 조건 문서 불일치)는 이후 `TEST_ARCHITECTURE.md`가 "Docker daemon 없음 → skip"으로 고쳐지면서 해소됐습니다.
+> 현재 상태가 아니라 기록으로만 읽으세요.
+
 # AUDIT RESULT: FAIL
 
 ## 1. EXECUTION SUMMARY
