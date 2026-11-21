@@ -70,7 +70,7 @@ const ORIGINAL_MODE = process.env.SIGNUP_MODE;
 let app: express.Express;
 let server: http.Server;
 // What the stand-in strategy does on the next callback.
-let stand: { user?: any; info?: any; error?: Error; outcome?: string } = {};
+let stand: { user?: any; info?: any; error?: Error; carry?: string } = {};
 
 class StandIn extends (PassportStrategy as any) {
   name: string;
@@ -80,7 +80,7 @@ class StandIn extends (PassportStrategy as any) {
   }
   authenticate(this: any, req: any) {
     if (stand.error) return this.error(stand.error);
-    if (stand.outcome) req.invitationOutcome = stand.outcome;
+    if (stand.carry) req.invitationCarry = stand.carry;
     if (stand.user) return this.success(stand.user);
     return this.fail(stand.info ?? {}, 401);
   }
@@ -143,23 +143,23 @@ describe.each(['google', 'github'] as const)('%s sign-in', (provider) => {
       expect(out.user).toMatchObject({ id: 5 });
       expect(createUserInDefaultOrganization).not.toHaveBeenCalled();
       expect(store.acceptOrganizationInvitation).not.toHaveBeenCalled();
-      expect(out.req.invitationOutcome).toBeUndefined();
+      expect(out.req.invitationCarry).toBeUndefined();
     });
 
-    it('accepts the invitation it carries, and reports what happened', async () => {
+    it('never joins inside the callback: it signs in and carries the token to the join page', async () => {
       process.env.SIGNUP_MODE = 'closed';
       store.db.where.mockResolvedValue([{ id: 5, email: 'old@example.com', isActive: true }]);
-      store.acceptOrganizationInvitation.mockResolvedValue({ kind: 'other_organization' });
       const out = await verify(provider, profile('old@example.com'), withToken);
-      expect(store.acceptOrganizationInvitation).toHaveBeenCalledWith(TOKEN, 5);
-      expect(out.req.invitationOutcome).toBe('other_organization');
+      expect(store.acceptOrganizationInvitation).not.toHaveBeenCalled();
+      expect(out.req.invitationCarry).toBe(TOKEN);
       expect(out.user).toMatchObject({ id: 5 });
     });
 
     it('does not try to accept for a deactivated account', async () => {
       store.db.where.mockResolvedValue([{ id: 5, email: 'old@example.com', isActive: false }]);
-      await verify(provider, profile('old@example.com'), withToken);
+      const out = await verify(provider, profile('old@example.com'), withToken);
       expect(store.acceptOrganizationInvitation).not.toHaveBeenCalled();
+      expect(out.req.invitationCarry).toBeUndefined();
     });
   });
 
@@ -255,6 +255,81 @@ describe.each(['google', 'github'] as const)('%s sign-in', (provider) => {
   });
 });
 
+describe('the address a provider vouches for', () => {
+  beforeEach(() => {
+    process.env.SIGNUP_MODE = 'invite_only';
+  });
+
+  // The shape passport-github2 produces with allRawEmails: every address, with primary/verified.
+  const githubProfile = (
+    emails: Array<{ email: string; primary: boolean; verified: boolean }>
+  ) => ({
+    id: 'g-1',
+    username: 'octo',
+    displayName: 'Octo',
+    emails: emails.map(({ email, ...rest }) => ({ value: email, visibility: null, ...rest })),
+  });
+
+  it('GitHub: the primary verified address is used for the bootstrap, whatever order the list is in', async () => {
+    const out = await verify(
+      'github',
+      githubProfile([
+        { email: 'other@example.com', primary: false, verified: true },
+        { email: BOOTSTRAP, primary: true, verified: true },
+      ])
+    );
+    expect(out.user).toMatchObject({ id: 77, email: BOOTSTRAP });
+  });
+
+  it('GitHub: an unverified primary is not vouched for by another entry that is verified', async () => {
+    const out = await verify(
+      'github',
+      githubProfile([
+        { email: 'other@example.com', primary: false, verified: true },
+        { email: BOOTSTRAP, primary: true, verified: false },
+      ])
+    );
+    expect(out.user).toBe(false);
+    expect(out.info).toEqual({ code: 'signup_requires_invitation' });
+  });
+
+  it('GitHub: an unverified primary does not satisfy an invitation made for an address', async () => {
+    store.registerWithOrganizationInvitation.mockResolvedValue({ kind: 'email_mismatch' });
+    await verify(
+      'github',
+      githubProfile([{ email: 'bound@example.com', primary: true, verified: false }]),
+      withToken
+    );
+    expect(store.registerWithOrganizationInvitation.mock.calls[0][2]).toEqual({
+      emailVerified: false,
+    });
+  });
+
+  it('the strategy asks GitHub for every address of the account', () => {
+    const strategy = (passport as any)._strategy('github');
+    expect(strategy._allRawEmails).toBe(true);
+    expect(strategy._scope).toEqual(['user:email']);
+  });
+
+  it('an address that differs only in case from an account is not a new account, and is not signed in to', async () => {
+    store.db.where.mockResolvedValue([{ id: 9, email: 'Person@Example.com', isActive: true }]);
+    const out = await verify('google', profile('person@example.com'));
+    expect(out.user).toBe(false);
+    expect(out.info).toEqual({ code: 'email_taken' });
+    expect(createUserInDefaultOrganization).not.toHaveBeenCalled();
+  });
+
+  it('a busy organization is "try again", not an error', async () => {
+    store.registerWithOrganizationInvitation.mockRejectedValue(
+      Object.assign(new Error('busy'), { name: 'OrganizationBusyError' })
+    );
+    const out = await verify('google', profile('new@example.com'), withToken);
+    expect(out.user).toBe(false);
+    expect(out.info).toEqual({ code: 'organization_busy' });
+    expect(out.err).toBeNull();
+  });
+});
+
 describe('the callback routes', () => {
   beforeEach(() => {
     passport.use('google', new StandIn('google') as any);
@@ -305,16 +380,16 @@ describe('the callback routes', () => {
     }
   });
 
-  it('a sign-in goes home; one that carried an invitation reports the outcome, never the token', async () => {
+  it('a sign-in goes home; one that carried an invitation goes to the join page with the token in the fragment only', async () => {
     stand = { user: { id: 5, email: 'a@b.com', isActive: true } };
     const home = await request(app).get('/api/auth/google/callback');
     expect(home.headers.location).toBe('/');
-    stand = { user: { id: 5, email: 'a@b.com', isActive: true }, outcome: 'joined' };
+    stand = { user: { id: 5, email: 'a@b.com', isActive: true }, carry: TOKEN };
     const joined = await request(app)
       .get('/api/auth/google/callback')
       .set('Cookie', [`invitation_intent=${TOKEN}`]);
-    expect(joined.headers.location).toBe('/join?result=joined');
-    expect(joined.headers.location).not.toContain(TOKEN);
+    expect(joined.headers.location).toBe(`/join#token=${TOKEN}`);
+    expect(joined.headers.location).not.toContain('?');
   });
 
   it('a deactivated account still gets no session', async () => {

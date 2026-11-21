@@ -13,7 +13,7 @@
  * - /api/auth/oauth-invitation keeps a token across a social sign-in round trip in an httpOnly
  *   cookie that is only sent to /api/auth/*.
  */
-import type { Express, Request, RequestHandler, Response } from 'express';
+import type { Express, NextFunction, Request, RequestHandler, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { config } from './config.js';
@@ -30,7 +30,7 @@ import { OrganizationBusyError, type DBStorage } from './storage.js';
 import { isEmailConfigured, sendEmail } from './services/email.js';
 import logger from './services/logger.js';
 
-const INTENT_COOKIE_MAX_AGE_MS = 15 * 60 * 1000;
+const INTENT_COOKIE_MAX_AGE_MS = 10 * 60 * 1000;
 
 export function invitationIntentCookieOptions() {
   return {
@@ -85,6 +85,39 @@ export function buildAddressRateLimiter(opts: { windowMs: number; max: number })
     },
     keyGenerator: (req) => `address:${req.ip || 'unknown'}`,
   });
+}
+
+/**
+ * Routes that act on an invitation token answer only a request the application's own page made:
+ * a JSON body, and either `Sec-Fetch-Site: same-origin` or an Origin that names this
+ * application's host (APP_BASE_URL when it is set, else the request's own Host). A form posted by
+ * another site, a request marked cross-site and a request with no Origin all get 403 and change
+ * nothing. The host is compared without the scheme, so a proxy that terminates TLS does not
+ * lock people out.
+ */
+export function requireSameOriginJson(req: Request, res: Response, next: NextFunction) {
+  const refuse = () => res.status(403).json({ message: 'Request must come from this application' });
+  if (!req.is('application/json')) return refuse();
+  const site = req.get('sec-fetch-site');
+  if (site !== undefined) return site === 'same-origin' ? next() : refuse();
+  const origin = req.get('origin');
+  if (!origin) return refuse();
+  let originHost: string;
+  try {
+    originHost = new URL(origin).host;
+  } catch {
+    return refuse();
+  }
+  let ownHost = req.get('host') ?? '';
+  const configured = (process.env.APP_BASE_URL || '').trim();
+  if (/^https?:\/\/[^\s]+$/i.test(configured)) {
+    try {
+      ownHost = new URL(configured).host;
+    } catch {
+      // keep the request's own host
+    }
+  }
+  return ownHost !== '' && originHost === ownHost ? next() : refuse();
 }
 
 function invalidInvitation(res: Response) {
@@ -242,7 +275,7 @@ export function registerOrganizationInvitationRoutes(app: Express, storage: DBSt
   );
 
   // What the link is for, before anything is accepted. Signed-out people can ask.
-  app.post('/api/invitations/preview', rlAddress, async (req, res) => {
+  app.post('/api/invitations/preview', requireSameOriginJson, rlAddress, async (req, res) => {
     res.set('Cache-Control', 'no-store');
     const parsed = tokenBodySchema.safeParse(req.body);
     if (!parsed.success) return invalidInvitation(res);
@@ -255,11 +288,10 @@ export function registerOrganizationInvitationRoutes(app: Express, storage: DBSt
     }
   });
 
-  // An existing, signed-in account joins. The address limiter runs first and counts every
-  // request; the account limiter counts the verified account.
+  // An existing, signed-in account joins. Counted per verified account (it needs a session).
   app.post(
     '/api/invitations/accept',
-    rlAddress,
+    requireSameOriginJson,
     authMiddleware,
     rlAcceptAccount,
     async (req: AuthRequest, res: Response) => {
@@ -314,7 +346,7 @@ export function registerOrganizationInvitationRoutes(app: Express, storage: DBSt
   // A social sign-in leaves the site and comes back, so the token waits in an httpOnly cookie that
   // only /api/auth/* receives. Nothing is checked here: the token is used (and judged) by the
   // sign-in callback.
-  app.post('/api/auth/oauth-invitation', rlAddress, (req, res) => {
+  app.post('/api/auth/oauth-invitation', requireSameOriginJson, rlAddress, (req, res) => {
     res.set('Cache-Control', 'no-store');
     const parsed = tokenBodySchema.safeParse(req.body);
     if (!parsed.success || !isPlausibleInvitationToken(parsed.data.token)) {

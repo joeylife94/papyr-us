@@ -111,6 +111,8 @@ import {
   invitationStatusOf,
   invitationUsable,
   isPlausibleInvitationToken,
+  maskInvitationEmail,
+  grantableInvitationRoles,
   type InvitationState,
   type InvitationStatus,
 } from './organization-invitations.js';
@@ -2709,6 +2711,8 @@ export class DBStorage {
               eq(organizationMembers.userId, targetUserId)
             )
           );
+        // Invitations the target could no longer create go with the role.
+        await this.revokeInvitationsBeyondRole(tx, organizationId, targetUserId, requested);
       }
       return { ok: true as const, value: { userId: targetUserId, role: requested } };
     });
@@ -2774,6 +2778,7 @@ export class DBStorage {
             eq(organizationMembers.userId, targetUserId)
           )
         );
+      await this.revokeInvitationsBeyondRole(tx, organizationId, targetUserId, null);
       await tx
         .delete(teamMembers)
         .where(
@@ -2925,6 +2930,26 @@ export class DBStorage {
   // FOR UPDATE inside the lock, so two requests holding the same token are serialized and only
   // the first finds it pending.
 
+  /**
+   * Revokes the pending invitations `userId` created in this organization that a member holding
+   * `role` (null: no longer a member) could not create. Runs inside the same organization lock as
+   * the change of role or removal, so a later promotion cannot revive them.
+   */
+  private async revokeInvitationsBeyondRole(
+    tx: OrganizationTx,
+    organizationId: number,
+    userId: number,
+    role: OrganizationRole | null
+  ): Promise<void> {
+    const allowed: string[] = role === null ? [] : grantableInvitationRoles(role);
+    await tx.execute(sql`
+      UPDATE organization_invitations SET revoked_at = now()
+       WHERE organization_id = ${organizationId} AND created_by_user_id = ${userId}
+         AND accepted_at IS NULL AND revoked_at IS NULL
+         AND role <> ALL (${sql.raw(allowed.length === 0 ? `ARRAY[]::text[]` : `ARRAY[${allowed.map((r) => `'${r}'`).join(',')}]::text[]`)})
+    `);
+  }
+
   private invitationStateFromRow(row: any): InvitationState {
     const creatorRole =
       row.creator_role === null || row.creator_role === undefined
@@ -3009,16 +3034,19 @@ export class DBStorage {
    * What the page for an invitation link may say before anything is accepted: the organization,
    * the role and the address it was made for. Null for every token that cannot be used.
    */
-  async previewOrganizationInvitation(
-    token: unknown
-  ): Promise<{ organizationName: string; role: 'member' | 'admin'; email: string | null } | null> {
+  async previewOrganizationInvitation(token: unknown): Promise<{
+    organizationName: string;
+    role: 'member' | 'admin';
+    emailHint: string | null;
+  } | null> {
     if (!isPlausibleInvitationToken(token)) return null;
     const found = await this.readInvitationByHash(hashInvitationToken(token), this.db, false);
     if (!found || !invitationUsable(found.state)) return null;
     return {
       organizationName: found.organizationName,
       role: found.state.role as 'member' | 'admin',
-      email: found.state.email,
+      // Never the whole address: the first character and the domain.
+      emailHint: found.state.email === null ? null : maskInvitationEmail(found.state.email),
     };
   }
 
@@ -3048,7 +3076,14 @@ export class DBStorage {
       });
       if (!decision.ok) return decision;
       const organization = await this.getOrganization(organizationId, tx);
-      if (!organization || !organization.isActive) return ORG_NO_ORGANIZATION;
+      if (!organization) return ORG_NO_ORGANIZATION;
+      if (!organization.isActive) {
+        return {
+          ok: false as const,
+          status: 403,
+          body: { code: 'organization_inactive', message: 'The organization is switched off' },
+        };
+      }
 
       const email = input.email === null ? null : input.email.trim().toLowerCase();
       if (email !== null) {
@@ -3313,7 +3348,7 @@ export class DBStorage {
         const [taken] = await tx
           .select({ id: users.id })
           .from(users)
-          .where(eq(users.email, values.email))
+          .where(sql`lower(${users.email}) = ${values.email.toLowerCase()}`)
           .limit(1);
         if (taken) return { kind: 'email_taken' as const };
         const [user] = await tx.insert(users).values(values).returning();

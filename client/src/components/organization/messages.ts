@@ -38,6 +38,7 @@ const KNOWN_MESSAGES: Record<string, string> = {
   'Invitation not found': '이 초대를 찾을 수 없습니다. 목록을 새로 고친 뒤 다시 시도하세요.',
   'Invalid invitation': '초대 값이 올바르지 않습니다. 이메일 형식과 만료 기간을 확인하세요.',
   'This address already belongs to a member': '이 이메일은 이미 이 조직의 구성원입니다.',
+  'The organization is switched off': '조직이 꺼져 있어 초대를 만들 수 없습니다.',
   'Too many pending invitations':
     '대기 중인 초대가 너무 많습니다. 쓰지 않는 초대를 취소한 뒤 다시 시도하세요.',
 };

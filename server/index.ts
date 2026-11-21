@@ -34,10 +34,29 @@ import {
 import { DBStorage } from './storage.js';
 import { metricsMiddleware, setupMetrics } from './services/metrics.js';
 import logger, { requestContextMiddleware } from './services/logger.js';
-import { SIGNUP_MODES, parseSignupMode } from './config.js';
+import { SIGNUP_MODES, config, parseSignupMode, parseTrustProxy } from './config.js';
 import { closeRedisConnections } from './services/redis.js';
 
 const app = express();
+
+// TRUST_PROXY: validated here too, because .env is read after the imports are evaluated.
+{
+  const trust = parseTrustProxy(process.env.TRUST_PROXY);
+  if (!trust.ok) {
+    console.error(
+      '[FATAL] TRUST_PROXY must be true, false, a number of proxies, or a list of addresses'
+    );
+    process.exit(1);
+  }
+  if (trust.value !== undefined) app.set('trust proxy', trust.value);
+  else if (config.isProduction && config.rateLimitEnabled) {
+    logger.warn(
+      'TRUST_PROXY is not set: behind a reverse proxy every client shares the proxy address, ' +
+        'so the per-address rate limits count all of them together. Set TRUST_PROXY to the number ' +
+        'of proxies in front of the server.'
+    );
+  }
+}
 
 // SIGNUP_MODE (issue #124 X1d). Checked here as well as in config.ts because the .env file is
 // read after the imports above are evaluated.

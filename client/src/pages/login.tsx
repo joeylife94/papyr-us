@@ -31,6 +31,10 @@ export default function LoginPage() {
         return '초대 링크를 사용할 수 없습니다. 링크가 만료되었거나 이미 사용되었을 수 있습니다. 초대한 사람에게 새 링크를 요청하세요.';
       case 'invitation_email_mismatch':
         return '이 초대는 다른 이메일 주소로 보낸 것입니다. 초대받은 주소의 계정으로 로그인하세요.';
+      case 'email_taken':
+        return '이미 가입된 이메일입니다. 기존 계정으로 로그인하세요.';
+      case 'organization_busy':
+        return '조직이 다른 변경을 처리 중입니다. 잠시 후 다시 시도하세요.';
       default:
         return null;
     }

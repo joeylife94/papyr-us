@@ -705,7 +705,7 @@ describe('preview', () => {
     expect(await storage.previewOrganizationInvitation(token)).toEqual({
       organizationName: 'Default',
       role: 'admin',
-      email: email(LONER),
+      emailHint: 'u***@example.com',
     });
     expect(await storage.previewOrganizationInvitation(generateInvitationToken())).toBeNull();
     expect(await storage.previewOrganizationInvitation('short')).toBeNull();
@@ -762,6 +762,85 @@ describe('an account that was removed and joins again', () => {
     expect(await storage.getUserTeamIds(MEMBER)).toEqual([]);
     expect(await storage.getUserTeamRole(MEMBER, team)).toBeNull();
     expect(await storage.checkPagePermission(MEMBER, teamPage, 'viewer')).toBe(false);
+  });
+});
+
+describe('an invitation goes with the role of the person who created it', () => {
+  const statusOf = async (id: number) =>
+    (await storage.listOrganizationInvitations(defaultId)).find((r: any) => r.id === id).status;
+
+  it('lowering an admin revokes its pending invitations in the same step, and promoting it again does not revive them', async () => {
+    const byAdmin = await create(ADMIN);
+    const byOwner = await create(OWNER);
+    expect((await storage.changeOrganizationMemberRole(defaultId, OWNER, ADMIN, 'member')).ok).toBe(
+      true
+    );
+    expect(await statusOf(byAdmin.invitation.id)).toBe('revoked');
+    expect(await statusOf(byOwner.invitation.id)).toBe('pending');
+    expect((await storage.changeOrganizationMemberRole(defaultId, OWNER, ADMIN, 'admin')).ok).toBe(
+      true
+    );
+    expect(await statusOf(byAdmin.invitation.id)).toBe('revoked');
+    expect((await storage.acceptOrganizationInvitation(byAdmin.token, LONER)).kind).toBe('invalid');
+  });
+
+  it('lowering an owner to admin revokes its invitations for admins and keeps those for members', async () => {
+    const second = await create(OWNER, { role: 'admin' });
+    const member = await create(OWNER, { role: 'member' });
+    await scoped.query(`UPDATE organization_members SET role = 'owner' WHERE user_id = $1`, [
+      ADMIN,
+    ]);
+    expect((await storage.changeOrganizationMemberRole(defaultId, ADMIN, OWNER, 'admin')).ok).toBe(
+      true
+    );
+    expect(await statusOf(second.invitation.id)).toBe('revoked');
+    expect(await statusOf(member.invitation.id)).toBe('pending');
+  });
+
+  it("removing the creator revokes all of its pending invitations and leaves other people's alone", async () => {
+    const byAdmin = await create(ADMIN);
+    const byOwner = await create(OWNER);
+    expect((await storage.removeOrganizationMember(defaultId, OWNER, ADMIN)).ok).toBe(true);
+    expect(await statusOf(byAdmin.invitation.id)).toBe('revoked');
+    expect(await statusOf(byOwner.invitation.id)).toBe('pending');
+  });
+
+  it('an invitation already accepted stays accepted when its creator is lowered', async () => {
+    const used = await create(ADMIN);
+    await storage.acceptOrganizationInvitation(used.token, LONER);
+    await storage.changeOrganizationMemberRole(defaultId, OWNER, ADMIN, 'member');
+    expect(await statusOf(used.invitation.id)).toBe('accepted');
+  });
+
+  it('the owner of a switched-off organization is told so', async () => {
+    await scoped.query(`UPDATE organizations SET is_active = false WHERE id = $1`, [defaultId]);
+    const refused = await storage.createOrganizationInvitation(defaultId, OWNER, {
+      email: null,
+      role: 'member',
+      expiresInDays: 7,
+    });
+    expect(refused).toMatchObject({
+      ok: false,
+      status: 403,
+      body: { code: 'organization_inactive', message: 'The organization is switched off' },
+    });
+  });
+});
+
+describe('an address is taken when an account has it ignoring case', () => {
+  it('registering with an invitation under a case variant of an existing address creates nothing', async () => {
+    const { token, invitation } = await create(OWNER);
+    const result = await storage.registerWithOrganizationInvitation(token, {
+      name: 'Variant',
+      email: email(MEMBER).toUpperCase(),
+      hashedPassword: 'x',
+      provider: 'local',
+    });
+    expect(result).toEqual({ kind: 'email_taken' });
+    expect((await invitationRow(invitation.id)).accepted_at).toBeNull();
+    expect(await rows(`SELECT 1 FROM users WHERE lower(email) = $1`, [email(MEMBER)])).toHaveLength(
+      1
+    );
   });
 });
 

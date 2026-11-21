@@ -266,3 +266,12 @@ export const INVITATION_INVALID_BODY = {
   code: 'invitation_invalid',
   message: 'This invitation is not valid',
 } as const;
+
+/** An address shown to someone who holds a token: the first character and the domain only. */
+export function maskInvitationEmail(email: string): string {
+  const at = email.lastIndexOf('@');
+  if (at < 1) return '***';
+  return `${email.slice(0, 1)}***${email.slice(at)}`;
+}
+
+/** What an invitation made for an address binds, and what it does not prove, is in docs/organizations-guide.md. */

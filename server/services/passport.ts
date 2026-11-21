@@ -2,7 +2,7 @@ import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { Strategy as GitHubStrategy } from 'passport-github2';
 import { users } from '../../shared/schema.js';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { config } from '../config.js';
 import { createUserInDefaultOrganization } from '../organizations.js';
 import {
@@ -23,28 +23,39 @@ export type SocialSignInRefusal =
   | 'signup_closed'
   | 'signup_requires_invitation'
   | 'invitation_invalid'
-  | 'invitation_email_mismatch';
-
-/** What the invitation carried through the round trip did for an account that already existed. */
-export type SocialInvitationOutcome =
-  | 'joined'
-  | 'already_member'
-  | 'invalid'
-  | 'account_inactive'
-  | 'email_mismatch'
-  | 'other_organization';
+  | 'invitation_email_mismatch'
+  | 'email_taken'
+  | 'organization_busy';
 
 function isVerified(entry: any): boolean {
   return entry?.verified === true || entry?.verified === 'true';
 }
 
 /**
+ * The address entry of a profile. GitHub returns all of the account's addresses (allRawEmails):
+ * the primary verified one is used; a primary that is not verified is used as an unverified
+ * address, never another entry's verification. Google returns one entry.
+ */
+function addressEntryOf(provider: 'google' | 'github', profile: any): any {
+  const entries: any[] = Array.isArray(profile.emails) ? profile.emails : [];
+  if (provider === 'github') {
+    return (
+      entries.find((e) => e?.primary === true && isVerified(e)) ??
+      entries.find((e) => e?.primary === true) ??
+      entries[0]
+    );
+  }
+  return entries[0];
+}
+
+/**
  * Signs a social profile in, creating the account when it is new. The sign-up policy
  * (SIGNUP_MODE, issue #124 X1d) decides a new account; an account that already exists signs in
  * as before. An invitation token travels in an httpOnly cookie (set before the redirect, scoped
- * to /api/auth) and is used here: for a new account it decides the organization and the role,
- * for an existing one without an organization it is accepted. The outcome for an existing account
- * is left on `req.invitationOutcome` for the callback to report.
+ * to /api/auth) and is used here only for a new account (the person's own sign-up from the join
+ * page): it decides the organization and the role. An existing account never joins inside the
+ * callback: the token is left on `req.invitationCarry` and the callback sends the person to the
+ * join page, where they see the organization and press the button.
  */
 async function signInSocialProfile(
   req: any,
@@ -52,7 +63,7 @@ async function signInSocialProfile(
   profile: any,
   done: (err: any, user?: any, info?: any) => void
 ) {
-  const emailEntry = profile.emails?.[0];
+  const emailEntry = addressEntryOf(provider, profile);
   const email = emailEntry?.value;
   if (!email) {
     return done(
@@ -67,16 +78,22 @@ async function signInSocialProfile(
   const rawToken = req?.cookies?.[INVITATION_INTENT_COOKIE];
   const hasToken = rawToken !== undefined && rawToken !== null && rawToken !== '';
 
-  const existing = await _db.select().from(users).where(eq(users.email, email));
+  // An address is taken when an account has it ignoring case. The account with exactly this
+  // address signs in as before; one that differs only in case is not signed in to and no second
+  // account is made.
+  const sameAddress: any[] = await _db
+    .select()
+    .from(users)
+    .where(sql`lower(${users.email}) = ${email.toLowerCase()}`);
+  const existing = sameAddress.filter((u) => u.email === email);
   if (existing.length > 0) {
-    if (hasToken && existing[0].isActive !== false) {
-      // An account without an organization may join through the invitation it was sent.
-      const outcome = _storage
-        ? await _storage.acceptOrganizationInvitation(rawToken, existing[0].id)
-        : { kind: 'invalid' };
-      req.invitationOutcome = outcome.kind as SocialInvitationOutcome;
+    if (hasToken && existing[0].isActive !== false && isPlausibleInvitationToken(rawToken)) {
+      req.invitationCarry = rawToken;
     }
     return done(null, existing[0]);
+  }
+  if (sameAddress.length > 0) {
+    return done(null, false, { code: 'email_taken' satisfies SocialSignInRefusal });
   }
 
   const decision = decideSignup({
@@ -106,6 +123,14 @@ async function signInSocialProfile(
 
   const newUser = await createUserInDefaultOrganization(_db, values);
   return done(null, newUser);
+}
+
+/** A busy organization is "try again", not a server error; anything else goes to the error handler. */
+function failSocialSignIn(error: any, done: (err: any, user?: any, info?: any) => void) {
+  if (error?.name === 'OrganizationBusyError') {
+    return done(null, false, { code: 'organization_busy' satisfies SocialSignInRefusal });
+  }
+  return done(error, undefined);
 }
 
 export function initPassportStrategies(db: any, storage?: any) {
@@ -147,7 +172,7 @@ export function initPassportStrategies(db: any, storage?: any) {
           try {
             return await signInSocialProfile(req, 'google', profile, done);
           } catch (error) {
-            return done(error, undefined);
+            return failSocialSignIn(error, done);
           }
         }
       )
@@ -168,6 +193,10 @@ export function initPassportStrategies(db: any, storage?: any) {
           clientSecret: config.githubClientSecret,
           callbackURL: '/api/auth/github/callback',
           passReqToCallback: true,
+          // All of the account's addresses, with their verification: the strategy only asks
+          // GitHub for them when the scope names them.
+          scope: ['user:email'],
+          allRawEmails: true,
         },
         async (
           req: any,
@@ -179,7 +208,7 @@ export function initPassportStrategies(db: any, storage?: any) {
           try {
             return await signInSocialProfile(req, 'github', profile, done);
           } catch (error) {
-            return done(error, undefined);
+            return failSocialSignIn(error, done);
           }
         }
       )

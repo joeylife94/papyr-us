@@ -106,18 +106,20 @@ import type { Request } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import passport from 'passport';
-import { eq, and, isNull } from 'drizzle-orm';
+import { eq, and, isNull, sql } from 'drizzle-orm';
 import { ANONYMOUS_PAGE_VIEWER, DBStorage, OrganizationRequiredError } from './storage.js';
 import { createUserInDefaultOrganization } from './organizations.js';
 import {
   buildAddressRateLimiter,
   invitationIntentCookieOptions,
+  requireSameOriginJson,
 } from './organization-invitation-routes.js';
 import {
   INVITATION_INTENT_COOKIE,
   INVITATION_INVALID_BODY,
   SIGNUP_REFUSAL_MESSAGES,
   decideSignup,
+  isPlausibleInvitationToken,
 } from './organization-invitations.js';
 import { generateTeamUrlName } from './team-names.js';
 import { TEAM_DISPLAY_NAME_MAX_LENGTH } from '../shared/team-members.js';
@@ -338,9 +340,11 @@ export async function registerRoutes(
   const rlInvitationSignup = buildAddressRateLimiter({ windowMs: 60_000, max: 10 });
   const limitInvitationSignup: RequestHandler = (req, res, next) => {
     const token = req.body?.invitationToken;
-    return token !== undefined && token !== null && token !== ''
-      ? rlInvitationSignup(req, res, next)
-      : next();
+    if (token === undefined || token === null || token === '') return next();
+    // Same-origin JSON only, then the per-address limit.
+    return requireSameOriginJson(req, res, (err?: unknown) =>
+      err ? next(err) : rlInvitationSignup(req, res, next)
+    );
   };
 
   // User Registration
@@ -401,7 +405,11 @@ export async function registerRoutes(
       }
 
       if (signup.kind === 'default_organization') {
-        const existingUser = await storage.db.select().from(users).where(eq(users.email, email));
+        // Taken ignoring case: BOOT@x.com is the address boot@x.com already has.
+        const existingUser = await storage.db
+          .select()
+          .from(users)
+          .where(sql`lower(${users.email}) = ${email.toLowerCase()}`);
         if (existingUser.length > 0) {
           return res.status(409).json({ message: 'User with this email already exists' });
         }
@@ -483,6 +491,9 @@ export async function registerRoutes(
         code: error.code,
         stack: error instanceof Error ? error.stack : undefined,
       });
+      if (error?.name === 'OrganizationBusyError') {
+        return res.status(503).json({ message: 'Organization is busy, try again' });
+      }
       // Handle unique constraint violation for PostgreSQL (code 23505)
       if (postgresErrorOf(error)?.code === '23505') {
         return res.status(409).json({ message: 'User with this email already exists' });
@@ -688,11 +699,12 @@ export async function registerRoutes(
         return next();
       })(req, res, next);
     };
-  // Where a social sign-in lands: home, or the invitation page when an invitation was carried
-  // through the round trip for an account that already existed.
+  // Where a social sign-in lands: home, or the join page when the account that signed in carried
+  // an invitation (the token is handed to the page in the URL fragment, which the browser does
+  // not send to any server).
   const socialSuccessLocation = (req: any): string =>
-    typeof req.invitationOutcome === 'string' && /^[a-z_]+$/.test(req.invitationOutcome)
-      ? `/join?result=${req.invitationOutcome}`
+    typeof req.invitationCarry === 'string' && isPlausibleInvitationToken(req.invitationCarry)
+      ? `/join#token=${req.invitationCarry}`
       : '/';
 
   // Google Auth

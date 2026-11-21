@@ -42,7 +42,7 @@ function storeToken(token: string | null) {
 interface Preview {
   organizationName: string;
   role: 'member' | 'admin';
-  email: string | null;
+  emailHint: string | null;
 }
 
 class InvalidInvitation extends Error {}
@@ -185,7 +185,6 @@ export default function JoinPage() {
   }, [preview.error]);
 
   const [form, setForm] = useState({ name: '', email: '', password: '' });
-  const [emailTouched, setEmailTouched] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -224,7 +223,7 @@ export default function JoinPage() {
       </h1>
       <p className="text-sm text-muted-foreground">
         역할: {roleText}
-        {invite.email ? ` · 초대받은 주소: ${invite.email}` : ''}
+        {invite.emailHint ? ` · 초대받은 주소: ${invite.emailHint}` : ''}
       </p>
     </div>
   );
@@ -256,8 +255,8 @@ export default function JoinPage() {
         setOutcome('email_mismatch');
       } else if (body.code === 'account_inactive') {
         setOutcome('account_inactive');
-      } else if (response.status === 429) {
-        setMessage('요청이 너무 많습니다. 잠시 후 다시 시도하세요.');
+      } else if (response.status === 429 || response.status === 503) {
+        setMessage('요청이 너무 많거나 조직이 바쁩니다. 잠시 후 다시 시도하세요.');
       } else {
         setMessage('수락하지 못했습니다. 잠시 후 다시 시도하세요.');
       }
@@ -291,7 +290,7 @@ export default function JoinPage() {
     );
   }
 
-  const email = emailTouched ? form.email : (invite.email ?? form.email);
+  const email = form.email;
 
   const register = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -324,8 +323,8 @@ export default function JoinPage() {
         );
       } else if (response.status === 409) {
         setMessage('이미 가입된 이메일입니다. 로그인한 뒤 초대를 수락하세요.');
-      } else if (response.status === 429) {
-        setMessage('요청이 너무 많습니다. 잠시 후 다시 시도하세요.');
+      } else if (response.status === 429 || response.status === 503) {
+        setMessage('요청이 너무 많거나 조직이 바쁩니다. 잠시 후 다시 시도하세요.');
       } else if (response.status === 400 && typeof body.message === 'string') {
         setMessage(body.message);
       } else {
@@ -382,10 +381,7 @@ export default function JoinPage() {
               type="email"
               value={email}
               required
-              onChange={(e) => {
-                setEmailTouched(true);
-                setForm({ ...form, email: e.target.value });
-              }}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
               className="bg-input"
             />
           </div>

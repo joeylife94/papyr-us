@@ -56,6 +56,7 @@ let server: http.Server;
 beforeAll(async () => {
   app = express();
   app.use(express.json());
+  app.use(express.urlencoded({ extended: false }));
   app.use(cookieParser());
   const result = await registerRoutes(app, storage);
   server = result.httpServer;
@@ -87,7 +88,8 @@ afterEach(() => {
   else process.env.SIGNUP_MODE = ORIGINAL_MODE;
 });
 
-const register = (payload: object) => request(app).post('/api/auth/register').send(payload);
+const register = (payload: object) =>
+  request(app).post('/api/auth/register').set('Sec-Fetch-Site', 'same-origin').send(payload);
 
 describe('SIGNUP_MODE unset (every deployment that never set it)', () => {
   beforeEach(() => {
@@ -260,6 +262,7 @@ describe('a sign-up that brings a token is limited per client address', () => {
     for (let i = 0; i < 10; i += 1) {
       const res = await request(app)
         .post('/api/auth/register')
+        .set('Sec-Fetch-Site', 'same-origin')
         .set('Cookie', [`accessToken=${Buffer.from(`{"id":${i}}`).toString('base64url')}.x.y`])
         .send(body({ invitationToken: TOKEN }));
       expect(res.status).toBe(404);
@@ -270,5 +273,51 @@ describe('a sign-up that brings a token is limited per client address', () => {
     // an ordinary sign-up (no token) is outside this limit
     const plain = await register(body());
     expect(plain.status).toBe(201);
+  });
+});
+
+describe('a sign-up that brings a token must come from the application own page', () => {
+  it.each([
+    ['a form body', (r: any) => r.set('Sec-Fetch-Site', 'same-origin').type('form')],
+    ['a foreign Origin', (r: any) => r.set('Origin', 'https://evil.example')],
+    ['Sec-Fetch-Site cross-site', (r: any) => r.set('Sec-Fetch-Site', 'cross-site')],
+    ['no Origin', (r: any) => r],
+  ])('%s is 403 and creates nothing', async (_label, shape) => {
+    process.env.SIGNUP_MODE = 'open';
+    const res = await shape(request(app).post('/api/auth/register')).send(
+      body({ invitationToken: TOKEN })
+    );
+    expect(res.status).toBe(403);
+    expect(store.registerWithOrganizationInvitation).not.toHaveBeenCalled();
+    expect(createUserInDefaultOrganization).not.toHaveBeenCalled();
+  });
+
+  it('a sign-up without a token is not subject to the rule (as before)', async () => {
+    process.env.SIGNUP_MODE = 'open';
+    const res = await request(app).post('/api/auth/register').send(body());
+    expect(res.status).toBe(201);
+  });
+});
+
+describe('an address is taken when an account has it ignoring case', () => {
+  it.each(['open', 'invite_only'])(
+    '%s: the existing-address answer, not a second account',
+    async (mode) => {
+      process.env.SIGNUP_MODE = mode;
+      store.db.where.mockResolvedValue([{ id: 2, email: 'first.admin@example.com' }]);
+      const res = await register(body({ email: BOOTSTRAP.toUpperCase() }));
+      expect(res.status).toBe(409);
+      expect(createUserInDefaultOrganization).not.toHaveBeenCalled();
+    }
+  );
+
+  it('a busy organization is 503, not 500', async () => {
+    process.env.SIGNUP_MODE = 'open';
+    const busy = Object.assign(new Error('Organization is busy'), {
+      name: 'OrganizationBusyError',
+    });
+    store.registerWithOrganizationInvitation.mockRejectedValue(busy);
+    const res = await register(body({ invitationToken: TOKEN }));
+    expect(res.status).toBe(503);
   });
 });

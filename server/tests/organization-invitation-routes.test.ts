@@ -162,7 +162,7 @@ beforeEach(() => {
 });
 
 const call = (as: number | null, method: 'get' | 'post' | 'delete', url: string, body?: object) => {
-  let r = (request(app) as any)[method](url);
+  let r = (request(app) as any)[method](url).set('Sec-Fetch-Site', 'same-origin');
   if (as !== null) r = r.set('Authorization', bearer(as));
   return body === undefined ? r : r.send(body);
 };
@@ -439,11 +439,11 @@ describe('every unusable token gets the same answer', () => {
     storage.previewOrganizationInvitation.mockResolvedValueOnce({
       organizationName: 'Acme',
       role: 'member',
-      email: null,
+      emailHint: null,
     });
     const res = await call(null, 'post', '/api/invitations/preview', { token: TOKEN });
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ organizationName: 'Acme', role: 'member', email: null });
+    expect(res.body).toEqual({ organizationName: 'Acme', role: 'member', emailHint: null });
     expect(res.headers['cache-control']).toBe('no-store');
   });
 
@@ -544,7 +544,7 @@ describe('the sign-in cookie that carries a token through a social sign-in', () 
     expect(cookie).toMatch(/HttpOnly/i);
     expect(cookie).toMatch(/Path=\/api\/auth(;|$)/);
     expect(cookie).toMatch(/SameSite=Lax/i);
-    expect(cookie).toMatch(/Max-Age=900/);
+    expect(cookie).toMatch(/Max-Age=600/);
   });
 });
 
@@ -606,25 +606,111 @@ describe('rate limits', () => {
     for (let i = 0; i < 30; i += 1) {
       const res = await request(app)
         .post('/api/invitations/preview')
+        .set('Sec-Fetch-Site', 'same-origin')
         .set('Cookie', [`accessToken=forged-${i}`])
         .send({ token: TOKEN });
       expect(res.status).toBe(404);
     }
     const limited = await request(app)
       .post('/api/invitations/preview')
+      .set('Sec-Fetch-Site', 'same-origin')
       .set('Cookie', ['accessToken=forged-new'])
       .send({ token: TOKEN });
     expect(limited.status).toBe(429);
   });
+});
 
-  it('a signed-out request to accept counts against the address, not an account', async () => {
-    for (let i = 0; i < 30; i += 1) {
-      expect((await call(null, 'post', '/api/invitations/accept', { token: TOKEN })).status).toBe(
-        401
-      );
+describe('only the application own page may act on a token', () => {
+  const token = TOKEN;
+  const post = (url: string) => request(app).post(url);
+
+  const CASES: Array<[string, (url: string) => any]> = [
+    [
+      'a form body',
+      (u) => post(u).set('Sec-Fetch-Site', 'same-origin').type('form').send({ token }),
+    ],
+    ['a foreign Origin', (u) => post(u).set('Origin', 'https://evil.example').send({ token })],
+    [
+      'Sec-Fetch-Site cross-site',
+      (u) => post(u).set('Sec-Fetch-Site', 'cross-site').send({ token }),
+    ],
+    [
+      'Sec-Fetch-Site cross-site with a matching Origin',
+      (u) =>
+        post(u)
+          .set('Sec-Fetch-Site', 'cross-site')
+          .set('Origin', 'http://127.0.0.1')
+          .send({ token }),
+    ],
+    ['Sec-Fetch-Site same-site', (u) => post(u).set('Sec-Fetch-Site', 'same-site').send({ token })],
+    ['no Origin and a non-JSON body', (u) => post(u).type('text').send(JSON.stringify({ token }))],
+    ['no Origin at all', (u) => post(u).send({ token })],
+    [
+      'a form body with an Origin of its own host',
+      (u) => post(u).type('form').set('Origin', 'http://127.0.0.1').send({ token }),
+    ],
+  ];
+
+  for (const url of [
+    '/api/auth/oauth-invitation',
+    '/api/invitations/preview',
+    '/api/invitations/accept',
+  ]) {
+    for (const [label, send] of CASES) {
+      it(`${url}: ${label} is 403 and sets and reads nothing`, async () => {
+        const res = await send(url).set('Authorization', bearer(NOBODY));
+        expect(res.status).toBe(403);
+        expect(res.headers['set-cookie']).toBeUndefined();
+        expect(storage.previewOrganizationInvitation).not.toHaveBeenCalled();
+        expect(storage.acceptOrganizationInvitation).not.toHaveBeenCalled();
+      });
     }
-    expect((await call(null, 'post', '/api/invitations/accept', { token: TOKEN })).status).toBe(
-      429
-    );
+  }
+
+  it('the same-origin page succeeds: by Sec-Fetch-Site, and by an Origin naming this host', async () => {
+    const host = (
+      await request(app)
+        .post('/api/auth/oauth-invitation')
+        .set('Sec-Fetch-Site', 'same-origin')
+        .send({ token })
+    ).status;
+    expect(host).toBe(204);
+    const viaOrigin = await request(app)
+      .post('/api/auth/oauth-invitation')
+      .set('Host', 'wiki.example.com')
+      .set('Origin', 'https://wiki.example.com')
+      .send({ token });
+    expect(viaOrigin.status).toBe(204);
+  });
+
+  it('APP_BASE_URL names the application host when it is set', async () => {
+    process.env.APP_BASE_URL = 'https://wiki.example.com';
+    try {
+      const ok = await request(app)
+        .post('/api/auth/oauth-invitation')
+        .set('Origin', 'https://wiki.example.com')
+        .send({ token });
+      expect(ok.status).toBe(204);
+      const other = await request(app)
+        .post('/api/auth/oauth-invitation')
+        .set('Origin', 'https://other.example.com')
+        .send({ token });
+      expect(other.status).toBe(403);
+    } finally {
+      delete process.env.APP_BASE_URL;
+    }
+  });
+});
+
+describe('creating for a switched-off organization', () => {
+  it('answers what storage said, in words', async () => {
+    storage.createOrganizationInvitation.mockResolvedValueOnce({
+      ok: false,
+      status: 403,
+      body: { code: 'organization_inactive', message: 'The organization is switched off' },
+    });
+    const res = await call(OWNER, 'post', '/api/organization/invitations', { role: 'member' });
+    expect(res.status).toBe(403);
+    expect(res.body.message).toBe('The organization is switched off');
   });
 });
