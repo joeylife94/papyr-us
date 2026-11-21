@@ -362,7 +362,7 @@ test.describe('Comment mentions and notifications', () => {
       await input.fill('a draft that must not be lost');
       await page.getByRole('button', { name: 'Post Comment' }).click();
       await expect(
-        page.getByText('Comments are temporarily unavailable. Please try again.')
+        page.getByText('Comments are temporarily unavailable. Please try again.').first()
       ).toBeVisible();
       await expect(input).toHaveValue('a draft that must not be lost');
       expect(attempts).toBe(1);
