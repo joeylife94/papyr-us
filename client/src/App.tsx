@@ -39,6 +39,7 @@ import NotFound from '@/pages/not-found';
 import SharedPage from '@/pages/shared-page';
 import LoginPage from '@/pages/login';
 import RegisterPage from '@/pages/register';
+import JoinPage from '@/pages/join';
 import { FeatureGate } from '@/components/FeatureGate';
 import { runtimeFeatureGates } from '@/features/runtimeFeatureGates';
 
@@ -164,6 +165,7 @@ function App() {
                 <Routes>
                   <Route path="/login" element={<LoginPage />} />
                   <Route path="/register" element={<RegisterPage />} />
+                  <Route path="/join" element={<JoinPage />} />
                   <Route path="/share/:token" element={<SharedPage />} />
                   <Route element={<ProtectedRoute />}>
                     <Route element={<AppLayout />}>
