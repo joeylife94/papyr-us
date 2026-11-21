@@ -731,24 +731,26 @@ export class DBStorage {
     });
   }
 
+  /**
+   * Updates a page that is not in the trash; undefined when there is no such page. A page in the
+   * trash is changed only by restoring it (restorePages / restoreWikiPage), so every writer
+   * (REST saves, autosave, Yjs, version restore, bulk edits, workflows) leaves it untouched.
+   */
   async updateWikiPage(id: number, page: UpdateWikiPage): Promise<WikiPage | undefined> {
     // Only the daily-note route gives out daily note slugs (#111).
     if (page.slug !== undefined && isReservedDailyNoteSlug(page.slug)) {
       throw new Error('This slug is reserved for daily notes');
     }
+    const live = and(eq(wikiPages.id, id), isNull(wikiPages.deletedAt));
     if (page.content === undefined) {
-      const result = await this.db
-        .update(wikiPages)
-        .set(page)
-        .where(eq(wikiPages.id, id))
-        .returning();
+      const result = await this.db.update(wikiPages).set(page).where(live).returning();
       return result[0];
     }
     // Every content write (REST, autosave, Yjs, restore) passes through here. The content and
     // its link index change in one transaction: the row lock taken by the UPDATE orders
     // concurrent saves of the same page, so the index always matches the content that won.
     return this.db.transaction(async (tx: any) => {
-      const result = await tx.update(wikiPages).set(page).where(eq(wikiPages.id, id)).returning();
+      const result = await tx.update(wikiPages).set(page).where(live).returning();
       if (result[0]) await this.writePageLinks(tx, id, result[0].content);
       return result[0];
     });

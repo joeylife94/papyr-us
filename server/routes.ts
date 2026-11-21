@@ -270,6 +270,19 @@ export async function registerRoutes(
   // One save pipeline for REST and Yjs page writes (issue #103 E1). Workflows for an autosaved
   // editing session fire once, when the session closes, instead of on every autosave.
   const pageSaveStore = storagePageSaveStore(storage as any);
+
+  // After a page gate: a page in the trash is not written, so a write route answers 404 for it
+  // before anything is read from the body or recorded. (getWikiPage finds live pages only.)
+  const requireLivePage: RequestHandler = async (_req, res, next) => {
+    try {
+      if (!(await storage.getWikiPage(checkedPageId(res)))) {
+        return res.status(404).json({ message: 'Page not found' });
+      }
+    } catch {
+      return res.status(500).json({ message: 'Failed to read page' });
+    }
+    return next();
+  };
   // Page tree rules (issue #103 E5) read pages and permissions through the same storage.
   const pageTreeStore: NewPageStore = {
     getPage: (id) => storage.getWikiPage(id),
@@ -1088,6 +1101,7 @@ export async function registerRoutes(
     '/api/pages/:id',
     requireAuthIfEnabled,
     requirePagePermission('editor'),
+    requireLivePage,
     async (req: AuthRequest, res) => {
       try {
         const id = parseInt(req.params.id);
@@ -1216,6 +1230,7 @@ export async function registerRoutes(
     '/api/pages/:id/autosave',
     requireAuthIfEnabled,
     requirePagePermission('editor'),
+    requireLivePage,
     async (req: AuthRequest, res) => {
       const id = parseInt(req.params.id);
       if (!Number.isInteger(id) || id <= 0) {
@@ -1349,6 +1364,7 @@ export async function registerRoutes(
     '/api/pages/:id/versions/:versionId/restore',
     requireAuthIfEnabled,
     requirePagePermission('editor'),
+    requireLivePage,
     async (req: AuthRequest, res) => {
       try {
         const pageId = parseInt(req.params.id);

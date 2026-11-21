@@ -257,3 +257,70 @@ describe('page save pipeline (real Postgres)', () => {
     expect(pipeline.hasOpenEditSession(id)).toBe(false);
   });
 });
+
+describe('a page in the trash is not written (real Postgres)', () => {
+  async function trashedPage(slug: string) {
+    const id = await createPage(slug, 'body before trash');
+    await admin.query(`UPDATE ${SCHEMA}.wiki_pages SET deleted_at = NOW() WHERE id = $1`, [id]);
+    return id;
+  }
+  async function row(id: number) {
+    const { rows } = await admin.query(
+      `SELECT title, content, blocks, tags, folder, metadata, updated_at, deleted_at
+         FROM ${SCHEMA}.wiki_pages WHERE id = $1`,
+      [id]
+    );
+    return rows[0];
+  }
+
+  it('a manual or autosave save of a trashed page writes nothing, records no version and opens no session', async () => {
+    const id = await trashedPage('trashed-save');
+    const before = await row(id);
+
+    expect(
+      await pipeline.savePage(store, id, { title: 'Edited', content: 'edited' }, 'manual')
+    ).toBeUndefined();
+    expect(
+      await pipeline.savePage(store, id, { blocks: [{ content: 'edited blocks' }] }, 'autosave')
+    ).toBeUndefined();
+    expect(
+      await pipeline.savePage(
+        store,
+        id,
+        { cover: { type: 'preset', value: 'sunset' } as any },
+        'autosave'
+      )
+    ).toBeUndefined();
+
+    expect(await row(id)).toEqual(before);
+    expect(await versions(id)).toEqual([]);
+    expect(pipeline.hasOpenEditSession(id)).toBe(false);
+  });
+
+  it('DBStorage.updateWikiPage changes no field of a trashed page, with or without content', async () => {
+    const id = await trashedPage('trashed-update');
+    const before = await row(id);
+
+    expect(await storage.updateWikiPage(id, { content: 'edited' })).toBeUndefined();
+    expect(await storage.updateWikiPage(id, { tags: ['changed'] })).toBeUndefined();
+    expect(await storage.updateWikiPage(id, { title: 'Edited', folder: 'other' })).toBeUndefined();
+    expect(await storage.updateWikiPage(id, { deletedAt: null })).toBeUndefined();
+
+    expect(await row(id)).toEqual(before);
+  });
+
+  it('restoring from the trash still works, and the page can be saved again afterwards', async () => {
+    const id = await trashedPage('trashed-restore');
+    expect(await storage.restorePages([id])).toBe(1);
+    const saved = await pipeline.savePage(store, id, { content: 'after restore' }, 'manual');
+    expect(saved?.after.content).toBe('after restore');
+    expect((await row(id)).deleted_at).toBeNull();
+  });
+
+  it('a page that is live is saved as before', async () => {
+    const id = await createPage('live-save', 'live body');
+    const saved = await pipeline.savePage(store, id, { content: 'live edit' }, 'manual');
+    expect(saved?.after.content).toBe('live edit');
+    expect(await storage.updateWikiPage(id, { tags: ['a'] })).toMatchObject({ tags: ['a'] });
+  });
+});
