@@ -121,6 +121,14 @@ describe('what each kind of caller is offered', () => {
 
   it('says what members get without a grant', () => {
     expect(baselineText({ kind: 'team', name: 'Design', level: 'viewer' })).toContain("'Design'");
+    // The team's own setting decides what its plain members hold without a grant
+    expect(baselineText({ kind: 'team', name: 'Design', level: 'viewer' })).toContain(
+      '멤버는 이 문서를 볼 수 있습니다'
+    );
+    expect(baselineText({ kind: 'team', name: 'Design', level: 'editor' })).toContain(
+      '멤버는 이 문서를 편집할 수 있습니다'
+    );
+    expect(baselineText({ kind: 'team', name: 'Design', level: 'editor' })).not.toContain('볼 수');
     expect(baselineText({ kind: 'organization', level: 'viewer' })).toContain('조직의 모든 구성원');
     expect(baselineText({ kind: 'restricted' })).toContain('아래에 있는 사람');
   });

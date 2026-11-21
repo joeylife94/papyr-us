@@ -51,6 +51,7 @@ import {
   type Task,
   type Notification,
   type PagePermission,
+  type Team,
 } from '../shared/schema.js';
 import {
   upload,
@@ -114,7 +115,9 @@ import {
   DBStorage,
   OrganizationRequiredError,
   PageCreatorUnavailableError,
+  TeamBusyError,
 } from './storage.js';
+import { notifyPageAccessChanged } from './services/page-access-events.js';
 import { createUserInDefaultOrganization } from './organizations.js';
 import {
   buildAddressRateLimiter,
@@ -237,7 +240,7 @@ function withoutPassword<T extends { password?: unknown }>(team: T): Omit<T, 'pa
   return rest;
 }
 
-const createTeamSchema = insertTeamSchema.extend({
+const createTeamSchema = insertTeamSchema.omit({ membersCanEdit: true }).extend({
   // A name that team-scoped routes would not read as a name (it starts with a number, such as
   // `5` or `2024-plans`) is refused. Teams that already have such a name are left alone.
   name: z
@@ -4194,12 +4197,39 @@ export async function registerRoutes(
           return res.status(400).json({ error: 'Invalid team data' });
         }
 
-        const team = await storage.updateTeam(id, parsed.data);
+        // "Members can edit team pages" is changed under the team's lock, which reads the
+        // caller's role again; the other fields are written as before.
+        const { membersCanEdit, ...otherFields } = parsed.data;
+        let team: Team | undefined;
+        if (membersCanEdit !== undefined) {
+          const result = await storage.setTeamMembersCanEdit(id, userId, membersCanEdit);
+          if (!result.ok) {
+            return res.status(result.status).json({
+              error:
+                result.status === 403
+                  ? 'Admin or owner role required to update team'
+                  : result.body.message,
+            });
+          }
+          team = result.value.team;
+          // Members' open sessions on the team's pages check their access again now
+          if (result.value.changed) {
+            for (const memberId of result.value.memberIds) {
+              await notifyPageAccessChanged(memberId);
+            }
+          }
+        }
+        if (Object.keys(otherFields).length > 0) {
+          team = await storage.updateTeam(id, otherFields);
+        }
         if (!team) {
           return res.status(404).json({ error: 'Team not found' });
         }
         res.json(withoutPassword(team));
       } catch (error) {
+        if (error instanceof TeamBusyError) {
+          return res.status(503).json({ error: 'Team is busy, try again' });
+        }
         console.error('Error updating team:', error);
         res.status(500).json({ error: 'Failed to update team' });
       }
