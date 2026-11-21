@@ -20,6 +20,22 @@ export default function LoginPage() {
   // sign-in: the account exists but an administrator has turned it off.
   const [isDeactivated, setIsDeactivated] = useState(query.get('error') === 'account_deactivated');
 
+  // Set by the social sign-in callbacks when the sign-up policy turned a new account away.
+  const refusalText = ((code: string | null) => {
+    switch (code) {
+      case 'signup_requires_invitation':
+        return '이 워크스페이스는 초대를 받은 사람만 가입할 수 있습니다. 초대 링크를 받았다면 그 링크를 여세요.';
+      case 'signup_closed':
+        return '이 워크스페이스는 새 계정을 만들 수 없습니다.';
+      case 'invitation_invalid':
+        return '초대 링크를 사용할 수 없습니다. 링크가 만료되었거나 이미 사용되었을 수 있습니다. 초대한 사람에게 새 링크를 요청하세요.';
+      case 'invitation_email_mismatch':
+        return '이 초대는 다른 이메일 주소로 보낸 것입니다. 초대받은 주소의 계정으로 로그인하세요.';
+      default:
+        return null;
+    }
+  })(query.get('error'));
+
   const handleSocialLogin = (provider: 'google' | 'github') => {
     window.location.href = `/api/auth/${provider}`;
   };
@@ -60,6 +76,16 @@ export default function LoginPage() {
             className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive"
           >
             This account has been deactivated. Contact an administrator to restore access.
+          </p>
+        )}
+
+        {refusalText && (
+          <p
+            role="alert"
+            data-testid="login-signup-refused"
+            className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive"
+          >
+            {refusalText}
           </p>
         )}
 
