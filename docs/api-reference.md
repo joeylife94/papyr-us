@@ -88,16 +88,23 @@
 
 ## 페이지 권한 & 공유 (Permissions & Sharing)
 
-| Method | Endpoint                             | Auth | Description                  |
-| ------ | ------------------------------------ | ---- | ---------------------------- |
-| GET    | `/api/pages/:id/permissions`         | JWT  | 페이지 권한 목록             |
-| POST   | `/api/pages/:id/permissions`         | JWT  | 권한 추가                    |
-| DELETE | `/api/pages/:id/permissions/:permId` | JWT  | 권한 삭제                    |
-| GET    | `/api/pages/:id/share`               | JWT  | 공유 링크 목록               |
-| POST   | `/api/pages/:id/share`               | JWT  | 공유 링크 생성               |
-| DELETE | `/api/pages/:id/share/:token`        | JWT  | 공유 링크 삭제               |
-| GET    | `/api/share/:token`                  | -    | 공유 링크로 페이지 조회      |
-| POST   | `/api/share/:token/verify`           | -    | 비밀번호 보호 공유 링크 검증 |
+| Method | Endpoint                             | Auth   | Description                                |
+| ------ | ------------------------------------ | ------ | ------------------------------------------ |
+| GET    | `/api/pages/:id/sharing`             | JWT    | 누가 접근할 수 있는지 (구성원·읽기 권한자) |
+| GET    | `/api/pages/:id/share-candidates`    | 소유자 | 권한을 줄 사람·팀 검색                     |
+| GET    | `/api/pages/:id/permissions`         | 소유자 | 페이지 권한 목록                           |
+| POST   | `/api/pages/:id/permissions`         | 소유자 | 권한 추가·변경                             |
+| DELETE | `/api/pages/:id/permissions/:permId` | 소유자 | 권한 삭제                                  |
+| GET    | `/api/pages/:id/share`               | 소유자 | 공유 링크 목록                             |
+| POST   | `/api/pages/:id/share`               | 소유자 | 공유 링크 생성                             |
+| DELETE | `/api/pages/:id/share/:token`        | 소유자 | 그 페이지의 공유 링크 삭제                 |
+| GET    | `/api/share/:token`                  | -      | 공유 링크로 페이지 조회                    |
+| POST   | `/api/share/:token/verify`           | -      | 비밀번호 보호 공유 링크 검증               |
+
+- 페이지 경로의 `:id`는 숫자만 받습니다(`^[1-9][0-9]*$`). 그 밖의 표기는 404(공유·권한 경로) 또는 400 `Invalid page ID`입니다.
+- 권한 추가 본문: `{ entityType: "user" | "team", entityId, permission: "viewer" | "commenter" | "editor" | "owner" }` 또는 `{ entityType: "public", permission: "viewer" | "commenter" }`. 공개 권한은 보기·댓글까지만 받고(그 이상은 400), 페이지마다 하나로 저장됩니다. 받는 사람은 페이지 조직의 활성 구성원·팀이어야 하고, 팀 페이지의 개인 권한은 그 팀 멤버에게만 줄 수 있습니다.
+- `/sharing`은 페이지 조직의 활성 구성원이면서 페이지를 읽을 수 있는 사람에게만 답하고(그 밖에는 404), 소유자에게만 계정 번호·이메일·공유 링크를 보여 줍니다.
+- 공유 링크의 권한도 보기·댓글까지만입니다. 응답에 비밀번호 해시는 없고 `hasPassword`만 있습니다. 없는 링크는 404, 만료된 링크는 403 `{ code: "link_expired" }`, 비밀번호가 필요하면 403입니다.
 
 ---
 

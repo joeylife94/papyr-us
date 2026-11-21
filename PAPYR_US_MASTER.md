@@ -4,7 +4,7 @@ aliases: ['PAPYR_US_MASTER', 'Papyr.us v1.0 Master']
 project: 'Papyr.us'
 type: 'project-master'
 status: 'authoritative-contract'
-version: '1.01'
+version: '1.02'
 target: 'v1.0 + D1 frozen baseline; enterprise readiness (Issue #124), one bounded phase per PR'
 current_phase: 'Issue #124 — X0, X1a, X1b and X1c done; X1d next, alongside the collaboration packages of §10'
 priority: 'P1'
@@ -18,7 +18,7 @@ checkpoint_main_sha: 'd2f092b240d5ffe0937dd6d487934e32d5a631f3'
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v1.01**  
+> **AUTHORITATIVE PROJECT CONTRACT — v1.02**  
 > Current repository / Issue / PR / executable evidence overrides historical checkpoints, Scheduled Task prompts, and agent self-report.  
 > The accepted v1.0 product/proof baseline and D1 remain frozen as evidence. Progression after D1 runs as contract Issues under [`AGENTS.md`](AGENTS.md), one bounded phase per PR, and must not rewrite prior accepted evidence or widen buyer-facing claims without a new Proof.
 
@@ -611,3 +611,44 @@ On the integration head (this package merged onto §14's branch), Linux containe
 - Reactivating a deactivated inviter revives their pending invitations (deactivation has no API yet, X5).
 - The OAuth flow has no `state` check (pre-existing); a separate item.
 - Per-address limits share one bucket behind a proxy until `TRUST_PROXY` is set.
+
+## 16. Sharing a Page From the Screen (2026-11-21)
+
+### Changed
+
+§10, item 5 (the sharing screen; the per-team "members can edit" setting decided on 2026-11-19 is a separate later package). Owner decision (2026-11-21): a public grant may carry viewer or commenter only.
+
+| Area          | What exists now                                                                                                                                                                                                |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Owners        | a dialog to grant, change and remove access for people and teams of the page's organization, to set public access (off, view, comment) and to manage share links (password, expiry)                            |
+| Others        | a read-only list of who has access, by name; a badge with their own level; nothing for readers outside the organization                                                                                        |
+| Public grants | at most commenter; stored editor/owner public grants honoured as viewer by every reader; several public rows read as the strongest one; setting public access replaces them with one row under a per-page lock |
+| Grants        | validated; only active members and teams of the page's organization; on a team page, person grants only to team members                                                                                        |
+| Share links   | owner-only; deleted only through their own page; no password hash in answers; unknown 404, expired `link_expired`                                                                                              |
+| Page ids      | one strict parser (digits only) for every page gate and the handler behind it                                                                                                                                  |
+| Realtime      | lowering or removing a grant re-checks the affected accounts' connections; lowering or removing public access re-checks every connection on the page                                                           |
+| Migration     | `0030` changes nothing and reports how many public grants above commenter exist                                                                                                                                |
+
+Rules are in [`docs/organizations-guide.md`](docs/organizations-guide.md#페이지-공유).
+
+Process: one developer package against a brief, four review rounds. The reviews found and the package fixed: a share link could be deleted by anyone holding its token (through any page id); readers disagreed on pages with several public rows (old data); editors could make a page public; person grants on team pages that gave no access were offered and listed; a check and the action behind it read the page id differently, so an odd id spelling acted on another page (introduced and caught during review; every gate/handler pair was then audited).
+
+### Actually Executed
+
+On the integration head (this package merged onto §15's branch), Linux container, local PostgreSQL 16, the container's Chromium:
+
+- `CI=true npx vitest run --maxWorkers=2` — 82 files, 2247 tests **PASS**; unit — 60 files, 943 tests **PASS**; Layer 4 — 38 files, 529 tests **PASS**;
+- browser: `page-share-ui`, `page-tree`, `organization-invitations`, `comment-mentions`, `security-page-write-access`, `security-page-reads-scope`, `team-membership-ui`, `gj02-document-lifecycle`, `gj03-authorization-boundary`, `security-page-creator`, `notification-bell`, `security-folder-pages-access` — 47 tests **PASS**;
+- the prepare step through `0030` on a real database twice ("0030 public grants: 2 above commenter … no row was changed");
+- reviewer probes: 17 id spellings against 34 routes (nothing acted on another page), public-access races (one row every round), realtime re-check live on `/yjs` and `/collab`; reviewer mutations each caught by at least one test.
+
+### Not Verified
+
+- the whole `test:gj` list, Layer 5, Layer 6 and Firebat: CI on the pull request is the reference;
+- component render tests (the repository has no DOM test setup; the dialog's decisions are pure functions with unit tests, the rendering is covered by the browser spec).
+
+### Known limits
+
+- Realtime edit rights do not count a team grant to another team on a team page (flag off by default).
+- Owners of older pages through the author text are not listed in the dialog.
+- An owner can lower or remove their own grant through the API (the dialog does not offer it).
