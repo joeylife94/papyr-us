@@ -57,7 +57,7 @@ describe('RBAC via JWT', () => {
       .set('Authorization', `Bearer ${token}`);
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual([{ id: 1, name: 'alpha' }]);
+    expect(res.body).toEqual([{ id: 1, name: 'alpha', hasPassword: false }]);
   });
 
   it('forbids access without admin (no token)', async () => {
