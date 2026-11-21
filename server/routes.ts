@@ -169,7 +169,7 @@ import {
 } from './page-sharing-routes.js';
 import { PUBLIC_GRANT_LEVELS, effectivePublicLevel } from '../shared/page-sharing.js';
 import { checkedPageId, parsePageIdParam } from './page-ids.js';
-import { parseTeamIdParam } from './team-ids.js';
+import { parseTeamIdParam, readTeamIdQuery } from './team-ids.js';
 
 interface MulterRequest extends Request {
   files?: any[];
@@ -873,15 +873,17 @@ export async function registerRoutes(
 
   app.get('/api/pages', optionalAuth, async (req: AuthRequest, res) => {
     try {
-      const teamIdParam = req.query.teamId as string;
+      const teamIdParam = req.query.teamId;
       const cursor = req.query.cursor as string | undefined;
 
-      // Resolve teamName string to numeric team ID
+      // A strict team id is an id; any other string is a team name (never a number read from its
+      // first digits). A name that names no team leaves the listing to the caller's own teams.
       let resolvedTeamId: number | undefined;
       if (teamIdParam) {
-        if (!isNaN(parseInt(teamIdParam))) {
-          resolvedTeamId = parseInt(teamIdParam);
-        } else {
+        const asId = parseTeamIdParam(teamIdParam);
+        if (asId !== null) {
+          resolvedTeamId = asId;
+        } else if (typeof teamIdParam === 'string') {
           const team = await storage.getTeamByName(teamIdParam);
           if (team) {
             resolvedTeamId = team.id;
@@ -1482,8 +1484,9 @@ export async function registerRoutes(
   // trashed page in the instance, body included, to any signed-in user).
   app.get('/api/trash', requireAuthIfEnabled, async (req: AuthRequest, res) => {
     try {
-      const teamParam = Number.parseInt(String(req.query.teamId ?? ''), 10);
-      const teamId = Number.isInteger(teamParam) && teamParam > 0 ? teamParam : undefined;
+      // A team id that is not a strict id filters nothing: the listing is limited to what the
+      // caller may read either way.
+      const teamId = parseTeamIdParam(req.query.teamId) ?? undefined;
       const viewer = await storage.getPageViewer(req.user?.id);
       res.json(await storage.getTrashPages(viewer, teamId));
     } catch (error) {
@@ -1549,8 +1552,11 @@ export async function registerRoutes(
   // Empty entire trash
   app.delete('/api/trash', requireAuthIfEnabled, requireAdmin, async (req: AuthRequest, res) => {
     try {
-      const teamId = req.query.teamId ? parseInt(req.query.teamId as string) : undefined;
-      const count = await storage.emptyTrash(teamId);
+      // Emptying the trash of one team needs that team named as a strict id; any other spelling
+      // is refused rather than widened to every team.
+      const team = readTeamIdQuery(req.query.teamId);
+      if (!team.ok) return res.status(400).json({ error: 'Invalid team ID' });
+      const count = await storage.emptyTrash(team.id);
       res.json({ message: `${count} page(s) permanently deleted` });
     } catch (error) {
       logger.error('Error emptying trash:', { error });
@@ -2861,10 +2867,11 @@ export async function registerRoutes(
       let teamId: number | undefined;
 
       if (teamParam && teamParam !== 'null') {
-        teamId = parseInt(teamParam, 10);
-        if (!Number.isInteger(teamId) || teamId <= 0) {
+        const team = readTeamIdQuery(teamParam);
+        if (!team.ok || team.id === undefined) {
           return res.status(400).json({ message: 'Invalid team ID' });
         }
+        teamId = team.id;
         if (!req.user?.id) {
           return res.status(401).json({ message: 'Authentication required' });
         }
@@ -2956,10 +2963,11 @@ export async function registerRoutes(
     const teamParam = req.query.teamId as string | undefined;
     let teamId: number | undefined;
     if (teamParam) {
-      teamId = parseInt(teamParam, 10);
-      if (!Number.isInteger(teamId) || teamId <= 0) {
+      const team = readTeamIdQuery(teamParam);
+      if (!team.ok || team.id === undefined) {
         return res.status(400).json({ message: 'Invalid team ID' });
       }
+      teamId = team.id;
       const userTeamIds = req.user?.id ? await storage.getUserTeamIds(req.user.id) : [];
       if (!userTeamIds.includes(teamId)) {
         return res.status(403).json({ message: 'You are not a member of this team' });
