@@ -582,6 +582,37 @@ describe('the creator id grants nothing', () => {
     ).not.toContain(pageId);
   });
 
+  it('a backfilled creator of an older email-author page holds only what its grant says: lowered or removed grants decide', async () => {
+    const ada = await newUser('backfilled-creator');
+    const pageId = await pageWithAuthor('Older email page', ada.email, ada.id);
+    const grant = async (permission: string) =>
+      scoped.query(
+        `INSERT INTO page_permissions (page_id, entity_type, entity_id, permission, granted_by)
+         VALUES ($1, 'user', $2, $3, $2)`,
+        [pageId, ada.id, permission]
+      );
+    await grant('owner');
+    expect(await storage.checkPagePermission(ada.id, pageId, 'owner')).toBe(true);
+
+    // The creation grant lowered to viewer after the backfill: the author text adds nothing.
+    await scoped.query(
+      `UPDATE page_permissions SET permission = 'viewer' WHERE page_id = $1 AND entity_id = $2`,
+      [pageId, ada.id]
+    );
+    expect(await storage.checkPagePermission(ada.id, pageId, 'viewer')).toBe(true);
+    expect(await storage.checkPagePermission(ada.id, pageId, 'editor')).toBe(false);
+    expect(await storage.checkPagePermission(ada.id, pageId, 'owner')).toBe(false);
+
+    // The grant removed: nothing is left.
+    await scoped.query(`DELETE FROM page_permissions WHERE page_id = $1 AND entity_id = $2`, [
+      pageId,
+      ada.id,
+    ]);
+    for (const level of ['viewer', 'commenter', 'editor', 'owner'] as const) {
+      expect(await storage.checkPagePermission(ada.id, pageId, level), level).toBe(false);
+    }
+  });
+
   it('a page created by an account whose name equals another account email gives that account nothing', async () => {
     const stranger = await newUser('stranger-by-name');
     const odd = await newUser(`odd-${counter}`, { name: stranger.email });

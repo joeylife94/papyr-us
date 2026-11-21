@@ -5,9 +5,10 @@
  *   one user grant whose granter is the grantee (any level), written within five seconds after
  *   the page, for an account that exists and whose email or name is the page's author text (and
  *   never for the author 'Automation'). Every other page keeps null.
- * - It runs on every application and touches only pages whose creator is null: a re-run changes
- *   nothing, a creator set by hand or by the application is never overwritten, and a table that
- *   a schema push made (the column exists, empty) is filled exactly as prepare-first fills it.
+ * - It runs once: the column is commented '0027: backfilled' in the run that fills it, and a
+ *   marked column is left alone (a later rename names no one, a creator cleared by hand stays
+ *   cleared). A table a schema push made (column present, not marked) is filled once, exactly as
+ *   prepare-first fills it, and then marked. Only pages whose creator is null are touched.
  * - Names match what `drizzle-kit push` creates.
  * - The down file refuses while a page records a creator that applying 0027 again would not
  *   compute, and otherwise drops the column; applying 0027 afterwards restores the same values.
@@ -303,7 +304,15 @@ const PUSH_SHAPE = `
   CREATE INDEX idx_wiki_pages_created_by_user_id ON wiki_pages (created_by_user_id);
 `;
 
-describe('0027 runs on every application and touches only pages without a creator', () => {
+const markOf = async (): Promise<string | null> =>
+  (
+    await scoped.query(
+      `SELECT col_description('wiki_pages'::regclass, attnum) AS c FROM pg_attribute
+        WHERE attrelid = 'wiki_pages'::regclass AND attname = 'created_by_user_id'`
+    )
+  ).rows[0]?.c ?? null;
+
+describe('0027 backfills once and then leaves the column alone', () => {
   it('a second and third run change nothing, and never overwrite a creator', async () => {
     const [a, b] = [await user(), await user()];
     const [set, handSet, unset] = [await page(a), await page(a), await page('someone')];
@@ -325,14 +334,43 @@ describe('0027 runs on every application and touches only pages without a creato
     expect(await creators()).toEqual({ [set]: a, [handSet]: b, [unset]: b });
   });
 
-  it('fills again a creator cleared by hand on a page that still satisfies the conditions', async () => {
+  it('marks the column when it backfills, in the same run', async () => {
+    const a = await user();
+    const p = await page(a);
+    await grant(p, { entityId: a });
+    expect(await hasColumn()).toBe(false);
+    await scoped.query(UP);
+    expect(await markOf()).toBe('0027: backfilled');
+    expect(await creatorOf(p)).toBe(a);
+  });
+
+  it('a creator cleared by hand stays cleared, even on a page that still satisfies the conditions', async () => {
     const a = await user();
     const p = await page(a);
     await grant(p, { entityId: a });
     await scoped.query(UP);
     await scoped.query(`UPDATE wiki_pages SET created_by_user_id = NULL WHERE id = $1`, [p]);
     await scoped.query(UP);
-    expect(await creatorOf(p)).toBe(a);
+    expect(await creatorOf(p)).toBeNull();
+  });
+
+  it('an account renamed after the first run is never named creator by a later run', async () => {
+    const [holder, other] = [await user('Ada Lovelace'), await user('Grace Hopper')];
+    // The account holds the one self-grant inside the window of pages whose author text it is
+    // not (an anonymous page; a page whose author text is another account's email).
+    const anonymous = await page('Anonymous');
+    const byEmail = await page(other);
+    await grant(anonymous, { entityId: holder, offset: '2 seconds' });
+    await grant(byEmail, { entityId: holder, offset: '2 seconds' });
+    await scoped.query(UP);
+    expect([await creatorOf(anonymous), await creatorOf(byEmail)]).toEqual([null, null]);
+
+    // It renames itself to each author text; the next deploy changes nothing.
+    await scoped.query(`UPDATE users SET name = 'Anonymous' WHERE id = $1`, [holder]);
+    await scoped.query(UP);
+    await scoped.query(`UPDATE users SET name = $2 WHERE id = $1`, [holder, emailOf.get(other)]);
+    await scoped.query(UP);
+    expect([await creatorOf(anonymous), await creatorOf(byEmail)]).toEqual([null, null]);
   });
 
   it('push first, then prepare, fills exactly what prepare first fills', async () => {
@@ -352,12 +390,28 @@ describe('0027 runs on every application and touches only pages without a creato
     await grant(anonymous2, { entityId: b, offset: '2 seconds' });
     await scoped.query(PUSH_SHAPE);
     expect(await creators()).toEqual({ [good2]: null, [anonymous2]: null });
+    expect(await markOf()).toBeNull();
     await scoped.query(UP);
+    expect(await markOf()).toBe('0027: backfilled');
     const pushFirst = await creators();
 
     expect(Object.values(prepareFirst)).toEqual([a, null]);
     expect(Object.values(pushFirst)).toEqual([b, null]);
     expect(notices.filter((n) => /0027: 1 page\(s\) got a creator/.test(n)).length).toBe(2);
+  });
+
+  it('a fresh install (push created the column, no pages) is marked with nothing filled', async () => {
+    await scoped.query(PUSH_SHAPE);
+    expect(await markOf()).toBeNull();
+    await scoped.query(UP);
+    expect(await markOf()).toBe('0027: backfilled');
+    expect(notices.join('\n')).not.toMatch(/0027:/);
+    // Pages created afterwards by the application are not touched by the next run.
+    const a = await user();
+    const p = await page(a);
+    await grant(p, { entityId: a });
+    await scoped.query(UP);
+    expect(await creatorOf(p)).toBeNull();
   });
 
   it('does nothing without a wiki_pages table', async () => {
@@ -366,11 +420,12 @@ describe('0027 runs on every application and touches only pages without a creato
     expect((await scoped.query(`SELECT to_regclass('wiki_pages') AS t`)).rows[0].t).toBeNull();
   });
 
-  it('adds the column without a backfill when there is no page_permissions table', async () => {
+  it('adds the column, and marks it, without a backfill when there is no page_permissions table', async () => {
     const p = await page();
     await scoped.query(`DROP TABLE page_permissions`);
     await scoped.query(UP);
     expect(await hasColumn()).toBe(true);
+    expect(await markOf()).toBe('0027: backfilled');
     expect(await creatorOf(p)).toBeNull();
   });
 });
@@ -406,6 +461,18 @@ describe('0027 names', () => {
 });
 
 describe('0027 down', () => {
+  it('removes the mark with the column, so the next up file backfills again', async () => {
+    const u = await user();
+    const p = await page(u);
+    await grant(p, { entityId: u });
+    await scoped.query(UP);
+    await scoped.query(DOWN);
+    expect(await markOf()).toBeNull();
+    await scoped.query(UP);
+    expect(await markOf()).toBe('0027: backfilled');
+    expect(await creatorOf(p)).toBe(u);
+  });
+
   it('refuses, changing nothing, while a page records a creator whose grant is gone', async () => {
     const u = await user();
     const p = await page(u);
