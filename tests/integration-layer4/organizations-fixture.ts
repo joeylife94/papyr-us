@@ -47,6 +47,13 @@ const NOTIFICATIONS_TO_ACCOUNTS_MIGRATION = readFileSync(
   'utf8'
 );
 
+// 0029 (#124 X1d) adds the invitation table; removing or lowering a member revokes that member's
+// pending invitations, so every file describes an upgraded deployment that has it.
+const INVITATIONS_MIGRATION = readFileSync(
+  new URL('../../drizzle/0029_add_organization_invitations.sql', import.meta.url),
+  'utf8'
+);
+
 /**
  * Applies 0022 to a pre-organization test schema and returns the default organization's id.
  * `schema` names the test schema when `pool` does not already use it as its search path.
@@ -83,6 +90,7 @@ export async function addOrganizations(
     await client.query(AI_SETTING_MIGRATION);
     await client.query(AI_ACCESS_MIGRATION);
     await client.query(NOTIFICATIONS_TO_ACCOUNTS_MIGRATION);
+    await client.query(INVITATIONS_MIGRATION);
     const { rows } = await client.query(`SELECT id FROM organizations WHERE slug = 'default'`);
     const organizationId = Number(rows[0].id);
     // The trigger names its schema, so inserts through a pool without the search path work too.

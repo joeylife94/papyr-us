@@ -865,7 +865,7 @@ describe('migration 0029', () => {
     ]);
     const indexes = (
       await rows(
-        `SELECT indexname FROM pg_indexes WHERE tablename = 'organization_invitations' ORDER BY indexname`
+        `SELECT indexname FROM pg_indexes WHERE tablename = 'organization_invitations' AND schemaname = current_schema() ORDER BY indexname`
       )
     ).map((r) => r.indexname);
     expect(indexes).toEqual([
