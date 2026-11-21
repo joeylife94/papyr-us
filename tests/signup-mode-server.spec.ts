@@ -79,12 +79,29 @@ function stopServers() {
 
 test.describe.configure({ mode: 'serial' });
 
-test.beforeAll(async () => {
-  test.setTimeout(420_000);
+test.beforeAll(async ({ browser }) => {
+  test.setTimeout(600_000);
   await Promise.all([
     startServer('invite_only', INVITE_ONLY_PORT, BOOTSTRAP_INVITE_ONLY),
     startServer('closed', CLOSED_PORT, BOOTSTRAP_CLOSED),
   ]);
+  // A development server compiles the client when it is first asked for it, which on a busy
+  // machine can outlast any assertion: load the pages once before the scenarios start.
+  for (const port of [INVITE_ONLY_PORT, CLOSED_PORT]) {
+    const context = await browser.newContext({ baseURL: origin(port) });
+    try {
+      const page = await context.newPage();
+      for (const path of ['/register', '/join', '/login']) {
+        await page.goto(path);
+        await page
+          .locator('form, [data-testid^="join-"], [data-testid^="register-"]')
+          .first()
+          .waitFor({ timeout: 240_000 });
+      }
+    } finally {
+      await context.close();
+    }
+  }
 });
 
 test.afterAll(() => {
