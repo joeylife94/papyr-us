@@ -9,6 +9,7 @@
  * It is the `store` of passport-oauth2's strategy options.
  */
 import { randomBytes, timingSafeEqual } from 'crypto';
+import type { StateStore } from 'passport-oauth2';
 import { config } from './config.js';
 
 /** How long a sign-in may take between its start and its callback. */
@@ -41,12 +42,14 @@ function sameState(expected: unknown, provided: unknown): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+// passport-oauth2 picks the call shape from the functions' arity: store(req, callback) and
+// verify(req, state, callback).
 export const oauthStateStore = {
   /** Makes the state, sets the cookie on the response that redirects to the provider. */
-  store(req: any, callback: (err: Error | null, state?: string) => void) {
+  store(req: any, callback: (err: Error | null, state: any) => void) {
     const res = req?.res;
     if (!res || typeof res.cookie !== 'function') {
-      return callback(new Error('OAuth state cannot be stored without a response'));
+      return callback(new Error('OAuth state cannot be stored without a response'), undefined);
     }
     const state = randomBytes(OAUTH_STATE_BYTES).toString('base64url');
     res.cookie(oauthStateCookie(config.isProduction).name, state, {
@@ -60,12 +63,12 @@ export const oauthStateStore = {
   verify(
     req: any,
     providedState: unknown,
-    callback: (err: Error | null, ok?: boolean, info?: { code: string }) => void
+    callback: (err: Error | null, ok: boolean, info: any) => void
   ) {
     const expected = req?.cookies?.[oauthStateCookie(config.isProduction).name];
     if (!sameState(expected, providedState)) {
       return callback(null, false, { code: OAUTH_STATE_REFUSAL });
     }
-    return callback(null, true);
+    return callback(null, true, undefined);
   },
-};
+} as unknown as StateStore;
