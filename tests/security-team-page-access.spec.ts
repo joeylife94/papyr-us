@@ -7,11 +7,15 @@
  *   editing, deleting and managing permissions still need an explicit grant or authorship;
  * - on a team page, authorship and user-specific grants only count while the user is a member of
  *   that team: a removed member loses even the pages they wrote, and re-admission restores them;
- * - outsiders stay denied, including through a user grant on a team page;
+ * - outsiders stay denied: a user grant on a team page to someone outside the team is refused,
+ *   and one stored before that rule existed gives them nothing;
  * - every page listed for a caller is directly readable by that caller.
  */
 import { test, expect, type APIRequestContext } from '@playwright/test';
+import { Pool } from 'pg';
 import { createAuthenticatedApiContext, registerTestUser } from './e2e-helpers';
+
+const DATABASE_URL = process.env.DATABASE_URL;
 
 function pageIds(body: unknown): number[] {
   const list = Array.isArray(body) ? body : ((body as any)?.pages ?? []);
@@ -157,7 +161,20 @@ test.describe('Team page access follows current team membership', () => {
       const grant = await ownerRequest.post(`/api/pages/${ownerPage.id}/permissions`, {
         data: { entityType: 'user', entityId: outsiderMe.id, permission: 'editor' },
       });
-      expect(grant.status()).toBe(201);
+      // A person grant on a team page goes only to a member of that team.
+      expect(grant.status()).toBe(400);
+      // A grant stored before that rule (written directly, as old data would be) gives nothing.
+      if (!DATABASE_URL) throw new Error('DATABASE_URL is required to store an older grant');
+      const db = new Pool({ connectionString: DATABASE_URL });
+      try {
+        await db.query(
+          `INSERT INTO page_permissions (page_id, entity_type, entity_id, permission, granted_by)
+           VALUES ($1, 'user', $2, 'editor', $3)`,
+          [ownerPage.id, outsiderMe.id, ownerPage.createdByUserId ?? null]
+        );
+      } finally {
+        await db.end();
+      }
       for (const status of await reads(outsiderRequest, ownerPage))
         expect([403, 404]).toContain(status);
       const outsiderEdit = await outsiderRequest.put(`/api/pages/${ownerPage.id}`, {
