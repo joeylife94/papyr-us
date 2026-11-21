@@ -125,6 +125,11 @@ interface AuthRequest extends Request {
   checkedTeamId?: number;
   /** Set by requireTeamMembership: the signed-in user's team ids (empty without a user). */
   userTeamIds?: number[];
+  /**
+   * The request's session read (see verifyRequestSession), kept so that however many middlewares
+   * look at the session, the account is read once. Lives on the request only.
+   */
+  sessionRead?: Promise<any>;
 }
 
 function extractBearerToken(authorizationHeader: string | undefined): string | undefined {
@@ -150,13 +155,18 @@ function getRequestToken(req: AuthRequest): string | undefined {
 
 /**
  * The session of a request: its access token verified, and the account behind it active now
- * (read from storage on every request). Throws like verifyActiveAccessToken.
+ * (read from storage on every request, once per request). Throws like verifyActiveAccessToken.
  */
-async function verifyRequestSession(req: AuthRequest): Promise<any> {
+function verifyRequestSession(req: AuthRequest): Promise<any> {
   const token = getRequestToken(req);
-  if (!token) return null;
-  const storage = req.app.locals.storage || (await import('./storage.js')).getStorage();
-  return verifyActiveAccessToken(token, storage);
+  if (!token) return Promise.resolve(null);
+  // One read per request: the global write gate, a route's session requirement and its optional
+  // session read share the result (a failure included, so a failed read is not retried).
+  req.sessionRead ??= (async () => {
+    const storage = req.app.locals.storage || (await import('./storage.js')).getStorage();
+    return verifyActiveAccessToken(token, storage);
+  })();
+  return req.sessionRead;
 }
 
 export function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
