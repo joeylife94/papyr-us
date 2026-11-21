@@ -228,7 +228,7 @@ test.describe('Comment mentions and notifications', () => {
       }
 
       // ── The picker and the API refuse what they must ──
-      const search = `/api/pages/${pageId}/mention-candidates?q=cm`;
+      const search = `/api/pages/${pageId}/mention-candidates?q=${stamp}`;
       expect((await signedOut.get(search)).status()).toBe(401);
       expect((await o.ctx.get(search)).status()).toBe(403);
       expect((await x.ctx.get(search)).status()).toBe(403);
@@ -248,6 +248,129 @@ test.describe('Comment mentions and notifications', () => {
       for (const context of contexts) await (context as any).close?.();
       for (const person of [a, b, c, d, x, o]) await person.ctx.dispose();
       await db.end();
+    }
+  });
+
+  test('mentions are a feature of members: an outsider on a public page mentions nobody and learns nobody', async () => {
+    test.setTimeout(120_000);
+    if (!DATABASE_URL) throw new Error('DATABASE_URL is required to make a second organization');
+    const db = new Pool({ connectionString: DATABASE_URL });
+    const stamp = `${Date.now().toString(36)}o`;
+    const b = await signedIn(`pmb${stamp}`);
+    const c = await signedIn(`pmc${stamp}`);
+    const m = await signedIn(`pmm${stamp}`);
+    const o = await signedIn(`pmo${stamp}`);
+    const signedOut = await playwrightRequest.newContext({ baseURL: baseURL() });
+    let pageId = 0;
+    try {
+      const { rows: org } = await db.query(
+        `INSERT INTO organizations (slug, name) VALUES ($1, $1) RETURNING id`,
+        [`pm-org-${stamp}`]
+      );
+      await db.query('UPDATE organization_members SET organization_id = $1 WHERE user_id = $2', [
+        org[0].id,
+        o.id,
+      ]);
+      const created = await b.ctx.post('/api/pages', {
+        data: {
+          title: `Public ${stamp}`,
+          slug: `pm-page-${stamp}`,
+          content: 'b',
+          folder: 'pm',
+          tags: [],
+        },
+      });
+      expect(created.status()).toBe(201);
+      pageId = (await created.json()).id;
+      const shared = await b.ctx.post(`/api/pages/${pageId}/permissions`, {
+        data: { entityType: 'public', permission: 'commenter' },
+      });
+      expect(shared.ok()).toBe(true);
+      const url = `/api/pages/${pageId}/comments`;
+
+      // The outsider mentions a member, and an id nobody has: the same text is stored, and nobody
+      // but the page's creator hears of it.
+      const withMember = await o.ctx.post(url, { data: { content: `hi [[user:${c.id}]]` } });
+      const withUnknown = await o.ctx.post(url, { data: { content: 'hi [[user:99999999]]' } });
+      expect(withMember.status()).toBe(201);
+      expect(withUnknown.status()).toBe(201);
+      expect((await withMember.json()).content).toBe('hi @unknown');
+      expect((await withUnknown.json()).content).toBe('hi @unknown');
+      expect((await listed(c.ctx)).filter((n) => n.type === 'mention')).toEqual([]);
+      expect((await listed(b.ctx)).map((n) => n.type)).toEqual(['comment', 'comment']);
+      expect(await listed(o.ctx)).toEqual([]);
+
+      // A member's mention is live for members, and neutral for everyone else.
+      const member = await m.ctx.post(url, { data: { content: `ping [[user:${c.id}]]` } });
+      expect(member.status()).toBe(201);
+      const asMember = await (await b.ctx.get(url)).json();
+      const live = asMember.find((x: { content: string }) => x.content.includes('[[user:'));
+      expect(live.mentions).toEqual([{ userId: c.id, name: c.name }]);
+      for (const viewer of [o.ctx, signedOut]) {
+        const rows = await (await viewer.get(url)).json();
+        for (const row of rows) {
+          expect(row).not.toHaveProperty('mentions');
+          expect(row.content).not.toContain('[[user:');
+        }
+        expect(JSON.stringify(rows)).not.toContain(c.name);
+        expect(rows.map((r: { content: string }) => r.content)).toContain('ping @unknown');
+      }
+    } finally {
+      if (pageId) await b.ctx.delete(`/api/pages/${pageId}`);
+      await signedOut.dispose();
+      for (const person of [b, c, m, o]) await person.ctx.dispose();
+      await db.end();
+    }
+  });
+
+  test('when a comment cannot be stored the text stays in the box and the person is told', async ({
+    browser,
+  }) => {
+    test.setTimeout(90_000);
+    const stamp = `${Date.now().toString(36)}k`;
+    const b = await signedIn(`kpb${stamp}`);
+    const context = await browser.newContext();
+    let pageId = 0;
+    try {
+      const created = await b.ctx.post('/api/pages', {
+        data: {
+          title: `Keep ${stamp}`,
+          slug: `kp-page-${stamp}`,
+          content: 'b',
+          folder: 'kp',
+          tags: [],
+        },
+      });
+      expect(created.status()).toBe(201);
+      pageId = (await created.json()).id;
+      const page = await context.newPage();
+      await loginPageWithCookies(page, b.email, b.password);
+      let attempts = 0;
+      await page.route(`**/api/pages/${pageId}/comments`, async (route) => {
+        if (route.request().method() !== 'POST') return route.continue();
+        attempts += 1;
+        return route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            message: 'Comments are temporarily unavailable. Please try again.',
+          }),
+        });
+      });
+      await page.goto(`/page/kp-page-${stamp}`);
+      const input = page.getByTestId('comment-input');
+      await input.fill('a draft that must not be lost');
+      await page.getByRole('button', { name: 'Post Comment' }).click();
+      await expect(
+        page.getByText('Comments are temporarily unavailable. Please try again.')
+      ).toBeVisible();
+      await expect(input).toHaveValue('a draft that must not be lost');
+      expect(attempts).toBe(1);
+      expect(await (await b.ctx.get(`/api/pages/${pageId}/comments`)).json()).toEqual([]);
+    } finally {
+      if (pageId) await b.ctx.delete(`/api/pages/${pageId}`);
+      await context.close();
+      await b.ctx.dispose();
     }
   });
 });
