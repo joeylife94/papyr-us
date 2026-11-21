@@ -11,7 +11,10 @@
  * - the notification text is a short excerpt of the comment with mentions rendered as names, and
  *   the sender's name; never an email, and nothing a reader of the page could not already see;
  * - recipients are accounts (`author_user_id`, `created_by_user_id`, mention ids); nothing is
- *   matched by email or by the page's `author` text.
+ *   matched by email or by the page's `author` text;
+ * - mentions are a feature of members: when the commenter is not an active member of the page's
+ *   organization, every token is replaced by the neutral label and no mention is sent, whatever
+ *   the ids were, so the answer tells such a commenter nothing about who is a member.
  */
 import type { InsertNotification } from '../../shared/schema.js';
 import {
@@ -34,6 +37,9 @@ export interface CommentPlanStorage {
   ): Promise<Map<number, string>>;
   getActiveAccountNames(userIds: number[]): Promise<Map<number, string>>;
 }
+
+/** Most recipients one comment is resolved for; mentions come first. */
+const MAX_RECIPIENTS = 200;
 
 export interface CommentPlanPage {
   id: number;
@@ -70,34 +76,33 @@ export function failClosedPlan(content: string): CommentPlan {
   return { content: stripUnlistedMentions(content, new Set()), notifications: [] };
 }
 
-export async function planCommentNotifications(
+interface PlanInput {
+  page: CommentPlanPage;
+  actorUserId: number;
+  /** Whether the commenter is an active member of the page's organization. */
+  actorIsMember: boolean;
+  content: string;
+}
+
+async function buildPlan(
   storage: CommentPlanStorage,
-  input: {
-    page: CommentPlanPage;
-    actorUserId: number;
-    content: string;
-    parentId: number | null;
-  }
+  input: PlanInput,
+  candidates: Map<number, CommentNotificationKind>,
+  mentionedUserIds: number[]
 ): Promise<CommentPlan> {
-  const { page, actorUserId, parentId } = input;
-  const mentionedUserIds = extractMentionIds(input.content);
-  const pageComments = parentId !== null ? await storage.getPageCommentThreadRows(page.id) : [];
-
-  const candidates = computeCommentRecipients({
-    actorUserId,
-    pageCreatorUserId: page.createdByUserId,
-    parentId,
-    pageComments,
-    mentionedUserIds,
-  });
-
+  const { page, actorUserId } = input;
   // Mentions first, so the recipient limit never drops a mention in favour of a participant.
-  const readers = await storage.getReadableOrganizationMembers(page.organizationId, page.id, [
-    ...mentionedUserIds,
-    ...candidates.keys(),
-  ]);
+  const wanted = [...new Set([...mentionedUserIds, ...candidates.keys()])].slice(0, MAX_RECIPIENTS);
+  const readers = await storage.getReadableOrganizationMembers(
+    page.organizationId,
+    page.id,
+    wanted
+  );
 
-  const content = stripUnlistedMentions(input.content, new Set(readers.keys()));
+  const content = stripUnlistedMentions(
+    input.content,
+    new Set(mentionedUserIds.filter((id) => readers.has(id)))
+  );
   const recipients = [...candidates].filter(([userId]) => readers.has(userId));
   if (recipients.length === 0) return { content, notifications: [] };
 
@@ -117,4 +122,39 @@ export async function planCommentNotifications(
       isRead: false,
     })),
   };
+}
+
+/** A new comment or reply. */
+export async function planCommentNotifications(
+  storage: CommentPlanStorage,
+  input: PlanInput & { parentId: number | null }
+): Promise<CommentPlan> {
+  const { page, actorUserId, parentId } = input;
+  // A commenter outside the organization mentions nobody: the tokens go, the rest is as usual.
+  const mentionedUserIds = input.actorIsMember ? extractMentionIds(input.content) : [];
+  const pageComments = parentId !== null ? await storage.getPageCommentThreadRows(page.id) : [];
+  const candidates = computeCommentRecipients({
+    actorUserId,
+    pageCreatorUserId: page.createdByUserId,
+    parentId,
+    pageComments,
+    mentionedUserIds,
+  });
+  return buildPlan(storage, input, candidates, mentionedUserIds);
+}
+
+/**
+ * An edited comment: the text keeps only live tokens, and a `mention` goes to each eligible
+ * account the edit ADDED (a token already in `previousContent` notifies nobody again). Nothing
+ * else is notified by an edit.
+ */
+export async function planEditNotifications(
+  storage: CommentPlanStorage,
+  input: PlanInput & { previousContent: string }
+): Promise<CommentPlan> {
+  const all = input.actorIsMember ? extractMentionIds(input.content) : [];
+  const before = new Set(extractMentionIds(input.previousContent));
+  const added = all.filter((id) => !before.has(id) && id !== input.actorUserId);
+  const candidates = new Map<number, CommentNotificationKind>(added.map((id) => [id, 'mention']));
+  return buildPlan(storage, input, candidates, all);
 }

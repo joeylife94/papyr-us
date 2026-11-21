@@ -11,6 +11,7 @@ import * as aiService from './ai.js';
 import { sendEmail, isEmailConfigured } from './email.js';
 import logger from './logger.js';
 import { fetchWithRetry, ExternalIntegrationError } from './resilience.js';
+import { stripUnlistedMentions } from '../../shared/comment-mentions.js';
 
 let _storage: DBStorage | null = null;
 
@@ -273,7 +274,11 @@ async function executeAction(
         const comment = await getWorkflowStorage().createComment({
           pageId: pageToComment.id,
           author: 'Automation Bot',
-          content: processedConfig.message || 'Automated comment',
+          // A workflow has no commenting account, so it mentions nobody: tokens become plain text.
+          content: stripUnlistedMentions(
+            String(processedConfig.message || 'Automated comment'),
+            new Set()
+          ),
           parentId: null,
         });
         return { success: true, result: comment };

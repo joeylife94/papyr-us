@@ -40,12 +40,14 @@ export function MentionTextarea({
   const ref = useRef<HTMLTextAreaElement>(null);
   const [active, setActive] = useState<MentionQuery | null>(null);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [truncated, setTruncated] = useState(false);
   const [highlight, setHighlight] = useState(0);
 
   const query = active?.query.trim() ?? '';
   useEffect(() => {
     if ([...query].length < MENTION_SEARCH_MIN_LENGTH) {
       setCandidates([]);
+      setTruncated(false);
       return;
     }
     const controller = new AbortController();
@@ -57,10 +59,12 @@ export function MentionTextarea({
         );
         if (!response.ok) {
           setCandidates([]);
+          setTruncated(false);
           return;
         }
-        const body = (await response.json()) as { candidates?: Candidate[] };
+        const body = (await response.json()) as { candidates?: Candidate[]; truncated?: boolean };
         setCandidates(Array.isArray(body.candidates) ? body.candidates : []);
+        setTruncated(body.truncated === true);
         setHighlight(0);
       } catch {
         // aborted or failed: no list
@@ -73,6 +77,8 @@ export function MentionTextarea({
   }, [pageId, query]);
 
   const open = active !== null && candidates.length > 0;
+  // The search was cut short: say so, so a person is never silently missing from the list.
+  const showHint = active !== null && truncated;
 
   const choose = (candidate: Candidate) => {
     if (!active) return;
@@ -123,7 +129,7 @@ export function MentionTextarea({
         }}
         onBlur={() => setTimeout(() => setActive(null), 150)}
       />
-      {open && (
+      {(open || showHint) && (
         <ul
           role="listbox"
           aria-label="Mention someone"
@@ -147,6 +153,15 @@ export function MentionTextarea({
               {candidate.name}
             </li>
           ))}
+          {showHint && (
+            <li
+              role="presentation"
+              data-testid="mention-truncated-hint"
+              className="px-2 py-1.5 text-xs text-muted-foreground"
+            >
+              검색어를 더 입력하세요
+            </li>
+          )}
         </ul>
       )}
     </div>

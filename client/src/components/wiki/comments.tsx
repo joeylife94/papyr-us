@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { MentionTextarea } from '@/components/wiki/mention-textarea';
+import { commentFailureMessage } from '@/lib/comment-errors';
 import { contentToDraft, draftToContent, type PickedMention } from '@/lib/mention-draft';
 import { UNKNOWN_MENTION_LABEL, splitMentions } from '@shared/comment-mentions';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -61,7 +62,9 @@ export function Comments({ pageId }: CommentsProps) {
         credentials: 'include',
         body: JSON.stringify(data),
       });
-      if (!response.ok) throw new Error('Failed to create comment');
+      if (!response.ok) {
+        throw new Error(await commentFailureMessage(response, 'Failed to post comment'));
+      }
       return response.json();
     },
     onSuccess: () => {
@@ -76,10 +79,11 @@ export function Comments({ pageId }: CommentsProps) {
         description: 'Your comment has been added successfully',
       });
     },
-    onError: () => {
+    // The text stays in the box: it is cleared only when the comment was posted.
+    onError: (error: Error) => {
       toast({
         title: 'Error',
-        description: 'Failed to post comment',
+        description: error.message,
         variant: 'destructive',
       });
     },
@@ -94,7 +98,9 @@ export function Comments({ pageId }: CommentsProps) {
         credentials: 'include',
         body: JSON.stringify({ content }),
       });
-      if (!response.ok) throw new Error('Failed to update comment');
+      if (!response.ok) {
+        throw new Error(await commentFailureMessage(response, 'Failed to update comment'));
+      }
       return response.json();
     },
     onSuccess: () => {
@@ -107,10 +113,10 @@ export function Comments({ pageId }: CommentsProps) {
         description: 'Your comment has been updated successfully',
       });
     },
-    onError: () => {
+    onError: (error: Error) => {
       toast({
         title: 'Error',
-        description: 'Failed to update comment',
+        description: error.message,
         variant: 'destructive',
       });
     },

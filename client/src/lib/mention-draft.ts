@@ -3,7 +3,7 @@
  * These helpers convert between the two. Only a person picked from the picker becomes a token:
  * typing `@Name` by hand stays plain text. The server validates every token again.
  */
-import { UNKNOWN_MENTION_LABEL, mentionToken, splitMentions } from '@shared/comment-mentions';
+import { mentionToken, splitMentions } from '@shared/comment-mentions';
 
 /** A person picked in the box: `label` is the exact text shown after the `@`. */
 export interface PickedMention {
@@ -50,7 +50,10 @@ export function draftToContent(text: string, picked: PickedMention[]): string {
   return content;
 }
 
-/** A stored comment as box text, with the people it names as picked mentions (for editing). */
+/**
+ * A stored comment as box text, with the people it names as picked mentions (for editing). A
+ * token whose person cannot be named stays as the token itself.
+ */
 export function contentToDraft(
   content: string,
   names: ReadonlyMap<number, string>
@@ -60,7 +63,9 @@ export function contentToDraft(
     .map((segment) => {
       if (segment.kind === 'text') return segment.text;
       const name = names.get(segment.userId);
-      if (name === undefined) return `@${UNKNOWN_MENTION_LABEL}`;
+      // A mention that cannot be named here stays as the token, so editing never destroys it;
+      // the server checks every token again on save.
+      if (name === undefined) return mentionToken(segment.userId);
       let entry = picked.find((candidate) => candidate.id === segment.userId);
       if (!entry) {
         entry = { id: segment.userId, label: labelFor({ id: segment.userId, name }, picked) };

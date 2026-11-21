@@ -134,7 +134,11 @@ import {
   extractMentionIds,
   stripUnlistedMentions,
 } from '../shared/comment-mentions.js';
-import { failClosedPlan, planCommentNotifications } from './services/comment-notify.js';
+import {
+  failClosedPlan,
+  planCommentNotifications,
+  planEditNotifications,
+} from './services/comment-notify.js';
 import { postgresErrorOf } from './db-errors.js';
 import { registerDatabaseRoutes } from './routes/database.js';
 import { registerSyncedBlockRoutes } from './routes/synced-blocks.js';
@@ -1971,6 +1975,29 @@ export async function registerRoutes(
     });
   };
 
+  // Mentions are a feature of members: whether the account is an active member of the
+  // organization. A failed lookup counts as no.
+  const isActiveOrganizationMember = async (
+    userId: number | undefined,
+    organizationId: number
+  ): Promise<boolean> => {
+    if (!userId) return false;
+    try {
+      if ((await storage.getUserAccount(userId))?.isActive !== true) return false;
+      return (await storage.getUserOrganizationId(userId)) === organizationId;
+    } catch {
+      return false;
+    }
+  };
+  // What is logged about a failure: a name or database code, never the message (it can carry text).
+  const failureCode = (error: unknown): string =>
+    postgresErrorOf(error)?.code ?? (error instanceof Error ? error.name : 'unknown');
+  const commentsUnavailable = {
+    message: 'Comments are temporarily unavailable. Please try again.',
+  };
+  const rlCommentCreate = buildAccountRateLimiter({ windowMs: 60_000, max: 30 });
+  const rlCommentEdit = buildAccountRateLimiter({ windowMs: 60_000, max: 60 });
+
   // Comments API
   app.get(
     '/api/pages/:pageId/comments',
@@ -1982,9 +2009,10 @@ export async function registerRoutes(
         const comments = await storage.getCommentsByPageId(pageId);
 
         // A comment that holds mention tokens carries the current names of the people they name,
-        // for those who are active members of the page's organization and may read the page. A
-        // token that fails either test (or whose lookup fails) carries nothing, so the client
-        // shows it neutrally and no name leaks.
+        // for a caller who is an active member of the page's organization, and only for those who
+        // are active members who may read the page. Anyone else (signed out, another
+        // organization) gets every token as the neutral label and no `mentions` field, whatever
+        // the ids: the answer does not tell them who is in the organization.
         const tokenIds = new Map<number, number[]>();
         for (const comment of comments) {
           const ids = extractMentionIds(comment.content);
@@ -1992,21 +2020,30 @@ export async function registerRoutes(
         }
         if (tokenIds.size === 0) return res.json(comments);
 
+        const page = await storage.getWikiPage(pageId);
+        const callerId = (req as AuthRequest).user?.id;
+        const member = page
+          ? await isActiveOrganizationMember(callerId, Number(page.organizationId))
+          : false;
+        if (!page || !member) {
+          return res.json(
+            comments.map((comment) =>
+              tokenIds.has(comment.id)
+                ? { ...comment, content: stripUnlistedMentions(comment.content, new Set()) }
+                : comment
+            )
+          );
+        }
+
         let names = new Map<number, string>();
         try {
-          const page = await storage.getWikiPage(pageId);
-          if (page) {
-            names = await storage.getReadableOrganizationMembers(
-              Number(page.organizationId),
-              pageId,
-              [...new Set([...tokenIds.values()].flat())]
-            );
-          }
-        } catch (error) {
-          logger.warn('Mention names could not be resolved', {
+          names = await storage.getReadableOrganizationMembers(
+            Number(page.organizationId),
             pageId,
-            error: error instanceof Error ? error.message : 'Unknown error',
-          });
+            [...new Set([...tokenIds.values()].flat())]
+          );
+        } catch (error) {
+          logger.warn('Mention names could not be resolved', { pageId, code: failureCode(error) });
         }
         res.json(
           comments.map((comment) => {
@@ -2073,6 +2110,7 @@ export async function registerRoutes(
   app.post(
     '/api/pages/:pageId/comments',
     requireAuthIfEnabled,
+    rlCommentCreate,
     requirePagePermission('commenter'),
     async (req: AuthRequest, res) => {
       try {
@@ -2103,11 +2141,15 @@ export async function registerRoutes(
           }
         }
 
-        // Mentions are validated and notifications decided before anything is written. When the
-        // plan cannot be made, the comment is stored without live mentions and notifies nobody.
+        // Mentions are validated and notifications decided before anything is written. When that
+        // cannot be done for a member's comment, nothing is stored and the client keeps the draft.
         const page = await storage.getWikiPage(pageId);
         let plan = failClosedPlan(commentData.content);
         if (page) {
+          const actorIsMember = await isActiveOrganizationMember(
+            authorUserId,
+            Number(page.organizationId)
+          );
           try {
             plan = await planCommentNotifications(storage, {
               page: {
@@ -2117,14 +2159,17 @@ export async function registerRoutes(
                 createdByUserId: page.createdByUserId ?? null,
               },
               actorUserId: authorUserId,
+              actorIsMember,
               content: commentData.content,
               parentId,
             });
           } catch (error) {
-            logger.error('Failed to plan comment notifications:', {
+            logger.error('Failed to plan comment notifications', {
               pageId,
-              error: error instanceof Error ? error.message : 'Unknown error',
+              code: failureCode(error),
             });
+            if (actorIsMember) return res.status(503).json(commentsUnavailable);
+            // A commenter outside the organization: stored without live mentions, nobody notified.
           }
         }
         commentData.content = plan.content;
@@ -2144,7 +2189,7 @@ export async function registerRoutes(
         for (const notification of created) {
           emitNotificationEvent('notification:new', notification).catch((emitErr) => {
             logger.warn('Socket emit failed for comment notification', {
-              error: emitErr instanceof Error ? emitErr.message : 'Unknown error',
+              code: failureCode(emitErr),
             });
           });
         }
@@ -2174,7 +2219,7 @@ export async function registerRoutes(
     }
   );
 
-  app.put('/api/comments/:id', authMiddleware, async (req: AuthRequest, res) => {
+  app.put('/api/comments/:id', authMiddleware, rlCommentEdit, async (req: AuthRequest, res) => {
     try {
       const id = parseInt(req.params.id);
       const userId = (req.user as any)?.id;
@@ -2201,28 +2246,59 @@ export async function registerRoutes(
 
       // updateCommentSchema already strips author/authorUserId to prevent identity tampering
       const updateData = updateCommentSchema.parse(req.body);
-      // Edited text keeps only mention tokens that name a current reader of the page; an edit
-      // notifies nobody.
+      // Edited text keeps only mention tokens that name a current reader of the page, and a
+      // member's edit notifies each eligible account it newly mentions (`mention`, once per
+      // edit, never for a token that was already there). Notifications already sent are not
+      // rewritten. An edit by an account outside the organization keeps no token.
+      let drafts: Awaited<ReturnType<typeof planEditNotifications>>['notifications'] = [];
       if (
         typeof updateData.content === 'string' &&
         extractMentionIds(updateData.content).length > 0
       ) {
-        let live = new Map<number, string>();
-        try {
-          const page = await storage.getWikiPage(existing.pageId);
-          if (page) {
-            live = await storage.getReadableOrganizationMembers(
-              Number(page.organizationId),
-              existing.pageId,
-              extractMentionIds(updateData.content)
-            );
+        const page = await storage.getWikiPage(existing.pageId);
+        let plan = failClosedPlan(updateData.content);
+        if (page) {
+          const actorIsMember = await isActiveOrganizationMember(
+            userId,
+            Number(page.organizationId)
+          );
+          try {
+            plan = await planEditNotifications(storage, {
+              page: {
+                id: page.id,
+                title: page.title,
+                organizationId: Number(page.organizationId),
+                createdByUserId: page.createdByUserId ?? null,
+              },
+              actorUserId: userId,
+              actorIsMember,
+              content: updateData.content,
+              previousContent: existing.content,
+            });
+          } catch (error) {
+            logger.error('Failed to plan comment edit', { code: failureCode(error) });
+            if (actorIsMember) return res.status(503).json(commentsUnavailable);
           }
-        } catch (error) {
-          live = new Map();
         }
-        updateData.content = stripUnlistedMentions(updateData.content, new Set(live.keys()));
+        updateData.content = plan.content;
+        if (featureFlags.FEATURE_NOTIFICATIONS) drafts = plan.notifications;
       }
-      const comment = await storage.updateComment(id, updateData);
+      let comment;
+      let created: Notification[] = [];
+      if (drafts.length === 0) {
+        comment = await storage.updateComment(id, updateData);
+      } else {
+        const written = await storage.updateCommentWithNotifications(id, updateData, drafts);
+        comment = written.comment;
+        created = written.notifications;
+      }
+      for (const notification of created) {
+        emitNotificationEvent('notification:new', notification).catch((emitErr) => {
+          logger.warn('Socket emit failed for comment notification', {
+            code: failureCode(emitErr),
+          });
+        });
+      }
 
       if (!comment) {
         return res.status(404).json({ message: 'Comment not found' });

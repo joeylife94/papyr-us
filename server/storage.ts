@@ -207,11 +207,9 @@ const MAX_SLUG_INSERT_ATTEMPTS = 100;
 const RESOLVE_LINKS_BATCH = 1000;
 /** Most synced blocks the picker list returns (`getReadableSyncedBlocks`). */
 const SYNCED_BLOCK_LIST_LIMIT = 200;
-/** Most recipients one comment is resolved for (mentions, thread participants, page creator). */
-const COMMENT_RECIPIENT_LIMIT = 50;
-/** Mention picker: rows read per batch and in all while looking for readers of the page. */
-const MENTION_SCAN_BATCH = 25;
-const MENTION_SCAN_LIMIT = 100;
+/** Mention picker: name matches read per batch and in all while looking for readers of the page. */
+const MENTION_SCAN_BATCH = 50;
+const MENTION_SCAN_LIMIT = 200;
 
 function isTeamPagesForeignKeyViolation(error: unknown): boolean {
   const dbError = postgresErrorOf(error);
@@ -2086,8 +2084,14 @@ export class DBStorage {
    * The accounts among `userIds` that are active members of the organization (and the
    * organization is active) and may read the page, with their current names. Membership comes
    * first: a page shared publicly is readable by anyone, which makes nobody outside the
-   * organization eligible. Account names only; never an email. Reads only, on the pool, so it
-   * must be called before a transaction is opened, never inside one.
+   * organization eligible. Account names only; never an email.
+   *
+   * A fixed number of queries whatever the number of ids (page, grants, members, team
+   * memberships): the viewer-level rules of `checkPagePermission` evaluated in memory for all
+   * ids at once. tests/integration-layer4/comment-notifications.test.ts compares the two over a
+   * matrix of pages and accounts, so they cannot drift apart unnoticed. An unknown page, or a
+   * page of another organization, gives nobody. Reads only, on the pool, so it must be called
+   * before a transaction is opened, never inside one.
    */
   async getReadableOrganizationMembers(
     organizationId: number,
@@ -2095,13 +2099,22 @@ export class DBStorage {
     userIds: number[]
   ): Promise<Map<number, string>> {
     const result = new Map<number, string>();
-    const wanted = [...new Set(userIds.filter((id) => Number.isInteger(id) && id > 0))].slice(
-      0,
-      COMMENT_RECIPIENT_LIMIT
-    );
+    const wanted = [...new Set(userIds.filter((id) => Number.isInteger(id) && id > 0))];
     if (wanted.length === 0) return result;
-    const rows = await this.db
-      .select({ id: users.id, name: users.name })
+
+    const [page] = await this.db
+      .select({
+        organizationId: wikiPages.organizationId,
+        teamId: wikiPages.teamId,
+        createdByUserId: wikiPages.createdByUserId,
+        author: wikiPages.author,
+      })
+      .from(wikiPages)
+      .where(eq(wikiPages.id, pageId));
+    if (!page || Number(page.organizationId) !== organizationId) return result;
+
+    const members = await this.db
+      .select({ id: users.id, name: users.name, email: users.email })
       .from(organizationMembers)
       .innerJoin(users, eq(users.id, organizationMembers.userId))
       .innerJoin(organizations, eq(organizations.id, organizationMembers.organizationId))
@@ -2113,10 +2126,63 @@ export class DBStorage {
           inArray(users.id, wanted)
         )
       );
-    for (const row of rows) {
-      if ((await this.checkPagePermission(Number(row.id), pageId, 'viewer')) === true) {
-        result.set(Number(row.id), String(row.name));
+    if (members.length === 0) return result;
+
+    const grants: PagePermission[] = await this.db
+      .select()
+      .from(pagePermissions)
+      .where(eq(pagePermissions.pageId, pageId));
+    const levels: Record<string, number> = { viewer: 1, commenter: 2, editor: 3, owner: 4 };
+    const reads = (permission: string) => (levels[permission] ?? 0) >= levels.viewer;
+    const pageTeamId = page.teamId ? Number(page.teamId) : null;
+    const publicGrant = grants.find((grant) => grant.entityType === 'public');
+    const everyone = publicGrant !== undefined && reads(publicGrant.permission);
+
+    const teamsOf = new Map<number, number[]>();
+    if (!everyone && !(grants.length === 0 && pageTeamId === null)) {
+      const rows = await this.db
+        .select({ userId: teamMembers.userId, teamId: teamMembers.teamId })
+        .from(teamMembers)
+        .innerJoin(teams, eq(teams.id, teamMembers.teamId))
+        .where(
+          and(
+            eq(teams.organizationId, organizationId),
+            inArray(
+              teamMembers.userId,
+              members.map((member: { id: number }) => Number(member.id))
+            )
+          )
+        );
+      for (const row of rows) {
+        const list = teamsOf.get(Number(row.userId)) ?? [];
+        list.push(Number(row.teamId));
+        teamsOf.set(Number(row.userId), list);
       }
+    }
+
+    for (const member of members) {
+      const id = Number(member.id);
+      const userTeamIds = teamsOf.get(id) ?? [];
+      const isPageTeamMember = pageTeamId !== null && userTeamIds.includes(pageTeamId);
+      let readable = everyone || (grants.length === 0 && pageTeamId === null) || isPageTeamMember;
+      if (!readable && (pageTeamId === null || isPageTeamMember)) {
+        // A page with no recorded creator is owned by the account whose email is its author text.
+        if (page.createdByUserId == null && page.author === member.email) readable = true;
+        const userGrant = grants.find(
+          (grant) => grant.entityType === 'user' && grant.entityId === id
+        );
+        if (userGrant && reads(userGrant.permission)) readable = true;
+      }
+      if (!readable) {
+        const teamGrant = grants.find(
+          (grant) =>
+            grant.entityType === 'team' &&
+            grant.entityId !== null &&
+            userTeamIds.includes(grant.entityId)
+        );
+        if (teamGrant && reads(teamGrant.permission)) readable = true;
+      }
+      if (readable) result.set(id, String(member.name));
     }
     return result;
   }
@@ -2137,23 +2203,32 @@ export class DBStorage {
   /**
    * Active members of the page's organization who may read the page and whose name contains the
    * search (at least MENTION_SEARCH_MIN_LENGTH characters, else nothing is read), by name, at
-   * most MENTION_SEARCH_LIMIT of them, and whether there were more. Candidates are taken from
-   * the organization in batches and each one is checked with checkPagePermission before it is
-   * listed, so an account that cannot read the page is never returned; the scan stops after
-   * MENTION_SCAN_LIMIT name matches (a very common search on a restricted page can then miss
-   * later matches). Id and name only. Reads only, on the pool.
+   * most MENTION_SEARCH_LIMIT of them, and whether there were more. Name matches are taken from
+   * the organization in batches and each batch is filtered with `getReadableOrganizationMembers`
+   * (a fixed number of queries per batch), so an account that cannot read the page is never
+   * returned. The scan covers at most MENTION_SCAN_LIMIT name matches; when it stops before the
+   * matches ran out and fewer than a full list was found, `truncated` is true so the caller can
+   * ask for a longer search instead of silently missing a reader. Id and name only. Reads only.
    */
   async listMentionCandidates(
     organizationId: number,
     pageId: number,
     query: string,
     excludeUserId: number
-  ): Promise<{ candidates: Array<{ id: number; name: string }>; more: boolean }> {
+  ): Promise<{
+    candidates: Array<{ id: number; name: string }>;
+    more: boolean;
+    truncated: boolean;
+  }> {
     const trimmed = query.trim();
-    if ([...trimmed].length < MENTION_SEARCH_MIN_LENGTH) return { candidates: [], more: false };
+    if ([...trimmed].length < MENTION_SEARCH_MIN_LENGTH) {
+      return { candidates: [], more: false, truncated: false };
+    }
     const needle = '%' + trimmed.replace(/[\\%_]/g, (character) => `\\${character}`) + '%';
     const found: Array<{ id: number; name: string }> = [];
-    for (let offset = 0; offset < MENTION_SCAN_LIMIT && found.length <= MENTION_SEARCH_LIMIT; ) {
+    let offset = 0;
+    let exhausted = false;
+    while (offset < MENTION_SCAN_LIMIT && found.length <= MENTION_SEARCH_LIMIT) {
       const rows = await this.db
         .select({ id: users.id, name: users.name })
         .from(organizationMembers)
@@ -2171,28 +2246,132 @@ export class DBStorage {
         .orderBy(asc(users.name), asc(users.id))
         .limit(MENTION_SCAN_BATCH)
         .offset(offset);
-      if (rows.length === 0) break;
       offset += rows.length;
+      if (rows.length < MENTION_SCAN_BATCH) exhausted = true;
+      if (rows.length === 0) break;
+      const readers = await this.getReadableOrganizationMembers(
+        organizationId,
+        pageId,
+        rows.map((row: { id: number }) => Number(row.id))
+      );
       for (const row of rows) {
         if (found.length > MENTION_SEARCH_LIMIT) break;
-        if ((await this.checkPagePermission(Number(row.id), pageId, 'viewer')) === true) {
-          found.push({ id: Number(row.id), name: String(row.name) });
-        }
+        if (readers.has(Number(row.id))) found.push({ id: Number(row.id), name: String(row.name) });
       }
-      if (rows.length < MENTION_SCAN_BATCH) break;
+      if (exhausted) break;
     }
+    const more = found.length > MENTION_SEARCH_LIMIT;
     return {
       candidates: found.slice(0, MENTION_SEARCH_LIMIT),
-      more: found.length > MENTION_SEARCH_LIMIT,
+      more,
+      truncated: !more && !exhausted,
     };
   }
 
   /**
+   * Writes notifications on the transaction `tx`, only for recipients that are, at the moment of
+   * the write, an active account and an active member of the notification's active organization
+   * (`INSERT ... SELECT ... WHERE EXISTS`), so one recipient who left or was deleted since the
+   * plan was made is skipped without costing the others theirs. What this cannot close: a page
+   * grant revoked in the same instant, since read access was decided when the plan was made.
+   * Never logs content. Returns the rows written.
+   */
+  private async insertCommentNotifications(
+    tx: any,
+    commentId: number,
+    drafts: Array<Omit<InsertNotification, 'relatedCommentId'>>
+  ): Promise<Notification[]> {
+    const written: Notification[] = [];
+    // Drafts of one comment share organization, page and sender; group defensively anyway.
+    const groups = new Map<string, typeof drafts>();
+    for (const draft of drafts) {
+      const key = `${draft.organizationId}|${draft.relatedPageId ?? ''}|${draft.senderUserId ?? ''}`;
+      groups.set(key, [...(groups.get(key) ?? []), draft]);
+    }
+    for (const group of groups.values()) {
+      const first = group[0];
+      const result = await tx.execute(sql`
+        INSERT INTO notifications
+          (type, title, content, recipient_user_id, organization_id, sender_user_id,
+           related_page_id, related_comment_id, is_read)
+        SELECT d.type, d.title, d.content, d.recipient_user_id, ${first.organizationId},
+               ${first.senderUserId ?? null}, ${first.relatedPageId ?? null}, ${commentId}, FALSE
+        FROM unnest(
+          ARRAY[${sql.join(
+            group.map((draft) => sql`${draft.type}`),
+            sql`, `
+          )}]::text[],
+          ARRAY[${sql.join(
+            group.map((draft) => sql`${draft.title}`),
+            sql`, `
+          )}]::text[],
+          ARRAY[${sql.join(
+            group.map((draft) => sql`${draft.content}`),
+            sql`, `
+          )}]::text[],
+          ARRAY[${sql.join(
+            group.map((draft) => sql`${draft.recipientUserId}`),
+            sql`, `
+          )}]::int[]
+        ) AS d(type, title, content, recipient_user_id)
+        WHERE EXISTS (
+          SELECT 1
+          FROM users u
+          JOIN organization_members om ON om.user_id = u.id
+          JOIN organizations o ON o.id = om.organization_id
+          WHERE u.id = d.recipient_user_id AND u.is_active = TRUE
+            AND om.organization_id = ${first.organizationId} AND o.is_active = TRUE
+        )
+        RETURNING id, type, title, content, recipient_user_id, organization_id, sender_user_id,
+                  related_page_id, related_task_id, related_comment_id, is_read, created_at
+      `);
+      for (const row of result.rows as any[]) {
+        written.push({
+          id: Number(row.id),
+          type: row.type,
+          title: row.title,
+          content: row.content,
+          recipientUserId: Number(row.recipient_user_id),
+          organizationId: Number(row.organization_id),
+          senderUserId: row.sender_user_id === null ? null : Number(row.sender_user_id),
+          relatedPageId: row.related_page_id === null ? null : Number(row.related_page_id),
+          relatedTaskId: row.related_task_id === null ? null : Number(row.related_task_id),
+          relatedCommentId: row.related_comment_id === null ? null : Number(row.related_comment_id),
+          isRead: row.is_read === true,
+          createdAt: row.created_at,
+        } as Notification);
+      }
+    }
+    return written;
+  }
+
+  /** The savepoint around `insertCommentNotifications`: a failure drops them all, never the comment. */
+  private async writeCommentNotifications(
+    tx: any,
+    commentId: number,
+    drafts: Array<Omit<InsertNotification, 'relatedCommentId'>>
+  ): Promise<{ notifications: Notification[]; notificationsFailed: boolean }> {
+    if (drafts.length === 0) return { notifications: [], notificationsFailed: false };
+    try {
+      const notificationRows = await tx.transaction((savepoint: any) =>
+        this.insertCommentNotifications(savepoint, commentId, drafts)
+      );
+      return { notifications: notificationRows, notificationsFailed: false };
+    } catch (error) {
+      // Only the comment id and the database error code: the driver's message carries the text.
+      logger.warn('Comment notifications were not written', {
+        commentId,
+        code: postgresErrorOf(error)?.code ?? 'unknown',
+      });
+      return { notifications: [], notificationsFailed: true };
+    }
+  }
+
+  /**
    * Creates a comment and, in the same transaction, the notifications decided for it. The
-   * notifications are written inside a savepoint: if writing them fails (a recipient removed
-   * meanwhile, a constraint) they are all dropped and the comment is still committed, so
-   * notifying never fails a comment. Every query runs on the transaction handle; the recipients
-   * were resolved before it was opened.
+   * notifications are written inside a savepoint: if writing them fails they are all dropped and
+   * the comment is still committed, so notifying never fails a comment. Every query runs on the
+   * transaction handle; the recipients were resolved before it was opened.
    */
   async createCommentWithNotifications(
     comment: InsertComment,
@@ -2200,27 +2379,35 @@ export class DBStorage {
   ): Promise<{ comment: Comment; notifications: Notification[]; notificationsFailed: boolean }> {
     return this.db.transaction(async (tx: any) => {
       const [created] = await tx.insert(comments).values(comment).returning();
-      if (drafts.length === 0)
-        return { comment: created, notifications: [], notificationsFailed: false };
-      try {
-        const rows = await tx.transaction(async (savepoint: any) =>
-          savepoint
-            .insert(notifications)
-            .values(drafts.map((draft) => ({ ...draft, relatedCommentId: created.id })))
-            .returning()
-        );
-        return {
-          comment: created,
-          notifications: rows as Notification[],
-          notificationsFailed: false,
-        };
-      } catch (error) {
-        logger.warn('Comment notifications were not written', {
-          commentId: created.id,
-          error: error instanceof Error ? error.message : 'Unknown error',
-        });
-        return { comment: created, notifications: [], notificationsFailed: true };
-      }
+      return {
+        comment: created,
+        ...(await this.writeCommentNotifications(tx, created.id, drafts)),
+      };
+    });
+  }
+
+  /**
+   * Updates a comment's text and, in the same transaction, writes the `mention` notifications for
+   * mentions the edit added (decided by the caller). Notifications are never rewritten on edit:
+   * those already sent stay as they were. Same savepoint rule as `createCommentWithNotifications`.
+   */
+  async updateCommentWithNotifications(
+    id: number,
+    changes: UpdateComment,
+    drafts: Array<Omit<InsertNotification, 'relatedCommentId'>>
+  ): Promise<{
+    comment: Comment | undefined;
+    notifications: Notification[];
+    notificationsFailed: boolean;
+  }> {
+    return this.db.transaction(async (tx: any) => {
+      const [updated] = await tx
+        .update(comments)
+        .set(changes)
+        .where(eq(comments.id, id))
+        .returning();
+      if (!updated) return { comment: undefined, notifications: [], notificationsFailed: false };
+      return { comment: updated, ...(await this.writeCommentNotifications(tx, id, drafts)) };
     });
   }
 
