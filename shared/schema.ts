@@ -220,6 +220,12 @@ export const wikiPages = pgTable(
     organizationId: integer('organization_id')
       .notNull()
       .references(() => organizations.id, { onDelete: 'restrict' }),
+    // The account that created the page, set by the server; null for pages created by automation
+    // or seeds, and for older pages whose creator cannot be established. Provenance only: it
+    // grants no access (drizzle/0027_add_page_creator.sql).
+    createdByUserId: integer('created_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
   },
   (table) => [
     foreignKey({
@@ -228,6 +234,7 @@ export const wikiPages = pgTable(
       foreignColumns: [teams.id, teams.organizationId],
     }),
     index('idx_wiki_pages_organization_id').on(table.organizationId),
+    index('idx_wiki_pages_created_by_user_id').on(table.createdByUserId),
   ]
 );
 
@@ -242,6 +249,8 @@ export const insertWikiPageSchema = wikiPageInsertColumns
     position: true,
     // Decided by the server from the page's team or creator, never by the client (issue #124 X1).
     organizationId: true,
+    // Set by the server from the session, never by the client (WP0b).
+    createdByUserId: true,
   })
   .extend({
     icon: pageIconSchema.nullable().optional(),
@@ -259,7 +268,13 @@ export const insertWikiPageSchema = wikiPageInsertColumns
 
 export const updateWikiPageSchema = insertWikiPageSchema.partial();
 
+// The body of a request that creates a page. The author is the creating account's name, recorded
+// by the server, so an `author` in the body is dropped (not refused: the editor still sends one).
+export const createPageRequestSchema = insertWikiPageSchema.omit({ author: true });
+
 export type InsertWikiPage = z.infer<typeof insertWikiPageSchema>;
+/** A page to create: the author and the creator are recorded by the server (see PageCreator). */
+export type NewPage = Omit<InsertWikiPage, 'author'>;
 export type UpdateWikiPage = z.infer<typeof updateWikiPageSchema>;
 export type WikiPage = typeof wikiPages.$inferSelect;
 

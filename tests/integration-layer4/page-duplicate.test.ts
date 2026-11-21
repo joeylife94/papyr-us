@@ -60,9 +60,8 @@ async function createPage(title: string, blocks: unknown[] = []) {
       blocks,
       folder: 'docs',
       tags: [],
-      author: ALICE.email,
     },
-    ALICE.id
+    { userId: ALICE.id }
   );
 }
 
@@ -90,13 +89,12 @@ const duplicate = (source: any, slug = `${source.slug}-copy`) =>
       blocks: source.blocks,
       folder: source.folder,
       tags: source.tags,
-      author: BOB.email,
       parentId: source.parentId,
       teamId: source.teamId,
       isPublished: false,
       metadata: source.metadata,
     },
-    BOB.id
+    { userId: BOB.id }
   );
 
 async function counts() {
@@ -142,7 +140,8 @@ beforeAll(async () => {
   scoped = new Pool({ connectionString: scopedUrl });
   await scoped.query(`
     CREATE TABLE users (
-      id SERIAL PRIMARY KEY, name VARCHAR(255) NOT NULL, email VARCHAR(255) NOT NULL UNIQUE
+      id SERIAL PRIMARY KEY, name VARCHAR(255) NOT NULL, email VARCHAR(255) NOT NULL UNIQUE,
+      is_active BOOLEAN NOT NULL DEFAULT TRUE
     );
     CREATE TABLE page_permissions (
       id SERIAL PRIMARY KEY, page_id INTEGER NOT NULL, entity_type TEXT NOT NULL,

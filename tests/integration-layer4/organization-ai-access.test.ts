@@ -69,7 +69,7 @@ const BASE_TABLES = `
   );
   CREATE TABLE wiki_pages (
     id SERIAL PRIMARY KEY, title TEXT NOT NULL, slug TEXT NOT NULL UNIQUE, content TEXT NOT NULL,
-    author TEXT NOT NULL, team_id INTEGER
+    author TEXT NOT NULL, team_id INTEGER, created_at TIMESTAMP NOT NULL DEFAULT NOW()
   );
 `;
 

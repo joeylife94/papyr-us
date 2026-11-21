@@ -100,12 +100,12 @@ describe('database errors through drizzle (real Postgres)', () => {
   it('createWikiPage takes the next slug when one is taken, also by a trashed page', async () => {
     // A team page: its team gives it an organization (issue #124 X1)
     const plan = { ...page('plan'), teamId: PLAN_TEAM };
-    const first = await storage.createWikiPage(plan);
-    const second = await storage.createWikiPage(plan);
+    const first = await storage.createWikiPage(plan, { automation: true });
+    const second = await storage.createWikiPage(plan, { automation: true });
     expect([first.slug, second.slug]).toEqual(['plan', 'plan-2']);
 
     await scoped.query('UPDATE wiki_pages SET deleted_at = NOW() WHERE id = $1', [second.id]);
-    const third = await storage.createWikiPage(plan);
+    const third = await storage.createWikiPage(plan, { automation: true });
     expect(third.slug).toBe('plan-3');
   });
 

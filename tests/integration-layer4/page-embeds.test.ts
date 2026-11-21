@@ -42,14 +42,13 @@ let admin: Pool;
 let scoped: Pool;
 let storage: any;
 
-const page = (title: string, author: string, content = '', extra: object = {}) => ({
+const page = (title: string, content = '', extra: object = {}) => ({
   title,
   slug: `${title.toLowerCase().replace(/\W+/g, '-')}`,
   content,
   blocks: [],
   folder: 'docs',
   tags: [],
-  author,
   ...extra,
 });
 
@@ -142,17 +141,16 @@ describe('page embeds (real Postgres)', () => {
   it('saves an embed as its token only and indexes it like a link', async () => {
     const { savePage, storagePageSaveStore } = await import('../../server/services/page-save.js');
     const target = await storage.createWikiPage(
-      page('Embed target', ALICE.email, 'Target secret text', { teamId: TEAM }),
-      ALICE.id
+      page('Embed target', 'Target secret text', { teamId: TEAM }),
+      { userId: ALICE.id }
     );
-    const other = await storage.createWikiPage(
-      page('Embed other', ALICE.email, 'other', { teamId: TEAM }),
-      ALICE.id
-    );
+    const other = await storage.createWikiPage(page('Embed other', 'other', { teamId: TEAM }), {
+      userId: ALICE.id,
+    });
     // Created with an embed token in its content (API, import).
     const source = await storage.createWikiPage(
-      page('Embed source', ALICE.email, `Intro\n\n![[page:${target.id}]]`, { teamId: TEAM }),
-      ALICE.id
+      page('Embed source', `Intro\n\n![[page:${target.id}]]`, { teamId: TEAM }),
+      { userId: ALICE.id }
     );
     expect(await linksFrom(source.id)).toEqual([target.id]);
 
@@ -188,13 +186,12 @@ describe('page embeds (real Postgres)', () => {
   });
 
   it('lists the embedding page in backlinks and the knowledge graph', async () => {
-    const target = await storage.createWikiPage(
-      page('Graph target', ALICE.email, 'x', { teamId: TEAM }),
-      ALICE.id
-    );
+    const target = await storage.createWikiPage(page('Graph target', 'x', { teamId: TEAM }), {
+      userId: ALICE.id,
+    });
     const source = await storage.createWikiPage(
-      page('Graph source', ALICE.email, `![[page:${target.id}]]`, { teamId: TEAM }),
-      ALICE.id
+      page('Graph source', `![[page:${target.id}]]`, { teamId: TEAM }),
+      { userId: ALICE.id }
     );
     const backlinks = await storage.getReadableBacklinks(ALICE.id, target.id);
     expect(backlinks.map((p: any) => p.id)).toEqual([source.id]);
@@ -207,9 +204,9 @@ describe('page embeds (real Postgres)', () => {
   it('answers an unreadable target exactly as an unknown or trashed one', async () => {
     const { readableLinkTarget } = await import('../../server/routes/page-embeds.js');
     // Bob's personal page: owner-only, so Alice may not read it.
-    const secret = await storage.createWikiPage(page('Bob secret', BOB.email, 'hidden'), BOB.id);
-    const mine = await storage.createWikiPage(page('Alice own', ALICE.email, 'mine'), ALICE.id);
-    const trashed = await storage.createWikiPage(page('Alice old', ALICE.email, 'old'), ALICE.id);
+    const secret = await storage.createWikiPage(page('Bob secret', 'hidden'), { userId: BOB.id });
+    const mine = await storage.createWikiPage(page('Alice own', 'mine'), { userId: ALICE.id });
+    const trashed = await storage.createWikiPage(page('Alice old', 'old'), { userId: ALICE.id });
     await storage.trashPages([trashed.id]);
 
     expect((await readableLinkTarget(storage, ALICE.id, mine.id))?.id).toBe(mine.id);

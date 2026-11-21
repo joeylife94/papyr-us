@@ -17,6 +17,10 @@
  *   account whose email equals the roster row's, in that account's organization; notifications
  *   that cannot be assigned are kept in notification_roster_archive with a reason, and the
  *   counts are printed;
+ * - drizzle/0027_add_page_creator.sql (WP0b): adds wiki_pages.created_by_user_id and, once per
+ *   database, records a creator only for pages whose creation grant and author text prove one (it
+ *   prints how many pages got one). A push that ran first leaves the column empty and unmarked;
+ *   the next prepare fills it and marks it;
  * - drizzle/0028_convert_roster_team_access.sql (WP2): turns the team access that directory
  *   (`members`) rows gave into team_members rows, once, and records them.
  *
@@ -30,11 +34,12 @@
  *
  * --down applies the .down.sql files in reverse order. Each refuses while it would lose a
  * boundary (an organization with AI turned off, a member without AI access, more than one
- * organization, templates of more than one, or a converted team membership with a raised role)
- * or would misdeliver or lose a notification (a recipient or sender account with no roster row, a
- * notification of an organization its recipient has left, an archived notification whose records
- * are gone), and then nothing is changed. Like apply-fts-schema.mjs, the script refuses non-local
- * database hosts unless --allow-remote is given.
+ * organization, templates of more than one, a page that records a creator the up file would not
+ * compute again, or a converted team membership with a raised role) or would misdeliver or lose a
+ * notification (a recipient or sender account with no roster row, a notification of an
+ * organization its recipient has left, an archived notification whose records are gone), and then
+ * nothing is changed. Like apply-fts-schema.mjs, the script refuses non-local database hosts
+ * unless --allow-remote is given.
  */
 
 import { readFile } from 'node:fs/promises';
@@ -53,6 +58,7 @@ const MIGRATIONS = [
   '0024_add_organization_ai_setting',
   '0025_add_organization_member_ai_access',
   '0026_notifications_to_accounts',
+  '0027_add_page_creator',
   '0028_convert_roster_team_access',
 ];
 const sqlPaths = (down ? [...MIGRATIONS].reverse() : MIGRATIONS).map((name) =>
@@ -80,9 +86,9 @@ if (!allowRemote && !LOCAL_HOSTS.has(host)) {
 
 const client = new pg.Client({ connectionString: databaseUrl });
 // Migrations tell the operator what they did or left undone with NOTICE messages that start with
-// their four-digit number (for example "0026 notifications: 4 assigned ..." or "0028: converted 3
-// directory row(s) ..."). Those are printed; every other notice (the "already exists, skipping"
-// of the idempotent files) stays quiet.
+// their four-digit number (for example "0026 notifications: 4 assigned ...", "0027: 6 page(s) got
+// a creator ..." or "0028: converted 3 directory row(s) ..."). Those are printed; every other
+// notice (the "already exists, skipping" of the idempotent files) stays quiet.
 client.on('notice', (notice) => {
   if (/^\d{4}[ :]/.test(notice.message)) console.log(`${label} ${notice.message}`);
 });

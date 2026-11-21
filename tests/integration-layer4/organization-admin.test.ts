@@ -128,6 +128,21 @@ async function newPage(organizationId: number, author: string, trashed = false):
   return Number(rows[0].id);
 }
 
+/** A page with a recorded creator (WP0b), whatever its author text says. */
+async function newPageCreatedBy(
+  organizationId: number,
+  author: string,
+  createdByUserId: number | null
+): Promise<number> {
+  counter += 1;
+  const { rows } = await scoped.query(
+    `INSERT INTO wiki_pages (title, slug, content, author, created_by_user_id, organization_id)
+     VALUES ($1, $1, 'x', $2, $3, $4) RETURNING id`,
+    [`page-${counter}`, author, createdByUserId, organizationId]
+  );
+  return Number(rows[0].id);
+}
+
 async function membershipOf(userId: number) {
   const { rows } = await scoped.query(
     `SELECT organization_id, role FROM organization_members WHERE user_id = $1`,
@@ -306,6 +321,94 @@ describe('getAccountFootprintOutside', () => {
       [page, user.id]
     );
     expect(await storage.getAccountFootprintOutside(user.id, target)).toEqual([]);
+  });
+});
+
+describe('authored_pages counts the pages an account created', () => {
+  it('fires for a page the account created, whatever its author text says', async () => {
+    const target = await newOrganization('fp-created-by');
+    const user = await newUser('creator');
+    await newPageCreatedBy(defaultOrg, 'Display Name', user.id);
+    expect(await storage.getAccountFootprintOutside(user.id, target)).toEqual(['authored_pages']);
+  });
+
+  it('counts a trashed page the account created', async () => {
+    const target = await newOrganization('fp-created-by-trashed');
+    const user = await newUser('creator-trashed');
+    const page = await newPageCreatedBy(defaultOrg, 'Display Name', user.id);
+    await scoped.query(`UPDATE wiki_pages SET deleted_at = NOW() WHERE id = $1`, [page]);
+    expect(await storage.getAccountFootprintOutside(user.id, target)).toEqual(['authored_pages']);
+  });
+
+  it('does not fire for a page whose author text is the email but whose creator is another account', async () => {
+    const target = await newOrganization('fp-created-by-other');
+    const user = await newUser('named-only');
+    const creator = await newUser('real-creator');
+    await newPageCreatedBy(defaultOrg, user.email, creator.id);
+    expect(await storage.getAccountFootprintOutside(user.id, target)).toEqual([]);
+    expect(await storage.getAccountFootprintOutside(creator.id, target)).toEqual([
+      'authored_pages',
+    ]);
+  });
+
+  it('still fires for a page without an established creator whose author is the email', async () => {
+    const target = await newOrganization('fp-created-by-null');
+    const user = await newUser('by-email');
+    await newPageCreatedBy(defaultOrg, user.email, null);
+    expect(await storage.getAccountFootprintOutside(user.id, target)).toEqual(['authored_pages']);
+  });
+
+  it('does not fire for a page the account created inside the target organization', async () => {
+    const target = await newOrganization('fp-created-by-inside');
+    const user = await newUser('inside-creator');
+    await newPageCreatedBy(target, 'Display Name', user.id);
+    expect(await storage.getAccountFootprintOutside(user.id, target)).toEqual([]);
+  });
+
+  it('refuses to name an account first owner after it made a page in the editor and was removed', async () => {
+    const source = await newOrganization('fp-source-removal');
+    const actor = await newUser('removal-owner');
+    const member = await newUser('removal-member');
+    for (const [account, role] of [
+      [actor, 'owner'],
+      [member, 'member'],
+    ] as const) {
+      await scoped.query(
+        `UPDATE organization_members SET organization_id = $1, role = $2 WHERE user_id = $3`,
+        [source, role, account.id]
+      );
+    }
+    // The editor's way: the account's creator id is set by the server, the author is a name.
+    const page = await storage.createWikiPage(
+      {
+        title: `Editor page ${counter}`,
+        slug: `editor-page-${counter}`,
+        content: '',
+        folder: 'docs',
+        tags: [],
+      },
+      { userId: member.id }
+    );
+    expect(
+      (await scoped.query(`SELECT organization_id FROM wiki_pages WHERE id = $1`, [page.id]))
+        .rows[0].organization_id
+    ).toBe(source);
+
+    const removal = await storage.removeOrganizationMember(source, actor.id, member.id);
+    expect(removal.ok).toBe(true);
+    // Removal deleted the account's grants there: nothing but the page's creator remains.
+    expect(await membershipOf(member.id)).toEqual([]);
+    const before = await organizationCount();
+
+    const result = await storage.createOrganizationWithOwner({
+      name: 'Removed Then Named',
+      slug: 'removed-then-named',
+      ownerEmail: member.email,
+    });
+
+    expect(result).toEqual({ kind: 'not_eligible', reasons: ['authored_pages'] });
+    expect(await organizationCount()).toBe(before);
+    expect(await membershipOf(member.id)).toEqual([]);
   });
 });
 

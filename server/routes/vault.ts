@@ -23,7 +23,7 @@
 import type { Express, NextFunction, Request, Response } from 'express';
 import multer from 'multer';
 import { buildRateLimiter, optionalAuth, type AuthRequest } from '../middleware.js';
-import type { DBStorage } from '../storage.js';
+import { PageCreatorUnavailableError, type DBStorage } from '../storage.js';
 import { resolvePageScope } from '../services/page-scope.js';
 import { extractPageLinkIds } from '../../shared/page-links.js';
 import { buildVaultEntries, outsideLinkIds, vaultArchiveName } from '../services/vault-export.js';
@@ -231,7 +231,6 @@ export function registerVaultRoutes(app: Express, storage: DBStorage) {
       const created = await storage.insertImportedPages({
         teamId: scope.teamId,
         userId,
-        author: String(req.user.email || req.user.name || 'imported'),
         folder: IMPORT_FOLDER,
         pages,
       });
@@ -250,6 +249,9 @@ export function registerVaultRoutes(app: Express, storage: DBStorage) {
         droppedCovers: plan.droppedCovers,
       });
     } catch (error) {
+      if (error instanceof PageCreatorUnavailableError) {
+        return res.status(403).json({ message: 'This account cannot create pages' });
+      }
       logger.error('Vault import failed', { error: (error as Error)?.message });
       res.status(500).json({ message: 'Failed to import pages' });
     }

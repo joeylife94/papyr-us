@@ -152,7 +152,7 @@ test.describe('Page-derived reads follow the page read boundary', () => {
         'totals',
       ]);
       const authors = dashboard.topContributors.map((row: { author: string }) => row.author);
-      expect(authors).toEqual([accounts.outsider.email]);
+      expect(authors).toEqual([accounts.outsider.name]);
       expect(dashboard.totals.users, 'accounts of the outsider organization').toBe(1);
       expect(dashboard.totals.pages).toBe(1);
       expect(dashboard.totals.tasks).toBe(0);
@@ -175,14 +175,15 @@ test.describe('Page-derived reads follow the page read boundary', () => {
       const ownerAuthors = ownerDashboard.topContributors.map(
         (row: { author: string }) => row.author
       );
-      expect(ownerAuthors).toContain(accounts.ownerA.email);
-      expect(ownerAuthors).not.toContain(accounts.outsider.email);
+      expect(ownerAuthors).toContain(accounts.ownerA.name);
+      expect(ownerAuthors).not.toContain(accounts.outsider.name);
       expect(ownerDashboard.totals.users).toBeGreaterThanOrEqual(3);
       expect(ownerDashboard.totals.pages).toBeGreaterThanOrEqual(3);
       expect(typeof ownerDashboard.totals.pages).toBe('number');
 
       const soloDashboard = await (await ctx.solo.get('/api/stats/dashboard')).json();
       expect(JSON.stringify(soloDashboard)).not.toContain(accounts.outsider.email);
+      expect(JSON.stringify(soloDashboard)).not.toContain(accounts.outsider.name);
       const soloOverview = await (await ctx.solo.get('/api/stats/overview')).json();
       expect(Object.keys(soloOverview).sort()).toEqual([
         'pagesThisWeek',

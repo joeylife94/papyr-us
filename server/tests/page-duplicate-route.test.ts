@@ -178,14 +178,13 @@ describe('POST /api/pages/:id/duplicate', () => {
       blocks,
       folder: 'docs',
       tags: ['t'],
-      author: MEMBER.email,
       parentId: PARENT,
       teamId: TEAM,
       isPublished: false,
       metadata: { a: 1 },
     };
     expect(storage.duplicateWikiPage).toHaveBeenCalledTimes(1);
-    expect(storage.duplicateWikiPage).toHaveBeenCalledWith(PAGE, page, MEMBER.id);
+    expect(storage.duplicateWikiPage).toHaveBeenCalledWith(PAGE, page, { userId: MEMBER.id });
     expect(storage.createWikiPage).not.toHaveBeenCalled();
     expect(res.body).toEqual({ ...page, id: 102 });
   });
@@ -197,7 +196,7 @@ describe('POST /api/pages/:id/duplicate', () => {
     expect(storage.duplicateWikiPage).toHaveBeenCalledWith(
       TOP,
       expect.objectContaining({ slug: 'top-copy', teamId: TEAM, parentId: null }),
-      MEMBER.id
+      { userId: MEMBER.id }
     );
   });
 
@@ -208,7 +207,7 @@ describe('POST /api/pages/:id/duplicate', () => {
     expect(storage.duplicateWikiPage).toHaveBeenCalledWith(
       PERSONAL,
       expect.objectContaining({ teamId: null, parentId: null }),
-      STRANGER.id
+      { userId: STRANGER.id }
     );
   });
 
