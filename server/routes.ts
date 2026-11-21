@@ -247,6 +247,13 @@ function teamAnswer<T extends { password?: unknown }>(
   return { ...rest, hasPassword: typeof password === 'string' && password !== '' };
 }
 
+/** A directory as answered to an admin: never with its password hash, and with `hasPassword`. */
+function directoryAnswer<T extends { password?: unknown }>(
+  directory: T
+): Omit<T, 'password'> & { hasPassword: boolean } {
+  return teamAnswer(directory);
+}
+
 const createTeamSchema = insertTeamSchema.omit({ membersCanEdit: true }).extend({
   // A name that team-scoped routes would not read as a name (it starts with a number, such as
   // `5` or `2024-plans`) is refused. Teams that already have such a name are left alone.
@@ -3205,7 +3212,7 @@ export async function registerRoutes(
     app.get('/api/admin/directories', rlAdmin, requireAdmin, async (req, res) => {
       try {
         const directories = await storage.getDirectories();
-        res.json(directories);
+        res.json(directories.map(directoryAnswer));
       } catch (error) {
         res.status(500).json({ message: 'Server error' });
       }
@@ -3215,7 +3222,7 @@ export async function registerRoutes(
       try {
         const validatedData = insertDirectorySchema.parse(req.body);
         const directory = await storage.createDirectory(validatedData);
-        res.status(201).json(directory);
+        res.status(201).json(directoryAnswer(directory));
       } catch (error) {
         res.status(400).json({ message: 'Invalid directory data' });
       }
@@ -3229,7 +3236,7 @@ export async function registerRoutes(
         if (!directory) {
           return res.status(404).json({ message: 'Directory not found' });
         }
-        res.json(directory);
+        res.json(directoryAnswer(directory));
       } catch (error) {
         res.status(400).json({ message: 'Invalid directory data' });
       }

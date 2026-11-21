@@ -159,7 +159,8 @@ describe('Admin directory management', () => {
       .set('Authorization', adminToken());
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual([mockDirectory]);
+    // An answer says whether a directory has a password, never what it is
+    expect(response.body).toEqual([{ ...mockDirectory, hasPassword: false }]);
   });
 
   it('TC-ADM-004: updates a directory, ignoring a stray adminPassword field', async () => {
