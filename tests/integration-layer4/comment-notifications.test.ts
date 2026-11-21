@@ -1028,3 +1028,58 @@ describe('mention picker cost and completeness', () => {
     });
   });
 });
+
+describe('one mention notification per comment and person', () => {
+  it('adding a mention notifies once; removing and adding it again notifies nobody again', async () => {
+    const a = await newUser('om-a');
+    const creator = await newUser('om-creator');
+    const d = await newUser('om-d');
+    const page = await newPage({ creator });
+    const first = await comment(page, a, 'hello');
+    const commentId = first.comment.id as number;
+    const info = await pageInfo(page.id);
+    const edit = async (content: string, previousContent: string) => {
+      const plan = await planEditNotifications(storage, {
+        page: info,
+        actorUserId: a.id,
+        actorIsMember: true,
+        content,
+        previousContent,
+      });
+      return storage.updateCommentWithNotifications(
+        commentId,
+        { content: plan.content },
+        plan.notifications
+      );
+    };
+    const total = async () =>
+      (
+        await scoped.query(
+          `SELECT count(*)::int AS n FROM notifications WHERE related_comment_id = $1 AND recipient_user_id = $2 AND type = 'mention'`,
+          [commentId, d.id]
+        )
+      ).rows[0].n as number;
+    const token = `[[user:${d.id}]]`;
+    expect((await edit(`hi ${token}`, 'hello')).notifications).toHaveLength(1);
+    expect(await total()).toBe(1);
+    expect((await edit('hi', `hi ${token}`)).notifications).toHaveLength(0);
+    expect(await total()).toBe(1);
+    expect((await edit(`hi again ${token}`, 'hi')).notifications).toHaveLength(0);
+    expect(await total()).toBe(1);
+  });
+});
+
+describe('reader resolution stays inside the page organization', () => {
+  it('a public page of one organization asked with another organization id answers nobody', async () => {
+    const creator = await newUser('go-creator');
+    const member = await newUser('go-member');
+    const other = await newUser('go-other', { organization: 'other' });
+    const page = await newPage({ creator, grants: [['public', null, 'viewer']] });
+    const ids = [creator.id, member.id, other.id];
+    // Asked with the other organization's id, even its own member gets no answer.
+    expect((await storage.getReadableOrganizationMembers(otherOrg, page.id, ids)).size).toBe(0);
+    expect(
+      [...(await storage.getReadableOrganizationMembers(defaultOrg, page.id, ids)).keys()].sort()
+    ).toEqual([creator.id, member.id].sort());
+  });
+});

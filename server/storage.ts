@@ -2314,7 +2314,12 @@ export class DBStorage {
             sql`, `
           )}]::int[]
         ) AS d(type, title, content, recipient_user_id)
-        WHERE EXISTS (
+        WHERE (d.type <> 'mention' OR NOT EXISTS (
+          -- at most one mention notification per comment and person, ever
+          SELECT 1 FROM notifications n
+          WHERE n.related_comment_id = ${commentId}
+            AND n.recipient_user_id = d.recipient_user_id AND n.type = 'mention'
+        )) AND EXISTS (
           SELECT 1
           FROM users u
           JOIN organization_members om ON om.user_id = u.id
