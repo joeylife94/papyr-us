@@ -314,7 +314,6 @@ describe('POST /api/vault/import', () => {
     expect(input).toMatchObject({
       teamId: 3,
       userId: 7,
-      author: 'member@example.com',
       folder: 'docs',
     });
     expect(

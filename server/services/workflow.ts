@@ -11,6 +11,7 @@ import * as aiService from './ai.js';
 import { sendEmail, isEmailConfigured } from './email.js';
 import logger from './logger.js';
 import { fetchWithRetry, ExternalIntegrationError } from './resilience.js';
+import { stripUnlistedMentions } from '../../shared/comment-mentions.js';
 
 let _storage: DBStorage | null = null;
 
@@ -247,15 +248,19 @@ async function executeAction(
         if (workflowTeamOf(context) === null) {
           return { success: false, error: 'Workflow has no team' };
         }
-        const newPage = await getWorkflowStorage().createWikiPage({
-          title: processedConfig.title || 'New Page',
-          slug: processedConfig.title?.toLowerCase().replace(/\s+/g, '-') || `page-${Date.now()}`,
-          content: processedConfig.content || '',
-          folder: processedConfig.folder || 'docs',
-          tags: processedConfig.tags || [],
-          author: context.trigger?.author || 'automation',
-          teamId: workflowTeamOf(context),
-        });
+        // A workflow's page records automation as its creator: no account, and nothing is taken
+        // from the page that triggered it.
+        const newPage = await getWorkflowStorage().createWikiPage(
+          {
+            title: processedConfig.title || 'New Page',
+            slug: processedConfig.title?.toLowerCase().replace(/\s+/g, '-') || `page-${Date.now()}`,
+            content: processedConfig.content || '',
+            folder: processedConfig.folder || 'docs',
+            tags: processedConfig.tags || [],
+            teamId: workflowTeamOf(context),
+          },
+          { automation: true }
+        );
         return { success: true, result: newPage };
 
       case 'add_comment':
@@ -269,7 +274,11 @@ async function executeAction(
         const comment = await getWorkflowStorage().createComment({
           pageId: pageToComment.id,
           author: 'Automation Bot',
-          content: processedConfig.message || 'Automated comment',
+          // A workflow has no commenting account, so it mentions nobody: tokens become plain text.
+          content: stripUnlistedMentions(
+            String(processedConfig.message || 'Automated comment'),
+            new Set()
+          ),
           parentId: null,
         });
         return { success: true, result: comment };

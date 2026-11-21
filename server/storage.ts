@@ -4,7 +4,7 @@ import {
   pageLinks,
   pageViews,
   type WikiPage,
-  type InsertWikiPage,
+  type NewPage,
   type UpdateWikiPage,
   type Tag,
   type SearchParams,
@@ -116,6 +116,8 @@ import {
   type InvitationState,
   type InvitationStatus,
 } from './organization-invitations.js';
+import logger from './services/logger.js';
+import { MENTION_SEARCH_LIMIT, MENTION_SEARCH_MIN_LENGTH } from '../shared/comment-mentions.js';
 import {
   MAX_INDEXED_LINKS,
   extractPageLinkIds,
@@ -167,6 +169,31 @@ export class OrganizationRequiredError extends Error {
   }
 }
 
+// ---- WP0b: the account a page records as its creator ----
+
+/**
+ * Who a page is recorded as created by. Every path that creates a page names one, so the
+ * compiler finds a path that does not: an account (the session's, never the request's), or
+ * automation (a workflow), which has no account.
+ */
+export type PageCreator = { userId: number } | { automation: true };
+
+/**
+ * Thrown, with nothing written, when the account that is to create a page is unknown or inactive.
+ * Routes answer it with one fixed 403.
+ */
+export class PageCreatorUnavailableError extends Error {
+  constructor() {
+    super('This account cannot create pages');
+    this.name = 'PageCreatorUnavailableError';
+  }
+}
+
+/** The author text of a page created by automation. */
+export const AUTOMATION_AUTHOR = 'Automation';
+
+// ---- end WP0b ----
+
 /** A trashed page as the trash list shows it: no body. */
 export type TrashedPage = Pick<
   WikiPage,
@@ -198,6 +225,9 @@ const MAX_SLUG_INSERT_ATTEMPTS = 100;
 const RESOLVE_LINKS_BATCH = 1000;
 /** Most synced blocks the picker list returns (`getReadableSyncedBlocks`). */
 const SYNCED_BLOCK_LIST_LIMIT = 200;
+/** Mention picker: name matches read per batch and in all while looking for readers of the page. */
+const MENTION_SCAN_BATCH = 50;
+const MENTION_SCAN_LIMIT = 200;
 
 function isTeamPagesForeignKeyViolation(error: unknown): boolean {
   const dbError = postgresErrorOf(error);
@@ -494,17 +524,38 @@ export class DBStorage {
     throw new Error('Failed to allocate a unique page slug');
   }
 
-  async createWikiPage(page: InsertWikiPage, creatorUserId?: number): Promise<WikiPage> {
-    const organizationId = await this.organizationForNewPage(page.teamId, creatorUserId);
-    const createdPage = await this.insertWithUniqueSlug(page.slug, async (slug) => {
-      const result = await this.db
-        .insert(wikiPages)
-        .values({ ...page, slug, organizationId })
-        .returning();
-      return result[0];
+  /**
+   * Creates `page` for `creator`. The page records the creating account and its name as author
+   * (or, for automation, no account and the author "Automation"): both come from `creator`, so
+   * an `author` or `createdByUserId` carried by `page` is overwritten. An unknown or inactive
+   * account creates nothing. The creator id is provenance only; an account's owner grant, written
+   * right after the page, is what makes it the page's owner.
+   */
+  async createWikiPage(page: NewPage, creator: PageCreator): Promise<WikiPage> {
+    await this.assertPageCreatorActive(creator);
+    // Looked up before the transaction: a transaction never waits for a second pool connection.
+    const organizationId = await this.organizationForNewPage(
+      page.teamId,
+      'userId' in creator ? creator.userId : undefined
+    );
+    // The account row is read under a share lock in the same transaction as the insert, so an
+    // account deactivated meanwhile waits for the page and cannot slip one in afterwards.
+    const { createdPage, recorded } = await this.db.transaction(async (tx: any) => {
+      const recorded = await this.recordedPageCreator(tx, creator);
+      const createdPage = await this.insertWithUniqueSlug(page.slug, (slug) =>
+        tx.transaction(async (savepoint: any) => {
+          const result = await savepoint
+            .insert(wikiPages)
+            .values({ ...page, slug, organizationId, ...recorded })
+            .returning();
+          return result[0];
+        })
+      );
+      return { createdPage, recorded };
     });
 
-    if (creatorUserId) {
+    if (recorded.createdByUserId !== undefined) {
+      const creatorUserId = recorded.createdByUserId;
       try {
         await this.setPageOwner(createdPage.id, creatorUserId, creatorUserId);
       } catch (error) {
@@ -517,6 +568,36 @@ export class DBStorage {
       await this.replacePageLinks(createdPage.id, createdPage.content);
     }
     return createdPage;
+  }
+
+  /** Refuses an unknown or inactive account before anything else about the page is looked up. */
+  private async assertPageCreatorActive(creator: PageCreator): Promise<void> {
+    if (!('userId' in creator)) return;
+    const [account] = await this.db
+      .select({ isActive: users.isActive })
+      .from(users)
+      .where(eq(users.id, creator.userId));
+    if (!account || account.isActive !== true) throw new PageCreatorUnavailableError();
+  }
+
+  /**
+   * What a new page records about its creator: the account's id and name, or for automation no
+   * account and the author "Automation". Throws, so nothing is written, when the account is
+   * unknown or inactive. Pass the transaction handle to read inside one.
+   */
+  private async recordedPageCreator(
+    executor: any,
+    creator: PageCreator
+  ): Promise<{ author: string; createdByUserId: number | undefined }> {
+    if (!('userId' in creator)) return { author: AUTOMATION_AUTHOR, createdByUserId: undefined };
+    // Share-locked: a deactivation of this account waits for the transaction that creates the page.
+    const [account] = await executor
+      .select({ name: users.name, isActive: users.isActive })
+      .from(users)
+      .where(eq(users.id, creator.userId))
+      .for('share');
+    if (!account || account.isActive !== true) throw new PageCreatorUnavailableError();
+    return { author: account.name, createdByUserId: creator.userId };
   }
 
   /**
@@ -534,12 +615,15 @@ export class DBStorage {
    */
   async duplicateWikiPage(
     sourcePageId: number,
-    page: InsertWikiPage,
-    creatorUserId?: number
+    page: NewPage,
+    creator: { userId: number }
   ): Promise<WikiPage> {
     const referenced = databaseBlockSchemaIds(page.blocks);
+    const creatorUserId = creator.userId;
+    await this.assertPageCreatorActive(creator);
     const organizationId = await this.organizationForNewPage(page.teamId, creatorUserId);
     return this.db.transaction(async (tx: any) => {
+      const recorded = await this.recordedPageCreator(tx, creator);
       const sources: DatabaseSchema[] =
         referenced.length === 0
           ? []
@@ -562,7 +646,7 @@ export class DBStorage {
         tx.transaction(async (savepoint: any) => {
           const result = await savepoint
             .insert(wikiPages)
-            .values({ ...page, slug, blocks, organizationId })
+            .values({ ...page, slug, blocks, organizationId, ...recorded })
             .returning();
           return result[0];
         })
@@ -621,20 +705,18 @@ export class DBStorage {
       }
 
       // As in createWikiPage, a failed owner grant is logged and does not undo the page.
-      if (creatorUserId) {
-        try {
-          await tx.transaction((savepoint: any) =>
-            savepoint.insert(pagePermissions).values({
-              pageId: copy.id,
-              entityType: 'user',
-              entityId: creatorUserId,
-              permission: 'owner',
-              grantedBy: creatorUserId,
-            })
-          );
-        } catch (error) {
-          console.error('Failed to set page owner permission:', error);
-        }
+      try {
+        await tx.transaction((savepoint: any) =>
+          savepoint.insert(pagePermissions).values({
+            pageId: copy.id,
+            entityType: 'user',
+            entityId: creatorUserId,
+            permission: 'owner',
+            grantedBy: creatorUserId,
+          })
+        );
+      } catch (error) {
+        console.error('Failed to set page owner permission:', error);
       }
 
       if (hasPageLinks(copy.content)) await this.writePageLinks(tx, copy.id, copy.content);
@@ -1063,7 +1145,15 @@ export class DBStorage {
       and(teamless, grant(sql`pp.entity_type = 'user' AND pp.entity_id = ${viewer.userId}`))!,
     ];
     if (viewer.email) {
-      conditions.push(and(teamless, hasPermissions, eq(wikiPages.author, viewer.email))!);
+      // The author text names an owner only on a page with no recorded creator (older pages).
+      conditions.push(
+        and(
+          teamless,
+          hasPermissions,
+          isNull(wikiPages.createdByUserId),
+          eq(wikiPages.author, viewer.email)
+        )!
+      );
     }
     if (viewer.teamIds.length > 0) {
       conditions.push(inArray(wikiPages.teamId, viewer.teamIds));
@@ -2047,6 +2137,358 @@ export class DBStorage {
     return result.length > 0;
   }
 
+  // ==================== Comment mentions and notifications (WP6) ====================
+
+  /** Ids, parents and author accounts of every comment of the page, for thread participants. */
+  async getPageCommentThreadRows(
+    pageId: number
+  ): Promise<Array<{ id: number; parentId: number | null; authorUserId: number | null }>> {
+    return this.db
+      .select({
+        id: comments.id,
+        parentId: comments.parentId,
+        authorUserId: comments.authorUserId,
+      })
+      .from(comments)
+      .where(eq(comments.pageId, pageId));
+  }
+
+  /**
+   * The accounts among `userIds` that are active members of the organization (and the
+   * organization is active) and may read the page, with their current names. Membership comes
+   * first: a page shared publicly is readable by anyone, which makes nobody outside the
+   * organization eligible. Account names only; never an email.
+   *
+   * A fixed number of queries whatever the number of ids (page, grants, members, team
+   * memberships): the viewer-level rules of `checkPagePermission` evaluated in memory for all
+   * ids at once. tests/integration-layer4/comment-notifications.test.ts compares the two over a
+   * matrix of pages and accounts, so they cannot drift apart unnoticed. An unknown page, or a
+   * page of another organization, gives nobody. Reads only, on the pool, so it must be called
+   * before a transaction is opened, never inside one.
+   */
+  async getReadableOrganizationMembers(
+    organizationId: number,
+    pageId: number,
+    userIds: number[]
+  ): Promise<Map<number, string>> {
+    const result = new Map<number, string>();
+    const wanted = [...new Set(userIds.filter((id) => Number.isInteger(id) && id > 0))];
+    if (wanted.length === 0) return result;
+
+    const [page] = await this.db
+      .select({
+        organizationId: wikiPages.organizationId,
+        teamId: wikiPages.teamId,
+        createdByUserId: wikiPages.createdByUserId,
+        author: wikiPages.author,
+      })
+      .from(wikiPages)
+      .where(eq(wikiPages.id, pageId));
+    if (!page || Number(page.organizationId) !== organizationId) return result;
+
+    const members = await this.db
+      .select({ id: users.id, name: users.name, email: users.email })
+      .from(organizationMembers)
+      .innerJoin(users, eq(users.id, organizationMembers.userId))
+      .innerJoin(organizations, eq(organizations.id, organizationMembers.organizationId))
+      .where(
+        and(
+          eq(organizationMembers.organizationId, organizationId),
+          eq(organizations.isActive, true),
+          eq(users.isActive, true),
+          inArray(users.id, wanted)
+        )
+      );
+    if (members.length === 0) return result;
+
+    const grants: PagePermission[] = await this.db
+      .select()
+      .from(pagePermissions)
+      .where(eq(pagePermissions.pageId, pageId));
+    const levels: Record<string, number> = { viewer: 1, commenter: 2, editor: 3, owner: 4 };
+    const reads = (permission: string) => (levels[permission] ?? 0) >= levels.viewer;
+    const pageTeamId = page.teamId ? Number(page.teamId) : null;
+    const publicGrant = grants.find((grant) => grant.entityType === 'public');
+    const everyone = publicGrant !== undefined && reads(publicGrant.permission);
+
+    const teamsOf = new Map<number, number[]>();
+    if (!everyone && !(grants.length === 0 && pageTeamId === null)) {
+      const rows = await this.db
+        .select({ userId: teamMembers.userId, teamId: teamMembers.teamId })
+        .from(teamMembers)
+        .innerJoin(teams, eq(teams.id, teamMembers.teamId))
+        .where(
+          and(
+            eq(teams.organizationId, organizationId),
+            inArray(
+              teamMembers.userId,
+              members.map((member: { id: number }) => Number(member.id))
+            )
+          )
+        );
+      for (const row of rows) {
+        const list = teamsOf.get(Number(row.userId)) ?? [];
+        list.push(Number(row.teamId));
+        teamsOf.set(Number(row.userId), list);
+      }
+    }
+
+    for (const member of members) {
+      const id = Number(member.id);
+      const userTeamIds = teamsOf.get(id) ?? [];
+      const isPageTeamMember = pageTeamId !== null && userTeamIds.includes(pageTeamId);
+      let readable = everyone || (grants.length === 0 && pageTeamId === null) || isPageTeamMember;
+      if (!readable && (pageTeamId === null || isPageTeamMember)) {
+        // A page with no recorded creator is owned by the account whose email is its author text.
+        if (page.createdByUserId == null && page.author === member.email) readable = true;
+        const userGrant = grants.find(
+          (grant) => grant.entityType === 'user' && grant.entityId === id
+        );
+        if (userGrant && reads(userGrant.permission)) readable = true;
+      }
+      if (!readable) {
+        const teamGrant = grants.find(
+          (grant) =>
+            grant.entityType === 'team' &&
+            grant.entityId !== null &&
+            userTeamIds.includes(grant.entityId)
+        );
+        if (teamGrant && reads(teamGrant.permission)) readable = true;
+      }
+      if (readable) result.set(id, String(member.name));
+    }
+    return result;
+  }
+
+  /** The current names of active accounts (no organization condition), for naming a sender. */
+  async getActiveAccountNames(userIds: number[]): Promise<Map<number, string>> {
+    const wanted = [...new Set(userIds.filter((id) => Number.isInteger(id) && id > 0))];
+    const result = new Map<number, string>();
+    if (wanted.length === 0) return result;
+    const rows = await this.db
+      .select({ id: users.id, name: users.name })
+      .from(users)
+      .where(and(inArray(users.id, wanted), eq(users.isActive, true)));
+    for (const row of rows) result.set(Number(row.id), String(row.name));
+    return result;
+  }
+
+  /**
+   * Active members of the page's organization who may read the page and whose name contains the
+   * search (at least MENTION_SEARCH_MIN_LENGTH characters, else nothing is read), by name, at
+   * most MENTION_SEARCH_LIMIT of them, and whether there were more. Name matches are taken from
+   * the organization in batches and each batch is filtered with `getReadableOrganizationMembers`
+   * (a fixed number of queries per batch), so an account that cannot read the page is never
+   * returned. The scan covers at most MENTION_SCAN_LIMIT name matches; when it stops before the
+   * matches ran out and fewer than a full list was found, `truncated` is true so the caller can
+   * ask for a longer search instead of silently missing a reader. Id and name only. Reads only.
+   */
+  async listMentionCandidates(
+    organizationId: number,
+    pageId: number,
+    query: string,
+    excludeUserId: number
+  ): Promise<{
+    candidates: Array<{ id: number; name: string }>;
+    more: boolean;
+    truncated: boolean;
+  }> {
+    const trimmed = query.trim();
+    if ([...trimmed].length < MENTION_SEARCH_MIN_LENGTH) {
+      return { candidates: [], more: false, truncated: false };
+    }
+    const needle = '%' + trimmed.replace(/[\\%_]/g, (character) => `\\${character}`) + '%';
+    const found: Array<{ id: number; name: string }> = [];
+    let offset = 0;
+    let exhausted = false;
+    while (offset < MENTION_SCAN_LIMIT && found.length <= MENTION_SEARCH_LIMIT) {
+      const rows = await this.db
+        .select({ id: users.id, name: users.name })
+        .from(organizationMembers)
+        .innerJoin(users, eq(users.id, organizationMembers.userId))
+        .innerJoin(organizations, eq(organizations.id, organizationMembers.organizationId))
+        .where(
+          and(
+            eq(organizationMembers.organizationId, organizationId),
+            eq(organizations.isActive, true),
+            eq(users.isActive, true),
+            sql`${users.id} <> ${excludeUserId}`,
+            sql`${users.name} ILIKE ${needle}`
+          )
+        )
+        .orderBy(asc(users.name), asc(users.id))
+        .limit(MENTION_SCAN_BATCH)
+        .offset(offset);
+      offset += rows.length;
+      if (rows.length < MENTION_SCAN_BATCH) exhausted = true;
+      if (rows.length === 0) break;
+      const readers = await this.getReadableOrganizationMembers(
+        organizationId,
+        pageId,
+        rows.map((row: { id: number }) => Number(row.id))
+      );
+      for (const row of rows) {
+        if (found.length > MENTION_SEARCH_LIMIT) break;
+        if (readers.has(Number(row.id))) found.push({ id: Number(row.id), name: String(row.name) });
+      }
+      if (exhausted) break;
+    }
+    const more = found.length > MENTION_SEARCH_LIMIT;
+    return {
+      candidates: found.slice(0, MENTION_SEARCH_LIMIT),
+      more,
+      truncated: !more && !exhausted,
+    };
+  }
+
+  /**
+   * Writes notifications on the transaction `tx`, only for recipients that are, at the moment of
+   * the write, an active account and an active member of the notification's active organization
+   * (`INSERT ... SELECT ... WHERE EXISTS`), so one recipient who left or was deleted since the
+   * plan was made is skipped without costing the others theirs. What this cannot close: a page
+   * grant revoked in the same instant, since read access was decided when the plan was made.
+   * Never logs content. Returns the rows written.
+   */
+  private async insertCommentNotifications(
+    tx: any,
+    commentId: number,
+    drafts: Array<Omit<InsertNotification, 'relatedCommentId'>>
+  ): Promise<Notification[]> {
+    const written: Notification[] = [];
+    // Drafts of one comment share organization, page and sender; group defensively anyway.
+    const groups = new Map<string, typeof drafts>();
+    for (const draft of drafts) {
+      const key = `${draft.organizationId}|${draft.relatedPageId ?? ''}|${draft.senderUserId ?? ''}`;
+      groups.set(key, [...(groups.get(key) ?? []), draft]);
+    }
+    for (const group of groups.values()) {
+      const first = group[0];
+      const result = await tx.execute(sql`
+        INSERT INTO notifications
+          (type, title, content, recipient_user_id, organization_id, sender_user_id,
+           related_page_id, related_comment_id, is_read)
+        SELECT d.type, d.title, d.content, d.recipient_user_id, ${first.organizationId},
+               ${first.senderUserId ?? null}, ${first.relatedPageId ?? null}, ${commentId}, FALSE
+        FROM unnest(
+          ARRAY[${sql.join(
+            group.map((draft) => sql`${draft.type}`),
+            sql`, `
+          )}]::text[],
+          ARRAY[${sql.join(
+            group.map((draft) => sql`${draft.title}`),
+            sql`, `
+          )}]::text[],
+          ARRAY[${sql.join(
+            group.map((draft) => sql`${draft.content}`),
+            sql`, `
+          )}]::text[],
+          ARRAY[${sql.join(
+            group.map((draft) => sql`${draft.recipientUserId}`),
+            sql`, `
+          )}]::int[]
+        ) AS d(type, title, content, recipient_user_id)
+        WHERE (d.type <> 'mention' OR NOT EXISTS (
+          -- at most one mention notification per comment and person, ever
+          SELECT 1 FROM notifications n
+          WHERE n.related_comment_id = ${commentId}
+            AND n.recipient_user_id = d.recipient_user_id AND n.type = 'mention'
+        )) AND EXISTS (
+          SELECT 1
+          FROM users u
+          JOIN organization_members om ON om.user_id = u.id
+          JOIN organizations o ON o.id = om.organization_id
+          WHERE u.id = d.recipient_user_id AND u.is_active = TRUE
+            AND om.organization_id = ${first.organizationId} AND o.is_active = TRUE
+        )
+        RETURNING id, type, title, content, recipient_user_id, organization_id, sender_user_id,
+                  related_page_id, related_task_id, related_comment_id, is_read, created_at
+      `);
+      for (const row of result.rows as any[]) {
+        written.push({
+          id: Number(row.id),
+          type: row.type,
+          title: row.title,
+          content: row.content,
+          recipientUserId: Number(row.recipient_user_id),
+          organizationId: Number(row.organization_id),
+          senderUserId: row.sender_user_id === null ? null : Number(row.sender_user_id),
+          relatedPageId: row.related_page_id === null ? null : Number(row.related_page_id),
+          relatedTaskId: row.related_task_id === null ? null : Number(row.related_task_id),
+          relatedCommentId: row.related_comment_id === null ? null : Number(row.related_comment_id),
+          isRead: row.is_read === true,
+          createdAt: row.created_at,
+        } as Notification);
+      }
+    }
+    return written;
+  }
+
+  /** The savepoint around `insertCommentNotifications`: a failure drops them all, never the comment. */
+  private async writeCommentNotifications(
+    tx: any,
+    commentId: number,
+    drafts: Array<Omit<InsertNotification, 'relatedCommentId'>>
+  ): Promise<{ notifications: Notification[]; notificationsFailed: boolean }> {
+    if (drafts.length === 0) return { notifications: [], notificationsFailed: false };
+    try {
+      const notificationRows = await tx.transaction((savepoint: any) =>
+        this.insertCommentNotifications(savepoint, commentId, drafts)
+      );
+      return { notifications: notificationRows, notificationsFailed: false };
+    } catch (error) {
+      // Only the comment id and the database error code: the driver's message carries the text.
+      logger.warn('Comment notifications were not written', {
+        commentId,
+        code: postgresErrorOf(error)?.code ?? 'unknown',
+      });
+      return { notifications: [], notificationsFailed: true };
+    }
+  }
+
+  /**
+   * Creates a comment and, in the same transaction, the notifications decided for it. The
+   * notifications are written inside a savepoint: if writing them fails they are all dropped and
+   * the comment is still committed, so notifying never fails a comment. Every query runs on the
+   * transaction handle; the recipients were resolved before it was opened.
+   */
+  async createCommentWithNotifications(
+    comment: InsertComment,
+    drafts: Array<Omit<InsertNotification, 'relatedCommentId'>>
+  ): Promise<{ comment: Comment; notifications: Notification[]; notificationsFailed: boolean }> {
+    return this.db.transaction(async (tx: any) => {
+      const [created] = await tx.insert(comments).values(comment).returning();
+      return {
+        comment: created,
+        ...(await this.writeCommentNotifications(tx, created.id, drafts)),
+      };
+    });
+  }
+
+  /**
+   * Updates a comment's text and, in the same transaction, writes the `mention` notifications for
+   * mentions the edit added (decided by the caller). Notifications are never rewritten on edit:
+   * those already sent stay as they were. Same savepoint rule as `createCommentWithNotifications`.
+   */
+  async updateCommentWithNotifications(
+    id: number,
+    changes: UpdateComment,
+    drafts: Array<Omit<InsertNotification, 'relatedCommentId'>>
+  ): Promise<{
+    comment: Comment | undefined;
+    notifications: Notification[];
+    notificationsFailed: boolean;
+  }> {
+    return this.db.transaction(async (tx: any) => {
+      const [updated] = await tx
+        .update(comments)
+        .set(changes)
+        .where(eq(comments.id, id))
+        .returning();
+      if (!updated) return { comment: undefined, notifications: [], notificationsFailed: false };
+      return { comment: updated, ...(await this.writeCommentNotifications(tx, id, drafts)) };
+    });
+  }
+
   async getTeams(): Promise<Team[]> {
     return this.db.select().from(teams).where(eq(teams.isActive, true)).orderBy(asc(teams.order));
   }
@@ -2316,7 +2758,9 @@ export class DBStorage {
         EXISTS (SELECT 1 FROM team_members tm JOIN teams t ON t.id = tm.team_id
           WHERE tm.user_id = u.id AND t.organization_id <> ${organizationId}) AS team_memberships,
         EXISTS (SELECT 1 FROM wiki_pages w
-          WHERE w.author = u.email AND w.organization_id <> ${organizationId}) AS authored_pages,
+          WHERE w.organization_id <> ${organizationId}
+            AND (w.created_by_user_id = u.id
+                 OR (w.created_by_user_id IS NULL AND w.author = u.email))) AS authored_pages,
         EXISTS (SELECT 1 FROM page_permissions pp JOIN wiki_pages w ON w.id = pp.page_id
           WHERE pp.entity_type = 'user' AND pp.entity_id = u.id
             AND w.organization_id <> ${organizationId}) AS page_grants,
@@ -4483,8 +4927,10 @@ export class DBStorage {
     // On a team page, authorship and user-specific permissions only count while the user is a
     // member of that team, so removing a member revokes them without deleting any rows
     if (pageTeamId === null || isPageTeamMember) {
-      // Check if user is the page author (implicit owner)
-      if (page.length > 0) {
+      // A page with no recorded creator (older pages) is owned by the account whose email is its
+      // author text. On a page with a recorded creator the author text decides nothing: access
+      // comes from grants and team roles only.
+      if (page.length > 0 && page[0].createdByUserId == null) {
         const user = await this.db.select().from(users).where(eq(users.id, userId));
         if (user.length > 0 && page[0].author === user[0].email) {
           return true;
@@ -5300,7 +5746,6 @@ export class DBStorage {
     title: string;
     folder: string;
     tags: string[];
-    author: string;
     teamId: number | null;
     userId: number;
   }): Promise<
@@ -5309,6 +5754,7 @@ export class DBStorage {
     | { status: 'trashed' }
     | { status: 'conflict' }
   > {
+    await this.assertPageCreatorActive({ userId: note.userId });
     const organizationId = await this.organizationForNewPage(note.teamId, note.userId);
     try {
       return await this.db.transaction(async (tx: any) => {
@@ -5339,6 +5785,8 @@ export class DBStorage {
           return { status: 'found' as const, page: existing as WikiPage };
         }
 
+        // A new note records the account that opened it, as any created page does (WP0b).
+        const recorded = await this.recordedPageCreator(tx, { userId: note.userId });
         const [page] = await tx
           .insert(wikiPages)
           .values({
@@ -5358,9 +5806,9 @@ export class DBStorage {
             ],
             folder: note.folder,
             tags: note.tags,
-            author: note.author,
             teamId: note.teamId,
             organizationId,
+            ...recorded,
           })
           .returning();
         const grants: InsertPagePermission[] = [
@@ -5453,7 +5901,6 @@ export class DBStorage {
   async insertImportedPages(input: {
     teamId: number | null;
     userId: number;
-    author: string;
     folder: string;
     pages: Array<{
       id: number;
@@ -5469,8 +5916,10 @@ export class DBStorage {
     }>;
   }): Promise<Array<{ id: number; slug: string }>> {
     if (input.pages.length === 0) return [];
+    await this.assertPageCreatorActive({ userId: input.userId });
     const organizationId = await this.organizationForNewPage(input.teamId, input.userId);
     return this.db.transaction(async (tx: any) => {
+      const recorded = await this.recordedPageCreator(tx, { userId: input.userId });
       const created: Array<{ id: number; slug: string }> = [];
       for (const page of input.pages) {
         let row: { id: number; slug: string } | undefined;
@@ -5486,9 +5935,9 @@ export class DBStorage {
               blocks: [],
               folder: input.folder,
               tags: page.tags,
-              author: input.author,
               teamId: input.teamId,
               organizationId,
+              ...recorded,
               parentId: page.parentId,
               icon: page.icon,
               metadata: page.cover ? { cover: page.cover } : {},

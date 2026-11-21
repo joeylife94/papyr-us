@@ -103,15 +103,23 @@
 
 ## 댓글 (Comments)
 
-| Method | Endpoint                      | Auth     | Description                         |
-| ------ | ----------------------------- | -------- | ----------------------------------- |
-| GET    | `/api/pages/:pageId/comments` | Optional | 댓글 목록                           |
-| POST   | `/api/pages/:pageId/comments` | JWT      | 댓글 작성                           |
-| PUT    | `/api/comments/:id`           | JWT      | 댓글 수정 (본인만)                  |
-| DELETE | `/api/comments/:id`           | JWT      | 댓글 삭제 (본인 또는 페이지 편집자) |
+| Method | Endpoint                                   | Auth     | Description                         |
+| ------ | ------------------------------------------ | -------- | ----------------------------------- |
+| GET    | `/api/pages/:pageId/comments`              | Optional | 댓글 목록                           |
+| POST   | `/api/pages/:pageId/comments`              | JWT      | 댓글 작성                           |
+| PUT    | `/api/comments/:id`                        | JWT      | 댓글 수정 (본인만)                  |
+| DELETE | `/api/comments/:id`                        | JWT      | 댓글 삭제 (본인 또는 페이지 편집자) |
+| GET    | `/api/pages/:pageId/mention-candidates?q=` | JWT      | 멘션할 사람 검색                    |
 
 - 작성자는 그 페이지에 댓글을 달 수 있는 동안에만 자기 댓글을 고치거나 지웁니다. 플랫폼 관리자라는 이유만으로는 남의 댓글을 다룰 수 없습니다(#124 X1c).
 - 호출자가 볼 수 없는 페이지의 댓글은 없는 댓글과 같은 404입니다.
+- 댓글 작성은 `ENFORCE_AUTH_WRITES`와 무관하게 로그인이 필요하고, 계정마다 분당 30회(수정은 60회)로 제한됩니다(429).
+- 답글의 `parentId`는 같은 페이지의 댓글이어야 합니다(아니면 400 `Invalid comment data`).
+- **멘션**: 본문의 `[[user:<계정 번호>]]`. 페이지 조직의 활성 구성원이 쓴 댓글에서, 그 페이지를 읽을 수 있는 같은 조직의 활성 구성원만 멘션으로 남고, 나머지는 저장 전에 `@unknown`으로 바뀝니다. 조직 밖에서 쓴 댓글의 멘션은 모두 `@unknown`이 됩니다. 한 댓글에 20명까지입니다.
+- `GET …/comments`는 호출자가 페이지 조직의 활성 구성원일 때만 멘션을 그대로 두고 `mentions: [{ userId, name }]`를 붙입니다. 그 밖의 호출자에게는 멘션이 `@unknown`으로 보입니다.
+- `mention-candidates`는 댓글을 달 수 있는 조직 구성원만 쓸 수 있고, 두 글자 이상의 이름으로 그 페이지를 읽을 수 있는 구성원을 10명까지 `{ candidates: [{ id, name }], more, truncated }`로 돌려줍니다. 이메일은 돌려주지 않습니다.
+- 멘션을 확인할 수 없는 일시적인 오류이면 댓글을 저장하지 않고 503으로 답합니다.
+- 알림: 새 댓글은 페이지를 만든 계정에게(`comment`), 답글은 그 스레드에 쓴 사람들에게(`reply`), 멘션은 멘션된 사람에게(`mention`, 댓글 하나에 한 사람당 한 번) 갑니다. 자기 행동으로는 알림을 받지 않고, 페이지를 읽을 수 없거나 페이지 조직의 활성 구성원이 아니면 받지 않습니다. 알림 내용은 댓글 앞부분 140자이며 멘션은 이름으로 표시됩니다.
 
 ---
 
@@ -137,6 +145,15 @@
 | PUT    | `/api/tasks/:id`          | Conditional | 태스크 수정              |
 | DELETE | `/api/tasks/:id`          | Conditional | 태스크 삭제              |
 | PATCH  | `/api/tasks/:id/progress` | Conditional | 진행률 업데이트          |
+
+---
+
+## 페이지 작성 계정
+
+- `POST /api/pages`, `POST /api/pages/:id/duplicate`, Markdown 가져오기는 `ENFORCE_AUTH_WRITES`와 무관하게 로그인이 필요합니다(401). 비활성 계정은 403 `This account cannot create pages`입니다.
+- 만든 페이지의 `author`는 만든 계정의 이름이고 `createdByUserId`는 그 계정 번호입니다. 본문의 `author`, `createdByUserId`는 무시합니다.
+- 페이지를 돌려주는 모든 응답에 `createdByUserId`(번호 또는 `null`)가 들어 있습니다. 접근 권한은 이 값으로 정해지지 않습니다.
+- 규칙은 [organizations-guide.md](organizations-guide.md#페이지는-만든-계정을-기록합니다)에 있습니다.
 
 ---
 

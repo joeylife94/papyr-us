@@ -169,9 +169,12 @@ test.describe('Page write routes enforce page permissions', () => {
   test('changing author, team or trash state through PUT needs owner', async () => {
     const { page: shared } = await createSharedPage();
 
-    // The editor UI re-sends the current author with every save.
+    // The author is the creating account's name, recorded by the server. The editor UI re-sends
+    // the stored author with every save.
+    const storedAuthor = (await ownerView(shared)).page.author;
+    expect(storedAuthor).toBe(owner.name);
     const editorSave = await editorRequest.put(`/api/pages/${shared.id}`, {
-      data: { title: `Shared edited ${stamp}`, author: owner.email },
+      data: { title: `Shared edited ${stamp}`, author: storedAuthor },
     });
     expect(editorSave.status()).toBe(200);
     for (const data of [
@@ -185,7 +188,7 @@ test.describe('Page write routes enforce page permissions', () => {
       expect(response.status(), `editor PUT ${JSON.stringify(data)}`).toBe(403);
     }
     expect((await editorRequest.get(`/api/pages/${shared.id}/permissions`)).status()).toBe(403);
-    expect((await ownerView(shared)).page).toMatchObject({ teamId: team, author: owner.email });
+    expect((await ownerView(shared)).page).toMatchObject({ teamId: team, author: storedAuthor });
 
     // Owners may change both, but only into a team they belong to.
     const toForeignTeam = await ownerRequest.put(`/api/pages/${shared.id}`, {

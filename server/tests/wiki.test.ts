@@ -3,7 +3,9 @@ import request from 'supertest';
 import type { Express } from 'express';
 import express from 'express';
 import http from 'http';
+import jwt from 'jsonwebtoken';
 import { registerRoutes } from '../routes';
+import { config } from '../config';
 import { insertWikiPageSchema } from '../../shared/schema';
 
 // Mock the storage module
@@ -17,6 +19,12 @@ import { storage } from '../storage.js';
 
 let app: Express;
 let server: http.Server;
+
+// Creating a page needs a session: the page records the account behind it.
+const SESSION_USER = { id: 11, email: 'wiki-test@example.com' };
+const signedIn = {
+  Authorization: `Bearer ${jwt.sign({ ...SESSION_USER, role: 'user' }, config.jwtSecret)}`,
+};
 
 beforeAll(async () => {
   app = express();
@@ -60,12 +68,20 @@ describe('Wiki Page Management API', () => {
       };
       const expectedPage = { ...newPageData, id: 2 };
       (storage.createWikiPage as vi.Mock).mockResolvedValue(expectedPage);
+      // The signed-in account belongs to the team the page goes into.
+      (storage.getUserTeamIds as vi.Mock).mockResolvedValue([1]);
 
-      const response = await request(app).post('/api/pages').send(newPageData);
+      const response = await request(app).post('/api/pages').set(signedIn).send(newPageData);
 
       expect(response.status).toBe(201);
       expect(response.body).toEqual(expectedPage);
-      expect(storage.createWikiPage).toHaveBeenCalledWith(expect.objectContaining(newPageData));
+      // The author is the session's account, recorded by storage: the one sent is dropped.
+      const { author: _dropped, ...pageWithoutAuthor } = newPageData;
+      expect(storage.createWikiPage).toHaveBeenCalledWith(
+        expect.objectContaining(pageWithoutAuthor),
+        { userId: SESSION_USER.id }
+      );
+      expect((storage.createWikiPage as vi.Mock).mock.calls[0][0]).not.toHaveProperty('author');
     });
 
     it('TC-PAGE-002: should fail to create a page with invalid data (missing title)', async () => {
@@ -74,7 +90,7 @@ describe('Wiki Page Management API', () => {
         author: 'vitest',
       };
 
-      const response = await request(app).post('/api/pages').send(invalidPageData);
+      const response = await request(app).post('/api/pages').set(signedIn).send(invalidPageData);
 
       expect(response.status).toBe(400);
       expect(response.body.message).toBe('Invalid page data');

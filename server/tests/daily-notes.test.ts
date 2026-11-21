@@ -104,7 +104,6 @@ describe('POST /api/pages/daily', () => {
       title: today,
       folder: 'logs',
       tags: ['daily'],
-      author: 'writer@example.com',
       teamId: null,
       userId: 7,
     });

@@ -1,6 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Bell, Check, Trash2, MessageSquare, AtSign, Calendar, AlertTriangle } from 'lucide-react';
+import {
+  Bell,
+  Check,
+  Trash2,
+  MessageSquare,
+  MessagesSquare,
+  AtSign,
+  Calendar,
+  AlertTriangle,
+} from 'lucide-react';
 import { Button } from './button';
 import { Badge } from './badge';
 import {
@@ -16,7 +25,7 @@ import { useFeatureFlags } from '@/features/FeatureFlagsContext';
 // A notification is addressed to an account and belongs to one organization (WP0a).
 interface Notification {
   id: number;
-  type: string; // comment, mention, task_due, task_assigned, system; unknown values are tolerated
+  type: string; // comment, reply, mention, task_due, task_assigned, system; unknown values are tolerated
   title: string;
   content: string;
   recipientUserId: number;
@@ -37,6 +46,7 @@ interface NotificationList {
 
 const notificationIcons: Record<string, typeof Bell> = {
   comment: MessageSquare,
+  reply: MessagesSquare,
   mention: AtSign,
   task_due: Calendar,
   task_assigned: AlertTriangle,
@@ -44,6 +54,7 @@ const notificationIcons: Record<string, typeof Bell> = {
 
 const notificationColors: Record<string, string> = {
   comment: 'text-info',
+  reply: 'text-info',
   mention: 'text-highlight',
   task_due: 'text-warning',
   task_assigned: 'text-success',
@@ -188,6 +199,10 @@ export function NotificationBell() {
       markAsReadMutation.mutate(notification.id);
     }
 
+    // A comment's notification opens the page at that comment.
+    const commentAnchor = notification.relatedCommentId
+      ? `#comment-${notification.relatedCommentId}`
+      : '';
     try {
       if (notification.relatedPageId) {
         // Fetch page to resolve slug for navigation
@@ -195,12 +210,12 @@ export function NotificationBell() {
         if (res.ok) {
           const page = await res.json();
           if (page?.slug) {
-            window.location.href = `/page/${page.slug}`;
+            window.location.href = `/page/${page.slug}${commentAnchor}`;
             return;
           }
         }
         // Fallback: go to page by id
-        window.location.href = `/page/${notification.relatedPageId}`;
+        window.location.href = `/page/${notification.relatedPageId}${commentAnchor}`;
       } else if (notification.relatedTaskId) {
         window.location.href = `/tasks`;
       }

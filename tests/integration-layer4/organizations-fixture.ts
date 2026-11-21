@@ -1,6 +1,6 @@
 /**
  * Layer 4 fixture: bring a test schema built in the pre-organization shape to the shape of
- * drizzle/0022_add_organizations.sql (issue #124 X1a), 0024 and 0025 (X1c) and 0026 (WP0a), so DBStorage runs
+ * drizzle/0022_add_organizations.sql (issue #124 X1a), 0024 and 0025 (X1c), 0026 (WP0a) and 0027 (WP0b), so DBStorage runs
  * against it.
  *
  * Most Layer 4 files hand-write their tables as they were before organizations and insert rows
@@ -47,6 +47,13 @@ const NOTIFICATIONS_TO_ACCOUNTS_MIGRATION = readFileSync(
   'utf8'
 );
 
+// 0027 (WP0b) adds wiki_pages.created_by_user_id, so every file describes an upgraded deployment
+// whose pages have no recorded creator unless a file sets one.
+const PAGE_CREATOR_MIGRATION = readFileSync(
+  new URL('../../drizzle/0027_add_page_creator.sql', import.meta.url),
+  'utf8'
+);
+
 // 0029 (#124 X1d) adds the invitation table; removing or lowering a member revokes that member's
 // pending invitations, so every file describes an upgraded deployment that has it.
 const INVITATIONS_MIGRATION = readFileSync(
@@ -90,6 +97,7 @@ export async function addOrganizations(
     await client.query(AI_SETTING_MIGRATION);
     await client.query(AI_ACCESS_MIGRATION);
     await client.query(NOTIFICATIONS_TO_ACCOUNTS_MIGRATION);
+    await client.query(PAGE_CREATOR_MIGRATION);
     await client.query(INVITATIONS_MIGRATION);
     const { rows } = await client.query(`SELECT id FROM organizations WHERE slug = 'default'`);
     const organizationId = Number(rows[0].id);

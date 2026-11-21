@@ -38,9 +38,12 @@ describe('document production paths', () => {
       })),
     };
     // The page's organization (issue #124 X1) is looked up once, before the insert attempts
+    // The create runs in a transaction whose savepoints are the same fake handle.
+    const fake = (storage as any).db;
+    fake.transaction = async (run: (tx: unknown) => unknown) => run(fake);
     (storage as any).organizationForNewPage = vi.fn(async () => 3);
 
-    const created = await storage.createWikiPage(pageInput as any);
+    const created = await storage.createWikiPage(pageInput as any, { automation: true });
     expect(inserted.map((value) => value.slug)).toEqual(['duplicate-title', 'duplicate-title-2']);
     expect(inserted.map((value) => value.organizationId)).toEqual([3, 3]);
     expect(created.slug).toBe('duplicate-title-2');
@@ -66,9 +69,12 @@ describe('document production paths', () => {
         })),
       })),
     };
+    // The create runs in a transaction whose savepoints are the same fake handle.
+    const fake = (storage as any).db;
+    fake.transaction = async (run: (tx: unknown) => unknown) => run(fake);
     (storage as any).organizationForNewPage = vi.fn(async () => 3);
 
-    const created = await storage.createWikiPage(pageInput as any);
+    const created = await storage.createWikiPage(pageInput as any, { automation: true });
     expect(inserted).toEqual(['duplicate-title', 'duplicate-title-2']);
     expect(created.slug).toBe('duplicate-title-2');
   });
