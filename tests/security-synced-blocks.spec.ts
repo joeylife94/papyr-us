@@ -90,6 +90,12 @@ test.describe('Synced block access control', () => {
           data: { name: `sb-team-b-${stamp}`, displayName: `Synced Team B ${stamp}` },
         })
       ).json();
+      // memberA is a viewer of team A's pages unless granted more: the setting "members can edit
+      // team pages" (on for a new team) is turned off for the team
+      const settingOff = await ownerARequest.put(`/api/teams/${teamA.id}`, {
+        data: { membersCanEdit: false },
+      });
+      expect(settingOff.status()).toBe(200);
       const admit = await ownerARequest.post(`/api/teams/${teamA.id}/memberships`, {
         data: { email: memberA.email },
       });

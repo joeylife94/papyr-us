@@ -33,6 +33,12 @@ async function setUpTeam(request: APIRequestContext, prefix: string) {
   });
   expect(teamResponse.status()).toBe(201);
   const teamId = Number((await teamResponse.json()).id);
+  // This spec describes a team whose members are viewers: the setting "members can edit team
+  // pages" (on for a new team) is turned off for it
+  const settingOff = await ownerRequest.put(`/api/teams/${teamId}`, {
+    data: { membersCanEdit: false },
+  });
+  expect(settingOff.status()).toBe(200);
   const admit = await ownerRequest.post(`/api/teams/${teamId}/memberships`, {
     data: { email: member.email },
   });
