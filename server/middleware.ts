@@ -2,8 +2,7 @@ import express, { type Express, type Request, Response, NextFunction } from 'exp
 import { parsePageIdParam } from './page-ids.js';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
-import jwt from 'jsonwebtoken';
-import { verifyAccessToken } from './auth-tokens.js';
+import { verifyAccessToken, verifyActiveAccessToken, AccountLookupError } from './auth-tokens.js';
 import cookieParser from 'cookie-parser';
 import { config } from './config.js';
 import helmet from 'helmet';
@@ -149,10 +148,15 @@ function getRequestToken(req: AuthRequest): string | undefined {
   return (req as any).cookies?.accessToken || extractBearerToken(req.headers.authorization);
 }
 
-function verifyRequestToken(req: AuthRequest): any {
+/**
+ * The session of a request: its access token verified, and the account behind it active now
+ * (read from storage on every request). Throws like verifyActiveAccessToken.
+ */
+async function verifyRequestSession(req: AuthRequest): Promise<any> {
   const token = getRequestToken(req);
   if (!token) return null;
-  return verifyAccessToken(token);
+  const storage = req.app.locals.storage || (await import('./storage.js')).getStorage();
+  return verifyActiveAccessToken(token, storage);
 }
 
 export function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
@@ -162,27 +166,32 @@ export function authMiddleware(req: AuthRequest, res: Response, next: NextFuncti
     return res.status(401).json({ message: 'No token provided' });
   }
 
-  try {
-    const payload = verifyRequestToken(req);
-    req.user = payload;
-    next();
-  } catch (error) {
-    return res.status(401).json({ message: 'Invalid token' });
-  }
+  verifyRequestSession(req).then(
+    (payload) => {
+      req.user = payload;
+      next();
+    },
+    (error) => {
+      if (error instanceof AccountLookupError) {
+        return res.status(500).json({ message: 'Authentication check failed' });
+      }
+      return res.status(401).json({ message: 'Invalid token' });
+    }
+  );
 }
 
-// Optional auth: extracts user from JWT if present, but doesn't require it
+// Optional auth: extracts user from JWT if present, but doesn't require it. A token that is not
+// a session (invalid, or of an account that is not active) counts as no token.
 export function optionalAuth(req: AuthRequest, _res: Response, next: NextFunction) {
   const token = getRequestToken(req);
-  if (token) {
-    try {
-      const payload = verifyRequestToken(req);
+  if (!token) return next();
+  verifyRequestSession(req).then(
+    (payload) => {
       req.user = payload;
-    } catch {
-      // Invalid token — proceed without user
-    }
-  }
-  next();
+      next();
+    },
+    () => next()
+  );
 }
 
 /** A team named by a request: its id, or a name to look up. */
@@ -353,12 +362,11 @@ export async function isPlatformAdmin(
 
 // RBAC: Require a platform admin (see isPlatformAdmin)
 export function requireAdmin(req: AuthRequest, res: Response, next: NextFunction) {
-  // Decode the JWT here too, so this middleware can be used standalone
+  // Verify the JWT here too, so this middleware can be used standalone. Whether the account is
+  // active is part of isPlatformAdmin below.
   try {
-    const payload = verifyRequestToken(req);
-    if (payload) {
-      req.user = payload;
-    }
+    const token = getRequestToken(req);
+    if (token) req.user = verifyAccessToken(token);
   } catch (_) {
     // An invalid token is treated like no token
   }
@@ -418,6 +426,25 @@ export function buildAccountRateLimiter(opts: { windowMs: number; max: number })
   });
 }
 
+/**
+ * The key a shared limiter counts a request under: the account named by a verified access token
+ * (the signature and kind are checked, not only decoded), otherwise the client address. A token
+ * that does not verify never names an account, so a request that is refused anyway cannot use up
+ * another account's allowance.
+ */
+export function rateLimitKey(req: Request): string {
+  try {
+    const token = getRequestToken(req as AuthRequest);
+    if (token) {
+      const accountId = Number(verifyAccessToken(token).id);
+      if (Number.isInteger(accountId) && accountId > 0) return `account:${accountId}`;
+    }
+  } catch {
+    // Not a session: counted by address
+  }
+  return `address:${req.ip || 'unknown'}`;
+}
+
 export function buildRateLimiter(opts?: { windowMs?: number; max?: number }) {
   return rateLimit({
     windowMs: opts?.windowMs ?? config.rateLimitWindowMs,
@@ -431,19 +458,7 @@ export function buildRateLimiter(opts?: { windowMs?: number; max?: number }) {
       if (config.adminIpWhitelist.some((w) => ip.includes(w))) return true;
       return false;
     },
-    keyGenerator: (req) => {
-      // Prefer user id/email from JWT, fallback to IP
-      try {
-        const token = getRequestToken(req as AuthRequest);
-        if (token) {
-          const payload: any = jwt.decode(token);
-          if (payload?.id || payload?.email) {
-            return `${payload.id || ''}|${payload.email || ''}`;
-          }
-        }
-      } catch {}
-      return req.ip || 'unknown';
-    },
+    keyGenerator: rateLimitKey,
   });
 }
 

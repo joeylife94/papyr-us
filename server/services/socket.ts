@@ -1,7 +1,7 @@
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import { Server as HTTPServer } from 'http';
 import { DBStorage } from '../storage.js';
-import { verifyAccessToken } from '../auth-tokens.js';
+import { verifyActiveAccessToken, InactiveAccountError } from '../auth-tokens.js';
 import { config } from '../config.js';
 import logger from './logger.js';
 import { isRedisEnabled, getRedisClient, getSubscriberClient } from './redis.js';
@@ -648,7 +648,7 @@ export async function setupSocketIO(
 
   // JWT authentication middleware for /collab namespace
   if (requireAuth) {
-    collabNamespace.use((socket: AuthenticatedSocket, next) => {
+    collabNamespace.use(async (socket: AuthenticatedSocket, next) => {
       const token =
         socket.handshake.headers?.authorization?.replace('Bearer ', '') ||
         extractCookieToken(socket.handshake.headers?.cookie);
@@ -659,7 +659,8 @@ export async function setupSocketIO(
       }
 
       try {
-        const decoded = verifyAccessToken(token) as {
+        // An access token of an account that is not active (read now) is no session
+        const decoded = (await verifyActiveAccessToken(token, storage as any)) as {
           id: string | number;
           email?: string;
           role?: string;
@@ -674,7 +675,11 @@ export async function setupSocketIO(
           '[Socket.IO] Invalid token:',
           error instanceof Error ? error.message : 'Unknown error'
         );
-        return next(new Error('Invalid token'));
+        return next(
+          new Error(
+            error instanceof InactiveAccountError ? 'Authentication required' : 'Invalid token'
+          )
+        );
       }
     });
   } else {

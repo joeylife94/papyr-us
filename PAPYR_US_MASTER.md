@@ -4,7 +4,7 @@ aliases: ['PAPYR_US_MASTER', 'Papyr.us v1.0 Master']
 project: 'Papyr.us'
 type: 'project-master'
 status: 'authoritative-contract'
-version: '1.03'
+version: '1.04'
 target: 'v1.0 + D1 frozen baseline; enterprise readiness (Issue #124), one bounded phase per PR'
 current_phase: 'Issue #124 — X0, X1a, X1b and X1c done; X1d next, alongside the collaboration packages of §10'
 priority: 'P1'
@@ -18,7 +18,7 @@ checkpoint_main_sha: 'd2f092b240d5ffe0937dd6d487934e32d5a631f3'
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v1.03**  
+> **AUTHORITATIVE PROJECT CONTRACT — v1.04**  
 > Current repository / Issue / PR / executable evidence overrides historical checkpoints, Scheduled Task prompts, and agent self-report.  
 > The accepted v1.0 product/proof baseline and D1 remain frozen as evidence. Progression after D1 runs as contract Issues under [`AGENTS.md`](AGENTS.md), one bounded phase per PR, and must not rewrite prior accepted evidence or widen buyer-facing claims without a new Proof.
 
@@ -687,3 +687,46 @@ On the package head (developer and reviewer, separately), Linux container, local
 
 - Teams the previous release creates between the prepare step and the new code serving start off.
 - Pre-existing, for a later security pass: storage permission checks do not look at `users.is_active` (a deactivated account with a still-valid access token keeps its page rights); an editor's autosave to a trashed page is accepted; the team update route parses its id loosely.
+
+## 18. Security Hardening 1 (2026-11-21)
+
+### Changed
+
+Closes the pre-existing limits recorded in §15 and §17. No schema change, no migration.
+
+| Area              | What exists now                                                                                                                                                                                                                     |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Social sign-in    | a Google or GitHub sign-in proceeds only when the callback returns the `state` it started with (random, in a 10-minute `HttpOnly` cookie, compared in constant time, cleared on every return); otherwise `/login?error=oauth_state` |
+| Existing accounts | an existing account is signed into through a provider only with an address the provider marks verified; otherwise `/login?error=email_unverified`                                                                                   |
+| Active accounts   | every authenticated request and every `/collab` and `/yjs` connection reads the account; an inactive or missing account is no session (401 where a session is required); a failed read is 500 there and signed-out elsewhere        |
+| Trashed pages     | page saves (PUT, autosave, version restore, realtime), comment create/edit/delete and grants answer 404 or write nothing; removing a grant or share link stays allowed; restore is `/api/trash/:id/restore` only                    |
+| Team passwords    | team answers carry `hasPassword`, never the hash; the admin team form keeps, replaces or explicitly removes the password                                                                                                            |
+| Rate limiter keys | shared limiters count an account only for a verified access token, otherwise the client address                                                                                                                                     |
+| Team ids          | a team id in a URL path is digits only, no leading zero, at most 2147483647; `/api/teams/:id` answers 404 to any other spelling, membership routes keep their 400                                                                   |
+
+Rules are in [`docs/sso-guide.md`](docs/sso-guide.md) and [`docs/api-reference.md`](docs/api-reference.md).
+
+Process: one developer package against a brief, one independent review (no blocker; mutation runs removing each rule failed its tests) and one round of review fixes (exact per-mode assertions, the trashed-page rule extended to comments and grants, wording), re-run.
+
+### Actually Executed
+
+On the package head, Linux container, local PostgreSQL 16, the container's Chromium:
+
+- `node scripts/verify-contributor.mjs` — **PASS**; `npx tsc --noEmit` — clean;
+- server suite — 88 files, 2508 tests **PASS**; unit — 61 files, 950 tests **PASS**; Layer 4 — 40 files, 567 tests **PASS** (before the review fixes; `page-save-pipeline` re-run after them, **PASS**);
+- browser (before the review fixes, which touched no client code): 26 + 37 tests **PASS** across 22 auth, team, page-access and collaboration specs; two specs fail identically on the unchanged base and are recorded below.
+
+### Not Verified
+
+- real Google and GitHub round trips (the tests use the real strategies and routes with the two provider requests stubbed);
+- the admin team form in a browser (unit-tested only);
+- the whole `test:gj` list, Layer 5, Layer 6 and Firebat: CI on the pull request is the reference.
+
+### Known limits
+
+- A realtime connection already open when an account is deactivated stays open until it reconnects (there is no deactivation route yet).
+- The active-account read is not cached: a write request reads the account two or three times.
+- A realtime save of a page trashed while it is open writes nothing but is logged as saved, and the editor is not told.
+- Team ids in query strings (`/api/pages?teamId=`, `/api/page-tree`, `/api/trash`) are still parsed loosely; membership is checked against the parsed id.
+- `POST /api/teams/verify` is unauthenticated and not rate limited; the directory `password` field is still sent to the admin page.
+- Pre-existing browser spec failures, also on the base: `auth-redirect.spec.ts:57` (register response times out) and `team-collaboration.spec.ts:93` (expects 404 for a non-member on a deleted team, the membership rule answers 403). Neither is in a CI list.

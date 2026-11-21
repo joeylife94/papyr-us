@@ -29,6 +29,18 @@ export function buildMockStorage(actualModule: any) {
     instance.checkPagePermission.mockResolvedValue(true);
   }
 
+  // A session belongs to an active account, read for every request that carries a token
+  // (authMiddleware, optionalAuth, sockets). The generic fixture's accounts are all active; tests
+  // about deactivated or missing accounts override this explicitly.
+  // (Passed to vi.fn so that a test's resetAllMocks restores it.)
+  if (instance.getUserAccount) {
+    instance.getUserAccount = vi.fn(async (id: number) => ({
+      id,
+      email: `user-${id}@example.com`,
+      isActive: true,
+    }));
+  }
+
   // Page tree (issue #103 E5): by default a page has no children, so deletes and restores act on
   // the page alone, as before. Tree tests override these.
   instance.getLiveDescendantIds?.mockResolvedValue([]);

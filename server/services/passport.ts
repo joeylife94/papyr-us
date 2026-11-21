@@ -10,6 +10,7 @@ import {
   decideSignup,
   isPlausibleInvitationToken,
 } from '../organization-invitations.js';
+import { oauthStateStore } from '../oauth-state.js';
 import logger from './logger.js';
 
 // The passport strategies need access to the database.
@@ -55,10 +56,11 @@ function addressEntryOf(provider: 'google' | 'github', profile: any): any {
 }
 
 /**
- * Signs a social profile in, creating the account when it is new. The sign-up policy
- * (SIGNUP_MODE, issue #124 X1d) decides a new account; an account that already exists signs in
- * as before. An invitation token travels in an httpOnly cookie (set before the redirect, scoped
- * to /api/auth) and is used here only for a new account (the person's own sign-up from the join
+ * Signs a social profile in, creating the account when it is new. An existing account is signed
+ * into only through an address the provider marks verified (Google `email_verified`, GitHub's
+ * address list); otherwise the sign-in is refused as `email_unverified`. The sign-up policy
+ * (SIGNUP_MODE, issue #124 X1d) decides a new account. An invitation token travels in an
+ * httpOnly cookie (set before the redirect, scoped to /api/auth) and is used here only for a new account (the person's own sign-up from the join
  * page): it decides the organization and the role. An existing account never joins inside the
  * callback: the token is left on `req.invitationCarry` and the callback sends the person to the
  * join page, where they see the organization and press the button.
@@ -97,6 +99,10 @@ async function signInSocialProfile(
     .where(sql`lower(${users.email}) = ${email.toLowerCase()}`);
   const existing = sameAddress.filter((u) => u.email === email);
   if (existing.length > 0) {
+    // An existing account is signed into only through an address the provider marks verified.
+    if (!isVerified(emailEntry)) {
+      return done(null, false, { code: 'email_unverified' satisfies SocialSignInRefusal });
+    }
     if (hasToken && existing[0].isActive !== false && isPlausibleInvitationToken(rawToken)) {
       req.invitationCarry = rawToken;
     }
@@ -174,6 +180,8 @@ export function initPassportStrategies(db: any, storage?: any) {
           clientSecret: config.googleClientSecret,
           callbackURL: '/api/auth/google/callback',
           passReqToCallback: true,
+          // A random state in a short-lived cookie, checked at the callback
+          store: oauthStateStore,
         },
         async (
           req: any,
@@ -206,6 +214,7 @@ export function initPassportStrategies(db: any, storage?: any) {
           clientSecret: config.githubClientSecret,
           callbackURL: '/api/auth/github/callback',
           passReqToCallback: true,
+          store: oauthStateStore,
           // All of the account's addresses, with their verification: the strategy only asks
           // GitHub for them when the scope names them.
           scope: ['user:email'],

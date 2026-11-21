@@ -227,6 +227,8 @@ describe('POST /api/pages/daily', () => {
 
 describe('daily note slugs are reserved', () => {
   it('refuses to rename a page to a daily note slug before anything is written', async () => {
+    // The page is live (a page in the trash is not written)
+    storage.getWikiPage.mockResolvedValue({ id: 5, title: 'T', slug: 't3', tags: [], blocks: [] });
     const response = await request(app)
       .put('/api/pages/5')
       .set('Cookie', [`accessToken=${token}`])

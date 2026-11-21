@@ -4,7 +4,7 @@ import { DBStorage } from '../storage.js';
 import logger from './logger.js';
 import { savePage, storagePageSaveStore } from './page-save.js';
 import { markdownToBlocks } from '../../shared/block-markdown.js';
-import { verifyAccessToken } from '../auth-tokens.js';
+import { verifyActiveAccessToken } from '../auth-tokens.js';
 import { config } from '../config.js';
 import { onPageAccessChanged, onPageGrantsChanged } from './page-access-events.js';
 
@@ -133,14 +133,25 @@ function extractCookieToken(cookieHeader: string | undefined): string | undefine
   return match ? match[1] : undefined;
 }
 
-function getSocketIdentity(socket: Socket, cfg: CollabConfig): SocketIdentity {
+/**
+ * The account behind a socket's access token, when that account is active now; nothing otherwise
+ * (no token, not an access token, a deactivated or unknown account, an account that cannot be read).
+ */
+async function getSocketIdentity(
+  socket: Socket,
+  cfg: CollabConfig,
+  storage: DBStorage
+): Promise<SocketIdentity> {
   if (!cfg.requireAuth) return {};
   const token =
     (socket.handshake.headers?.authorization as string | undefined)?.replace('Bearer ', '') ||
     extractCookieToken(socket.handshake.headers?.cookie as string | undefined);
   if (!token || typeof token !== 'string') return {};
   try {
-    const decoded = verifyAccessToken(token) as { id: number; email?: string };
+    const decoded = (await verifyActiveAccessToken(token, storage as any)) as {
+      id: number;
+      email?: string;
+    };
     return { userId: decoded.id, userEmail: decoded.email };
   } catch {
     return {};
@@ -630,10 +641,19 @@ export function setupYjsCollaboration(io: SocketIOServer, storage: DBStorage) {
     requireAuth: cfg.requireAuth,
   });
 
-  yjsNamespace.on('connection', (socket: Socket) => {
-    const identity = getSocketIdentity(socket, cfg);
+  // The identity is settled before the connection exists, so no event can arrive ahead of it
+  yjsNamespace.use(async (socket, next) => {
+    const identity = await getSocketIdentity(socket, cfg, storage);
     socket.data.userId = identity.userId;
     socket.data.userEmail = identity.userEmail;
+    next();
+  });
+
+  yjsNamespace.on('connection', (socket: Socket) => {
+    const identity: SocketIdentity = {
+      userId: socket.data.userId,
+      userEmail: socket.data.userEmail,
+    };
 
     const rate = createRateLimiter();
 

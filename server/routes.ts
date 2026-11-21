@@ -109,6 +109,7 @@ import type { Request } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import passport from 'passport';
+import { oauthStateCookie, oauthStateCookieOptions } from './oauth-state.js';
 import { eq, and, isNull, sql } from 'drizzle-orm';
 import {
   ANONYMOUS_PAGE_VIEWER,
@@ -168,6 +169,7 @@ import {
 } from './page-sharing-routes.js';
 import { PUBLIC_GRANT_LEVELS, effectivePublicLevel } from '../shared/page-sharing.js';
 import { checkedPageId, parsePageIdParam } from './page-ids.js';
+import { parseTeamIdParam } from './team-ids.js';
 
 interface MulterRequest extends Request {
   files?: any[];
@@ -234,10 +236,15 @@ function pageCreatorUnavailable(res: Response) {
 
 // A team to create: the display name is required and bounded; the URL name is optional (the
 // server makes one when it is missing or held). The organization is never taken from the request.
-/** A team as answered to a caller: never with its password hash. */
-function withoutPassword<T extends { password?: unknown }>(team: T): Omit<T, 'password'> {
-  const { password: _password, ...rest } = team;
-  return rest;
+/**
+ * A team as answered to a caller: never with its password hash, and with `hasPassword` saying
+ * whether one is set (the sidebar asks for the team's password from it).
+ */
+function teamAnswer<T extends { password?: unknown }>(
+  team: T
+): Omit<T, 'password'> & { hasPassword: boolean } {
+  const { password, ...rest } = team;
+  return { ...rest, hasPassword: typeof password === 'string' && password !== '' };
 }
 
 const createTeamSchema = insertTeamSchema.omit({ membersCanEdit: true }).extend({
@@ -269,6 +276,19 @@ export async function registerRoutes(
   // One save pipeline for REST and Yjs page writes (issue #103 E1). Workflows for an autosaved
   // editing session fire once, when the session closes, instead of on every autosave.
   const pageSaveStore = storagePageSaveStore(storage as any);
+
+  // After a page gate: a page in the trash is not written, so a write route answers 404 for it
+  // before anything is read from the body or recorded. (getWikiPage finds live pages only.)
+  const requireLivePage: RequestHandler = async (_req, res, next) => {
+    try {
+      if (!(await storage.getWikiPage(checkedPageId(res)))) {
+        return res.status(404).json({ message: 'Page not found' });
+      }
+    } catch {
+      return res.status(500).json({ message: 'Failed to read page' });
+    }
+    return next();
+  };
   // Page tree rules (issue #103 E5) read pages and permissions through the same storage.
   const pageTreeStore: NewPageStore = {
     getPage: (id) => storage.getWikiPage(id),
@@ -384,7 +404,8 @@ export async function registerRoutes(
   const rlAnalytics = buildRateLimiter({ windowMs: 60_000, max: 60 }); // analytics view recording
 
   // A sign-up that brings an invitation token is an acceptance without a session: limited per
-  // client address, which a forged session cookie cannot change (rlAuth keys on the cookie's claims).
+  // client address (the shared limiters key on the account only for a verified access token,
+  // otherwise on the address).
   const rlInvitationSignup = buildAddressRateLimiter({ windowMs: 60_000, max: 10 });
   const limitInvitationSignup: RequestHandler = (req, res, next) => {
     const token = req.body?.invitationToken;
@@ -729,7 +750,8 @@ export async function registerRoutes(
       .json({ message: 'Logged out successfully' });
   });
 
-  // Passport automatically handles OAuth2 state/nonce validation. SameSite=Lax is required for cross-site top-level redirects.
+  // Each sign-in start sets a random `state` in a short-lived cookie (see oauth-state.ts) that the
+  // callback must see returned by the provider. SameSite=Lax is required for cross-site top-level redirects.
   // --- Social Auth Routes ---
 
   // The social sign-in callbacks: a person turned away by the sign-up policy (SIGNUP_MODE, issue
@@ -744,6 +766,8 @@ export async function registerRoutes(
           invitationIntentCookie(config.isProduction).name,
           invitationIntentCookieOptions()
         );
+        // The sign-in's state is single-use: cleared on every return, accepted or refused
+        res.clearCookie(oauthStateCookie(config.isProduction).name, oauthStateCookieOptions());
         if (err) return next(err);
         if (!user) {
           const code = typeof info?.code === 'string' ? info.code : null;
@@ -1084,6 +1108,7 @@ export async function registerRoutes(
     '/api/pages/:id',
     requireAuthIfEnabled,
     requirePagePermission('editor'),
+    requireLivePage,
     async (req: AuthRequest, res) => {
       try {
         const id = parseInt(req.params.id);
@@ -1212,6 +1237,7 @@ export async function registerRoutes(
     '/api/pages/:id/autosave',
     requireAuthIfEnabled,
     requirePagePermission('editor'),
+    requireLivePage,
     async (req: AuthRequest, res) => {
       const id = parseInt(req.params.id);
       if (!Number.isInteger(id) || id <= 0) {
@@ -1345,6 +1371,7 @@ export async function registerRoutes(
     '/api/pages/:id/versions/:versionId/restore',
     requireAuthIfEnabled,
     requirePagePermission('editor'),
+    requireLivePage,
     async (req: AuthRequest, res) => {
       try {
         const pageId = parseInt(req.params.id);
@@ -2225,6 +2252,7 @@ export async function registerRoutes(
     authMiddleware,
     rlCommentCreate,
     requirePagePermission('commenter'),
+    requireLivePage,
     async (req: AuthRequest, res) => {
       try {
         const pageId = parseInt(req.params.pageId);
@@ -2349,6 +2377,10 @@ export async function registerRoutes(
       if (!(await storage.checkPagePermission(userId, existing.pageId, 'viewer'))) {
         return res.status(404).json({ message: 'Comment not found' });
       }
+      // A comment of a page in the trash is not changed
+      if (!(await storage.getWikiPage(existing.pageId))) {
+        return res.status(404).json({ message: 'Page not found' });
+      }
       const isOwner = existing.authorUserId != null && existing.authorUserId === userId;
       if (!isOwner) {
         return res.status(403).json({ message: 'Only the comment author can edit this comment' });
@@ -2440,6 +2472,10 @@ export async function registerRoutes(
       if (!(await storage.checkPagePermission(userId, existing.pageId, 'viewer'))) {
         return res.status(404).json({ message: 'Comment not found' });
       }
+      // A comment of a page in the trash is not changed
+      if (!(await storage.getWikiPage(existing.pageId))) {
+        return res.status(404).json({ message: 'Page not found' });
+      }
       const isOwner = existing.authorUserId != null && existing.authorUserId === userId;
       if (isOwner) {
         if (!(await storage.checkPagePermission(userId, existing.pageId, 'commenter'))) {
@@ -2494,6 +2530,10 @@ export async function registerRoutes(
       const hasOwnerPermission = await storage.checkPagePermission(req.user?.id, pageId, 'owner');
       if (!hasOwnerPermission) {
         return res.status(403).json({ message: 'Only page owners can manage permissions' });
+      }
+      // Access to a page in the trash is not granted (removing a grant stays possible)
+      if (!(await storage.getWikiPage(pageId))) {
+        return res.status(404).json({ message: 'Page not found' });
       }
 
       // A user or team at any level, or the public at viewer or commenter (never above)
@@ -4075,12 +4115,12 @@ export async function registerRoutes(
           const userTeamIds = await storage.getUserTeamIds(req.user.id);
           const allTeams = await storage.getTeams();
           const userTeams = allTeams.filter((t) => userTeamIds.includes(t.id));
-          return res.json(userTeams);
+          return res.json(userTeams.map(teamAnswer));
         }
         // If auth not enforced (dev mode), return all
         if (!config.enforceAuthForWrites) {
           const teams = await storage.getTeams();
-          return res.json(teams);
+          return res.json(teams.map(teamAnswer));
         }
         return res.status(401).json({ error: 'Authentication required' });
       } catch (error) {
@@ -4091,23 +4131,27 @@ export async function registerRoutes(
 
     app.get('/api/teams/:id', optionalAuth, async (req: AuthRequest, res) => {
       try {
-        const id = parseInt(req.params.id);
+        const callerId = req.user?.id;
+        if (!callerId && config.enforceAuthForWrites) {
+          return res.status(401).json({ error: 'Authentication required' });
+        }
+        // Only a plain team id names a team; any other spelling names none
+        const id = parseTeamIdParam(req.params.id);
+        if (id === null) return res.status(404).json({ error: 'Team not found' });
 
         // Verify membership for the specific team
-        if (req.user?.id) {
-          const userTeamIds = await storage.getUserTeamIds(req.user.id);
+        if (callerId) {
+          const userTeamIds = await storage.getUserTeamIds(callerId);
           if (!userTeamIds.includes(id)) {
             return res.status(403).json({ error: 'You are not a member of this team' });
           }
-        } else if (config.enforceAuthForWrites) {
-          return res.status(401).json({ error: 'Authentication required' });
         }
 
         const team = await storage.getTeam(id);
         if (!team) {
           return res.status(404).json({ error: 'Team not found' });
         }
-        res.json(team);
+        res.json(teamAnswer(team));
       } catch (error) {
         console.error('Error fetching team:', error);
         res.status(500).json({ error: 'Failed to fetch team' });
@@ -4152,7 +4196,7 @@ export async function registerRoutes(
                 : generateTeamUrlName(requestedName ?? rest.displayName);
             try {
               const team = await storage.createTeamWithOwner({ ...rest, name }, creatorUserId);
-              return res.status(201).json(withoutPassword(team));
+              return res.status(201).json(teamAnswer(team));
             } catch (error) {
               const db = postgresErrorOf(error);
               const nameTaken =
@@ -4175,13 +4219,14 @@ export async function registerRoutes(
 
     app.put('/api/teams/:id', optionalAuth, requireAuthIfEnabled, async (req: AuthRequest, res) => {
       try {
-        const id = parseInt(req.params.id);
-
         // Always verify user's team membership and role for team updates
         const userId = req.user?.id;
         if (!userId) {
           return res.status(401).json({ error: 'Authentication required' });
         }
+        // Only a plain team id names a team; any other spelling names none
+        const id = parseTeamIdParam(req.params.id);
+        if (id === null) return res.status(404).json({ error: 'Team not found' });
         const userRole = await storage.getUserTeamRole(userId, id);
         if (!userRole) {
           return res.status(403).json({ error: 'You are not a member of this team' });
@@ -4230,7 +4275,7 @@ export async function registerRoutes(
         if (!team) {
           return res.status(404).json({ error: 'Team not found' });
         }
-        res.json(withoutPassword(team));
+        res.json(teamAnswer(team));
       } catch (error) {
         if (error instanceof TeamBusyError) {
           return res.status(503).json({ error: 'Team is busy, try again' });
@@ -4246,13 +4291,14 @@ export async function registerRoutes(
       requireAuthIfEnabled,
       async (req: AuthRequest, res) => {
         try {
-          const id = parseInt(req.params.id);
-
           // Always verify user's team ownership for team deletion
           const userId = req.user?.id;
           if (!userId) {
             return res.status(401).json({ error: 'Authentication required' });
           }
+          // Only a plain team id names a team; any other spelling names none
+          const id = parseTeamIdParam(req.params.id);
+          if (id === null) return res.status(404).json({ error: 'Team not found' });
           const userRole = await storage.getUserTeamRole(userId, id);
           if (!userRole) {
             return res.status(403).json({ error: 'You are not a member of this team' });
