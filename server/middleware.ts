@@ -2,6 +2,7 @@ import express, { type Express, type Request, Response, NextFunction } from 'exp
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
+import { verifyAccessToken } from './auth-tokens.js';
 import cookieParser from 'cookie-parser';
 import { config } from './config.js';
 import helmet from 'helmet';
@@ -150,7 +151,7 @@ function getRequestToken(req: AuthRequest): string | undefined {
 function verifyRequestToken(req: AuthRequest): any {
   const token = getRequestToken(req);
   if (!token) return null;
-  return jwt.verify(token, config.jwtSecret);
+  return verifyAccessToken(token);
 }
 
 export function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
@@ -392,6 +393,28 @@ export function writeAuthGate(req: AuthRequest, res: Response, next: NextFunctio
   if (path.startsWith('/api/auth') || path.startsWith('/api/admin')) return next();
 
   return authMiddleware(req, res, next);
+}
+
+/**
+ * A rate limiter keyed on the verified account (`req.user.id`), for routes that run it after the
+ * session has been checked. A request without a verified session is not counted at all, so
+ * requests that are refused anyway can never use up an account's allowance. Subject to the same
+ * switches as buildRateLimiter (RATE_LIMIT_ENABLED and the admin IP whitelist).
+ */
+export function buildAccountRateLimiter(opts: { windowMs: number; max: number }) {
+  return rateLimit({
+    windowMs: opts.windowMs,
+    max: opts.max,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req) => {
+      if (!config.rateLimitEnabled) return true;
+      if (!(req as AuthRequest).user?.id) return true;
+      const ip = req.ip || '';
+      return config.adminIpWhitelist.some((w) => ip.includes(w));
+    },
+    keyGenerator: (req) => `account:${(req as AuthRequest).user!.id}`,
+  });
 }
 
 export function buildRateLimiter(opts?: { windowMs?: number; max?: number }) {

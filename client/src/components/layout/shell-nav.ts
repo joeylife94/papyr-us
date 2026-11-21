@@ -9,6 +9,7 @@ import {
   Network,
   Sparkles,
   Users,
+  Contact,
   Zap,
   type LucideIcon,
 } from 'lucide-react';
@@ -81,7 +82,9 @@ export function useShellNav(): ShellNav {
     };
     primary.push(teamItem('tasks', '할 일', CheckSquare));
     if (flags.FEATURE_CALENDAR) primary.push(teamItem('calendar', '캘린더', Calendar));
-    primary.push(teamItem('members', '팀원', Users));
+    // Two different things: who may open the team's documents, and the contact directory
+    primary.push(teamItem('team-members', '팀 멤버', Users));
+    primary.push(teamItem('members', '디렉터리', Contact));
   }
 
   const tools: ShellToolLink[] = [

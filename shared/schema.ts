@@ -554,6 +554,18 @@ export const teamMembers = pgTable('team_members', {
 
 export type TeamMember = typeof teamMembers.$inferSelect;
 
+/**
+ * The team_members rows that drizzle/0028_convert_roster_team_access.sql created from directory
+ * (`members`) rows, so that its down file removes exactly those and nothing an owner added or
+ * changed since. A row goes when its membership row goes.
+ */
+export const teamRosterConversions = pgTable('team_roster_conversions', {
+  teamMemberId: integer('team_member_id')
+    .primaryKey()
+    .references(() => teamMembers.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
 // Study progress & contribution stats schema
 export const progressStats = pgTable('progress_stats', {
   id: serial('id').primaryKey(),
@@ -598,31 +610,107 @@ export type InsertTask = z.infer<typeof insertTaskSchema>;
 export type UpdateTask = z.infer<typeof updateTaskSchema>;
 export type Task = typeof tasks.$inferSelect;
 
-// Notifications schema
-export const notifications = pgTable('notifications', {
-  id: serial('id').primaryKey(),
-  type: text('type').notNull(), // comment, mention, task_due, task_assigned
-  title: text('title').notNull(),
-  content: text('content').notNull(),
-  recipientId: integer('recipient_id')
-    .notNull()
-    .references(() => members.id, { onDelete: 'cascade' }),
-  senderId: integer('sender_id').references(() => members.id, { onDelete: 'set null' }),
-  relatedPageId: integer('related_page_id').references(() => wikiPages.id, { onDelete: 'cascade' }),
-  relatedTaskId: integer('related_task_id').references(() => tasks.id, { onDelete: 'cascade' }),
-  relatedCommentId: integer('related_comment_id').references(() => comments.id, {
-    onDelete: 'cascade',
-  }),
-  isRead: boolean('is_read').notNull().default(false),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
+// Notifications schema (WP0a, drizzle/0026_notifications_to_accounts.sql). A notification is
+// addressed to an account (users.id) and belongs to the organization it was created in: it is
+// listed, counted and opened only by that account, and only while the account belongs to that
+// organization. The roster (`members`) has no part in it.
+export const notifications = pgTable(
+  'notifications',
+  {
+    id: serial('id').primaryKey(),
+    type: text('type').notNull(), // comment, mention, task_due, task_assigned, system
+    title: text('title').notNull(),
+    content: text('content').notNull(),
+    recipientUserId: integer('recipient_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    organizationId: integer('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    // The account whose action caused it, set by the server; null for workflow and system notifications.
+    senderUserId: integer('sender_user_id').references(() => users.id, { onDelete: 'set null' }),
+    relatedPageId: integer('related_page_id').references(() => wikiPages.id, {
+      onDelete: 'cascade',
+    }),
+    relatedTaskId: integer('related_task_id').references(() => tasks.id, { onDelete: 'cascade' }),
+    relatedCommentId: integer('related_comment_id').references(() => comments.id, {
+      onDelete: 'cascade',
+    }),
+    isRead: boolean('is_read').notNull().default(false),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => [
+    index('idx_notifications_recipient_user').on(table.recipientUserId, table.organizationId),
+  ]
+);
+
+// Notifications that migration 0026 could not assign to an account, kept with the reason. Declared
+// here only so that `drizzle-kit push --force` does not drop the table; no application code reads
+// or writes it, and it has no foreign keys on purpose (it outlives the rows it describes).
+export const notificationRosterArchive = pgTable('notification_roster_archive', {
+  notificationId: integer('notification_id').primaryKey(),
+  reason: text('reason').notNull(), // no_account, account_without_organization, other_organization, no_roster_row, sender_unmapped
+  recipientMemberId: integer('recipient_member_id').notNull(),
+  senderMemberId: integer('sender_member_id'),
+  type: text('type'),
+  title: text('title'),
+  content: text('content'),
+  relatedPageId: integer('related_page_id'),
+  relatedTaskId: integer('related_task_id'),
+  relatedCommentId: integer('related_comment_id'),
+  isRead: boolean('is_read'),
+  createdAt: timestamp('created_at'),
+  archivedAt: timestamp('archived_at').notNull().defaultNow(),
 });
 
+// What the server writes: the sender and the organization are set by the server from the session.
 export const insertNotificationSchema = createInsertSchema(notifications).omit({
   id: true,
   createdAt: true,
 });
 
 export const updateNotificationSchema = insertNotificationSchema.partial();
+
+// What a client may send. Strict on purpose: a body that still names a roster id (`recipientId`,
+// `senderId`) is refused instead of being read as an account id, and so is a body that names the
+// sender or the organization, which only the server decides.
+const optionalRelatedId = z.number().int().positive().nullable().optional();
+
+// The kinds a person may send. Kinds that only server code creates (the workflow's `system`) are
+// refused from the route; server-side creation does not go through it.
+export const memberNotificationTypes = ['comment', 'mention', 'task_due', 'task_assigned'] as const;
+
+export const createNotificationRequestSchema = z
+  .object({
+    type: z.enum(memberNotificationTypes),
+    title: z.string().trim().min(1).max(200),
+    content: z.string().max(2000),
+    recipientUserId: z.number().int().positive(),
+    relatedPageId: optionalRelatedId,
+    relatedTaskId: optionalRelatedId,
+    relatedCommentId: optionalRelatedId,
+    isRead: z.boolean().optional(),
+  })
+  .strict();
+
+// The fixed fields (recipient, sender, organization, related records) are accepted only to echo
+// the stored value; the route refuses a different one.
+export const updateNotificationRequestSchema = z
+  .object({
+    isRead: z.boolean().optional(),
+    // Same bounds as at creation: a recipient editing their own row cannot store more than a
+    // sender could.
+    title: z.string().trim().min(1).max(200).optional(),
+    content: z.string().max(2000).optional(),
+    type: z.string().max(50).optional(),
+    recipientUserId: z.number().int().positive().optional(),
+    senderUserId: z.number().int().positive().nullable().optional(),
+    organizationId: z.number().int().positive().optional(),
+    relatedPageId: optionalRelatedId,
+    relatedTaskId: optionalRelatedId,
+    relatedCommentId: optionalRelatedId,
+  })
+  .strict();
 
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 export type UpdateNotification = z.infer<typeof updateNotificationSchema>;

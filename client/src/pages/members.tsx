@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -303,12 +304,24 @@ export default function Members({ teamName }: MembersProps) {
     <div className="container mx-auto p-6">
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-3xl font-bold">{teamName ? `${teamName} 팀원 관리` : '팀원 관리'}</h1>
+          <h1 className="text-3xl font-bold">{teamName ? `${teamName} 디렉터리` : '디렉터리'}</h1>
           <p className="text-muted-foreground mt-2">
             {teamName
-              ? `${teamName} 팀의 팀원들을 관리합니다`
+              ? `${teamName} 팀원들의 프로필과 연락처를 적어 두는 목록입니다.`
               : '바이브코딩 스터디 팀원들의 프로필을 관리합니다'}
           </p>
+          {teamName ? (
+            <p className="text-muted-foreground mt-1" data-testid="directory-not-membership">
+              이 목록은 팀 문서에 대한 접근 권한을 주지 않습니다. 누가 팀 문서에 접근할 수 있는지는{' '}
+              <Link
+                to={`/teams/${encodeURIComponent(teamName)}/team-members`}
+                className="underline underline-offset-2 hover:text-foreground"
+              >
+                팀 멤버
+              </Link>
+              에서 관리합니다.
+            </p>
+          ) : null}
         </div>
 
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

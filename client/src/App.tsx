@@ -24,6 +24,7 @@ import EditRedirect from '@/pages/edit-redirect';
 import AdminPage from '@/pages/admin';
 import OrganizationPage from '@/pages/organization';
 import Members from '@/pages/members';
+import TeamMembersPage from '@/pages/team-members';
 import FileManager from '@/pages/file-manager';
 import DashboardPage from '@/pages/dashboard';
 import TasksPage from '@/pages/tasks';
@@ -72,6 +73,11 @@ const EditRedirectWrapper = () => {
 const MembersWrapper = () => {
   const { teamName } = useParams();
   return <Members teamName={teamName} />;
+};
+
+const TeamMembersWrapper = () => {
+  const { teamName } = useParams();
+  return <TeamMembersPage key={teamName ?? ''} teamName={teamName} />;
 };
 
 const TasksPageWrapper = () => {
@@ -258,6 +264,14 @@ function App() {
                         element={
                           <FeatureGate flag="FEATURE_TEAMS">
                             <MembersWrapper />
+                          </FeatureGate>
+                        }
+                      />
+                      <Route
+                        path="/teams/:teamName/team-members"
+                        element={
+                          <FeatureGate flag="FEATURE_TEAMS">
+                            <TeamMembersWrapper />
                           </FeatureGate>
                         }
                       />

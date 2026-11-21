@@ -436,23 +436,19 @@ describe('4-2  Cross-team reassignment', () => {
 // 4-3  Notification IDOR
 // =============================================================================
 describe('4-3  Notification IDOR', () => {
-  // Notifications address member rows; an account owns the rows carrying its email (#124 X1b).
-  // The member ids are not the user ids on purpose.
-  const MEMBER_A_ID = 101;
-  const MEMBER_B_ID = 102;
+  // Notifications are addressed to accounts and stay in their organization (WP0a): storage is
+  // always asked with the session user and that user's organization.
   const notifForA = {
     id: 42,
     type: 'mention',
     title: 'Hi',
     content: 'Content',
-    recipientId: MEMBER_A_ID,
+    recipientUserId: USER_A_ID,
+    organizationId: UPLOAD_ORG_ID,
     isRead: false,
   };
 
   beforeEach(() => {
-    storage.getMemberIdsForUser.mockImplementation(async (userId: number) =>
-      userId === USER_A_ID ? [MEMBER_A_ID] : userId === USER_B_ID ? [MEMBER_B_ID] : []
-    );
     // Single-row lookups answer only for the recipient's account.
     storage.getNotificationForUser.mockImplementation(async (_id: number, userId: number) =>
       userId === USER_A_ID ? notifForA : undefined
@@ -468,8 +464,8 @@ describe('4-3  Notification IDOR', () => {
     storage.getNotifications.mockResolvedValue([notifForA]);
     const res = await request(app).get('/api/notifications').set(auth(tokenA));
     expect(res.status).toBe(200);
-    // storage should have been called with User A's member ids, not a user id or a spoofed one
-    expect(storage.getNotifications).toHaveBeenCalledWith([MEMBER_A_ID]);
+    // storage is asked with User A's id and organization, nothing from the request
+    expect(storage.getNotifications).toHaveBeenCalledWith(USER_A_ID, UPLOAD_ORG_ID);
   });
 
   it('GET /api/notifications/unread-count — requires authentication', async () => {
@@ -481,7 +477,7 @@ describe('4-3  Notification IDOR', () => {
     storage.getUnreadNotificationCount.mockResolvedValue(3);
     const res = await request(app).get('/api/notifications/unread-count').set(auth(tokenA));
     expect(res.status).toBe(200);
-    expect(storage.getUnreadNotificationCount).toHaveBeenCalledWith([MEMBER_A_ID]);
+    expect(storage.getUnreadNotificationCount).toHaveBeenCalledWith(USER_A_ID, UPLOAD_ORG_ID);
   });
 
   it('GET /api/notifications/:id — requires authentication', async () => {
@@ -527,7 +523,7 @@ describe('4-3  Notification IDOR', () => {
       .set(auth(tokenA))
       .send({ recipientId: USER_B_ID });
     expect(res.status).toBe(200);
-    expect(storage.markAllNotificationsAsRead).toHaveBeenCalledWith([MEMBER_A_ID]);
+    expect(storage.markAllNotificationsAsRead).toHaveBeenCalledWith(USER_A_ID, UPLOAD_ORG_ID);
   });
 
   it('GET /api/notifications/:id — still requires JWT when ENFORCE_AUTH_WRITES is false', async () => {

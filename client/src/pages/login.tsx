@@ -16,6 +16,9 @@ export default function LoginPage() {
   // Get redirect URL from query params (set by ProtectedRoute or http.ts 401 handler)
   const query = new URLSearchParams(location.search);
   const redirectTo = query.get('redirect') || '/';
+  // Set by the social sign-in callbacks (?error=account_deactivated) and by a 403 on password
+  // sign-in: the account exists but an administrator has turned it off.
+  const [isDeactivated, setIsDeactivated] = useState(query.get('error') === 'account_deactivated');
 
   const handleSocialLogin = (provider: 'google' | 'github') => {
     window.location.href = `/api/auth/${provider}`;
@@ -23,6 +26,7 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsDeactivated(false);
     try {
       await login(email, password);
       navigate(redirectTo);
@@ -32,6 +36,10 @@ export default function LoginPage() {
       });
     } catch (error) {
       console.error('Failed to login:', error);
+      if ((error as { status?: number })?.status === 403) {
+        setIsDeactivated(true);
+        return;
+      }
       toast({
         title: 'Login Failed',
         description: 'Please check your credentials and try again.',
@@ -44,6 +52,16 @@ export default function LoginPage() {
     <div className="flex items-center justify-center min-h-screen bg-background">
       <div className="w-full max-w-md p-8 space-y-6 bg-card text-card-foreground rounded-lg shadow-md">
         <h2 className="text-2xl font-bold text-center">Login</h2>
+
+        {isDeactivated && (
+          <p
+            role="alert"
+            data-testid="login-account-deactivated"
+            className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive"
+          >
+            This account has been deactivated. Contact an administrator to restore access.
+          </p>
+        )}
 
         <div className="space-y-4">
           <Button variant="outline" className="w-full" onClick={() => handleSocialLogin('google')}>

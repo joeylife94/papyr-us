@@ -9,7 +9,7 @@
  * - a workflow that has no team does not run its actions;
  * - every action acts only inside the workflow's own team, whatever the trigger data names:
  *   pages and tasks of another team are not found, created objects land in the workflow's team,
- *   and notifications go only to members of the workflow team's organization.
+ *   and notifications go only to active accounts of the workflow team's organization.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -253,51 +253,83 @@ describe('create_page and create_task', () => {
 });
 
 describe('send_notification', () => {
-  const run = (recipients: unknown[]) =>
+  const run = (config: Record<string, unknown>) =>
     executeWorkflow(
-      workflowWith({ type: 'send_notification', config: { message: 'hello', recipients } }),
+      workflowWith({ type: 'send_notification', config: { message: 'hello', ...config } }),
       { id: 1 }
     );
+  const runTo = (recipientUserIds: unknown[]) => run({ recipientUserIds });
 
   beforeEach(() => {
     storage.getTeamOrganizationId.mockResolvedValue(1);
-    storage.getMemberOrganizationId.mockImplementation(async (id: number) =>
-      id === 11 ? 1 : id === 12 ? 2 : null
+    // account 11 is active in organization 1, 12 in organization 2; 13 is unknown or inactive
+    storage.getNotificationRecipientOrganizationId.mockImplementation(async (id: number) =>
+      id === 11 || id === 14 ? 1 : id === 12 ? 2 : null
     );
   });
 
-  it("notifies members of the workflow team's organization only", async () => {
-    const result = await run([11, 12, 13]);
+  it("notifies accounts of the workflow team's organization only, from the workflow, with no sender", async () => {
+    const result = await runTo([11, 12, 13]);
     expect(storage.getTeamOrganizationId).toHaveBeenCalledWith(TEAM);
     expect(storage.createNotification).toHaveBeenCalledTimes(1);
     expect(storage.createNotification).toHaveBeenCalledWith(
-      expect.objectContaining({ recipientId: 11 })
+      expect.objectContaining({
+        recipientUserId: 11,
+        organizationId: 1,
+        senderUserId: null,
+        type: 'system',
+      })
     );
     expect(result.status).toBe('success');
   });
 
-  it('fails the action when no recipient is in the organization', async () => {
-    const result = await run([12, 13]);
+  it('skips an account that is inactive or unknown (no organization) and one of another organization', async () => {
+    const result = await runTo([12, 13]);
     expect(storage.createNotification).not.toHaveBeenCalled();
     expect(result.status).toBe('failed');
   });
 
+  it('a stored roster-id list creates nothing and fails with the stated error', async () => {
+    const result = await run({ recipients: [11, 14] });
+    expect(storage.createNotification).not.toHaveBeenCalled();
+    expect(storage.getNotificationRecipientOrganizationId).not.toHaveBeenCalled();
+    expect(result.status).toBe('failed');
+    expect(JSON.stringify(result.results)).toContain('Notification actions take recipientUserIds');
+  });
+
+  it('never reads recipients when recipientUserIds is present', async () => {
+    await run({ recipients: [14], recipientUserIds: [11] });
+    expect(storage.createNotification).toHaveBeenCalledTimes(1);
+    expect(storage.createNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ recipientUserId: 11 })
+    );
+  });
+
+  it.each([[['11']], [[1.5]], [[0]], [[-3]]])(
+    'ignores the entry that is not a positive integer: %j',
+    async (ids) => {
+      const result = await runTo(ids as unknown[]);
+      expect(storage.createNotification).not.toHaveBeenCalled();
+      expect(result.status).toBe('failed');
+    }
+  );
+
   it('sends nothing when the workflow team has no organization', async () => {
     storage.getTeamOrganizationId.mockResolvedValue(null);
-    const result = await run([11]);
+    const result = await runTo([11]);
     expect(storage.createNotification).not.toHaveBeenCalled();
     expect(result.status).toBe('failed');
   });
 
   it('skips a recipient whose organization lookup fails', async () => {
-    storage.getMemberOrganizationId.mockImplementation(async (id: number) => {
+    storage.getNotificationRecipientOrganizationId.mockImplementation(async (id: number) => {
       if (id === 11) throw new Error('boom');
       return 1;
     });
-    await run([11, 14]);
+    await runTo([11, 14]);
     expect(storage.createNotification).toHaveBeenCalledTimes(1);
     expect(storage.createNotification).toHaveBeenCalledWith(
-      expect.objectContaining({ recipientId: 14 })
+      expect.objectContaining({ recipientUserId: 14 })
     );
   });
 });

@@ -13,9 +13,16 @@
  *   on for every organization that exists when it is added;
  * - drizzle/0025_add_organization_member_ai_access.sql (X1c): adds the per-member AI access,
  *   granted to every membership that exists when it is added;
- * - drizzle/0027_add_page_creator.sql (WP0b): adds wiki_pages.created_by_user_id and claims a
- *   creator only for pages whose creation grant proves one (it prints how many pages got one and
- *   how many have none). It must run before push: push alone adds the column without the claim.
+ * - drizzle/0026_notifications_to_accounts.sql (WP0a): addresses every notification to the
+ *   account whose email equals the roster row's, in that account's organization; notifications
+ *   that cannot be assigned are kept in notification_roster_archive with a reason, and the
+ *   counts are printed;
+ * - drizzle/0027_add_page_creator.sql (WP0b): adds wiki_pages.created_by_user_id and, once per
+ *   database, records a creator only for pages whose creation grant and author text prove one (it
+ *   prints how many pages got one). A push that ran first leaves the column empty and unmarked;
+ *   the next prepare fills it and marks it;
+ * - drizzle/0028_convert_roster_team_access.sql (WP2): turns the team access that directory
+ *   (`members`) rows gave into team_members rows, once, and records them.
  *
  * All add their columns and constraints under the names push expects, so push then has nothing
  * left to change. All are idempotent, so running this on every deploy is safe.
@@ -27,10 +34,12 @@
  *
  * --down applies the .down.sql files in reverse order. Each refuses while it would lose a
  * boundary (an organization with AI turned off, a member without AI access, more than one
- * organization, templates of more than one, or a page that records a creator the up file would
- * not compute again), and then nothing is changed. Like
- * apply-fts-schema.mjs, the script refuses non-local database hosts unless --allow-remote is
- * given.
+ * organization, templates of more than one, a page that records a creator the up file would not
+ * compute again, or a converted team membership with a raised role) or would misdeliver or lose a
+ * notification (a recipient or sender account with no roster row, a notification of an
+ * organization its recipient has left, an archived notification whose records are gone), and then
+ * nothing is changed. Like apply-fts-schema.mjs, the script refuses non-local database hosts
+ * unless --allow-remote is given.
  */
 
 import { readFile } from 'node:fs/promises';
@@ -48,7 +57,9 @@ const MIGRATIONS = [
   '0023_add_template_organizations',
   '0024_add_organization_ai_setting',
   '0025_add_organization_member_ai_access',
+  '0026_notifications_to_accounts',
   '0027_add_page_creator',
+  '0028_convert_roster_team_access',
 ];
 const sqlPaths = (down ? [...MIGRATIONS].reverse() : MIGRATIONS).map((name) =>
   fileURLToPath(new URL(`../drizzle/${name}${down ? '.down' : ''}.sql`, import.meta.url))
@@ -74,10 +85,12 @@ if (!allowRemote && !LOCAL_HOSTS.has(host)) {
 }
 
 const client = new pg.Client({ connectionString: databaseUrl });
-// A migration reports counts as a NOTICE that starts with its number (0027: pages that got a
-// creator); the "already exists, skipping" notices of the others stay quiet.
-client.on('notice', (message) => {
-  if (/^\d{4}[ :]/.test(message.message)) console.log(`${label} ${message.message}`);
+// Migrations tell the operator what they did or left undone with NOTICE messages that start with
+// their four-digit number (for example "0026 notifications: 4 assigned ...", "0027: 6 page(s) got
+// a creator ..." or "0028: converted 3 directory row(s) ..."). Those are printed; every other
+// notice (the "already exists, skipping" of the idempotent files) stays quiet.
+client.on('notice', (notice) => {
+  if (/^\d{4}[ :]/.test(notice.message)) console.log(`${label} ${notice.message}`);
 });
 
 try {
@@ -105,9 +118,18 @@ try {
       const templates = counts[0].has_templates
         ? (await client.query('SELECT count(*)::int AS n FROM templates')).rows[0].n
         : 0;
+      const held = (await client.query(`SELECT to_regclass('notification_roster_archive') AS t`))
+        .rows[0].t
+        ? (
+            await client.query(
+              `SELECT count(*)::int AS n FROM notification_roster_archive WHERE reason <> 'sender_unmapped'`
+            )
+          ).rows[0].n
+        : 0;
       console.log(
         `${label} Organizations ready (${counts[0].organizations} organization(s), ` +
-          `${counts[0].members} membership(s), ${templates} template(s) placed).`
+          `${counts[0].members} membership(s), ${templates} template(s) placed, ` +
+          `${held} notification(s) held in notification_roster_archive).`
       );
     }
   }

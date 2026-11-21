@@ -52,6 +52,7 @@ import {
   type PermissionLevel,
   type TeamMember,
   type TeamRole,
+  teamRoles,
   type DatabaseSchema,
   type DatabaseRow,
   type DatabaseRelation,
@@ -104,6 +105,7 @@ import {
   isPageId,
 } from '../shared/page-links.js';
 import { isReservedDailyNoteSlug } from '../shared/daily-notes.js';
+import { TEAM_CANDIDATE_LIMIT, TEAM_CANDIDATE_MIN_QUERY_LENGTH } from '../shared/team-members.js';
 import {
   DATABASE_LIMITS,
   checkRowData,
@@ -326,6 +328,44 @@ export class OrganizationBusyError extends Error {
   constructor() {
     super('Organization is busy');
     this.name = 'OrganizationBusyError';
+  }
+}
+
+// ---- WP2: team members (team-membership-routes.ts) ----
+
+const TEAM_LOCK_TIMEOUT_MS = 5000;
+
+const TEAM_ROLE_RANK: Record<TeamRole, number> = { owner: 3, admin: 2, member: 1 };
+
+/** A stored role outside teamRoles counts as 'member'. */
+function normalizeTeamRole(role: unknown): TeamRole {
+  return (teamRoles as readonly unknown[]).includes(role) ? (role as TeamRole) : 'member';
+}
+
+function isTeamManager(role: TeamRole): boolean {
+  return role === 'owner' || role === 'admin';
+}
+
+/** One member of a team as read inside its lock. */
+export interface TeamMemberState {
+  userId: number;
+  role: TeamRole;
+  isActive: boolean;
+}
+
+export type TeamDecision = OrganizationDecision;
+export type TeamMutationResult<T> = OrganizationMutationResult<T>;
+
+const TEAM_MEMBER_NOT_FOUND = refuseOrganization(404, 'Membership not found');
+const TEAM_MANAGER_REQUIRED = refuseOrganization(403, 'Owner or admin role required');
+const TEAM_LAST_OWNER_REMOVAL = refuseOrganization(409, 'Cannot remove the sole team owner');
+const TEAM_LAST_OWNER_DEMOTION = refuseOrganization(409, 'Cannot demote the sole team owner');
+
+/** Another request holds the team's member lock for too long; routes answer 503. */
+export class TeamBusyError extends Error {
+  constructor() {
+    super('Team is busy');
+    this.name = 'TeamBusyError';
   }
 }
 
@@ -2714,19 +2754,33 @@ export class DBStorage {
       });
       if (!decision.ok) return decision;
 
-      const soleOwnerTeams = await tx
-        .select({ id: teams.id, name: teams.name, displayName: teams.displayName })
+      // The target's teams, locked in id order after the organization lock (team paths never take
+      // an organization lock, so this order cannot deadlock). Their owners are read once the
+      // locks are held, so a change made under a team lock is either finished or waits.
+      const targetTeams: Array<{ id: number; role: string }> = await tx
+        .select({ id: teams.id, role: teamMembers.role })
         .from(teams)
         .innerJoin(teamMembers, eq(teamMembers.teamId, teams.id))
-        .where(
-          and(
-            eq(teams.organizationId, organizationId),
-            eq(teamMembers.userId, targetUserId),
-            eq(teamMembers.role, 'owner'),
-            sql`(select count(*) from team_members o where o.team_id = ${teams.id} and o.role = 'owner') = 1`
-          )
-        )
+        .where(and(eq(teams.organizationId, organizationId), eq(teamMembers.userId, targetUserId)))
         .orderBy(asc(teams.id));
+      await this.lockTeamsInTransaction(
+        tx,
+        targetTeams.map((team) => Number(team.id))
+      );
+      const ownedTeamIds = (
+        await tx
+          .select({ id: teams.id })
+          .from(teams)
+          .innerJoin(teamMembers, eq(teamMembers.teamId, teams.id))
+          .where(
+            and(
+              eq(teams.organizationId, organizationId),
+              eq(teamMembers.userId, targetUserId),
+              eq(teamMembers.role, 'owner')
+            )
+          )
+          .orderBy(asc(teams.id))
+      ).map((row: { id: number }) => Number(row.id));
 
       await tx
         .delete(organizationMembers)
@@ -2754,10 +2808,31 @@ export class DBStorage {
           )
         );
 
+      // Teams the target owned that now have no active owner who is a member of the organization
+      const ownerless: Array<{ id: number; name: string; displayName: string }> =
+        ownedTeamIds.length === 0
+          ? []
+          : await tx
+              .select({ id: teams.id, name: teams.name, displayName: teams.displayName })
+              .from(teams)
+              .where(
+                and(
+                  inArray(teams.id, ownedTeamIds),
+                  sql`NOT EXISTS (
+                    SELECT 1 FROM team_members o
+                    JOIN users u ON u.id = o.user_id
+                    JOIN organization_members om
+                      ON om.user_id = o.user_id AND om.organization_id = ${organizationId}
+                    WHERE o.team_id = ${teams.id} AND o.role = 'owner' AND u.is_active = true
+                  )`
+                )
+              )
+              .orderBy(asc(teams.id));
+
       return {
         ok: true as const,
         value: {
-          teamsLeftWithoutOwner: soleOwnerTeams.map((row: any) => ({
+          teamsLeftWithoutOwner: ownerless.map((row: any) => ({
             id: Number(row.id),
             name: row.name,
             displayName: row.displayName,
@@ -2859,49 +2934,6 @@ export class DBStorage {
 
   // ---- end X1c P5 ----
 
-  // Accounts (`users`) and roster rows (`members`) are separate id spaces, linked only by email,
-  // the link `getUserTeamIds` already follows. Notifications address members, sessions carry a
-  // user id, so anything that compares the two goes through these three (issue #124 X1b).
-
-  /** The `members` rows of an account: those with exactly its email. Empty for an unknown user. */
-  async getMemberIdsForUser(userId: number): Promise<number[]> {
-    const rows: Array<{ id: number }> = await this.db
-      .select({ id: members.id })
-      .from(members)
-      .innerJoin(users, eq(users.email, members.email))
-      .where(eq(users.id, userId));
-    return rows.map((row) => Number(row.id));
-  }
-
-  /** The account behind a roster row: the user with exactly its email, or null. */
-  async getUserIdForMember(memberId: number): Promise<number | null> {
-    const [row] = await this.db
-      .select({ id: users.id })
-      .from(users)
-      .innerJoin(members, eq(members.email, users.email))
-      .where(eq(members.id, memberId))
-      .limit(1);
-    return row ? Number(row.id) : null;
-  }
-
-  /**
-   * The organization of a roster row: the one its account belongs to, or null when that account
-   * belongs to none (a removed account stays outside every organization). Only a row with no
-   * account at all is placed by its team's organization. Null when nothing places the row (or it
-   * is unknown); callers must then treat the member as outside every organization.
-   */
-  async getMemberOrganizationId(memberId: number): Promise<number | null> {
-    const [member] = await this.db
-      .select({ teamId: members.teamId })
-      .from(members)
-      .where(eq(members.id, memberId))
-      .limit(1);
-    if (!member) return null;
-    const userId = await this.getUserIdForMember(memberId);
-    if (userId !== null) return this.getUserOrganizationId(userId);
-    return member.teamId == null ? null : this.getTeamOrganizationId(Number(member.teamId));
-  }
-
   /**
    * The organization a new page belongs to: its team's, or for a team-less page its creator's.
    * Throws OrganizationRequiredError when neither gives one, so a page never lands in an
@@ -2927,51 +2959,25 @@ export class DBStorage {
    * Get all team IDs that a user belongs to, among the teams of the user's own organization
    * (issue #124 X1): a membership row in another organization's team never counts, so every
    * team-scoped check built on this stays inside the organization. A user in no organization
-   * belongs to no team. First checks the team_members RBAC table; falls back to legacy members
-   * table.
+   * belongs to no team. Team membership is the team_members table and nothing else: a
+   * directory (`members`) row names a person and grants no access.
    */
   async getUserTeamIds(userId: number): Promise<number[]> {
     const organizationId = await this.getUserOrganizationId(userId);
     if (organizationId === null) return [];
 
-    // Primary: team_members table (RBAC)
-    const tmRecords = await this.db
+    const records = await this.db
       .select({ teamId: teamMembers.teamId })
       .from(teamMembers)
       .innerJoin(teams, eq(teams.id, teamMembers.teamId))
       .where(and(eq(teamMembers.userId, userId), eq(teams.organizationId, organizationId)));
-
-    if (tmRecords.length > 0) {
-      return tmRecords.map((r: { teamId: number }) => r.teamId);
-    }
-
-    // Fallback: legacy members table (email-based matching)
-    const user = await this.db.select().from(users).where(eq(users.id, userId));
-    if (user.length === 0) return [];
-
-    const userEmail = user[0].email;
-
-    const memberRecords = await this.db
-      .select({ teamId: members.teamId })
-      .from(members)
-      .innerJoin(teams, eq(teams.id, members.teamId))
-      .where(
-        and(
-          eq(members.email, userEmail),
-          eq(members.isActive, true),
-          eq(teams.organizationId, organizationId)
-        )
-      );
-
-    return memberRecords
-      .map((m: { teamId: number | null }) => m.teamId)
-      .filter((id: number | null): id is number => id !== null);
+    return records.map((r: { teamId: number }) => r.teamId);
   }
 
   /**
-   * Get user's role in a specific team from team_members table.
-   * Returns the role ('owner' | 'admin' | 'member') or null if not a member. A team outside the
-   * user's organization always gives null (issue #124 X1).
+   * Get user's role in a specific team from the team_members table: 'owner' | 'admin' |
+   * 'member', or null if not a member. A team outside the user's organization always gives null
+   * (issue #124 X1). A directory (`members`) row is not a membership.
    */
   async getUserTeamRole(userId: number, teamId: number): Promise<TeamRole | null> {
     const organizationId = await this.getUserOrganizationId(userId);
@@ -2983,27 +2989,7 @@ export class DBStorage {
       .select({ role: teamMembers.role })
       .from(teamMembers)
       .where(and(eq(teamMembers.userId, userId), eq(teamMembers.teamId, teamId)));
-
-    if (record.length > 0) {
-      return record[0].role as TeamRole;
-    }
-
-    // Fallback: if user is in legacy members table, treat as 'member' role
-    const user = await this.db.select().from(users).where(eq(users.id, userId));
-    if (user.length === 0) return null;
-
-    const memberRecord = await this.db
-      .select({ id: members.id })
-      .from(members)
-      .where(
-        and(
-          eq(members.email, user[0].email),
-          eq(members.teamId, teamId),
-          eq(members.isActive, true)
-        )
-      );
-
-    return memberRecord.length > 0 ? 'member' : null;
+    return record.length > 0 ? normalizeTeamRole(record[0].role) : null;
   }
 
   /**
@@ -3024,6 +3010,405 @@ export class DBStorage {
       })
       .returning();
     return result[0];
+  }
+
+  // ---- WP2: team members (team-membership-routes.ts) ----
+
+  /**
+   * The role rules for changing a team member's role. Pure: the caller reads the actor, the
+   * target and the owner count inside the team lock and passes them in. They mirror
+   * decideOrganizationRoleChange: only an owner grants or changes `owner`, an admin cannot change
+   * another admin, nobody raises their own role, the last active owner stays. The actor is
+   * checked first (a non-member and a plain member get the same answer, so nothing is revealed
+   * about a team the caller is not in), then the target.
+   */
+  static decideTeamRoleChange(input: {
+    actor: TeamMemberState | null;
+    target: TeamMemberState | null;
+    requested: TeamRole;
+    /** Active owners of the team, the target included when it is one. */
+    activeOwnerCount: number;
+  }): TeamDecision {
+    const { actor, target, requested } = input;
+    if (!actor || !isTeamManager(actor.role)) return TEAM_MANAGER_REQUIRED;
+    if (!target) return TEAM_MEMBER_NOT_FOUND;
+    if ((target.role === 'owner' || requested === 'owner') && actor.role !== 'owner') {
+      return refuseOrganization(403, 'Only a team owner can grant or change the owner role');
+    }
+    if (target.role === 'admin' && target.userId !== actor.userId && actor.role !== 'owner') {
+      return refuseOrganization(403, 'Only a team owner can change an admin');
+    }
+    if (target.userId === actor.userId && TEAM_ROLE_RANK[requested] > TEAM_ROLE_RANK[target.role]) {
+      return refuseOrganization(403, 'You cannot raise your own role');
+    }
+    if (requested === target.role) return { ok: true, write: false };
+    if (target.role === 'owner' && lastActiveOwner(input.activeOwnerCount, target)) {
+      return TEAM_LAST_OWNER_DEMOTION;
+    }
+    return { ok: true, write: true };
+  }
+
+  /**
+   * The role rules for taking a member out of a team, same contract as decideTeamRoleChange.
+   * `leaving` is a member removing their own row (DELETE .../memberships/me): any member may,
+   * except the last active owner. Otherwise the actor must be an owner or admin; only an owner
+   * removes an owner or another admin.
+   */
+  static decideTeamMemberRemoval(input: {
+    actor: TeamMemberState | null;
+    target: TeamMemberState | null;
+    leaving: boolean;
+    activeOwnerCount: number;
+  }): TeamDecision {
+    const { actor, target } = input;
+    if (input.leaving) {
+      if (!actor) return TEAM_MEMBER_NOT_FOUND;
+      if (actor.role === 'owner' && lastActiveOwner(input.activeOwnerCount, actor)) {
+        return TEAM_LAST_OWNER_REMOVAL;
+      }
+      return { ok: true, write: true };
+    }
+    if (!actor || !isTeamManager(actor.role)) return TEAM_MANAGER_REQUIRED;
+    if (!target) return TEAM_MEMBER_NOT_FOUND;
+    if (target.role === 'owner' && actor.role !== 'owner') {
+      return refuseOrganization(403, 'Only an owner can remove another owner');
+    }
+    if (target.role === 'admin' && target.userId !== actor.userId && actor.role !== 'owner') {
+      return refuseOrganization(403, 'Only an owner can remove an admin');
+    }
+    if (target.role === 'owner' && lastActiveOwner(input.activeOwnerCount, target)) {
+      return TEAM_LAST_OWNER_REMOVAL;
+    }
+    return { ok: true, write: true };
+  }
+
+  /**
+   * The role rule for admitting an account to a team: the actor must be an active owner or admin
+   * of it. Pure, like the decisions above; the caller reads the actor inside the team lock.
+   */
+  static decideTeamAdmission(input: { actor: TeamMemberState | null }): TeamDecision {
+    const { actor } = input;
+    if (!actor || !isTeamManager(actor.role)) return TEAM_MANAGER_REQUIRED;
+    return { ok: true, write: true };
+  }
+
+  /**
+   * Runs fn in a transaction after taking pg_advisory_xact_lock(hashtextextended('team-members:' ||
+   * teamId, 0)). Every change to team_members that depends on who else is in the team (roles,
+   * removal, leaving, admission) goes through this. Same contract as withOrganizationLocks: every
+   * read and write the decision depends on goes through the handle fn receives; a wait longer than
+   * the lock timeout throws TeamBusyError.
+   */
+  async withTeamLock<T>(
+    teamId: number,
+    fn: (tx: OrganizationTx) => Promise<T>,
+    options: { lockTimeoutMs?: number } = {}
+  ): Promise<T> {
+    const timeoutMs = options.lockTimeoutMs ?? TEAM_LOCK_TIMEOUT_MS;
+    if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
+      throw new Error('lockTimeoutMs must be a positive integer');
+    }
+    try {
+      return await this.db.transaction(async (tx: OrganizationTx) => {
+        await tx.execute(sql.raw(`SET LOCAL lock_timeout = '${timeoutMs}ms'`));
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(hashtextextended(${'team-members:' + teamId}, 0))`
+        );
+        await tx.execute(sql`SET LOCAL lock_timeout = 0`);
+        return fn(tx);
+      });
+    } catch (error) {
+      if (postgresErrorOf(error)?.code === '55P03') throw new TeamBusyError();
+      throw error;
+    }
+  }
+
+  /**
+   * Takes the team locks of `teamIds` (ascending id order) inside a transaction that is already
+   * open, for a caller that holds an organization lock (removeOrganizationMember). The wait is
+   * bounded like withTeamLock; a timeout surfaces as the caller's busy error.
+   */
+  private async lockTeamsInTransaction(tx: OrganizationTx, teamIds: number[]): Promise<void> {
+    if (teamIds.length === 0) return;
+    await tx.execute(sql.raw(`SET LOCAL lock_timeout = '${TEAM_LOCK_TIMEOUT_MS}ms'`));
+    for (const id of [...new Set(teamIds)].sort((a, b) => a - b)) {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${'team-members:' + id}, 0))`
+      );
+    }
+    await tx.execute(sql`SET LOCAL lock_timeout = 0`);
+  }
+
+  /**
+   * The members of a team read through the lock's handle: only accounts that are also members of
+   * the team's organization count, so a row left over from another organization is not a member.
+   */
+  private async readTeamRoles(
+    executor: OrganizationExecutor,
+    teamId: number,
+    actorUserId: number,
+    targetUserId: number
+  ): Promise<{
+    organizationId: number | null;
+    actor: TeamMemberState | null;
+    target: TeamMemberState | null;
+    activeOwnerCount: number;
+  }> {
+    const [team] = await executor
+      .select({ organizationId: teams.organizationId })
+      .from(teams)
+      .where(eq(teams.id, teamId))
+      .limit(1);
+    if (!team) return { organizationId: null, actor: null, target: null, activeOwnerCount: 0 };
+    const rows = await executor
+      .select({
+        userId: teamMembers.userId,
+        role: teamMembers.role,
+        isActive: users.isActive,
+      })
+      .from(teamMembers)
+      .innerJoin(users, eq(users.id, teamMembers.userId))
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.userId, teamMembers.userId),
+          eq(organizationMembers.organizationId, team.organizationId)
+        )
+      )
+      .where(eq(teamMembers.teamId, teamId));
+    const states: TeamMemberState[] = rows.map((row: any) => ({
+      userId: Number(row.userId),
+      role: normalizeTeamRole(row.role),
+      isActive: row.isActive === true,
+    }));
+    const find = (id: number) => states.find((state) => state.userId === id) ?? null;
+    const actor = find(actorUserId);
+    return {
+      organizationId: Number(team.organizationId),
+      actor: actor && actor.isActive ? actor : null,
+      target: find(targetUserId),
+      activeOwnerCount: states.filter((state) => state.role === 'owner' && state.isActive).length,
+    };
+  }
+
+  /**
+   * Changes one team member's role inside the team lock. The actor's role, the target's role and
+   * the owner count are read after the lock is taken and the answer follows
+   * decideTeamRoleChange. `demoted` says the new role is lower than the old one.
+   */
+  async changeTeamMemberRole(
+    teamId: number,
+    actorUserId: number,
+    targetUserId: number,
+    requested: TeamRole
+  ): Promise<
+    TeamMutationResult<{ teamId: number; userId: number; role: TeamRole; demoted: boolean }>
+  > {
+    return this.withTeamLock(teamId, async (tx) => {
+      const state = await this.readTeamRoles(tx, teamId, actorUserId, targetUserId);
+      const decision = DBStorage.decideTeamRoleChange({ ...state, requested });
+      if (!decision.ok) return decision;
+      const previous = state.target!.role;
+      if (decision.write) {
+        await tx
+          .update(teamMembers)
+          .set({ role: requested })
+          .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, targetUserId)));
+      }
+      return {
+        ok: true as const,
+        value: {
+          teamId,
+          userId: targetUserId,
+          role: requested,
+          demoted: decision.write && TEAM_ROLE_RANK[requested] < TEAM_ROLE_RANK[previous],
+        },
+      };
+    });
+  }
+
+  /**
+   * Takes a member out of the team inside the team lock. `leaving` is the caller removing their
+   * own row; the target is then the actor. Decided by decideTeamMemberRemoval.
+   */
+  async removeTeamMember(
+    teamId: number,
+    actorUserId: number,
+    targetUserId: number,
+    options: { leaving?: boolean } = {}
+  ): Promise<TeamMutationResult<{ userId: number }>> {
+    const leaving = options.leaving === true;
+    const subjectUserId = leaving ? actorUserId : targetUserId;
+    return this.withTeamLock(teamId, async (tx) => {
+      const state = await this.readTeamRoles(tx, teamId, actorUserId, subjectUserId);
+      const decision = DBStorage.decideTeamMemberRemoval({ ...state, leaving });
+      if (!decision.ok) return decision;
+      await tx
+        .delete(teamMembers)
+        .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, subjectUserId)));
+      return { ok: true as const, value: { userId: subjectUserId } };
+    });
+  }
+
+  /**
+   * Admits an existing account of the team's own organization as a plain member, inside the team
+   * lock. An unknown account and an account of another organization get the same refusal.
+   */
+  async admitTeamMember(
+    teamId: number,
+    actorUserId: number,
+    email: string
+  ): Promise<
+    TeamMutationResult<{
+      created: boolean;
+      membership: { teamId: number; userId: number; role: TeamRole };
+    }>
+  > {
+    return this.withTeamLock(teamId, async (tx) => {
+      const state = await this.readTeamRoles(tx, teamId, actorUserId, actorUserId);
+      const decision = DBStorage.decideTeamAdmission({ actor: state.actor });
+      if (!decision.ok) return decision;
+      if (!email) return refuseOrganization(400, 'Existing user email is required');
+      const notFound = refuseOrganization(404, 'Registered user not found');
+      const [account] = await tx
+        .select({ id: users.id, isActive: users.isActive })
+        .from(users)
+        .where(eq(users.email, email))
+        .limit(1);
+      // A deactivated account is answered like an unknown one.
+      if (!account || account.isActive !== true) return notFound;
+      // The row is read FOR SHARE and held until this transaction ends: a removal of the account
+      // from the organization (removeOrganizationMember deletes this row) waits for the admission
+      // and then deletes the new membership with the rest, or has already finished and the row
+      // is gone. Lock order: this transaction takes the team lock, then this row lock; a removal
+      // takes the organization lock, the target's team locks (ascending), then deletes this row.
+      // After this read the admission asks for nothing the removal holds, so they cannot wait on
+      // each other in a circle.
+      const [membership] = await tx
+        .select({ organizationId: organizationMembers.organizationId })
+        .from(organizationMembers)
+        .where(eq(organizationMembers.userId, account.id))
+        .limit(1)
+        .for('share');
+      if (!membership || Number(membership.organizationId) !== state.organizationId) {
+        return notFound;
+      }
+      const [existing] = await tx
+        .select({ teamId: teamMembers.teamId, userId: teamMembers.userId, role: teamMembers.role })
+        .from(teamMembers)
+        .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, account.id)))
+        .limit(1);
+      if (existing) {
+        const membership = { ...existing, role: normalizeTeamRole(existing.role) };
+        return { ok: true as const, value: { created: false, membership } };
+      }
+      const [created] = await tx
+        .insert(teamMembers)
+        .values({ teamId, userId: account.id, role: 'member', invitedBy: actorUserId })
+        .returning({
+          teamId: teamMembers.teamId,
+          userId: teamMembers.userId,
+          role: teamMembers.role,
+        });
+      return {
+        ok: true as const,
+        value: { created: true, membership: { ...created, role: normalizeTeamRole(created.role) } },
+      };
+    });
+  }
+
+  /**
+   * The members of a team, highest role first, then by name. Only accounts that are also members
+   * of the team's organization are listed.
+   */
+  async listTeamMembers(teamId: number): Promise<
+    Array<{
+      userId: number;
+      name: string;
+      email: string;
+      role: TeamRole;
+      isActive: boolean;
+      joinedAt: Date;
+    }>
+  > {
+    const rows = await this.db
+      .select({
+        userId: teamMembers.userId,
+        name: users.name,
+        email: users.email,
+        role: teamMembers.role,
+        isActive: users.isActive,
+        joinedAt: teamMembers.joinedAt,
+      })
+      .from(teamMembers)
+      .innerJoin(teams, eq(teams.id, teamMembers.teamId))
+      .innerJoin(users, eq(users.id, teamMembers.userId))
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.userId, teamMembers.userId),
+          eq(organizationMembers.organizationId, teams.organizationId)
+        )
+      )
+      .where(eq(teamMembers.teamId, teamId));
+    return rows
+      .map((row: any) => ({
+        userId: Number(row.userId),
+        name: row.name,
+        email: row.email,
+        role: normalizeTeamRole(row.role),
+        isActive: row.isActive === true,
+        joinedAt: row.joinedAt,
+      }))
+      .sort(
+        (
+          a: { userId: number; name: string; role: TeamRole },
+          b: { userId: number; name: string; role: TeamRole }
+        ) =>
+          TEAM_ROLE_RANK[b.role] - TEAM_ROLE_RANK[a.role] ||
+          a.name.localeCompare(b.name) ||
+          a.userId - b.userId
+      );
+  }
+
+  /**
+   * Active members of the team's organization who are not in the team, for the "add member"
+   * picker. `query` matches a part of the name or the email (case-insensitive) and must be at
+   * least TEAM_CANDIDATE_MIN_QUERY_LENGTH characters once trimmed, else nothing is returned and
+   * nothing is read. At most TEAM_CANDIDATE_LIMIT rows, by name; `more` says there were further
+   * matches. Name and email only.
+   */
+  async listTeamMemberCandidates(
+    teamId: number,
+    query: string
+  ): Promise<{ candidates: Array<{ name: string; email: string }>; more: boolean }> {
+    const trimmed = query.trim();
+    if ([...trimmed].length < TEAM_CANDIDATE_MIN_QUERY_LENGTH) {
+      return { candidates: [], more: false };
+    }
+    const needle = trimmed.replace(/[\\%_]/g, (character) => `\\${character}`);
+    const result = await this.db.execute(sql`
+      SELECT u.name, u.email
+      FROM teams t
+      JOIN organization_members om ON om.organization_id = t.organization_id
+      JOIN users u ON u.id = om.user_id
+      WHERE t.id = ${teamId}
+        AND u.is_active = true
+        AND NOT EXISTS (
+          SELECT 1 FROM team_members tm WHERE tm.team_id = t.id AND tm.user_id = u.id
+        )
+        AND (u.name ILIKE ${'%' + needle + '%'} OR u.email ILIKE ${'%' + needle + '%'})
+      ORDER BY u.name, u.id
+      LIMIT ${TEAM_CANDIDATE_LIMIT + 1}
+    `);
+    const rows = (result.rows as any[]).map((row) => ({
+      name: String(row.name),
+      email: String(row.email),
+    }));
+    return {
+      candidates: rows.slice(0, TEAM_CANDIDATE_LIMIT),
+      more: rows.length > TEAM_CANDIDATE_LIMIT,
+    };
   }
 
   async getMembers(teamId?: number): Promise<Member[]> {
@@ -3191,27 +3576,29 @@ export class DBStorage {
     return result[0];
   }
 
-  // Notifications address `members` rows; a signed-in account owns the rows whose email matches
-  // its own (`getMemberIdsForUser`). Every read and write below is restricted to a list of member
-  // ids, and an empty list never becomes an unfiltered query (issue #124 X1b).
+  // Notifications are addressed to accounts (users.id) and belong to the organization they were
+  // created in (WP0a). Every method below filters on both the account and the organization, so a
+  // row of another organization is never listed, counted, opened, changed or deleted, and there is
+  // no unfiltered path.
 
-  async getNotifications(memberIds: number[]): Promise<Notification[]> {
-    if (memberIds.length === 0) return [];
+  async getNotifications(userId: number, organizationId: number): Promise<Notification[]> {
     return this.db
       .select()
       .from(notifications)
-      .where(inArray(notifications.recipientId, memberIds))
-      .orderBy(desc(notifications.createdAt));
+      .where(this.notificationScope(userId, organizationId))
+      .orderBy(desc(notifications.createdAt), desc(notifications.id));
   }
 
-  /** The notification when it is addressed to one of the account's member rows, else undefined. */
-  async getNotificationForUser(id: number, userId: number): Promise<Notification | undefined> {
-    const memberIds = await this.getMemberIdsForUser(userId);
-    if (memberIds.length === 0) return undefined;
+  /** The notification when it is addressed to the account in this organization, else undefined. */
+  async getNotificationForUser(
+    id: number,
+    userId: number,
+    organizationId: number
+  ): Promise<Notification | undefined> {
     const result = await this.db
       .select()
       .from(notifications)
-      .where(and(eq(notifications.id, id), inArray(notifications.recipientId, memberIds)));
+      .where(and(eq(notifications.id, id), this.notificationScope(userId, organizationId)));
     return result[0];
   }
 
@@ -3222,52 +3609,74 @@ export class DBStorage {
 
   async updateNotification(
     id: number,
-    notification: UpdateNotification,
-    memberIds: number[]
+    changes: UpdateNotification,
+    userId: number,
+    organizationId: number
   ): Promise<Notification | undefined> {
-    if (memberIds.length === 0) return undefined;
     const result = await this.db
       .update(notifications)
-      .set(notification)
-      .where(and(eq(notifications.id, id), inArray(notifications.recipientId, memberIds)))
+      .set(changes)
+      .where(and(eq(notifications.id, id), this.notificationScope(userId, organizationId)))
       .returning();
     return result[0];
   }
 
-  async deleteNotification(id: number, memberIds: number[]): Promise<boolean> {
-    if (memberIds.length === 0) return false;
+  async deleteNotification(id: number, userId: number, organizationId: number): Promise<boolean> {
     const result = await this.db
       .delete(notifications)
-      .where(and(eq(notifications.id, id), inArray(notifications.recipientId, memberIds)))
+      .where(and(eq(notifications.id, id), this.notificationScope(userId, organizationId)))
       .returning();
     return result.length > 0;
   }
 
-  async markNotificationAsRead(id: number, memberIds: number[]): Promise<Notification | undefined> {
-    if (memberIds.length === 0) return undefined;
+  async markNotificationAsRead(
+    id: number,
+    userId: number,
+    organizationId: number
+  ): Promise<Notification | undefined> {
     const result = await this.db
       .update(notifications)
       .set({ isRead: true })
-      .where(and(eq(notifications.id, id), inArray(notifications.recipientId, memberIds)))
+      .where(and(eq(notifications.id, id), this.notificationScope(userId, organizationId)))
       .returning();
     return result[0];
   }
 
-  async markAllNotificationsAsRead(memberIds: number[]): Promise<void> {
-    if (memberIds.length === 0) return;
+  async markAllNotificationsAsRead(userId: number, organizationId: number): Promise<void> {
     await this.db
       .update(notifications)
       .set({ isRead: true })
-      .where(inArray(notifications.recipientId, memberIds));
+      .where(this.notificationScope(userId, organizationId));
   }
 
-  async getUnreadNotificationCount(memberIds: number[]): Promise<number> {
-    if (memberIds.length === 0) return 0;
+  async getUnreadNotificationCount(userId: number, organizationId: number): Promise<number> {
     const result = await this.db
       .select({ count: sql`count(*)` })
       .from(notifications)
-      .where(and(inArray(notifications.recipientId, memberIds), eq(notifications.isRead, false)));
+      .where(and(this.notificationScope(userId, organizationId), eq(notifications.isRead, false)));
     return Number(result[0].count);
+  }
+
+  /** The rows of one account in one organization: the only filter the methods above use. */
+  private notificationScope(userId: number, organizationId: number) {
+    return and(
+      eq(notifications.recipientUserId, userId),
+      eq(notifications.organizationId, organizationId)
+    );
+  }
+
+  /**
+   * The organization a notification for this account would belong to: the organization of an
+   * active account, else null (unknown, deactivated, or without an organization).
+   */
+  async getNotificationRecipientOrganizationId(userId: number): Promise<number | null> {
+    const [row] = await this.db
+      .select({ organizationId: organizationMembers.organizationId })
+      .from(users)
+      .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
+      .where(and(eq(users.id, userId), eq(users.isActive, true)))
+      .limit(1);
+    return row ? Number(row.organizationId) : null;
   }
 
   async getTemplateCategories(): Promise<TemplateCategory[]> {

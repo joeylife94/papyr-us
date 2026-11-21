@@ -151,14 +151,19 @@ async function executeAction(
       : config;
 
     switch (action.type) {
-      case 'send_notification':
-        // Create notifications for recipients
-        const recipients = processedConfig.recipients || [];
+      case 'send_notification': {
+        // Notifications are addressed to accounts (WP0a). `recipients` held roster ids; it is
+        // never read, and never translated: a roster id read as an account id would notify a
+        // different person. An action that still has it fails.
         const content =
           processedConfig.message || processedConfig.content || 'Workflow notification';
         const title = processedConfig.title || 'Workflow Alert';
+        const recipientUserIds: unknown = processedConfig.recipientUserIds;
+        if (recipientUserIds === undefined && 'recipients' in processedConfig) {
+          return { success: false, error: 'Notification actions take recipientUserIds' };
+        }
 
-        // Only members of the workflow team's organization are notified
+        // Only active accounts of the workflow team's organization are notified
         const workflowTeamId = workflowTeamOf(context);
         const organizationId =
           workflowTeamId === null
@@ -166,23 +171,27 @@ async function executeAction(
             : await getWorkflowStorage().getTeamOrganizationId(workflowTeamId);
 
         const notifications: any[] = [];
-        for (const recipientId of recipients) {
+        for (const recipientUserId of Array.isArray(recipientUserIds) ? recipientUserIds : []) {
           try {
             const recipientOrganizationId =
-              organizationId === null || !Number.isInteger(Number(recipientId))
+              organizationId === null || !Number.isInteger(recipientUserId) || recipientUserId <= 0
                 ? null
-                : await getWorkflowStorage().getMemberOrganizationId(Number(recipientId));
+                : await getWorkflowStorage().getNotificationRecipientOrganizationId(
+                    recipientUserId
+                  );
             if (organizationId === null || recipientOrganizationId !== organizationId) {
               logger.warn(
                 'Skipped notification for a recipient outside the workflow organization',
                 {
-                  recipientId,
+                  recipientUserId,
                 }
               );
               continue;
             }
             const notification = await getWorkflowStorage().createNotification({
-              recipientId,
+              recipientUserId,
+              organizationId,
+              senderUserId: null,
               type: 'system',
               title,
               content,
@@ -191,7 +200,7 @@ async function executeAction(
             notifications.push(notification);
           } catch (error) {
             logger.error('Failed to create notification for recipient', {
-              recipientId,
+              recipientUserId,
               error: error instanceof Error ? error.message : 'Unknown error',
             });
           }
@@ -201,6 +210,7 @@ async function executeAction(
           success: notifications.length > 0,
           result: { sent: notifications.length, notifications },
         };
+      }
 
       case 'create_task':
         if (workflowTeamOf(context) === null) {

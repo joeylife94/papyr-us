@@ -23,8 +23,13 @@
 - **운영**: `/ready` 준비 상태 프로브(#125), PR마다 Golden Journey·P0 브라우저 스펙 실행(#87)
 - **조직 관리** (#124 X1c): 플랫폼 관리자의 조직 생성과 첫 소유자 지정(`/admin`의 `Organizations` 탭, `/api/admin/organizations*`), 조직 소유자·관리자의 구성원·역할·팀 목록·설정 화면(`/organization`, `/api/organization*`), 조직 AI 스위치(`organizations.ai_enabled`, 가역 마이그레이션 `drizzle/0024`)와 구성원별 AI 권한(`organization_members.ai_allowed`, `drizzle/0025`, `구성원` 탭에서 소유자·관리자가 부여)
 
+- **팀 멤버 화면** (WP2): 팀 소유자·관리자가 같은 조직의 계정을 찾아 추가하고, 역할을 바꾸고, 내보내는 화면(`/teams/<팀>/team-members`, `/api/teams/:teamId/members`·`member-candidates`·`memberships`). 조직 구성원이면 누구나 팀을 만들고 그 팀의 소유자가 됨. 주소용 팀 이름은 서버가 만듦
+- **알림은 계정에게** (WP0a): 알림의 받는 사람과 보낸 사람이 팀 명단 행이 아니라 계정이고(`notifications.recipient_user_id`, `sender_user_id`), 알림은 만들어진 조직에 머뭄(`organization_id`). 가역 마이그레이션 `drizzle/0026`이 기존 알림을 같은 이메일의 계정으로 옮기고, 옮길 수 없는 알림은 `notification_roster_archive`에 사유와 함께 보관. 종 아이콘은 조직이 있는 모든 계정에 표시
+
 ### Changed
 
+- 팀 접근은 `team_members` 행으로만 정해짐. 팀 명단(`members`) 행이 주던 접근은 가역 마이그레이션 `drizzle/0028`이 팀 멤버십으로 한 번 옮기고 `team_roster_conversions`에 기록하며, 그 뒤 명단은 디렉터리로만 남음. 조직에서 구성원을 내보내면 활성 소유자가 없어진 팀을 응답으로 알림 (WP2)
+- `POST /api/notifications`는 `recipientUserId`(같은 조직의 활성 계정)를 받고, 사람이 보낼 수 있는 종류(`comment`, `mention`, `task_due`, `task_assigned`)와 길이(제목 200자, 내용 2,000자)를 제한. 예전 `recipientId`·`senderId`가 있는 본문은 400. 워크플로 알림 동작은 `recipientUserIds`를 사용 (WP0a)
 - 저장 파이프라인을 하나로 통합, 변경 없는 저장은 버전을 만들지 않음 (#108, #122)
 - 팀 없는 "열린" 페이지는 같은 조직의 로그인한 구성원에게만 열림 (#149)
 - 런타임 이미지와 CI를 Node.js 22로 이동 (#78)
