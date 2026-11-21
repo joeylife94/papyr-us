@@ -30,7 +30,8 @@
  *
  * --down applies the .down.sql files in reverse order. Each refuses while it would lose a
  * boundary (an organization with AI turned off, a member without AI access, more than one
- * organization, templates of more than one, or a converted team membership with a raised role)
+ * organization, templates of more than one, a converted team membership with a raised role, or an
+ * invitation that is still pending)
  * or would misdeliver or lose a notification (a recipient or sender account with no roster row, a
  * notification of an organization its recipient has left, an archived notification whose records
  * are gone), and then nothing is changed. Like apply-fts-schema.mjs, the script refuses non-local
@@ -54,6 +55,7 @@ const MIGRATIONS = [
   '0025_add_organization_member_ai_access',
   '0026_notifications_to_accounts',
   '0028_convert_roster_team_access',
+  '0029_add_organization_invitations',
 ];
 const sqlPaths = (down ? [...MIGRATIONS].reverse() : MIGRATIONS).map((name) =>
   fileURLToPath(new URL(`../drizzle/${name}${down ? '.down' : ''}.sql`, import.meta.url))

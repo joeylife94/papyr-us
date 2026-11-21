@@ -448,7 +448,43 @@ export const organizationMembers = pgTable(
 
 export type OrganizationMember = typeof organizationMembers.$inferSelect;
 
-/** The organization existing data and new sign-ups join until signup policies arrive (X1d). */
+// Organization invitations (issue #124 X1d, drizzle/0029_add_organization_invitations.sql). The
+// token is a credential: only its SHA-256 is stored. An invitation is pending until it is
+// accepted, revoked or past expires_at; none of those deletes the row.
+export const invitationRoles = ['member', 'admin'] as const;
+export type InvitationRole = (typeof invitationRoles)[number];
+
+export const organizationInvitations = pgTable(
+  'organization_invitations',
+  {
+    id: serial('id').primaryKey(),
+    organizationId: integer('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    // Lower-cased. Null: a link anyone holding it may use once.
+    email: text('email'),
+    role: text('role').notNull().default('member'), // 'member' or 'admin', never 'owner'
+    tokenHash: text('token_hash').notNull(),
+    createdByUserId: integer('created_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    expiresAt: timestamp('expires_at').notNull(),
+    acceptedAt: timestamp('accepted_at'),
+    acceptedByUserId: integer('accepted_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    revokedAt: timestamp('revoked_at'),
+  },
+  (table) => [
+    uniqueIndex('organization_invitations_token_hash_unique').on(table.tokenHash),
+    index('idx_organization_invitations_organization_id').on(table.organizationId),
+  ]
+);
+
+export type OrganizationInvitation = typeof organizationInvitations.$inferSelect;
+
+/** The organization existing data and new sign-ups join when no invitation or sign-up policy says otherwise (X1d). */
 export const DEFAULT_ORGANIZATION_SLUG = 'default';
 
 // Teams schema
