@@ -48,6 +48,8 @@ const AI_SETTING = read('0024_add_organization_ai_setting.sql');
 const AI_ACCESS = read('0025_add_organization_member_ai_access.sql');
 // and 0027 (WP0b) adds wiki_pages.created_by_user_id.
 const PAGE_CREATOR = read('0027_add_page_creator.sql');
+// and 0031 (WP7) adds teams.members_can_edit.
+const TEAM_MEMBERS_CAN_EDIT = read('0031_add_team_members_can_edit.sql');
 
 let admin: Pool;
 let scoped: Pool;
@@ -257,6 +259,7 @@ describe('0022 organizations migration (real Postgres)', () => {
     await scoped.query(AI_SETTING);
     await scoped.query(AI_ACCESS);
     await scoped.query(PAGE_CREATOR);
+    await scoped.query(TEAM_MEMBERS_CAN_EDIT);
   });
 });
 

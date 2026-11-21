@@ -1000,26 +1000,32 @@ describe('reader resolution is a fixed number of queries and agrees with checkPa
         grants: [['user', creator.id, 'owner']],
       }),
     ];
-    for (const page of pages) {
-      const readers = await storage.getReadableOrganizationMembers(
-        defaultOrg,
-        page.id,
-        everyone.map((p) => p.id)
-      );
-      for (const person of everyone) {
-        const members = person !== outsider;
-        const expected =
-          members && (await storage.checkPagePermission(person.id, page.id, 'viewer'));
-        expect(readers.has(person.id), `${person.email} on page ${page.id}`).toBe(
-          Boolean(expected)
+    // Both settings of "members can edit team pages": comment and edit rights never change who
+    // reads, so the in-memory reader keeps agreeing with the single-page check and the SQL form.
+    for (const membersCanEdit of [false, true]) {
+      await scoped.query(`UPDATE teams SET members_can_edit = $1`, [membersCanEdit]);
+      for (const page of pages) {
+        const readers = await storage.getReadableOrganizationMembers(
+          defaultOrg,
+          page.id,
+          everyone.map((p) => p.id)
         );
-        if (members) {
-          // The SQL form used by the page lists and by-id reads says the same
-          const viewer = await storage.getPageViewer(person.id);
+        for (const person of everyone) {
+          const members = person !== outsider;
+          const expected =
+            members && (await storage.checkPagePermission(person.id, page.id, 'viewer'));
           expect(
-            (await storage.resolveReadablePageLinks(viewer, [page.id])).length === 1,
-            `readableBy: ${person.email} on page ${page.id}`
+            readers.has(person.id),
+            `${person.email} on page ${page.id}, members can edit ${membersCanEdit}`
           ).toBe(Boolean(expected));
+          if (members) {
+            // The SQL form used by the page lists and by-id reads says the same
+            const viewer = await storage.getPageViewer(person.id);
+            expect(
+              (await storage.resolveReadablePageLinks(viewer, [page.id])).length === 1,
+              `readableBy: ${person.email} on page ${page.id}`
+            ).toBe(Boolean(expected));
+          }
         }
       }
     }
