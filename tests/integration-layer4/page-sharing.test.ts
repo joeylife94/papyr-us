@@ -815,3 +815,107 @@ describe('on a team page a person grant must be one that gives access', () => {
     ).toBe(1);
   });
 });
+
+describe('concurrent changes to a page’s public access', () => {
+  it('three sets at once, fifteen times: exactly one public row each time, and it is one of the levels asked for', async () => {
+    const creator = await newUser('cc-creator');
+    const page = await newPage({ creator, grants: [['user', creator.id, 'owner']] });
+    const count = async () =>
+      (
+        await scoped.query(
+          `SELECT permission, entity_id FROM page_permissions WHERE page_id = $1 AND entity_type = 'public'`,
+          [page.id]
+        )
+      ).rows;
+    for (let round = 0; round < 15; round++) {
+      const levels = ['viewer', 'commenter', round % 2 ? 'viewer' : 'commenter'] as const;
+      await Promise.all(
+        levels.map((level) => storage.setPagePublicAccess(page.id, level, creator.id))
+      );
+      const rows = await count();
+      expect(rows, `round ${round}`).toHaveLength(1);
+      expect(rows[0].entity_id).toBeNull();
+      expect(levels).toContain(rows[0].permission);
+    }
+  });
+
+  it('lowering racing with raising ends at one of the two values with one row; removing racing with setting ends with one row or none', async () => {
+    const creator = await newUser('cr-creator');
+    const page = await newPage({ creator, grants: [['user', creator.id, 'owner']] });
+    const rows = async () =>
+      (
+        await scoped.query(
+          `SELECT permission FROM page_permissions WHERE page_id = $1 AND entity_type = 'public'`,
+          [page.id]
+        )
+      ).rows.map((row) => row.permission);
+    for (let round = 0; round < 15; round++) {
+      await storage.setPagePublicAccess(page.id, 'commenter', creator.id);
+      await Promise.all([
+        storage.setPagePublicAccess(page.id, 'viewer', creator.id),
+        storage.setPagePublicAccess(page.id, 'commenter', creator.id),
+      ]);
+      const after = await rows();
+      expect(after).toHaveLength(1);
+      expect(['viewer', 'commenter']).toContain(after[0]);
+      await Promise.all([
+        storage.setPagePublicAccess(page.id, null, creator.id),
+        storage.setPagePublicAccess(page.id, 'viewer', creator.id),
+      ]);
+      expect((await rows()).length).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('holds one connection for the whole change, so concurrent changes never wait for a second one', async () => {
+    const creator = await newUser('cp-creator');
+    const pages = await Promise.all(
+      Array.from({ length: 25 }, () =>
+        newPage({ creator, grants: [['user', creator.id, 'owner']] })
+      )
+    );
+    await Promise.all(
+      pages.map((page) => storage.setPagePublicAccess(page.id, 'viewer', creator.id))
+    );
+    for (const page of pages) {
+      expect(await storage.checkPagePermission(undefined, page.id, 'viewer')).toBe(true);
+    }
+  });
+});
+
+describe('the read-only list leaves out grants that give nothing', () => {
+  it('on a team page, readers do not see a person who is not in the team; owners see them marked', async () => {
+    const creator = await newUser('nl-creator');
+    const teamId = await newTeam('nl-team');
+    const member = await newUser('nl-member', { name: 'Nia Member' });
+    const stray = await newUser('nl-stray', { name: 'Nia Stray' });
+    await joinTeam(teamId, creator, 'owner');
+    await joinTeam(teamId, member);
+    const page = await newPage({
+      creator,
+      teamId,
+      grants: [
+        ['user', creator.id, 'owner'],
+        ['user', member.id, 'editor'],
+        ['user', stray.id, 'viewer'],
+      ],
+    });
+    const reader = await storage.getPageSharing(page.id, member.id, false);
+    expect(reader.entries.map((e: any) => e.name).sort()).toEqual(
+      [creator.name, 'Nia Member'].sort()
+    );
+    expect(JSON.stringify(reader)).not.toContain('Nia Stray');
+    const owner = await storage.getPageSharing(page.id, creator.id, true);
+    expect(owner.entries.map((e: any) => e.name)).toContain('Nia Stray');
+    // A team-less page lists every active member grant to everyone, as before
+    const plain = await newPage({
+      creator,
+      grants: [
+        ['user', creator.id, 'owner'],
+        ['user', stray.id, 'viewer'],
+      ],
+    });
+    expect(
+      (await storage.getPageSharing(plain.id, member.id, false)).entries.map((e: any) => e.name)
+    ).toContain('Nia Stray');
+  });
+});

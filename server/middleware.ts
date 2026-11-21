@@ -1,4 +1,5 @@
 import express, { type Express, type Request, Response, NextFunction } from 'express';
+import { parsePageIdParam } from './page-ids.js';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
@@ -561,8 +562,8 @@ export function requirePagePermission(
       const storage = req.app.locals.storage || (await import('./storage.js')).getStorage();
 
       // Resolve page ID — from params (:id/:pageId) or by looking up :slug
-      let pageId = parseInt(req.params.id || req.params.pageId);
-      if (!pageId || isNaN(pageId)) {
+      let pageId = parsePageIdParam(req.params.id ?? req.params.pageId);
+      if (pageId === null) {
         // Try slug-based lookup
         const slug = req.params.slug;
         if (slug) {
@@ -593,6 +594,9 @@ export function requirePagePermission(
           .json({ message: `Insufficient permissions: ${requiredPermission} required` });
       }
 
+      // The page that was checked, for the handler behind this gate
+      res.locals.pageId = pageId;
+
       // Store permission in request for later use
       req.user = {
         ...req.user,
@@ -614,8 +618,8 @@ export function checkPagePermission() {
     try {
       const storage = req.app.locals.storage || (await import('./storage.js')).getStorage();
 
-      const pageId = parseInt(req.params.id || req.params.pageId);
-      if (!pageId || isNaN(pageId)) {
+      const pageId = parsePageIdParam(req.params.id ?? req.params.pageId);
+      if (pageId === null) {
         return next();
       }
 

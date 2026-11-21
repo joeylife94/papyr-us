@@ -18,6 +18,7 @@ import { authMiddleware, buildAccountRateLimiter, type AuthRequest } from './mid
 import type { DBStorage } from './storage.js';
 import { notifyPageAccessChanged, notifyPageGrantsChanged } from './services/page-access-events.js';
 import logger from './services/logger.js';
+import { parsePageIdParam } from './page-ids.js';
 import {
   PUBLIC_GRANT_LEVELS,
   SHARE_CANDIDATE_MAX_QUERY_LENGTH,
@@ -105,14 +106,6 @@ export function toShareLink(link: PublicLink): PageShareLink {
   };
 }
 
-/** The largest page id the database holds; a larger one names no page. */
-export const MAX_PAGE_ID = 2147483647;
-
-export function parsePageIdParam(raw: string): number | null {
-  const id = Number(raw);
-  return Number.isInteger(id) && id > 0 && id <= MAX_PAGE_ID ? id : null;
-}
-
 /**
  * Gate for the share link routes: the page in the path must exist (404) and the caller must own
  * it (403). The permission check alone says yes for a page that does not exist, so existence is
@@ -122,12 +115,14 @@ export function pageOwnerGate(storage: Pick<DBStorage, 'getWikiPage' | 'checkPag
   return async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const pageId = parsePageIdParam(req.params.id);
-      if (!pageId || !(await storage.getWikiPage(pageId))) {
+      if (pageId === null || !(await storage.getWikiPage(pageId))) {
         return res.status(404).json({ message: 'Page not found' });
       }
       if (!(await storage.checkPagePermission(req.user?.id, pageId, 'owner'))) {
         return res.status(403).json({ message: 'Only page owners can manage share links' });
       }
+      // The handler behind this gate acts on this page, never on a second reading of the path
+      res.locals.pageId = pageId;
       next();
     } catch {
       return res.status(500).json({ message: 'Server error' });

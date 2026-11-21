@@ -4594,7 +4594,7 @@ export class DBStorage {
 
     // On a team page a person who is not in the team holds nothing from a user grant
     const inPageTeam = new Set<number>();
-    if (forManager && page.teamId && userIds.length > 0) {
+    if (page.teamId && userIds.length > 0) {
       const rows = await this.db
         .select({ userId: teamMembers.userId })
         .from(teamMembers)
@@ -4619,6 +4619,9 @@ export class DBStorage {
           continue;
         }
         if (person && person.organizationId === organizationId && person.isActive) {
+          // On a team page a person outside the team holds nothing from a user grant: owners see
+          // the grant marked, other readers are not shown it
+          if (page.teamId && !inPageTeam.has(entityId) && !forManager) continue;
           entries.push({
             entityType: 'user',
             name: person.name,
@@ -4777,7 +4780,7 @@ export class DBStorage {
 
   /**
    * Sets the public access of a page to one row that names nobody at `level`, replacing every
-   * public row of the page in one statement; null removes them all. Other grants are untouched.
+   * public row of the page, under a per-page lock; null removes them all. Other grants are untouched.
    * Returns the row, or undefined when public access was removed.
    */
   async setPagePublicAccess(
@@ -4785,18 +4788,26 @@ export class DBStorage {
     level: 'viewer' | 'commenter' | null,
     grantedBy?: number
   ): Promise<PagePermission | undefined> {
-    const result = await this.db.execute(sql`
-      WITH removed AS (
-        DELETE FROM page_permissions WHERE page_id = ${pageId} AND entity_type = 'public'
-      )
-      INSERT INTO page_permissions (page_id, entity_type, entity_id, permission, granted_by)
-      SELECT ${pageId}, 'public', NULL, ${level}::text, ${grantedBy ?? null}::integer
-      WHERE ${level}::text IS NOT NULL
-      RETURNING id, page_id AS "pageId", entity_type AS "entityType", entity_id AS "entityId",
-                permission, granted_by AS "grantedBy", created_at AS "createdAt",
-                updated_at AS "updatedAt"
-    `);
-    return (result.rows as PagePermission[])[0];
+    // Concurrent changes to one page's public access run one after the other (a per-page lock
+    // held until commit), so the page always ends with exactly one public row, or none, and the
+    // last change wins. Everything inside uses the transaction's own connection.
+    return this.db.transaction(async (tx: any) => {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${'page-public-access:' + pageId}, 0))`
+      );
+      const result = await tx.execute(sql`
+        WITH removed AS (
+          DELETE FROM page_permissions WHERE page_id = ${pageId} AND entity_type = 'public'
+        )
+        INSERT INTO page_permissions (page_id, entity_type, entity_id, permission, granted_by)
+        SELECT ${pageId}, 'public', NULL, ${level}::text, ${grantedBy ?? null}::integer
+        WHERE ${level}::text IS NOT NULL
+        RETURNING id, page_id AS "pageId", entity_type AS "entityType", entity_id AS "entityId",
+                  permission, granted_by AS "grantedBy", created_at AS "createdAt",
+                  updated_at AS "updatedAt"
+      `);
+      return (result.rows as PagePermission[])[0];
+    });
   }
 
   /** Whether the user is a current owner or admin of the team (see checkPagePermission). */

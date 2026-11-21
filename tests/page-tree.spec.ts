@@ -159,6 +159,7 @@ test('page tree rules hold against the database: team boundary, cycles, hidden p
   expect(teamRes.status()).toBe(201);
   const team = await teamRes.json();
   const created: number[] = [];
+  let outsiderTeamId: number | null = null;
 
   try {
     const teamPage = await createPage(api, `Team Root ${stamp}`, { teamId: team.id });
@@ -202,6 +203,7 @@ test('page tree rules hold against the database: team boundary, cycles, hidden p
     });
     expect(outsiderTeamRes.status()).toBe(201);
     const outsiderTeam = await outsiderTeamRes.json();
+    outsiderTeamId = outsiderTeam.id;
     const teamGrant = await api.post(`/api/pages/${teamPage.id}/permissions`, {
       data: { entityType: 'team', entityId: outsiderTeam.id, permission: 'editor' },
     });
@@ -252,6 +254,9 @@ test('page tree rules hold against the database: team boundary, cycles, hidden p
       await api.delete(`/api/trash/${id}`).catch(() => {});
     }
     await api.delete(`/api/teams/${team.id}`).catch(() => {});
+    if (outsiderTeamId !== null) {
+      await otherApi.delete(`/api/teams/${outsiderTeamId}`).catch(() => {});
+    }
     await api.dispose();
     await otherApi.dispose();
   }

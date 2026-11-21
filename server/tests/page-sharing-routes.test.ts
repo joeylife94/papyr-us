@@ -442,6 +442,73 @@ describe('share links belong to their page and to its owner', () => {
   });
 });
 
+describe('a page id is read one way, by every gate and handler', () => {
+  // Number() reads these as page 100 (the page the gate would check); parseInt() reads others
+  // as a different page. Only plain digits name a page.
+  const NOT_PLAIN = [
+    '1.0e2',
+    '1e2',
+    '100.0',
+    '0100',
+    '+100',
+    '%20100',
+    '100abc',
+    '0x64',
+    '1_00',
+    '100%00',
+  ];
+
+  it('the share routes, the sharing view, the search and the permission routes answer 404 for any other spelling and touch nothing', async () => {
+    for (const spelling of NOT_PLAIN) {
+      for (const [method, path] of [
+        ['get', 'share'],
+        ['post', 'share'],
+        ['delete', 'share/tok'],
+        ['get', 'sharing'],
+        ['get', 'share-candidates?q=ab'],
+        ['get', 'permissions'],
+        ['post', 'permissions'],
+        ['delete', 'permissions/3'],
+      ] as const) {
+        const res = await (request(app) as any)
+          [method](`/api/pages/${spelling}/${path}`)
+          .set(cookieFor(OWNER))
+          .send({ entityType: 'public', permission: 'viewer' });
+        expect(res.status, `${method} ${spelling}/${path}`).toBe(404);
+      }
+    }
+    expect(storage.getPagePublicLinks).not.toHaveBeenCalled();
+    expect(storage.createPublicLink).not.toHaveBeenCalled();
+    expect(storage.deletePublicLinkForPage).not.toHaveBeenCalled();
+    expect(storage.addPagePermission).not.toHaveBeenCalled();
+    expect(storage.setPagePublicAccess).not.toHaveBeenCalled();
+    expect(storage.removePagePermission).not.toHaveBeenCalled();
+    expect(storage.getPageSharing).not.toHaveBeenCalled();
+    expect(storage.listPageShareCandidates).not.toHaveBeenCalled();
+  });
+
+  it('the handler acts on the page the gate checked', async () => {
+    await (request(app) as any).post(`/api/pages/${PAGE}/share`).set(cookieFor(OWNER)).send({});
+    expect(storage.createPublicLink).toHaveBeenCalledWith(
+      expect.objectContaining({ pageId: PAGE })
+    );
+    await (request(app) as any).get(`/api/pages/${PAGE}/share`).set(cookieFor(OWNER));
+    expect(storage.getPagePublicLinks).toHaveBeenCalledWith(PAGE);
+  });
+
+  it('the page permission gate refuses the same spellings before any handler runs', async () => {
+    for (const spelling of NOT_PLAIN) {
+      for (const path of ['access', 'comments', 'children', 'versions']) {
+        const res = await request(app).get(`/api/pages/${spelling}/${path}`).set(cookieFor(OWNER));
+        expect(res.status, `${spelling}/${path}`).toBeGreaterThanOrEqual(400);
+        expect(res.status, `${spelling}/${path}`).toBeLessThan(500);
+      }
+    }
+    expect(storage.getCommentsByPageId).not.toHaveBeenCalled();
+    expect(storage.checkPagePermission).not.toHaveBeenCalled();
+  });
+});
+
 describe('page ids beyond the database range', () => {
   it('are 404 on the sharing view and the candidate search', async () => {
     for (const path of ['sharing', 'share-candidates?q=ab']) {

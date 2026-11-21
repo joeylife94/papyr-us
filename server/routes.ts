@@ -152,6 +152,7 @@ import {
   toShareLink,
 } from './page-sharing-routes.js';
 import { PUBLIC_GRANT_LEVELS, effectivePublicLevel } from '../shared/page-sharing.js';
+import { checkedPageId, parsePageIdParam } from './page-ids.js';
 
 interface MulterRequest extends Request {
   files?: any[];
@@ -2367,7 +2368,8 @@ export async function registerRoutes(
   // Get all permissions for a page
   app.get('/api/pages/:id/permissions', authMiddleware, async (req: AuthRequest, res) => {
     try {
-      const pageId = parseInt(req.params.id);
+      const pageId = parsePageIdParam(req.params.id);
+      if (pageId === null) return res.status(404).json({ message: 'Page not found' });
 
       // Check if user has owner permission to view permissions
       const hasOwnerPermission = await storage.checkPagePermission(req.user?.id, pageId, 'owner');
@@ -2385,7 +2387,8 @@ export async function registerRoutes(
   // Add or update a permission for a page
   app.post('/api/pages/:id/permissions', authMiddleware, async (req: AuthRequest, res) => {
     try {
-      const pageId = parseInt(req.params.id);
+      const pageId = parsePageIdParam(req.params.id);
+      if (pageId === null) return res.status(404).json({ message: 'Page not found' });
 
       // Check if user has owner permission to manage permissions
       const hasOwnerPermission = await storage.checkPagePermission(req.user?.id, pageId, 'owner');
@@ -2442,7 +2445,8 @@ export async function registerRoutes(
     authMiddleware,
     async (req: AuthRequest, res) => {
       try {
-        const pageId = parseInt(req.params.id);
+        const pageId = parsePageIdParam(req.params.id);
+        if (pageId === null) return res.status(404).json({ message: 'Page not found' });
         const permissionId = parseInt(req.params.permissionId);
 
         // Check if user has owner permission to manage permissions
@@ -2492,7 +2496,7 @@ export async function registerRoutes(
     requireShareOwner,
     async (req: AuthRequest, res) => {
       try {
-        const pageId = parseInt(req.params.id);
+        const pageId = checkedPageId(res);
 
         // The password hash never leaves the server: the answer says whether a link has one
         const links = await storage.getPagePublicLinks(pageId);
@@ -2510,7 +2514,7 @@ export async function registerRoutes(
     requireShareOwner,
     async (req: AuthRequest, res) => {
       try {
-        const pageId = parseInt(req.params.id);
+        const pageId = checkedPageId(res);
 
         // A public link, like a public grant, carries viewer or commenter at most
         const linkPermission = req.body.permission ?? 'viewer';
@@ -2553,7 +2557,7 @@ export async function registerRoutes(
     requireShareOwner,
     async (req: AuthRequest, res) => {
       try {
-        const pageId = parseInt(req.params.id);
+        const pageId = checkedPageId(res);
         const token = req.params.token;
 
         // Only a link of the page in the path, and only by an owner of that page
