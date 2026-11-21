@@ -196,10 +196,15 @@ function createSaveLimiter() {
   };
 }
 
+/** How a save ended: written, refused because the page is no longer editable, skipped, or failed. */
+export type SaveOutcome = 'saved' | 'not-editable' | 'skipped' | 'failed';
+
 type DocMetrics = {
   savesAttempted: number;
   savesSucceeded: number;
   savesFailed: number;
+  /** Saves refused because the page was trashed (or is gone) while the document was open. */
+  savesRefused: number;
   lastSaveAt?: number;
   lastSaveReason?: SaveReason;
   lastSaveDurationMs?: number;
@@ -212,6 +217,8 @@ type DocState = {
   clients: Set<string>;
   lastAccessAt: number;
   dirty: boolean;
+  /** Set once a save found the page no longer editable: nothing more is saved until a rejoin. */
+  pageNotEditable?: boolean;
   updateListener: (update: Uint8Array, origin: any) => void;
   debounceTimer?: NodeJS.Timeout;
   snapshotTimer?: NodeJS.Timeout;
@@ -294,6 +301,7 @@ export class YjsCollaborationManager {
         savesAttempted: 0,
         savesSucceeded: 0,
         savesFailed: 0,
+        savesRefused: 0,
       },
     };
 
@@ -354,6 +362,8 @@ export class YjsCollaborationManager {
 
     const doc = await this.getOrCreate(documentId, pageId);
     doc.lastAccessAt = Date.now();
+    // A new join checks the page again: the next save finds out whether it can be written
+    doc.pageNotEditable = false;
 
     if (!doc.clients.has(socket.id) && doc.clients.size >= this.cfg.maxClientsPerDoc) {
       throw new Error(
@@ -497,7 +507,7 @@ export class YjsCollaborationManager {
 
   markDirty(documentId: string): void {
     const doc = this.docs.get(documentId);
-    if (!doc) return;
+    if (!doc || doc.pageNotEditable) return;
     doc.dirty = true;
     doc.lastAccessAt = Date.now();
     this.scheduleDebouncedSave(doc);
@@ -521,20 +531,64 @@ export class YjsCollaborationManager {
         if (blocks.length > 0) yblocks.push(blocks);
       }, RELOAD_ORIGIN);
       doc.dirty = false;
+      if (doc.pageNotEditable) {
+        // The page is back: its editors get their edit right again
+        doc.pageNotEditable = false;
+        for (const socketId of Array.from(doc.clients)) {
+          const socket = this.namespace.sockets.get(socketId);
+          const userId = Number(socket?.data.userId);
+          if (socket) {
+            await this.revalidateSocket(
+              socket,
+              doc.documentId,
+              Number.isInteger(userId) && userId > 0 ? userId : undefined
+            );
+          }
+        }
+      }
     }
     logger.info('Reloaded Yjs documents from database', { pageId, documents: docs.length });
     return docs.length;
   }
 
-  async saveDoc(documentId: string, reason: SaveReason): Promise<void> {
+  /**
+   * A save found the page trashed (or gone): nothing was written. The document stops saving, its
+   * clients lose their edit right, and each of them is told once that the page is no longer editable.
+   */
+  private refuseSave(doc: DocState, reason: SaveReason): void {
+    doc.metrics.savesRefused += 1;
+    doc.pageNotEditable = true;
+    doc.dirty = false;
+    if (doc.debounceTimer) {
+      clearTimeout(doc.debounceTimer);
+      doc.debounceTimer = undefined;
+    }
+    this.stopSnapshotTimer(doc);
+    for (const socketId of doc.clients) {
+      const socket = this.namespace.sockets.get(socketId);
+      if (socket) socket.data.canEdit = false;
+    }
+    logger.warn('Refused Yjs save: the page is no longer editable', {
+      documentId: doc.documentId,
+      pageId: doc.pageId,
+      reason,
+    });
+    this.namespace.to(doc.documentId).emit('yjs:error', {
+      message: 'This page is no longer editable.',
+      code: 'PAGE_NOT_EDITABLE',
+    });
+  }
+
+  async saveDoc(documentId: string, reason: SaveReason): Promise<SaveOutcome> {
     const doc = this.docs.get(documentId);
-    if (!doc) return;
-    if (!doc.dirty && reason !== 'manual') return;
+    if (!doc) return 'skipped';
+    if (doc.pageNotEditable) return 'not-editable';
+    if (!doc.dirty && reason !== 'manual') return 'skipped';
 
     // Per-doc save limiter to avoid excessive writes even if misconfigured.
     if (!this.saveLimiter.allow(documentId, this.cfg.rateLimitSavesPerMin)) {
       logger.warn('Throttled Yjs save (rate limit)', { documentId, reason });
-      return;
+      return 'skipped';
     }
 
     const startedAt = Date.now();
@@ -546,7 +600,16 @@ export class YjsCollaborationManager {
 
       // Same pipeline as REST autosave (issue #103 E1): keeps `content` (reader, FTS, AI search)
       // in step with the blocks and groups saves into one version per editing session.
-      await savePage(storagePageSaveStore(this.storage), doc.pageId, { blocks }, 'autosave');
+      const saved = await savePage(
+        storagePageSaveStore(this.storage),
+        doc.pageId,
+        { blocks },
+        'autosave'
+      );
+      if (!saved) {
+        this.refuseSave(doc, reason);
+        return 'not-editable';
+      }
 
       doc.dirty = false;
       doc.metrics.savesSucceeded += 1;
@@ -563,6 +626,7 @@ export class YjsCollaborationManager {
         savesFailed: doc.metrics.savesFailed,
         lastSaveDurationMs: doc.metrics.lastSaveDurationMs,
       });
+      return 'saved';
     } catch (error) {
       doc.metrics.savesFailed += 1;
       logger.error('Failed to save Yjs document snapshot to database', {
@@ -572,6 +636,7 @@ export class YjsCollaborationManager {
         error: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : undefined,
       });
+      return 'failed';
     }
   }
 
@@ -873,8 +938,21 @@ export function setupYjsCollaboration(io: SocketIOServer, storage: DBStorage) {
           return;
         }
 
-        await yjsManager!.saveDoc(documentId, 'manual');
-        socket.emit('yjs:saved', { success: true });
+        const outcome = await yjsManager!.saveDoc(documentId, 'manual');
+        socket.emit(
+          'yjs:saved',
+          outcome === 'saved'
+            ? { success: true }
+            : {
+                success: false,
+                error:
+                  outcome === 'not-editable'
+                    ? 'Page is no longer editable'
+                    : outcome === 'skipped'
+                      ? 'Save skipped'
+                      : 'Save failed',
+              }
+        );
       } catch (error) {
         logger.error('Error saving document:', {
           error: error instanceof Error ? error.message : 'Unknown error',

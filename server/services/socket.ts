@@ -154,6 +154,8 @@ interface CollaborationSession {
   changes: DocumentChange[];
   lastAccessAt: number;
   dirty: boolean;
+  /** Set once a save found the page no longer editable: nothing more is saved until a rejoin. */
+  pageNotEditable?: boolean;
   latestBlocks?: any[];
   debounceTimer?: NodeJS.Timeout;
   snapshotTimer?: NodeJS.Timeout;
@@ -178,6 +180,8 @@ export class CollaborationManager {
   private sessions = new Map<number, CollaborationSession>();
   private userSessions = new Map<string, number>(); // userId -> pageId
   private saveLimiter = createSaveLimiter();
+  /** Told when a save finds the page no longer editable; the socket layer tells the page's room. */
+  onPageNotEditable?: (pageId: number) => void;
 
   constructor(
     private storage: DBStorage,
@@ -224,6 +228,8 @@ export class CollaborationManager {
     }
 
     session.lastAccessAt = Date.now();
+    // A new join checks the page again: the next save finds out whether it can be written
+    session.pageNotEditable = false;
     session.users.set(connectionId, user);
     this.userSessions.set(connectionId, pageId);
     this.ensureSnapshotTimer(session);
@@ -252,7 +258,7 @@ export class CollaborationManager {
     session.lastAccessAt = Date.now();
 
     const blocks = change.data?.blocks;
-    if (Array.isArray(blocks)) {
+    if (Array.isArray(blocks) && !session.pageNotEditable) {
       session.latestBlocks = blocks;
       this.markDirty(pageId);
     }
@@ -338,6 +344,7 @@ export class CollaborationManager {
   async saveSession(pageId: number, reason: SaveReason): Promise<void> {
     const session = this.sessions.get(pageId);
     if (!session) return;
+    if (session.pageNotEditable) return;
     if (!session.dirty) return;
     if (!Array.isArray(session.latestBlocks)) return;
 
@@ -351,7 +358,24 @@ export class CollaborationManager {
     const startedAt = Date.now();
 
     try {
-      await this.storage.updateWikiPage(pageId, { blocks: session.latestBlocks });
+      const updated = await this.storage.updateWikiPage(pageId, { blocks: session.latestBlocks });
+      if (!updated) {
+        // The page was trashed (or is gone) while open: nothing was written
+        session.pageNotEditable = true;
+        session.dirty = false;
+        session.latestBlocks = undefined;
+        if (session.debounceTimer) {
+          clearTimeout(session.debounceTimer);
+          session.debounceTimer = undefined;
+        }
+        this.stopSnapshotTimer(session);
+        logger.warn('Refused legacy collab save: the page is no longer editable', {
+          pageId,
+          reason,
+        });
+        this.onPageNotEditable?.(pageId);
+        return;
+      }
 
       session.dirty = false;
       session.metrics.savesSucceeded += 1;
@@ -634,6 +658,17 @@ export async function setupSocketIO(
   const collabNamespace = io.of('/collab');
 
   if (enableCollaboration) {
+    // A save of a page that is no longer editable: its editors lose their edit right and are told
+    // once (the page's room, whoever is in it)
+    collaborationManager.onPageNotEditable = (pageId) => {
+      for (const socket of collabNamespace.sockets.values()) {
+        if ((socket.data as any).pageId === pageId) (socket.data as any).canEdit = false;
+      }
+      collabNamespace.to(`page:${pageId}`).emit('collab:error', {
+        message: 'This page is no longer editable.',
+        code: 'PAGE_NOT_EDITABLE',
+      });
+    };
     // Sessions check page access once at join; check again when a user's access shrinks
     onPageAccessChanged((userId) =>
       revalidateCollabUserAccess(collabNamespace, storage, collaborationManager, userId)
