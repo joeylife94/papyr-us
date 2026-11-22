@@ -4,7 +4,7 @@ aliases: ['PAPYR_US_MASTER', 'Papyr.us v1.0 Master']
 project: 'Papyr.us'
 type: 'project-master'
 status: 'authoritative-contract'
-version: '1.05'
+version: '1.06'
 target: 'v1.0 + D1 frozen baseline; enterprise readiness (Issue #124), one bounded phase per PR'
 current_phase: 'Issue #124 — X0, X1a, X1b and X1c done; X1d next, alongside the collaboration packages of §10'
 priority: 'P1'
@@ -18,7 +18,7 @@ checkpoint_main_sha: 'd2f092b240d5ffe0937dd6d487934e32d5a631f3'
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v1.05**  
+> **AUTHORITATIVE PROJECT CONTRACT — v1.06**  
 > Current repository / Issue / PR / executable evidence overrides historical checkpoints, Scheduled Task prompts, and agent self-report.  
 > The accepted v1.0 product/proof baseline and D1 remain frozen as evidence. Progression after D1 runs as contract Issues under [`AGENTS.md`](AGENTS.md), one bounded phase per PR, and must not rewrite prior accepted evidence or widen buyer-facing claims without a new Proof.
 
@@ -767,3 +767,37 @@ On the package head, Linux container, local PostgreSQL 16, the container's Chrom
 - A restore re-reads every open document of the page, so unsaved in-memory edits on it are replaced by the database content (as version restore does).
 - Access notices reach only sockets connected to the same server process.
 - Still open from §18: realtime connections stay open after account deactivation; two browser specs outside every CI list fail on the base.
+
+## 20. Trash, Favourites and Recent in the Sidebar (2026-11-22)
+
+### Changed
+
+The trash, favourites and recent-pages APIs existed with no screen (audit §1.5). No schema change, no migration; one additive field.
+
+| Area       | What exists now                                                                                                                                                                                                                             |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Trash      | sidebar `휴지통` (`/trash`, `/teams/<team>/trash`); rows the caller could already list, each with `canRestore` from the same owner check as restore and delete; restore shows how many pages came back; delete forever is confirmed by name |
+| Empty      | `휴지통 비우기` only for platform admins on a team trash screen, for that team only; the dialog re-reads the list and counts what it will delete; the instance-wide form of the admin route is never sent by the client                     |
+| Favourites | a star on the page header and a sidebar section; the listing already hides pages the caller cannot list or that are trashed                                                                                                                 |
+| Recent     | the last 10 opened pages, kept in this browser per account and organization (id and title only), shown only when the server confirms access now; cleared on sign-out and on a forced sign-out                                               |
+
+Process: one developer package, one lead decision during development (no instance-wide empty in the UI), one independent review (no security regression; one blocker on the empty-trash count) and one round of review fixes, re-run.
+
+### Actually Executed
+
+On the package head, Linux container, local PostgreSQL 16, the container's Chromium:
+
+- `node scripts/verify-contributor.mjs` — **PASS**; `npx tsc --noEmit` — clean;
+- server suite — 93 files, 2686 tests **PASS** (before the client-only review fixes); unit — 65 files, 980 tests **PASS**;
+- browser: `trash-favorites-recent` (10 tests, added to `test:gj`) twice in a row — **PASS**; `page-tree`, `gj01`, `gj02`, `team-membership-ui`, `page-share-ui` — **PASS**; `quick-switcher` failed intermittently at the command-palette step, also on the unchanged base (1 of 9 runs).
+
+### Not Verified
+
+- Layer 4 (no storage change); the whole `test:gj` list, Layer 5, Layer 6 and Firebat: CI on the pull request is the reference.
+
+### Known limits
+
+- `DELETE /api/trash` (platform admins) is not scoped to an organization or team membership, and without `teamId` it empties every trashed page of the instance. The client never sends that form; narrowing the route is an owner decision.
+- The trash listing runs an owner check per row and has no limit.
+- Old team-less pages with no permission rows count every organization member as owner (existing rule), so the screen offers them restore and delete forever.
+- A page the caller can read but not list cannot be favourited (the server answers 404; the star says so after the click).
