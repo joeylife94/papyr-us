@@ -1,6 +1,6 @@
 import type * as Y from 'yjs';
 import type { Block } from '@shared/schema';
-import { blockIndent } from '@shared/block-tree';
+import { blockIndent, normalizeBlockTree } from '@shared/block-tree';
 import { movedSubtree, type SubtreeMove } from './block-order';
 
 /**
@@ -12,23 +12,26 @@ import { movedSubtree, type SubtreeMove } from './block-order';
  */
 
 /**
- * Replace the shared list by `change(blocks)`, a list of the same length (an indent or outdent of
- * a block and the blocks under it): only the blocks that differ are rewritten, in one
- * transaction, and the tree is made consistent. Nothing is written when nothing changes.
+ * Apply `change` (an indent or outdent of a block and the blocks under it, same length) to the
+ * list as every view shows it (`normalizeBlockTree` of the stored list), and write only the blocks
+ * whose level the change itself moved, in one transaction. A stored block whose level differs from
+ * the view only because the view normalises it (for example a child whose parent was deleted) is
+ * never rewritten by an edit of another block. Nothing is written when nothing changes.
  */
 export function editBlocks(
   ydoc: Y.Doc,
   yblocks: Y.Array<Block>,
   change: (blocks: Block[]) => Block[]
 ): void {
-  const current = yblocks.toArray();
-  const next = change(current);
-  if (next === current || next.length !== current.length) return;
+  const stored = yblocks.toArray();
+  const view = normalizeBlockTree(stored);
+  const next = change(view);
+  if (next === view || next.length !== stored.length) return;
   ydoc.transact(() => {
     next.forEach((block, index) => {
       // Only the indent is written; `parentId` is derived wherever the list is shown or saved.
-      if (blockIndent(block) === blockIndent(current[index])) return;
-      const { indent: _indent, ...rest } = current[index];
+      if (blockIndent(block) === blockIndent(view[index])) return;
+      const { indent: _indent, ...rest } = stored[index];
       const level = blockIndent(block);
       yblocks.delete(index, 1);
       yblocks.insert(index, [(level > 0 ? { ...rest, indent: level } : rest) as Block]);

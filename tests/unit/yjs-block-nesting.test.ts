@@ -161,4 +161,31 @@ describe('nesting in the shared block list', () => {
     expect(after[3]).toBe(before[3]);
     expect(shape(after).slice(1, 3)).toEqual(['y:1>x:y', 'z:2>y:z']);
   });
+
+  it('never rewrites a block whose stored indent only differs from the view when an unrelated block is indented', () => {
+    // After its parent is deleted, a child keeps indent 1 in the shared list while every view shows
+    // it at level 0. Indenting another block must not rewrite it, or a concurrent text edit of that
+    // child duplicates it.
+    const { a, b, ya, yb, sync } = pair([block('p'), block('c', 1), block('x'), block('y')]);
+    deleteBlockAt(a, ya, 0);
+    sync();
+    expect(ya.toArray().find((x) => x.id === 'c')?.indent).toBe(1);
+    const untouched = ya.toArray()[0];
+    editBlocks(a, ya, (blocks) =>
+      shiftSubtree(
+        blocks,
+        blocks.findIndex((x) => x.id === 'y'),
+        1
+      )
+    );
+    expect(ya.toArray()[0]).toBe(untouched);
+    setText(b, yb, 'c', 'typed in c');
+    sync();
+    for (const doc of [ya, yb]) {
+      const ids = doc.toArray().map((x) => x.id);
+      expect(ids).toEqual(['c', 'x', 'y']);
+    }
+    expect(shape(ya.toArray())).toEqual(shape(yb.toArray()));
+    expect(shape(ya.toArray())).toEqual(['c:0:typed in c', 'x:0:x', 'y:1>x:y']);
+  });
 });
