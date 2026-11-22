@@ -405,19 +405,32 @@ export const comments = pgTable('comments', {
   parentId: integer('parent_id'), // For nested replies - will be handled as foreign key later
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  // Block anchor and resolved state (WP15). Only a top-level comment carries either; a reply
+  // belongs to its thread's. Existing comments have none of them: page-level and open. The
+  // excerpt is taken from the stored block by the server, never from the client.
+  blockId: text('block_id'),
+  blockExcerpt: text('block_excerpt'),
+  resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  resolvedByUserId: integer('resolved_by_user_id').references(() => users.id, {
+    onDelete: 'set null',
+  }),
 });
 
+// Resolved state is set only by the resolve and reopen routes, never by a create or an edit body.
 export const insertCommentSchema = createInsertSchema(comments).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+  resolvedAt: true,
+  resolvedByUserId: true,
 });
 
 // Update schema strips identity fields — author / authorUserId are server-derived
-// and must not be client-editable on normal update paths.
+// and must not be client-editable on normal update paths. The anchor is fixed when the thread
+// is created.
 export const updateCommentSchema = insertCommentSchema
   .partial()
-  .omit({ author: true, authorUserId: true });
+  .omit({ author: true, authorUserId: true, blockId: true, blockExcerpt: true });
 
 export type InsertComment = z.infer<typeof insertCommentSchema>;
 export type UpdateComment = z.infer<typeof updateCommentSchema>;
