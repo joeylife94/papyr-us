@@ -419,3 +419,67 @@ describe('page duplication with inline databases (real Postgres)', () => {
     expect(await visibleCopies()).toEqual([{ blocks: copy.blocks }]);
   });
 });
+
+// WP11: nesting is made consistent on creation and on copy, like on every other write of blocks.
+describe('nested blocks on create and duplicate (real Postgres)', () => {
+  const inconsistent = [
+    { id: 't', type: 'toggle', content: 'Summary', properties: {}, order: 0, children: [] },
+    {
+      id: 'a',
+      type: 'paragraph',
+      content: 'inside',
+      properties: {},
+      order: 1,
+      children: [],
+      indent: 6,
+      parentId: 'ghost',
+    },
+    {
+      id: 'z',
+      type: 'paragraph',
+      content: 'out',
+      properties: {},
+      order: 2,
+      children: [],
+      parentId: 't',
+    },
+  ];
+
+  it('a new page stores a clamped indent and a recomputed parentId', async () => {
+    const page = await createPage('Nested create', inconsistent);
+    expect(page.blocks.map((b: any) => [b.indent ?? 0, b.parentId ?? null])).toEqual([
+      [0, null],
+      [1, 't'],
+      [0, null],
+    ]);
+  });
+
+  it('a copy keeps the nesting of its source, and one made from an inconsistent source is normalised', async () => {
+    const source = await createPage('Nested source', [
+      inconsistent[0],
+      { ...inconsistent[1], indent: 1, parentId: 't' },
+      { ...inconsistent[2], parentId: undefined },
+    ]);
+    const copy = await duplicate(source);
+    expect(copy.blocks).toEqual(source.blocks);
+
+    const forced = await storage.duplicateWikiPage(
+      source.id,
+      {
+        title: 'Forced copy',
+        slug: 'forced-copy',
+        content: '',
+        blocks: inconsistent,
+        folder: 'docs',
+        tags: [],
+        isPublished: false,
+      },
+      { userId: BOB.id }
+    );
+    expect(forced.blocks.map((b: any) => [b.indent ?? 0, b.parentId ?? null])).toEqual([
+      [0, null],
+      [1, 't'],
+      [0, null],
+    ]);
+  });
+});

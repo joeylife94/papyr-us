@@ -340,4 +340,62 @@ describe('savePage', () => {
     expect(await savePage(store, 99, { content: 'x' }, 'autosave')).toBeUndefined();
     expect(hasOpenEditSession(99)).toBe(false);
   });
+
+  // WP11: nesting is made consistent on every save, whoever sent it.
+  describe('nested blocks', () => {
+    const nested = [
+      { id: 'a', type: 'toggle', content: 'Summary' },
+      { id: 'b', type: 'paragraph', content: 'inside', indent: 6, parentId: 'ghost' },
+      { id: 'c', type: 'bulleted_list', content: 'item', indent: 1, parentId: 'b' },
+    ];
+
+    it.each(['manual', 'autosave'] as const)(
+      'a %s save stores a clamped indent and a recomputed parentId',
+      async (mode) => {
+        const { store, current } = makeStore(makePage());
+        await savePage(store, 1, { blocks: nested as any }, mode);
+        expect(current().blocks).toEqual([
+          { id: 'a', type: 'toggle', content: 'Summary' },
+          { id: 'b', type: 'paragraph', content: 'inside', indent: 1, parentId: 'a' },
+          { id: 'c', type: 'bulleted_list', content: 'item', indent: 1, parentId: 'a' },
+        ]);
+      }
+    );
+
+    it('derives content from the normalised tree, toggle children included', async () => {
+      const { store, current } = makeStore(makePage());
+      await savePage(store, 1, { blocks: nested as any }, 'autosave');
+      expect(current().content).toBe(
+        '<details>\n<summary>Summary</summary>\n\ninside\n\n- item\n\n</details>'
+      );
+    });
+
+    it('a page without nesting is written exactly as sent, and re-saving it is a no-op', async () => {
+      const flat = [
+        { id: 'b0', type: 'paragraph', content: 'v0', order: 0, children: [] },
+        { id: 'b1', type: 'heading1', content: 'h', order: 1, children: [] },
+      ];
+      const { store, updates, snapshots, current } = makeStore(
+        makePage({ blocks: flat as any, content: 'v0\n\n# h' })
+      );
+      await savePage(store, 1, { blocks: JSON.parse(JSON.stringify(flat)) }, 'autosave');
+      expect(updates).toHaveLength(0);
+      expect(snapshots).toHaveLength(0);
+      await savePage(
+        store,
+        1,
+        { blocks: [{ ...flat[0], content: 'v1' }, flat[1]] as any },
+        'autosave'
+      );
+      expect(current().blocks).toEqual([{ ...flat[0], content: 'v1' }, flat[1]]);
+    });
+
+    it('an already consistent nested page saved again is a no-op', async () => {
+      const { store, updates } = makeStore(makePage());
+      await savePage(store, 1, { blocks: nested as any }, 'manual');
+      const stored = JSON.parse(JSON.stringify((await store.getPage(1))!.blocks));
+      await savePage(store, 1, { blocks: stored }, 'manual');
+      expect(updates).toHaveLength(1);
+    });
+  });
 });

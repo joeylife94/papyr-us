@@ -37,7 +37,22 @@
  * paragraphs split on blank lines, with their text verbatim, so constructs the editor has no
  * block for (tables, HTML, indented code, math) still render the same after the next save.
  * Inline Markdown and page link tokens (`[[page:<id>]]`) are never touched. Nested list items
- * stay in their parent item's text (the editor has no nesting), indented as written.
+ * and `<details>` toggles become nested blocks (see below); continuation lines and lazy lines
+ * of an item stay in its text.
+ *
+ * Nesting (shared/block-tree.ts: a flat list with an `indent` per block):
+ * - A list item or to-do nested under a list item is a nested Markdown list item, written at the
+ *   parent's content column (2 spaces per level under `-` items and to-dos, wider under numbered
+ *   items, so every Markdown reader nests them). Numbered lists count per level.
+ * - A `toggle` is `<details>` with a `<summary>` line holding its text (`&`, `<` and `>`
+ *   escaped; text after the first line becomes a paragraph inside the toggle), the blocks under it, and `</details>`. The reader draws it
+ *   as a disclosure (client/src/lib/markdown.ts); other Markdown tools show their own.
+ *   `<details>` that is not exactly this shape stays text, as before.
+ * - Import reads both back: nested list items get their level, blocks inside `<details>` the
+ *   toggle's depth plus their own list level. The round trip is exact for lists and to-dos
+ *   nested under lists or toggles and for toggles nested in toggles. Any other nested block (a
+ *   paragraph under a list item, a list under a paragraph) is written without its nesting, in
+ *   order, and comes back at the depth of the enclosing toggles.
  *
  * Text that already looks like Markdown syntax is not escaped: a paragraph that starts with
  * `# ` reads as a heading, exactly as it did before blocks had their own Markdown.
@@ -45,6 +60,7 @@
  * Pure: no DOM and no Node-only APIs (imported by the server and the client).
  */
 import type { Block, BlockType } from './schema.js';
+import { blockIndent, listNumbers, normalizeBlockTree } from './block-tree.js';
 import { embedLinePageId, pageEmbedToken } from './page-embeds.js';
 import { isPageId } from './page-links.js';
 
@@ -139,6 +155,8 @@ function blockMarkdown(block: unknown, listNumber: number, bullet: '-' | '*'): s
     case 'checkbox':
       // The to-do marker is part of the item's text; continuation lines align with `- `.
       return listItemMarkdown(`${bullet} [${blockProperties(block).checked ? 'x' : ' '}]`, 2, text);
+    case 'toggle':
+      return toggleOpening(text);
     case 'quote':
       return text
         .split('\n')
@@ -155,15 +173,51 @@ function blockMarkdown(block: unknown, listNumber: number, bullet: '-' | '*'): s
   }
 }
 
+/** The summary's text (one line) with the characters HTML reads as markup written as entities. */
+function escapeSummary(text: string): string {
+  return text.trim().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/** The inverse of `escapeSummary` for the three entities it writes (others stay as written). */
+function unescapeSummary(text: string): string {
+  return text.replace(/&(amp|lt|gt);/g, (_match, name: string) =>
+    name === 'amp' ? '&' : name === 'lt' ? '<' : '>'
+  );
+}
+
+/**
+ * A toggle's Markdown: its first line is the `<summary>`; any further lines are written as a
+ * paragraph inside the toggle, before the blocks nested under it, so line breaks survive.
+ */
+function toggleOpening(text: string): string {
+  const [first, ...rest] = text.split('\n');
+  const more = rest.join('\n').replace(/^\n+|\s+$/g, '');
+  const opening = `<details>\n<summary>${escapeSummary(first)}</summary>`;
+  return more.trim() ? `${opening}\n\n${more}` : opening;
+}
+
+const DETAILS_CLOSING = '</details>';
+
 /** Where each block's Markdown starts and ends in the joined document (`end` exclusive). */
 export interface BlockMarkdownRange {
   start: number;
   end: number;
 }
 
+/** Spaces a nested list item is written with: the content columns of its list ancestors. */
+function indentLines(markdown: string, columns: number): string {
+  if (columns === 0) return markdown;
+  const pad = ' '.repeat(columns);
+  return markdown
+    .split('\n')
+    .map((line) => (line ? pad + line : line))
+    .join('\n');
+}
+
 /**
  * `blocksToMarkdown`, plus each block's range in the result, so a position in `content` (a
- * heading found by the table of contents) can be mapped back to its block.
+ * heading found by the table of contents) can be mapped back to its block. The `</details>`
+ * lines closing toggles lie between blocks, in no block's range.
  */
 export function blocksToMarkdownWithRanges(blocks: unknown): {
   markdown: string;
@@ -172,28 +226,69 @@ export function blocksToMarkdownWithRanges(blocks: unknown): {
   let markdown = '';
   const ranges: BlockMarkdownRange[] = [];
   if (!Array.isArray(blocks)) return { markdown, ranges };
+  const list = normalizeBlockTree(blocks);
+  const numbers = listNumbers(list);
+  // Per level, for the blocks above the current one: the type of the latest block, the bullet
+  // its list uses, and the column where list items nested under it start.
+  const typeAt: Array<string | undefined> = [];
+  const bulletAt: Array<'-' | '*' | undefined> = [];
+  const childColumn: number[] = [];
+  const openToggles: number[] = [];
   let previousType: string | undefined;
-  let listNumber = 0;
-  let bullet: '-' | '*' = '-';
-  blocks.forEach((block, index) => {
+  let previousIndent = 0;
+
+  list.forEach((block, index) => {
     const type = blockType(block);
+    const indent = blockIndent(block);
+    const isList = type !== undefined && LIST_TYPES.has(type);
+
+    // Toggles at this level or deeper end before this block.
+    let closers = 0;
+    while (openToggles.length > 0 && openToggles[openToggles.length - 1] >= indent) {
+      openToggles.pop();
+      closers++;
+    }
+
+    const sameTypeAsLevel = isList && typeAt[indent] === type;
+    const previousIsList = previousType !== undefined && LIST_TYPES.has(previousType);
     const continuesList =
-      index > 0 && type !== undefined && LIST_TYPES.has(type) && type === previousType;
-    listNumber = type === 'numbered_list' ? (continuesList ? listNumber + 1 : 1) : 0;
-    if (!continuesList) {
+      index > 0 &&
+      closers === 0 &&
+      isList &&
+      previousIsList &&
+      (indent > previousIndent || sameTypeAsLevel);
+
+    let bullet: '-' | '*' = bulletAt[indent] ?? '-';
+    if (isList && !sameTypeAsLevel) {
       const followsOtherBullets =
-        type !== undefined &&
-        BULLET_TYPES.has(type) &&
-        previousType !== undefined &&
-        BULLET_TYPES.has(previousType);
-      bullet = followsOtherBullets && bullet === '-' ? '*' : '-';
+        BULLET_TYPES.has(type) && typeAt[indent] !== undefined && BULLET_TYPES.has(typeAt[indent]!);
+      bullet = followsOtherBullets && bulletAt[indent] === '-' ? '*' : '-';
+    }
+
+    const column = isList && indent > 0 ? (childColumn[indent - 1] ?? 0) : 0;
+    typeAt.length = indent + 1;
+    bulletAt.length = indent + 1;
+    childColumn.length = indent + 1;
+    typeAt[indent] = type;
+    bulletAt[indent] = isList ? bullet : undefined;
+    childColumn[indent] = isList
+      ? column + (type === 'numbered_list' ? `${numbers[index]}. `.length : 2)
+      : 0;
+
+    for (let close = 0; close < closers; close++) {
+      markdown += `${index > 0 || markdown ? '\n\n' : ''}${DETAILS_CLOSING}`;
     }
     if (index > 0) markdown += continuesList ? '\n' : '\n\n';
     const start = markdown.length;
-    markdown += blockMarkdown(block, listNumber, bullet);
+    markdown += indentLines(blockMarkdown(block, numbers[index], bullet), column);
     ranges.push({ start, end: markdown.length });
+    if (type === 'toggle') openToggles.push(indent);
     previousType = type;
+    previousIndent = indent;
   });
+  for (let close = 0; close < openToggles.length; close++) {
+    markdown += `\n\n${DETAILS_CLOSING}`;
+  }
   return { markdown, ranges };
 }
 
@@ -239,7 +334,13 @@ export function splitFrontmatter(markdown: string): { frontmatter: string | null
   };
 }
 
-type ParsedBlock = { type: BlockType; content: string; properties: Record<string, unknown> };
+type ParsedBlock = {
+  type: BlockType;
+  content: string;
+  properties: Record<string, unknown>;
+  /** Depth in the flat list (shared/block-tree.ts); absent means the depth of the open toggles. */
+  indent?: number;
+};
 
 const ATX_HEADING = /^ {0,3}(#{1,6})(?:[ \t]+(.*))?$/;
 const SETEXT_UNDERLINE = /^ {0,3}(=+|-+)[ \t]*$/;
@@ -249,6 +350,11 @@ const QUOTE_LINE = /^ {0,3}> ?(.*)$/;
 const BULLET_ITEM = /^( {0,3})([-*+])(?:([ \t]+)(.*))?$/;
 const ORDERED_ITEM = /^( {0,3})(\d{1,9})([.)])(?:([ \t]+)(.*))?$/;
 const TASK_PREFIX = /^\[([ xX])\](?:[ \t]+(.*))?$/;
+
+const DETAILS_OPEN =
+  /^ {0,3}<details(?:[ \t]+open)?[ \t]*>[ \t]*(?:<summary>([^<]*)<\/summary>[ \t]*)?$/i;
+const SUMMARY_LINE = /^ {0,3}<summary>([^<]*)<\/summary>[ \t]*$/i;
+const DETAILS_CLOSE = /^ {0,3}<\/details>[ \t]*$/i;
 
 const isBlank = (line: string) => line.trim() === '';
 const indentOf = (line: string) => line.length - line.trimStart().length;
@@ -361,8 +467,152 @@ function startsBlock(line: string): boolean {
     THEMATIC_BREAK.test(line) ||
     QUOTE_LINE.test(line) ||
     !!fenceOpen(line) ||
-    !!listStart(line)
+    !!listStart(line) ||
+    DETAILS_OPEN.test(line) ||
+    DETAILS_CLOSE.test(line)
   );
+}
+
+/**
+ * A toggle's opening at `index`: `<details>` with its `<summary>` on the same line or the next
+ * (the shape `blocksToMarkdown` writes). Null for any other `<details>` line, which stays text.
+ */
+function detailsOpening(
+  lines: readonly string[],
+  index: number
+): { summary: string; lines: number } | null {
+  const open = DETAILS_OPEN.exec(lines[index]);
+  if (!open) return null;
+  if (open[1] !== undefined) return { summary: unescapeSummary(open[1]), lines: 1 };
+  const next = index + 1 < lines.length ? SUMMARY_LINE.exec(lines[index + 1]) : null;
+  return next ? { summary: unescapeSummary(next[1]), lines: 2 } : null;
+}
+
+/** Leading tabs count as four columns, so lists indented with tabs nest like the ones with spaces. */
+function expandLeadingTabs(line: string): string {
+  return line.replace(/^\t+/, (tabs) => ' '.repeat(tabs.length * 4));
+}
+
+interface OpenItem {
+  start: ListStart;
+  markerColumn: number;
+  contentIndent: number;
+  text: string[];
+  level: number;
+  /** A fenced code block inside the item's text is open: its lines are text, never items. */
+  fence: RegExp | null;
+}
+
+/** The list item a line starts at any indentation (nesting), or null. */
+function itemAt(line: string): { start: ListStart; column: number } | null {
+  const column = indentOf(line);
+  const rest = line.slice(column);
+  if (THEMATIC_BREAK.test(rest)) return null;
+  const start = listStart(rest);
+  return start
+    ? { start: { ...start, contentIndent: start.contentIndent + column }, column }
+    : null;
+}
+
+/**
+ * A run of list items from `from`, nested items included: each item becomes a block whose indent
+ * is `depth` (the open toggles) plus its list level. An item is nested under the previous item
+ * when it starts at least two columns after that item's marker. Continuation lines indented to an
+ * item's content, lazy lines and blank lines inside an item stay in its text, as before nesting.
+ * Returns the index after the run.
+ */
+function parseListRun(
+  lines: readonly string[],
+  from: number,
+  depth: number,
+  emit: (block: ParsedBlock) => void
+): number {
+  const stack: OpenItem[] = [];
+  const open: { current: OpenItem | null } = { current: null };
+  const flush = () => {
+    const item = open.current;
+    if (!item) return;
+    emit({
+      type: item.start.type,
+      content: item.text.join('\n'),
+      properties: item.start.type === 'checkbox' ? { checked: item.start.checked } : {},
+      indent: depth + item.level,
+    });
+  };
+  const begin = (start: ListStart, column: number) => {
+    flush();
+    while (stack.length > 0 && column < stack[stack.length - 1].markerColumn + 2) stack.pop();
+    const created: OpenItem = {
+      start,
+      markerColumn: column,
+      contentIndent: start.contentIndent,
+      text: [start.first],
+      level: stack.length,
+      fence: null,
+    };
+    open.current = created;
+    stack.push(created);
+  };
+
+  const firstLine = expandLeadingTabs(lines[from]);
+  const first = itemAt(firstLine);
+  if (!first) return from + 1;
+  begin(first.start, first.column);
+  let index = from + 1;
+  while (index < lines.length) {
+    const item = open.current as OpenItem;
+    const line = expandLeadingTabs(lines[index]);
+    if (isBlank(line)) {
+      // Blank lines belong to the item only when it continues after them; the next item of the
+      // list (loose lists) is not text.
+      let next = index;
+      while (next < lines.length && isBlank(lines[next])) next++;
+      if (next >= lines.length) break;
+      const following = expandLeadingTabs(lines[next]);
+      if (!item.fence && itemAt(following)) {
+        index = next;
+        continue;
+      }
+      // Text indented to any open item's content stays in the list (as text of the latest item).
+      if (indentOf(following) < stack[0].contentIndent) break;
+      for (; index < next; index++) item.text.push('');
+      continue;
+    }
+    if (item.fence) {
+      if (indentOf(line) >= item.contentIndent) {
+        const piece = line.slice(item.contentIndent);
+        const closer = item.fence.test(piece);
+        item.text.push(piece);
+        if (closer) item.fence = null;
+        index++;
+        continue;
+      }
+      item.fence = null;
+    }
+    const next = itemAt(line);
+    if (next) {
+      begin(next.start, next.column);
+      index++;
+      continue;
+    }
+    if (indentOf(line) >= stack[0].contentIndent) {
+      const piece = line.slice(Math.min(item.contentIndent, indentOf(line)));
+      const fence = fenceOpen(piece);
+      if (fence) {
+        // The line that closes it: the same character, at least as many times.
+        item.fence = new RegExp(`^ {0,3}${fence.fence[0]}{${fence.fence.length},}[ \\t]*$`);
+      }
+      item.text.push(piece);
+    } else if (!isBlank(item.text[item.text.length - 1]) && !startsBlock(line)) {
+      // A lazy line continues the item's paragraph.
+      item.text.push(line.trimStart());
+    } else {
+      break;
+    }
+    index++;
+  }
+  flush();
+  return index;
 }
 
 /**
@@ -387,6 +637,11 @@ function headingLevelType(hashes: number): BlockType {
 function parseMarkdown(lines: readonly string[], from: number): ParsedBlock[] {
   const blocks: ParsedBlock[] = [];
   let index = from;
+  // Toggles (`<details>`) open at this point: blocks inside are indented by their number.
+  let depth = 0;
+  const emit = (block: ParsedBlock) => {
+    blocks.push({ ...block, indent: block.indent ?? depth });
+  };
 
   while (index < lines.length) {
     const line = lines[index];
@@ -409,7 +664,7 @@ function parseMarkdown(lines: readonly string[], from: number): ParsedBlock[] {
         index++;
       }
       index++; // the closing fence (or the end of the document)
-      blocks.push({
+      emit({
         type: 'code',
         content: code.join('\n'),
         properties: fence.language ? { language: fence.language } : {},
@@ -417,9 +672,22 @@ function parseMarkdown(lines: readonly string[], from: number): ParsedBlock[] {
       continue;
     }
 
+    const opening = detailsOpening(lines, index);
+    if (opening) {
+      emit({ type: 'toggle', content: opening.summary, properties: {} });
+      depth++;
+      index += opening.lines;
+      continue;
+    }
+    if (depth > 0 && DETAILS_CLOSE.test(line)) {
+      depth--;
+      index++;
+      continue;
+    }
+
     const heading = ATX_HEADING.exec(line);
     if (heading) {
-      blocks.push({
+      emit({
         type: headingLevelType(heading[1].length),
         content: atxHeadingText(heading[2] ?? ''),
         properties: {},
@@ -429,7 +697,7 @@ function parseMarkdown(lines: readonly string[], from: number): ParsedBlock[] {
     }
 
     if (THEMATIC_BREAK.test(line)) {
-      blocks.push({ type: 'divider', content: '', properties: {} });
+      emit({ type: 'divider', content: '', properties: {} });
       index++;
       continue;
     }
@@ -454,39 +722,12 @@ function parseMarkdown(lines: readonly string[], from: number): ParsedBlock[] {
         }
         index++;
       }
-      blocks.push({ type: 'quote', content: quoted.join('\n'), properties: {} });
+      emit({ type: 'quote', content: quoted.join('\n'), properties: {} });
       continue;
     }
 
-    const item = listStart(line);
-    if (item) {
-      const text = [item.first];
-      index++;
-      while (index < lines.length) {
-        const current = lines[index];
-        if (isBlank(current)) {
-          // Blank lines belong to the item only when it continues after them.
-          let next = index;
-          while (next < lines.length && isBlank(lines[next])) next++;
-          if (next >= lines.length || indentOf(lines[next]) < item.contentIndent) break;
-          for (; index < next; index++) text.push('');
-          continue;
-        }
-        if (indentOf(current) >= item.contentIndent) {
-          text.push(current.slice(item.contentIndent));
-        } else if (!isBlank(text[text.length - 1]) && !startsBlock(current)) {
-          // A lazy line continues the item's paragraph.
-          text.push(current.trimStart());
-        } else {
-          break;
-        }
-        index++;
-      }
-      blocks.push({
-        type: item.type,
-        content: text.join('\n'),
-        properties: item.type === 'checkbox' ? { checked: item.checked } : {},
-      });
+    if (listStart(line)) {
+      index = parseListRun(lines, index, depth, emit);
       continue;
     }
 
@@ -504,18 +745,19 @@ function parseMarkdown(lines: readonly string[], from: number): ParsedBlock[] {
         break;
       }
       if (interruptsParagraph(current)) break;
+      if (detailsOpening(lines, index) || (depth > 0 && DETAILS_CLOSE.test(current))) break;
       paragraph.push(current);
       index++;
     }
     if (setextLevel) {
-      blocks.push({
+      emit({
         type: headingLevelType(setextLevel),
         content: paragraph.map((part) => part.trim()).join(' '),
         properties: {},
       });
     } else {
       // Embed lines split the paragraph (#135); a setext heading keeps them as its text.
-      for (const block of paragraphBlocks(paragraph)) blocks.push(block);
+      for (const block of paragraphBlocks(paragraph)) emit(block);
     }
   }
 
@@ -549,12 +791,16 @@ export function markdownToBlocks(markdown: string, options: { idPrefix?: string 
   if (parsed.length === 0) parsed.push({ type: 'paragraph', content: '', properties: {} });
 
   const prefix = options.idPrefix ?? 'block_md';
-  return parsed.map((block, order) => ({
-    id: `${prefix}_${order}`,
-    type: block.type,
-    content: block.content,
-    properties: block.properties,
-    order,
-    children: [],
-  }));
+  // Nested blocks carry `indent` (absent at 0) and the `parentId` normalizeBlockTree derives.
+  return normalizeBlockTree(
+    parsed.map((block, order) => ({
+      id: `${prefix}_${order}`,
+      type: block.type,
+      content: block.content,
+      properties: block.properties,
+      order,
+      ...(block.indent ? { indent: block.indent } : {}),
+      children: [],
+    }))
+  );
 }

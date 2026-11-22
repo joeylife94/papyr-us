@@ -184,8 +184,11 @@ export const blockSchema = z.object({
   content: z.string().default(''),
   properties: z.record(z.string(), z.any()).default({}),
   order: z.number(),
+  // Nesting in the flat list (shared/block-tree.ts): `indent` is the depth (absent means 0) and
+  // `parentId` the nearest preceding block one level up; the server recomputes `parentId`.
+  indent: z.number().int().min(0).max(8).optional(),
   parentId: z.string().optional(),
-  children: z.array(z.string()).default([]), // child block IDs
+  children: z.array(z.string()).default([]), // not used: nesting is `indent` + `parentId`
 });
 
 export type Block = z.infer<typeof blockSchema>;

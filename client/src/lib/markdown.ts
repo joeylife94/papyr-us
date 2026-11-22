@@ -55,6 +55,75 @@ function rehypePageLinks() {
   return (tree: Root) => replacePageLinkTokens(tree);
 }
 
+const TOGGLE_OPENING = /^<details(?:\s+open)?\s*>\s*<summary>([^<]*)<\/summary>\s*$/i;
+const TOGGLE_CLOSING = /^<\/details>\s*$/i;
+
+type MdastParent = { children: MdastChild[] };
+type MdastChild = { type: string; value?: string; children?: MdastChild[]; data?: unknown };
+
+const inlineParser = remark().use(remarkGfm);
+
+/**
+ * A toggle summary as inline Markdown (bold, italic, links, inline code, page link tokens).
+ * Raw HTML in it is shown as the text it is, never as markup; a summary that is not one plain
+ * paragraph of inline content (a heading, a list...) is shown as text. Source positions are
+ * dropped: they would point into the summary, not into the page.
+ */
+function summaryInline(text: string): MdastChild[] {
+  const strip = (node: MdastChild): MdastChild => {
+    const { position: _position, ...rest } = node as MdastChild & { position?: unknown };
+    if (rest.type === 'html') return { type: 'text', value: rest.value };
+    return rest.children ? { ...rest, children: rest.children.map(strip) } : rest;
+  };
+  const root = inlineParser.parse(text) as unknown as MdastParent;
+  const only = root.children.length === 1 ? root.children[0] : undefined;
+  if (only?.type === 'paragraph' && only.children) return only.children.map(strip);
+  return [{ type: 'text', value: text }];
+}
+
+/**
+ * Toggles (WP11): the `<details>`, `<summary>…</summary>` … `</details>` lines the block Markdown
+ * writes for a toggle block (shared/block-markdown.ts) become real `details` elements, open to
+ * begin with, so every reader of a page can open and close them. Only that exact shape is
+ * recognised: the summary is inline Markdown (the three entities the writer escapes are decoded, and
+ * the text is escaped again when rendered), and any other raw HTML is still dropped. A closing
+ * line without an opening one is dropped.
+ */
+function remarkToggles() {
+  return (root: unknown) => {
+    const tree = root as MdastParent;
+    const out: MdastChild[] = [];
+    const open: MdastChild[] = [];
+    for (const node of tree.children) {
+      const html = node.type === 'html' ? (node.value ?? '').trim() : '';
+      const opening = html ? TOGGLE_OPENING.exec(html) : null;
+      if (opening) {
+        const summary = opening[1].replace(/&(amp|lt|gt);/g, (_m, name: string) =>
+          name === 'amp' ? '&' : name === 'lt' ? '<' : '>'
+        );
+        const toggle: MdastChild = {
+          type: 'toggle',
+          data: { hName: 'details', hProperties: { open: true } },
+          children: [
+            {
+              type: 'paragraph',
+              data: { hName: 'summary' },
+              children: summaryInline(summary),
+            },
+          ],
+        };
+        (open[open.length - 1]?.children ?? out).push(toggle);
+        open.push(toggle);
+      } else if (html && TOGGLE_CLOSING.test(html)) {
+        open.pop();
+      } else {
+        (open[open.length - 1]?.children ?? out).push(node);
+      }
+    }
+    tree.children = out;
+  };
+}
+
 /** A paragraph's inline content split into lines (text nodes split at their line breaks). */
 function paragraphLines(children: readonly ElementContent[]): ElementContent[][] {
   const lines: ElementContent[][] = [[]];
@@ -225,6 +294,7 @@ export async function markdownToHtml(
   const footnoteIds = `user-content-${options.footnoteIdPrefix ?? ''}`;
   const processor = remark()
     .use(remarkGfm)
+    .use(remarkToggles)
     .use(remarkRehype, { clobberPrefix: footnoteIds })
     .use(rehypeFootnoteLabelId, {
       id: options.footnoteIdPrefix ? `${footnoteIds}footnote-label` : undefined,
@@ -484,9 +554,18 @@ export function toPlainTextPreview(content: string, maxLength = 160): string {
     .replace(/`([^`]*)`/g, '$1')
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-    // Checkbox items: drop the list marker and the box together.
-    .replace(/^\s{0,3}[-*+]\s+\[[ xX]\]\s+/gm, '')
-    .replace(/^\s{0,3}(#{1,6}|>|[-*+]|\d+\.)\s+/gm, '')
+    // Toggles (WP11) are `<details>` with a `<summary>`: their text stays (the three entities the
+    // writer escapes read as the characters), the tags go.
+    .replace(/<summary>([^<]*)<\/summary>/gi, (_m, text: string) =>
+      text.replace(/&(amp|lt|gt);/g, (_e, name: string) =>
+        name === 'amp' ? '&' : name === 'lt' ? '<' : '>'
+      )
+    )
+    .replace(/<\/?details>/gi, ' ')
+    // Checkbox items: drop the list marker and the box together (nested items are indented).
+    .replace(/^[ \t]*[-*+]\s+\[[ xX]\]\s+/gm, '')
+    .replace(/^\s{0,3}(#{1,6}|>)\s+/gm, '')
+    .replace(/^[ \t]*([-*+]|\d+\.)\s+/gm, '')
     .replace(/(\*\*|__|~~|\*)(\S(?:[\s\S]*?\S)?)\1/g, '$2')
     .replace(/\s+/g, ' ')
     .trim();

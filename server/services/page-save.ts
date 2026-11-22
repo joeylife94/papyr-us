@@ -16,6 +16,8 @@
  * - A restore snapshots the current state first, so restoring never loses the latest edit.
  * - A synced block reference stores only its `originalBlockId` (#135): a copy of the original's
  *   content in its `syncedContent` is dropped (`withoutSyncedCopies`), whoever sent it.
+ * - Nesting (`indent`, `parentId`) is made consistent on every save, whoever sent it
+ *   (`normalizeBlockTree`): the storage layer applies the same rule to every other write.
  * - A version is only kept when the save changes the title or body (content derived from blocks,
  *   or blocks) compared with the stored page. A save that changes nothing at all, such as the
  *   editor echoing blocks it has just synced, records no version, opens or extends no session,
@@ -34,6 +36,7 @@ import {
   type WikiPage,
 } from '../../shared/schema.js';
 import { blocksToMarkdown } from '../../shared/block-markdown.js';
+import { normalizeBlockTree } from '../../shared/block-tree.js';
 import logger from './logger.js';
 
 /** Idle time after which an autosave session closes (decision D2 on #103). */
@@ -191,7 +194,11 @@ export async function savePage(
 
   const { cover, ...fields } = update;
   const data: UpdateWikiPage = { ...fields };
-  if (data.blocks !== undefined) data.blocks = withoutSyncedCopies(data.blocks);
+  if (data.blocks !== undefined) {
+    // Nesting is made consistent before `content` is derived from the blocks and before the
+    // save is compared with the stored page (shared/block-tree.ts).
+    data.blocks = normalizeBlockTree(withoutSyncedCopies(data.blocks));
+  }
   // A cover change rewrites the stored metadata with only that key changed. Like an icon, it is
   // not part of a version (versions keep the title and body).
   if (cover !== undefined) {

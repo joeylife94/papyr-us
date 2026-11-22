@@ -21,6 +21,7 @@ import {
 } from '../../server/services/vault-import';
 import { parseFrontmatter } from '../../server/services/vault-format';
 import { createZip, readZip } from '../../server/services/zip';
+import { blocksToMarkdown, markdownToBlocks } from '../../shared/block-markdown';
 
 // #113 P2-D2: vault export paths and links, import hierarchy and links, and the round trip.
 
@@ -392,5 +393,57 @@ describe('export, zip, import round trip', () => {
       `See [[page:${ids[at('README.md')]}]] and [[page:${ids[at('README')]}]]\n`
     );
     expect(unresolved).toEqual([]);
+  });
+});
+
+// WP11: nested lists, to-dos and toggles survive a vault export and import as the same blocks.
+describe('export, zip, import round trip of nested blocks', () => {
+  const nested = (type: string, content: string, indent = 0, properties: any = {}) => ({
+    id: `${type}-${content}`,
+    type,
+    content,
+    properties,
+    order: 0,
+    children: [],
+    ...(indent ? { indent } : {}),
+  });
+
+  it('imports a page exported with toggles and nested items as the same blocks', () => {
+    const blocks = [
+      nested('heading1', 'Plan'),
+      nested('toggle', 'Details & <notes> [[page:2]]'),
+      nested('bulleted_list', 'first', 1),
+      nested('checkbox', 'sub task', 2, { checked: true }),
+      nested('numbered_list', 'one', 1),
+      nested('toggle', 'inner', 1),
+      nested('paragraph', 'deep text', 2),
+      nested('paragraph', 'after'),
+      nested('numbered_list', 'top'),
+      nested('bulleted_list', 'nested under numbered', 1),
+    ];
+    const content = blocksToMarkdown(blocks);
+    const archive = createZip(
+      buildVaultEntries([row(1, 'Plan', null, content), row(2, 'Other', null)], new Map())
+    );
+    const files = readZip(archive, { maxEntries: 500, maxTotalUncompressed: 20 * 1024 * 1024 })
+      .filter((entry) => !entry.isDirectory)
+      .map((entry) => {
+        const segments = normalizeVaultPath(entry.name);
+        return { path: segments.join('/'), segments, size: entry.size, read: entry.read };
+      });
+    const plan = planVaultImport(files);
+    const ids = plan.pages.map((_, index) => 500 + index);
+    const { contents } = renderImportedBodies(plan, [], ids);
+    const planIndex = plan.pages.findIndex((page) => page.title === 'Plan');
+    const imported = contents[planIndex].replace(/\[\[page:\d+\]\]/, '[[page:2]]');
+
+    const shape = (list: any[]) =>
+      list.map((b) => ({
+        type: b.type,
+        content: b.content.replace(/\[\[page:\d+\]\]/, '[[page:2]]'),
+        indent: b.indent ?? 0,
+        ...(b.type === 'checkbox' ? { checked: !!b.properties?.checked } : {}),
+      }));
+    expect(shape(markdownToBlocks(imported))).toEqual(shape(blocks));
   });
 });

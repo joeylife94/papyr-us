@@ -34,4 +34,10 @@ describe('document list preview text', () => {
       'Weekly Review tasks Ship it'
     );
   });
+
+  it('shows the text of toggles and nested items without their markup (WP11)', () => {
+    const content =
+      '<details>\n<summary>Open &amp; read</summary>\n\n- first\n  - nested\n    - [ ] deep todo\n\n</details>';
+    expect(toPlainTextPreview(content)).toBe('Open & read first nested deep todo');
+  });
 });

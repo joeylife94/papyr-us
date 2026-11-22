@@ -177,6 +177,15 @@
   max-width: none !important;
 }
 
+.prose details > summary {
+  cursor: pointer;
+}
+
+/* Toggle blocks (WP11): what a toggle holds is set in from its summary. */
+.prose details > :not(summary) {
+  margin-left: 1.5rem;
+}
+
 .prose h1 {
   @apply text-3xl font-bold text-foreground mb-6 mt-8 first:mt-0;
 }

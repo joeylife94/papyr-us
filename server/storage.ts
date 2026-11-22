@@ -125,6 +125,8 @@ import {
   isPageId,
 } from '../shared/page-links.js';
 import { isReservedDailyNoteSlug } from '../shared/daily-notes.js';
+import { normalizeBlockTree } from '../shared/block-tree.js';
+import { snippetText } from '../shared/page-excerpt.js';
 import { TEAM_CANDIDATE_LIMIT, TEAM_CANDIDATE_MIN_QUERY_LENGTH } from '../shared/team-members.js';
 import {
   SHARE_CANDIDATE_LIMIT,
@@ -540,6 +542,8 @@ export class DBStorage {
    */
   async createWikiPage(page: NewPage, creator: PageCreator): Promise<WikiPage> {
     await this.assertPageCreatorActive(creator);
+    // Nesting is made consistent on every write of blocks (shared/block-tree.ts).
+    if (page.blocks !== undefined) page = { ...page, blocks: normalizeBlockTree(page.blocks) };
     // Looked up before the transaction: a transaction never waits for a second pool connection.
     const organizationId = await this.organizationForNewPage(
       page.teamId,
@@ -648,7 +652,7 @@ export class DBStorage {
 
       // The page needs an id before its databases can, so it is inserted without database ids
       // and pointed at the copies before the transaction commits.
-      const blocks = remapDatabaseBlocks(page.blocks, new Map());
+      const blocks = normalizeBlockTree(remapDatabaseBlocks(page.blocks, new Map()));
       let copy = await this.insertWithUniqueSlug(page.slug, (slug) =>
         tx.transaction(async (savepoint: any) => {
           const result = await savepoint
@@ -705,7 +709,7 @@ export class DBStorage {
         `);
         const result = await tx
           .update(wikiPages)
-          .set({ blocks: remapDatabaseBlocks(page.blocks, schemaIds) })
+          .set({ blocks: normalizeBlockTree(remapDatabaseBlocks(page.blocks, schemaIds)) })
           .where(eq(wikiPages.id, copy.id))
           .returning();
         copy = result[0];
@@ -741,6 +745,9 @@ export class DBStorage {
     if (page.slug !== undefined && isReservedDailyNoteSlug(page.slug)) {
       throw new Error('This slug is reserved for daily notes');
     }
+    // Every write of blocks (REST, autosave, Yjs, restore, workflows) keeps the nesting
+    // consistent (shared/block-tree.ts).
+    if (page.blocks !== undefined) page = { ...page, blocks: normalizeBlockTree(page.blocks) };
     const live = and(eq(wikiPages.id, id), isNull(wikiPages.deletedAt));
     if (page.content === undefined) {
       const result = await this.db.update(wikiPages).set(page).where(live).returning();
@@ -1078,7 +1085,7 @@ export class DBStorage {
     const tsquery = sql`plainto_tsquery('simple', ${params.query})`;
     const rank = sql<number>`ts_rank(search_vector, ${tsquery})`;
 
-    return this.db
+    const rows: RetrievedPageRow[] = await this.db
       .select({
         pageId: wikiPages.id,
         teamId: wikiPages.teamId,
@@ -1105,6 +1112,11 @@ export class DBStorage {
       )
       .orderBy(desc(rank), desc(wikiPages.updatedAt))
       .limit(params.limit);
+    // Toggles are `<details>`/`<summary>` in content; a snippet shows their text, not the markup.
+    return rows.map((row) => ({
+      ...row,
+      snippet: row.snippet == null ? row.snippet : snippetText(row.snippet),
+    }));
   }
 
   /** Who is listing pages: identity plus current team memberships, loaded from the database. */

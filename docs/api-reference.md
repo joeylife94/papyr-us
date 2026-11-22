@@ -51,6 +51,9 @@
 | POST   | `/api/pages/:id/versions/:versionId/restore`  | Editor      | 버전 복원                              |
 | GET    | `/api/pages/:id/export?format=md\|html\|json` | Viewer      | 페이지 내보내기                        |
 
+- 블록에는 선택 필드 `indent`(0~8, 없으면 0)가 있습니다. 서버는 모든 저장 경로(저장·자동 저장·실시간 저장·버전 복원·생성·복제)에서 블록 구조를 정규화합니다: 앞 블록보다 한 단계 넘게 깊은 `indent`는 줄이고, `parentId`는 `indent`로부터 다시 계산하며(바로 앞의 한 단계 얕은 블록), `indent: 0`과 0단계의 `parentId`는 지웁니다. `children`은 쓰지 않습니다. 계약 밖의 `indent`·`parentId`를 보낸 클라이언트의 블록은 이렇게 고쳐 저장됩니다.
+- `toggle` 블록은 Markdown으로 `<details>`/`<summary>`(첫 줄, 이스케이프)와 그 안의 하위 블록으로 내보내고 가져옵니다. 하위 목록은 부모 내용 열에 맞춰 들여씁니다.
+
 - 쿼리의 `teamId`(`/api/pages`, `/api/page-tree`, `/api/page-links/search`, `/api/trash`)는 0으로 시작하지 않는 숫자만 팀 id로 읽습니다. `/api/pages`에서는 그 밖의 문자열을 호출자 조직 안의 팀 이름으로 찾고(다른 조직의 팀 이름은 없는 이름과 같은 답), 나머지 라우트는 400 `Invalid team ID`입니다.
 
 ---
