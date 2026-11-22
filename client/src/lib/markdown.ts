@@ -534,9 +534,18 @@ export function toPlainTextPreview(content: string, maxLength = 160): string {
     .replace(/`([^`]*)`/g, '$1')
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-    // Checkbox items: drop the list marker and the box together.
-    .replace(/^\s{0,3}[-*+]\s+\[[ xX]\]\s+/gm, '')
-    .replace(/^\s{0,3}(#{1,6}|>|[-*+]|\d+\.)\s+/gm, '')
+    // Toggles (WP11) are `<details>` with a `<summary>`: their text stays (the three entities the
+    // writer escapes read as the characters), the tags go.
+    .replace(/<summary>([^<]*)<\/summary>/gi, (_m, text: string) =>
+      text.replace(/&(amp|lt|gt);/g, (_e, name: string) =>
+        name === 'amp' ? '&' : name === 'lt' ? '<' : '>'
+      )
+    )
+    .replace(/<\/?details>/gi, ' ')
+    // Checkbox items: drop the list marker and the box together (nested items are indented).
+    .replace(/^[ \t]*[-*+]\s+\[[ xX]\]\s+/gm, '')
+    .replace(/^\s{0,3}(#{1,6}|>)\s+/gm, '')
+    .replace(/^[ \t]*([-*+]|\d+\.)\s+/gm, '')
     .replace(/(\*\*|__|~~|\*)(\S(?:[\s\S]*?\S)?)\1/g, '$2')
     .replace(/\s+/g, ' ')
     .trim();

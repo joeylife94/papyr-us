@@ -258,6 +258,88 @@ describe('page save pipeline (real Postgres)', () => {
   });
 });
 
+describe('nested blocks are stored consistent (real Postgres, WP11)', () => {
+  const storedBlocks = async (id: number) =>
+    (await storage.getWikiPage(id)).blocks as Array<Record<string, any>>;
+  const inconsistent = [
+    { id: 't', type: 'toggle', content: 'Summary' },
+    { id: 'a', type: 'paragraph', content: 'inside', indent: 6, parentId: 'ghost' },
+    { id: 'b', type: 'bulleted_list', content: 'item', indent: 2 },
+    { id: 'c', type: 'paragraph', content: 'outside', parentId: 't' },
+  ];
+  const consistent = [
+    { id: 't', type: 'toggle', content: 'Summary' },
+    { id: 'a', type: 'paragraph', content: 'inside', indent: 1, parentId: 't' },
+    { id: 'b', type: 'bulleted_list', content: 'item', indent: 2, parentId: 'a' },
+    { id: 'c', type: 'paragraph', content: 'outside' },
+  ];
+
+  it('a manual or autosave of an inconsistent tree stores a clamped indent and a recomputed parentId', async () => {
+    for (const mode of ['manual', 'autosave'] as const) {
+      const id = await createPage(`nest-${mode}`, 'x');
+      await pipeline.savePage(store, id, { blocks: inconsistent }, mode);
+      expect(await storedBlocks(id)).toEqual(consistent);
+    }
+  });
+
+  it('derives content, which FTS indexes, from the nested blocks, toggle children included', async () => {
+    const id = await createPage('nest-content', 'x');
+    await pipeline.savePage(store, id, { blocks: inconsistent }, 'autosave');
+    expect((await storage.getWikiPage(id)).content).toBe(
+      '<details>\n<summary>Summary</summary>\n\ninside\n\n- item\n\n</details>\n\noutside'
+    );
+    expect(await matchesSearch(id, 'inside')).toBe(true);
+    expect(await matchesSearch(id, 'summary')).toBe(true);
+  });
+
+  it('every other write of blocks (restore, workflows, bulk edits) is normalised by the storage layer', async () => {
+    const id = await createPage('nest-storage', 'x');
+    const updated = await storage.updateWikiPage(id, { blocks: inconsistent as any });
+    expect(updated.blocks).toEqual(consistent);
+    expect(await storedBlocks(id)).toEqual(consistent);
+  });
+
+  it('a page saved before nesting existed is unchanged by a load and save, byte for byte', async () => {
+    const legacy = [
+      { id: 'b1', type: 'heading1', content: 'Title', properties: {}, order: 0, children: [] },
+      {
+        id: 'b2',
+        type: 'checkbox',
+        content: 'todo',
+        properties: { checked: true },
+        order: 1,
+        children: [],
+      },
+      { id: 'b3', type: 'bulleted_list', content: 'item', properties: {}, order: 2, children: [] },
+    ];
+    const id = await createPage('nest-legacy', 'Title');
+    await admin.query(`UPDATE ${SCHEMA}.wiki_pages SET blocks = $2, content = $3 WHERE id = $1`, [
+      id,
+      JSON.stringify(legacy),
+      pipeline.derivePageContent(legacy),
+    ]);
+    const before = await admin.query(
+      `SELECT blocks::text AS text FROM ${SCHEMA}.wiki_pages WHERE id = $1`,
+      [id]
+    );
+    const loaded = await storage.getWikiPage(id);
+    await pipeline.savePage(
+      store,
+      id,
+      { blocks: JSON.parse(JSON.stringify(loaded.blocks)) },
+      'manual'
+    );
+    await pipeline.savePage(store, id, { blocks: loaded.blocks }, 'autosave');
+    await storage.updateWikiPage(id, { blocks: loaded.blocks });
+    const after = await admin.query(
+      `SELECT blocks::text AS text FROM ${SCHEMA}.wiki_pages WHERE id = $1`,
+      [id]
+    );
+    expect(after.rows[0].text).toBe(before.rows[0].text);
+    expect(await versions(id)).toEqual([]);
+  });
+});
+
 describe('a page in the trash is not written (real Postgres)', () => {
   async function trashedPage(slug: string) {
     const id = await createPage(slug, 'body before trash');

@@ -31,6 +31,7 @@ import {
   Sigma,
   Link2,
   GripVertical,
+  ChevronRight,
 } from 'lucide-react';
 import {
   DragDropContext,
@@ -40,7 +41,17 @@ import {
   type ResponderProvided,
 } from '@hello-pangea/dnd';
 import { cn } from '@/lib/utils';
-import { moveBlock as reorderBlocks, resolveDrop } from '@/lib/block-order';
+import { moveSubtree, resolveSubtreeDrop, subtreeStep, type SubtreeMove } from '@/lib/block-order';
+import {
+  blockIndent,
+  listNumbers,
+  normalizeBlockTree,
+  shiftSubtree,
+  subtreeEnd,
+  visibleBlockIndices,
+} from '@shared/block-tree';
+import { useCollapsedToggles } from '@/lib/toggle-state';
+import { ToggleDisclosure } from './toggle-block';
 import { PageLinkPicker } from '@/components/page/page-links';
 import { EmbedScopeProvider } from '@/components/page/page-embed';
 import { pageLinkToken } from '@shared/page-links';
@@ -77,8 +88,25 @@ interface BlockEditorProps {
   linkTeamId?: number | null;
 }
 
+/** Block types whose text Tab and Shift+Tab indent. Code keeps Tab as text, tables keep it for
+ * moving between cells, and blocks that hold their own editor or media are not text. */
+const INDENTABLE_TYPES: ReadonlySet<string> = new Set([
+  'paragraph',
+  'heading1',
+  'heading2',
+  'heading3',
+  'bulleted_list',
+  'numbered_list',
+  'checkbox',
+  'toggle',
+  'quote',
+]);
+
+/** The marker of a bulleted item at each nesting level. */
+const BULLETS = ['•', '◦', '▪'];
+
 export function BlockEditor({
-  blocks,
+  blocks: blocksProp,
   onChange,
   teamName,
   pageId,
@@ -89,6 +117,11 @@ export function BlockEditor({
   linkTeamId = null,
 }: BlockEditorProps) {
   const { flags } = useFeatureFlags();
+  // Nesting as the server stores it (indent clamped, parentId recomputed): what is shown, edited
+  // and handed to `onChange` is always a consistent tree.
+  const blocks = useMemo(() => normalizeBlockTree(blocksProp), [blocksProp]);
+  const emitBlocks = useCallback((next: Block[]) => onChange(normalizeBlockTree(next)), [onChange]);
+  const { isCollapsed, setCollapsed } = useCollapsedToggles(pageId);
   const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null);
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const addBlockRef = useRef<(index: number, type?: BlockType) => void>(() => {});
@@ -235,7 +268,7 @@ export function BlockEditor({
       // 충돌 해결 및 블록 업데이트
       const updatedBlocks = collaborationSync.processRemoteChange(change, blocks);
       if (updatedBlocks !== blocks) {
-        onChange(updatedBlocks);
+        emitBlocks(updatedBlocks);
       }
     };
 
@@ -271,14 +304,24 @@ export function BlockEditor({
 
   // 블록 추가 함수
   const addBlock = useCallback(
-    (index: number, type: BlockType = 'paragraph') => {
+    (index: number, type: BlockType = 'paragraph', indent?: number) => {
       lastShortcutRef.current = null;
+      // A new block sits at the level of the block above it; where that block has blocks nested
+      // under it, the new one is the first of them, so it never takes them over.
+      const above = blocks[index - 1];
+      const below = blocks[index];
+      const level =
+        indent ??
+        (above
+          ? blockIndent(above) + (below && blockIndent(below) > blockIndent(above) ? 1 : 0)
+          : 0);
       const newBlock: Block = {
         id: `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         type,
         content: '',
         properties: {},
         order: index,
+        ...(level > 0 ? { indent: level } : {}),
         children: [],
       };
 
@@ -297,7 +340,7 @@ export function BlockEditor({
           block.order = idx;
         });
 
-        onChange(newBlocks);
+        emitBlocks(newBlocks);
 
         // 실시간 협업: 추가 변경사항 전송
         if (pageId && collaboration.isConnected) {
@@ -331,7 +374,7 @@ export function BlockEditor({
         newBlocks.forEach((block, idx) => {
           block.order = idx;
         });
-        onChange(newBlocks);
+        emitBlocks(newBlocks);
 
         // 실시간 협업: 삭제 변경사항 전송
         if (pageId && collaboration.isConnected) {
@@ -363,7 +406,7 @@ export function BlockEditor({
         const newBlocks = blocks.map((block) =>
           block.id === blockId ? { ...block, ...updates } : block
         );
-        onChange(newBlocks);
+        emitBlocks(newBlocks);
 
         // 실시간 협업: 변경사항 전송
         if (pageId && collaboration.isConnected) {
@@ -391,19 +434,59 @@ export function BlockEditor({
     [blocks, onChange, pageId, collaboration, useYjs, yjsCollaboration]
   );
 
-  // 블록 이동 함수 (issue #103 E3): drag, Alt+↑/↓ and the drag handle's keyboard mode.
-  const moveBlockAt = useCallback(
-    (from: number, to: number) => {
-      if (from === to || to < 0 || to >= blocks.length) return;
+  // 블록 이동 함수 (issue #103 E3): drag, Alt+↑/↓ and the drag handle's keyboard mode. A block
+  // moves together with the blocks nested under it (WP11).
+  const moveBlocksBy = useCallback(
+    (move: SubtreeMove) => {
+      if (move.from === move.to || move.count < 1) return;
       if (useYjs && yjsCollaboration.isSynced) {
         // Yjs CRDT: one transaction, so collaborators converge on the new order.
-        yjsCollaboration.moveBlock(from, to);
+        yjsCollaboration.moveBlocks(move);
       } else {
         // The legacy Socket.IO channel has no move; pages edit through Yjs or autosave.
-        onChange(reorderBlocks(blocks, from, to));
+        emitBlocks(moveSubtree(blocks, move));
       }
     },
     [blocks, onChange, useYjs, yjsCollaboration]
+  );
+
+  // Tab / Shift+Tab (WP11): the block and the blocks nested under it go one level deeper or
+  // shallower, keeping their depth relative to it. A block only goes one level deeper than the
+  // block before it, so an indent that is not allowed changes nothing.
+  const shiftBlockIndent = useCallback(
+    (blockId: string, delta: 1 | -1) => {
+      lastShortcutRef.current = null;
+      const parentAfter = (list: Block[]) => list.find((b) => b.id === blockId)?.parentId;
+      if (useYjs && yjsCollaboration.isSynced) {
+        const index = blocks.findIndex((b) => b.id === blockId);
+        const parent = parentAfter(shiftSubtree(blocks, index, delta));
+        if (parent) setCollapsed(parent, false);
+        yjsCollaboration.editTree((current) =>
+          shiftSubtree(
+            current,
+            current.findIndex((b) => b.id === blockId),
+            delta
+          )
+        );
+        return;
+      }
+      const index = blocks.findIndex((b) => b.id === blockId);
+      const next = shiftSubtree(blocks, index, delta);
+      if (next === blocks) return;
+      // Going under a collapsed toggle would hide the block being edited.
+      const parent = parentAfter(next);
+      if (parent) setCollapsed(parent, false);
+      emitBlocks(next);
+      if (pageId && collaboration.isConnected) {
+        collaboration.sendDocumentChange({
+          pageId,
+          blockId,
+          type: 'update',
+          data: { blocks: next },
+        });
+      }
+    },
+    [blocks, onChange, pageId, collaboration, useYjs, yjsCollaboration, setCollapsed]
   );
 
   // Divider (#113 §1): the block at `index` becomes a divider (`replace`) or one is inserted below
@@ -413,12 +496,15 @@ export function BlockEditor({
   const insertDivider = (index: number, replace: boolean, text?: string) => {
     lastShortcutRef.current = null;
     const stamp = `${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+    // The divider and the paragraph below it sit at the level of the block they come from.
+    const level = blockIndent(blocks[index]);
     const fresh = (id: string, type: BlockType): Block => ({
       id,
       type,
       content: '',
       properties: {},
       order: 0,
+      ...(level > 0 ? { indent: level } : {}),
       children: [],
     });
     const paragraph = fresh(`block_${stamp}`, 'paragraph');
@@ -441,7 +527,7 @@ export function BlockEditor({
       const ordered = next.map((block, order) =>
         block.order === order ? block : { ...block, order }
       );
-      onChange(ordered);
+      emitBlocks(ordered);
       if (pageId && collaboration.isConnected) {
         collaboration.sendDocumentChange({
           pageId,
@@ -469,7 +555,10 @@ export function BlockEditor({
       stamp: `${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
     });
     if (!insertion) return;
-    const { index, replace, embed } = insertion;
+    const { index, replace } = insertion;
+    // The embed sits at the level of the block it comes from.
+    const level = blockIndent(blocks[index]);
+    const embed = level > 0 ? { ...insertion.embed, indent: level } : insertion.embed;
     if (useYjs && yjsCollaboration.isSynced) {
       if (replace) {
         yjsCollaboration.updateBlock(index, {
@@ -482,7 +571,9 @@ export function BlockEditor({
         yjsCollaboration.insertBlock(index + 1, embed);
       }
     } else {
-      onChange(insertion.blocks);
+      emitBlocks(
+        insertion.blocks.map((block) => (block.id === embed.id ? { ...block, ...embed } : block))
+      );
       if (insertion.change && collaboration.isConnected) {
         collaboration.sendDocumentChange(insertion.change);
       }
@@ -498,6 +589,8 @@ export function BlockEditor({
     const index = blocks.findIndex((b) => b.id === blockId);
     if (index === -1) return;
     const stamp = `${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+    // The copy sits at the level of the reference it replaces.
+    const level = blockIndent(blocks[index]);
     const copies: Block[] = content.map((raw, offset) => {
       const source = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
       const type = (blockTypes as readonly string[]).includes(source.type as string)
@@ -517,6 +610,7 @@ export function BlockEditor({
         content: typeof source.content === 'string' ? source.content : '',
         properties,
         order: 0,
+        ...(level > 0 ? { indent: level } : {}),
         children: [],
       };
     });
@@ -527,6 +621,7 @@ export function BlockEditor({
         content: '',
         properties: {},
         order: 0,
+        ...(level > 0 ? { indent: level } : {}),
         children: [],
       });
     }
@@ -536,7 +631,7 @@ export function BlockEditor({
     } else {
       const next = [...blocks];
       next.splice(index, 1, ...copies);
-      onChange(next.map((block, order) => (block.order === order ? block : { ...block, order })));
+      emitBlocks(next.map((block, order) => (block.order === order ? block : { ...block, order })));
     }
     setFocusedBlockId(copies[0].id);
   };
@@ -599,13 +694,35 @@ export function BlockEditor({
   // Screen reader feedback for Alt+↑/↓ moves (drags announce through the dnd library).
   const [moveAnnouncement, setMoveAnnouncement] = useState('');
 
+  // The rows shown: blocks inside a collapsed toggle are hidden (the viewer's own state). Drags
+  // report positions among these rows.
+  const visibleIndices = useMemo(
+    () => visibleBlockIndices(blocks, (block) => isCollapsed(block.id as string)),
+    [blocks, isCollapsed]
+  );
+  const itemNumbers = useMemo(() => listNumbers(blocks), [blocks]);
+
   const handleRowKeyDown = (event: React.KeyboardEvent, index: number) => {
     if (undoMarkdownShortcut(event, blocks[index])) return;
+    // Tab / Shift+Tab in the text of a block (WP11); the menus that are open keep the key.
+    if (
+      event.key === 'Tab' &&
+      !event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      event.target instanceof HTMLTextAreaElement &&
+      INDENTABLE_TYPES.has(blocks[index].type)
+    ) {
+      event.preventDefault();
+      if (!slashMenu.isOpen && !linkPicker)
+        shiftBlockIndent(blocks[index].id, event.shiftKey ? -1 : 1);
+      return;
+    }
     if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
     event.preventDefault();
-    const to = event.key === 'ArrowUp' ? index - 1 : index + 1;
-    if (to < 0 || to >= blocks.length) return;
+    const move = subtreeStep(blocks, index, event.key === 'ArrowUp' ? -1 : 1);
+    if (!move) return;
 
     // Reordering can move the focused element in the DOM, which drops focus; put it back.
     const active = document.activeElement as HTMLElement | null;
@@ -613,8 +730,8 @@ export function BlockEditor({
       active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement
         ? [active.selectionStart, active.selectionEnd]
         : null;
-    moveBlockAt(index, to);
-    setMoveAnnouncement(`블록을 ${to + 1}번째 위치로 옮겼습니다 (${blocks.length}개 중)`);
+    moveBlocksBy(move);
+    setMoveAnnouncement(`블록을 ${move.to + 1}번째 위치로 옮겼습니다 (${blocks.length}개 중)`);
     requestAnimationFrame(() => {
       if (!active?.isConnected) return;
       if (document.activeElement !== active) active.focus();
@@ -630,12 +747,17 @@ export function BlockEditor({
       return;
     }
     // Resolve by id: the order may have changed under the drag (a collaborator's edit).
-    const move = resolveDrop(blocks, result.draggableId, result.destination.index);
+    const move = resolveSubtreeDrop(
+      blocks,
+      visibleIndices,
+      result.draggableId,
+      result.destination.index
+    );
     if (!move) {
       provided.announce('블록을 옮기지 않았습니다');
       return;
     }
-    moveBlockAt(move.from, move.to);
+    moveBlocksBy(move);
     provided.announce(`블록을 ${move.to + 1}번째 위치에 놓았습니다`);
   };
 
@@ -703,15 +825,15 @@ export function BlockEditor({
       case 'numbered_list': {
         // List items edit like paragraphs behind a marker. Enter continues the list; Enter on an
         // empty item turns it back into a paragraph.
-        let number = 1;
-        while (index - number >= 0 && blocks[index - number].type === 'numbered_list') number++;
+        const number = itemNumbers[index];
+        const level = blockIndent(block);
         return (
           <div key={`list-${block.id}`} className="flex items-start">
             <span
               aria-hidden="true"
               className="w-6 shrink-0 select-none pt-2 text-right leading-relaxed text-muted-foreground"
             >
-              {block.type === 'bulleted_list' ? '•' : `${number}.`}
+              {block.type === 'bulleted_list' ? BULLETS[level % BULLETS.length] : `${number}.`}
             </span>
             <div className="min-w-0 flex-1">
               <ParagraphBlock
@@ -725,6 +847,27 @@ export function BlockEditor({
               />
             </div>
           </div>
+        );
+      }
+      case 'toggle': {
+        // The summary line. Enter adds the first nested block of an open toggle, or a block after
+        // a collapsed one and everything nested under it.
+        const collapsed = isCollapsed(block.id);
+        return (
+          <ToggleDisclosure
+            collapsed={collapsed}
+            onToggle={() => setCollapsed(block.id, !collapsed)}
+          >
+            <ParagraphBlock
+              {...commonProps}
+              placeholder="토글"
+              onAddBlock={() =>
+                collapsed
+                  ? addBlock(subtreeEnd(blocks, index), 'paragraph', blockIndent(block))
+                  : addBlock(index + 1, 'paragraph', blockIndent(block) + 1)
+              }
+            />
+          </ToggleDisclosure>
         );
       }
       case 'checkbox':
@@ -1035,51 +1178,65 @@ export function BlockEditor({
                     {...dropProvided.droppableProps}
                     className="space-y-1"
                   >
-                    {blocks.map((block, index) => (
-                      <Draggable key={block.id} draggableId={block.id} index={index}>
-                        {(dragProvided, snapshot) => (
-                          <div
-                            ref={dragProvided.innerRef}
-                            {...dragProvided.draggableProps}
-                            id={headingAnchors.get(block.id)}
-                            data-block-row={block.id}
-                            data-block-type={block.type}
-                            onKeyDown={(event) => handleRowKeyDown(event, index)}
-                            className={cn(
-                              // The gutter hangs into the left margin so text lines up near the title.
-                              'group/row relative -ml-4 flex items-start gap-0.5 sm:-ml-12 sm:gap-1',
-                              snapshot.isDragging &&
-                                'rounded-lg bg-card shadow-lg ring-1 ring-border'
-                            )}
-                          >
-                            {/* Gutter: insert below and the drag handle (keyboard: Space). The
+                    {visibleIndices.map((index, position) => {
+                      const block = blocks[index];
+                      const indent = blockIndent(block);
+                      return (
+                        <Draggable key={block.id} draggableId={block.id} index={position}>
+                          {(dragProvided, snapshot) => (
+                            <div
+                              ref={dragProvided.innerRef}
+                              {...dragProvided.draggableProps}
+                              id={headingAnchors.get(block.id)}
+                              data-block-row={block.id}
+                              data-block-type={block.type}
+                              data-block-indent={indent}
+                              onKeyDown={(event) => handleRowKeyDown(event, index)}
+                              className={cn(
+                                // The gutter hangs into the left margin so text lines up near the title.
+                                'group/row relative -ml-4 flex items-start gap-0.5 sm:-ml-12 sm:gap-1',
+                                snapshot.isDragging &&
+                                  'rounded-lg bg-card shadow-lg ring-1 ring-border'
+                              )}
+                            >
+                              {/* Gutter: insert below and the drag handle (keyboard: Space). The
                               targets are 24px on touch screens (WCAG 2.5.8); `!min-*` overrides
                               the global 44px mobile minimum, which would double the gutter. */}
-                            <div className="flex w-6 shrink-0 items-center justify-end gap-0.5 pt-2 opacity-0 transition-opacity focus-within:opacity-100 group-hover/row:opacity-100 [@media(hover:none)]:opacity-60 sm:w-11 sm:pt-2.5">
-                              <button
-                                type="button"
-                                onClick={() => addBlock(index + 1, 'paragraph')}
-                                aria-label="아래에 블록 추가"
-                                title="아래에 블록 추가"
-                                className="hidden h-5 w-5 !min-h-0 !min-w-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:inline-flex"
-                              >
-                                <Plus className="h-4 w-4" />
-                              </button>
+                              <div className="flex w-6 shrink-0 items-center justify-end gap-0.5 pt-2 opacity-0 transition-opacity focus-within:opacity-100 group-hover/row:opacity-100 [@media(hover:none)]:opacity-60 sm:w-11 sm:pt-2.5">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    addBlock(subtreeEnd(blocks, index), 'paragraph', indent)
+                                  }
+                                  aria-label="아래에 블록 추가"
+                                  title="아래에 블록 추가"
+                                  className="hidden h-5 w-5 !min-h-0 !min-w-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:inline-flex"
+                                >
+                                  <Plus className="h-4 w-4" />
+                                </button>
+                                <div
+                                  {...dragProvided.dragHandleProps}
+                                  aria-label={`블록 ${position + 1} 이동`}
+                                  title="드래그해서 이동"
+                                  data-testid="block-drag-handle"
+                                  className="inline-flex h-6 w-6 !min-h-0 !min-w-0 cursor-grab items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing sm:h-5 sm:w-5"
+                                >
+                                  <GripVertical className="h-4 w-4" />
+                                </div>
+                              </div>
                               <div
-                                {...dragProvided.dragHandleProps}
-                                aria-label={`블록 ${index + 1} 이동`}
-                                title="드래그해서 이동"
-                                data-testid="block-drag-handle"
-                                className="inline-flex h-6 w-6 !min-h-0 !min-w-0 cursor-grab items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing sm:h-5 sm:w-5"
+                                className="min-w-0 flex-1"
+                                style={
+                                  indent > 0 ? { marginLeft: `${indent * 1.5}rem` } : undefined
+                                }
                               >
-                                <GripVertical className="h-4 w-4" />
+                                {renderBlock(block, index)}
                               </div>
                             </div>
-                            <div className="min-w-0 flex-1">{renderBlock(block, index)}</div>
-                          </div>
-                        )}
-                      </Draggable>
-                    ))}
+                          )}
+                        </Draggable>
+                      );
+                    })}
                     {dropProvided.placeholder}
                   </div>
                 )}
@@ -1103,51 +1260,55 @@ export function BlockEditor({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="center">
-                  <DropdownMenuItem onClick={() => addBlock(blocks.length, 'paragraph')}>
+                  <DropdownMenuItem onClick={() => addBlock(blocks.length, 'paragraph', 0)}>
                     <AlignLeft className="h-4 w-4 mr-2" />
                     단락
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => addBlock(blocks.length, 'heading1')}>
+                  <DropdownMenuItem onClick={() => addBlock(blocks.length, 'toggle', 0)}>
+                    <ChevronRight className="h-4 w-4 mr-2" />
+                    토글
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => addBlock(blocks.length, 'heading1', 0)}>
                     <Type className="h-4 w-4 mr-2" />
                     제목 1
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => addBlock(blocks.length, 'heading2')}>
+                  <DropdownMenuItem onClick={() => addBlock(blocks.length, 'heading2', 0)}>
                     <Type className="h-4 w-4 mr-2" />
                     제목 2
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => addBlock(blocks.length, 'heading3')}>
+                  <DropdownMenuItem onClick={() => addBlock(blocks.length, 'heading3', 0)}>
                     <Type className="h-4 w-4 mr-2" />
                     제목 3
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => addBlock(blocks.length, 'checkbox')}>
+                  <DropdownMenuItem onClick={() => addBlock(blocks.length, 'checkbox', 0)}>
                     <CheckSquare className="h-4 w-4 mr-2" />
                     체크박스
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => addBlock(blocks.length, 'image')}>
+                  <DropdownMenuItem onClick={() => addBlock(blocks.length, 'image', 0)}>
                     <ImageIcon className="h-4 w-4 mr-2" />
                     이미지
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => addBlock(blocks.length, 'table')}>
+                  <DropdownMenuItem onClick={() => addBlock(blocks.length, 'table', 0)}>
                     <TableIcon className="h-4 w-4 mr-2" />
                     테이블
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => addBlock(blocks.length, 'code')}>
+                  <DropdownMenuItem onClick={() => addBlock(blocks.length, 'code', 0)}>
                     <Code className="h-4 w-4 mr-2" />
                     코드
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => addBlock(blocks.length, 'quote')}>
+                  <DropdownMenuItem onClick={() => addBlock(blocks.length, 'quote', 0)}>
                     <Quote className="h-4 w-4 mr-2" />
                     인용
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => addBlock(blocks.length, 'callout')}>
+                  <DropdownMenuItem onClick={() => addBlock(blocks.length, 'callout', 0)}>
                     <Lightbulb className="h-4 w-4 mr-2" />
                     Callout
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => addBlock(blocks.length, 'embed')}>
+                  <DropdownMenuItem onClick={() => addBlock(blocks.length, 'embed', 0)}>
                     <Video className="h-4 w-4 mr-2" />
                     Embed
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => addBlock(blocks.length, 'math')}>
+                  <DropdownMenuItem onClick={() => addBlock(blocks.length, 'math', 0)}>
                     <Sigma className="h-4 w-4 mr-2" />
                     수식
                   </DropdownMenuItem>
