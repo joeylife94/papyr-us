@@ -55,6 +55,55 @@ function rehypePageLinks() {
   return (tree: Root) => replacePageLinkTokens(tree);
 }
 
+const TOGGLE_OPENING = /^<details(?:\s+open)?\s*>\s*<summary>([^<]*)<\/summary>\s*$/i;
+const TOGGLE_CLOSING = /^<\/details>\s*$/i;
+
+type MdastParent = { children: MdastChild[] };
+type MdastChild = { type: string; value?: string; children?: MdastChild[]; data?: unknown };
+
+/**
+ * Toggles (WP11): the `<details>`, `<summary>…</summary>` … `</details>` lines the block Markdown
+ * writes for a toggle block (shared/block-markdown.ts) become real `details` elements, open to
+ * begin with, so every reader of a page can open and close them. Only that exact shape is
+ * recognised: the summary is plain text (the three entities the writer escapes are decoded, and
+ * the text is escaped again when rendered), and any other raw HTML is still dropped. A closing
+ * line without an opening one is dropped.
+ */
+function remarkToggles() {
+  return (root: unknown) => {
+    const tree = root as MdastParent;
+    const out: MdastChild[] = [];
+    const open: MdastChild[] = [];
+    for (const node of tree.children) {
+      const html = node.type === 'html' ? (node.value ?? '').trim() : '';
+      const opening = html ? TOGGLE_OPENING.exec(html) : null;
+      if (opening) {
+        const summary = opening[1].replace(/&(amp|lt|gt);/g, (_m, name: string) =>
+          name === 'amp' ? '&' : name === 'lt' ? '<' : '>'
+        );
+        const toggle: MdastChild = {
+          type: 'toggle',
+          data: { hName: 'details', hProperties: { open: true } },
+          children: [
+            {
+              type: 'paragraph',
+              data: { hName: 'summary' },
+              children: [{ type: 'text', value: summary }],
+            },
+          ],
+        };
+        (open[open.length - 1]?.children ?? out).push(toggle);
+        open.push(toggle);
+      } else if (html && TOGGLE_CLOSING.test(html)) {
+        open.pop();
+      } else {
+        (open[open.length - 1]?.children ?? out).push(node);
+      }
+    }
+    tree.children = out;
+  };
+}
+
 /** A paragraph's inline content split into lines (text nodes split at their line breaks). */
 function paragraphLines(children: readonly ElementContent[]): ElementContent[][] {
   const lines: ElementContent[][] = [[]];
@@ -225,6 +274,7 @@ export async function markdownToHtml(
   const footnoteIds = `user-content-${options.footnoteIdPrefix ?? ''}`;
   const processor = remark()
     .use(remarkGfm)
+    .use(remarkToggles)
     .use(remarkRehype, { clobberPrefix: footnoteIds })
     .use(rehypeFootnoteLabelId, {
       id: options.footnoteIdPrefix ? `${footnoteIds}footnote-label` : undefined,

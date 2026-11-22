@@ -92,6 +92,7 @@ import {
   snapshotBeforeRestore,
   setSessionClosedHandler,
   storagePageSaveStore,
+  derivePageContent,
 } from './services/page-save.js';
 import {
   buildPageTree,
@@ -138,6 +139,7 @@ import { registerKnowledgeRoutes } from './routes/knowledge.js';
 import { buildKnowledgeGraph, suggestAiLinks } from './services/knowledge-graph.js';
 import { aiRefusalFor, aiUsableBy, requireOrganizationAi } from './organization-guards.js';
 import { isReservedDailyNoteSlug } from '../shared/daily-notes.js';
+import { normalizeBlockTree } from '../shared/block-tree.js';
 import { isPageId } from '../shared/page-links.js';
 import { draftPageExcerpt, excerptLinkIds, renderPageExcerpt } from '../shared/page-excerpt.js';
 import { registerDailyNoteRoutes } from './routes/daily-notes.js';
@@ -1418,10 +1420,14 @@ export async function registerRoutes(
         // Keep the current state as a version first, so restoring never loses the latest edit.
         await snapshotBeforeRestore(pageSaveStore, pageId);
 
+        // A version's nesting is made consistent like any other write; content follows the blocks
+        // when that changed them.
+        const restoredBlocks = normalizeBlockTree(version.blocks as any);
         const restoredPage = await storage.updateWikiPage(pageId, {
           title: version.title,
-          content: version.content,
-          blocks: version.blocks as any,
+          content:
+            restoredBlocks === version.blocks ? version.content : derivePageContent(restoredBlocks),
+          blocks: restoredBlocks,
         });
 
         if (!restoredPage) {

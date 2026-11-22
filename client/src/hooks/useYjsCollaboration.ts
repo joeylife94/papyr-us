@@ -3,6 +3,9 @@ import * as Y from 'yjs';
 import { Awareness } from 'y-protocols/awareness';
 import { io, Socket } from 'socket.io-client';
 import { Block } from '@shared/schema';
+import { normalizeBlockTree } from '@shared/block-tree';
+import type { SubtreeMove } from '@/lib/block-order';
+import { editBlocks, moveBlockRange, reconcileTree } from '@/lib/yjs-block-ops';
 
 export interface User {
   id: string;
@@ -156,7 +159,8 @@ export function useYjsCollaboration({
     // Skipping remote updates here meant other users' edits were applied to the Y.Doc but
     // never rendered.
     const observer = () => {
-      const blocks = yblocks.toArray();
+      // Nesting is shown as the server will store it: indent clamped, parentId recomputed.
+      const blocks = normalizeBlockTree(yblocks.toArray());
       callbacksRef.current.onBlocksChange(blocks);
     };
 
@@ -305,6 +309,7 @@ export function useYjsCollaboration({
 
     ydocRef.current?.transact(() => {
       yblocks.insert(index, [block]);
+      reconcileTree(yblocks);
     });
   }, []);
 
@@ -317,6 +322,7 @@ export function useYjsCollaboration({
       const currentBlock = yblocks.get(index);
       yblocks.delete(index, 1);
       yblocks.insert(index, [{ ...currentBlock, ...block }]);
+      reconcileTree(yblocks);
     });
   }, []);
 
@@ -327,6 +333,7 @@ export function useYjsCollaboration({
 
     ydocRef.current?.transact(() => {
       yblocks.delete(index, 1);
+      reconcileTree(yblocks);
     });
   }, []);
 
@@ -340,7 +347,25 @@ export function useYjsCollaboration({
       const block = yblocks.get(from);
       yblocks.delete(from, 1);
       yblocks.insert(to, [block]);
+      reconcileTree(yblocks);
     });
+  }, []);
+
+  // Move a block together with the blocks nested under it (WP11): one transaction.
+  const moveBlocks = useCallback((move: SubtreeMove) => {
+    const ydoc = ydocRef.current;
+    const yblocks = yblocksRef.current;
+    if (!ydoc || !yblocks) return;
+    moveBlockRange(ydoc, yblocks, move);
+  }, []);
+
+  // Change the nesting of several blocks at once (WP11): `change` maps the shared list to a list
+  // of the same length; only the blocks that differ are rewritten, in one transaction.
+  const editTree = useCallback((change: (blocks: Block[]) => Block[]) => {
+    const ydoc = ydocRef.current;
+    const yblocks = yblocksRef.current;
+    if (!ydoc || !yblocks) return;
+    editBlocks(ydoc, yblocks, change);
   }, []);
 
   // Update cursor position
@@ -392,6 +417,8 @@ export function useYjsCollaboration({
     updateBlock,
     deleteBlock,
     moveBlock,
+    moveBlocks,
+    editTree,
     updateCursor,
     saveToDatabase,
   };

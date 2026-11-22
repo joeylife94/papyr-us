@@ -269,12 +269,17 @@ describe('markdownToBlocks', () => {
     ]);
   });
 
-  it('keeps continuation lines, nested items and lazy lines in their item or quote', () => {
+  it('keeps continuation lines and lazy lines in their item or quote, and nests items', () => {
+    // Nesting (WP11): an item two columns in is a nested item (its own block, one level deeper);
+    // text indented to a list's content, a blank line later, stays in the list.
     expect(
-      essence(markdownToBlocks('- parent\n  - child\n  more\n\n  after blank\nlazy\n- next'))
+      markdownToBlocks('- parent\n  - child\n  more\n\n  after blank\nlazy\n- next').map(
+        ({ type, content, indent }) => ({ type, content, indent })
+      )
     ).toEqual([
-      { type: 'bulleted_list', content: 'parent\n- child\nmore\n\nafter blank\nlazy' },
-      { type: 'bulleted_list', content: 'next' },
+      { type: 'bulleted_list', content: 'parent', indent: undefined },
+      { type: 'bulleted_list', content: 'child\nmore\n\nafter blank\nlazy', indent: 1 },
+      { type: 'bulleted_list', content: 'next', indent: undefined },
     ]);
     expect(essence(markdownToBlocks('> quote\nlazy\n\nafter'))).toEqual([
       { type: 'quote', content: 'quote\nlazy' },
@@ -444,5 +449,218 @@ describe('round trip', () => {
       const once = blocksToMarkdown(markdownToBlocks(md));
       expect(blocksToMarkdown(markdownToBlocks(once))).toBe(once);
     }
+  });
+});
+
+// WP11 (owner decision O5): nesting in the flat list. Lists and to-dos nest as Markdown lists,
+// toggles as <details>, and both read back as the same blocks.
+describe('nested blocks and toggles', () => {
+  const nested = (
+    type: string,
+    content: string,
+    indent = 0,
+    properties: Record<string, unknown> = {}
+  ) => ({ ...block(type, content, properties), ...(indent ? { indent } : {}) });
+
+  /** The parts of a block the nesting round trip must preserve. */
+  const shape = (blocks: any[]) =>
+    blocks.map((b) => ({
+      type: b.type,
+      content: b.content,
+      indent: b.indent ?? 0,
+      ...(b.type === 'checkbox' ? { checked: !!b.properties?.checked } : {}),
+    }));
+
+  const roundTrip = (blocks: any[]) => markdownToBlocks(blocksToMarkdown(blocks));
+
+  it('writes nested list items at the parent content column, two spaces per level for bullets', () => {
+    expect(
+      blocksToMarkdown([
+        nested('bulleted_list', 'a'),
+        nested('bulleted_list', 'b', 1),
+        nested('checkbox', 'c', 2),
+        nested('bulleted_list', 'd', 1),
+        nested('bulleted_list', 'e'),
+      ])
+    ).toBe('- a\n  - b\n    - [ ] c\n  - d\n- e');
+  });
+
+  it('nests under a numbered item at its wider marker, and numbers each level on its own', () => {
+    expect(
+      blocksToMarkdown([
+        nested('numbered_list', 'a'),
+        nested('numbered_list', 'b', 1),
+        nested('numbered_list', 'c', 1),
+        nested('numbered_list', 'd'),
+        nested('bulleted_list', 'e', 1),
+        nested('numbered_list', 'f', 1),
+      ])
+    ).toBe('1. a\n   1. b\n   2. c\n2. d\n   - e\n\n   1. f');
+  });
+
+  it('writes a toggle as <details> holding its nested blocks, closed after the last one', () => {
+    expect(
+      blocksToMarkdown([
+        nested('toggle', 'Open me'),
+        nested('paragraph', 'inside', 1),
+        nested('toggle', 'deeper', 1),
+        nested('paragraph', 'deepest', 2),
+        nested('paragraph', 'outside'),
+      ])
+    ).toBe(
+      [
+        '<details>\n<summary>Open me</summary>',
+        'inside',
+        '<details>\n<summary>deeper</summary>',
+        'deepest',
+        '</details>',
+        '</details>',
+        'outside',
+      ].join('\n\n')
+    );
+    expect(blocksToMarkdown([nested('toggle', 'empty')])).toBe(
+      '<details>\n<summary>empty</summary>\n\n</details>'
+    );
+  });
+
+  it('escapes markup in a toggle summary and keeps it on one line', () => {
+    const md = blocksToMarkdown([nested('toggle', '<script>alert(1)</script> & "x"\nsecond')]);
+    expect(md).toBe(
+      '<details>\n<summary>&lt;script&gt;alert(1)&lt;/script&gt; &amp; "x" second</summary>\n\n</details>'
+    );
+    expect(md).not.toContain('<script>');
+    expect(markdownToBlocks(md)[0].content).toBe('<script>alert(1)</script> & "x" second');
+  });
+
+  it('reads a summary that is already escaped literally, so text such as &lt; survives a round trip', () => {
+    const blocks = [nested('toggle', 'a &lt; b &amp;amp; c')];
+    expect(roundTrip(blocks)[0].content).toBe('a &lt; b &amp;amp; c');
+  });
+
+  it('round-trips lists and to-dos nested at mixed depths', () => {
+    const blocks = [
+      nested('paragraph', 'intro'),
+      nested('bulleted_list', 'a'),
+      nested('numbered_list', 'one', 1),
+      nested('numbered_list', 'two', 1),
+      nested('checkbox', 'todo', 2, { checked: true }),
+      nested('bulleted_list', 'b', 1),
+      nested('bulleted_list', 'c'),
+      nested('checkbox', 'x'),
+      nested('checkbox', 'y', 1),
+      nested('numbered_list', 'top'),
+      nested('numbered_list', 'next'),
+    ];
+    const back = roundTrip(blocks);
+    expect(shape(back)).toEqual(shape(blocks));
+    expect(blocksToMarkdown(back)).toBe(blocksToMarkdown(blocks));
+    // The parent links come back too.
+    expect((back[4] as any).parentId).toBe(back[3].id);
+  });
+
+  it('round-trips toggles, nested toggles and lists inside toggles', () => {
+    const blocks = [
+      nested('toggle', 'Q & A'),
+      nested('paragraph', 'answer', 1),
+      nested('bulleted_list', 'point', 1),
+      nested('bulleted_list', 'sub point', 2),
+      nested('toggle', 'more', 1),
+      nested('heading2', 'Inside', 2),
+      nested('checkbox', 'task', 2, { checked: false }),
+      nested('paragraph', 'after toggles'),
+      nested('toggle', 'second'),
+      nested('paragraph', 'last', 1),
+    ];
+    const back = roundTrip(blocks);
+    expect(shape(back)).toEqual(shape(blocks));
+    expect(blocksToMarkdown(back)).toBe(blocksToMarkdown(blocks));
+  });
+
+  it('writes a nested block that Markdown cannot nest without its nesting, in order', () => {
+    const md = blocksToMarkdown([
+      nested('bulleted_list', 'a'),
+      nested('paragraph', 'under a list item', 1),
+      nested('bulleted_list', 'b'),
+    ]);
+    expect(md).toBe('- a\n\nunder a list item\n\n- b');
+    expect(shape(markdownToBlocks(md)).map((b) => b.indent)).toEqual([0, 0, 0]);
+  });
+
+  it('reads nested lists written by other tools, with tabs or four-space indents', () => {
+    expect(shape(markdownToBlocks('- a\n\t- b\n\t\t- c\n- d'))).toEqual([
+      { type: 'bulleted_list', content: 'a', indent: 0 },
+      { type: 'bulleted_list', content: 'b', indent: 1 },
+      { type: 'bulleted_list', content: 'c', indent: 2 },
+      { type: 'bulleted_list', content: 'd', indent: 0 },
+    ]);
+    expect(shape(markdownToBlocks('1. a\n    - b\n        1. c'))).toEqual([
+      { type: 'numbered_list', content: 'a', indent: 0 },
+      { type: 'bulleted_list', content: 'b', indent: 1 },
+      { type: 'numbered_list', content: 'c', indent: 2 },
+    ]);
+  });
+
+  it('keeps fenced code inside a list item as the item text', () => {
+    const blocks = markdownToBlocks('- run\n  ```\n  - not an item\n  ```\n- next');
+    expect(shape(blocks)).toEqual([
+      { type: 'bulleted_list', content: 'run\n```\n- not an item\n```', indent: 0 },
+      { type: 'bulleted_list', content: 'next', indent: 0 },
+    ]);
+  });
+
+  it('leaves <details> that is not a toggle as text, and a stray closing line as text', () => {
+    const html = '<details>\nplain html\n</details>';
+    expect(essence(markdownToBlocks(html))).toEqual([{ type: 'paragraph', content: html }]);
+    expect(essence(markdownToBlocks('</details>'))).toEqual([
+      { type: 'paragraph', content: '</details>' },
+    ]);
+    // An opening line with other markup in the summary is not the shape the editor writes.
+    const rich = '<details>\n<summary><b>x</b></summary>\n\nbody\n\n</details>';
+    expect(markdownToBlocks(rich).every((b) => b.type !== 'toggle')).toBe(true);
+  });
+
+  it('reads <summary> on the same line as <details>, and an unclosed toggle to the end', () => {
+    expect(shape(markdownToBlocks('<details><summary>Hi</summary>\n\nbody'))).toEqual([
+      { type: 'toggle', content: 'Hi', indent: 0 },
+      { type: 'paragraph', content: 'body', indent: 1 },
+    ]);
+  });
+
+  it('does not read <details> inside a code fence as a toggle', () => {
+    expect(
+      essence(markdownToBlocks('```html\n<details>\n<summary>x</summary>\n</details>\n```'))
+    ).toEqual([
+      { type: 'code', content: '<details>\n<summary>x</summary>\n</details>', language: 'html' },
+    ]);
+  });
+
+  it('derives text for nested blocks and for the children of a collapsed or open toggle', () => {
+    const md = blocksToMarkdown([
+      nested('toggle', 'Secrets'),
+      nested('paragraph', 'hidden words', 1),
+      nested('bulleted_list', 'nested item', 1),
+    ]);
+    expect(md).toContain('hidden words');
+    expect(md).toContain('nested item');
+    expect(md).toContain('Secrets');
+  });
+
+  it('leaves the content of pages without nesting exactly as before', () => {
+    const flat = [
+      block('heading1', 'T'),
+      block('numbered_list', 'a'),
+      block('numbered_list', 'b'),
+      block('paragraph', 'p'),
+      block('bulleted_list', 'c'),
+      block('checkbox', 'd'),
+    ];
+    expect(blocksToMarkdown(flat)).toBe('# T\n\n1. a\n2. b\n\np\n\n- c\n\n* [ ] d');
+  });
+
+  it('keeps ranges pointing at each block when toggles close between them', () => {
+    const blocks = [nested('toggle', 'T'), nested('heading2', 'In', 1), nested('heading2', 'Out')];
+    const { markdown, ranges } = blocksToMarkdownWithRanges(blocks);
+    expect(markdown.slice(ranges[1].start, ranges[1].end)).toBe('## In');
+    expect(markdown.slice(ranges[2].start, ranges[2].end)).toBe('## Out');
   });
 });
