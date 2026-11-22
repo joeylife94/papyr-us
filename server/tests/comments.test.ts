@@ -249,6 +249,19 @@ describe('Comments Management API', () => {
       expect(calledWith).not.toHaveProperty('author');
       expect(calledWith).not.toHaveProperty('authorUserId');
     });
+
+    it('TC-CMT-003f: an edit changes the text only; the page and the thread of a comment stay', async () => {
+      const token = signToken(ownerUser);
+      (storage.updateComment as vi.Mock).mockResolvedValue({ ...mockComment, content: 'ok' });
+
+      const response = await request(app)
+        .put(`/api/comments/${mockComment.id}`)
+        .set('Cookie', authCookie(token))
+        .send({ content: 'ok', pageId: 999, parentId: 555 });
+
+      expect(response.status).toBe(200);
+      expect(storage.updateComment).toHaveBeenCalledWith(mockComment.id, { content: 'ok' });
+    });
   });
 
   describe('DELETE /api/comments/:id', () => {
