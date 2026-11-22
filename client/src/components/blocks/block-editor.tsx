@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useId, useMemo, useRef } from 'react';
 import { Block, BlockType, blockTypes } from '@shared/schema';
 import { HeadingBlock } from './heading-block';
 import { ParagraphBlock } from './paragraph-block';
@@ -54,7 +54,7 @@ import { useCollapsedToggles } from '@/lib/toggle-state';
 import { ToggleDisclosure } from './toggle-block';
 import { PageLinkPicker } from '@/components/page/page-links';
 import { EmbedScopeProvider } from '@/components/page/page-embed';
-import { hasPageLinks, pageLinkToken } from '@shared/page-links';
+import { pageLinkToken } from '@shared/page-links';
 import { matchMarkdownShortcut } from '@/lib/markdown-shortcuts';
 import { planPageEmbedInsertion } from '@/lib/page-embed-insert';
 import { headingIdsByBlock } from '@/lib/markdown';
@@ -102,14 +102,6 @@ const INDENTABLE_TYPES: ReadonlySet<string> = new Set([
   'quote',
 ]);
 
-/** Block types drawn by ParagraphBlock, which lists the page links of its text in a row below. */
-const LINK_ROW_TYPES: ReadonlySet<string> = new Set([
-  'paragraph',
-  'bulleted_list',
-  'numbered_list',
-  'toggle',
-]);
-
 /** The marker of a bulleted item at each nesting level. */
 const BULLETS = ['•', '◦', '▪'];
 
@@ -130,6 +122,13 @@ export function BlockEditor({
   const blocks = useMemo(() => normalizeBlockTree(blocksProp), [blocksProp]);
   const emitBlocks = useCallback((next: Block[]) => onChange(normalizeBlockTree(next)), [onChange]);
   const { isCollapsed, setCollapsed } = useCollapsedToggles(pageId);
+  // Screen reader feedback for indents, moves and the Tab mode (drags also announce through the
+  // dnd library): one polite status region.
+  const [moveAnnouncement, setMoveAnnouncement] = useState('');
+  // After Escape in a text block, Tab and Shift+Tab move focus instead of indenting, until the
+  // next typed character, click or focus entering a text field (a way out of the editor body).
+  const tabMovesFocusRef = useRef(false);
+  const keysHintId = useId();
   const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null);
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const addBlockRef = useRef<(index: number, type?: BlockType) => void>(() => {});
@@ -464,11 +463,18 @@ export function BlockEditor({
   const shiftBlockIndent = useCallback(
     (blockId: string, delta: 1 | -1) => {
       lastShortcutRef.current = null;
-      const parentAfter = (list: Block[]) => list.find((b) => b.id === blockId)?.parentId;
+      const index = blocks.findIndex((b) => b.id === blockId);
+      const next = shiftSubtree(blocks, index, delta);
+      if (next === blocks) {
+        setMoveAnnouncement(delta > 0 ? '더 들여쓸 수 없습니다' : '더 내어쓸 수 없습니다');
+        return;
+      }
+      const level = blockIndent(next[index]);
+      setMoveAnnouncement(level === 0 ? '들여쓰기 수준: 최상위' : `들여쓰기 수준: ${level}단계`);
+      // Going under a collapsed toggle would hide the block being edited.
+      const parent = next[index].parentId;
+      if (parent) setCollapsed(parent, false);
       if (useYjs && yjsCollaboration.isSynced) {
-        const index = blocks.findIndex((b) => b.id === blockId);
-        const parent = parentAfter(shiftSubtree(blocks, index, delta));
-        if (parent) setCollapsed(parent, false);
         yjsCollaboration.editTree((current) =>
           shiftSubtree(
             current,
@@ -478,12 +484,6 @@ export function BlockEditor({
         );
         return;
       }
-      const index = blocks.findIndex((b) => b.id === blockId);
-      const next = shiftSubtree(blocks, index, delta);
-      if (next === blocks) return;
-      // Going under a collapsed toggle would hide the block being edited.
-      const parent = parentAfter(next);
-      if (parent) setCollapsed(parent, false);
       emitBlocks(next);
       if (pageId && collaboration.isConnected) {
         collaboration.sendDocumentChange({
@@ -699,9 +699,6 @@ export function BlockEditor({
     field.setSelectionRange(pending.position, pending.position);
   }, [blocks]);
 
-  // Screen reader feedback for Alt+↑/↓ moves (drags announce through the dnd library).
-  const [moveAnnouncement, setMoveAnnouncement] = useState('');
-
   // The rows shown: blocks inside a collapsed toggle are hidden (the viewer's own state). Drags
   // report positions among these rows.
   const visibleIndices = useMemo(
@@ -710,32 +707,54 @@ export function BlockEditor({
   );
   const itemNumbers = useMemo(() => listNumbers(blocks), [blocks]);
 
+  // Where a moved block lands among the rows shown, counted like the drag handles' labels.
+  const placementAfter = (move: SubtreeMove) => {
+    const next = moveSubtree(blocks, move);
+    const shown = visibleBlockIndices(next, (block) => isCollapsed(block.id as string));
+    return { position: Math.max(shown.indexOf(move.to), 0) + 1, total: shown.length };
+  };
+
   const handleRowKeyDown = (event: React.KeyboardEvent, index: number) => {
     if (undoMarkdownShortcut(event, blocks[index])) return;
-    // Tab / Shift+Tab in the text of a block (WP11); the menus that are open keep the key. Ctrl or
-    // Cmd with ] and [ do the same, and work where Tab has to stay a way to move on: forward Tab
-    // from a block that shows a row of page links reaches the first link, as it always has.
+    // Typing ends the "Tab moves focus" mode.
+    if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      tabMovesFocusRef.current = false;
+    }
+    // Tab / Shift+Tab in the text of a block indent and outdent it (WP11), where that is allowed.
+    // Where it is not (the first block, a block already one level under the one above, level 0),
+    // and in the "Tab moves focus" mode that Escape turns on, Tab keeps its usual job of moving
+    // focus, so the keyboard can always leave the editor body. Ctrl or Cmd with ] and [ indent
+    // and outdent too; the menus that are open keep their keys.
     const block = blocks[index];
     if (event.target instanceof HTMLTextAreaElement && INDENTABLE_TYPES.has(block.type)) {
+      const menuOpen = slashMenu.isOpen || !!linkPicker;
+      if (event.key === 'Escape' && !menuOpen && !event.ctrlKey && !event.metaKey) {
+        tabMovesFocusRef.current = !tabMovesFocusRef.current;
+        setMoveAnnouncement(
+          tabMovesFocusRef.current
+            ? 'Tab이 다음 요소로 이동합니다'
+            : 'Tab이 다시 들여쓰기에 쓰입니다'
+        );
+        return;
+      }
       const withModifier =
         (event.ctrlKey || event.metaKey) &&
         !event.altKey &&
         !event.shiftKey &&
         (event.key === ']' || event.key === '[');
-      const withTab = event.key === 'Tab' && !event.altKey && !event.ctrlKey && !event.metaKey;
-      const reachesLinks =
-        withTab &&
-        !event.shiftKey &&
-        LINK_ROW_TYPES.has(block.type) &&
-        focusedBlockId === block.id &&
-        hasPageLinks(block.content);
-      if ((withTab && !reachesLinks) || withModifier) {
+      if (withModifier && !menuOpen) {
         event.preventDefault();
-        if (!slashMenu.isOpen && !linkPicker) {
-          const outdent = withTab ? event.shiftKey : event.key === '[';
-          shiftBlockIndent(block.id, outdent ? -1 : 1);
-        }
+        shiftBlockIndent(block.id, event.key === '[' ? -1 : 1);
         return;
+      }
+      const withTab = event.key === 'Tab' && !event.altKey && !event.ctrlKey && !event.metaKey;
+      if (withTab && !menuOpen && !tabMovesFocusRef.current) {
+        const delta = event.shiftKey ? -1 : 1;
+        if (shiftSubtree(blocks, index, delta) !== blocks) {
+          event.preventDefault();
+          shiftBlockIndent(block.id, delta);
+          return;
+        }
       }
     }
     if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
@@ -751,7 +770,8 @@ export function BlockEditor({
         ? [active.selectionStart, active.selectionEnd]
         : null;
     moveBlocksBy(move);
-    setMoveAnnouncement(`블록을 ${move.to + 1}번째 위치로 옮겼습니다 (${blocks.length}개 중)`);
+    const placed = placementAfter(move);
+    setMoveAnnouncement(`블록을 ${placed.position}번째 위치로 옮겼습니다 (${placed.total}개 중)`);
     requestAnimationFrame(() => {
       if (!active?.isConnected) return;
       if (document.activeElement !== active) active.focus();
@@ -778,7 +798,7 @@ export function BlockEditor({
       return;
     }
     moveBlocksBy(move);
-    provided.announce(`블록을 ${move.to + 1}번째 위치에 놓았습니다`);
+    provided.announce(`블록을 ${placementAfter(move).position}번째 위치에 놓았습니다`);
   };
 
   // Keep refs in sync so handleSlashSelect can call these without circular dependency
@@ -789,6 +809,18 @@ export function BlockEditor({
   // Table of contents anchors while editing (#113 §1): a row holding a heading carries the id
   // the TOC (built from the same derived content) scrolls to.
   const headingAnchors = useMemo(() => headingIdsByBlock(blocks), [blocks]);
+
+  // The text of every block Tab indents names its keys (the hint above the status region).
+  useEffect(() => {
+    const rows = editorContainerRef.current?.querySelectorAll<HTMLElement>('[data-block-row]');
+    rows?.forEach((row) => {
+      const field = row.querySelector('textarea');
+      if (!field) return;
+      if (INDENTABLE_TYPES.has(row.getAttribute('data-block-type') ?? '')) {
+        field.setAttribute('aria-describedby', keysHintId);
+      }
+    });
+  });
 
   // 블록 렌더링 함수
   const renderBlock = (block: Block, index: number) => {
@@ -876,6 +908,7 @@ export function BlockEditor({
         return (
           <ToggleDisclosure
             collapsed={collapsed}
+            summary={block.content.split('\n')[0]}
             onToggle={() => setCollapsed(block.id, !collapsed)}
           >
             <ParagraphBlock
@@ -1026,6 +1059,13 @@ export function BlockEditor({
       <div
         ref={editorContainerRef}
         className="block-editor relative min-h-[400px] py-2 sm:py-4"
+        // A click, or focus entering a text field, ends the "Tab moves focus" mode.
+        onMouseDown={() => {
+          tabMovesFocusRef.current = false;
+        }}
+        onFocusCapture={(event) => {
+          if (event.target instanceof HTMLTextAreaElement) tabMovesFocusRef.current = false;
+        }}
         onMouseMove={(e) => {
           // Update cursor position for Yjs collaboration
           if (useYjs && yjsCollaboration.isConnected && pageId) {
@@ -1262,6 +1302,9 @@ export function BlockEditor({
                 )}
               </Droppable>
             </DragDropContext>
+            <p id={keysHintId} className="sr-only">
+              Tab: 들여쓰기, Shift+Tab: 내어쓰기, Esc 다음 Tab: 다음 요소로 이동
+            </p>
             <p className="sr-only" role="status" aria-live="polite">
               {moveAnnouncement}
             </p>

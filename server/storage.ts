@@ -126,6 +126,7 @@ import {
 } from '../shared/page-links.js';
 import { isReservedDailyNoteSlug } from '../shared/daily-notes.js';
 import { normalizeBlockTree } from '../shared/block-tree.js';
+import { snippetText } from '../shared/page-excerpt.js';
 import { TEAM_CANDIDATE_LIMIT, TEAM_CANDIDATE_MIN_QUERY_LENGTH } from '../shared/team-members.js';
 import {
   SHARE_CANDIDATE_LIMIT,
@@ -1084,7 +1085,7 @@ export class DBStorage {
     const tsquery = sql`plainto_tsquery('simple', ${params.query})`;
     const rank = sql<number>`ts_rank(search_vector, ${tsquery})`;
 
-    return this.db
+    const rows: RetrievedPageRow[] = await this.db
       .select({
         pageId: wikiPages.id,
         teamId: wikiPages.teamId,
@@ -1111,6 +1112,11 @@ export class DBStorage {
       )
       .orderBy(desc(rank), desc(wikiPages.updatedAt))
       .limit(params.limit);
+    // Toggles are `<details>`/`<summary>` in content; a snippet shows their text, not the markup.
+    return rows.map((row) => ({
+      ...row,
+      snippet: row.snippet == null ? row.snippet : snippetText(row.snippet),
+    }));
   }
 
   /** Who is listing pages: identity plus current team memberships, loaded from the database. */

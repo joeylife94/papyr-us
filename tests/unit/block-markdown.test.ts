@@ -523,13 +523,35 @@ describe('nested blocks and toggles', () => {
     );
   });
 
-  it('escapes markup in a toggle summary and keeps it on one line', () => {
-    const md = blocksToMarkdown([nested('toggle', '<script>alert(1)</script> & "x"\nsecond')]);
+  it('escapes markup in a toggle summary; text after its first line becomes a paragraph inside the toggle', () => {
+    const md = blocksToMarkdown([
+      nested('toggle', '<script>alert(1)</script> & "x"\nsecond **line**'),
+    ]);
     expect(md).toBe(
-      '<details>\n<summary>&lt;script&gt;alert(1)&lt;/script&gt; &amp; "x" second</summary>\n\n</details>'
+      '<details>\n<summary>&lt;script&gt;alert(1)&lt;/script&gt; &amp; "x"</summary>\n\nsecond **line**\n\n</details>'
     );
     expect(md).not.toContain('<script>');
-    expect(markdownToBlocks(md)[0].content).toBe('<script>alert(1)</script> & "x" second');
+    const back = markdownToBlocks(md);
+    expect(shape(back)).toEqual([
+      { type: 'toggle', content: '<script>alert(1)</script> & "x"', indent: 0 },
+      { type: 'paragraph', content: 'second **line**', indent: 1 },
+    ]);
+    // No text is lost, and the result is stable: writing it again gives the same Markdown.
+    expect(blocksToMarkdown(back)).toBe(md);
+  });
+
+  it('keeps the lines of a multi-line toggle, blank lines included, and nested blocks after them', () => {
+    const blocks = [
+      nested('toggle', 'first\nsecond\n\nthird'),
+      nested('bulleted_list', 'child', 1),
+    ];
+    const md = blocksToMarkdown(blocks);
+    expect(md).toBe(
+      '<details>\n<summary>first</summary>\n\nsecond\n\nthird\n\n- child\n\n</details>'
+    );
+    const back = markdownToBlocks(md);
+    expect(back.map((b) => b.content)).toEqual(['first', 'second', 'third', 'child']);
+    expect(blocksToMarkdown(back)).toBe(md);
   });
 
   it('reads a summary that is already escaped literally, so text such as &lt; survives a round trip', () => {

@@ -88,6 +88,9 @@ const storedShape = async (api: APIRequestContext, pageId: number) =>
     (b) => `${b.indent ?? 0}:${b.content}`
   );
 
+const rowIndent = (rows: ReturnType<Page['locator']>, i: number) =>
+  rows.nth(i).getAttribute('data-block-indent');
+
 const openEditor = async (page: Page, slug: string) => {
   await page.goto(`/page/${slug}`);
   await expect(page.getByTestId('page-title')).toHaveAttribute('contenteditable', 'true');
@@ -117,10 +120,12 @@ test.describe('toggle blocks and indentation', () => {
       await expect(rows.first()).toHaveAttribute('data-block-type', 'toggle');
       const disclosure = rows.first().getByTestId('toggle-disclosure');
       await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+      // The button is named by the summary once there is one.
+      await page.keyboard.type('Summary line');
+      await expect(disclosure).toHaveAttribute('aria-label', 'Summary line 접기');
 
       // Enter in the summary adds the first nested block, Enter in that one a sibling, and
       // Shift+Tab on a third leaves the toggle.
-      await page.keyboard.type('Summary line');
       await page.keyboard.press('Enter');
       await expect(rows).toHaveCount(2);
       await page.keyboard.type('child one');
@@ -238,10 +243,11 @@ test.describe('toggle blocks and indentation', () => {
       const field = (i: number) => rows.nth(i).locator('textarea');
       const rowIndent = (i: number) => rows.nth(i).getAttribute('data-block-indent');
 
-      // The first block cannot be indented; Tab keeps the caret in the text.
+      // The first block cannot be indented: Tab then moves focus on, as it always did, and
+      // changes nothing.
       await field(0).click();
       await page.keyboard.press('Tab');
-      await expect(field(0)).toBeFocused();
+      await expect(field(0)).not.toBeFocused();
       expect(await rowIndent(0)).toBe('0');
 
       // B indents under A; C indents twice (under B); D (to-do) follows.
@@ -253,10 +259,10 @@ test.describe('toggle blocks and indentation', () => {
       await page.keyboard.press('Tab');
       await expect.poll(() => rowIndent(2)).toBe('2');
       // A third Tab is refused (a block goes one level deeper than the block before it, and C
-      // already is): nothing changes and focus stays.
+      // already is): nothing changes and Tab moves focus on.
       await page.keyboard.press('Tab');
       expect(await rowIndent(2)).toBe('2');
-      await expect(field(2)).toBeFocused();
+      await expect(field(2)).not.toBeFocused();
       await field(3).click();
       await page.keyboard.press('Tab');
       await page.keyboard.press('Tab');
@@ -391,6 +397,78 @@ test.describe('toggle blocks and indentation', () => {
     }
   });
 
+  test('the keyboard can always leave the editor body; Escape turns Tab into a way out, and the keys are announced', async ({
+    page,
+    request,
+  }) => {
+    const user = await registerTestUser(request, 'keys');
+    const api = await createAuthenticatedApiContext(user.email, user.password);
+    const stamp = Date.now();
+    const slug = `keys-${stamp}`;
+    const pageId = await createPage(api, stamp, slug, [
+      block(stamp, 'a', 'paragraph', 'A'),
+      block(stamp, 'b', 'bulleted_list', 'B'),
+      block(stamp, 'c', 'paragraph', 'C'),
+    ]);
+    try {
+      await loginPageWithCookies(page, user.email, user.password);
+      await openEditor(page, slug);
+      const rows = page.locator('[data-page-body] [data-block-row]');
+      await expect(rows).toHaveCount(3);
+      const field = (i: number) => rows.nth(i).locator('textarea');
+      const insideBody = () =>
+        page.evaluate(() =>
+          document.querySelector('[data-page-body]')!.contains(document.activeElement)
+        );
+      const status = page.locator('[data-page-body] [role="status"]');
+
+      // Text blocks name their keys for assistive technology.
+      const hintId = await field(0).getAttribute('aria-describedby');
+      await expect(page.locator(`[id="${hintId}"]`)).toContainText('Esc 다음 Tab');
+
+      // Backwards: Shift+Tab at level 0 changes nothing and moves focus on.
+      await field(1).click();
+      await page.keyboard.press('Shift+Tab');
+      await expect(field(1)).not.toBeFocused();
+      expect(await rowIndent(rows, 1)).toBe('0');
+
+      // Forwards: Tab on a block that can be indented indents it ...
+      await field(1).click();
+      await page.keyboard.press('Tab');
+      await expect.poll(() => rowIndent(rows, 1)).toBe('1');
+      await page.keyboard.press('Shift+Tab');
+      await expect.poll(() => rowIndent(rows, 1)).toBe('0');
+
+      // ... and after Escape, Tab moves focus instead, announced, until something is typed.
+      await field(2).click();
+      await page.keyboard.press('Escape');
+      await expect(status).toHaveText('Tab이 다음 요소로 이동합니다');
+      for (let i = 0; i < 4; i++) await page.keyboard.press('Tab');
+      expect(await insideBody()).toBe(false);
+      expect(await rowsOf(page).then(shape)).toEqual(['0:A', '0:B', '0:C']);
+
+      // Typing ends the mode: Tab indents again.
+      await field(1).click();
+      await page.keyboard.press('Escape');
+      await page.keyboard.type('!');
+      await page.keyboard.press('Tab');
+      await expect.poll(() => rowIndent(rows, 1)).toBe('1');
+      await expect.poll(async () => shape(await rowsOf(page))).toEqual(['0:A', '1:B!', '0:C']);
+      // The level change was announced, and so was the refusal and the move.
+      await expect(status).toHaveText('들여쓰기 수준: 1단계');
+      await page.keyboard.press('Control+[');
+      await page.keyboard.press('Control+[');
+      await expect(status).toHaveText('더 내어쓸 수 없습니다');
+      const saved = waitForAutosave(page, pageId);
+      await page.keyboard.press('Alt+ArrowDown');
+      await expect(status).toHaveText('블록을 3번째 위치로 옮겼습니다 (3개 중)');
+      await saved;
+    } finally {
+      await api.delete(`/api/pages/${pageId}`).catch(() => {});
+      await api.dispose();
+    }
+  });
+
   test('a reader opens and closes a toggle and cannot edit; an inconsistent tree is stored normalised', async ({
     page,
     browser,
@@ -400,6 +478,7 @@ test.describe('toggle blocks and indentation', () => {
     const reader = await registerTestUser(request, 'reader');
     const api = await createAuthenticatedApiContext(owner.email, owner.password);
     const readerApi = await createAuthenticatedApiContext(reader.email, reader.password);
+    let richPageId: number | null = null;
     const readerId = Number((await (await readerApi.get('/api/auth/me')).json()).id);
     const stamp = Date.now();
     const slug = `reader-toggle-${stamp}`;
@@ -456,6 +535,41 @@ test.describe('toggle blocks and indentation', () => {
         await expect(details).toHaveJSProperty('open', true);
         await expect(details.getByText('Answer text')).toBeVisible();
 
+        // A multi-line, formatted summary: the first line is the summary (inline Markdown), the
+        // rest a paragraph inside the toggle; the editor shows the text as typed.
+        const richSlug = `${slug}-rich`;
+        const richId = await createPage(api, stamp, richSlug, [
+          block(
+            stamp,
+            'rt',
+            'toggle',
+            '**Bold** summary with `code` and [a link](https://example.com)\nsecond line, _italic_'
+          ),
+          block(stamp, 'rc', 'paragraph', 'nested child', { indent: 1 }),
+        ]);
+        richPageId = richId;
+        expect(
+          (
+            await api.post(`/api/pages/${richId}/permissions`, {
+              data: { entityType: 'user', entityId: readerId, permission: 'viewer' },
+            })
+          ).status()
+        ).toBe(201);
+        await readerPage.goto(`/page/${richSlug}`);
+        const richDetails = readerPage.locator('[data-markdown-root] details');
+        await expect(richDetails.locator('> summary strong')).toHaveText('Bold');
+        await expect(richDetails.locator('> summary code')).toHaveText('code');
+        await expect(richDetails.locator('> summary a')).toHaveText('a link');
+        await expect(richDetails.locator('> p').first()).toHaveText('second line, italic');
+        await expect(richDetails.getByText('nested child')).toBeVisible();
+        if (SHOTS) {
+          await readerPage.screenshot({ path: `${SHOTS}/rich-summary-reader-desktop.png` });
+          await loginPageWithCookies(page, owner.email, owner.password);
+          await page.goto(`/page/${richSlug}`);
+          await page.locator('[data-page-body] textarea').first().waitFor();
+          await page.screenshot({ path: `${SHOTS}/rich-summary-editor-desktop.png` });
+        }
+
         // Nothing to edit: no text fields in the page body, and a save is refused.
         await expect(readerPage.locator('[data-page-body] textarea')).toHaveCount(0);
         const refused = await readerApi.put(`/api/pages/${pageId}/autosave`, {
@@ -467,6 +581,7 @@ test.describe('toggle blocks and indentation', () => {
       }
     } finally {
       await api.delete(`/api/pages/${pageId}`).catch(() => {});
+      if (richPageId) await api.delete(`/api/pages/${richPageId}`).catch(() => {});
       await api.dispose();
       await readerApi.dispose();
     }

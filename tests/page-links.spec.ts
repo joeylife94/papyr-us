@@ -84,9 +84,10 @@ test('link a page with @, see the chip and the backlink, and a rename everywhere
     expect(stored.content).toContain(`[[page:${target.id}]]`);
     expect(stored.content).not.toContain(renamed);
 
-    // Keyboard: Tab from the text being edited reaches the link row under it (the block stays
-    // in edit mode), and Enter opens the link.
+    // Keyboard: Escape, then Tab from the text being edited reaches the link row under it (the
+    // block stays in edit mode; Tab alone indents the block, WP11), and Enter opens the link.
     await body.focus();
+    await page.keyboard.press('Escape');
     await page.keyboard.press('Tab');
     const rowChip = page.locator('[data-page-body]').getByRole('link', { name: renamed });
     await expect(rowChip).toBeFocused();

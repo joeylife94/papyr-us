@@ -3,7 +3,13 @@ import * as Y from 'yjs';
 import type { Block } from '../../shared/schema';
 import { normalizeBlockTree, shiftSubtree } from '../../shared/block-tree';
 import { subtreeStep } from '../../client/src/lib/block-order';
-import { editBlocks, moveBlockRange } from '../../client/src/lib/yjs-block-ops';
+import {
+  deleteBlockAt,
+  editBlocks,
+  insertBlockAt,
+  moveBlockRange,
+  patchBlockAt,
+} from '../../client/src/lib/yjs-block-ops';
 
 // WP11: the shared block list carries `indent` and `parentId`, so two editors see the same
 // structure, and concurrent nesting and text edits on different blocks converge.
@@ -43,13 +49,16 @@ function setText(doc: Y.Doc, yblocks: Y.Array<Block>, id: string, content: strin
   });
 }
 
+/** What an editor shows: the tree as the view derives it (`parentId` is never written back). */
 const shape = (blocks: Block[]) =>
-  blocks.map((b) => `${b.id}:${b.indent ?? 0}${b.parentId ? `>${b.parentId}` : ''}:${b.content}`);
+  normalizeBlockTree(blocks).map(
+    (b) => `${b.id}:${b.indent ?? 0}${b.parentId ? `>${b.parentId}` : ''}:${b.content}`
+  );
 
 describe('nesting in the shared block list', () => {
   const start = [block('t1'), block('a', 1), block('b', 1), block('c'), block('d')];
 
-  it('carries indent and parentId to the other editor', () => {
+  it('carries indent to the other editor, whose view derives the parent', () => {
     const { a, ya, yb, sync } = pair(start);
     editBlocks(a, ya, (blocks) => shiftSubtree(blocks, 3, 1));
     sync();
@@ -111,5 +120,45 @@ describe('nesting in the shared block list', () => {
     expect(shown.length).toBe(2);
     expect(shown[0].indent).toBeUndefined();
     expect(shown[0].parentId).toBeUndefined();
+  });
+
+  // Normalising is a view concern: writing it back into the shared array rewrote blocks nobody
+  // had touched, and two people typing in unrelated blocks then duplicated one of them.
+  it('never duplicates a block when a parent is deleted while another editor nests under it, and both then type elsewhere', () => {
+    const { a, b, ya, yb, sync } = pair([
+      block('p'),
+      block('q'),
+      block('r'),
+      block('s'),
+      block('u'),
+    ]);
+    deleteBlockAt(a, ya, 0);
+    insertBlockAt(b, yb, 1, block('n', 1));
+    sync();
+    const typeIn = (doc: Y.Doc, y: Y.Array<Block>, id: string, content: string) =>
+      patchBlockAt(
+        doc,
+        y,
+        y.toArray().findIndex((x) => x.id === id),
+        { content }
+      );
+    typeIn(a, ya, 's', 's typed by A');
+    typeIn(b, yb, 'u', 'u typed by B');
+    typeIn(a, ya, 's', 's typed by A again');
+    sync();
+    expect(ya.toArray()).toEqual(yb.toArray());
+    const ids = ya.toArray().map((x) => x.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids.sort()).toEqual(['n', 'q', 'r', 's', 'u']);
+  });
+
+  it('writes only the blocks whose indent changed when a subtree is indented', () => {
+    const { a, ya } = pair([block('x'), block('y'), block('z', 1), block('w')]);
+    const before = ya.toArray();
+    editBlocks(a, ya, (blocks) => shiftSubtree(blocks, 1, 1));
+    const after = ya.toArray();
+    expect(after[0]).toBe(before[0]);
+    expect(after[3]).toBe(before[3]);
+    expect(shape(after).slice(1, 3)).toEqual(['y:1>x:y', 'z:2>y:z']);
   });
 });

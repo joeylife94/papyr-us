@@ -45,7 +45,7 @@
  *   parent's content column (2 spaces per level under `-` items and to-dos, wider under numbered
  *   items, so every Markdown reader nests them). Numbered lists count per level.
  * - A `toggle` is `<details>` with a `<summary>` line holding its text (`&`, `<` and `>`
- *   escaped, line breaks as spaces), the blocks under it, and `</details>`. The reader draws it
+ *   escaped; text after the first line becomes a paragraph inside the toggle), the blocks under it, and `</details>`. The reader draws it
  *   as a disclosure (client/src/lib/markdown.ts); other Markdown tools show their own.
  *   `<details>` that is not exactly this shape stays text, as before.
  * - Import reads both back: nested list items get their level, blocks inside `<details>` the
@@ -173,16 +173,9 @@ function blockMarkdown(block: unknown, listNumber: number, bullet: '-' | '*'): s
   }
 }
 
-/** The summary's text on one line, with the characters HTML reads as markup written as entities. */
+/** The summary's text (one line) with the characters HTML reads as markup written as entities. */
 function escapeSummary(text: string): string {
-  return text
-    .split('\n')
-    .map((part) => part.trim())
-    .filter((part) => part.length > 0)
-    .join(' ')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+  return text.trim().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 /** The inverse of `escapeSummary` for the three entities it writes (others stay as written). */
@@ -192,8 +185,15 @@ function unescapeSummary(text: string): string {
   );
 }
 
+/**
+ * A toggle's Markdown: its first line is the `<summary>`; any further lines are written as a
+ * paragraph inside the toggle, before the blocks nested under it, so line breaks survive.
+ */
 function toggleOpening(text: string): string {
-  return `<details>\n<summary>${escapeSummary(text)}</summary>`;
+  const [first, ...rest] = text.split('\n');
+  const more = rest.join('\n').replace(/^\n+|\s+$/g, '');
+  const opening = `<details>\n<summary>${escapeSummary(first)}</summary>`;
+  return more.trim() ? `${opening}\n\n${more}` : opening;
 }
 
 const DETAILS_CLOSING = '</details>';

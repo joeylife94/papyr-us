@@ -5,7 +5,13 @@ import { io, Socket } from 'socket.io-client';
 import { Block } from '@shared/schema';
 import { normalizeBlockTree } from '@shared/block-tree';
 import type { SubtreeMove } from '@/lib/block-order';
-import { editBlocks, moveBlockRange, reconcileTree } from '@/lib/yjs-block-ops';
+import {
+  deleteBlockAt,
+  editBlocks,
+  insertBlockAt,
+  moveBlockRange,
+  patchBlockAt,
+} from '@/lib/yjs-block-ops';
 
 export interface User {
   id: string;
@@ -304,37 +310,26 @@ export function useYjsCollaboration({
 
   // Insert block at index
   const insertBlock = useCallback((index: number, block: Block) => {
+    const ydoc = ydocRef.current;
     const yblocks = yblocksRef.current;
-    if (!yblocks) return;
-
-    ydocRef.current?.transact(() => {
-      yblocks.insert(index, [block]);
-      reconcileTree(yblocks);
-    });
+    if (!ydoc || !yblocks) return;
+    insertBlockAt(ydoc, yblocks, index, block);
   }, []);
 
   // Update block at index
   const updateBlock = useCallback((index: number, block: Partial<Block>) => {
+    const ydoc = ydocRef.current;
     const yblocks = yblocksRef.current;
-    if (!yblocks || index >= yblocks.length) return;
-
-    ydocRef.current?.transact(() => {
-      const currentBlock = yblocks.get(index);
-      yblocks.delete(index, 1);
-      yblocks.insert(index, [{ ...currentBlock, ...block }]);
-      reconcileTree(yblocks);
-    });
+    if (!ydoc || !yblocks) return;
+    patchBlockAt(ydoc, yblocks, index, block);
   }, []);
 
   // Delete block at index
   const deleteBlock = useCallback((index: number) => {
+    const ydoc = ydocRef.current;
     const yblocks = yblocksRef.current;
-    if (!yblocks || index >= yblocks.length) return;
-
-    ydocRef.current?.transact(() => {
-      yblocks.delete(index, 1);
-      reconcileTree(yblocks);
-    });
+    if (!ydoc || !yblocks) return;
+    deleteBlockAt(ydoc, yblocks, index);
   }, []);
 
   // Move a block (issue #103 E3): delete and re-insert it in one transaction, so every
@@ -347,7 +342,6 @@ export function useYjsCollaboration({
       const block = yblocks.get(from);
       yblocks.delete(from, 1);
       yblocks.insert(to, [block]);
-      reconcileTree(yblocks);
     });
   }, []);
 

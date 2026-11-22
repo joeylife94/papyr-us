@@ -148,4 +148,42 @@ describe('moving blocks with their nested blocks', () => {
     expect(resolveSubtreeDrop(list, visible, 'b', 1)).toBeNull();
     expect(resolveSubtreeDrop(list, visible, 'zzz', 1)).toBeNull();
   });
+
+  it("a block dropped between a parent and its first child becomes that child's sibling and does not adopt the children", () => {
+    const tree = normalizeBlockTree([
+      nested('t', 0, 'toggle'),
+      nested('c1', 1),
+      nested('c2', 1),
+      nested('x'),
+    ]);
+    const visible = visibleBlockIndices(tree, () => false);
+    // x lifted out: the shown blocks are t, c1, c2; destination 1 is before c1.
+    const move = resolveSubtreeDrop(tree, visible, 'x', 1)!;
+    const result = normalizeBlockTree(moveSubtree(tree, move));
+    expect(result.map((b) => `${b.id}:${b.indent ?? 0}>${b.parentId ?? ''}`)).toEqual([
+      't:0>',
+      'x:1>t',
+      'c1:1>t',
+      'c2:1>t',
+    ]);
+  });
+
+  it('a moved block keeps the depth of its nested blocks relative to it when it takes another level', () => {
+    const tree = normalizeBlockTree([
+      nested('t', 0, 'toggle'),
+      nested('c1', 1),
+      nested('x'),
+      nested('y', 1),
+    ]);
+    const move = { from: 2, count: 2, to: 1 };
+    const result = normalizeBlockTree(moveSubtree(tree, move));
+    expect(result.map((b) => `${b.id}:${b.indent ?? 0}`)).toEqual(['t:0', 'x:1', 'y:2', 'c1:1']);
+  });
+
+  it('a move to the top level of a flat page, or below the last block, changes no level', () => {
+    const flat = [block('a', 0), block('b', 1), block('c', 2)];
+    expect(
+      moveSubtree(flat, { from: 0, count: 1, to: 2 }).every((b: any) => b.indent === undefined)
+    ).toBe(true);
+  });
 });

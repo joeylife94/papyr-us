@@ -5,6 +5,7 @@ import {
   draftPageExcerpt,
   excerptLinkIds,
   renderPageExcerpt,
+  snippetText,
 } from '../../shared/page-excerpt';
 
 // The hover card of a page link (issue #133) shows the start of the target page as plain text,
@@ -140,4 +141,24 @@ describe('the excerpt stays linear on hostile content', () => {
       expect(result.length).toBeLessThanOrEqual(PAGE_EXCERPT_LENGTH + 1);
     });
   }
+});
+
+// WP11: a toggle is `<details>` with a `<summary>` in content; previews show its text.
+describe('toggles in excerpts and snippets', () => {
+  const content =
+    '<details>\n<summary>A &amp; B &lt;x&gt; [[page:5]]</summary>\n\ninside text\n\n</details>';
+
+  it('shows a summary as text: no tags, the escaped characters read as themselves, links stay links', () => {
+    expect(buildPageExcerpt(content)).toBe('A & B <x> [링크] inside text');
+    expect(excerptLinkIds(draftPageExcerpt(content))).toEqual([5]);
+  });
+
+  it('shows a snippet without the toggle markup or entities', () => {
+    expect(snippetText('A &amp; B &lt;x&gt;</summary> inside <details>')).toBe('A & B <x> inside');
+    expect(snippetText('<details> <summary>Sum &amp; more</summary> body')).toBe('Sum & more body');
+  });
+
+  it('leaves other snippets exactly as they are', () => {
+    expect(snippetText('plain &amp; text <b>kept</b>')).toBe('plain &amp; text <b>kept</b>');
+  });
 });

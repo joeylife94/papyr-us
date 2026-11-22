@@ -1,30 +1,15 @@
 import type * as Y from 'yjs';
 import type { Block } from '@shared/schema';
-import { normalizeBlockTree } from '@shared/block-tree';
-import type { SubtreeMove } from './block-order';
+import { blockIndent } from '@shared/block-tree';
+import { movedSubtree, type SubtreeMove } from './block-order';
 
 /**
- * Edits of the shared block list that keep nesting consistent (WP11, shared/block-tree.ts).
- * Each is one Yjs transaction, so collaborators apply it as one update and converge on it. The
- * blocks are whole JSON objects in the shared array: `indent` and `parentId` travel with them.
+ * Edits of the shared block list that carry nesting (WP11, shared/block-tree.ts). Each is one Yjs
+ * transaction, so collaborators apply it as one update. The blocks are whole JSON objects in the
+ * shared array: `indent` (and a `parentId` as last written) travel with them. A consistent tree is
+ * never written back: `parentId` is recomputed wherever the list is shown (the editor) or saved
+ * (the server), because rewriting blocks nobody edited makes concurrent edits duplicate them.
  */
-
-/**
- * Inside a transaction: rewrite the blocks whose `indent` or `parentId` is not what
- * `normalizeBlockTree` derives for the list as it now stands. Touches nothing when the tree is
- * already consistent, so ordinary text edits write no extra blocks.
- */
-export function reconcileTree(yblocks: Y.Array<Block>): void {
-  const current = yblocks.toArray();
-  const normalized = normalizeBlockTree(current);
-  if (normalized === current) return;
-  normalized.forEach((block, index) => {
-    if (block !== current[index]) {
-      yblocks.delete(index, 1);
-      yblocks.insert(index, [block]);
-    }
-  });
-}
 
 /**
  * Replace the shared list by `change(blocks)`, a list of the same length (an indent or outdent of
@@ -41,11 +26,13 @@ export function editBlocks(
   if (next === current || next.length !== current.length) return;
   ydoc.transact(() => {
     next.forEach((block, index) => {
-      if (block === current[index]) return;
+      // Only the indent is written; `parentId` is derived wherever the list is shown or saved.
+      if (blockIndent(block) === blockIndent(current[index])) return;
+      const { indent: _indent, ...rest } = current[index];
+      const level = blockIndent(block);
       yblocks.delete(index, 1);
-      yblocks.insert(index, [block]);
+      yblocks.insert(index, [(level > 0 ? { ...rest, indent: level } : rest) as Block]);
     });
-    reconcileTree(yblocks);
   });
 }
 
@@ -54,9 +41,38 @@ export function moveBlockRange(ydoc: Y.Doc, yblocks: Y.Array<Block>, move: Subtr
   const { from, count, to } = move;
   if (count < 1 || from === to || from < 0 || from + count > yblocks.length) return;
   ydoc.transact(() => {
-    const moved = yblocks.slice(from, from + count);
+    const moved = movedSubtree(yblocks.toArray(), move);
     yblocks.delete(from, count);
     yblocks.insert(Math.min(to, yblocks.length), moved);
-    reconcileTree(yblocks);
+  });
+}
+
+/** Insert a block at `index` in one transaction. */
+export function insertBlockAt(ydoc: Y.Doc, yblocks: Y.Array<Block>, index: number, block: Block) {
+  ydoc.transact(() => {
+    yblocks.insert(index, [block]);
+  });
+}
+
+/** Change fields of the block at `index` in one transaction. */
+export function patchBlockAt(
+  ydoc: Y.Doc,
+  yblocks: Y.Array<Block>,
+  index: number,
+  patch: Partial<Block>
+) {
+  if (index < 0 || index >= yblocks.length) return;
+  ydoc.transact(() => {
+    const current = yblocks.get(index);
+    yblocks.delete(index, 1);
+    yblocks.insert(index, [{ ...current, ...patch }]);
+  });
+}
+
+/** Delete the block at `index` in one transaction. */
+export function deleteBlockAt(ydoc: Y.Doc, yblocks: Y.Array<Block>, index: number) {
+  if (index < 0 || index >= yblocks.length) return;
+  ydoc.transact(() => {
+    yblocks.delete(index, 1);
   });
 }

@@ -186,6 +186,41 @@ function codeSpanAt(
   return null;
 }
 
+const SUMMARY_OPEN = '<summary>';
+const SUMMARY_CLOSE = '</summary>';
+
+/** A `<summary>…</summary>` starting at `start`, within LOOKAHEAD: its text and where it ends. */
+function summaryAt(line: string, start: number): { text: string; end: number } | null {
+  if (!line.startsWith(SUMMARY_OPEN, start)) return null;
+  const close = line.indexOf(SUMMARY_CLOSE, start + SUMMARY_OPEN.length);
+  if (close < 0 || close - start > LOOKAHEAD) return null;
+  return {
+    text: line.slice(start + SUMMARY_OPEN.length, close),
+    end: close + SUMMARY_CLOSE.length,
+  };
+}
+
+const unescapeEntities = (text: string) =>
+  text.replace(/&(amp|lt|gt);/g, (_m, name: string) =>
+    name === 'amp' ? '&' : name === 'lt' ? '<' : '>'
+  );
+
+/** A summary's text as plain text, its page link tokens as links. */
+function writeSummary(text: string, out: ExcerptWriter): void {
+  let at = 0;
+  while (at < text.length && !out.full) {
+    const open = text.indexOf('[[page:', at);
+    const token = open < 0 ? null : pageLinkAt(text, open);
+    if (!token) {
+      out.write(unescapeEntities(text.slice(at)));
+      return;
+    }
+    out.write(unescapeEntities(text.slice(at, open)));
+    out.link(token.pageId);
+    at = token.end;
+  }
+}
+
 /** Inline Markdown of one line (or a link's text) as plain text. */
 function writeInline(line: string, out: ExcerptWriter, tableRow: boolean): void {
   let at = 0;
@@ -227,6 +262,14 @@ function writeInline(line: string, out: ExcerptWriter, tableRow: boolean): void 
         continue;
       }
     } else if (char === '<') {
+      // A toggle's summary (WP11) shows its text: the three entities the writer escapes read as
+      // the characters, page link tokens stay links, and the tags go.
+      const summary = summaryAt(line, at);
+      if (summary) {
+        writeSummary(summary.text, out);
+        at = summary.end;
+        continue;
+      }
       const angle = angleAt(line, at);
       if (angle) {
         // Raw HTML is dropped, as in the reader; an autolink shows its address.
@@ -434,4 +477,19 @@ export function buildPageExcerpt(
   maxLength = PAGE_EXCERPT_LENGTH
 ): string {
   return renderPageExcerpt(draftPageExcerpt(content, maxLength), titles, maxLength);
+}
+
+/**
+ * A search snippet (a fragment of `content`) as plain text: the `<details>` and `<summary>` tags
+ * of toggles (WP11) are dropped and, in a fragment that holds a summary tag, the three entities
+ * the writer escapes in summaries read as the characters. The result is text, never HTML.
+ */
+export function snippetText(snippet: string): string {
+  if (!/<\/?(?:details|summary)>/i.test(snippet)) return snippet;
+  const hasSummary = /<\/?summary>/i.test(snippet);
+  const plain = snippet
+    .replace(/<\/?(?:details|summary)>/gi, ' ')
+    .replace(/ {2,}/g, ' ')
+    .trim();
+  return hasSummary ? unescapeEntities(plain) : plain;
 }

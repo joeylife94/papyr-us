@@ -1,5 +1,5 @@
 import type { Block } from '@shared/schema';
-import { blockIndent, subtreeEnd } from '@shared/block-tree';
+import { MAX_BLOCK_INDENT, blockIndent, subtreeEnd } from '@shared/block-tree';
 
 /**
  * The block list with the block at `from` moved to `to` (issue #103 E3). Indices follow
@@ -96,12 +96,44 @@ export function resolveSubtreeDrop(
   return to === from ? null : { from, count, to };
 }
 
+/**
+ * The blocks of a move as they land: a moved block never takes over the blocks next to where it
+ * lands. Dropped between a parent and its first child, it takes the child's level (it becomes the
+ * child's sibling, the parent keeps its children); it is never deeper than one level under the
+ * block above it. The moved blocks keep their depth relative to the first of them.
+ */
+export function movedSubtree<T extends { indent?: number }>(
+  blocks: readonly T[],
+  move: SubtreeMove
+): T[] {
+  const { from, count, to } = move;
+  const moved = blocks.slice(from, from + count);
+  if (moved.length === 0) return moved;
+  const rest = [...blocks.slice(0, from), ...blocks.slice(from + count)];
+  const above = to > 0 ? rest[to - 1] : undefined;
+  const below = rest[to];
+  const original = blockIndent(moved[0]);
+  let level = Math.min(original, above ? blockIndent(above) + 1 : 0);
+  if (below) level = Math.max(level, blockIndent(below));
+  const delta = level - original;
+  if (delta === 0) return moved;
+  return moved.map((block) => {
+    const next = Math.min(Math.max(blockIndent(block) + delta, 0), MAX_BLOCK_INDENT);
+    const { indent: _indent, ...others } = block;
+    return (next > 0 ? { ...others, indent: next } : others) as T;
+  });
+}
+
 /** The blocks with the range of a move relocated; `order` is renumbered to match. */
-export function moveSubtree<T extends { order: number }>(blocks: T[], move: SubtreeMove): T[] {
+export function moveSubtree<T extends { order: number; indent?: number }>(
+  blocks: T[],
+  move: SubtreeMove
+): T[] {
   const { from, count, to } = move;
   if (count < 1 || from === to || from < 0 || from + count > blocks.length) return blocks;
+  const moved = movedSubtree(blocks, move);
   const next = blocks.slice();
-  const moved = next.splice(from, count);
+  next.splice(from, count);
   next.splice(to, 0, ...moved);
   return next.map((block, index) => (block.order === index ? block : { ...block, order: index }));
 }
