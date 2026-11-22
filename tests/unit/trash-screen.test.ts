@@ -50,12 +50,12 @@ describe('restoredMessage', () => {
   });
 });
 
-describe('emptyTrashScopeText: the confirmation says exactly what is deleted', () => {
-  it('names the team when one is selected', () => {
-    expect(emptyTrashScopeText('디자인팀')).toMatch(/"디자인팀" 팀/);
-  });
-  it('says every trashed page of the whole instance, also those the admin cannot list, otherwise', () => {
-    expect(emptyTrashScopeText(null)).toMatch(/모든 조직/);
+describe('emptyTrashScopeText: the confirmation names the team and how many pages go', () => {
+  it('names the team and the number of pages shown', () => {
+    const text = emptyTrashScopeText('디자인팀', 3);
+    expect(text).toMatch(/"디자인팀" 팀/);
+    expect(text).toMatch(/3개/);
+    expect(text).toMatch(/영구 삭제/);
   });
 });
 

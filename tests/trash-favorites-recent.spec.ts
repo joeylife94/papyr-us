@@ -15,7 +15,8 @@ import {
 //   reload; trashing also removes the page from "최근 문서"; restoring brings the favourite back;
 // - "최근 문서" lists the pages this account opened, newest first, never another account's, and
 //   drops a page the account can no longer read;
-// - "휴지통 비우기" is shown to platform admins only and sends nothing until confirmed.
+// - "휴지통 비우기" is shown only to a platform admin on a team's trash screen, sends nothing until
+//   confirmed, and then deletes that team's trashed pages only (DELETE /api/trash?teamId=<id>).
 
 const ADMIN_EMAIL = 'e2e-platform-admin@example.com';
 const ADMIN_PASSWORD = 'Password123!';
@@ -455,7 +456,7 @@ test('recent: lists the pages this account opened, newest first, never another a
   }
 });
 
-test('trash: "휴지통 비우기" is shown to platform admins only and sends nothing until confirmed', async ({
+test('trash: "휴지통 비우기" is shown only to a platform admin on a team screen and deletes that team only', async ({
   browser,
   request,
 }) => {
@@ -463,50 +464,106 @@ test('trash: "휴지통 비우기" is shown to platform admins only and sends no
     data: { name: 'Platform Admin', email: ADMIN_EMAIL, password: ADMIN_PASSWORD },
   });
   expect([201, 409]).toContain(adminAccount.status());
-  const user = await registerTestUser(request, 'trash-not-admin');
-
-  // An ordinary account: the screen loads, the button is absent
-  const userPage = await (await browser.newContext()).newPage();
-  try {
-    await loginPageWithCookies(userPage, user.email, user.password);
-    const session = userPage.waitForResponse(
-      (r) => new URL(r.url()).pathname === '/api/admin/session'
-    );
-    const listed = userPage.waitForResponse(isTrashList);
-    await userPage.goto('/trash');
-    await listed;
-    expect((await session).status()).toBe(403);
-    await expect(userPage.getByTestId('trash-empty')).toBeVisible();
-    await expect(userPage.getByTestId('empty-trash')).toHaveCount(0);
-  } finally {
-    await userPage.context().close();
-  }
-
-  // A platform admin: the button asks first, and Cancel sends nothing
-  const adminPage = await (await browser.newContext()).newPage();
-  try {
-    await loginPageWithCookies(adminPage, ADMIN_EMAIL, ADMIN_PASSWORD);
-    const deletes: string[] = [];
-    adminPage.on('request', (r) => {
-      if (new URL(r.url()).pathname === '/api/trash' && r.method() === 'DELETE')
-        deletes.push(r.url());
+  const owner = await registerTestUser(request, 'empty-owner');
+  const member = await registerTestUser(request, 'empty-member');
+  const ownerApi = await createAuthenticatedApiContext(owner.email, owner.password);
+  const key = stamp();
+  const makeTeam = async (suffix: string) => {
+    const created = await ownerApi.post('/api/teams', {
+      data: { name: `empty-${suffix}-${key}`, displayName: `Empty ${suffix} ${key}` },
     });
-    const session = adminPage.waitForResponse(
-      (r) => new URL(r.url()).pathname === '/api/admin/session'
-    );
-    await adminPage.goto('/trash');
-    expect((await session).status()).toBe(200);
-    const button = adminPage.getByTestId('empty-trash');
-    await expect(button).toBeVisible();
-    await button.click();
-    const dialog = adminPage.getByTestId('trash-empty-dialog');
-    await expect(dialog).toContainText('영구 삭제합니다');
-    await expect(dialog).toContainText('되돌릴 수 없습니다');
-    await dialog.getByRole('button', { name: '취소' }).click();
-    await expect(dialog).toHaveCount(0);
-    expect(deletes).toEqual([]);
+    expect(created.status()).toBe(201);
+    const id = Number((await created.json()).id);
+    for (const email of [ADMIN_EMAIL, member.email]) {
+      const admit = await ownerApi.post(`/api/teams/${id}/memberships`, { data: { email } });
+      expect(admit.status()).toBe(201);
+    }
+    return { id, name: `empty-${suffix}-${key}` };
+  };
+  const teamA = await makeTeam('a');
+  const teamB = await makeTeam('b');
+
+  try {
+    const pageA1 = await createPage(ownerApi, `Empty A1 ${key}`, { teamId: teamA.id });
+    const pageA2 = await createPage(ownerApi, `Empty A2 ${key}`, { teamId: teamA.id });
+    const pageB = await createPage(ownerApi, `Empty B ${key}`, { teamId: teamB.id });
+    for (const created of [pageA1, pageA2, pageB]) {
+      expect((await ownerApi.delete(`/api/pages/${created.id}`)).status()).toBe(200);
+    }
+
+    // An ordinary member of the team: the screen loads, the button is absent
+    const memberPage = await (await browser.newContext()).newPage();
+    try {
+      await loginPageWithCookies(memberPage, member.email, member.password);
+      const session = memberPage.waitForResponse(
+        (r) => new URL(r.url()).pathname === '/api/admin/session'
+      );
+      const listed = memberPage.waitForResponse(isTrashList);
+      await memberPage.goto(`/teams/${teamA.name}/trash`);
+      await listed;
+      expect((await session).status()).toBe(403);
+      await expect(memberPage.getByTestId('trash-row')).toHaveCount(2);
+      await expect(memberPage.getByTestId('empty-trash')).toHaveCount(0);
+    } finally {
+      await memberPage.context().close();
+    }
+
+    const adminPage = await (await browser.newContext()).newPage();
+    try {
+      await loginPageWithCookies(adminPage, ADMIN_EMAIL, ADMIN_PASSWORD);
+      const deletes: string[] = [];
+      adminPage.on('request', (r) => {
+        if (new URL(r.url()).pathname === '/api/trash' && r.method() === 'DELETE') {
+          deletes.push(r.url());
+        }
+      });
+
+      // No team selected: even a platform admin gets no button
+      const allSession = adminPage.waitForResponse(
+        (r) => new URL(r.url()).pathname === '/api/admin/session'
+      );
+      const allListed = adminPage.waitForResponse(isTrashList);
+      await adminPage.goto('/trash');
+      await allListed;
+      expect((await allSession).status()).toBe(200);
+      await expect(adminPage.getByTestId('trash-screen')).toBeVisible();
+      await expect(adminPage.getByTestId('empty-trash')).toHaveCount(0);
+
+      // A team screen: the button asks first; Cancel sends nothing
+      const teamListed = adminPage.waitForResponse(isTrashList);
+      await adminPage.goto(`/teams/${teamA.name}/trash`);
+      await teamListed;
+      await expect(adminPage.getByTestId('trash-row')).toHaveCount(2);
+      await adminPage.getByTestId('empty-trash').click();
+      const dialog = adminPage.getByTestId('trash-empty-dialog');
+      await expect(dialog).toContainText(`"Empty a ${key}" 팀`);
+      await expect(dialog).toContainText('2개를 영구 삭제합니다');
+      await expect(dialog).toContainText('되돌릴 수 없습니다');
+      await dialog.getByRole('button', { name: '취소' }).click();
+      await expect(dialog).toHaveCount(0);
+      expect(deletes).toEqual([]);
+
+      // Confirm: one DELETE naming this team only; its rows go, the other team's page stays
+      await adminPage.getByTestId('empty-trash').click();
+      const emptied = adminPage.waitForResponse(
+        (r) => new URL(r.url()).pathname === '/api/trash' && r.request().method() === 'DELETE'
+      );
+      await adminPage.getByTestId('trash-empty-confirm').click();
+      expect((await emptied).status()).toBe(200);
+      expect(deletes).toHaveLength(1);
+      expect(new URL(deletes[0]).search).toBe(`?teamId=${teamA.id}`);
+      await expect(adminPage.getByTestId('trash-empty')).toBeVisible();
+      const remaining = (await (await ownerApi.get('/api/trash')).json()).map((row: any) => row.id);
+      expect(remaining).toContain(pageB.id);
+      expect(remaining).not.toContain(pageA1.id);
+      expect(remaining).not.toContain(pageA2.id);
+    } finally {
+      await adminPage.context().close();
+    }
   } finally {
-    await adminPage.context().close();
+    await ownerApi.delete(`/api/teams/${teamA.id}`).catch(() => {});
+    await ownerApi.delete(`/api/teams/${teamB.id}`).catch(() => {});
+    await ownerApi.dispose();
   }
 });
 

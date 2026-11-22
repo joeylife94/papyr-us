@@ -32,11 +32,9 @@ export function restoredMessage(title: string, restoredCount: unknown): string {
   return `"${title}" 문서를 복원했습니다.`;
 }
 
-/** What "휴지통 비우기" deletes, said in the confirmation. */
-export function emptyTrashScopeText(teamLabel: string | null): string {
-  return teamLabel
-    ? `"${teamLabel}" 팀의 휴지통에 있는 모든 문서를 영구 삭제합니다.`
-    : '모든 조직과 팀의 휴지통에 있는 모든 문서를, 이 화면에 보이지 않는 문서까지 영구 삭제합니다.';
+/** What "휴지통 비우기" deletes on a team's trash screen, said in the confirmation. */
+export function emptyTrashScopeText(teamLabel: string, shownCount: number): string {
+  return `"${teamLabel}" 팀의 휴지통에 있는 문서 ${shownCount}개를 영구 삭제합니다.`;
 }
 
 /** Newest favourite first; ties by id, so the sidebar order is the same on every load. */

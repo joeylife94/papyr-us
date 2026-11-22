@@ -207,7 +207,7 @@ export default function TrashPage() {
             문서 소유자는 복원하거나 영구 삭제할 수 있습니다.
           </p>
         </div>
-        {isPlatformAdmin && (
+        {isPlatformAdmin && teamId !== '' && teamLabel && (
           <Button
             variant="outline"
             onClick={() => setConfirmEmpty(true)}
@@ -374,7 +374,7 @@ export default function TrashPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>휴지통을 비울까요?</AlertDialogTitle>
             <AlertDialogDescription>
-              {emptyTrashScopeText(teamLabel)} 이 작업은 되돌릴 수 없습니다.
+              {emptyTrashScopeText(teamLabel ?? '', rows.length)} 이 작업은 되돌릴 수 없습니다.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
