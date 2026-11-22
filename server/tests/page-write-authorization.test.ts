@@ -355,7 +355,8 @@ describe('Trash listing is the caller’s', () => {
 
     const all = await request(app).get('/api/trash').set(as(EDITOR));
     expect(all.status).toBe(200);
-    expect(all.body).toEqual([{ id: PAGE_A, title: 'Plan' }]);
+    // An editor can list the page but does not hold the owner right that restore needs
+    expect(all.body).toEqual([{ id: PAGE_A, title: 'Plan', canRestore: false }]);
     expect(storage.getPageViewer).toHaveBeenCalledWith(EDITOR.id);
     expect(storage.getTrashPages).toHaveBeenCalledWith(viewer, undefined);
 
@@ -366,6 +367,46 @@ describe('Trash listing is the caller’s', () => {
     const malformed = await request(app).get('/api/trash?teamId=abc').set(as(EDITOR));
     expect([malformed.status, malformed.body]).toEqual([400, { error: 'Invalid team ID' }]);
     expect(storage.getTrashPages).not.toHaveBeenCalled();
+  });
+});
+
+describe('Trash listing says which rows the caller may restore or delete forever', () => {
+  const row = (id: number) => ({ id, title: `Page ${id}`, slug: `page-${id}`, teamId: TEAM_A });
+
+  beforeEach(() => {
+    storage.getPageViewer.mockResolvedValue({ userId: 0, email: '', teamIds: [] });
+  });
+
+  it('marks a row canRestore only where the caller holds the owner right on that page', async () => {
+    storage.getTrashPages.mockResolvedValue([row(PAGE_A), row(PAGE_B)]);
+
+    const owner = await request(app).get('/api/trash').set(as(OWNER));
+    expect(owner.status).toBe(200);
+    expect(owner.body.map((r: any) => [r.id, r.canRestore])).toEqual([
+      [PAGE_A, true],
+      [PAGE_B, false],
+    ]);
+    expect(storage.checkPagePermission).toHaveBeenCalledWith(OWNER.id, PAGE_A, 'owner');
+
+    const editor = await request(app).get('/api/trash').set(as(EDITOR));
+    expect(editor.body.map((r: any) => [r.id, r.canRestore])).toEqual([
+      [PAGE_A, false],
+      [PAGE_B, false],
+    ]);
+  });
+
+  it('adds nothing but the flag: the rows are exactly those the listing returned', async () => {
+    storage.getTrashPages.mockResolvedValue([row(PAGE_A)]);
+    const res = await request(app).get('/api/trash').set(as(OWNER));
+    expect(res.body).toEqual([{ ...row(PAGE_A), canRestore: true }]);
+  });
+
+  it('answers 500 without rows when an owner check fails, instead of guessing a flag', async () => {
+    storage.getTrashPages.mockResolvedValue([row(PAGE_A)]);
+    storage.checkPagePermission.mockRejectedValue(new Error('db down'));
+    const res = await request(app).get('/api/trash').set(as(OWNER));
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Failed to fetch trash' });
   });
 });
 
