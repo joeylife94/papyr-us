@@ -1,13 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useOrganization } from '@/hooks/useOrganization';
-import {
-  forgetRecent,
-  readRecent,
-  recentKey,
-  recordRecent,
-  type RecentEntry,
-} from '@/lib/recent-pages';
+import { readRecent, recentKey, recordRecent, type RecentEntry } from '@/lib/recent-pages';
 
 const CHANGED = 'papyrus:recent-changed';
 
@@ -56,15 +50,5 @@ export function useRecentPages() {
     [key, organization]
   );
 
-  const forget = useCallback(
-    (id: number) => {
-      const store = browserStore();
-      if (!key || !store) return;
-      forgetRecent(store, key, id);
-      window.dispatchEvent(new Event(CHANGED));
-    },
-    [key]
-  );
-
-  return { entries, record, forget };
+  return { entries, record };
 }

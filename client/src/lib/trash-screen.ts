@@ -32,6 +32,21 @@ export function restoredMessage(title: string, restoredCount: unknown): string {
   return `"${title}" 문서를 복원했습니다.`;
 }
 
+/** The notice after emptying a team's trash: the server's count ("N page(s) permanently deleted"). */
+export function emptiedMessage(serverMessage: unknown): string {
+  const count =
+    typeof serverMessage === 'string'
+      ? /^(\d+) page\(s\) permanently deleted$/.exec(serverMessage)
+      : null;
+  return count ? `문서 ${count[1]}개를 영구 삭제했습니다.` : '휴지통을 비웠습니다.';
+}
+
+/** What a refused star says: a page the caller cannot list can never be added, so no "try again". */
+export function favoriteFailureMessage(adding: boolean, status: number): string {
+  if (adding && status === 404) return '이 문서는 즐겨찾기에 추가할 수 없습니다.';
+  return `${adding ? '즐겨찾기에 추가하지 못했습니다' : '즐겨찾기에서 제거하지 못했습니다'}. 잠시 후 다시 시도해 주세요.`;
+}
+
 /** What "휴지통 비우기" deletes on a team's trash screen, said in the confirmation. */
 export function emptyTrashScopeText(teamLabel: string, shownCount: number): string {
   return `"${teamLabel}" 팀의 휴지통에 있는 문서 ${shownCount}개를 영구 삭제합니다.`;

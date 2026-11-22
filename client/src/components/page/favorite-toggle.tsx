@@ -1,8 +1,15 @@
-import { Star } from 'lucide-react';
+import { Star, StarOff } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { favoriteFailureMessage } from '@/lib/trash-screen';
+
+class FavoriteRequestError extends Error {
+  constructor(readonly status: number) {
+    super(`${status}`);
+  }
+}
 
 /**
  * The page header's star: adds the page to the caller's favourites or removes it, as
@@ -13,7 +20,7 @@ export function FavoriteToggle({ pageId, pageTitle }: { pageId: number; pageTitl
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const checkKey = [`/api/favorites/check/${pageId}`];
-  const { data, isLoading } = useQuery<{ isFavorited: boolean }>({
+  const { data, isLoading, isError, refetch } = useQuery<{ isFavorited: boolean }>({
     queryKey: checkKey,
     // The state is the caller's own and changes from other tabs; ask again on every page open
     staleTime: 0,
@@ -28,20 +35,40 @@ export function FavoriteToggle({ pageId, pageTitle }: { pageId: number; pageTitl
       });
       // "Already a favourite" and "already removed" are the state the click asked for
       if (!response.ok && response.status !== 409 && !(response.status === 404 && !add)) {
-        throw new Error(`${response.status}`);
+        throw new FavoriteRequestError(response.status);
       }
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: checkKey });
       void queryClient.invalidateQueries({ queryKey: ['/api/favorites'] });
     },
-    onError: (_error, add) =>
+    onError: (error, add) =>
       toast({
         title: add ? '즐겨찾기에 추가하지 못했습니다' : '즐겨찾기에서 제거하지 못했습니다',
-        description: `"${pageTitle || '제목 없음'}" 문서의 즐겨찾기를 바꾸지 못했습니다. 잠시 후 다시 시도해 주세요.`,
+        description: `"${pageTitle || '제목 없음'}": ${favoriteFailureMessage(
+          add,
+          error instanceof FavoriteRequestError ? error.status : 0
+        )}`,
         variant: 'destructive',
       }),
   });
+
+  // The state could not be read: say so, and let the click ask again
+  if (isError) {
+    return (
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={() => void refetch()}
+        title="즐겨찾기 상태를 불러오지 못했습니다. 눌러서 다시 시도"
+        aria-label="즐겨찾기 상태를 불러오지 못했습니다. 눌러서 다시 시도"
+        data-testid="favorite-toggle-error"
+        className="text-destructive"
+      >
+        <StarOff className="h-4 w-4" aria-hidden="true" />
+      </Button>
+    );
+  }
 
   const label = favorited ? '즐겨찾기에서 제거' : '즐겨찾기에 추가';
   return (

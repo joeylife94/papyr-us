@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   RECENT_LIMIT,
   clearAllRecent,
-  forgetRecent,
   readRecent,
   recentKey,
   recordRecent,
@@ -57,6 +56,11 @@ describe('the recent list', () => {
     expect(readRecent(store, key)).toEqual([]);
   });
 
+  it('keeps a page in the list until newer pages push it out (nothing else deletes an entry)', () => {
+    for (let id = 1; id <= 3; id++) recordRecent(store, key, { id, title: `P${id}` });
+    expect(readRecent(store, key).map((e) => e.id)).toEqual([3, 2, 1]);
+  });
+
   it('puts the newest page first, once per page, and keeps only id and title', () => {
     recordRecent(store, key, { id: 1, title: 'One', slug: 'secret-slug', body: 'x' } as any);
     recordRecent(store, key, { id: 2, title: 'Two' });
@@ -75,13 +79,6 @@ describe('the recent list', () => {
     expect(list).toHaveLength(RECENT_LIMIT);
     expect(list[0].id).toBe(RECENT_LIMIT + 5);
     expect(list[RECENT_LIMIT - 1].id).toBe(6);
-  });
-
-  it('forgets one page', () => {
-    recordRecent(store, key, { id: 1, title: 'One' });
-    recordRecent(store, key, { id: 2, title: 'Two' });
-    expect(forgetRecent(store, key, 1)).toEqual([{ id: 2, title: 'Two' }]);
-    expect(readRecent(store, key)).toEqual([{ id: 2, title: 'Two' }]);
   });
 
   it('never reads another key: another account or organization sees nothing of this list', () => {
@@ -131,7 +128,6 @@ describe('the recent list', () => {
     };
     expect(readRecent(broken, key)).toEqual([]);
     expect(recordRecent(broken, key, { id: 1, title: 'One' })).toEqual([{ id: 1, title: 'One' }]);
-    expect(() => forgetRecent(broken, key, 1)).not.toThrow();
     expect(() => clearAllRecent(broken)).not.toThrow();
   });
 

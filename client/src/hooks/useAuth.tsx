@@ -49,6 +49,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Token genuinely invalid/expired — try to refresh via cookie
         const refreshed = await tryRefreshToken();
         if (!refreshed) {
+          // The session is over without a sign-out: the recent lists go as they do there
+          try {
+            clearAllRecent(window.localStorage);
+          } catch {
+            // Storage unavailable: nothing stored to clear
+          }
           setIsAuthenticated(false);
           setUser(null);
         }

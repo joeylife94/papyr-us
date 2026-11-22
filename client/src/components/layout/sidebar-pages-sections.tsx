@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
@@ -24,12 +23,6 @@ interface FavoriteRow {
 type PreviewAnswer =
   | { id: number; accessible: false }
   | { id: number; accessible: true; title: string; slug: string; icon?: string | null };
-
-/** The status of an error thrown by the default query function (`403: …`). */
-const errorStatus = (error: unknown): number | null => {
-  const match = error instanceof Error ? /^(\d{3}):/.exec(error.message) : null;
-  return match ? Number(match[1]) : null;
-};
 
 /** "즐겨찾기": the caller's favourites, newest first, each linking to its page. */
 export function FavoritesSection({ onNavigate }: { onNavigate?: () => void }) {
@@ -82,12 +75,13 @@ export function FavoritesSection({ onNavigate }: { onNavigate?: () => void }) {
 /**
  * "최근 문서": the pages this account opened last in its organization (a localStorage list of ids,
  * see lib/recent-pages.ts). An entry is shown only once the server confirms the account can still
- * read the page, with the server's current title and address; a page the server answers as
- * unreadable, trashed or missing (accessible: false, 403, 404) is dropped from the list.
+ * read the page, with the server's current title and address. A page the server answers as
+ * unreadable, trashed or missing (accessible: false, 403, 404) is hidden but stays stored, so a
+ * restored page reappears; the cap of 10 evicts the oldest.
  */
 export function RecentSection({ onNavigate }: { onNavigate?: () => void }) {
   const { pathname } = useLocation();
-  const { entries, forget } = useRecentPages();
+  const { entries } = useRecentPages();
   const previews = useQueries({
     queries: entries.map((entry) => ({
       queryKey: [`/api/pages/${entry.id}/link-preview`],
@@ -99,20 +93,13 @@ export function RecentSection({ onNavigate }: { onNavigate?: () => void }) {
 
   const verdicts = previews.map((query, index) => {
     const answer = query.data as PreviewAnswer | undefined;
-    const status = errorStatus(query.error);
     return {
       entry: entries[index],
+      // Not confirmed (inaccessible, trashed, 403/404, error) means hidden; the entry stays stored
       ready: answer?.accessible === true ? answer : null,
-      gone: answer?.accessible === false || status === 403 || status === 404,
       pending: !answer && !query.isError,
     };
   });
-  const goneIds = verdicts.filter((verdict) => verdict.gone).map((verdict) => verdict.entry.id);
-  const goneKey = goneIds.join(',');
-  useEffect(() => {
-    for (const id of goneKey ? goneKey.split(',').map(Number) : []) forget(id);
-  }, [goneKey, forget]);
-
   const shown = verdicts.filter((verdict) => verdict.ready);
   const waiting = verdicts.some((verdict) => verdict.pending);
 

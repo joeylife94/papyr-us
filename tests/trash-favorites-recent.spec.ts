@@ -1,4 +1,4 @@
-import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
+import { test, expect, type APIRequestContext, type Page, type Route } from '@playwright/test';
 import {
   createAuthenticatedApiContext,
   loginPageWithCookies,
@@ -110,6 +110,8 @@ test('trash: a page goes to the trash, comes back, goes again and is deleted for
     await expect(page.getByTestId('trash-row').filter({ hasText: title })).toHaveCount(0);
     // The favourite comes back with the page, still without a reload
     await expect(favorites(page).getByRole('link', { name: title })).toBeVisible();
+    // Recent shows the restored page again without opening it
+    await expect(recent(page).getByRole('link', { name: title })).toBeVisible();
     await page.getByTestId('trash-notice').getByRole('link', { name: '복원한 문서 열기' }).click();
     await expect(page).toHaveURL(new RegExp(`/page/${created.slug}$`));
     await expect(
@@ -357,7 +359,84 @@ test('favourites: add and remove with the star, persist across a reload, and hid
   }
 });
 
-test('recent: lists the pages this account opened, newest first, never another account’s, and drops a page it lost access to', async ({
+test('favourites: a page the account can read but not list cannot be starred, and the star says so', async ({
+  page,
+  request,
+}) => {
+  const owner = await registerTestUser(request, 'fav-unlistable-owner');
+  const member = await registerTestUser(request, 'fav-unlistable-member');
+  const ownerApi = await createAuthenticatedApiContext(owner.email, owner.password);
+  const key = stamp();
+  const makeTeam = async (suffix: string, admitMember: boolean) => {
+    const created = await ownerApi.post('/api/teams', {
+      data: { name: `unl-${suffix}-${key}`, displayName: `Unl ${suffix} ${key}` },
+    });
+    expect(created.status()).toBe(201);
+    const id = Number((await created.json()).id);
+    if (admitMember) {
+      const admit = await ownerApi.post(`/api/teams/${id}/memberships`, {
+        data: { email: member.email },
+      });
+      expect(admit.status()).toBe(201);
+    }
+    return id;
+  };
+  const memberTeam = await makeTeam('member', true);
+  const otherTeam = await makeTeam('other', false);
+
+  try {
+    // A page of a team the member is not in, shared with the member's team: readable, not listable
+    const shared = await createPage(ownerApi, `Shared Elsewhere ${key}`, { teamId: otherTeam });
+    const grant = await ownerApi.post(`/api/pages/${shared.id}/permissions`, {
+      data: { entityType: 'team', entityId: memberTeam, permission: 'viewer' },
+    });
+    expect(grant.status()).toBeLessThan(300);
+
+    await loginPageWithCookies(page, member.email, member.password);
+    await page.goto(`/page/${shared.slug}`);
+    const star = page.getByTestId('favorite-toggle');
+    await expect(star).toBeEnabled();
+    const refused = page.waitForResponse(
+      (r) =>
+        new URL(r.url()).pathname === `/api/favorites/${shared.id}` &&
+        r.request().method() === 'POST'
+    );
+    await star.click();
+    expect((await refused).status()).toBe(404);
+    await expect(page.getByText('이 문서는 즐겨찾기에 추가할 수 없습니다.')).toBeVisible();
+    await expect(page.getByText(/다시 시도해 주세요/)).toHaveCount(0);
+    await expect(star).toHaveAttribute('aria-pressed', 'false');
+  } finally {
+    await ownerApi.delete(`/api/teams/${memberTeam}`).catch(() => {});
+    await ownerApi.delete(`/api/teams/${otherTeam}`).catch(() => {});
+    await ownerApi.dispose();
+  }
+});
+
+test('favourites: a failed state read shows an error star that asks again', async ({
+  page,
+  request,
+}) => {
+  const user = await registerTestUser(request, 'fav-check-error');
+  const api = await createAuthenticatedApiContext(user.email, user.password);
+  try {
+    const created = await createPage(api, `Check Error ${stamp()}`);
+    await loginPageWithCookies(page, user.email, user.password);
+    const failCheck = (route: Route) => route.fulfill({ status: 500, body: '{}' });
+    await page.route('**/api/favorites/check/*', failCheck);
+    await page.goto(`/page/${created.slug}`);
+    const errorStar = page.getByTestId('favorite-toggle-error');
+    await expect(errorStar).toBeVisible();
+    await expect(errorStar).toHaveAttribute('aria-label', /불러오지 못했습니다/);
+    await page.unroute('**/api/favorites/check/*', failCheck);
+    await errorStar.click();
+    await expect(page.getByTestId('favorite-toggle')).toHaveAttribute('aria-pressed', 'false');
+  } finally {
+    await api.dispose();
+  }
+});
+
+test('recent: lists the pages this account opened, newest first, never another account’s, and hides a page it lost access to', async ({
   page,
   request,
 }) => {
@@ -424,21 +503,20 @@ test('recent: lists the pages this account opened, newest first, never another a
       first.title,
     ]);
 
-    // Losing the team drops its page from the list, and from storage
+    // Losing the team hides its page; it stays stored
     expect(
       (await ownerApi.delete(`/api/teams/${teamId}/memberships/${memberUserId}`)).status()
     ).toBeLessThan(300);
     await page.reload();
     await expect(recent(page).getByRole('link')).toHaveText([second.title, first.title]);
     const memberKey = names[0];
-    await expect
-      .poll(() =>
-        page.evaluate(
-          (name) => JSON.parse(localStorage.getItem(name) ?? '[]').map((e: any) => e.id),
-          memberKey
-        )
+    // The entry is hidden, not deleted: it stays stored until newer pages push it out
+    expect(
+      await page.evaluate(
+        (name) => JSON.parse(localStorage.getItem(name) ?? '[]').map((e: any) => e.id),
+        memberKey
       )
-      .toEqual([second.id, first.id]);
+    ).toEqual([second.id, shared.id, first.id]);
 
     // Signing out clears the lists of this browser
     await page.getByTestId('user-menu').click();
@@ -486,6 +564,7 @@ test('trash: "휴지통 비우기" is shown only to a platform admin on a team s
   try {
     const pageA1 = await createPage(ownerApi, `Empty A1 ${key}`, { teamId: teamA.id });
     const pageA2 = await createPage(ownerApi, `Empty A2 ${key}`, { teamId: teamA.id });
+    const pageA3 = await createPage(ownerApi, `Empty A3 ${key}`, { teamId: teamA.id });
     const pageB = await createPage(ownerApi, `Empty B ${key}`, { teamId: teamB.id });
     for (const created of [pageA1, pageA2, pageB]) {
       expect((await ownerApi.delete(`/api/pages/${created.id}`)).status()).toBe(200);
@@ -529,22 +608,55 @@ test('trash: "휴지통 비우기" is shown only to a platform admin on a team s
       await expect(adminPage.getByTestId('trash-screen')).toBeVisible();
       await expect(adminPage.getByTestId('empty-trash')).toHaveCount(0);
 
-      // A team screen: the button asks first; Cancel sends nothing
+      // The team's list failed to load: no empty button, since nothing says what it would delete
+      const failList = (route: Route) =>
+        route.request().method() === 'GET'
+          ? route.fulfill({ status: 500, body: '{}' })
+          : route.continue();
+      await adminPage.route('**/api/trash?teamId=*', failList);
+      const failed = adminPage.waitForResponse(isTrashList);
+      await adminPage.goto(`/teams/${teamA.name}/trash`);
+      expect((await failed).status()).toBe(500);
+      await expect(adminPage.getByTestId('trash-error')).toBeVisible();
+      await expect(adminPage.getByTestId('empty-trash')).toHaveCount(0);
+      await adminPage.unroute('**/api/trash?teamId=*', failList);
+
+      // A team screen: two rows are listed
       const teamListed = adminPage.waitForResponse(isTrashList);
       await adminPage.goto(`/teams/${teamA.name}/trash`);
       await teamListed;
       await expect(adminPage.getByTestId('trash-row')).toHaveCount(2);
-      await adminPage.getByTestId('empty-trash').click();
+
+      // Another page of the team is trashed after the list was read: the dialog reads the list
+      // again and counts it
+      expect((await ownerApi.delete(`/api/pages/${pageA3.id}`)).status()).toBe(200);
       const dialog = adminPage.getByTestId('trash-empty-dialog');
+      await adminPage.getByTestId('empty-trash').click();
       await expect(dialog).toContainText(`"Empty a ${key}" 팀`);
-      await expect(dialog).toContainText('2개를 영구 삭제합니다');
+      await expect(dialog).toContainText('3개를 영구 삭제합니다');
       await expect(dialog).toContainText('되돌릴 수 없습니다');
+      // Cancel sends nothing
       await dialog.getByRole('button', { name: '취소' }).click();
       await expect(dialog).toHaveCount(0);
       expect(deletes).toEqual([]);
 
+      // The dialog's own read fails: it says so and cannot delete
+      await adminPage.route('**/api/trash?teamId=*', failList);
+      await adminPage.getByTestId('empty-trash').click();
+      await expect(dialog.getByRole('alert')).toContainText('삭제할 수 없습니다');
+      await expect(adminPage.getByTestId('trash-empty-confirm')).toBeDisabled();
+      await dialog.getByRole('button', { name: '취소' }).click();
+      await adminPage.unroute('**/api/trash?teamId=*', failList);
+      expect(deletes).toEqual([]);
+      // The screen now shows the failed read with a retry; the button is back once the list loads
+      await expect(adminPage.getByTestId('empty-trash')).toHaveCount(0);
+      const retried = adminPage.waitForResponse(isTrashList);
+      await adminPage.getByTestId('trash-error').getByRole('button', { name: '다시 시도' }).click();
+      expect((await retried).status()).toBe(200);
+
       // Confirm: one DELETE naming this team only; its rows go, the other team's page stays
       await adminPage.getByTestId('empty-trash').click();
+      await expect(dialog).toContainText('3개를 영구 삭제합니다');
       const emptied = adminPage.waitForResponse(
         (r) => new URL(r.url()).pathname === '/api/trash' && r.request().method() === 'DELETE'
       );
@@ -553,10 +665,14 @@ test('trash: "휴지통 비우기" is shown only to a platform admin on a team s
       expect(deletes).toHaveLength(1);
       expect(new URL(deletes[0]).search).toBe(`?teamId=${teamA.id}`);
       await expect(adminPage.getByTestId('trash-empty')).toBeVisible();
+      await expect(
+        adminPage.getByText('문서 3개를 영구 삭제했습니다.', { exact: true })
+      ).toBeVisible();
       const remaining = (await (await ownerApi.get('/api/trash')).json()).map((row: any) => row.id);
       expect(remaining).toContain(pageB.id);
       expect(remaining).not.toContain(pageA1.id);
       expect(remaining).not.toContain(pageA2.id);
+      expect(remaining).not.toContain(pageA3.id);
     } finally {
       await adminPage.context().close();
     }

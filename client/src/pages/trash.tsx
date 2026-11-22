@@ -23,6 +23,7 @@ import { invalidatePageLists } from '@/lib/queryClient';
 import { resolvePageTeamId } from '@/lib/page-team-scope';
 import { PERSONAL_SCOPE_LABEL } from '@/lib/page-scope';
 import {
+  emptiedMessage,
   emptyTrashScopeText,
   failureMessage,
   restoredMessage,
@@ -126,6 +127,10 @@ export default function TrashPage() {
   const [failure, setFailure] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<TrashRow | null>(null);
   const [confirmEmpty, setConfirmEmpty] = useState(false);
+  // The count in the empty-trash dialog is the list as read when the dialog opened
+  const [emptyCheck, setEmptyCheck] = useState<
+    { state: 'checking' } | { state: 'failed' } | { state: 'ready'; count: number }
+  >({ state: 'checking' });
 
   const refresh = () => {
     void invalidatePageLists(queryClient);
@@ -181,7 +186,7 @@ export default function TrashPage() {
       setNotice(null);
     },
     onSuccess: (result) => {
-      toast({ title: '휴지통을 비웠습니다', description: result.message });
+      toast({ title: '휴지통을 비웠습니다', description: emptiedMessage(result.message) });
       refresh();
     },
     onError: (error) => fail('empty', error),
@@ -189,6 +194,21 @@ export default function TrashPage() {
   });
 
   const rows = trash.data ?? [];
+  // Opening the dialog reads the team's list again; deleting is possible only after that read
+  // succeeded, and the dialog counts what it returned.
+  const openEmptyDialog = () => {
+    setEmptyCheck({ state: 'checking' });
+    setConfirmEmpty(true);
+    void trash
+      .refetch()
+      .then((result) =>
+        setEmptyCheck(
+          result.isSuccess && result.data
+            ? { state: 'ready', count: result.data.length }
+            : { state: 'failed' }
+        )
+      );
+  };
   const busy = restore.isPending || remove.isPending || empty.isPending;
   const scopeLabel = teamLabel ?? '모든 문서';
 
@@ -207,10 +227,10 @@ export default function TrashPage() {
             문서 소유자는 복원하거나 영구 삭제할 수 있습니다.
           </p>
         </div>
-        {isPlatformAdmin && teamId !== '' && teamLabel && (
+        {isPlatformAdmin && teamId !== '' && teamLabel && trash.isSuccess && rows.length > 0 && (
           <Button
             variant="outline"
-            onClick={() => setConfirmEmpty(true)}
+            onClick={openEmptyDialog}
             disabled={busy}
             data-testid="empty-trash"
             className="text-destructive"
@@ -374,14 +394,23 @@ export default function TrashPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>휴지통을 비울까요?</AlertDialogTitle>
             <AlertDialogDescription>
-              {emptyTrashScopeText(teamLabel ?? '', rows.length)} 이 작업은 되돌릴 수 없습니다.
+              {emptyCheck.state === 'ready'
+                ? `${emptyTrashScopeText(teamLabel ?? '', emptyCheck.count)} 이 작업은 되돌릴 수 없습니다.`
+                : emptyCheck.state === 'checking'
+                  ? '삭제할 문서를 확인하는 중입니다…'
+                  : null}
             </AlertDialogDescription>
+            {emptyCheck.state === 'failed' && (
+              <p role="alert" className="text-sm text-destructive">
+                휴지통 목록을 불러오지 못해 삭제할 수 없습니다. 닫고 다시 시도해 주세요.
+              </p>
+            )}
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>취소</AlertDialogCancel>
             <Button
               variant="destructive"
-              disabled={empty.isPending}
+              disabled={empty.isPending || emptyCheck.state !== 'ready' || emptyCheck.count === 0}
               onClick={() => empty.mutate()}
               data-testid="trash-empty-confirm"
             >

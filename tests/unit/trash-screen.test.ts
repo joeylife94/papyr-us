@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  emptiedMessage,
   emptyTrashScopeText,
+  favoriteFailureMessage,
   failureMessage,
   restoredMessage,
   sortFavorites,
@@ -74,5 +76,30 @@ describe('sortFavorites: the sidebar order does not change between loads', () =>
     const rows = [row(1, '2025-01-01T00:00:00Z'), row(2, '2025-01-02T00:00:00Z')];
     sortFavorites(rows);
     expect(rows.map((r) => r.id)).toEqual([1, 2]);
+  });
+});
+
+describe('emptiedMessage: the success notice is Korean and carries the server count', () => {
+  it('reads the count out of the server answer', () => {
+    expect(emptiedMessage('3 page(s) permanently deleted')).toBe('문서 3개를 영구 삭제했습니다.');
+    expect(emptiedMessage('0 page(s) permanently deleted')).toBe('문서 0개를 영구 삭제했습니다.');
+  });
+  it('does not guess a number from anything else', () => {
+    for (const text of [undefined, null, '', 'done', 'x page(s) permanently deleted', {}]) {
+      expect(emptiedMessage(text as any)).toBe('휴지통을 비웠습니다.');
+    }
+  });
+});
+
+describe('favoriteFailureMessage: a refused star says why', () => {
+  it('says a page that cannot be listed cannot be a favourite (404 on add)', () => {
+    expect(favoriteFailureMessage(true, 404)).toBe('이 문서는 즐겨찾기에 추가할 수 없습니다.');
+  });
+  it('asks to try again only for failures a retry can fix', () => {
+    for (const status of [500, 502, 0]) {
+      expect(favoriteFailureMessage(true, status)).toMatch(/다시 시도/);
+      expect(favoriteFailureMessage(false, status)).toMatch(/다시 시도/);
+    }
+    expect(favoriteFailureMessage(false, 404)).toMatch(/다시 시도/);
   });
 });

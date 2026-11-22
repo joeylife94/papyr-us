@@ -2,8 +2,9 @@
  * The "최근 문서" list: the pages this browser's signed-in account last opened, kept in
  * localStorage under a key naming the account AND its organization. Only a page id and title are
  * stored (never a body, slug or any other field). The sidebar shows an entry only after the server
- * confirms the account can still read that page (GET /api/pages/:id/link-preview), and drops it
- * when it cannot; signing out clears every list.
+ * confirms the account can still read that page (GET /api/pages/:id/link-preview); an entry the
+ * server does not confirm is hidden, not deleted (a restored page reappears), and only the cap of
+ * the newest RECENT_LIMIT pages evicts. Signing out, or a session that ends, clears every list.
  */
 
 export const RECENT_LIMIT = 10;
@@ -65,12 +66,6 @@ export function recordRecent(store: RecentStore, key: string, entry: RecentEntry
     { id: entry.id, title: entry.title },
     ...readRecent(store, key).filter((item) => item.id !== entry.id),
   ]);
-  write(store, key, next);
-  return next;
-}
-
-export function forgetRecent(store: RecentStore, key: string, id: number): RecentEntry[] {
-  const next = readRecent(store, key).filter((item) => item.id !== id);
   write(store, key, next);
   return next;
 }
