@@ -290,6 +290,14 @@ test.describe('toggle blocks and indentation', () => {
         .poll(async () => storedShape(api, pageId), { timeout: 30_000 })
         .toEqual(['0:A', '1:B', '2:C', '2:D', '0:E', '1:F', '0:code']);
 
+      // Ctrl+] and Ctrl+[ indent and outdent too (they work where Tab has to stay a way to move
+      // on, such as from a block that shows page links).
+      await field(4).click();
+      await page.keyboard.press('Control+]');
+      await expect.poll(() => rowIndent(4)).toBe('1');
+      await page.keyboard.press('Control+[');
+      await expect.poll(() => rowIndent(4)).toBe('0');
+
       // Code keeps Tab as text (two spaces in the code): the block does not indent.
       await field(6).click();
       const codeSaved = waitForAutosave(page, pageId);

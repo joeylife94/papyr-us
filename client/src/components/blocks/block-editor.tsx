@@ -54,7 +54,7 @@ import { useCollapsedToggles } from '@/lib/toggle-state';
 import { ToggleDisclosure } from './toggle-block';
 import { PageLinkPicker } from '@/components/page/page-links';
 import { EmbedScopeProvider } from '@/components/page/page-embed';
-import { pageLinkToken } from '@shared/page-links';
+import { hasPageLinks, pageLinkToken } from '@shared/page-links';
 import { matchMarkdownShortcut } from '@/lib/markdown-shortcuts';
 import { planPageEmbedInsertion } from '@/lib/page-embed-insert';
 import { headingIdsByBlock } from '@/lib/markdown';
@@ -100,6 +100,14 @@ const INDENTABLE_TYPES: ReadonlySet<string> = new Set([
   'checkbox',
   'toggle',
   'quote',
+]);
+
+/** Block types drawn by ParagraphBlock, which lists the page links of its text in a row below. */
+const LINK_ROW_TYPES: ReadonlySet<string> = new Set([
+  'paragraph',
+  'bulleted_list',
+  'numbered_list',
+  'toggle',
 ]);
 
 /** The marker of a bulleted item at each nesting level. */
@@ -704,19 +712,31 @@ export function BlockEditor({
 
   const handleRowKeyDown = (event: React.KeyboardEvent, index: number) => {
     if (undoMarkdownShortcut(event, blocks[index])) return;
-    // Tab / Shift+Tab in the text of a block (WP11); the menus that are open keep the key.
-    if (
-      event.key === 'Tab' &&
-      !event.altKey &&
-      !event.ctrlKey &&
-      !event.metaKey &&
-      event.target instanceof HTMLTextAreaElement &&
-      INDENTABLE_TYPES.has(blocks[index].type)
-    ) {
-      event.preventDefault();
-      if (!slashMenu.isOpen && !linkPicker)
-        shiftBlockIndent(blocks[index].id, event.shiftKey ? -1 : 1);
-      return;
+    // Tab / Shift+Tab in the text of a block (WP11); the menus that are open keep the key. Ctrl or
+    // Cmd with ] and [ do the same, and work where Tab has to stay a way to move on: forward Tab
+    // from a block that shows a row of page links reaches the first link, as it always has.
+    const block = blocks[index];
+    if (event.target instanceof HTMLTextAreaElement && INDENTABLE_TYPES.has(block.type)) {
+      const withModifier =
+        (event.ctrlKey || event.metaKey) &&
+        !event.altKey &&
+        !event.shiftKey &&
+        (event.key === ']' || event.key === '[');
+      const withTab = event.key === 'Tab' && !event.altKey && !event.ctrlKey && !event.metaKey;
+      const reachesLinks =
+        withTab &&
+        !event.shiftKey &&
+        LINK_ROW_TYPES.has(block.type) &&
+        focusedBlockId === block.id &&
+        hasPageLinks(block.content);
+      if ((withTab && !reachesLinks) || withModifier) {
+        event.preventDefault();
+        if (!slashMenu.isOpen && !linkPicker) {
+          const outdent = withTab ? event.shiftKey : event.key === '[';
+          shiftBlockIndent(block.id, outdent ? -1 : 1);
+        }
+        return;
+      }
     }
     if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;

@@ -37,7 +37,8 @@
  * paragraphs split on blank lines, with their text verbatim, so constructs the editor has no
  * block for (tables, HTML, indented code, math) still render the same after the next save.
  * Inline Markdown and page link tokens (`[[page:<id>]]`) are never touched. Nested list items
- * stay in their parent item's text (the editor has no nesting), indented as written.
+ * and `<details>` toggles become nested blocks (see below); continuation lines and lazy lines
+ * of an item stay in its text.
  *
  * Nesting (shared/block-tree.ts: a flat list with an `indent` per block):
  * - A list item or to-do nested under a list item is a nested Markdown list item, written at the
@@ -499,7 +500,7 @@ interface OpenItem {
   text: string[];
   level: number;
   /** A fenced code block inside the item's text is open: its lines are text, never items. */
-  fence: { character: string; length: number } | null;
+  fence: RegExp | null;
 }
 
 /** The list item a line starts at any indentation (nesting), or null. */
@@ -580,9 +581,7 @@ function parseListRun(
     if (item.fence) {
       if (indentOf(line) >= item.contentIndent) {
         const piece = line.slice(item.contentIndent);
-        const closer = new RegExp(
-          `^ {0,3}${item.fence.character}{${item.fence.length},}[ \\t]*$`
-        ).test(piece);
+        const closer = item.fence.test(piece);
         item.text.push(piece);
         if (closer) item.fence = null;
         index++;
@@ -599,7 +598,10 @@ function parseListRun(
     if (indentOf(line) >= stack[0].contentIndent) {
       const piece = line.slice(Math.min(item.contentIndent, indentOf(line)));
       const fence = fenceOpen(piece);
-      if (fence) item.fence = { character: fence.fence[0], length: fence.fence.length };
+      if (fence) {
+        // The line that closes it: the same character, at least as many times.
+        item.fence = new RegExp(`^ {0,3}${fence.fence[0]}{${fence.fence.length},}[ \\t]*$`);
+      }
       item.text.push(piece);
     } else if (!isBlank(item.text[item.text.length - 1]) && !startsBlock(line)) {
       // A lazy line continues the item's paragraph.
