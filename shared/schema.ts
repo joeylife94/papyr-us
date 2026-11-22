@@ -400,9 +400,11 @@ export const insertCommentSchema = createInsertSchema(comments).omit({
 
 // Update schema strips identity fields — author / authorUserId are server-derived
 // and must not be client-editable on normal update paths.
+// An edit changes the text of a comment only: the page and the thread it belongs to are fixed
+// when it is created (the edit route checks access on the comment's own page).
 export const updateCommentSchema = insertCommentSchema
   .partial()
-  .omit({ author: true, authorUserId: true });
+  .omit({ author: true, authorUserId: true, pageId: true, parentId: true });
 
 export type InsertComment = z.infer<typeof insertCommentSchema>;
 export type UpdateComment = z.infer<typeof updateCommentSchema>;
