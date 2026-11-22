@@ -4,7 +4,7 @@ aliases: ['PAPYR_US_MASTER', 'Papyr.us v1.0 Master']
 project: 'Papyr.us'
 type: 'project-master'
 status: 'authoritative-contract'
-version: '1.05'
+version: '1.07'
 target: 'v1.0 + D1 frozen baseline; enterprise readiness (Issue #124), one bounded phase per PR'
 current_phase: 'Issue #124 — X0, X1a, X1b and X1c done; X1d next, alongside the collaboration packages of §10'
 priority: 'P1'
@@ -18,7 +18,7 @@ checkpoint_main_sha: 'd2f092b240d5ffe0937dd6d487934e32d5a631f3'
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v1.05**  
+> **AUTHORITATIVE PROJECT CONTRACT — v1.07**  
 > Current repository / Issue / PR / executable evidence overrides historical checkpoints, Scheduled Task prompts, and agent self-report.  
 > The accepted v1.0 product/proof baseline and D1 remain frozen as evidence. Progression after D1 runs as contract Issues under [`AGENTS.md`](AGENTS.md), one bounded phase per PR, and must not rewrite prior accepted evidence or widen buyer-facing claims without a new Proof.
 
@@ -767,3 +767,40 @@ On the package head, Linux container, local PostgreSQL 16, the container's Chrom
 - A restore re-reads every open document of the page, so unsaved in-memory edits on it are replaced by the database content (as version restore does).
 - Access notices reach only sockets connected to the same server process.
 - Still open from §18: realtime connections stay open after account deactivation; two browser specs outside every CI list fail on the base.
+
+## 21. Toggle Blocks and Indentation (2026-11-22)
+
+### Changed
+
+Owner decision O5 (2026-11-22): pages stay a flat list of blocks; nesting is an indent level plus a `parentId`, not a `children` tree. The stored `blocks` shape is a persistence contract. No migration (blocks are JSON).
+
+| Area     | What exists now                                                                                                                                                                                                                                                                                                    |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Model    | optional `indent` 0–8; the server normalises on every save path (save, autosave, realtime, version restore, create, duplicate): at most one level deeper than the block before, `parentId` recomputed from `indent`, `indent: 0` and level-0 `parentId` dropped; pages without nesting are unchanged byte for byte |
+| Editor   | `Tab`/`Shift+Tab` and `Ctrl/Cmd+]`/`[` indent and outdent text blocks with their nested blocks; a refused indent and `Shift+Tab` at level 0 move focus; `Esc` then `Tab` walks out of the editor; changes are announced; moves never re-parent other blocks' children                                              |
+| Toggle   | a real toggle block; collapse state per viewer (session storage), never saved; readers open and close it; each disclosure is labelled with its summary                                                                                                                                                             |
+| Markdown | nested lists at the parent's content column; toggles as `<details>`/`<summary>` (first line escaped, further lines a paragraph inside); the reader renders summaries as inline Markdown and never raw HTML                                                                                                         |
+| Realtime | indent travels with the block; the client never writes a normalisation back into the shared document                                                                                                                                                                                                               |
+
+Process: one developer package against a brief, one independent review (one blocker: a keyboard trap; probes compared old and new Markdown on 60k random block lists and 20k documents, and every write path) and one round of review fixes, plus a lead fix so one `Esc` is enough however many blocks follow, re-run.
+
+### Actually Executed
+
+On the package head, Linux container, local PostgreSQL 16, the container's Chromium:
+
+- `node scripts/verify-contributor.mjs` — **PASS**; `npx tsc --noEmit`, `npx eslint . --max-warnings=0` — clean;
+- server suite — 93 files, 2683 tests **PASS**; unit — 65 files, 1035 tests **PASS**; Layer 4 — 41 files, 580 tests **PASS** (before the review fixes; `page-save-pipeline`, `page-duplicate`, `retrieval-fts` re-run after them);
+- browser: `editor-toggle-indent` (5 tests, added to `test:gj`) twice in a row, also with `FEATURE_COLLABORATION=true` — **PASS**; `markdown-fidelity`, `markdown-shortcuts`, `live-preview`, `block-reorder`, `vault-roundtrip`, `page-links`, `synced-block-reference`, `gj02`, `gj04`, `collaboration-sync` — **PASS**.
+
+### Not Verified
+
+- `Cmd+[`/`Cmd+]` on macOS (browser back/forward outside a text field);
+- the whole `test:gj` list, Layer 5, Layer 6 and Firebat: CI on the pull request is the reference.
+
+### Known limits
+
+- Pages that hold `toggle` blocks from before this change (the slash menu offered them as plain text) get new `content` on their next save (the summary becomes `<details>` Markdown; one version is recorded); their stored blocks do not change.
+- Content-only pages (no stored blocks) convert differently on their first edit: nested list items become nested blocks.
+- A paragraph, heading or toggle nested under a list item shows nested in the editor but flat in the reader and after a vault round trip; a toggle split by an inline database renders the blocks after the database outside it; bare `<details>` lines in imported Markdown start a new block.
+- Search matches the words "details" and "summary" on pages with toggles.
+- Two people indenting and typing in the same block at once can still duplicate it until the per-block realtime binding (#158) lands.
