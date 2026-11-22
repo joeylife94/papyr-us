@@ -34,6 +34,7 @@ import CollaborationTest from '@/pages/collaboration-test';
 import AISearchPage from '@/pages/ai-search';
 import KnowledgeGraphPage from '@/pages/knowledge-graph';
 import TagsPage from '@/pages/tags';
+import TrashPage from '@/pages/trash';
 import AutomationPage from '@/pages/automation';
 import NotFound from '@/pages/not-found';
 import SharedPage from '@/pages/shared-page';
@@ -100,6 +101,12 @@ const DatabaseViewWrapper = () => {
 const TagsPageWrapper = () => {
   const { teamName } = useParams();
   return <TagsPage key={teamName ?? ''} />;
+};
+
+// The trash screen: one per workspace, so switching teams starts afresh.
+const TrashPageWrapper = () => {
+  const { teamName } = useParams();
+  return <TrashPage key={teamName ?? ''} />;
 };
 
 const HomeWrapper = () => {
@@ -292,6 +299,8 @@ function App() {
                       <Route path="/tags/*" element={<TagsPageWrapper />} />
                       <Route path="/teams/:teamName/tags" element={<TagsPageWrapper />} />
                       <Route path="/teams/:teamName/tags/*" element={<TagsPageWrapper />} />
+                      <Route path="/trash" element={<TrashPageWrapper />} />
+                      <Route path="/teams/:teamName/trash" element={<TrashPageWrapper />} />
                       <Route path="*" element={<NotFound />} />
                     </Route>
                   </Route>

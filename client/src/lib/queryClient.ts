@@ -57,7 +57,8 @@ export const queryClient = new QueryClient({
 /**
  * Refresh every cached page list after a page's title, icon, folder or place changed: the
  * document table and command palette (`/api/pages…`), per-folder lists (`/api/folders/:f/pages`),
- * the sidebar page tree (`/api/page-tree…`), and link chips and backlinks. These queries never go stale on their own, so a
+ * the sidebar page tree (`/api/page-tree…`), the trash and favourites lists, and link chips and
+ * backlinks (which also feed the recent list). These queries never go stale on their own, so a
  * save has to invalidate them.
  */
 export function invalidatePageLists(client: QueryClient = queryClient) {
@@ -74,6 +75,9 @@ export function invalidatePageLists(client: QueryClient = queryClient) {
           key.endsWith('/embed') ||
           key.endsWith('/backlinks') ||
           key.startsWith('/api/page-links/search') ||
+          // Trashing or restoring a page moves it between the trash and the favourites list.
+          key === '/api/trash' ||
+          key === '/api/favorites' ||
           (key.startsWith('/api/folders/') && key.endsWith('/pages')))
       );
     },

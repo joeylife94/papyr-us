@@ -13,8 +13,16 @@ describe('invalidatePageLists', () => {
       '/api/pages/7/embed',
       '/api/pages/7/backlinks',
       '/api/page-links/search?q=plan',
+      // Trashing or restoring a page changes the trash and the favourites list without a reload
+      '/api/trash',
+      '/api/favorites',
     ];
-    const untouched = ['/api/tasks', '/api/pages/7', '/api/pages/7/versions'];
+    const untouched = [
+      '/api/tasks',
+      '/api/pages/7',
+      '/api/pages/7/versions',
+      '/api/favorites/check/7',
+    ];
     for (const key of [...refreshed, ...untouched]) client.setQueryData([key], []);
 
     await invalidatePageLists(client);

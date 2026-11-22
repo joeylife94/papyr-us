@@ -29,6 +29,8 @@ import { PageIcon, PageIconPicker } from '@/components/page/page-icon';
 import { AddPageCoverButton, EditablePageCover, PageCover } from '@/components/page/page-cover';
 import { Backlinks } from '@/components/page/page-links';
 import { PageTagLinks } from '@/components/page/page-tag-links';
+import { FavoriteToggle } from '@/components/page/favorite-toggle';
+import { useRecentPages } from '@/hooks/useRecentPages';
 import { apiRequest, invalidatePageLists } from '@/lib/queryClient';
 import { extractHeadings, estimateReadingTime } from '@/lib/markdown';
 import { blocksToContent, initialBlocksFor, parseTags } from '@/lib/page-content';
@@ -101,6 +103,17 @@ export default function WikiPageView() {
     refetchInterval: 30_000,
   });
   const canEdit = !!access?.canEdit;
+
+  // The page opened is the newest "최근 문서" entry (its id and title only), once the server has
+  // answered with it: a page that answers 403/404 never gets there.
+  const { record: recordRecent } = useRecentPages();
+  const recentId = page?.id;
+  const recentTitle = page?.title;
+  const recentOrganizationId = page?.organizationId;
+  useEffect(() => {
+    if (recentId == null) return;
+    recordRecent({ id: recentId, title: recentTitle ?? '', organizationId: recentOrganizationId });
+  }, [recentId, recentTitle, recentOrganizationId, recordRecent]);
 
   const content = liveContent ?? page?.content ?? '';
   const headings = useMemo(() => extractHeadings(content), [content]);
@@ -277,6 +290,7 @@ export default function WikiPageView() {
         </Button>
       )}
       <div className="ml-auto flex items-center gap-1">
+        <FavoriteToggle pageId={page.id} pageTitle={page.title} />
         <PageShareControl pageId={page.id} pageTitle={page.title} onCopyLink={handleShare} />
         <Button
           variant="ghost"
