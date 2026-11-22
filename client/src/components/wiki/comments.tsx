@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -9,7 +9,7 @@ import { UNKNOWN_MENTION_LABEL, splitMentions } from '@shared/comment-mentions';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
-import { MessageCircle, Reply, Edit, Trash2, Send } from 'lucide-react';
+import { MessageCircle, Reply, Edit, Trash2, Send, CheckCircle2, RotateCcw } from 'lucide-react';
 
 interface Comment {
   id: number;
@@ -22,13 +22,61 @@ interface Comment {
   updatedAt: string;
   // The people named by mention tokens that may be shown to this viewer (others render neutrally).
   mentions?: Array<{ userId: number; name: string }>;
+  // Block anchor and resolved state of a thread; replies carry their thread's (WP15).
+  blockId?: string | null;
+  blockExcerpt?: string | null;
+  resolvedAt?: string | null;
+  resolvedBy?: string | null;
+  blockExists?: boolean;
+}
+
+/** The comments of a page; the page view and the panel share one cache entry. */
+export function usePageComments(pageId: number | undefined) {
+  return useQuery<Comment[]>({
+    queryKey: [`/api/pages/${pageId}/comments`],
+    enabled: !!pageId,
+    queryFn: async () => {
+      const response = await fetch(`/api/pages/${pageId}/comments`, { credentials: 'include' });
+      if (!response.ok) throw new Error('Failed to fetch comments');
+      return response.json();
+    },
+  });
+}
+
+/** Open threads of a page: top-level comments that are not resolved. */
+export function openThreadsOf(comments: Comment[] | undefined): Comment[] {
+  return (comments ?? []).filter((comment) => !comment.parentId && !comment.resolvedAt);
+}
+
+type ThreadFilter = 'open' | 'resolved' | 'all';
+const FILTER_LABELS: Record<ThreadFilter, string> = {
+  open: '열린 토론',
+  resolved: '해결됨',
+  all: '전체',
+};
+
+export interface CommentBlock {
+  id: string;
+  type?: string;
+  content?: string;
 }
 
 interface CommentsProps {
   pageId: number;
+  /** The page's blocks, to pick the block a new comment is about. */
+  blocks?: CommentBlock[];
+  /** The viewer may comment on the page (block comments, resolve and reopen are offered). */
+  canComment?: boolean;
+  /** A request from the editor to show the threads of one block; `nonce` makes each request new. */
+  focusRequest?: { blockId: string; nonce: number } | null;
 }
 
-export function Comments({ pageId }: CommentsProps) {
+const excerptOfBlock = (block: CommentBlock | undefined): string => {
+  const text = (block?.content ?? '').replace(/\s+/g, ' ').trim();
+  return text.length > 80 ? `${text.slice(0, 80)}…` : text;
+};
+
+export function Comments({ pageId, blocks = [], canComment = false, focusRequest }: CommentsProps) {
   const [newComment, setNewComment] = useState('');
   const [newPicked, setNewPicked] = useState<PickedMention[]>([]);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -38,24 +86,23 @@ export function Comments({ pageId }: CommentsProps) {
   const [replyContent, setReplyContent] = useState('');
   const [replyPicked, setReplyPicked] = useState<PickedMention[]>([]);
   const [highlightedId, setHighlightedId] = useState<number | null>(null);
+  const [filter, setFilter] = useState<ThreadFilter>('open');
+  // Only the threads of this block are listed (set from the editor's marker); null lists all.
+  const [blockFilter, setBlockFilter] = useState<string | null>(null);
+  // The block a new comment is about ('' is the page as a whole).
+  const [newBlockId, setNewBlockId] = useState('');
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user, isAuthenticated } = useAuth();
 
   // Fetch comments for this page
-  const { data: comments = [], refetch } = useQuery<Comment[]>({
-    queryKey: [`/api/pages/${pageId}/comments`],
-    queryFn: async () => {
-      const response = await fetch(`/api/pages/${pageId}/comments`, { credentials: 'include' });
-      if (!response.ok) throw new Error('Failed to fetch comments');
-      return response.json();
-    },
-  });
+  const { data: comments = [], refetch } = usePageComments(pageId);
 
   // Create comment mutation
   const createCommentMutation = useMutation({
-    mutationFn: async (data: { content: string; parentId?: number }) => {
+    mutationFn: async (data: { content: string; parentId?: number; blockId?: string }) => {
       const response = await fetch(`/api/pages/${pageId}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -122,6 +169,27 @@ export function Comments({ pageId }: CommentsProps) {
     },
   });
 
+  // Resolve or reopen a thread (whoever may comment on the page may).
+  const threadStateMutation = useMutation({
+    mutationFn: async ({ id, action }: { id: number; action: 'resolve' | 'reopen' }) => {
+      const response = await fetch(`/api/comments/${id}/${action}`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error(await commentFailureMessage(response, '토론 상태를 바꾸지 못했습니다'));
+      }
+      return response.json();
+    },
+    onSuccess: (_data, { action }) => {
+      refetch();
+      toast({ title: action === 'resolve' ? '토론을 해결했습니다' : '토론을 다시 열었습니다' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    },
+  });
+
   // Delete comment mutation
   const deleteCommentMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -149,7 +217,10 @@ export function Comments({ pageId }: CommentsProps) {
 
   const handleSubmitComment = () => {
     if (!newComment.trim()) return;
-    createCommentMutation.mutate({ content: draftToContent(newComment, newPicked).trim() });
+    createCommentMutation.mutate({
+      content: draftToContent(newComment, newPicked).trim(),
+      ...(newBlockId && canComment ? { blockId: newBlockId } : {}),
+    });
   };
 
   const handleSubmitReply = (parentId: number) => {
@@ -243,28 +314,115 @@ export function Comments({ pageId }: CommentsProps) {
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
+  const handledHash = useRef<string | null>(null);
   useEffect(() => {
     const match = /^#comment-(\d+)$/.exec(hash);
-    if (!match) return;
+    if (!match || handledHash.current === hash) return;
     const id = Number(match[1]);
-    if (!comments.some((comment) => comment.id === id)) return;
-    document.getElementById(`comment-${id}`)?.scrollIntoView({ block: 'center' });
+    const target = comments.find((comment) => comment.id === id);
+    if (!target) return;
+    // A comment of a resolved thread is shown by opening the thread first.
+    const root = target.parentId ? comments.find((c) => c.id === target.parentId) : target;
+    if (root?.resolvedAt && (filter === 'open' || blockFilter !== null || !expanded.has(root.id))) {
+      setFilter('all');
+      setBlockFilter(null);
+      setExpanded((current) => new Set(current).add(root.id));
+      return;
+    }
+    if (blockFilter !== null && root?.blockId !== blockFilter) {
+      setBlockFilter(null);
+      return;
+    }
+    const element = document.getElementById(`comment-${id}`);
+    if (!element) return;
+    handledHash.current = hash;
+    element.scrollIntoView({ block: 'center' });
     setHighlightedId(id);
-    const timer = setTimeout(() => setHighlightedId(null), 4000);
-    return () => clearTimeout(timer);
-  }, [hash, comments]);
+    setTimeout(() => setHighlightedId(null), 4000);
+  }, [hash, comments, filter, blockFilter, expanded]);
+
+  // The editor's marker or comment button asks for one block's threads.
+  const panelRef = useRef<HTMLDivElement>(null);
+  const lastFocusNonce = useRef<number | null>(null);
+  useEffect(() => {
+    if (!focusRequest || lastFocusNonce.current === focusRequest.nonce) return;
+    lastFocusNonce.current = focusRequest.nonce;
+    setBlockFilter(focusRequest.blockId);
+    setFilter('open');
+    setNewBlockId(focusRequest.blockId);
+    panelRef.current?.scrollIntoView({ block: 'start' });
+    panelRef.current?.focus({ preventScroll: true });
+  }, [focusRequest]);
 
   // Organize comments into threads (parent comments with their replies)
-  const parentComments = comments.filter((comment) => !comment.parentId);
+  const allThreads = comments.filter((comment) => !comment.parentId);
+  const threadCounts: Record<ThreadFilter, number> = {
+    open: allThreads.filter((comment) => !comment.resolvedAt).length,
+    resolved: allThreads.filter((comment) => comment.resolvedAt).length,
+    all: allThreads.length,
+  };
+  const parentComments = allThreads.filter(
+    (comment) =>
+      (filter === 'all' || (filter === 'resolved') === !!comment.resolvedAt) &&
+      (blockFilter === null || comment.blockId === blockFilter)
+  );
+  const blockById = new Map(blocks.map((block) => [block.id, block]));
   const getReplies = (parentId: number) =>
     comments.filter((comment) => comment.parentId === parentId);
 
   return (
-    <div className="space-y-6">
+    <div
+      ref={panelRef}
+      id="page-comments"
+      tabIndex={-1}
+      data-testid="comments-panel"
+      aria-label="댓글"
+      className="space-y-6 focus:outline-none"
+    >
       <div className="flex items-center space-x-2">
         <MessageCircle className="h-5 w-5 text-highlight" />
         <h3 className="text-lg font-semibold">Comments ({comments.length})</h3>
       </div>
+
+      <div role="tablist" aria-label="토론 보기" className="flex flex-wrap gap-1">
+        {(Object.keys(FILTER_LABELS) as ThreadFilter[]).map((key) => (
+          <Button
+            key={key}
+            role="tab"
+            type="button"
+            size="sm"
+            variant={filter === key ? 'default' : 'outline'}
+            aria-selected={filter === key}
+            data-testid={`thread-filter-${key}`}
+            onClick={() => setFilter(key)}
+          >
+            {FILTER_LABELS[key]} ({threadCounts[key]})
+          </Button>
+        ))}
+      </div>
+
+      {blockFilter !== null && (
+        <div
+          data-testid="block-filter"
+          className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm"
+        >
+          <span className="text-muted-foreground">블록의 토론만 보는 중:</span>
+          <span className="min-w-0 truncate font-medium">
+            {excerptOfBlock(blockById.get(blockFilter)) || '선택한 블록'}
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setBlockFilter(null);
+              setNewBlockId('');
+            }}
+          >
+            모두 보기
+          </Button>
+        </div>
+      )}
 
       {/* New Comment Form — only show when authenticated */}
       {isAuthenticated ? (
@@ -290,6 +448,29 @@ export function Comments({ pageId }: CommentsProps) {
               }}
               className="min-h-[80px]"
             />
+            {canComment && blocks.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <label htmlFor="comment-block-select" className="text-muted-foreground">
+                  댓글을 달 블록
+                </label>
+                <select
+                  id="comment-block-select"
+                  data-testid="comment-block-select"
+                  value={newBlockId}
+                  onChange={(event) => setNewBlockId(event.target.value)}
+                  className="min-w-0 max-w-full flex-1 rounded-md border border-input bg-background px-2 py-1"
+                >
+                  <option value="">문서 전체</option>
+                  {blocks
+                    .filter((block) => excerptOfBlock(block) !== '' || block.id === newBlockId)
+                    .map((block) => (
+                      <option key={block.id} value={block.id}>
+                        {excerptOfBlock(block) || '선택한 블록'}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
             <div className="flex justify-end">
               <Button
                 onClick={handleSubmitComment}
@@ -335,7 +516,62 @@ export function Comments({ pageId }: CommentsProps) {
                       <span>{formatDate(comment.createdAt)}</span>
                     </div>
 
-                    {editingId === comment.id ? (
+                    {comment.blockId && (
+                      <p
+                        data-testid="thread-anchor"
+                        className="truncate border-l-2 border-border pl-2 text-xs text-muted-foreground"
+                      >
+                        {comment.blockExists
+                          ? comment.blockExcerpt || '(내용 없는 블록)'
+                          : '원래 블록이 삭제되었습니다'}
+                      </p>
+                    )}
+
+                    {comment.resolvedAt && (
+                      <div
+                        data-testid="thread-resolved"
+                        className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
+                      >
+                        <CheckCircle2 className="h-3 w-3" />
+                        <span>
+                          {comment.resolvedBy ?? 'Unknown User'} 님이{' '}
+                          {formatDate(comment.resolvedAt)}에 해결함
+                        </span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          aria-expanded={expanded.has(comment.id)}
+                          onClick={() =>
+                            setExpanded((current) => {
+                              const next = new Set(current);
+                              if (!next.delete(comment.id)) next.add(comment.id);
+                              return next;
+                            })
+                          }
+                        >
+                          {expanded.has(comment.id) ? '접기' : '펼치기'}
+                        </Button>
+                        {canComment && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            data-testid="reopen-thread"
+                            disabled={threadStateMutation.isPending}
+                            onClick={() =>
+                              threadStateMutation.mutate({ id: comment.id, action: 'reopen' })
+                            }
+                          >
+                            <RotateCcw className="h-3 w-3 mr-1" />
+                            다시 열기
+                          </Button>
+                        )}
+                      </div>
+                    )}
+
+                    {comment.resolvedAt && !expanded.has(comment.id) ? null : editingId ===
+                      comment.id ? (
                       <div className="space-y-2">
                         <MentionTextarea
                           pageId={pageId}
@@ -361,7 +597,7 @@ export function Comments({ pageId }: CommentsProps) {
                         <p className="text-sm leading-relaxed whitespace-pre-wrap">
                           {renderContent(comment)}
                         </p>
-                        <div className="flex space-x-2">
+                        <div className="flex flex-wrap gap-x-2">
                           {isAuthenticated && (
                             <Button
                               size="sm"
@@ -370,6 +606,20 @@ export function Comments({ pageId }: CommentsProps) {
                             >
                               <Reply className="h-3 w-3 mr-1" />
                               Reply
+                            </Button>
+                          )}
+                          {canComment && !comment.resolvedAt && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              data-testid="resolve-thread"
+                              disabled={threadStateMutation.isPending}
+                              onClick={() =>
+                                threadStateMutation.mutate({ id: comment.id, action: 'resolve' })
+                              }
+                            >
+                              <CheckCircle2 className="h-3 w-3 mr-1" />
+                              해결
                             </Button>
                           )}
                           {canModify(comment) && (
@@ -401,7 +651,7 @@ export function Comments({ pageId }: CommentsProps) {
             </Card>
 
             {/* Reply Form */}
-            {replyingTo === comment.id && (
+            {replyingTo === comment.id && (!comment.resolvedAt || expanded.has(comment.id)) && (
               <div className="ml-12">
                 <Card>
                   <CardContent className="pt-6">
@@ -438,59 +688,68 @@ export function Comments({ pageId }: CommentsProps) {
             )}
 
             {/* Replies */}
-            {getReplies(comment.id).map((reply) => (
-              <div key={reply.id} className="ml-12">
-                <Card
-                  id={`comment-${reply.id}`}
-                  data-testid="comment-item"
-                  className={highlightedId === reply.id ? 'ring-2 ring-highlight' : undefined}
-                >
-                  <CardContent className="pt-6">
-                    <div className="flex items-start space-x-3">
-                      <Avatar>
-                        <AvatarFallback>{getInitials(getDisplayAuthor(reply))}</AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 space-y-2">
-                        <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-                          <span className="font-medium text-foreground">
-                            {getDisplayAuthor(reply)}
-                          </span>
-                          {!reply.authorUserId && <span className="text-xs italic">(legacy)</span>}
-                          <span>•</span>
-                          <span>{formatDate(reply.createdAt)}</span>
-                        </div>
-                        <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                          {renderContent(reply)}
-                        </p>
-                        {canModify(reply) && (
-                          <div className="flex space-x-2">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => handleEditComment(reply)}
-                            >
-                              <Edit className="h-3 w-3 mr-1" />
-                              Edit
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => handleDeleteComment(reply.id)}
-                            >
-                              <Trash2 className="h-3 w-3 mr-1" />
-                              Delete
-                            </Button>
+            {(!comment.resolvedAt || expanded.has(comment.id)) &&
+              getReplies(comment.id).map((reply) => (
+                <div key={reply.id} className="ml-12">
+                  <Card
+                    id={`comment-${reply.id}`}
+                    data-testid="comment-item"
+                    className={highlightedId === reply.id ? 'ring-2 ring-highlight' : undefined}
+                  >
+                    <CardContent className="pt-6">
+                      <div className="flex items-start space-x-3">
+                        <Avatar>
+                          <AvatarFallback>{getInitials(getDisplayAuthor(reply))}</AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 space-y-2">
+                          <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+                            <span className="font-medium text-foreground">
+                              {getDisplayAuthor(reply)}
+                            </span>
+                            {!reply.authorUserId && (
+                              <span className="text-xs italic">(legacy)</span>
+                            )}
+                            <span>•</span>
+                            <span>{formatDate(reply.createdAt)}</span>
                           </div>
-                        )}
+                          <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                            {renderContent(reply)}
+                          </p>
+                          {canModify(reply) && (
+                            <div className="flex space-x-2">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleEditComment(reply)}
+                              >
+                                <Edit className="h-3 w-3 mr-1" />
+                                Edit
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleDeleteComment(reply.id)}
+                              >
+                                <Trash2 className="h-3 w-3 mr-1" />
+                                Delete
+                              </Button>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            ))}
+                    </CardContent>
+                  </Card>
+                </div>
+              ))}
           </div>
         ))}
       </div>
+
+      {comments.length > 0 && parentComments.length === 0 && (
+        <p data-testid="no-threads" className="py-4 text-center text-sm text-muted-foreground">
+          {filter === 'resolved' ? '해결된 토론이 없습니다.' : '열린 토론이 없습니다.'}
+        </p>
+      )}
 
       {comments.length === 0 && (
         <div className="text-center py-8 text-muted-foreground">

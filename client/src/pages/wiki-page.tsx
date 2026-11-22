@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TableOfContents } from '@/components/layout/table-of-contents';
-import { Comments } from '@/components/wiki/comments';
+import { Comments, openThreadsOf, usePageComments } from '@/components/wiki/comments';
 import { PageShareControl } from '@/components/permissions/page-share-control';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
@@ -36,7 +36,15 @@ import { getUserId, getUserName } from '@/lib/user';
 import { jsonEqual } from '@shared/json-equal';
 import { formatDistanceToNow } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { User, Clock, Calendar, AlertTriangle, Sparkles, Trash2 } from 'lucide-react';
+import {
+  User,
+  Clock,
+  Calendar,
+  AlertTriangle,
+  Sparkles,
+  Trash2,
+  MessageSquare,
+} from 'lucide-react';
 import {
   readPageCover,
   type Block,
@@ -93,7 +101,10 @@ export default function WikiPageView() {
     Number(page.organizationId) === organization.id;
 
   // Edit rights decide between the in-place editor and the read-only view (issue #103 E2).
-  const { data: access, isLoading: accessLoading } = useQuery<{ canEdit: boolean }>({
+  const { data: access, isLoading: accessLoading } = useQuery<{
+    canEdit: boolean;
+    canComment?: boolean;
+  }>({
     queryKey: [`/api/pages/${page?.id}/access`],
     enabled: !!page?.id,
     // A change of this account's level (a new editor, a downgrade) shows without a reload
@@ -101,6 +112,31 @@ export default function WikiPageView() {
     refetchInterval: 30_000,
   });
   const canEdit = !!access?.canEdit;
+  // Block comments, resolve and reopen are offered to whoever may comment on the page.
+  const canComment = canEdit || !!access?.canComment;
+  const { data: pageComments } = usePageComments(page?.id);
+  const openThreads = useMemo(() => openThreadsOf(pageComments), [pageComments]);
+  const openThreadsByBlock = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const thread of openThreads) {
+      if (thread.blockId && thread.blockExists)
+        counts[thread.blockId] = (counts[thread.blockId] ?? 0) + 1;
+    }
+    return counts;
+  }, [openThreads]);
+  // The editor's comment button or marker asks the comments panel to show one block's threads.
+  const [commentFocus, setCommentFocus] = useState<{ blockId: string; nonce: number } | null>(null);
+  const blockComments = useMemo(
+    () =>
+      canComment
+        ? {
+            counts: openThreadsByBlock,
+            onOpen: (blockId: string) =>
+              setCommentFocus((current) => ({ blockId, nonce: (current?.nonce ?? 0) + 1 })),
+          }
+        : undefined,
+    [canComment, openThreadsByBlock]
+  );
 
   const content = liveContent ?? page?.content ?? '';
   const headings = useMemo(() => extractHeadings(content), [content]);
@@ -343,9 +379,16 @@ export default function WikiPageView() {
               actions={actions}
               breadcrumb={breadcrumb}
               onContentChange={setLiveContent}
+              openThreads={openThreads.length}
+              blockComments={blockComments}
             />
           ) : (
-            <ReadOnlyPageBody page={page} actions={actions} breadcrumb={breadcrumb} />
+            <ReadOnlyPageBody
+              page={page}
+              actions={actions}
+              breadcrumb={breadcrumb}
+              openThreads={openThreads.length}
+            />
           )}
 
           <Backlinks pageId={page.id} />
@@ -357,7 +400,12 @@ export default function WikiPageView() {
           </section>
 
           <section className="mt-12 border-t border-border pt-8">
-            <Comments pageId={page.id} />
+            <Comments
+              pageId={page.id}
+              blocks={Array.isArray(page.blocks) ? (page.blocks as Block[]) : []}
+              canComment={canComment}
+              focusRequest={commentFocus}
+            />
           </section>
 
           <section className="mt-12">
@@ -392,9 +440,19 @@ interface BodyProps {
   page: WikiPage;
   actions: React.ReactNode;
   breadcrumb: (title: string, icon?: string | null) => React.ReactNode;
+  /** How many comment threads are open; the header shows it. */
+  openThreads: number;
 }
 
-function PageMeta({ page, content }: { page: WikiPage; content: string }) {
+function PageMeta({
+  page,
+  content,
+  openThreads,
+}: {
+  page: WikiPage;
+  content: string;
+  openThreads: number;
+}) {
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
       <span className="flex min-w-0 items-center gap-1.5">
@@ -411,12 +469,20 @@ function PageMeta({ page, content }: { page: WikiPage; content: string }) {
         <Clock className="h-3.5 w-3.5 shrink-0" />
         <span>{estimateReadingTime(content)}분 분량</span>
       </span>
+      <a
+        href="#page-comments"
+        data-testid="open-thread-count"
+        className="flex items-center gap-1.5 hover:text-foreground"
+      >
+        <MessageSquare className="h-3.5 w-3.5 shrink-0" />
+        <span>열린 토론 {openThreads}</span>
+      </a>
     </div>
   );
 }
 
 /** Readers without edit rights see the rendered page. */
-function ReadOnlyPageBody({ page, actions, breadcrumb }: BodyProps) {
+function ReadOnlyPageBody({ page, actions, breadcrumb, openThreads }: BodyProps) {
   return (
     <>
       {breadcrumb(page.title, page.icon)}
@@ -424,7 +490,7 @@ function ReadOnlyPageBody({ page, actions, breadcrumb }: BodyProps) {
         <PageCover cover={readPageCover(page.metadata)} />
         {page.icon && <PageIcon icon={page.icon} className="block text-[44px]" />}
         <PageTitle initialTitle={page.title} editable={false} />
-        <PageMeta page={page} content={page.content} />
+        <PageMeta page={page} content={page.content} openThreads={openThreads} />
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <Badge variant="secondary" className="capitalize">
             {page.folder}
@@ -448,6 +514,7 @@ interface EditableBodyProps extends BodyProps {
   /** Changes after a restore: reset the editor to the restored page without remounting it. */
   reloadToken: number;
   onContentChange: (content: string) => void;
+  blockComments?: React.ComponentProps<typeof BlockEditor>['blockComments'];
 }
 
 /**
@@ -462,6 +529,8 @@ function EditablePageBody({
   actions,
   breadcrumb,
   onContentChange,
+  openThreads,
+  blockComments,
 }: EditableBodyProps) {
   const queryClient = useQueryClient();
   const [title, setTitle] = useState(page.title);
@@ -556,7 +625,7 @@ function EditablePageBody({
             if (next) queue({ title: next });
           }}
         />
-        <PageMeta page={page} content={content} />
+        <PageMeta page={page} content={content} openThreads={openThreads} />
         <PageProperties
           folder={folder}
           folders={folders}
@@ -591,6 +660,7 @@ function EditablePageBody({
           userName={getUserName()}
           useYjs={true}
           linkTeamId={page.teamId}
+          blockComments={blockComments}
         />
       </div>
     </>
