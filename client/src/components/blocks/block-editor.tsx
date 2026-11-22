@@ -1059,12 +1059,20 @@ export function BlockEditor({
       <div
         ref={editorContainerRef}
         className="block-editor relative min-h-[400px] py-2 sm:py-4"
-        // A click, or focus entering a text field, ends the "Tab moves focus" mode.
+        // A click, or focus coming into the editor from outside it, ends the "Tab moves focus"
+        // mode. Moving between blocks with Tab keeps it, so one Escape is enough to walk out of
+        // the editor however many blocks follow.
         onMouseDown={() => {
           tabMovesFocusRef.current = false;
         }}
         onFocusCapture={(event) => {
-          if (event.target instanceof HTMLTextAreaElement) tabMovesFocusRef.current = false;
+          // A control that lost focus and was removed at once (the row's own gutter buttons
+          // unmount when their row loses focus) came from inside the editor too.
+          const from = event.relatedTarget;
+          const fromInside =
+            from instanceof Node &&
+            (!from.isConnected || !!editorContainerRef.current?.contains(from));
+          if (!fromInside) tabMovesFocusRef.current = false;
         }}
         onMouseMove={(e) => {
           // Update cursor position for Yjs collaboration

@@ -447,6 +447,18 @@ test.describe('toggle blocks and indentation', () => {
       expect(await insideBody()).toBe(false);
       expect(await rowsOf(page).then(shape)).toEqual(['0:A', '0:B', '0:C']);
 
+      // One Escape is enough from the first block: Tab walks through the later blocks, their
+      // text fields included, and out of the editor body without indenting anything.
+      await field(0).click();
+      await page.keyboard.press('Escape');
+      let presses = 0;
+      while ((await insideBody()) && presses < 30) {
+        await page.keyboard.press('Tab');
+        presses += 1;
+      }
+      expect(await insideBody()).toBe(false);
+      expect(await rowsOf(page).then(shape)).toEqual(['0:A', '0:B', '0:C']);
+
       // Typing ends the mode: Tab indents again.
       await field(1).click();
       await page.keyboard.press('Escape');
