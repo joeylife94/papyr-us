@@ -801,6 +801,7 @@ On the package head, Linux container, local PostgreSQL 16, the container's Chrom
 ### Known limits
 
 - The reader view has no per-block marker; readers who may comment pick the block in the panel.
+- On a page with no stored blocks (content only), block ids are derived from the content; a thread anchored there counts as attached only while that block's text still matches its excerpt, so editing or moving that text before the page is first saved from the block editor shows the thread as "the block was deleted".
 - The excerpt is frozen when the thread is created; deleting a top-level comment leaves its replies (as before).
 - After the toggle/indent package (#170) merges, Tab indents in text blocks, so the comment button is reached after Escape; markers inside a collapsed toggle are hidden while the panel still lists their threads.
 - On a page with public comment access, any signed-in account that may comment can resolve its threads (the rule above; rate limited).
