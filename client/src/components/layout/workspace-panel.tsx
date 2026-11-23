@@ -251,9 +251,6 @@ export function WorkspacePanel({
         </Link>
       </div>
 
-      <FavoritesSection onNavigate={onNavigate} />
-      <RecentSection onNavigate={onNavigate} />
-
       {/* "페이지": the page tree of the active workspace (issue #103 E5); it replaces the folder
           list, while folders stay a page property and a filter on the document table. */}
       <nav aria-label="페이지" className="flex flex-col">
@@ -265,6 +262,11 @@ export function WorkspacePanel({
           onNavigate={onNavigate}
         />
       </nav>
+
+      {/* Below the page tree: the tree keeps its place in the panel (it is the drag target of the
+          page tree and must stay in view), and the sections grow downwards. */}
+      <FavoritesSection onNavigate={onNavigate} />
+      <RecentSection onNavigate={onNavigate} />
 
       {flags.FEATURE_TEAMS ? (
         <div className="flex flex-col">

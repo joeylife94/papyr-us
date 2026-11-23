@@ -144,7 +144,7 @@ test('trash: a page goes to the trash, comes back, goes again and is deleted for
     await page.getByTestId('trash-delete-confirm').click();
     expect((await deleted).status()).toBe(200);
     await expect(page.getByTestId('trash-row').filter({ hasText: title })).toHaveCount(0);
-    await expect(page.getByTestId('trash-empty')).toBeVisible();
+    // (the unfiltered trash may hold other pages the account can list; only this one is asserted)
     expect((await api.get(`/api/pages/${created.id}`)).status()).toBe(404);
     expect((await api.post(`/api/trash/${created.id}/restore`)).status()).toBe(404);
   } finally {
@@ -176,7 +176,9 @@ test('trash: a restore counts the pages that came back with it', async ({ page, 
     await expect(page.getByTestId('trash-notice')).toContainText(
       `"${parent.title}" 문서와 하위 문서 1개를 포함해 2개를 복원했습니다.`
     );
-    await expect(page.getByTestId('trash-row')).toHaveCount(0);
+    for (const restoredTitle of [parent.title, child.title]) {
+      await expect(page.getByTestId('trash-row').filter({ hasText: restoredTitle })).toHaveCount(0);
+    }
   } finally {
     await api.dispose();
   }
@@ -403,7 +405,8 @@ test('favourites: a page the account can read but not list cannot be starred, an
     );
     await star.click();
     expect((await refused).status()).toBe(404);
-    await expect(page.getByText('이 문서는 즐겨찾기에 추가할 수 없습니다.')).toBeVisible();
+    // The toast text is also announced in a live region: take the first match
+    await expect(page.getByText('이 문서는 즐겨찾기에 추가할 수 없습니다.').first()).toBeVisible();
     await expect(page.getByText(/다시 시도해 주세요/)).toHaveCount(0);
     await expect(star).toHaveAttribute('aria-pressed', 'false');
   } finally {
@@ -702,7 +705,7 @@ test('mobile: the trash screen and the sidebar sections fit a 390 px screen', as
     const listed = page.waitForResponse(isTrashList);
     await page.goto('/trash');
     await listed;
-    await expect(page.getByTestId('trash-row')).toHaveCount(1);
+    await expect(page.getByTestId('trash-row').filter({ hasText: longTitle })).toHaveCount(1);
     await expect(page.getByRole('button', { name: `${longTitle} 복원` })).toBeVisible();
     const overflow = () =>
       page.evaluate(
