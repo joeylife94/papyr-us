@@ -1,6 +1,6 @@
 import type { Block } from '@shared/schema';
 // Relative import: unit tests load this module without the Vite aliases.
-import { blocksToMarkdown, markdownToBlocks } from '../../../shared/block-markdown';
+import { blocksForPage, blocksToMarkdown, markdownToBlocks } from '../../../shared/block-markdown';
 
 /**
  * The Markdown page content for a block list (#113 §1, shared/block-markdown.ts). The server
@@ -22,12 +22,9 @@ export function initialBlocksFor(page: {
   blocks?: unknown;
   content?: string;
 }): Block[] {
+  if (page.id) return blocksForPage({ id: page.id, blocks: page.blocks, content: page.content });
   if (Array.isArray(page.blocks) && page.blocks.length > 0) return page.blocks as Block[];
-  if (page.content) {
-    return markdownToBlocks(page.content, {
-      idPrefix: page.id ? `block_seed_${page.id}` : `block_${Date.now()}`,
-    });
-  }
+  if (page.content) return markdownToBlocks(page.content, { idPrefix: `block_${Date.now()}` });
   return [];
 }
 

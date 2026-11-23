@@ -69,6 +69,8 @@ interface CommentsProps {
   canComment?: boolean;
   /** A request from the editor to show the threads of one block; `nonce` makes each request new. */
   focusRequest?: { blockId: string; nonce: number } | null;
+  /** Saves the page's pending edits first; false when that failed (a block comment is not sent). */
+  beforeBlockComment?: () => Promise<boolean>;
 }
 
 const excerptOfBlock = (block: CommentBlock | undefined): string => {
@@ -76,7 +78,13 @@ const excerptOfBlock = (block: CommentBlock | undefined): string => {
   return text.length > 80 ? `${text.slice(0, 80)}…` : text;
 };
 
-export function Comments({ pageId, blocks = [], canComment = false, focusRequest }: CommentsProps) {
+export function Comments({
+  pageId,
+  blocks = [],
+  canComment = false,
+  focusRequest,
+  beforeBlockComment,
+}: CommentsProps) {
   const [newComment, setNewComment] = useState('');
   const [newPicked, setNewPicked] = useState<PickedMention[]>([]);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -215,11 +223,22 @@ export function Comments({ pageId, blocks = [], canComment = false, focusRequest
     },
   });
 
-  const handleSubmitComment = () => {
+  const handleSubmitComment = async () => {
     if (!newComment.trim()) return;
+    const blockId = newBlockId && canComment ? newBlockId : null;
+    // A block comment needs the block to be saved: pending edits are saved first, and when that
+    // fails nothing is posted and the text stays in the box.
+    if (blockId && beforeBlockComment && !(await beforeBlockComment())) {
+      toast({
+        title: 'Error',
+        description: '문서를 저장하지 못해 댓글을 보내지 않았습니다. 다시 시도해 주세요.',
+        variant: 'destructive',
+      });
+      return;
+    }
     createCommentMutation.mutate({
       content: draftToContent(newComment, newPicked).trim(),
-      ...(newBlockId && canComment ? { blockId: newBlockId } : {}),
+      ...(blockId ? { blockId } : {}),
     });
   };
 
@@ -315,22 +334,27 @@ export function Comments({ pageId, blocks = [], canComment = false, focusRequest
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
   const handledHash = useRef<string | null>(null);
+  const highlightTimer = useRef<ReturnType<typeof setTimeout>>();
   useEffect(() => {
     const match = /^#comment-(\d+)$/.exec(hash);
     if (!match || handledHash.current === hash) return;
     const id = Number(match[1]);
     const target = comments.find((comment) => comment.id === id);
     if (!target) return;
-    // A comment of a resolved thread is shown by opening the thread first.
+    // Show the comment: the tab that holds its thread, the thread's block, the thread expanded.
     const root = target.parentId ? comments.find((c) => c.id === target.parentId) : target;
-    if (root?.resolvedAt && (filter === 'open' || blockFilter !== null || !expanded.has(root.id))) {
-      setFilter('all');
-      setBlockFilter(null);
-      setExpanded((current) => new Set(current).add(root.id));
+    if (!root) return;
+    const tab: ThreadFilter = root.resolvedAt ? 'resolved' : 'open';
+    if (filter !== 'all' && filter !== tab) {
+      setFilter(tab);
       return;
     }
-    if (blockFilter !== null && root?.blockId !== blockFilter) {
+    if (blockFilter !== null && root.blockId !== blockFilter) {
       setBlockFilter(null);
+      return;
+    }
+    if (root.resolvedAt && !expanded.has(root.id)) {
+      setExpanded((current) => new Set(current).add(root.id));
       return;
     }
     const element = document.getElementById(`comment-${id}`);
@@ -338,8 +362,15 @@ export function Comments({ pageId, blocks = [], canComment = false, focusRequest
     handledHash.current = hash;
     element.scrollIntoView({ block: 'center' });
     setHighlightedId(id);
-    setTimeout(() => setHighlightedId(null), 4000);
+    if (highlightTimer.current) clearTimeout(highlightTimer.current);
+    highlightTimer.current = setTimeout(() => setHighlightedId(null), 4000);
   }, [hash, comments, filter, blockFilter, expanded]);
+  useEffect(
+    () => () => {
+      if (highlightTimer.current) clearTimeout(highlightTimer.current);
+    },
+    []
+  );
 
   // The editor's marker or comment button asks for one block's threads.
   const panelRef = useRef<HTMLDivElement>(null);

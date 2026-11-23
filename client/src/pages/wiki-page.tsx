@@ -125,6 +125,11 @@ export default function WikiPageView() {
     return counts;
   }, [openThreads]);
   // The editor's comment button or marker asks the comments panel to show one block's threads.
+  // The editor's blocks as they are now (and the flush that saves them), for the panel.
+  const [liveBlocks, setLiveBlocks] = useState<{ pageId: number; blocks: Block[] } | null>(null);
+  const flushEditsRef = useRef<() => Promise<boolean>>(async () => true);
+  const panelBlocks =
+    page && liveBlocks?.pageId === page.id ? liveBlocks.blocks : page ? initialBlocksFor(page) : [];
   const [commentFocus, setCommentFocus] = useState<{ blockId: string; nonce: number } | null>(null);
   const blockComments = useMemo(
     () =>
@@ -381,6 +386,8 @@ export default function WikiPageView() {
               onContentChange={setLiveContent}
               openThreads={openThreads.length}
               blockComments={blockComments}
+              onBlocksChange={(next) => setLiveBlocks({ pageId: page.id, blocks: next })}
+              flushEditsRef={flushEditsRef}
             />
           ) : (
             <ReadOnlyPageBody
@@ -402,9 +409,10 @@ export default function WikiPageView() {
           <section className="mt-12 border-t border-border pt-8">
             <Comments
               pageId={page.id}
-              blocks={Array.isArray(page.blocks) ? (page.blocks as Block[]) : []}
+              blocks={panelBlocks}
               canComment={canComment}
               focusRequest={commentFocus}
+              beforeBlockComment={canEdit ? () => flushEditsRef.current() : undefined}
             />
           </section>
 
@@ -515,6 +523,10 @@ interface EditableBodyProps extends BodyProps {
   reloadToken: number;
   onContentChange: (content: string) => void;
   blockComments?: React.ComponentProps<typeof BlockEditor>['blockComments'];
+  /** The blocks as they are now, for the comments panel. */
+  onBlocksChange: (blocks: Block[]) => void;
+  /** Set to a function that saves pending edits and says whether they are all saved. */
+  flushEditsRef: React.MutableRefObject<() => Promise<boolean>>;
 }
 
 /**
@@ -531,6 +543,8 @@ function EditablePageBody({
   onContentChange,
   openThreads,
   blockComments,
+  onBlocksChange,
+  flushEditsRef,
 }: EditableBodyProps) {
   const queryClient = useQueryClient();
   const [title, setTitle] = useState(page.title);
@@ -544,7 +558,7 @@ function EditablePageBody({
   const [cover, setCover] = useState<PageCoverValue | null>(() => readPageCover(page.metadata));
   const { data: folders = [] } = useQuery<string[]>({ queryKey: ['/api/folders'] });
 
-  const { status, queue, flush, reset } = usePageAutosave(page.id, {
+  const { status, queue, flush, flushSaved, reset } = usePageAutosave(page.id, {
     onSaved: () => {
       // Lists and the sidebar show titles, icons and folders; refresh them quietly.
       void invalidatePageLists(queryClient);
@@ -553,6 +567,13 @@ function EditablePageBody({
 
   const content = useMemo(() => blocksToContent(blocks), [blocks]);
   useEffect(() => onContentChange(content), [content, onContentChange]);
+  useEffect(() => onBlocksChange(blocks), [blocks]);
+  useEffect(() => {
+    flushEditsRef.current = flushSaved;
+    return () => {
+      flushEditsRef.current = async () => true;
+    };
+  }, [flushSaved, flushEditsRef]);
 
   // A restore replaced the page: drop unsent edits and show the restored state. The history
   // panel stays mounted (it lives in `actions`), so it can report and be closed normally.

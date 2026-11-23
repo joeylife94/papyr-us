@@ -159,7 +159,9 @@ import {
 import {
   BLOCK_ID_MAX,
   blockExcerptOf,
+  blocksOfPage,
   findBlock,
+  publicComment,
   withThreadFields,
 } from './services/comment-threads.js';
 import { postgresErrorOf } from './db-errors.js';
@@ -2187,7 +2189,7 @@ export async function registerRoutes(
         const comments = withThreadFields(
           rows,
           rows.some((row) => row.parentId == null && row.blockId != null)
-            ? (await storage.getWikiPage(pageId))?.blocks
+            ? blocksOfPage(await storage.getWikiPage(pageId))
             : []
         );
 
@@ -2338,7 +2340,7 @@ export async function registerRoutes(
           if (blockId.length > BLOCK_ID_MAX) {
             return res.status(400).json({ message: 'Invalid comment data' });
           }
-          const block = findBlock((await storage.getWikiPage(pageId))?.blocks, blockId);
+          const block = findBlock(blocksOfPage(await storage.getWikiPage(pageId)), blockId);
           if (!block) return res.status(400).json({ message: 'Invalid comment data' });
           commentData.blockId = blockId;
           commentData.blockExcerpt = blockExcerptOf(block);
@@ -2415,7 +2417,7 @@ export async function registerRoutes(
           });
         }
 
-        res.status(201).json(comment);
+        res.status(201).json(publicComment(comment));
       } catch (error) {
         res.status(400).json(failureBody('Invalid comment data', error));
       }
@@ -2554,7 +2556,7 @@ export async function registerRoutes(
         return res.status(404).json({ message: 'Comment not found' });
       }
 
-      res.json(comment);
+      res.json(publicComment(comment));
     } catch (error) {
       res.status(400).json(failureBody('Invalid update data', error));
     }

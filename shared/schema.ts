@@ -426,11 +426,13 @@ export const insertCommentSchema = createInsertSchema(comments).omit({
 });
 
 // Update schema strips identity fields — author / authorUserId are server-derived
-// and must not be client-editable on normal update paths. The anchor is fixed when the thread
-// is created.
+// and must not be client-editable on normal update paths. An edit changes the text only: a
+// comment stays on its page and in its thread (pageId / parentId), and a thread's block anchor
+// is fixed when it is created.
 export const updateCommentSchema = insertCommentSchema
   .partial()
-  .omit({ author: true, authorUserId: true, blockId: true, blockExcerpt: true });
+  .omit({ author: true, authorUserId: true, pageId: true, parentId: true })
+  .omit({ blockId: true, blockExcerpt: true });
 
 export type InsertComment = z.infer<typeof insertCommentSchema>;
 export type UpdateComment = z.infer<typeof updateCommentSchema>;

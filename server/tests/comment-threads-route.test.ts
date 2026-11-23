@@ -14,6 +14,10 @@
  *   the trash is 404, a reply is 400, an unknown comment is 404;
  * - resolving twice keeps who resolved it and when; reopening an open thread changes nothing;
  * - neither sends a notification;
+ * - a page saved without blocks offers the blocks seeded from its content (the same ids on every
+ *   request): a thread may be anchored to one of them, and it still exists in the listing;
+ * - an edit changes the text only: page, thread, anchor and resolved state are not taken from the body;
+ * - the page access answer says who may comment (editor and owner, commenter: yes; viewer: no);
  * - the listing carries the anchor, the resolved state and the resolver by name only, replies
  *   take their thread's, and whether the anchored block still exists comes from the page's
  *   current blocks.
@@ -59,12 +63,14 @@ const OWNER = 1;
 const COMMENTER = 2;
 const VIEWER = 3;
 const OUTSIDER = 4;
+const EDITOR = 5;
 const LEVELS = ['viewer', 'commenter', 'editor', 'owner'];
 const levelOf: Record<number, string | null> = {
   [OWNER]: 'owner',
   [COMMENTER]: 'commenter',
   [VIEWER]: 'viewer',
   [OUTSIDER]: null,
+  [EDITOR]: 'editor',
 };
 const as = (id: number) => ({
   Cookie: [
@@ -225,15 +231,71 @@ describe.each([true, false])('block threads with ENFORCE_AUTH_WRITES=%s', (enfor
       expect(res.status).toBe(404);
     });
 
-    it('an edit body cannot move the anchor or set the resolved state', async () => {
+    it('an edit changes the text only: page, thread, anchor and resolved state come from storage', async () => {
       rows = [base({ id: 7, authorUserId: COMMENTER, blockId: 'b1', blockExcerpt: 'e' })];
-      s.updateComment.mockImplementation(async (_id: number, data: any) => ({ id: 7, ...data }));
-      const res = await request(app)
-        .put('/api/comments/7')
-        .set(as(COMMENTER))
-        .send({ content: 'edited', blockId: 'b2', blockExcerpt: 'z', resolvedAt: '2026-01-01' });
+      s.updateComment.mockImplementation(async (_id: number, data: any) => ({
+        id: 7,
+        resolvedByUserId: 9,
+        ...data,
+      }));
+      const res = await request(app).put('/api/comments/7').set(as(COMMENTER)).send({
+        content: 'edited',
+        pageId: 99,
+        parentId: 8,
+        blockId: 'b2',
+        blockExcerpt: 'z',
+        resolvedAt: '2026-01-01',
+        resolvedByUserId: COMMENTER,
+      });
       expect(res.status).toBe(200);
       expect(s.updateComment).toHaveBeenCalledWith(7, { content: 'edited' });
+      expect(res.body).not.toHaveProperty('resolvedByUserId');
+    });
+
+    it('the answer to a new comment does not carry the resolver account id', async () => {
+      const res = await post(COMMENTER, { content: 'x' });
+      expect(res.status).toBe(201);
+      expect(res.body).not.toHaveProperty('resolvedByUserId');
+    });
+  });
+
+  describe('a page saved without blocks', () => {
+    beforeEach(() => {
+      page = { ...page, blocks: [], content: 'Alpha line\n\nBeta line' };
+    });
+
+    it('may be anchored to a block seeded from its content, with the same id on every request', async () => {
+      const first = await post(COMMENTER, { content: 'a', blockId: `block_seed_${PAGE_ID}_1` });
+      const second = await post(COMMENTER, { content: 'b', blockId: `block_seed_${PAGE_ID}_1` });
+      expect(first.status).toBe(201);
+      expect(second.status).toBe(201);
+      expect(first.body.blockExcerpt).toBe('Beta line');
+      expect(second.body.blockExcerpt).toBe('Beta line');
+    });
+
+    it('refuses a seeded id the content does not produce', async () => {
+      const res = await post(COMMENTER, { content: 'a', blockId: `block_seed_${PAGE_ID}_7` });
+      expect(res.status).toBe(400);
+      expect(s.createComment).not.toHaveBeenCalled();
+    });
+
+    it('lists the thread as anchored to an existing block', async () => {
+      rows = [base({ id: 7, blockId: `block_seed_${PAGE_ID}_0`, blockExcerpt: 'Alpha line' })];
+      const res = await request(app).get(`/api/pages/${PAGE_ID}/comments`).set(as(VIEWER));
+      expect(res.body[0]).toMatchObject({ blockExists: true });
+    });
+  });
+
+  describe('GET /api/pages/:id/access', () => {
+    it.each([
+      ['an owner', OWNER, { canEdit: true, canComment: true }],
+      ['an editor', EDITOR, { canEdit: true, canComment: true }],
+      ['a commenter', COMMENTER, { canEdit: false, canComment: true }],
+      ['a viewer', VIEWER, { canEdit: false, canComment: false }],
+    ])('tells %s what they may do', async (_label, who, expected) => {
+      const res = await request(app).get(`/api/pages/${PAGE_ID}/access`).set(as(who));
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual(expected);
     });
   });
 

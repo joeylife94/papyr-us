@@ -269,4 +269,113 @@ test.describe('Comments on a block, resolve and reopen', () => {
       await v.ctx.dispose();
     }
   });
+  test('a page saved with content only offers its seeded blocks, a block added just now can be commented on, and a link to a resolved thread opens it', async ({
+    browser,
+  }) => {
+    test.setTimeout(240_000);
+    const stamp = Date.now().toString(36);
+    const owner = await signedIn(`bsown${stamp}`);
+    const c = await signedIn(`bsc${stamp}`);
+    const contexts = [];
+
+    try {
+      const slug = `bs-page-${stamp}`;
+      // Saved with content only: no stored blocks, so the editor shows blocks seeded from the text.
+      const created = await owner.ctx.post('/api/pages', {
+        data: {
+          title: `Seeded ${stamp}`,
+          slug,
+          content: 'Seeded alpha\n\nSeeded beta',
+          folder: 'bt',
+          tags: [],
+        },
+      });
+      expect(created.status()).toBe(201);
+      const pageId: number = (await created.json()).id;
+      const shared = await owner.ctx.post(`/api/pages/${pageId}/permissions`, {
+        data: { entityType: 'user', entityId: c.id, permission: 'commenter' },
+      });
+      expect(shared.ok()).toBe(true);
+
+      // ── A reader who may comment gets the seeded blocks in the picker and can anchor to one ──
+      const readerContext = await browser.newContext();
+      contexts.push(readerContext);
+      const readerPage = await readerContext.newPage();
+      await loginPageWithCookies(readerPage, c.email, c.password);
+      await readerPage.goto(`/page/${slug}`);
+      const select = readerPage.getByTestId('comment-block-select');
+      await expect(select.locator('option')).toHaveText([
+        '문서 전체',
+        'Seeded alpha',
+        'Seeded beta',
+      ]);
+      await select.selectOption({ label: 'Seeded beta' });
+      await readerPage.getByTestId('comment-input').fill('About the seeded beta');
+      const readerPosted = readerPage.waitForResponse(apiResponse(pageId, 'comments', 'POST', 201));
+      await readerPage.getByRole('button', { name: 'Post Comment' }).click();
+      const readerComment = await (await readerPosted).json();
+      expect(readerComment.blockId).toBe(`block_seed_${pageId}_1`);
+      expect(readerComment.blockExcerpt).toBe('Seeded beta');
+      await expect(readerPage.getByTestId('thread-anchor')).toHaveText('Seeded beta');
+
+      // ── The owner comments on a seeded row, and on a block added a moment ago ──
+      const ownerContext = await browser.newContext();
+      contexts.push(ownerContext);
+      const ownerPage = await ownerContext.newPage();
+      await loginPageWithCookies(ownerPage, owner.email, owner.password);
+      await ownerPage.goto(`/page/${slug}`);
+      const seededRow = ownerPage.locator(`[data-block-row="block_seed_${pageId}_0"]`);
+      await expect(seededRow).toBeVisible();
+      await expect(
+        ownerPage
+          .locator(`[data-block-row="block_seed_${pageId}_1"]`)
+          .getByTestId('block-comment-marker')
+      ).toHaveText('1');
+      await seededRow.getByTestId('block-comment-button').click();
+      await ownerPage.getByTestId('comment-input').fill('On the seeded alpha');
+      const seededPosted = ownerPage.waitForResponse(apiResponse(pageId, 'comments', 'POST', 201));
+      await ownerPage.getByRole('button', { name: 'Post Comment' }).click();
+      expect((await (await seededPosted).json()).blockExcerpt).toBe('Seeded alpha');
+
+      await ownerPage.getByRole('button', { name: '블록 추가', exact: true }).click();
+      await ownerPage.getByRole('menuitem', { name: '단락' }).click();
+      const rows = ownerPage.locator('[data-block-row]');
+      await expect(rows).toHaveCount(3);
+      const fresh = rows.nth(2);
+      await fresh.locator('textarea').fill('Typed just now');
+      // No wait for the autosave: posting the comment saves the pending edit first.
+      await fresh.getByTestId('block-comment-button').click();
+      await expect(ownerPage.getByTestId('block-filter')).toContainText('Typed just now');
+      await ownerPage.getByTestId('comment-input').fill('About the new block');
+      const freshPosted = ownerPage.waitForResponse(apiResponse(pageId, 'comments', 'POST', 201));
+      await ownerPage.getByRole('button', { name: 'Post Comment' }).click();
+      const freshComment = await (await freshPosted).json();
+      expect(freshComment.blockExcerpt).toBe('Typed just now');
+      await expect(fresh.getByTestId('block-comment-marker')).toHaveText('1');
+
+      // ── A link to a comment of a resolved thread opens the tab that holds it ──
+      const resolved = await c.ctx.post(`/api/comments/${readerComment.id}/resolve`);
+      expect(resolved.status()).toBe(200);
+      await readerPage.reload();
+      await readerPage.goto(`/page/${slug}#comment-${readerComment.id}`);
+      await expect(readerPage.getByTestId('thread-filter-resolved')).toHaveAttribute(
+        'aria-selected',
+        'true'
+      );
+      await expect(readerPage.getByText('About the seeded beta')).toBeVisible();
+      // And a link to an open thread, followed from the resolved tab, switches back.
+      await readerPage.reload();
+      await readerPage.getByTestId('thread-filter-resolved').click();
+      await readerPage.goto(`/page/${slug}#comment-${freshComment.id}`);
+      await expect(readerPage.getByTestId('thread-filter-open')).toHaveAttribute(
+        'aria-selected',
+        'true'
+      );
+      await expect(readerPage.getByText('About the new block')).toBeVisible();
+    } finally {
+      for (const context of contexts) await context.close();
+      await owner.ctx.dispose();
+      await c.ctx.dispose();
+    }
+  });
 });

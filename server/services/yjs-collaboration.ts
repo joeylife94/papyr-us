@@ -3,7 +3,7 @@ import { Server as SocketIOServer, Socket } from 'socket.io';
 import { DBStorage } from '../storage.js';
 import logger from './logger.js';
 import { savePage, storagePageSaveStore } from './page-save.js';
-import { markdownToBlocks } from '../../shared/block-markdown.js';
+import { blocksForPage } from '../../shared/block-markdown.js';
 import { verifyActiveAccessToken } from '../auth-tokens.js';
 import { config } from '../config.js';
 import { onPageAccessChanged, onPageGrantsChanged, onPageRestored } from './page-access-events.js';
@@ -89,18 +89,6 @@ function getCollabConfig(): CollabConfig {
 
 /** Transaction origin for server-side reloads: broadcast to clients, but not a new edit to save. */
 const RELOAD_ORIGIN = 'papyrus:reload-from-db';
-
-/**
- * The block list a Yjs document should hold for a page. A page without blocks is seeded from its
- * Markdown content (#113 §1), with the same ids the browser gives it (client initialBlocksFor).
- */
-function blocksForPage(page: { id: number; blocks?: unknown; content?: string | null }): any[] {
-  if (Array.isArray(page.blocks) && page.blocks.length > 0) return page.blocks as any[];
-  if (page.content) {
-    return markdownToBlocks(page.content, { idPrefix: `block_seed_${page.id}` });
-  }
-  return [];
-}
 
 function parseDocumentId(
   documentId: unknown

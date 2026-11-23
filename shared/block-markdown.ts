@@ -558,3 +558,20 @@ export function markdownToBlocks(markdown: string, options: { idPrefix?: string 
     children: [],
   }));
 }
+
+/**
+ * The blocks a page shows. Stored blocks as they are; a page saved without blocks (API, template,
+ * import) is seeded from its Markdown content with ids `block_seed_<pageId>_<index>`, which depend
+ * only on the page id and the content, so every request, the collaboration server and the browser
+ * get the same ids for the same stored page. One function for all of them (client initialBlocksFor,
+ * the collaboration seed, and the block ids a comment may be anchored to).
+ */
+export function blocksForPage(page: {
+  id: number;
+  blocks?: unknown;
+  content?: string | null;
+}): Block[] {
+  if (Array.isArray(page.blocks) && page.blocks.length > 0) return page.blocks as Block[];
+  if (page.content) return markdownToBlocks(page.content, { idPrefix: `block_seed_${page.id}` });
+  return [];
+}

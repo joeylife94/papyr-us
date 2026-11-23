@@ -8,12 +8,32 @@
  * - Whether the anchored block still exists is computed from the page's current blocks.
  */
 
+import { blocksForPage } from '../../shared/block-markdown.js';
+
 export const BLOCK_EXCERPT_MAX = 200;
 export const BLOCK_ID_MAX = 200;
 
 interface StoredBlock {
   id?: unknown;
   content?: unknown;
+}
+
+/**
+ * The blocks a page shows (stored blocks, or the ones seeded from its content): the ids a thread
+ * may be anchored to. A page that cannot be read (in the trash) has none.
+ */
+export function blocksOfPage(
+  page: { id: number; blocks?: unknown; content?: string | null } | undefined
+): unknown[] {
+  return page ? blocksForPage(page) : [];
+}
+
+/** A comment as it is answered to a caller: the resolver's account id is not part of it. */
+export function publicComment<T extends { resolvedByUserId?: unknown }>(
+  comment: T
+): Omit<T, 'resolvedByUserId'> {
+  const { resolvedByUserId: _resolvedBy, ...rest } = comment;
+  return rest;
 }
 
 /** The blocks of a page as an array; anything else is no blocks. */
