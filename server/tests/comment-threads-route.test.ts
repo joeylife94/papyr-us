@@ -279,6 +279,22 @@ describe.each([true, false])('block threads with ENFORCE_AUTH_WRITES=%s', (enfor
       expect(s.createComment).not.toHaveBeenCalled();
     });
 
+    it('a thread on a seeded block is not attached to the block that took its place when the content shifts', async () => {
+      rows = [base({ id: 7, blockId: `block_seed_${PAGE_ID}_1`, blockExcerpt: 'Beta line' })];
+      const list = () => request(app).get(`/api/pages/${PAGE_ID}/comments`).set(as(VIEWER));
+      expect((await list()).body[0]).toMatchObject({ blockExists: true });
+      // A paragraph is put first by a content-only update: seeded id _1 now names "Alpha line".
+      page = { ...page, content: 'New first\n\nAlpha line\n\nBeta line' };
+      expect((await list()).body[0]).toMatchObject({
+        blockId: `block_seed_${PAGE_ID}_1`,
+        blockExcerpt: 'Beta line',
+        blockExists: false,
+      });
+      // A seeded id past the end of the shifted content is gone as well.
+      page = { ...page, content: 'Only one' };
+      expect((await list()).body[0]).toMatchObject({ blockExists: false });
+    });
+
     it('lists the thread as anchored to an existing block', async () => {
       rows = [base({ id: 7, blockId: `block_seed_${PAGE_ID}_0`, blockExcerpt: 'Alpha line' })];
       const res = await request(app).get(`/api/pages/${PAGE_ID}/comments`).set(as(VIEWER));

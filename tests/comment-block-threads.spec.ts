@@ -378,4 +378,63 @@ test.describe('Comments on a block, resolve and reopen', () => {
       await c.ctx.dispose();
     }
   });
+  test("opening a block's threads on one page does not filter or anchor another page opened in the app", async ({
+    browser,
+  }) => {
+    test.setTimeout(240_000);
+    const stamp = Date.now().toString(36);
+    const owner = await signedIn(`bnav${stamp}`);
+    const contexts = [];
+    try {
+      const make = async (slug: string, title: string, id: string, text: string) => {
+        const created = await owner.ctx.post('/api/pages', {
+          data: {
+            title,
+            slug,
+            content: text,
+            blocks: [block(id, text, 0)],
+            folder: 'bn',
+            tags: [],
+          },
+        });
+        expect(created.status()).toBe(201);
+        return (await created.json()).id as number;
+      };
+      const slugA = `bn-a-${stamp}`;
+      const slugB = `bn-b-${stamp}`;
+      const pageA = await make(slugA, `Nav A ${stamp}`, 'nav-a', 'Text on page A');
+      const pageB = await make(slugB, `Nav B ${stamp}`, 'nav-b', 'Text on page B');
+      const onA = await owner.ctx.post(`/api/pages/${pageA}/comments`, {
+        data: { content: 'Thread on A', blockId: 'nav-a' },
+      });
+      expect(onA.status()).toBe(201);
+      const onB = await owner.ctx.post(`/api/pages/${pageB}/comments`, {
+        data: { content: 'Thread on B' },
+      });
+      expect(onB.status()).toBe(201);
+
+      const context = await browser.newContext();
+      contexts.push(context);
+      const page = await context.newPage();
+      await loginPageWithCookies(page, owner.email, owner.password);
+      await page.goto(`/page/${slugA}`);
+      await page.locator('[data-block-row="nav-a"]').getByTestId('block-comment-marker').click();
+      await expect(page.getByTestId('block-filter')).toContainText('Text on page A');
+      await expect(page.getByTestId('comment-block-select')).toHaveValue('nav-a');
+
+      // Open page B from the sidebar, without a reload.
+      await page.locator(`a[href="/page/${slugB}"]`).first().click();
+      await expect(page).toHaveURL(new RegExp(`/page/${slugB}$`));
+      await expect(page.getByText('Thread on B')).toBeVisible();
+      await expect(page.getByTestId('block-filter')).toHaveCount(0);
+      await expect(page.getByTestId('comment-block-select')).toHaveValue('');
+      await page.getByTestId('comment-input').fill('Page level on B');
+      const posted = page.waitForResponse(apiResponse(pageB, 'comments', 'POST', 201));
+      await page.getByRole('button', { name: 'Post Comment' }).click();
+      expect((await (await posted).json()).blockId).toBeNull();
+    } finally {
+      for (const context of contexts) await context.close();
+      await owner.ctx.dispose();
+    }
+  });
 });

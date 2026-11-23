@@ -55,6 +55,25 @@ export function blockExcerptOf(block: StoredBlock): string | null {
   return Array.from(text).slice(0, BLOCK_EXCERPT_MAX).join('');
 }
 
+/** An id given to a block of a page that has no stored blocks (shared/block-markdown blocksForPage). */
+const SEEDED_BLOCK_ID = /^block_seed_\d+_\d+$/;
+
+/**
+ * Whether a thread's anchor still points at its block. A stored id keeps naming its block. A seeded
+ * id names a position in the page's content, so it holds only while the block at that position
+ * has the same excerpt it had when the thread was made; when the content has shifted, the
+ * thread's block is gone and the thread is not attached to the block that took its place.
+ */
+function anchorStillHolds(
+  block: StoredBlock | undefined,
+  blockId: string,
+  storedExcerpt: string | null
+): boolean {
+  if (!block) return false;
+  if (!SEEDED_BLOCK_ID.test(blockId)) return true;
+  return blockExcerptOf(block) === storedExcerpt;
+}
+
 export interface ThreadRow {
   id: number;
   parentId: number | null;
@@ -81,7 +100,7 @@ export function withThreadFields<T extends ThreadRow>(
 > {
   const roots = new Map<number, T>();
   for (const row of rows) if (row.parentId == null) roots.set(row.id, row);
-  const ids = new Set(pageBlocks(blocks).map((block) => block.id));
+  const byId = new Map(pageBlocks(blocks).map((block) => [block.id, block]));
   return rows.map((row) => {
     const thread = row.parentId == null ? row : (roots.get(row.parentId) ?? null);
     const { resolvedByUserId: _id, resolvedByName: _name, ...rest } = row;
@@ -93,7 +112,9 @@ export function withThreadFields<T extends ThreadRow>(
       blockExcerpt: thread?.blockExcerpt ?? null,
       resolvedAt,
       resolvedBy: resolvedAt ? (thread?.resolvedByName ?? 'Unknown User') : null,
-      blockExists: blockId !== null && ids.has(blockId),
+      blockExists:
+        blockId !== null &&
+        anchorStillHolds(byId.get(blockId), blockId, thread?.blockExcerpt ?? null),
     };
   });
 }

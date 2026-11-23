@@ -130,17 +130,27 @@ export default function WikiPageView() {
   const flushEditsRef = useRef<() => Promise<boolean>>(async () => true);
   const panelBlocks =
     page && liveBlocks?.pageId === page.id ? liveBlocks.blocks : page ? initialBlocksFor(page) : [];
-  const [commentFocus, setCommentFocus] = useState<{ blockId: string; nonce: number } | null>(null);
+  // A request belongs to the page it was made on; it is ignored on any other page.
+  const [commentFocus, setCommentFocus] = useState<{
+    pageId: number;
+    blockId: string;
+    nonce: number;
+  } | null>(null);
+  useEffect(() => setCommentFocus(null), [page?.id]);
   const blockComments = useMemo(
     () =>
       canComment
         ? {
             counts: openThreadsByBlock,
             onOpen: (blockId: string) =>
-              setCommentFocus((current) => ({ blockId, nonce: (current?.nonce ?? 0) + 1 })),
+              setCommentFocus((current) => ({
+                pageId: page?.id ?? 0,
+                blockId,
+                nonce: (current?.nonce ?? 0) + 1,
+              })),
           }
         : undefined,
-    [canComment, openThreadsByBlock]
+    [canComment, openThreadsByBlock, page?.id]
   );
 
   const content = liveContent ?? page?.content ?? '';
@@ -408,10 +418,11 @@ export default function WikiPageView() {
 
           <section className="mt-12 border-t border-border pt-8">
             <Comments
+              key={page.id}
               pageId={page.id}
               blocks={panelBlocks}
               canComment={canComment}
-              focusRequest={commentFocus}
+              focusRequest={commentFocus?.pageId === page.id ? commentFocus : null}
               beforeBlockComment={canEdit ? () => flushEditsRef.current() : undefined}
             />
           </section>
