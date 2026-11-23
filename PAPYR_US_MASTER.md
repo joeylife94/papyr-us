@@ -4,7 +4,7 @@ aliases: ['PAPYR_US_MASTER', 'Papyr.us v1.0 Master']
 project: 'Papyr.us'
 type: 'project-master'
 status: 'authoritative-contract'
-version: '1.05'
+version: '1.08'
 target: 'v1.0 + D1 frozen baseline; enterprise readiness (Issue #124), one bounded phase per PR'
 current_phase: 'Issue #124 — X0, X1a, X1b and X1c done; X1d next, alongside the collaboration packages of §10'
 priority: 'P1'
@@ -18,7 +18,7 @@ checkpoint_main_sha: 'd2f092b240d5ffe0937dd6d487934e32d5a631f3'
 
 # PAPYR.US MASTER
 
-> **AUTHORITATIVE PROJECT CONTRACT — v1.05**  
+> **AUTHORITATIVE PROJECT CONTRACT — v1.08**  
 > Current repository / Issue / PR / executable evidence overrides historical checkpoints, Scheduled Task prompts, and agent self-report.  
 > The accepted v1.0 product/proof baseline and D1 remain frozen as evidence. Progression after D1 runs as contract Issues under [`AGENTS.md`](AGENTS.md), one bounded phase per PR, and must not rewrite prior accepted evidence or widen buyer-facing claims without a new Proof.
 
@@ -767,3 +767,40 @@ On the package head, Linux container, local PostgreSQL 16, the container's Chrom
 - A restore re-reads every open document of the page, so unsaved in-memory edits on it are replaced by the database content (as version restore does).
 - Access notices reach only sockets connected to the same server process.
 - Still open from §18: realtime connections stay open after account deactivation; two browser specs outside every CI list fail on the base.
+
+## 22. Comments on Blocks, Resolve and Reopen (2026-11-23)
+
+### Changed
+
+Lead decisions (nothing widens access): additive nullable columns; anyone who may comment on a page may resolve or reopen its threads, and who did it and when is kept; a thread anchors to a block id with an excerpt the server takes from the stored block; resolving sends no notification. §20 and §21 come from the sibling packages on the same base.
+
+| Area      | What exists now                                                                                                                                                                                                                                                                                                                                       |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Model     | `comments.block_id`, `block_excerpt`, `resolved_at`, `resolved_by_user_id` (set null when the account is deleted), all nullable; only top-level comments carry them, replies follow their thread; existing comments stay page-level and open                                                                                                          |
+| Migration | `0032`: adds the four columns under the names push uses; idempotent; down refuses while any comment is anchored or resolved                                                                                                                                                                                                                           |
+| API       | `blockId` on a new thread must be a block of the page (stored, or seeded from content when none are stored); `POST /api/comments/:id/resolve` and `/reopen` (commenter or above; viewer 403; unreadable or trashed 404; replies 400; idempotent); listing adds anchor, resolved state and whether the block still exists; `/access` adds `canComment` |
+| Editor    | a keyboard-reachable comment button and an open-thread marker on each block row; the panel filters to that block                                                                                                                                                                                                                                      |
+| Panel     | open / resolved / all; anchor excerpt or "the block was deleted"; resolved threads collapsed with who and when; links to a comment open its tab                                                                                                                                                                                                       |
+| Edits     | an edit changes the text only: page, thread, anchor and resolved state stay (also fixed on `main` in #171)                                                                                                                                                                                                                                            |
+
+Process: one developer package against a brief, one independent review (two blockers: comments on pages without stored blocks, and an older defect letting an edit change a comment's page; mutations and the migration in both deploy orders) and one round of review fixes, re-run.
+
+### Actually Executed
+
+On the package head, Linux container, local PostgreSQL 16, the container's Chromium (client rebuilt before browser runs):
+
+- `node scripts/verify-contributor.mjs` — **PASS**; `npx tsc --noEmit`, `npx eslint . --max-warnings=0` — clean;
+- server suite — 94 files, 2791 tests **PASS**; unit — 62 files, 960 tests **PASS**; Layer 4 — 42 files, 584 tests **PASS**;
+- browser: `comment-block-threads` (2 tests, added to `test:gj`; content-only page, a block added just now, a link to a resolved thread) twice in a row — **PASS**; `comment-mentions`, `notification-bell`, `security-page-write-access`, `gj02`, `block-reorder` — **PASS**;
+- `0032` by execution (review): prepare first, push first, fresh install, down refused then allowed, down twice.
+
+### Not Verified
+
+- the whole `test:gj` list, Layer 5, Layer 6 and Firebat: CI on the pull request is the reference.
+
+### Known limits
+
+- The reader view has no per-block marker; readers who may comment pick the block in the panel.
+- The excerpt is frozen when the thread is created; deleting a top-level comment leaves its replies (as before).
+- After the toggle/indent package (#170) merges, Tab indents in text blocks, so the comment button is reached after Escape; markers inside a collapsed toggle are hidden while the panel still lists their threads.
+- On a page with public comment access, any signed-in account that may comment can resolve its threads (the rule above; rate limited).
