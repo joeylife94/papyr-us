@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { clearAllRecent } from '@/lib/recent-pages';
 
 interface AuthContextType {
   isAuthenticated: boolean;
@@ -26,6 +27,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Signing out does not reload the page, and cached queries never go stale on their own
     // (staleTime: Infinity), so drop everything the previous account fetched.
     queryClient.clear();
+    // The recent-pages lists of this browser go with the session
+    try {
+      clearAllRecent(window.localStorage);
+    } catch {
+      // Storage unavailable: there is nothing stored to clear
+    }
     setIsAuthenticated(false);
     setUser(null);
   }, [queryClient]);
@@ -42,6 +49,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Token genuinely invalid/expired — try to refresh via cookie
         const refreshed = await tryRefreshToken();
         if (!refreshed) {
+          // The session is over without a sign-out: the recent lists go as they do there
+          try {
+            clearAllRecent(window.localStorage);
+          } catch {
+            // Storage unavailable: nothing stored to clear
+          }
           setIsAuthenticated(false);
           setUser(null);
         }

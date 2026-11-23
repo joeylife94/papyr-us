@@ -1,3 +1,5 @@
+import { clearAllRecent } from './recent-pages';
+
 // Capture the native fetch at module-init time, before setup-fetch.ts can override
 // window.fetch. All calls in this module must use _nativeFetch to avoid the infinite
 // recursion: window.fetch → http() → window.fetch → ...
@@ -53,7 +55,14 @@ export async function http(input: RequestInfo | URL, init: RequestInit = {}) {
       return _nativeFetch(input, { ...init, credentials: 'include' });
     }
 
-    // Refresh failed — redirect to login
+    // Refresh failed: the session is over. The recent-page lists of this browser go with it, as
+    // they do on sign out.
+    try {
+      clearAllRecent(window.localStorage);
+    } catch {
+      // Storage unavailable: nothing stored to clear
+    }
+    // Redirect to login
     const current = window.location.pathname + window.location.search;
     if (!current.startsWith('/login') && !current.startsWith('/register')) {
       const url = new URL('/login', window.location.origin);

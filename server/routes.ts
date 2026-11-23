@@ -1498,7 +1498,19 @@ export async function registerRoutes(
       if (!team.ok) return res.status(400).json({ error: 'Invalid team ID' });
       const teamId = team.id;
       const viewer = await storage.getPageViewer(req.user?.id);
-      res.json(await storage.getTrashPages(viewer, teamId));
+      const rows = await storage.getTrashPages(viewer, teamId);
+      // `canRestore`: whether the caller holds the owner right that restoring and deleting
+      // forever need (the same check as those routes), so the screen offers the actions only
+      // where they can succeed. Rows are exactly the listed ones; a failed check fails the list.
+      const answer: Array<(typeof rows)[number] & { canRestore: boolean }> = [];
+      for (let i = 0; i < rows.length; i += 10) {
+        const batch = rows.slice(i, i + 10);
+        const owned = await Promise.all(
+          batch.map((row) => storage.checkPagePermission(req.user?.id, row.id, 'owner'))
+        );
+        batch.forEach((row, index) => answer.push({ ...row, canRestore: owned[index] === true }));
+      }
+      res.json(answer);
     } catch (error) {
       logger.error('Error fetching trash:', { error });
       res.status(500).json({ error: 'Failed to fetch trash' });

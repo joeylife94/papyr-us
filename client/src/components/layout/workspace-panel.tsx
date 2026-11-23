@@ -12,6 +12,7 @@ import {
   FileText,
   Hash,
   Plus,
+  Trash2,
   Users,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -27,6 +28,7 @@ import { useOrganization } from '@/hooks/useOrganization';
 import { VaultMenu } from '@/components/vault/vault-menu';
 import { useShellNav } from './shell-nav';
 import { PageTree } from './page-tree';
+import { FavoritesSection, RecentSection } from './sidebar-pages-sections';
 import { resolvePageTeamId } from '@/lib/page-team-scope';
 import { needsTeamPassword, teamVerifyOutcome } from '@/lib/team-password';
 
@@ -54,8 +56,9 @@ export function WorkspacePanel({
   showTools = false,
 }: WorkspacePanelProps) {
   const { pathname } = useLocation();
-  const { scope, createHref, tagsHref, tools } = useShellNav();
+  const { scope, createHref, tagsHref, trashHref, tools } = useShellNav();
   const inTags = pathname === tagsHref || pathname.startsWith(`${tagsHref}/`);
+  const inTrash = pathname === trashHref;
   const workspace = scope.kind === 'team' ? scope.workspace : null;
   const { flags } = useFeatureFlags();
   const { toast } = useToast();
@@ -232,6 +235,20 @@ export function WorkspacePanel({
         >
           <Hash className="h-4 w-4" aria-hidden="true" /> 태그
         </Link>
+        {/* The workspace's trash: restore or delete forever the pages the caller may list. */}
+        <Link
+          to={trashHref}
+          onClick={onNavigate}
+          aria-current={inTrash ? 'page' : undefined}
+          className={cn(
+            rowLink,
+            inTrash
+              ? 'bg-raised font-semibold text-foreground'
+              : 'text-foreground-secondary hover:bg-raised hover:text-foreground'
+          )}
+        >
+          <Trash2 className="h-4 w-4" aria-hidden="true" /> 휴지통
+        </Link>
       </div>
 
       {/* "페이지": the page tree of the active workspace (issue #103 E5); it replaces the folder
@@ -245,6 +262,11 @@ export function WorkspacePanel({
           onNavigate={onNavigate}
         />
       </nav>
+
+      {/* Below the page tree: the tree keeps its place in the panel (it is the drag target of the
+          page tree and must stay in view), and the sections grow downwards. */}
+      <FavoritesSection onNavigate={onNavigate} />
+      <RecentSection onNavigate={onNavigate} />
 
       {flags.FEATURE_TEAMS ? (
         <div className="flex flex-col">
