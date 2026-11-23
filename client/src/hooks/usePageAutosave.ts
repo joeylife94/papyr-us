@@ -106,6 +106,14 @@ export function usePageAutosave(pageId: number | undefined, { onSaved }: Options
 
   const flush = useCallback(() => send(false), [send]);
 
+  /** Saves what is pending and says whether everything is saved now (false: the save failed). */
+  const flushSaved = useCallback(async (): Promise<boolean> => {
+    if (inFlight.current) await inFlight.current;
+    await send(false);
+    if (inFlight.current) await inFlight.current;
+    return !hasPending.current;
+  }, [send]);
+
   /** Drop unsent edits (after a restore replaced the page they were made on). */
   const reset = useCallback(() => {
     pending.current = {};
@@ -157,5 +165,5 @@ export function usePageAutosave(pageId: number | undefined, { onSaved }: Options
     };
   }, [pageId, send]);
 
-  return { status, savedAt, queue, flush, reset };
+  return { status, savedAt, queue, flush, flushSaved, reset };
 }

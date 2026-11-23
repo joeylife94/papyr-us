@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  blocksForPage,
   blocksToMarkdown,
   blocksToMarkdownWithRanges,
   markdownToBlocks,
@@ -444,5 +445,25 @@ describe('round trip', () => {
       const once = blocksToMarkdown(markdownToBlocks(md));
       expect(blocksToMarkdown(markdownToBlocks(once))).toBe(once);
     }
+  });
+});
+
+describe('blocksForPage: the blocks a page shows', () => {
+  it('keeps stored blocks as they are', () => {
+    const stored = [block('paragraph', 'kept')];
+    expect(blocksForPage({ id: 3, blocks: stored, content: 'ignored' })).toBe(stored);
+  });
+
+  it('seeds a page without blocks from its content, with ids that depend only on page and content', () => {
+    const page = { id: 3, blocks: [], content: 'One\n\nTwo' };
+    const first = blocksForPage(page);
+    const second = blocksForPage({ ...page });
+    expect(first.map((b) => b.id)).toEqual(['block_seed_3_0', 'block_seed_3_1']);
+    expect(second).toEqual(first);
+  });
+
+  it('is empty for a page with neither blocks nor content', () => {
+    expect(blocksForPage({ id: 3, blocks: [], content: '' })).toEqual([]);
+    expect(blocksForPage({ id: 3 })).toEqual([]);
   });
 });

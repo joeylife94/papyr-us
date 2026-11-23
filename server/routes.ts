@@ -156,6 +156,14 @@ import {
   planCommentNotifications,
   planEditNotifications,
 } from './services/comment-notify.js';
+import {
+  BLOCK_ID_MAX,
+  blockExcerptOf,
+  blocksOfPage,
+  findBlock,
+  publicComment,
+  withThreadFields,
+} from './services/comment-threads.js';
 import { postgresErrorOf } from './db-errors.js';
 import { registerDatabaseRoutes } from './routes/database.js';
 import { registerSyncedBlockRoutes } from './routes/synced-blocks.js';
@@ -1291,7 +1299,11 @@ export async function registerRoutes(
       const canEdit = req.user?.id
         ? await storage.checkPagePermission(req.user.id, id, 'editor')
         : false;
-      res.json({ canEdit });
+      // An editor may comment too; the comment panel offers a block comment only when true.
+      const canComment =
+        canEdit ||
+        (req.user?.id ? await storage.checkPagePermission(req.user.id, id, 'commenter') : false);
+      res.json({ canEdit, canComment });
     }
   );
 
@@ -2170,7 +2182,16 @@ export async function registerRoutes(
     async (req, res) => {
       try {
         const pageId = parseInt(req.params.pageId);
-        const comments = await storage.getCommentsByPageId(pageId);
+        const rows = await storage.getCommentsByPageId(pageId);
+        // Anchor, resolved state and whether the anchored block still exists, from the page's
+        // current blocks. Nothing here is shown to anyone who may not read the page (the gate
+        // above), and the resolver is named, never identified by id.
+        const comments = withThreadFields(
+          rows,
+          rows.some((row) => row.parentId == null && row.blockId != null)
+            ? blocksOfPage(await storage.getWikiPage(pageId))
+            : []
+        );
 
         // A comment that holds mention tokens carries the current names of the people they name,
         // for a caller who is an active member of the page's organization, and only for those who
@@ -2309,6 +2330,22 @@ export async function registerRoutes(
           }
         }
 
+        // A thread may be anchored to a block of this page's stored blocks; a reply is never
+        // anchored (it belongs to its thread). The excerpt comes from the stored block.
+        if (req.body.blockId !== undefined && req.body.blockId !== null) {
+          const blockId = req.body.blockId;
+          if (parentId !== null || typeof blockId !== 'string' || blockId.length === 0) {
+            return res.status(400).json({ message: 'Invalid comment data' });
+          }
+          if (blockId.length > BLOCK_ID_MAX) {
+            return res.status(400).json({ message: 'Invalid comment data' });
+          }
+          const block = findBlock(blocksOfPage(await storage.getWikiPage(pageId)), blockId);
+          if (!block) return res.status(400).json({ message: 'Invalid comment data' });
+          commentData.blockId = blockId;
+          commentData.blockExcerpt = blockExcerptOf(block);
+        }
+
         // Mentions are validated and notifications decided before anything is written. When that
         // cannot be done for a member's comment, nothing is stored and the client keeps the draft.
         const page = await storage.getWikiPage(pageId);
@@ -2380,12 +2417,55 @@ export async function registerRoutes(
           });
         }
 
-        res.status(201).json(comment);
+        res.status(201).json(publicComment(comment));
       } catch (error) {
         res.status(400).json(failureBody('Invalid comment data', error));
       }
     }
   );
+
+  // Resolve or reopen a thread. Whoever may comment on the page may do either (viewers and
+  // callers who cannot read the page may not); a top-level comment only; a live page only.
+  // Repeating a request changes nothing. Neither sends a notification.
+  const resolveRoute = (resolve: boolean) => async (req: AuthRequest, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      const userId = Number((req.user as any)?.id);
+      if (!Number.isInteger(id) || id <= 0) {
+        return res.status(400).json({ message: 'Invalid comment ID' });
+      }
+      const existing = await storage.getComment(id);
+      if (!existing) return res.status(404).json({ message: 'Comment not found' });
+      // A caller who cannot view the comment's page is answered as for an unknown comment.
+      if (!(await storage.checkPagePermission(userId, existing.pageId, 'viewer'))) {
+        return res.status(404).json({ message: 'Comment not found' });
+      }
+      // A comment of a page in the trash is not changed
+      if (!(await storage.getWikiPage(existing.pageId))) {
+        return res.status(404).json({ message: 'Page not found' });
+      }
+      if (!(await storage.checkPagePermission(userId, existing.pageId, 'commenter'))) {
+        return res.status(403).json({ message: 'Insufficient permissions: commenter required' });
+      }
+      if (existing.parentId != null) {
+        return res.status(400).json({ message: 'Only a top-level comment can be resolved' });
+      }
+      const updated = await storage.setCommentResolved(id, resolve ? userId : null);
+      if (!updated) return res.status(404).json({ message: 'Comment not found' });
+      const resolvedBy =
+        updated.resolvedAt && updated.resolvedByUserId != null
+          ? ((await storage.getAccountDisplayName(updated.resolvedByUserId)) ?? 'Unknown User')
+          : updated.resolvedAt
+            ? 'Unknown User'
+            : null;
+      res.json({ id: updated.id, resolvedAt: updated.resolvedAt ?? null, resolvedBy });
+    } catch (error) {
+      logger.error('Failed to change a comment thread state', { code: failureCode(error) });
+      res.status(500).json({ message: 'Server error' });
+    }
+  };
+  app.post('/api/comments/:id/resolve', authMiddleware, rlCommentEdit, resolveRoute(true));
+  app.post('/api/comments/:id/reopen', authMiddleware, rlCommentEdit, resolveRoute(false));
 
   app.put('/api/comments/:id', authMiddleware, rlCommentEdit, async (req: AuthRequest, res) => {
     try {
@@ -2476,7 +2556,7 @@ export async function registerRoutes(
         return res.status(404).json({ message: 'Comment not found' });
       }
 
-      res.json(comment);
+      res.json(publicComment(comment));
     } catch (error) {
       res.status(400).json(failureBody('Invalid update data', error));
     }

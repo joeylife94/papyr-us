@@ -166,7 +166,17 @@ describe('Comments Management API', () => {
       const response = await request(app).get(`/api/pages/${pageId}/comments`);
 
       expect(response.status).toBe(200);
-      expect(response.body).toEqual(comments);
+      // Existing comments read as page-level and open (WP15 adds these fields to every comment).
+      expect(response.body).toEqual(
+        comments.map((comment) => ({
+          ...comment,
+          blockId: null,
+          blockExcerpt: null,
+          resolvedAt: null,
+          resolvedBy: null,
+          blockExists: false,
+        }))
+      );
       expect(storage.getCommentsByPageId).toHaveBeenCalledWith(pageId);
     });
   });

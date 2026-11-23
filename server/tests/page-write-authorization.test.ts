@@ -426,10 +426,10 @@ describe('In-place editing endpoints (issue #103 E1/E2) use the single-page leve
   it('reports edit rights to editors and owners, and nothing to callers who cannot view', async () => {
     const editor = await request(app).get(`/api/pages/${PAGE_A}/access`).set(as(EDITOR));
     expect(editor.status).toBe(200);
-    expect(editor.body).toEqual({ canEdit: true });
+    expect(editor.body).toEqual({ canEdit: true, canComment: true });
 
     const owner = await request(app).get(`/api/pages/${PAGE_A}/access`).set(as(OWNER));
-    expect(owner.body).toEqual({ canEdit: true });
+    expect(owner.body).toEqual({ canEdit: true, canComment: true });
 
     const outsider = await request(app).get(`/api/pages/${PAGE_A}/access`).set(as(OUTSIDER));
     expect(outsider.status).toBe(403);

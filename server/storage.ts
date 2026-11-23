@@ -91,7 +91,20 @@ import {
   type ActivityFeedEntry,
 } from '../shared/schema.js';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { eq, like, and, or, sql, desc, asc, isNull, inArray, type SQL } from 'drizzle-orm';
+import {
+  eq,
+  like,
+  and,
+  or,
+  sql,
+  desc,
+  asc,
+  isNull,
+  isNotNull,
+  inArray,
+  type SQL,
+} from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 import type { RetrievedPageRow } from './services/retrieval.js';
@@ -2085,11 +2098,14 @@ export class DBStorage {
     return await bcrypt.compare(password, dir.password);
   }
 
-  async getCommentsByPageId(pageId: number): Promise<Comment[]> {
+  async getCommentsByPageId(
+    pageId: number
+  ): Promise<Array<Comment & { resolvedByName: string | null }>> {
     // P4: LEFT JOIN with users to resolve the current display name.
     // Priority: User Table current name (users.name) > fallback 'Unknown User'.
     // This prevents stale author names when a user later updates their profile.
     // Users that are inactive/withdrawn are treated the same as deleted users.
+    const resolver = alias(users, 'comment_resolver');
     const rows = await this.db
       .select({
         id: comments.id,
@@ -2100,11 +2116,18 @@ export class DBStorage {
         parentId: comments.parentId,
         createdAt: comments.createdAt,
         updatedAt: comments.updatedAt,
+        blockId: comments.blockId,
+        blockExcerpt: comments.blockExcerpt,
+        resolvedAt: comments.resolvedAt,
+        resolvedByUserId: comments.resolvedByUserId,
         _resolvedName: users.name,
         _resolvedIsActive: users.isActive,
+        _resolverName: resolver.name,
+        _resolverIsActive: resolver.isActive,
       })
       .from(comments)
       .leftJoin(users, eq(comments.authorUserId, users.id))
+      .leftJoin(resolver, eq(comments.resolvedByUserId, resolver.id))
       .where(eq(comments.pageId, pageId))
       .orderBy(asc(comments.createdAt));
 
@@ -2123,7 +2146,49 @@ export class DBStorage {
       parentId: row.parentId,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
+      blockId: row.blockId,
+      blockExcerpt: row.blockExcerpt,
+      resolvedAt: row.resolvedAt,
+      resolvedByUserId: row.resolvedByUserId,
+      // The resolver is shown by current name, like an author; a deleted or deactivated account
+      // is not named.
+      resolvedByName:
+        row.resolvedAt == null || row._resolverName == null || row._resolverIsActive === false
+          ? null
+          : row._resolverName,
     }));
+  }
+
+  /**
+   * Marks a top-level comment's thread resolved by this account, or open again (`null`). Only a
+   * change is written: resolving a resolved thread keeps who resolved it and when, reopening an
+   * open one writes nothing. Returns the comment as it now stands.
+   */
+  async setCommentResolved(
+    id: number,
+    resolvedByUserId: number | null
+  ): Promise<Comment | undefined> {
+    if (resolvedByUserId === null) {
+      await this.db
+        .update(comments)
+        .set({ resolvedAt: null, resolvedByUserId: null })
+        .where(and(eq(comments.id, id), isNotNull(comments.resolvedAt)));
+    } else {
+      await this.db
+        .update(comments)
+        .set({ resolvedAt: new Date(), resolvedByUserId })
+        .where(and(eq(comments.id, id), isNull(comments.resolvedAt)));
+    }
+    return this.getComment(id);
+  }
+
+  /** Current name of an account for display, or null when it is gone or deactivated. */
+  async getAccountDisplayName(userId: number): Promise<string | null> {
+    const [row] = await this.db
+      .select({ name: users.name, isActive: users.isActive })
+      .from(users)
+      .where(eq(users.id, userId));
+    return row && row.isActive !== false ? row.name : null;
   }
 
   async getComment(id: number): Promise<Comment | undefined> {

@@ -69,6 +69,13 @@ const TEAM_MEMBERS_CAN_EDIT_MIGRATION = readFileSync(
   'utf8'
 );
 
+// 0032 (WP15) adds the nullable thread columns to comments (a no-op without that table), so every
+// file's hand-written comments table has the columns the application reads.
+const COMMENT_THREADS_MIGRATION = readFileSync(
+  new URL('../../drizzle/0032_add_comment_threads.sql', import.meta.url),
+  'utf8'
+);
+
 /**
  * Applies 0022 to a pre-organization test schema and returns the default organization's id.
  * `schema` names the test schema when `pool` does not already use it as its search path.
@@ -108,6 +115,7 @@ export async function addOrganizations(
     await client.query(PAGE_CREATOR_MIGRATION);
     await client.query(INVITATIONS_MIGRATION);
     await client.query(TEAM_MEMBERS_CAN_EDIT_MIGRATION);
+    await client.query(COMMENT_THREADS_MIGRATION);
     const { rows } = await client.query(`SELECT id FROM organizations WHERE slug = 'default'`);
     const organizationId = Number(rows[0].id);
     // The trigger names its schema, so inserts through a pool without the search path work too.

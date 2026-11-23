@@ -30,6 +30,9 @@
  * - drizzle/0031_add_team_members_can_edit.sql (WP7): adds teams.members_can_edit, off for every
  *   team that exists (a team is created with it on by the application); prints how many teams it
  *   set to false. A schema push that ran first creates the same column with the same default.
+ * - drizzle/0032_add_comment_threads.sql (WP15): adds the nullable comments.block_id,
+ *   block_excerpt, resolved_at and resolved_by_user_id; existing comments stay page-level and
+ *   open. Its down file refuses while a comment is anchored or resolved.
  *
  * All add their columns and constraints under the names push expects, so push then has nothing
  * left to change. All are idempotent, so running this on every deploy is safe.
@@ -70,6 +73,7 @@ const MIGRATIONS = [
   '0029_add_organization_invitations',
   '0030_report_public_grant_levels',
   '0031_add_team_members_can_edit',
+  '0032_add_comment_threads',
 ];
 const sqlPaths = (down ? [...MIGRATIONS].reverse() : MIGRATIONS).map((name) =>
   fileURLToPath(new URL(`../drizzle/${name}${down ? '.down' : ''}.sql`, import.meta.url))

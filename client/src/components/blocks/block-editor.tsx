@@ -31,6 +31,7 @@ import {
   Sigma,
   Link2,
   GripVertical,
+  MessageSquare,
 } from 'lucide-react';
 import {
   DragDropContext,
@@ -75,6 +76,11 @@ interface BlockEditorProps {
   useYjs?: boolean; // Enable Yjs CRDT collaboration (default: false)
   /** Team of the page being edited, for the `@` / `[[` link picker (issue #103 E6). */
   linkTeamId?: number | null;
+  /** Block comments (WP15): the row's comment button and the marker with its open-thread count. */
+  blockComments?: {
+    counts: Record<string, number>;
+    onOpen: (blockId: string) => void;
+  };
 }
 
 export function BlockEditor({
@@ -87,6 +93,7 @@ export function BlockEditor({
   userName,
   useYjs = false, // Default to false for backward compatibility
   linkTeamId = null,
+  blockComments,
 }: BlockEditorProps) {
   const { flags } = useFeatureFlags();
   const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null);
@@ -1076,6 +1083,36 @@ export function BlockEditor({
                               </div>
                             </div>
                             <div className="min-w-0 flex-1">{renderBlock(block, index)}</div>
+                            {blockComments && (
+                              <button
+                                type="button"
+                                onClick={() => blockComments.onOpen(block.id)}
+                                data-testid={
+                                  blockComments.counts[block.id] > 0
+                                    ? 'block-comment-marker'
+                                    : 'block-comment-button'
+                                }
+                                aria-label={
+                                  blockComments.counts[block.id] > 0
+                                    ? `열린 토론 ${blockComments.counts[block.id]}개`
+                                    : '댓글'
+                                }
+                                title={
+                                  blockComments.counts[block.id] > 0 ? '열린 토론 보기' : '댓글'
+                                }
+                                className={cn(
+                                  'mt-1.5 inline-flex h-5 min-w-5 shrink-0 !min-h-0 !min-w-0 items-center justify-center gap-0.5 rounded px-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                                  blockComments.counts[block.id] > 0
+                                    ? 'bg-highlight/10 text-highlight'
+                                    : 'opacity-0 transition-opacity group-focus-within/row:opacity-100 group-hover/row:opacity-100 [@media(hover:none)]:opacity-60'
+                                )}
+                              >
+                                <MessageSquare className="h-3.5 w-3.5" />
+                                {blockComments.counts[block.id] > 0 && (
+                                  <span>{blockComments.counts[block.id]}</span>
+                                )}
+                              </button>
+                            )}
                           </div>
                         )}
                       </Draggable>
